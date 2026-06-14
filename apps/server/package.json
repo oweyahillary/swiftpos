@@ -1,17 +1,14 @@
 {
-  "name": "server",
-  "version": "0.0.1",
+  "name": "swiftpos-server",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --skipLibCheck --noEmitOnError false || true",
-    "start": "node dist/index.js",
-    "lint": "echo 'lint server'",
-    "type-check": "tsc --noEmit"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.104.0",
-    "@swiftpos/db": "workspace:*",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "date-fns-tz": "^3.2.0",
@@ -35,7 +32,11 @@
     "@types/node": "^22.15.3",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.0",
+    "@types/ws": "^8.5.13",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": "20"
   }
 }

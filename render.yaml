@@ -1,10 +1,10 @@
 services:
-  # ── SwiftPOS API Server (Express / Node.js) ───────────────────────────────
   - type: web
     name: swiftpos-server
     runtime: node
-    buildCommand: npm install -g pnpm && pnpm install && pnpm --filter server build
-    startCommand: node apps/server/dist/index.js
+    rootDir: apps/server
+    buildCommand: npm install && npm run build
+    startCommand: node dist/index.js
     plan: free
     healthCheckPath: /health
     envVars:
@@ -12,7 +12,6 @@ services:
         value: production
       - key: PORT
         value: 4000
-      # ── Set these in Render dashboard — never commit real values ──────────
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
