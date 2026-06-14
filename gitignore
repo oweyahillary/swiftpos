@@ -1,0 +1,123 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SwiftPOS .gitignore
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# ── Environment / Secrets ─────────────────────────────────────────────────────
+# NEVER commit .env files — they contain API keys, DB passwords, JWT secrets
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.*.local
+# Keep .env.example files (they document required variables)
+!.env.example
+
+# ── Build Outputs ─────────────────────────────────────────────────────────────
+dist/
+build/
+out/
+
+# Electron packaged installer output
+apps/desktop/dist/
+apps/desktop/release/
+apps/desktop/*.exe
+apps/desktop/*.dmg
+apps/desktop/*.AppImage
+apps/desktop/*.deb
+apps/desktop/*.rpm
+apps/desktop/*.snap
+apps/desktop/win-unpacked/
+apps/desktop/mac/
+apps/desktop/linux-unpacked/
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+.turbo/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Vite dev server cache
+apps/dashboard/.vite/
+apps/admin/.vite/
+apps/desktop/.vite/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ── Database local files ──────────────────────────────────────────────────────
+*.sqlite
+*.sqlite-journal
+*.sqlite3
+*.db
+
+# ── OS Files ──────────────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ── Editor and IDE ────────────────────────────────────────────────────────────
+# VSCode — keep extensions.json and settings.json for team consistency
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# ── Certificates and Keys ─────────────────────────────────────────────────────
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.p8
+*.pfx
+*.jks
+*.keystore
+
+# ── Temporary Files ───────────────────────────────────────────────────────────
+tmp/
+temp/
+.temp/
+*.tmp
+*.bak
+*.backup
+*.orig
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+storybook-static/

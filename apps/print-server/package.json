@@ -1,0 +1,29 @@
+{
+  "name": "swiftpos-print-server",
+  "version": "1.0.0",
+  "description": "SwiftPOS local print server — runs on the POS computer and receives print jobs from the browser",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "build:win": "pkg src/index.js --targets node18-win-x64 --output dist/SwiftPOS-PrintServer.exe --compress GZip",
+    "build:all": "pkg src/index.js --targets node18-win-x64,node18-macos-x64,node18-linux-x64 --output dist/SwiftPOS-PrintServer --compress GZip"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "pdf-to-printer": "^5.0.0",
+    "node-html-to-image": "^4.0.0"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": [
+      "node_modules/puppeteer/.local-chromium/**/*"
+    ],
+    "scripts": [
+      "src/**/*.js"
+    ]
+  }
+}

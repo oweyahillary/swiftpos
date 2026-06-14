@@ -1,0 +1,49 @@
+services:
+  # ── SwiftPOS API Server (Express / Node.js) ───────────────────────────────
+  - type: web
+    name: swiftpos-server
+    runtime: node
+    buildCommand: npm install -g pnpm && pnpm install && pnpm --filter server build
+    startCommand: node apps/server/dist/index.js
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      # ── Set these in Render dashboard — never commit real values ──────────
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SUPERVISOR_PIN
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: NOTIFY_FROM_EMAIL
+        sync: false
+      - key: MPESA_ENVIRONMENT
+        value: sandbox
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_CALLBACK_BASE_URL
+        sync: false
+      - key: DASHBOARD_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

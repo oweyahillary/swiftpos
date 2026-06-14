@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Folders
+dryrun/
+migrations/
+others/
+tests/
+
+# Build outputs
+dist/
+build/
+out/
+.turbo/
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# SQLite
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+BACKEND_README.md
+CHANGES.md
+DEPLOY.MD
+Eugene
+TESTING_GUIDE.md

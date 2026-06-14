@@ -1,0 +1,24 @@
+{
+  "name": "swiftpos",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev:desktop":   "pnpm --filter desktop dev",
+    "dev:dashboard": "pnpm --filter dashboard dev",
+    "dev:server":    "pnpm --filter server dev",
+    "dev:admin":     "pnpm --filter admin dev",
+    "build": "turbo build",
+    "dev":   "turbo dev",
+    "lint":  "turbo lint",
+    "type-check": "turbo type-check"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@10.33.1"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@swiftpos/sync",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "echo 'lint sync'",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@swiftpos/db": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

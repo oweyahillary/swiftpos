@@ -1,0 +1,40 @@
+{
+  "name": "server",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "echo 'lint server'",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.104.0",
+    "@swiftpos/db": "workspace:*",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "date-fns-tz": "^3.2.0",
+    "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.1",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.7",
+    "resend": "^6.12.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.15.3",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^8.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}
