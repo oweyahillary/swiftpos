@@ -6,7 +6,8 @@
     "outDir": "dist",
     "lib": ["ES2022"],
     "skipLibCheck": true,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "strict": false
   },
   "include": ["src"]
 }
