@@ -20,7 +20,7 @@ const DEFAULT_API = "http://localhost:4000";
 // ─── API layer ────────────────────────────────────────────────────────────────
 // ─── API hook ─────────────────────────────────────────────────────────────────
 function useAdminApi() {
-  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem("swiftpos_admin_api") || DEFAULT_API);
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem("swiftpos_admin_api") || import.meta.env.VITE_API_URL || DEFAULT_API);
   const [token, setToken]   = useState(() => sessionStorage.getItem("swiftpos_admin_token") || "");
 
   const req = useCallback(async (method, path, body) => {

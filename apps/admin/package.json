@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite --port 5174",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview --port 5174",
     "lint": "echo 'lint admin'",
     "type-check": "tsc --noEmit"
