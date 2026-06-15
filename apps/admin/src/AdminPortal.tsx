@@ -24,7 +24,7 @@ function useAdminApi() {
   const [token, setToken]   = useState(() => sessionStorage.getItem("swiftpos_admin_token") || "");
 
   const req = useCallback(async (method, path, body) => {
-    const res = await fetch(`${apiUrl}/api/admin${path}`, {
+    const res = await fetch(`${apiUrl.replace(/\/+$/, "")}/api/admin${path}`, {
       method,
       headers: {
         "Content-Type": "application/json",
