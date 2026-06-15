@@ -55,7 +55,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <p className="text-gray-400 text-sm mb-6">
             An unexpected error occurred. Your data is safe — please reload to continue.
           </p>
-          {process.env.NODE_ENV !== 'production' && this.state.error && (
+          {import.meta.env.DEV && this.state.error && (
             <pre className="text-left text-red-400 text-xs bg-gray-950 rounded-lg p-3 mb-6 overflow-auto max-h-40">
               {this.state.error.message}
             </pre>

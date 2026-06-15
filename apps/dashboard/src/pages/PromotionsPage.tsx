@@ -64,7 +64,6 @@ const BLANK_FORM: FormState = {
 
 function fmtTime(t: string | null): string {
   if (!t) return '—';
-  const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [h, m] = t.split(':');
   const hour = Number(h);
   return `${hour > 12 ? hour - 12 : hour || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
@@ -78,6 +77,7 @@ function fmtDays(days: number[]): string {
 }
 
 export default function PromotionsPage() {
+  const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [promos, setPromos]     = useState<Promotion[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -472,7 +472,7 @@ export default function PromotionsPage() {
           </div>
         </div>
       )}
-    </div>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
   );
 }

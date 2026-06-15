@@ -427,7 +427,7 @@ export default function ParkingSettingsPage() {
           </div>
         </div>
       )}
-    </div>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
   );
 }

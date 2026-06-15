@@ -1,23 +1,14 @@
 {
   "name": "swiftpos",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
+  "description": "SwiftPOS \u2014 Multi-tenant Point of Sale System",
   "scripts": {
-    "dev:desktop":   "pnpm --filter desktop dev",
-    "dev:dashboard": "pnpm --filter dashboard dev",
-    "dev:server":    "pnpm --filter server dev",
-    "dev:admin":     "pnpm --filter admin dev",
-    "build": "turbo build",
-    "dev":   "turbo dev",
-    "lint":  "turbo lint",
-    "type-check": "turbo type-check"
-  },
-  "devDependencies": {
-    "turbo": "^2.5.3",
-    "typescript": "^5.8.3"
+    "dev:server": "cd apps/server && npm run dev",
+    "dev:dashboard": "cd apps/dashboard && npm run dev",
+    "install:all": "cd apps/server && npm install && cd ../dashboard && npm install"
   },
   "engines": {
-    "node": "20"
-  },
-  "packageManager": "pnpm@9.0.0"
+    "node": ">=20"
+  }
 }

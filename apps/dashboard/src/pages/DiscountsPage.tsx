@@ -367,7 +367,7 @@ export default function DiscountsPage() {
           </div>
         </div>
       )}
-    </div>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
   );
 }

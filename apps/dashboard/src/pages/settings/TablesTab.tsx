@@ -502,6 +502,7 @@ export default function TablesTab({ branches }: { branches: Branch[] }) {
           </div>
         </div>
       )}
+      <ConfirmModal state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }
@@ -533,6 +534,5 @@ function TableCard({ table, onEdit, onToggle, onDelete }: {
         <button onClick={onDelete} className="p-1.5 text-gray-600 hover:text-red-400 transition-colors rounded-lg hover:bg-gray-700" title="Delete">🗑</button>
       </div>
     </div>
-      <ConfirmModal state={confirmState} onClose={closeConfirm} />
   );
 }

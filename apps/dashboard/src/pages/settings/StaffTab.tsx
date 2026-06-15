@@ -162,6 +162,7 @@ export default function StaffTab({ branches, excludeRoles }: Props) {
           onSaved={() => { setShowModal(false); fetchAll(); }}
         />
       )}
+      <ConfirmModal state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }
@@ -185,6 +186,8 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
   const [phone, setPhone] = useState(editing?.phone ?? '');
   const [roleId, setRoleId] = useState(editing?.roles?.id ?? roles[0]?.id ?? '');
   const [pin, setPin] = useState('');
+  const [overridePin, setOverridePin] = useState('');
+  const [clearOverride, setClearOverride] = useState(false);
   const [selectedBranches, setSelectedBranches] = useState<string[]>(
     editing?.user_branches?.map(b => b.branch_id) ??
     (branches.length > 0 ? [branches[0].id] : [])  // default to first branch (main) for new staff
@@ -263,6 +266,12 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
       }
     });
 
+    // Override PIN payload: '' clears (revoke), a value sets/replaces, omit = keep.
+    const overrideField: { override_pin?: string } =
+      clearOverride ? { override_pin: '' }
+      : overridePin ? { override_pin: overridePin }
+      : {};
+
     setLoading(true); setError('');
     try {
       if (editing) {
@@ -272,13 +281,14 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
           email: email || undefined,
           role_id: roleId,
           ...(pin ? { pin } : {}),
+          ...overrideField,
           branch_ids: selectedBranches,
           overrides,
         });
       } else if (mode === 'pin') {
-        await api.post('/api/staff', { name, phone: phone || undefined, role_id: roleId, pin, branch_ids: selectedBranches, overrides });
+        await api.post('/api/staff', { name, phone: phone || undefined, role_id: roleId, pin, branch_ids: selectedBranches, overrides, ...overrideField });
       } else {
-        await api.post('/api/staff/invite', { name, email, role_id: roleId, branch_ids: selectedBranches, overrides });
+        await api.post('/api/staff/invite', { name, email, role_id: roleId, branch_ids: selectedBranches, overrides, ...overrideField });
       }
       onSaved();
     } catch (err: any) {
@@ -363,6 +373,32 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
             </div>
           )}
+          <div className="col-span-2">
+            <label className="block text-sm text-gray-400 mb-1">
+              Override PIN
+              <span className="text-gray-600 text-xs ml-1">— lets this person authorize paid-order voids &amp; overrides</span>
+            </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={overridePin}
+              onChange={e => { setOverridePin(e.target.value.replace(/\D/g, '')); setClearOverride(false); }}
+              maxLength={6}
+              disabled={clearOverride}
+              placeholder={editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 disabled:opacity-40 tracking-widest"
+            />
+            <p className="text-xs text-gray-600 mt-1">
+              Separate from the login PIN. Entered by the supervisor to approve a paid void — the void is recorded against them.
+              {editing && (
+                <button type="button"
+                  onClick={() => { setClearOverride(c => !c); setOverridePin(''); }}
+                  className={`ml-2 underline ${clearOverride ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>
+                  {clearOverride ? 'Will remove override authority — undo' : 'Remove override authority'}
+                </button>
+              )}
+            </p>
+          </div>
         </div>
 
         {/* Branch access — dropdown */}
@@ -497,6 +533,5 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
         </div>
       </div>
     </div>
-      <ConfirmModal state={confirmState} onClose={closeConfirm} />
   );
 }

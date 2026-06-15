@@ -76,7 +76,6 @@ function AddGroupModal({
   onSave: (state: AddGroupState) => Promise<void>;
   onClose: () => void;
 }) {
-  const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [form, setForm] = useState<AddGroupState>(EMPTY_GROUP);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -210,6 +209,7 @@ function AddGroupModal({
 // ── Main Drawer ─────────────────────────────────────────────
 
 export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
+  const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [variantGroups, setVariantGroups] = useState<VariantGroup[]>([]);
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -427,7 +427,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
           onClose={() => setAddingMode(null)}
         />
       )}
-    </>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </>
   );
 }

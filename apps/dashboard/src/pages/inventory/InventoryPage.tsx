@@ -4,6 +4,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 import AdjustmentModal from './AdjustmentModal';
 import MovementsDrawer from './MovementsDrawer';
+import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
 
 interface StockRow {
   id: string | null;

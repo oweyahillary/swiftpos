@@ -151,6 +151,25 @@ export default function CashierScreen() {
     if (dest !== '/pos/cashier') navigate(dest, { replace: true });
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Data (usePOSData hook) ────────────────────────────────────────────────
+  // Replaces 7 inline useState declarations + sequential data loading useEffect.
+  // Fetches products/categories/variants/tables/pumps/printers/orderMode in
+  // parallel via Promise.allSettled — previously sequential (400-600ms slower).
+  // NOTE: must be declared BEFORE `businessMode`/view effects below, which read
+  // posDataMode — otherwise it's a temporal-dead-zone ReferenceError on render.
+  const {
+    products,
+    categories,
+    variantsByProduct,
+    tables,
+    pumps,
+    setPumps,
+    branchPrinters,
+    businessMode:  posDataMode,
+    orderMode:     posDataOrderMode,
+    loading,
+  } = usePOSData();
+
   // ── Business mode (from usePOSData) ──────────────────────────────────────
   // posDataMode comes from usePOSData — initialised to 'retail' then updated
   // once the POS init API returns. Aliased to businessMode for compatibility.
@@ -176,22 +195,6 @@ export default function CashierScreen() {
   }, [businessMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currency = session?.currency ?? 'KES';
-
-  // ── Data (usePOSData hook) ────────────────────────────────────────────────
-  // Replaces 7 inline useState declarations + sequential data loading useEffect.
-  // Fetches products/categories/variants/tables/pumps/printers/orderMode in
-  // parallel via Promise.allSettled — previously sequential (400-600ms slower).
-  const {
-    products,
-    categories,
-    variantsByProduct,
-    tables,
-    pumps,
-    branchPrinters,
-    businessMode:  posDataMode,
-    orderMode:     posDataOrderMode,
-    loading,
-  } = usePOSData();
 
   const [activeParkingSessions, setActiveParkingSessions] = useState<Record<string, ParkingSession>>({});
 

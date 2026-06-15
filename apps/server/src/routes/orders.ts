@@ -52,6 +52,43 @@ async function verifySupervisorPin(
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// Verify a per-user override authorizer for a privileged action (e.g. voiding a
+// paid order). Looks up active staff in the business who have an override PIN
+// configured and bcrypt-compares the entered PIN.
+//   - If `authorizerId` is supplied (supervisor picked from a list), only that
+//     user is checked, giving an unambiguous audit trail.
+//   - Returns { ok:true, userId } on success.
+//   - Returns reason 'no_authorizers' when nobody has an override PIN set, so the
+//     caller can fall back to the legacy business-wide supervisor PIN.
+async function verifyOverrideAuthorizer(
+  businessId:   string,
+  authorizerId: string | undefined,
+  pin:          string | undefined,
+): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers'; userId?: string }> {
+  const { data: authorizers } = await supabase
+    .from('users')
+    .select('id, override_pin_hash')
+    .eq('business_id', businessId)
+    .eq('status', 'active')
+    .not('override_pin_hash', 'is', null);
+
+  if (!authorizers || authorizers.length === 0) {
+    return { result: 'no_authorizers' };
+  }
+  if (!pin) return { result: 'invalid' };
+
+  const candidates = authorizerId
+    ? authorizers.filter((a: any) => a.id === authorizerId)
+    : authorizers;
+
+  for (const a of candidates as any[]) {
+    if (a.override_pin_hash && await bcrypt.compare(String(pin), String(a.override_pin_hash))) {
+      return { result: 'ok', userId: a.id };
+    }
+  }
+  return { result: 'invalid' };
+}
+
 // ── Authoritative order pricing (shared by POST / and POST /open) ────────────
 // Rebuilds every line from the catalogue so client-sent prices/totals can't be
 // trusted. Mutates each line's selectedVariants[].priceAdjustment and
@@ -809,6 +846,21 @@ router.get('/:id', async (req, res) => {
 
   const { data, error } = await query.single();
   if (error) { res.status(404).json({ error: 'Order not found' }); return; }
+
+  // For voided orders, resolve the cashier who voided and the supervisor who
+  // authorized it (if any) to names, so the order detail can show attribution.
+  if ((data as any).status === 'voided') {
+    const ids = [ (data as any).voided_by, (data as any).authorized_by ].filter(Boolean) as string[];
+    if (ids.length) {
+      const { data: users } = await supabase
+        .from('users').select('id, name').in('id', [...new Set(ids)]);
+      const nameMap: Record<string, string> = {};
+      (users ?? []).forEach((u: any) => { nameMap[u.id] = u.name; });
+      (data as any).voided_by_name     = (data as any).voided_by     ? (nameMap[(data as any).voided_by]     ?? null) : null;
+      (data as any).authorized_by_name = (data as any).authorized_by ? (nameMap[(data as any).authorized_by] ?? null) : null;
+    }
+  }
+
   res.json(data);
 });
 
@@ -816,7 +868,7 @@ router.get('/:id', async (req, res) => {
 const VOID_WINDOW_MINUTES = 30;
 
 router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
-  const { reason, supervisor_pin } = req.body;
+  const { reason, supervisor_pin, override_pin, authorizer_id } = req.body;
   const orderId = req.params.id;
 
   if (!reason) {
@@ -848,14 +900,31 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   }
 
   const completedPayment = (order.payments ?? []).find((p: { id: string; status: string; amount: string; method: string }) => p.status === 'completed');
+  let authorizedBy: string | null = null;
   if (completedPayment) {
-    const result = await verifySupervisorPin(req.businessId, supervisor_pin);
-    if (result === 'not_configured') {
-      res.status(500).json({ error: 'Supervisor PIN has not been configured for this business' });
-      return;
-    }
-    if (!result) {
-      res.status(403).json({ error: 'Invalid supervisor PIN' });
+    const pin = (override_pin ?? supervisor_pin) as string | undefined;
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
+
+    if (ov.result === 'ok') {
+      authorizedBy = ov.userId ?? null;
+    } else if (ov.result === 'no_authorizers') {
+      // Transition fallback: no per-user override PINs configured yet — accept
+      // the legacy business-wide supervisor PIN so existing installs keep working.
+      const legacy = await verifySupervisorPin(req.businessId, pin);
+      if (legacy === 'not_configured') {
+        res.status(400).json({
+          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
+          code:  'NO_OVERRIDE_CONFIGURED',
+        });
+        return;
+      }
+      if (!legacy) {
+        res.status(403).json({ error: 'Invalid supervisor PIN' });
+        return;
+      }
+      // legacy PIN valid — authorizedBy stays null (no identifiable supervisor)
+    } else {
+      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
       return;
     }
   }
@@ -864,7 +933,7 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
     // 1. Mark order voided
     const { error: vErr } = await supabase
       .from('orders')
-      .update({ status: 'voided', void_reason: reason, voided_at: new Date().toISOString(), voided_by: req.userId })
+      .update({ status: 'voided', void_reason: reason, voided_at: new Date().toISOString(), voided_by: req.userId, authorized_by: authorizedBy })
       .eq('id', orderId);
     if (vErr) throw vErr;
 

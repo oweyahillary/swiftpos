@@ -36,30 +36,26 @@ export default function LoginPage() {
     setErrorCode('');
     setLoading(true);
 
-    // ── Clear any stale SwiftPOS token BEFORE authenticating ────────────────
+    // ── Clear any stale SwiftPOS / POS / cashier tokens BEFORE authenticating ──
     // The access token is a single shared localStorage key, written by both the
     // dashboard owner login and the (web) POS staff logins, and getAuthHeader()
-    // prefers it over the Supabase session. signInWithPassword() below fires
-    // Supabase's onAuthStateChange synchronously, which makes BusinessContext
-    // refetch /api/business — and if a previous business's token were still in
-    // localStorage at that instant (it's only overwritten in step 3), that fetch
-    // would resolve to the WRONG business and cache it. Clearing first guarantees
-    // the in-flight fetch falls back to the freshly-authenticated Supabase
-    // session, so the correct business loads even before the new token is stored.
-    // clearAllTokens() also wipes any leftover POS/cashier tokens from a
-    // previous session on this device.
+    // prefers it over the Supabase session. Wiping first guarantees no previous
+    // user's token leaks into the fetches the new session will trigger.
     clearAllTokens();
 
     try {
-      // ── Step 1: Supabase credential check ──────────────────────────────────
-      // This confirms the email/password is valid before we hit the server.
-      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInErr) throw new Error(signInErr.message);
-
-      // ── Step 2: Server login — enforces web_hosting gate + suspension check ──
-      // The server will 403 with a specific code if the client hasn't paid for
-      // web portal access or has been suspended by a SwiftPOS agent.
-      // The response also tells us if the owner must change their password.
+      // ── Step 1: Server login FIRST — validates credentials server-side and
+      //   returns the SwiftPOS JWT pair, while enforcing the web_hosting gate +
+      //   suspension check. This endpoint does its own password verification, so
+      //   it does NOT require a pre-existing Supabase session on the client.
+      //
+      //   Order matters: we must STORE the SwiftPOS token before establishing the
+      //   Supabase session (step 3). signInWithPassword() fires onAuthStateChange,
+      //   which makes BusinessContext / BranchContext / PermissionsContext refetch
+      //   immediately. Those API routes verify the SwiftPOS JWT — if the token
+      //   isn't in localStorage yet, every fetch 401s and the contexts stay empty
+      //   until a manual page reload. Storing first means the very first
+      //   session-triggered fetch already carries a valid token.
       let loginResponse: { mustChangePassword?: boolean; accessToken?: string; refreshToken?: string } = {};
       try {
         loginResponse = await api.post<{ mustChangePassword?: boolean }>(
@@ -72,19 +68,30 @@ export default function LoginPage() {
         if (code && ACCESS_ERROR_CODES[code]) {
           setErrorCode(code);
         } else {
-          setError(serverErr.message ?? 'Access denied');
+          // Invalid email/password (server 401) and any other access error land here.
+          setError(serverErr.message ?? 'Sign in failed — please check your credentials.');
         }
-        await supabase.auth.signOut();
         setLoading(false);
         return;
       }
 
-      // Store SwiftPOS JWT so api.ts uses it for all subsequent requests.
-      // This avoids the Supabase JWT verification path on the server.
+      // ── Step 2: Store the SwiftPOS JWT so api.ts uses it for every subsequent
+      //   request (including the context fetches triggered by step 3).
       if (loginResponse.accessToken)  storeSwiftPOSToken(loginResponse.accessToken);
       if (loginResponse.refreshToken) storeRefreshToken(loginResponse.refreshToken);
 
-      // ── Step 3: Route to password change or dashboard ───────────────────────
+      // ── Step 3: Establish the Supabase session. ProtectedRoute and the data
+      //   contexts gate on this session. It now fires with the SwiftPOS token
+      //   already in place, so the contexts load correctly on first paint.
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInErr) {
+        // Token was stored but the session couldn't be created — don't leave a
+        // half-authenticated state (token present, no session → bounce loop).
+        clearAllTokens();
+        throw new Error(signInErr.message);
+      }
+
+      // ── Step 4: Route to password change or dashboard ───────────────────────
       if (loginResponse.mustChangePassword) { navigate('/change-password'); return; }
 
       navigate('/dashboard');

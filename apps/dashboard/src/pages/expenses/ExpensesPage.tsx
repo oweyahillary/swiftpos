@@ -631,5 +631,6 @@ export default function ExpensesPage() {
 
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
     </div>
+    </>
   );
 }

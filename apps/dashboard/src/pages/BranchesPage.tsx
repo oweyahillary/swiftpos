@@ -187,7 +187,7 @@ export default function BranchesPage() {
           </div>
         </div>
       )}
-    </div>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
   );
 }

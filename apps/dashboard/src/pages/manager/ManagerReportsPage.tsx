@@ -38,6 +38,7 @@ interface ProductRow {
 interface VoidRow {
   id: string; order_number: string; total: number; void_reason: string | null;
   voided_at: string; cashier_name: string | null; table_name: string | null;
+  authorized_by_name: string | null;
 }
 
 interface StaffRow {
@@ -426,7 +427,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: any; session: any; cu
             <table className="w-full text-sm">
               <thead className="bg-gray-700/30">
                 <tr>
-                  {['Order', 'Amount', 'Cashier', 'Table', 'Reason', 'Time'].map(h => (
+                  {['Order', 'Amount', 'Cashier', 'Authorized by', 'Table', 'Reason', 'Time'].map(h => (
                     <th key={h} className="text-left text-xs text-gray-400 px-4 py-3 font-medium">{h}</th>
                   ))}
                 </tr>
@@ -437,6 +438,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: any; session: any; cu
                     <td className="px-4 py-2.5 text-white font-mono text-xs">{r.order_number}</td>
                     <td className="px-4 py-2.5 text-red-400 font-medium tabular-nums">{fmt(currency, r.total)}</td>
                     <td className="px-4 py-2.5 text-gray-300">{r.cashier_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs">{r.authorized_by_name ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-400">{r.table_name ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-400 text-xs max-w-[180px] truncate">{r.void_reason ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{fmtDate(r.voided_at)}</td>

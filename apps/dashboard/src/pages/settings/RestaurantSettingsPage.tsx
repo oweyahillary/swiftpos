@@ -415,7 +415,7 @@ export default function RestaurantSettingsPage() {
           </div>
         </div>
       )}
-    </div>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
   );
 }

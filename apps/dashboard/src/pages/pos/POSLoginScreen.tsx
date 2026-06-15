@@ -34,7 +34,9 @@ export default function POSLoginScreen() {
   const [shake, setShake]             = useState(false);
   const [successName, setSuccessName] = useState('');
   const [branches, setBranches]       = useState<Branch[]>([]);
-  const [pendingData, setPendingData] = useState<any>(null);
+  const [pendingData, setPendingData]       = useState<any>(null);
+  const [deviceRejected, setDeviceRejected] = useState(false);
+  const [devicePending,  setDevicePending]  = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
   // ── If already logged in, route immediately based on role ─────────────────
@@ -75,7 +77,13 @@ export default function POSLoginScreen() {
       });
       const data = await res.json();
 
-      if (!res.ok) { triggerError(data.error ?? 'Login failed'); return; }
+      if (!res.ok) {
+        // Server signals device gating via `code` (not `device_status`).
+        if (data.code === 'DEVICE_REJECTED')       { setDeviceRejected(true); return; }
+        if (data.code === 'DEVICE_NOT_REGISTERED')  { setDevicePending(true);  return; }
+        triggerError(data.error ?? 'Login failed');
+        return;
+      }
 
       // Store tokens for api.ts (business data fetch etc.)
       localStorage.setItem('swiftpos_pos_token', data.accessToken ?? data.token);

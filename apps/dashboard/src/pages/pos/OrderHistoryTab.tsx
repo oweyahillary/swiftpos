@@ -14,6 +14,10 @@ interface Order {
   subtotal: number; vat_amount: number; total: number; created_at: string;
   payments: Payment[];
   order_items?: OrderItem[];
+  void_reason?: string | null;
+  voided_at?: string | null;
+  voided_by_name?: string | null;
+  authorized_by_name?: string | null;
 }
 
 interface Props {
@@ -248,6 +252,23 @@ export default function OrderHistoryTab({ branchId, currency }: Props) {
               {selectedOrder.status !== 'voided' && (
                 <div className="mt-2">
                   <VoidTimer createdAt={selectedOrder.created_at} />
+                </div>
+              )}
+              {/* Void attribution — shown for voided orders */}
+              {selectedOrder.status === 'voided' && (
+                <div className="mt-3 bg-red-500/5 border border-red-500/20 rounded-lg px-3 py-2.5 space-y-1">
+                  <p className="text-xs text-red-300/90">
+                    <span className="text-gray-500">Reason:</span> {selectedOrder.void_reason || '—'}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Voided by <span className="text-gray-200">{selectedOrder.voided_by_name ?? 'Unknown'}</span>
+                    {selectedOrder.authorized_by_name && (
+                      <> · authorized by <span className="text-gray-200">{selectedOrder.authorized_by_name}</span></>
+                    )}
+                    {selectedOrder.voided_at && (
+                      <> · {new Date(selectedOrder.voided_at).toLocaleString()}</>
+                    )}
+                  </p>
                 </div>
               )}
             </div>

@@ -511,5 +511,6 @@ export default function IngredientsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

@@ -6,6 +6,7 @@ import type { Product, Category } from '../../types';
 import VariantsDrawer from './VariantsDrawer';
 import RecipeDrawer from './RecipeDrawer';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
 
 const EMPTY_FORM = {
   name: '',
@@ -482,7 +483,7 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
-    </div>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </div>
   );
 }

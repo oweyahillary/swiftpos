@@ -822,7 +822,7 @@ router.get('/voids', async (req, res) => {
     .from('orders')
     .select(`
       id, order_number, order_type, total, discount_amount,
-      void_reason, cashier_id, created_at, branch_id,
+      void_reason, cashier_id, voided_at, authorized_by, created_at, branch_id,
       branches ( name ),
       order_items ( product_name, quantity, subtotal )
     `)
@@ -838,18 +838,21 @@ router.get('/voids', async (req, res) => {
   const { data: voids, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
-  // Enrich cashier names
-  const cashierIds = [...new Set((voids ?? []).map(o => o.cashier_id).filter(Boolean))];
+  // Enrich cashier + authorizer (supervisor) names in one lookup.
+  const userIds = [...new Set(
+    (voids ?? []).flatMap(o => [o.cashier_id, (o as any).authorized_by]).filter(Boolean)
+  )];
   const nameMap: Record<string, string> = {};
-  if (cashierIds.length) {
-    const users = await chunkIn<any>('users', 'id', cashierIds, q => q.select('id, name'));
+  if (userIds.length) {
+    const users = await chunkIn<any>('users', 'id', userIds, q => q.select('id, name'));
     (users ?? [] as Array<{ id: string; name: string }>).forEach(u => { nameMap[u.id] = u.name; });
   }
 
   const enriched = (voids ?? []).map(o => ({
     ...o,
-    cashier_name: nameMap[o.cashier_id] ?? 'Unknown',
-    branch_name:  (o as { branches?: { name: string } | null }).branches?.name ?? '—',
+    cashier_name:       nameMap[o.cashier_id] ?? 'Unknown',
+    authorized_by_name: (o as any).authorized_by ? (nameMap[(o as any).authorized_by] ?? 'Unknown') : null,
+    branch_name:        (o as { branches?: { name: string } | null }).branches?.name ?? '—',
   }));
 
   // Per-cashier summary

@@ -53,6 +53,7 @@ interface VoidsReport {
   voids: {
     id: string; order_number: string; order_type: string; total: number;
     void_reason: string | null; cashier_id: string; cashier_name: string;
+    authorized_by_name: string | null;
     branch_name: string; created_at: string;
   }[];
   summary: {
@@ -570,6 +571,7 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
                   <tr>
                     <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
                     <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Cashier</th>
+                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Authorized by</th>
                     <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Reason</th>
                     <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Amount</th>
                     <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Time</th>
@@ -580,6 +582,7 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
                     <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{v.order_number}</td>
                       <td className="px-2 py-2 text-gray-700 dark:text-gray-300">{v.cashier_name}</td>
+                      <td className="px-2 py-2 text-xs text-gray-600 dark:text-gray-400">{v.authorized_by_name ?? '—'}</td>
                       <td className="px-2 py-2 text-gray-500 dark:text-gray-400 text-xs">{v.void_reason || '—'}</td>
                       <td className="px-2 py-2 text-right tabular-nums text-red-600 dark:text-red-400 font-medium">{fmtShort(v.total, currency)}</td>
                       <td className="px-4 py-2 text-right text-xs text-gray-400">

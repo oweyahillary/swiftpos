@@ -8,7 +8,7 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
 import { connectQZ } from '../../../lib/localPrintServer';
@@ -30,6 +30,7 @@ export interface POSData {
   variantsByProduct: Record<string, VariantGroup[]>;
   tables:            Table[];
   pumps:             Pump[];
+  setPumps:          Dispatch<SetStateAction<Pump[]>>;
   branchPrinters:    BranchPrinter[];
   businessMode:      BusinessMode;
   currency:          string;
@@ -126,7 +127,7 @@ export function usePOSData(): POSData {
 
   return {
     products, categories, variantsByProduct,
-    tables, pumps, branchPrinters,
+    tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, orderMode,
     loading,
     reload: () => setTick(t => t + 1),

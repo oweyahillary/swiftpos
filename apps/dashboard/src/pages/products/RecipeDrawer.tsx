@@ -409,7 +409,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
           </button>
         </div>
       </div>
-    </>
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
+    </>
   );
 }

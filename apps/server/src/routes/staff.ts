@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 
@@ -12,6 +13,14 @@ router.use(requireAuth);
 
 function hashPin(pin: string, businessId: string): string {
   return crypto.createHash('sha256').update(`${pin}:${businessId}`).digest('hex');
+}
+
+// Override PINs are auth secrets used to authorize privileged actions (e.g.
+// voiding a paid order), so they get a proper salted bcrypt hash — kept separate
+// from the login pin_hash so shoulder-surfing an override never leaks login.
+const OVERRIDE_PIN_RE = /^\d{4,6}$/;
+function hashOverridePin(pin: string): Promise<string> {
+  return bcrypt.hash(String(pin), 10);
 }
 
 // Roles a non-owner (e.g. a branch manager) must never be able to assign or
@@ -70,6 +79,27 @@ router.get('/', async (req, res) => {
   res.json(staff);
 });
 
+// GET /api/staff/authorizers — list staff who can authorize overrides.
+// Used by the POS void modal so a supervisor can be selected by name, then
+// confirm with their override PIN. Returns only id/name/role — never the hash.
+// Any authenticated user on this business may read it (names only).
+router.get('/authorizers', async (req, res) => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, name, roles ( name )')
+    .eq('business_id', req.businessId)
+    .eq('status', 'active')
+    .not('override_pin_hash', 'is', null)
+    .order('name');
+
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json((data ?? []).map((u: any) => ({
+    id:   u.id,
+    name: u.name,
+    role: u.roles?.name ?? null,
+  })));
+});
+
 // POST /api/staff — create staff member with PIN
 router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema), async (req, res) => {
   const { name, email, phone, role_id, pin, branch_ids } = req.body;
@@ -101,9 +131,24 @@ router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema),
 
   const pin_hash = hashPin(pin, req.businessId);
 
+  // Optional per-user override PIN (manager authority for voids/overrides).
+  const overridePin = req.body.override_pin;
+  let override_pin_hash: string | null | undefined;
+  if (typeof overridePin === 'string' && overridePin.length > 0) {
+    if (!OVERRIDE_PIN_RE.test(overridePin)) {
+      res.status(400).json({ error: 'Override PIN must be 4–6 digits' });
+      return;
+    }
+    override_pin_hash = await hashOverridePin(overridePin);
+  }
+
   const { data: user, error } = await supabase
     .from('users')
-    .insert({ business_id: req.businessId, name, email: email || null, phone: phone || null, role_id, pin_hash, status: 'active' })
+    .insert({
+      business_id: req.businessId, name, email: email || null, phone: phone || null,
+      role_id, pin_hash, status: 'active',
+      ...(override_pin_hash !== undefined ? { override_pin_hash } : {}),
+    })
     .select()
     .single();
 
@@ -214,6 +259,20 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
   if (pin) {
     if (!/^\d{4,6}$/.test(pin)) { res.status(400).json({ error: 'PIN must be 4–6 digits' }); return; }
     updates.pin_hash = hashPin(pin, req.businessId);
+  }
+
+  // Override PIN: a 4–6 digit value sets/replaces it, '' clears it (revokes
+  // override authority), and omitting the field leaves it unchanged.
+  const overridePin = req.body.override_pin;
+  if (typeof overridePin === 'string') {
+    if (overridePin.length === 0) {
+      updates.override_pin_hash = null;
+    } else if (OVERRIDE_PIN_RE.test(overridePin)) {
+      updates.override_pin_hash = await hashOverridePin(overridePin);
+    } else {
+      res.status(400).json({ error: 'Override PIN must be 4–6 digits' });
+      return;
+    }
   }
 
   const { data, error } = await supabase

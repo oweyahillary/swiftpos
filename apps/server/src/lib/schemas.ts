@@ -111,6 +111,12 @@ export const CreateStaffSchema = z.object({
   role_id: uuid,
   pin: z.string().regex(/^\d{4,6}$/, 'PIN must be 4–6 digits'),
   branch_ids: z.array(uuid).optional().default([]),
+  // Per-user manager-override PIN. 4–6 digits to set; '' to clear (revoke
+  // override authority); omit to leave unchanged. Validated again in the handler.
+  override_pin: z.string().optional().nullable(),
+  // Per-user permission overrides relative to the role defaults.
+  overrides: z.array(z.object({ permission_id: uuid, granted: z.boolean() })).optional(),
+  hourly_rate: z.union([z.number(), z.string(), z.null()]).optional(),
 });
 
 export const UpdateStaffSchema = CreateStaffSchema.partial().extend({

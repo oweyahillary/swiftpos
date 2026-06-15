@@ -11,7 +11,6 @@ const TABS = [
   { key: 'staff',     label: 'Staff Members' },
   { key: 'roles',     label: 'Roles & Permissions' },
   { key: 'devices',   label: 'Devices' },
-  { key: 'security',  label: 'Security' },
   { key: 'scheduler', label: 'Report Scheduler' },
   { key: 'webhooks',  label: 'Webhooks' },
 ];
@@ -161,6 +160,7 @@ interface Webhook {
 }
 
 function WebhooksTab() {
+  const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [hooks,     setHooks]     = useState<Webhook[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [showForm,  setShowForm]  = useState(false);
@@ -299,6 +299,7 @@ function WebhooksTab() {
           </div>
         </div>
       )}
+      <ConfirmModal state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }
@@ -307,47 +308,11 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('staff');
   const [branches, setBranches] = useState<Branch[]>([]);
 
-  // Supervisor PIN state
-  const [currentPin, setCurrentPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [pinSaving, setPinSaving] = useState(false);
-  const [pinError, setPinError] = useState('');
-  const [pinSuccess, setPinSuccess] = useState('');
-  const [pinSet, setPinSet] = useState(false); // whether a PIN is already configured
-
   useEffect(() => {
     api.get<Branch[]>('/api/branches')
       .then(data => setBranches(data ?? []))
       .catch(console.error);
   }, []);
-
-  useEffect(() => {
-    if (activeTab === 'security') loadPinStatus();
-  }, [activeTab]);
-
-  async function loadPinStatus() {
-    try {
-      const settings = await api.get<{ key: string; value: string }[]>('/api/business/settings');
-      const pin = (settings ?? []).find(s => s.key === 'supervisor_pin');
-      setPinSet(!!pin?.value);
-    } catch { /* silent */ }
-  }
-
-  async function savePin() {
-    setPinError(''); setPinSuccess('');
-    if (!/^\d{4,6}$/.test(newPin)) { setPinError('PIN must be 4–6 digits'); return; }
-    if (newPin !== confirmPin) { setPinError('PINs do not match'); return; }
-    setPinSaving(true);
-    try {
-      await api.post('/api/business/settings', { key: 'supervisor_pin', value: newPin });
-      setPinSuccess('Supervisor PIN updated successfully');
-      setPinSet(true);
-      setCurrentPin(''); setNewPin(''); setConfirmPin('');
-    } catch (err: any) {
-      setPinError(err.message ?? 'Failed to save PIN');
-    } finally { setPinSaving(false); }
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -376,78 +341,8 @@ export default function SettingsPage() {
           {activeTab === 'roles'     && <RolesTab />}
           {activeTab === 'scheduler' && <ReportSchedulerTab />}
           {activeTab === 'webhooks'  && <WebhooksTab />}
-          {activeTab === 'security' && (
-            <div className="max-w-lg">
-              <h2 className="text-lg font-bold text-white mb-1">Supervisor PIN</h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Required to void paid orders at the POS. Keep this separate from cashier PINs.
-                {pinSet
-                  ? <span className="ml-1 text-green-400 font-medium">● PIN is configured</span>
-                  : <span className="ml-1 text-amber-400 font-medium">● No PIN set — voids are blocked</span>}
-              </p>
-
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                    New PIN (4–6 digits)
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    placeholder="••••"
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 tracking-widest"
-                    value={newPin}
-                    onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                    Confirm PIN
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    placeholder="••••"
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 tracking-widest"
-                    value={confirmPin}
-                    onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                  />
-                </div>
-
-                {pinError && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5 text-sm text-red-400">
-                    {pinError}
-                  </div>
-                )}
-                {pinSuccess && (
-                  <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-2.5 text-sm text-green-400">
-                    {pinSuccess}
-                  </div>
-                )}
-
-                <button
-                  onClick={savePin}
-                  disabled={pinSaving || !newPin || !confirmPin}
-                  className="w-full py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white text-sm font-bold transition-colors"
-                >
-                  {pinSaving ? 'Saving…' : pinSet ? 'Update PIN' : 'Set PIN'}
-                </button>
-              </div>
-
-              <div className="mt-4 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  <span className="text-gray-400 font-semibold">When is it needed?</span><br />
-                  Only when voiding an order that has already been paid. Free (unpaid) orders can be voided without a PIN.
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
-      <ConfirmModal state={confirmState} onClose={closeConfirm} />
   );
 }
