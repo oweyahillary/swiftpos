@@ -42,6 +42,9 @@ function initSchema(db: Database.Database) {
       branch_id     TEXT,
       business_type TEXT,
       device_name   TEXT,
+      device_id     TEXT,
+      device_role   TEXT NOT NULL DEFAULT 'till',
+      node_url      TEXT,
       configured    INTEGER NOT NULL DEFAULT 0,
       created_at    TEXT NOT NULL,
       updated_at    TEXT NOT NULL
@@ -188,6 +191,7 @@ function initSchema(db: Database.Database) {
       discount_amount REAL DEFAULT 0,
       total         REAL NOT NULL,
       created_at    TEXT NOT NULL,
+      device_id     TEXT,
       sync_status   TEXT DEFAULT 'pending'
     );
 
@@ -315,6 +319,23 @@ function initSchema(db: Database.Database) {
       created_at          TEXT NOT NULL,
       sync_status         TEXT NOT NULL DEFAULT 'pending'
     );
+
+    -- Branch price overrides set by the manager on THIS device (the branch
+    -- authority). LOCAL ORIGIN — the manager owns the branch's prices offline.
+    -- Kept in its own table (not just products.branch_price) for two reasons:
+    --   1. Durability: pullCatalogue overwrites products.branch_price from the
+    --      server; this table lets us re-apply unsynced local edits afterwards
+    --      so a manager's offline price change is never clobbered by a sync.
+    --   2. Up-sync (step 6): synced=0 rows are exactly what flows up to the
+    --      cloud, carrying who/when for newest-wins. price NULL = "cleared,
+    --      revert to base_price" (and delete the cloud override on up-sync).
+    CREATE TABLE IF NOT EXISTS local_price_edits (
+      product_id  TEXT PRIMARY KEY,
+      price       REAL,                    -- NULL = cleared (revert to base_price)
+      updated_at  TEXT NOT NULL,
+      updated_by  TEXT NOT NULL DEFAULT 'pc',
+      synced      INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // ── Additive migrations for existing installs ──────────────────────────────
@@ -335,6 +356,14 @@ function initSchema(db: Database.Database) {
     ['void_reason', 'TEXT'],
     ['voided_at', 'TEXT'],
     ['voided_by', 'TEXT'],
+    // Desktop multi-till — which physical terminal created this order.
+    ['device_id', 'TEXT'],
+  ]);
+  // Desktop multi-till identity + aggregation-node role on the device config.
+  migrateColumns(db, 'device_config', [
+    ['device_id', 'TEXT'],
+    ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
+    ['node_url', 'TEXT'],
   ]);
   migrateColumns(db, 'order_items', [
     ['course', 'TEXT'],
@@ -344,6 +373,9 @@ function initSchema(db: Database.Database) {
     ['barcode', 'TEXT'],
     ['plu',     'TEXT'],
     ['is_fuel', 'INTEGER DEFAULT 0'],
+    // Per-branch price override for the branch this till is bound to (nullable).
+    // Effective price = branch_price ?? base_price. See BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6.
+    ['branch_price', 'REAL'],
   ]);
 }
 

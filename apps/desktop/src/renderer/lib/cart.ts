@@ -29,9 +29,18 @@ export interface CartItem {
   isFuel?: boolean;
 }
 
+// The price this till charges for a product: the per-branch override if one was
+// synced down for the bound branch, otherwise the catalogue default. Keeping this
+// in one place means every price read (cart math, display) resolves identically.
+// See BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6.
+export function effectivePrice(product: any): number {
+  const branch = product?.branch_price;
+  return branch !== null && branch !== undefined ? Number(branch) : Number(product?.base_price ?? 0);
+}
+
 export function computeUnitPrice(product: any, selectedVariants: SelectedVariant[]): number {
   const adj = selectedVariants.reduce((s, v) => s + v.priceAdjustment, 0);
-  return product.base_price + adj;
+  return effectivePrice(product) + adj;
 }
 
 export function computeLineTotal(unitPrice: number, quantity: number, selectedModifiers: SelectedModifier[]): number {

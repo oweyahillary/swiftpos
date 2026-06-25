@@ -37,6 +37,7 @@ import { Router }   from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { getWebAccess } from '../lib/webAccess';
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
@@ -436,17 +437,17 @@ router.post('/login', async (req, res) => {
     return;
   }
 
-  const { data: hostingFlag } = await supabase
-    .from('feature_flags')
-    .select('enabled')
-    .eq('business_id', business.id)
-    .eq('key', 'web_hosting')
-    .maybeSingle();
-
-  if (!hostingFlag || !hostingFlag.enabled) {
+  // Web portal access gate. Uses the central state helper so the renewal ladder
+  // (active → grace → reports_only → locked) is enforced from one place. For
+  // accounts without a dated subscription this falls back to the legacy
+  // feature_flags.web_hosting boolean, so existing logins are unchanged.
+  const webAccess = await getWebAccess(business.id, business.status);
+  if (!webAccess.canLogin) {
     res.status(403).json({
-      error: 'Web portal access is not enabled for your account. Please contact SwiftPOS to upgrade.',
-      code:  'WEB_HOSTING_REQUIRED',
+      error: webAccess.state === 'locked'
+        ? 'Your web portal subscription has expired. Please renew to continue.'
+        : 'Web portal access is not enabled for your account. Please contact SwiftPOS to upgrade.',
+      code:  webAccess.state === 'locked' ? 'WEB_ACCESS_EXPIRED' : 'WEB_HOSTING_REQUIRED',
     });
     return;
   }

@@ -4,6 +4,7 @@ import cors        from 'cors';
 import helmet      from 'helmet';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import apiRoutes   from './routes';
+import { supabase } from './lib/supabase';
 import { startDailySummaryJob } from './jobs/dailySummary';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 
@@ -80,8 +81,48 @@ app.use('/api/admin/auth', authLimiter); // brute-force on admin login
 app.use('/api',            apiLimiter);
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'swiftpos-server', env: ENV, ts: new Date().toISOString() });
+// Does a lightweight DB round-trip so an external uptime pinger hitting this
+// endpoint keeps BOTH Render (spins down after ~15min idle) and Supabase
+// (pauses after ~7 days idle) warm. HEAD request (head: true) returns no rows —
+// just enough to reach Postgres. Bounded by a timeout so the check never hangs.
+app.get('/health', async (_req, res) => {
+  const started = Date.now();
+
+  const ping = supabase
+    .from('businesses')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1);
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('health db timeout')), 5000),
+  );
+
+  try {
+    const { error } = (await Promise.race([ping, timeout])) as Awaited<typeof ping>;
+    if (error) throw error;
+
+    const body: Record<string, unknown> = {
+      status: 'ok',
+      service: 'swiftpos-server',
+      db: 'up',
+      latencyMs: Date.now() - started,
+      ts: new Date().toISOString(),
+    };
+    // Only expose version + env outside production to avoid fingerprinting.
+    if (!isProd) {
+      body.version = '1.0.0';
+      body.env     = ENV;
+    }
+    res.json(body);
+  } catch (err) {
+    log.warn('Health check DB ping failed', { message: (err as Error).message });
+    res.status(503).json({
+      status: 'degraded',
+      service: 'swiftpos-server',
+      db: 'down',
+      ts: new Date().toISOString(),
+    });
+  }
 });
 
 // ── API routes ────────────────────────────────────────────────────────────────

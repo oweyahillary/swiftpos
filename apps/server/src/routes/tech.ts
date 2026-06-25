@@ -16,6 +16,8 @@
 import { Router }    from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
+import { requireAuth } from '../middleware/auth';
+import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM } from '../lib/techToken';
 import crypto        from 'crypto';
 import os            from 'os';
 import { execSync }  from 'child_process';
@@ -46,13 +48,19 @@ async function refreshRevocations() {
 
 // ── Token helpers ──────────────────────────────────────────────────────────
 
-/** Verify a raw tech token. Returns decoded payload or null. */
+/** Verify a raw tech token. Returns decoded payload or null.
+ *  Supports v2 Ed25519 tokens (st2.*, offline-verifiable) and legacy v1 HMAC. */
 function verifyTechToken(rawToken: string): {
   techId: string; techName: string; branchId: string;
   businessId: string; scope: string; exp: number;
 } | null {
+  // v2 — Ed25519 (asymmetric). Same verifier the desktop uses offline.
+  if (rawToken.startsWith('st2.')) {
+    const p = verifyEd25519Token(rawToken);
+    return p ? { techId: p.techId, techName: p.techName, branchId: p.branchId, businessId: p.businessId, scope: p.scope, exp: p.exp } : null;
+  }
+  // v1 — legacy HMAC (online-only). Format: base64(payload).signature
   try {
-    // Format: base64(payload).signature
     const lastDot  = rawToken.lastIndexOf('.');
     const payload  = rawToken.slice(0, lastDot);
     const sig      = rawToken.slice(lastDot + 1);
@@ -123,6 +131,62 @@ router.post('/verify-token', async (req, res) => {
     businessId:  payload.businessId,
     expiresAt:   new Date(payload.exp * 1000).toISOString(),
   });
+});
+
+// ── GET /api/tech/public-key ───────────────────────────────────────────────
+// The Ed25519 public key the desktop uses to verify tech tokens OFFLINE. A
+// public key is not secret — it can only verify, never sign. Open endpoint so a
+// device can refresh the key if it's ever rotated.
+router.get('/public-key', async (_req, res) => {
+  res.json({ algorithm: 'ed25519', public_key: PUBLIC_KEY_PEM });
+});
+
+// ── GET /api/tech/branch-config/:branchId ──────────────────────────────────
+// Called by the desktop at ACTIVATION (owner-authenticated) to cache everything
+// it needs to gate tech access offline thereafter: the branch's reveal code
+// (doorknock) and the token-verification public key. Scoped to the owner's own
+// business so one business can't read another's reveal code.
+router.get('/branch-config/:branchId', requireAuth, async (req: any, res) => {
+  const branchId = String(req.params.branchId);
+  const { data: branch } = await supabase
+    .from('branches')
+    .select('id, name, business_id, tech_reveal_code')
+    .eq('id', branchId)
+    .single();
+
+  if (!branch)                              { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (branch.business_id !== req.businessId) { res.status(403).json({ error: 'Branch not in your business' }); return; }
+
+  res.json({
+    branch_id:   branch.id,
+    reveal_code: branch.tech_reveal_code ?? null,
+    public_key:  PUBLIC_KEY_PEM,
+    algorithm:   'ed25519',
+  });
+});
+
+// ── POST /api/tech/audit ───────────────────────────────────────────────────
+// Records a tech action for the audit trail (who/where/what/when + device). The
+// desktop queues these locally while offline and flushes them here when it can
+// reach the server. Authenticated by the tech token itself.
+router.post('/audit', requireTechToken, async (req: any, res) => {
+  const { action, device_id, detail, occurred_at } = req.body ?? {};
+  const { techId, techName, branchId, businessId } = req.techPayload;
+  if (!action) { res.status(400).json({ error: 'action is required' }); return; }
+
+  const { error } = await supabase.from('tech_audit_log').insert({
+    tech_id:     techId,
+    tech_name:   techName,
+    business_id: businessId,
+    branch_id:   branchId,
+    device_id:   device_id ?? null,
+    action:      String(action).slice(0, 120),
+    detail:      detail ?? null,
+    occurred_at: occurred_at ?? new Date().toISOString(),
+    token_hash:  req.tokenHash ?? null,
+  });
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json({ ok: true });
 });
 
 // ── GET /api/tech/status ───────────────────────────────────────────────────

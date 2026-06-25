@@ -51,6 +51,16 @@ contextBridge.exposeInMainWorld('swiftpos', {
     testConnection: (url: string)  => ipcRenderer.invoke('config:testConnection', url),
   },
 
+  tech: {
+    checkReveal:  (code: string)  => ipcRenderer.invoke('tech:checkReveal', code),
+    openSession:  (token: string) => ipcRenderer.invoke('tech:openSession', token),
+    getSession:   ()              => ipcRenderer.invoke('tech:getSession'),
+    closeSession: ()              => ipcRenderer.invoke('tech:closeSession'),
+    logAction:    (action: string, detail?: any) => ipcRenderer.invoke('tech:logAction', { action, detail }),
+    status:       ()              => ipcRenderer.invoke('tech:status'),
+    adoptFromNode:()              => ipcRenderer.invoke('tech:adoptFromNode'),
+  },
+
   shift: {
     current: ()                                                          => ipcRenderer.invoke('shift:current'),
     open:    (opening_float: number)                                     => ipcRenderer.invoke('shift:open', { opening_float }),
@@ -67,6 +77,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     fuelSales:      () => ipcRenderer.invoke('manager:fuelSales'),
     pumpStatus:     () => ipcRenderer.invoke('manager:pumpStatus'),
     tableOccupancy: () => ipcRenderer.invoke('manager:tableOccupancy'),
+    branchReport:   () => ipcRenderer.invoke('manager:branchReport'),
+    priceList:        ()                                          => ipcRenderer.invoke('manager:priceList'),
+    setBranchPrice:   (product_id: string, price: number)         => ipcRenderer.invoke('manager:setBranchPrice', { product_id, price }),
+    clearBranchPrice: (product_id: string)                        => ipcRenderer.invoke('manager:clearBranchPrice', { product_id }),
   },
 
   expense: {

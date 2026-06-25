@@ -181,7 +181,7 @@ export function getPumpStatus() {
 
   const pumps = db.prepare(`
     SELECT p.id, p.name, p.status, p.fuel_product_id,
-           pr.name AS product_name, pr.base_price AS price_per_litre
+           pr.name AS product_name, COALESCE(pr.branch_price, pr.base_price) AS price_per_litre
     FROM pumps p
     LEFT JOIN products pr ON pr.id = p.fuel_product_id
     ORDER BY p.sort_order
@@ -225,4 +225,86 @@ export function getTableOccupancy() {
   `).all() as any[];
 
   return tables;
+}
+
+// ── Branch price management (manager = branch authority) ─────────────────────
+// Read/write the branch's own prices, LOCALLY. The manager owns these offline;
+// they take effect on this device immediately and are queued (local_price_edits,
+// synced=0) for the cloud up-sync (step 6). Effective price = branch_price ??
+// base_price. See BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6.
+
+export interface PriceRow {
+  product_id:     string;
+  product_name:   string;
+  category_name:  string | null;
+  base_price:     number;
+  branch_price:   number | null;   // null → using base_price
+  effective_price: number;
+  pending:        boolean;          // edited locally, not yet synced up
+}
+
+export function getPriceList(): PriceRow[] {
+  const db = getLocalDb();
+  return db.prepare(`
+    SELECT p.id            AS product_id,
+           p.name          AS product_name,
+           c.name          AS category_name,
+           p.base_price    AS base_price,
+           p.branch_price  AS branch_price,
+           COALESCE(p.branch_price, p.base_price) AS effective_price,
+           CASE WHEN lpe.product_id IS NOT NULL THEN 1 ELSE 0 END AS pending
+    FROM products p
+    LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN local_price_edits lpe ON lpe.product_id = p.id AND lpe.synced = 0
+    WHERE p.status = 'active' AND COALESCE(p.is_fuel, 0) = 0
+    ORDER BY c.name, p.name
+  `).all().map((r: any) => ({
+    product_id:      r.product_id,
+    product_name:    r.product_name,
+    category_name:   r.category_name ?? null,
+    base_price:      Number(r.base_price),
+    branch_price:    r.branch_price === null || r.branch_price === undefined ? null : Number(r.branch_price),
+    effective_price: Number(r.effective_price),
+    pending:         !!r.pending,
+  }));
+}
+
+// Set this branch's price for a product. Writes the live value AND records an
+// unsynced local edit so it survives catalogue pulls and is ready to sync up.
+export function setBranchPrice(productId: string, price: number): { ok: true } {
+  if (!Number.isFinite(price) || price < 0) throw new Error('Price must be a number ≥ 0');
+  const db  = getLocalDb();
+  const now = new Date().toISOString();
+  const exists = db.prepare(`SELECT 1 FROM products WHERE id = ?`).get(productId);
+  if (!exists) throw new Error('Unknown product');
+
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE products SET branch_price = ? WHERE id = ?`).run(price, productId);
+    db.prepare(`
+      INSERT INTO local_price_edits (product_id, price, updated_at, updated_by, synced)
+      VALUES (@product_id, @price, @updated_at, 'pc', 0)
+      ON CONFLICT(product_id) DO UPDATE SET
+        price = excluded.price, updated_at = excluded.updated_at, updated_by = 'pc', synced = 0
+    `).run({ product_id: productId, price, updated_at: now });
+  });
+  tx();
+  return { ok: true };
+}
+
+// Clear the override → revert to base_price. Recorded as a pending edit (price
+// NULL) so the cloud override is also removed on up-sync.
+export function clearBranchPrice(productId: string): { ok: true } {
+  const db  = getLocalDb();
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE products SET branch_price = NULL WHERE id = ?`).run(productId);
+    db.prepare(`
+      INSERT INTO local_price_edits (product_id, price, updated_at, updated_by, synced)
+      VALUES (@product_id, NULL, @updated_at, 'pc', 0)
+      ON CONFLICT(product_id) DO UPDATE SET
+        price = NULL, updated_at = excluded.updated_at, updated_by = 'pc', synced = 0
+    `).run({ product_id: productId, updated_at: now });
+  });
+  tx();
+  return { ok: true };
 }

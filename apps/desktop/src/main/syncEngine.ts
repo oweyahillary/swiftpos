@@ -11,8 +11,8 @@
 import { net } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
+import { hasNode, pushOrderToNode } from './nodeClient';
 import { v4 as uuid } from 'uuid';
-
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -146,6 +146,7 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
       if (refreshed) pulled = await pullCatalogue();
     }
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
+    await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
@@ -168,6 +169,7 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
   let pushed = 0;
   try {
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
+    await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
@@ -208,7 +210,13 @@ export async function retryFailedOrders(): Promise<{ requeued: number; pushed: n
 // ── Pull catalogue + stock from Express ─────────────────────
 
 async function pullCatalogue(): Promise<boolean> {
-  const res = await fetch(`${_serverUrl}/api/pos/init`, { headers: authHeaders() });
+  // Price for the branch this till is actually bound to (per-branch pricing).
+  // Sent as ?branch_id so /api/pos/init returns branch_price per product.
+  const boundBranchForPricing: string | null = getDeviceConfig()?.branch_id ?? null;
+  const initUrl = boundBranchForPricing
+    ? `${_serverUrl}/api/pos/init?branch_id=${encodeURIComponent(boundBranchForPricing)}`
+    : `${_serverUrl}/api/pos/init`;
+  const res = await fetch(initUrl, { headers: authHeaders() });
   if (!res.ok) return false;
 
   const { products, categories, branchId } = await res.json();
@@ -326,11 +334,11 @@ async function pullCatalogue(): Promise<boolean> {
     for (const c of categories) upsertCat.run({ ...c, synced_at: now });
 
     const upsertProd = db.prepare(`
-      INSERT INTO products (id, category_id, name, description, base_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, synced_at)
-      VALUES (@id, @category_id, @name, @description, @base_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @synced_at)
+      INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, synced_at)
+      VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @synced_at)
       ON CONFLICT(id) DO UPDATE SET
         category_id=excluded.category_id, name=excluded.name, description=excluded.description,
-        base_price=excluded.base_price, image_url=excluded.image_url,
+        base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
         has_variants=excluded.has_variants, has_modifiers=excluded.has_modifiers,
         track_stock=excluded.track_stock, status=excluded.status,
         barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
@@ -345,9 +353,23 @@ async function pullCatalogue(): Promise<boolean> {
         is_fuel:       (p as any).is_fuel ? 1 : 0,
         barcode:       (p as any).barcode ?? null,
         plu:           (p as any).plu ?? null,
+        branch_price:  (p as any).branch_price ?? null,
         synced_at:     now,
       });
     }
+
+    // Re-apply the manager's UNSYNCED local price overrides on top of the pulled
+    // catalogue. The pull just overwrote products.branch_price with whatever the
+    // server had; for products the manager edited locally but hasn't yet synced
+    // up, the LOCAL value is authoritative (branch owns its prices). Without this
+    // a routine catalogue sync would silently wipe an offline price change.
+    // price NULL = the manager cleared the override → force back to base_price.
+    db.prepare(`
+      UPDATE products
+         SET branch_price = (SELECT lpe.price FROM local_price_edits lpe
+                              WHERE lpe.product_id = products.id AND lpe.synced = 0)
+       WHERE id IN (SELECT product_id FROM local_price_edits WHERE synced = 0)
+    `).run();
 
     const upsertVG = db.prepare(`
       INSERT INTO variant_groups (id, product_id, name, required, sort_order)
@@ -531,6 +553,48 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
   }
 }
 
+// Push the manager's local branch-price edits up to the cloud (the branch is the
+// authority for its own prices). Reads unsynced local_price_edits, sends them to
+// /api/branch-prices/sync, and on success flips synced=1 — after which a normal
+// catalogue pull is free to bring the (now-matching) cloud value back down.
+// price NULL = a cleared override (delete on the server). Independent of orders.
+async function pushBranchPriceEdits(errors: string[]): Promise<number> {
+  const db = getLocalDb();
+  const branchId = getDeviceConfig()?.branch_id ?? null;
+  if (!branchId) return 0;   // not bound yet → nothing to attribute
+
+  const edits = db.prepare(`
+    SELECT product_id, price, updated_at FROM local_price_edits WHERE synced = 0
+  `).all() as { product_id: string; price: number | null; updated_at: string }[];
+  if (!edits.length) return 0;
+
+  const doPost = () => fetch(`${_serverUrl}/api/branch-prices/sync`, {
+    method: 'POST',
+    headers: pushAuthHeaders(),
+    body: JSON.stringify({ branch_id: branchId, edits }),
+  });
+
+  try {
+    let res = await doPost();
+    if (res.status === 401) {
+      const refreshed = (await refreshStaffToken()) || (await refreshAccessToken());
+      if (refreshed) res = await doPost();
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      errors.push(`Price sync: ${err.error ?? res.status}`);
+      return 0;   // leave rows unsynced — they retry next pass
+    }
+    const { applied } = await res.json() as { applied: string[] };
+    // Only mark the products the server actually applied.
+    const mark = db.prepare(`UPDATE local_price_edits SET synced = 1 WHERE product_id = ? AND synced = 0`);
+    db.transaction(() => { for (const pid of (applied ?? [])) mark.run(pid); })();
+    return (applied ?? []).length;
+  } catch (err: any) {
+    errors.push(`Price sync: ${err.message}`);
+    return 0;
+  }
+}
 async function pushPendingOrders(errors: string[]): Promise<number> {
   const db = getLocalDb();
   const pending = db.prepare(`
@@ -540,8 +604,27 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   let pushed = 0;
   let triedStaffRefresh = false;  // refresh once per sync pass
 
+  // If this till has a branch node, the node is its uplink — push there, not to
+  // the cloud (one path: till → node → cloud). The node forwards to the cloud.
+  const viaNode = hasNode();
+
   for (const row of pending) {
     try {
+      if (viaNode) {
+        const ok = await pushOrderToNode({ orderId: row.order_id, createdAt: row.created_at, payload: row.payload });
+        if (ok) {
+          db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
+          db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`).run(row.order_id);
+          pushed++;
+        } else {
+          // Node unreachable/declined — stay pending and retry next pass. The
+          // till keeps selling regardless; nothing is lost.
+          db.prepare(`UPDATE sync_queue SET attempts=attempts+1, last_error='node unreachable' WHERE id=?`).run(row.id);
+          errors.push(`Order ${row.order_id}: node unreachable`);
+        }
+        continue;
+      }
+
       const doPost = () => fetch(`${_serverUrl}/api/orders`, {
         method: 'POST',
         headers: {
@@ -617,14 +700,17 @@ export function createLocalOrder(orderPayload: any): string {
   const staff = db.prepare(`SELECT staff_id FROM staff_session WHERE id=1`).get() as any;
   const cashierId = staff?.staff_id ?? null;
   const shiftId = (getOpenShift() as any)?.id ?? null;
+  // The physical terminal that created this sale — travels with the order through
+  // till → aggregation node → cloud for per-till attribution and audit.
+  const deviceId = getDeviceConfig()?.device_id ?? null;
 
   const orderId = uuid();
   const now = new Date().toISOString();
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, status, subtotal, vat_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, sync_status)
-      VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, status, subtotal, vat_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
+      VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail', orderPayload.subtotal, orderPayload.vat_amount,
@@ -632,7 +718,7 @@ export function createLocalOrder(orderPayload: any): string {
       orderPayload.total,
       cashierId, shiftId,
       orderPayload.customer_id ?? null, orderPayload.customer_name ?? null, orderPayload.customer_phone ?? null,
-      now,
+      now, deviceId,
     );
 
     for (const item of orderPayload.items) {
@@ -707,7 +793,7 @@ export function createLocalOrder(orderPayload: any): string {
     db.prepare(`
       INSERT INTO sync_queue (order_id, payload, created_at, status)
       VALUES (?, ?, ?, 'pending')
-    `).run(orderId, JSON.stringify({ ...orderPayload, payments: legs, shift_id: shiftId, _localOrderId: orderId, idempotency_key: orderId }), now);
+    `).run(orderId, JSON.stringify({ ...orderPayload, payments: legs, shift_id: shiftId, device_id: deviceId, _localOrderId: orderId, idempotency_key: orderId }), now);
   })();
 
   return orderId;

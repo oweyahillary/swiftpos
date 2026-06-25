@@ -33,12 +33,30 @@ export interface Pump {
   price_per_litre: number | null;
 }
 
+export type DeviceRole = 'till' | 'node';
+
+export interface TechSession {
+  techId: string; techName: string; branchId: string;
+  startedAt: number; expiresAt: number; tokenHash: string;
+}
+
+export interface TechStatus {
+  device: {
+    device_id: string | null; device_name: string | null; device_role: DeviceRole;
+    branch_id: string | null; deploy_mode: string | null; server_url: string | null; node_url: string | null;
+  };
+  sync: { online?: boolean; pending: number; failed: number; lastOrder: string | null; [k: string]: any };
+}
+
 export interface DeviceConfig {
   deploy_mode: DeployMode;
   server_url: string;
   branch_id: string | null;
   business_type: string | null;
   device_name: string | null;
+  device_id: string | null;
+  device_role: DeviceRole;
+  node_url: string | null;
   configured: boolean;
 }
 
@@ -125,6 +143,15 @@ declare global {
         clear: () => Promise<boolean>;
         testConnection: (url: string) => Promise<ConnectionTestResult>;
       };
+      tech: {
+        checkReveal:  (code: string)  => Promise<{ ok: boolean }>;
+        openSession:  (token: string) => Promise<{ ok: true; session: TechSession } | { ok: false; error: string }>;
+        getSession:   () => Promise<TechSession | null>;
+        closeSession: () => Promise<{ ok: boolean }>;
+        logAction:    (action: string, detail?: any) => Promise<{ ok: boolean }>;
+        status:       () => Promise<TechStatus>;
+        adoptFromNode:() => Promise<{ ok: true; session: TechSession } | { ok: false }>;
+      };
       shift: {
         current: () => Promise<ZReport | null>;
         open: (opening_float: number) => Promise<ZReport | null>;
@@ -140,6 +167,10 @@ declare global {
         fuelSales:       () => Promise<any>;
         pumpStatus:      () => Promise<any[]>;
         tableOccupancy:  () => Promise<any[]>;
+        branchReport:    () => Promise<{ salesSummary: any; topProducts: any[]; recentOrders: any[]; stockLevels: any[]; source: 'node' | 'local' | 'local_fallback' }>;
+        priceList:        () => Promise<{ product_id: string; product_name: string; category_name: string | null; base_price: number; branch_price: number | null; effective_price: number; pending: boolean }[]>;
+        setBranchPrice:   (product_id: string, price: number) => Promise<{ ok: true }>;
+        clearBranchPrice: (product_id: string) => Promise<{ ok: true }>;
       };
       expense: {
         categories: () => Promise<{ id: string; name: string }[]>;

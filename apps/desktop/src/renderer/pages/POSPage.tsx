@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { posApi } from '../lib/posApi';
-import { cartSubtotal, extractVat, computeUnitPrice, computeLineTotal, generateOrderNumber } from '../lib/cart';
+import { cartSubtotal, extractVat, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
 import type { CartItem } from '../lib/cart';
 import { modeFlags } from '../lib/posMode';
 import type { ModeFlags } from '../lib/posMode';
@@ -209,7 +209,7 @@ export default function POSPage({ business, onLogout }: Props) {
           : i
         );
       }
-      return [...prev, { product, quantity: 1, selectedVariants: [], selectedModifiers: [], unitPrice: product.base_price, lineTotal: product.base_price, kotSent: false }];
+      return [...prev, { product, quantity: 1, selectedVariants: [], selectedModifiers: [], unitPrice: effectivePrice(product), lineTotal: effectivePrice(product), kotSent: false }];
     });
   };
 
@@ -730,7 +730,7 @@ export default function POSPage({ business, onLogout }: Props) {
                       )}
                       <p className="text-white text-sm font-medium leading-tight truncate">{product.name}</p>
                       <p className="text-green-400 text-sm font-semibold mt-1">
-                        {product.has_variants ? 'from ' : ''}{currency} {Number(product.base_price).toLocaleString()}
+                        {product.has_variants ? 'from ' : ''}{currency} {Number(effectivePrice(product)).toLocaleString()}
                       </p>
                     </button>
                   );

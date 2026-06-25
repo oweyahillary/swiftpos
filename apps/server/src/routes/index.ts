@@ -39,6 +39,7 @@ import techRoutes          from './tech';
 import syncRoutes          from './sync';
 import devicesRoutes       from './devices';
 import parkingRoutes       from './parking';
+import branchPricesRoutes  from './branch-prices';
 
 const router = Router();
 
@@ -60,6 +61,7 @@ router.use('/business',       businessRoutes);
 router.use('/onboarding',     onboardingRoutes);
 router.use('/categories',     categoriesRoutes);
 router.use('/products',       productsRoutes);
+router.use('/branch-prices',  branchPricesRoutes);
 router.use('/pos',            posRoutes);
 router.use('/variants',       variantsRoutes);
 router.use('/modifiers',      modifiersRoutes);

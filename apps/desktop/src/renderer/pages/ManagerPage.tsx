@@ -35,6 +35,7 @@ const I = {
   zreport:   'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   stock:     'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
   items:     'M4 6h16M4 12h16M4 18h7',
+  prices:    'M7 7h.01M3 4a1 1 0 011-1h6.586a1 1 0 01.707.293l8 8a2 2 0 010 2.828l-6.586 6.586a2 2 0 01-2.828 0l-8-8A1 1 0 013 10V4z',
   tables:    'M3 10h18M3 14h18M10 4v16M14 4v16M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z',
   logout:    'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
   pos:       'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2',
@@ -793,6 +794,133 @@ interface Props {
   onLogout:  () => void;   // end shift → PIN screen
 }
 
+// ── Prices Tab — branch price management (manager = branch authority) ─────────
+function PricesTab({ currency }: { currency: string }) {
+  const [rows,    setRows]    = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query,   setQuery]   = useState('');
+  const [drafts,  setDrafts]  = useState<Record<string, string>>({});
+  const [busy,    setBusy]    = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    posApi.manager.priceList()
+      .then(r => { setRows(r as any[]); setDrafts({}); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  if (loading) return <Spinner />;
+
+  const visible = rows.filter(r =>
+    r.product_name.toLowerCase().includes(query.toLowerCase()) ||
+    (r.category_name ?? '').toLowerCase().includes(query.toLowerCase())
+  );
+  const overrides = rows.filter(r => r.branch_price !== null).length;
+
+  async function save(r: any) {
+    const raw = drafts[r.product_id];
+    const price = Number(raw);
+    if (raw === undefined || raw === '' || !Number.isFinite(price) || price < 0) return;
+    setBusy(r.product_id);
+    try { await posApi.manager.setBranchPrice(r.product_id, price); load(); }
+    finally { setBusy(null); }
+  }
+  async function clearOverride(r: any) {
+    setBusy(r.product_id);
+    try { await posApi.manager.clearBranchPrice(r.product_id); load(); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-bold text-white">Branch Prices</h2>
+          <p className="text-gray-500 text-sm">
+            {rows.length} products · {overrides} with a branch price
+          </p>
+        </div>
+        <input
+          value={query} onChange={e => setQuery(e.target.value)}
+          placeholder="Search products…"
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 w-56"
+        />
+      </div>
+
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl px-4 py-3 text-sm text-blue-200">
+        Prices set here apply to <span className="font-semibold">this branch</span> and take effect on this
+        device immediately. A blank override uses the default price. Changes are queued to sync to the
+        cloud when web access is on.
+      </div>
+
+      {visible.length === 0
+        ? <div className="text-center py-12 text-gray-500">No matching products.</div>
+        : (
+          <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  {['Product', 'Category', 'Default', 'Branch price', ''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700/50">
+                {visible.map(r => {
+                  const hasOverride = r.branch_price !== null;
+                  const draft = drafts[r.product_id];
+                  return (
+                    <tr key={r.product_id} className="hover:bg-gray-700/30">
+                      <td className="px-4 py-2.5 text-white font-medium">
+                        {r.product_name}
+                        {r.pending && (
+                          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 align-middle">unsynced</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-400">{r.category_name ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{fmt(r.base_price, currency)}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500 text-xs">{currency}</span>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={draft !== undefined ? draft : (hasOverride ? String(r.branch_price) : '')}
+                            placeholder={String(r.base_price)}
+                            onChange={e => setDrafts(d => ({ ...d, [r.product_id]: e.target.value }))}
+                            className={`w-28 bg-gray-900 border rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-blue-500 ${hasOverride ? 'border-green-600/50 text-green-300' : 'border-gray-700 text-white'}`}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => save(r)}
+                            disabled={busy === r.product_id || draft === undefined || draft === ''}
+                            className="px-3 py-1 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            Save
+                          </button>
+                          {hasOverride && (
+                            <button
+                              onClick={() => clearOverride(r)}
+                              disabled={busy === r.product_id}
+                              className="px-3 py-1 rounded-md text-xs font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors">
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+    </div>
+  );
+}
 export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Props) {
   const currency     = business.currency ?? 'KES';
   const businessName = business.name;
@@ -800,7 +928,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'zreport' | 'stock' | 'items';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'zreport' | 'stock' | 'items' | 'prices';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
@@ -808,6 +936,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
     { key: 'shift',    label: 'Shift',        icon: I.shift    },
     { key: 'zreport',  label: 'Shift Report', icon: I.zreport  },
     ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
+    { key: 'prices',   label: 'Prices',       icon: I.prices   },
     { key: 'stock',    label: 'Stock',        icon: I.stock    },
   ];
 
@@ -823,6 +952,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
       case 'shift':   return <ShiftTab   currency={currency} />;
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
+      case 'prices':  return <PricesTab   currency={currency} />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }

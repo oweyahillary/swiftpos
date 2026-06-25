@@ -11,6 +11,14 @@ router.use(requireAuth);
 // Fetches everything the POS screen needs to boot in a single round-trip:
 // active products (with category colour), active categories, main branch id, and variant groups.
 router.get('/init', async (req, res) => {
+  // ── Which branch are we pricing for? ────────────────────────────────────────
+  // Per-branch pricing (BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6): the till is bound
+  // to one branch and sends it as ?branch_id. We resolve THAT branch's prices.
+  // If absent (legacy callers) we fall back to the main branch below, so behaviour
+  // is unchanged for anything not yet sending branch_id.
+  const requestedBranchId =
+    typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
+
   const [
     { data: products, error: pErr },
     { data: categories, error: cErr },
@@ -89,10 +97,45 @@ router.get('/init', async (req, res) => {
     variantsByProduct[vg.product_id].push(vg);
   });
 
+  // ── Per-branch price resolution ─────────────────────────────────────────────
+  // Resolve the branch we're pricing for: the caller's branch_id if it belongs to
+  // this business, otherwise the main branch (legacy/fallback). Then overlay each
+  // product with branch_price (nullable). Effective price the client charges is
+  // COALESCE(branch_price, base_price) — base_price stays the default.
+  let pricingBranchId: string | null = branch?.id ?? null;
+  if (requestedBranchId) {
+    const { data: reqBranch } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('id', requestedBranchId)
+      .eq('business_id', req.businessId)   // tenant guard — never price for another business
+      .single();
+    if (reqBranch) pricingBranchId = reqBranch.id;
+  }
+
+  const productsOut = products ?? [];
+  if (pricingBranchId && productIds.length > 0) {
+    const { data: branchPrices } = await supabase
+      .from('branch_prices')
+      .select('product_id, price')
+      .eq('branch_id', pricingBranchId)
+      .in('product_id', productIds);
+
+    const priceByProduct: Record<string, number> = {};
+    (branchPrices ?? []).forEach((bp: any) => { priceByProduct[bp.product_id] = bp.price; });
+
+    for (const p of productsOut as any[]) {
+      p.branch_price = priceByProduct[p.id] ?? null;   // null → client uses base_price
+    }
+  } else {
+    for (const p of productsOut as any[]) p.branch_price = null;
+  }
+
   res.json({
-    products: products ?? [],
+    products: productsOut,
     categories: categories ?? [],
     branchId: branch?.id ?? null,
+    pricingBranchId,
     loyaltyEnabled: loyaltyFlag?.enabled ?? false,
     variantsByProduct,
     businessType: business?.type ?? 'retail',

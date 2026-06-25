@@ -59,6 +59,7 @@ import bcrypt             from 'bcrypt';
 import { supabase }       from '../lib/supabase';
 import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
 import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/adminAuth';
+import { signTechToken, generateRevealCode } from '../lib/techToken';
 
 const router = safeRouter();
 
@@ -630,6 +631,42 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
   res.json(data);
 });
 
+// ─── WEB ACCESS (recurring portal subscription — renewal clock) ───────────────
+// Sets businesses.web_access_expires_at, the date the renewal ladder is measured
+// against (active → grace → reports_only → locked). Pass null to clear (reverts
+// to the legacy feature_flags.web_hosting boolean). This is the writer the renewal
+// dashboard uses; enforcement lives in lib/webAccess.ts + the login gate.
+router.patch('/clients/:id/web-access', requireAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  const { expires_at } = req.body as { expires_at: string | null };
+
+  if (expires_at !== null && expires_at !== undefined && isNaN(Date.parse(expires_at))) {
+    res.status(400).json({ error: 'expires_at must be an ISO date or null' });
+    return;
+  }
+
+  const { data: biz } = await supabase.from('businesses').select('name, web_access_expires_at').eq('id', id).single();
+
+  const { data, error } = await supabase
+    .from('businesses')
+    .update({ web_access_expires_at: expires_at ?? null })
+    .eq('id', id)
+    .select('id, name, web_access_expires_at')
+    .single();
+
+  if (error) { res.status(500).json({ error: error.message }); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'web_access.set_expiry', resource: 'business',
+    businessId: id, businessName: biz?.name ?? undefined,
+    before: { web_access_expires_at: biz?.web_access_expires_at ?? null },
+    after:  { web_access_expires_at: expires_at ?? null },
+  });
+
+  res.json(data);
+});
+
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
 
 router.get('/clients/:id/subscription', requireAdmin, async (req, res) => {
@@ -1011,6 +1048,45 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req,
   res.json(updated);
 });
 
+// ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────
+// The doorknock surfaced on the desktop POS (after long-pressing the logo) for a
+// branch. View or regenerate per branch. Delivered to a device at activation.
+
+router.get('/branches/:branchId/reveal-code', requireAdmin, async (req, res) => {
+  const branchId = String(req.params.branchId);
+  const { data: branch } = await supabase
+    .from('branches').select('id, name, business_id, tech_reveal_code').eq('id', branchId).single();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+
+  // Assign one lazily if the branch never had a code (pre-migration rows).
+  let code = branch.tech_reveal_code;
+  if (!code) {
+    code = generateRevealCode();
+    await supabase.from('branches').update({ tech_reveal_code: code }).eq('id', branchId);
+  }
+  res.json({ branch_id: branchId, branch_name: branch.name, reveal_code: code });
+});
+
+router.post('/branches/:branchId/reveal-code/regenerate', requireAdmin, async (req, res) => {
+  const branchId = String(req.params.branchId);
+  const { data: branch } = await supabase
+    .from('branches').select('id, name, business_id, tech_reveal_code').eq('id', branchId).single();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+
+  const code = generateRevealCode();
+  const { error } = await supabase.from('branches').update({ tech_reveal_code: code }).eq('id', branchId);
+  if (error) { res.status(500).json({ error: error.message }); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'branch.reveal_code.regenerate', resource: 'branch',
+    businessId: branch.business_id, businessName: undefined,
+    before: { reveal_code: branch.tech_reveal_code ?? null },
+    after:  { reveal_code: code },
+  });
+  res.json({ branch_id: branchId, branch_name: branch.name, reveal_code: code });
+});
+
 // ─── TECH ACCESS TOKENS ───────────────────────────────────────────────────────
 
 const TECH_HMAC_SECRET = process.env.TECH_HMAC_SECRET ?? 'swiftpos-tech-dev-secret-change-at-install';
@@ -1056,7 +1132,10 @@ router.post('/tech/generate-token', requireAdmin, async (req, res) => {
   const { data: admin } = await supabase.from('admin_users').select('name').eq('id', req.adminId).single();
   const { data: biz }   = await supabase.from('businesses').select('name').eq('id', business_id).single();
 
-  const rawToken  = generateTechToken({ techId: req.adminId, techName: admin?.name ?? req.adminEmail, branchId: branch_id, businessId: business_id });
+  const { token: rawToken } = signTechToken({
+    techId: req.adminId, techName: admin?.name ?? req.adminEmail,
+    branchId: branch_id, businessId: business_id,
+  });
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
 

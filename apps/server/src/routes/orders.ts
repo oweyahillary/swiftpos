@@ -100,6 +100,7 @@ type RecomputeResult =
 
 async function recomputeOrderTotals(
   businessId: string,
+  branchId: string,
   items: OrderItemInput[],
   discountAmount: number | string,
 ): Promise<RecomputeResult> {
@@ -117,6 +118,19 @@ async function recomputeOrderTotals(
       .from('products').select('id, base_price')
       .eq('business_id', businessId).in('id', lineProductIds);
     (bizProducts ?? [] as Pick<DbProduct, 'id' | 'base_price'>[]).forEach(p => basePriceMap.set(p.id, Number(p.base_price)));
+
+    // Per-branch pricing: overlay this branch's price overrides on top of the
+    // base prices. Still authoritative (server-resolved, not client-trusted) —
+    // we just resolve the SAME effective price the till charged
+    // (COALESCE(branch_price, base_price)) instead of always the default.
+    // See BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6.
+    if (branchId) {
+      const { data: branchPrices } = await supabase
+        .from('branch_prices').select('product_id, price')
+        .eq('branch_id', branchId).in('product_id', lineProductIds);
+      (branchPrices ?? []).forEach((bp: { product_id: string; price: string | number }) =>
+        basePriceMap.set(bp.product_id, Number(bp.price)));
+    }
 
     const { data: vgroups } = await supabase
       .from('variant_groups')
@@ -326,7 +340,7 @@ router.post('/', async (req, res) => {
     }
 
     // ── Item 4: authoritative price recomputation (anti-tampering) ───────────
-    const recomputed = await recomputeOrderTotals(req.businessId, items, discount_amount);
+    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, discount_amount);
     if (!recomputed.ok) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     const {
       lines: authLines,
@@ -383,6 +397,7 @@ router.post('/', async (req, res) => {
         shift_id: shift_id ?? null,
         idempotency_key: idempotencyKey || null,
         cashier_id:      req.userId ?? null,
+        device_id:       req.body?.device_id ?? null,
         sync_status: 'pending',
       })
       .select()
@@ -1098,7 +1113,7 @@ router.post('/open', async (req, res) => {
     }
 
     // Item 4: authoritative totals (no discount applied at open time)
-    const recomputed = await recomputeOrderTotals(req.businessId, items, 0);
+    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, 0);
     if (!recomputed.ok) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     const { lines: authLines, subtotal: authSubtotal, total: authTotal, vat: authVat } = recomputed;
 

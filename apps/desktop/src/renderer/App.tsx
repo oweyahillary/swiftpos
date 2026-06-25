@@ -5,8 +5,9 @@ import LoginPage from './pages/LoginPage';
 import PinPage from './pages/PinPage';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
+import TechPage from './pages/TechPage';
 
-type AppState = 'loading' | 'install' | 'owner-login' | 'pin' | 'pos' | 'manager';
+type AppState = 'loading' | 'install' | 'owner-login' | 'pin' | 'pos' | 'manager' | 'tech';
 
 const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
@@ -99,8 +100,13 @@ export default function App() {
         businessName={session?.business?.name ?? 'SwiftPOS'}
         onStaffLogin={handleStaffLogin}
         onBackToOwner={handleSignOut}
+        onTechUnlock={() => setState('tech')}
       />
     );
+  }
+
+  if (state === 'tech') {
+    return <TechPage onExit={() => setState('pin')} />;
   }
 
   if (state === 'manager' && staff) {

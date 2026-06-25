@@ -16,8 +16,10 @@ import { getLocalDb } from './localDb';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport } from './shiftService';
-import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy } from './managerReports';
+import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent } from './printService';
+import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit } from './techService';
+import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken } from './nodeClient';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
 // and on logout (so the next user never sees stale data on boot).
@@ -78,6 +80,10 @@ export function registerIpcHandlers() {
 
     // Configure sync engine with new credentials (incl. refresh token)
     configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
+
+    // Cache the branch's tech reveal code + token-verification public key so the
+    // tech panel can be unlocked offline later. Best-effort (online at login).
+    refreshTechConfig(data.token).catch(() => {});
 
     // Wait for initial sync before returning — renderer gets fresh data immediately
     await syncAll().catch(console.error);
@@ -236,7 +242,7 @@ export function registerIpcHandlers() {
     return db.prepare(`
       SELECT pu.id, pu.name, pu.status, pu.sort_order, pu.fuel_product_id,
              p.name       AS fuel_product_name,
-             p.base_price AS price_per_litre
+             COALESCE(p.branch_price, p.base_price) AS price_per_litre
       FROM pumps pu
       LEFT JOIN products p ON p.id = pu.fuel_product_id
       ORDER BY pu.sort_order, pu.name
@@ -465,6 +471,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('manager:pumpStatus',    async () => getPumpStatus());
   ipcMain.handle('manager:tableOccupancy',async () => getTableOccupancy());
 
+  // ── Branch price management (manager = branch authority, local-first) ──────
+  ipcMain.handle('manager:priceList',      async () => getPriceList());
+  ipcMain.handle('manager:setBranchPrice', async (_e, { product_id, price }) => setBranchPrice(product_id, price));
+  ipcMain.handle('manager:clearBranchPrice', async (_e, { product_id }) => clearBranchPrice(product_id));
+
   // ── Expenses (record petty-cash at the till) ──────────────────────────────
 
   // List categories from server (online) for the expense form
@@ -546,5 +557,79 @@ export function registerIpcHandlers() {
     // Mark local order voided so order history reflects it immediately
     db.prepare(`UPDATE orders SET status='voided' WHERE id=?`).run(orderId);
     return { ok: true };
+  });
+
+  // ── Tech access ────────────────────────────────────────────────────────────
+  // Reveal code check (doorknock) — opens the token prompt. Grants nothing.
+  ipcMain.handle('tech:checkReveal', async (_event, code: string) => {
+    const ok = checkRevealCode(code);
+    return { ok };
+  });
+
+  // Verify the Ed25519 token OFFLINE and open a 4-hour active session.
+  ipcMain.handle('tech:openSession', async (_event, token: string) => {
+    const result = openTechSession(String(token ?? '').trim());
+    if (!result.ok) return { ok: false, error: result.reason };
+    // Best-effort: flush queued audit + mark token used server-side if reachable.
+    flushTechAudit(String(token).trim()).catch(() => {});
+    // Share the token with branch peers (via the node) so all tills reflect the
+    // same active session. Each peer re-verifies it locally; no shared clock.
+    broadcastTechToken(String(token).trim()).catch(() => {});
+    return { ok: true, session: result.session };
+  });
+
+  // A peer till adopts an active tech session broadcast to the branch node.
+  ipcMain.handle('tech:adoptFromNode', async () => {
+    const existing = getActiveSession();
+    if (existing) return { ok: true, session: existing };
+    const token = await fetchNodeTechToken().catch(() => null);
+    if (!token) return { ok: false };
+    const result = openTechSession(token);
+    return result.ok ? { ok: true, session: result.session } : { ok: false };
+  });
+
+  ipcMain.handle('tech:getSession', async () => getActiveSession());
+
+  ipcMain.handle('tech:closeSession', async () => { closeTechSession(); return { ok: true }; });
+
+  ipcMain.handle('tech:logAction', async (_event, { action, detail }: { action: string; detail?: any }) => {
+    logTechAction(action, detail);
+    return { ok: true };
+  });
+
+  // Local, offline-safe diagnostics for the tech screen.
+  ipcMain.handle('tech:status', async () => {
+    const db = getLocalDb();
+    const cfg = getDeviceConfig();
+    const sync = getSyncStatus();
+    const lastOrder = (db.prepare(`SELECT created_at FROM orders ORDER BY created_at DESC LIMIT 1`).get() as any)?.created_at ?? null;
+    return {
+      device: {
+        device_id: cfg?.device_id ?? null, device_name: cfg?.device_name ?? null,
+        device_role: cfg?.device_role ?? 'till', branch_id: cfg?.branch_id ?? null,
+        deploy_mode: cfg?.deploy_mode ?? null, server_url: cfg?.server_url ?? null,
+        node_url: cfg?.node_url ?? null,
+      },
+      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder },
+    };
+  });
+
+  // ── Manager branch-wide report ──────────────────────────────────────────────
+  // Any till can see ALL the branch's tills' data by reading from the aggregation
+  // node. If the node is unreachable (or this device has none) it falls back to
+  // this machine's own local data, flagged so the UI can say so.
+  ipcMain.handle('manager:branchReport', async () => {
+    if (hasNode()) {
+      const report = await fetchNodeReport().catch(() => null);
+      if (report) return { ...report, source: 'node' as const };
+    }
+    // Fallback: local-only view of this device.
+    return {
+      salesSummary: getSalesSummary(),
+      topProducts:  getTopProducts(),
+      recentOrders: getRecentOrders(),
+      stockLevels:  getStockLevels(),
+      source: hasNode() ? ('local_fallback' as const) : ('local' as const),
+    };
   });
 }

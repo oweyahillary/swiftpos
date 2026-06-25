@@ -3,7 +3,8 @@ import path from 'path';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
-import { getServerUrl } from './deviceConfig';
+import { getServerUrl, getDeviceConfig } from './deviceConfig';
+import { startNodeServer } from './nodeServer';
 
 const isDev = !app.isPackaged;
 
@@ -38,6 +39,13 @@ app.whenReady().then(() => {
 
     // Register all IPC handlers
     registerIpcHandlers();
+
+    // If this device is the branch aggregation node, start its LAN listener so
+    // peer tills can push orders and read combined branch reports.
+    try {
+      const cfg = getDeviceConfig();
+      if (cfg?.device_role === 'node') startNodeServer();
+    } catch (e) { console.error('[startup] node server start failed:', e); }
 
     // Re-hydrate sync engine from persisted session if one exists
     const db = getLocalDb();
