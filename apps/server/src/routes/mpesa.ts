@@ -53,17 +53,50 @@ const DARAJA_BASE = ENV === 'production'
   ? 'https://api.safaricom.co.ke'
   : 'https://sandbox.safaricom.co.ke';
 
-// ── In-memory pending payments map ────────────────────────────────────────────
-// Maps checkoutRequestId → status for fast polling.
-// In production, replace with Redis for multi-instance deployments.
-const pendingPayments = new Map<string, {
-  status:    'pending' | 'completed' | 'failed' | 'cancelled';
-  mpesaRef?: string;
-  amount?:   number;
-  phone?:    string;
-  error?:    string;
-  updatedAt: number;
-}>();
+// ── Callback source allow-list ────────────────────────────────────────────────
+// Daraja does NOT sign its callbacks, so IP allow-listing is the standard way to
+// authenticate that a callback really came from Safaricom. Without it, anyone who
+// knows the callback URL can POST a forged "success" and mark an order as paid.
+//
+// Safaricom occasionally changes these IPs, so they are env-overridable. Set
+// MPESA_ALLOWED_IPS as a comma-separated list and VERIFY it against the current
+// list in your Daraja portal / Safaricom onboarding docs before go-live. The
+// defaults below are the commonly published production ranges — treat them as a
+// starting point, not gospel. The check only runs in production (see below), so
+// sandbox/ngrok testing is unaffected.
+const DEFAULT_DARAJA_IPS = [
+  '196.201.214.200', '196.201.214.206', '196.201.213.114',
+  '196.201.214.207', '196.201.214.208', '196.201.213.44',
+  '196.201.212.127', '196.201.212.138', '196.201.212.129',
+  '196.201.212.136', '196.201.212.74',  '196.201.212.69',
+];
+const ALLOWED_CALLBACK_IPS = new Set(
+  (process.env.MPESA_ALLOWED_IPS ?? DEFAULT_DARAJA_IPS.join(','))
+    .split(',').map(s => s.trim()).filter(Boolean),
+);
+
+// Returns true if the request's source IP is a trusted Daraja IP.
+// In non-production we skip the check (sandbox + ngrok source IPs vary).
+// NOTE: relies on app.set('trust proxy', 1) in index.ts so req.ip is the real
+// client IP behind Render/nginx, not the load-balancer's.
+function isAllowedCallbackIp(ip: string | undefined): boolean {
+  if (ENV !== 'production') return true;
+  const normalized = (ip ?? '').replace(/^::ffff:/, ''); // strip IPv4-mapped IPv6
+  return ALLOWED_CALLBACK_IPS.has(normalized);
+}
+
+// ── Pending-payment state lives in the DB (payments table) ────────────────────
+// Previously this was an in-memory Map, which lost all pending payments on a
+// server restart / cold start and didn't work across multiple instances. State
+// is now tracked on the payments row itself, keyed by mpesa_checkout_id:
+//   status ('pending'|'completed'|'failed') · reference (M-Pesa receipt) ·
+//   amount · mpesa_phone · mpesa_result_desc · mpesa_requested_at
+// Requires migration 21_mpesa_payment_tracking.sql.
+//
+// A payment left 'pending' longer than STK_TIMEOUT_MS is treated as timed out at
+// read time (Daraja's STK prompt itself times out at ~60s), so no background
+// timer or in-process state is needed for correctness.
+const STK_TIMEOUT_MS = 70_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -212,28 +245,21 @@ router.post('/stk-push', requireAuth, async (req, res) => {
 
     const checkoutId = stkData.CheckoutRequestID as string;
 
-    // Store pending status
-    pendingPayments.set(checkoutId, {
-      status:    'pending',
-      phone:     formattedPhone,
-      amount:    amountInt,
-      updatedAt: Date.now(),
-    });
-
-    // Persist checkout ID to payments table so we can match the callback
+    // Persist the checkout ID + pending state on the payments row so the callback
+    // can match it and /status can read it. mpesa_requested_at anchors the
+    // read-time timeout. This is the single source of truth — survives restarts
+    // and works across instances (replaces the old in-memory Map + setTimeout).
     await supabase
       .from('payments')
-      .update({ mpesa_checkout_id: checkoutId, status: 'pending' })
+      .update({
+        mpesa_checkout_id:  checkoutId,
+        status:             'pending',
+        mpesa_phone:        formattedPhone,
+        mpesa_requested_at: new Date().toISOString(),
+        mpesa_result_desc:  null,
+      })
       .eq('order_id', order_id)
       .eq('method', 'mpesa');
-
-    // Auto-expire pending after 70 seconds (Daraja timeout is 60s)
-    setTimeout(() => {
-      const entry = pendingPayments.get(checkoutId);
-      if (entry?.status === 'pending') {
-        pendingPayments.set(checkoutId, { ...entry, status: 'failed', error: 'Timeout — customer did not respond', updatedAt: Date.now() });
-      }
-    }, 70_000);
 
     res.json({
       checkoutRequestId:    checkoutId,
@@ -243,15 +269,26 @@ router.post('/stk-push', requireAuth, async (req, res) => {
 
   } catch (err: any) {
     console.error('[mpesa] STK push error:', err.message);
-    res.status(500).json({ error: 'Failed to initiate M-Pesa payment', details: err.message });
+    res.status(500).json({ error: 'Failed to initiate M-Pesa payment' });
   }
 });
 
 // ── POST /api/mpesa/callback ──────────────────────────────────────────────────
-// PUBLIC — no requireAuth. Daraja calls this directly.
-// IMPORTANT: validate the source IP in production (Daraja IP ranges).
+// PUBLIC — no requireAuth. Daraja calls this directly. Source is authenticated
+// by IP allow-list (see isAllowedCallbackIp), amount is validated against the
+// payments row, and processing is idempotent against Daraja retries.
 
 router.post('/callback', async (req, res) => {
+  // ── Source authentication ─────────────────────────────────────────────────
+  // Reject anything that isn't coming from a trusted Daraja IP BEFORE doing any
+  // work. This is what stops a forged "success" callback from marking an order
+  // paid. See isAllowedCallbackIp / MPESA_ALLOWED_IPS above.
+  if (!isAllowedCallbackIp(req.ip)) {
+    console.warn('[mpesa] Rejected callback from untrusted IP:', req.ip);
+    res.status(403).json({ ResultCode: 1, ResultDesc: 'Forbidden' });
+    return;
+  }
+
   // Always respond 200 immediately — Daraja retries if it doesn't get 200 fast
   res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
 
@@ -266,78 +303,93 @@ router.post('/callback', async (req, res) => {
     const resultCode  = Number(body.ResultCode);
     const resultDesc  = body.ResultDesc as string;
 
-    const existing = pendingPayments.get(checkoutId);
-
     if (resultCode === 0) {
-      // SUCCESS
+      // ── SUCCESS ──────────────────────────────────────────────────────────
       const items    = body.CallbackMetadata?.Item ?? [];
       const getValue = (name: string) =>
         items.find((i: any) => i.Name === name)?.Value;
 
-      const mpesaRef = String(getValue('MpesaReceiptNumber') ?? '');
-      const amount   = Number(getValue('Amount') ?? 0);
-      const phone    = String(getValue('PhoneNumber') ?? '');
+      const mpesaRef   = String(getValue('MpesaReceiptNumber') ?? '');
+      const paidAmount = Number(getValue('Amount') ?? 0);
+      const phone      = String(getValue('PhoneNumber') ?? '');
 
-      pendingPayments.set(checkoutId, {
-        status:    'completed',
-        mpesaRef,
-        amount,
-        phone,
-        updatedAt: Date.now(),
-      });
-
-      // Update payments table
-      await supabase
-        .from('payments')
-        .update({
-          status:    'completed',
-          reference: mpesaRef,
-          amount,
-        })
-        .eq('mpesa_checkout_id', checkoutId);
-
-      // Update the parent order status to completed
+      // Look up the payment this checkout belongs to BEFORE trusting anything in
+      // the callback. This gives us the expected amount and lets us de-duplicate.
       const { data: payment } = await supabase
         .from('payments')
-        .select('order_id')
+        .select('id, order_id, amount, status')
         .eq('mpesa_checkout_id', checkoutId)
         .single();
 
-      if (payment?.order_id) {
+      if (!payment) {
+        console.warn(`[mpesa] Success callback for unknown checkout ${checkoutId} — ignored`);
+        return;
+      }
+
+      // Idempotency — Daraja retries callbacks, and a replayed callback must not
+      // re-run side effects. If we've already completed this payment, stop here.
+      if ((payment as any).status === 'completed') {
+        return;
+      }
+
+      // Amount validation — the STK push charged Math.ceil(expected), so a
+      // genuine payment pays at least that. A shortfall means a tampered/forged
+      // callback or an underpayment: do NOT complete the order — record it as
+      // failed and flag loudly for a human to review.
+      const expectedInt = Math.ceil(Number((payment as any).amount ?? 0));
+      if (expectedInt > 0 && paidAmount < expectedInt) {
+        console.error(
+          `[mpesa] AMOUNT MISMATCH on ${checkoutId}: paid ${paidAmount} < expected ${expectedInt} — order NOT completed, flagged for review`,
+        );
+        // 'failed' is the closest valid payments.status; the console.error above
+        // is the signal to investigate. (If you add a 'flagged' status to the
+        // payments CHECK constraint later, use it here instead.)
+        await supabase
+          .from('payments')
+          .update({
+            status:            'failed',
+            reference:         mpesaRef,
+            mpesa_phone:       phone,
+            mpesa_result_desc: `Amount mismatch: paid ${paidAmount}, expected ${expectedInt}`,
+          })
+          .eq('id', (payment as any).id);
+        return;
+      }
+
+      // Record the ACTUAL amount paid (from Safaricom), not a client-supplied
+      // value. Keyed by the payment's own id (already resolved above).
+      await supabase
+        .from('payments')
+        .update({
+          status:            'completed',
+          reference:         mpesaRef,
+          amount:            paidAmount,
+          mpesa_phone:       phone,
+          mpesa_result_desc: null,
+        })
+        .eq('id', (payment as any).id);
+
+      if ((payment as any).order_id) {
         await supabase
           .from('orders')
           .update({ status: 'completed' })
-          .eq('id', payment.order_id);
+          .eq('id', (payment as any).order_id);
       }
 
-      console.log(`[mpesa] Payment completed: ${mpesaRef} — KES ${amount}`);
+      console.log(`[mpesa] Payment completed: ${mpesaRef} — KES ${paidAmount}`);
 
     } else if (resultCode === 1032) {
       // Customer cancelled
-      pendingPayments.set(checkoutId, {
-        ...(existing ?? { amount: 0, phone: '', updatedAt: 0 }),
-        status:    'cancelled',
-        error:     'Customer cancelled the payment request',
-        updatedAt: Date.now(),
-      });
-
       await supabase
         .from('payments')
-        .update({ status: 'failed' })
+        .update({ status: 'failed', mpesa_result_desc: 'Customer cancelled the payment request' })
         .eq('mpesa_checkout_id', checkoutId);
 
     } else {
       // Other failure
-      pendingPayments.set(checkoutId, {
-        ...(existing ?? { amount: 0, phone: '', updatedAt: 0 }),
-        status:    'failed',
-        error:     resultDesc,
-        updatedAt: Date.now(),
-      });
-
       await supabase
         .from('payments')
-        .update({ status: 'failed' })
+        .update({ status: 'failed', mpesa_result_desc: resultDesc })
         .eq('mpesa_checkout_id', checkoutId);
 
       console.warn(`[mpesa] Payment failed: ${resultDesc}`);
@@ -351,22 +403,50 @@ router.post('/callback', async (req, res) => {
 // ── GET /api/mpesa/status/:checkoutId ────────────────────────────────────────
 // Frontend polls this every 3 seconds while showing "Waiting for payment…"
 
-router.get('/status/:checkoutId', requireAuth, (req, res) => {
+router.get('/status/:checkoutId', requireAuth, async (req, res) => {
   const { checkoutId } = req.params;
-  const entry = pendingPayments.get(checkoutId);
 
-  if (!entry) {
+  // Read from the payments row (source of truth). Scoped to the caller's
+  // business so one tenant can't poll another's checkout id.
+  const { data: payment } = await supabase
+    .from('payments')
+    .select('status, reference, amount, mpesa_phone, mpesa_result_desc, mpesa_requested_at')
+    .eq('mpesa_checkout_id', checkoutId)
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+
+  if (!payment) {
     res.status(404).json({ status: 'not_found', error: 'No pending payment found for this checkout ID' });
     return;
   }
 
+  const p = payment as any;
+  let status: string = p.status;
+  let error: string | null = p.mpesa_result_desc ?? null;
+
+  // Derive a timeout at read time: a payment still 'pending' past the STK window
+  // is treated as failed, without relying on any in-process timer. Best-effort
+  // write-back so the row doesn't linger as 'pending' forever.
+  if (status === 'pending' && p.mpesa_requested_at) {
+    const age = Date.now() - new Date(p.mpesa_requested_at).getTime();
+    if (age > STK_TIMEOUT_MS) {
+      status = 'failed';
+      error  = error ?? 'Timeout — customer did not respond';
+      void supabase
+        .from('payments')
+        .update({ status: 'failed', mpesa_result_desc: error })
+        .eq('mpesa_checkout_id', checkoutId)
+        .eq('business_id', req.businessId)
+        .eq('status', 'pending'); // only if still pending — avoid racing the callback
+    }
+  }
+
   res.json({
-    status:    entry.status,
-    mpesaRef:  entry.mpesaRef,
-    amount:    entry.amount,
-    phone:     entry.phone,
-    error:     entry.error,
-    updatedAt: entry.updatedAt,
+    status,
+    mpesaRef:  p.reference ?? undefined,
+    amount:    p.amount ?? undefined,
+    phone:     p.mpesa_phone ?? undefined,
+    error:     error ?? undefined,
   });
 });
 

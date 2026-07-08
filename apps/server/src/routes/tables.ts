@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -31,7 +32,7 @@ router.get('/', requireAuth, async (req, res) => {
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -52,7 +53,7 @@ router.get('/all', requireAuth, requirePermission('settings.manage'), async (req
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -88,7 +89,7 @@ router.post('/', requireAuth, requirePermission('settings.manage'), async (req, 
       res.status(409).json({ error: `A table named "${name}" already exists in this branch` });
       return;
     }
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
 
@@ -117,7 +118,7 @@ router.patch('/:id', requireAuth, requirePermission('settings.manage'), async (r
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Table not found' }); return; }
 
   res.json(data);
@@ -133,7 +134,7 @@ router.delete('/:id', requireAuth, requirePermission('settings.manage'), async (
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Table not found' }); return; }
 
   res.json({ success: true });

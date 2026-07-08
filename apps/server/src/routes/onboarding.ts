@@ -68,6 +68,12 @@ router.post('/', async (req, res) => {
     return;
   }
 
+  // Tracks the business row so we can roll the whole onboarding back if any
+  // later step fails. Every child table references businesses(id) ON DELETE
+  // CASCADE, so deleting the business cleans up branch/roles/user/etc. — no
+  // orphaned half-provisioned tenant left behind. (Audit finding M4.)
+  let createdBusinessId: string | null = null;
+
   try {
     // ── 1. Create business ──────────────────────────────────────────────────
     const { data: business, error: bErr } = await supabase
@@ -88,6 +94,7 @@ router.post('/', async (req, res) => {
       .single();
 
     if (bErr) throw bErr;
+    createdBusinessId = business.id;
 
     // ── 2. Create first branch ──────────────────────────────────────────────
     const { data: branch, error: brErr } = await supabase
@@ -182,7 +189,17 @@ router.post('/', async (req, res) => {
     res.status(201).json({ business, branch, ownerUserId: ownerUser.id });
   } catch (err: any) {
     console.error('[onboarding]', err);
-    res.status(500).json({ error: err.message ?? 'Onboarding failed' });
+    // Roll back a half-provisioned tenant so a retry starts clean.
+    if (createdBusinessId) {
+      const { error: cleanupErr } = await supabase
+        .from('businesses')
+        .delete()
+        .eq('id', createdBusinessId);
+      if (cleanupErr) {
+        console.error('[onboarding] rollback failed for business', createdBusinessId, cleanupErr.message);
+      }
+    }
+    res.status(500).json({ error: 'Onboarding failed' });
   }
 });
 

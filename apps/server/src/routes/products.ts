@@ -12,6 +12,7 @@
  */
 
 import { Router }    from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
@@ -36,7 +37,7 @@ router.get('/', async (req, res) => {
   if (status) query = query.eq('status', status as string);
 
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -152,7 +153,7 @@ router.post('/', requirePermission('products.manage'), async (req, res) => {
     .select('*, categories(name, color, icon)')
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -216,7 +217,7 @@ router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
     .select('*, categories(name, color, icon)')
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Product not found' }); return; }
   res.json(data);
 });
@@ -234,7 +235,7 @@ router.delete('/:id', requirePermission('products.manage'), async (req, res) => 
     .eq('id', id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
@@ -278,7 +279,7 @@ router.patch('/bulk-tax/by-category', requirePermission('products.manage'), asyn
   if (only_unset) q = q.is('kra_item_class_code', null);
 
   const { data, error } = await q.select('id');
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ updated: data?.length ?? 0 });
 });
 

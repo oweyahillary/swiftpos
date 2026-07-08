@@ -16,7 +16,13 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET ?? 'swiftpos-admin-dev-secret-change-in-prod';
+// No fallback: an unset secret must stop the server booting, never silently
+// fall back to a value that is published in source control (which would let
+// anyone forge a cross-tenant super_admin token). Mirrors JWT_SECRET handling.
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET;
+if (!ADMIN_JWT_SECRET) {
+  throw new Error('[server] Missing ADMIN_JWT_SECRET in environment');
+}
 
 // Extend Express Request with admin claims
 declare global {
@@ -38,7 +44,7 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 
   const token = header.slice(7);
   try {
-    const payload = jwt.verify(token, ADMIN_JWT_SECRET) as {
+    const payload = jwt.verify(token, ADMIN_JWT_SECRET, { algorithms: ['HS256'] }) as {
       adminId: string;
       email:   string;
       role:    'super_admin' | 'agent';

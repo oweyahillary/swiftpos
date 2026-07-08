@@ -19,6 +19,7 @@
  */
 
 import { safeRouter }        from '../middleware/asyncHandler';
+import { sendError } from '../lib/sendError';
 import { requireAuth }       from '../middleware/auth';
 import { branchScope, assertBranchAccess } from '../middleware/rbac';
 import { supabase }          from '../lib/supabase';
@@ -100,7 +101,7 @@ router.post('/', async (req, res) => {
     .select('*, tables(id, name, capacity)')
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -125,7 +126,7 @@ router.get('/', async (req, res) => {
   if (to)          q = q.lte('started_at', to   as string);
 
   const { data, error } = await q;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -210,7 +211,7 @@ router.post('/:id/close', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   res.json({
     session:      data,
@@ -244,7 +245,7 @@ router.post('/:id/void', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 

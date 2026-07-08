@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, branchScope } from '../middleware/rbac';
@@ -20,7 +21,7 @@ router.get('/customers', async (req, res) => {
   if (search) q = q.ilike('name', `%${search as string}%`);
 
   const { data, error } = await q;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const rows = (data ?? []).map((c: any) => ({
     ...c,
@@ -103,7 +104,7 @@ router.post('/customer/:id/payment', requirePermission('customers.manage'), asyn
 
   if (error) {
     if (error.message?.includes('CUSTOMER_NOT_FOUND')) { res.status(404).json({ error: 'Customer not found' }); return; }
-    res.status(500).json({ error: error.message }); return;
+    sendError(res, error); return;
   }
   res.json({ credit_balance: balance });
 });
@@ -135,7 +136,7 @@ router.post('/customer/:id/adjustment', requirePermission('customers.manage'), a
 
   if (error) {
     if (error.message?.includes('CUSTOMER_NOT_FOUND')) { res.status(404).json({ error: 'Customer not found' }); return; }
-    res.status(500).json({ error: error.message }); return;
+    sendError(res, error); return;
   }
   res.json({ credit_balance: balance });
 });

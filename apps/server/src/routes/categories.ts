@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -16,7 +17,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('sort_order');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -32,7 +33,7 @@ router.post('/', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -50,7 +51,7 @@ router.patch('/:id', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Category not found' }); return; }
   res.json(data);
 });
@@ -65,7 +66,7 @@ router.delete('/:id', async (req, res) => {
     .eq('id', id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

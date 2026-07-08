@@ -54,6 +54,7 @@
  */
 
 import { Router }         from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt             from 'bcrypt';
 import { supabase }       from '../lib/supabase';
@@ -263,7 +264,7 @@ router.get('/fleet/health', requireAdmin, async (req, res) => {
     supabase.from('orders').select('business_id').eq('status', 'completed').gte('created_at', startOfMonth),
   ]);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Build lookup maps from bulk results
   const staffCount:   Record<string, number> = {};
@@ -348,7 +349,7 @@ router.post('/clients', requireAdmin, async (req, res) => {
       password:       ownerPassword,
       email_confirm:  true,
     });
-    if (authErr) { res.status(400).json({ error: `Auth creation failed: ${authErr.message}` }); return; }
+    if (authErr) { sendError(res, authErr, { status: 400, message: 'Auth creation failed' }); return; }
     const supabaseUserId = authData.user.id;
 
     // 2. Create business
@@ -453,7 +454,7 @@ router.post('/clients', requireAdmin, async (req, res) => {
 
   } catch (err: any) {
     console.error('[admin/create-client]', err);
-    res.status(500).json({ error: err.message ?? 'Client creation failed' });
+    sendError(res, err, { message: 'Client creation failed' });
   }
 });
 
@@ -472,7 +473,7 @@ router.get('/clients', requireAdmin, async (req, res) => {
   if (search) query = query.ilike('name', `%${search}%`);
 
   const { data, count, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ clients: data ?? [], total: count ?? 0 });
 });
 
@@ -540,7 +541,7 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
 
   const { data, error } = await supabase
     .from('businesses').update(updates).eq('id', id).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -598,7 +599,7 @@ router.get('/clients/:id/features', requireAdmin, async (req, res) => {
     .select('id, key, enabled, notes, set_by, updated_at')
     .eq('business_id', req.params.id)
     .order('key');
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -619,7 +620,7 @@ router.patch('/clients/:id/features/:key', requireAdmin, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -654,7 +655,7 @@ router.patch('/clients/:id/web-access', requireAdmin, async (req, res) => {
     .select('id, name, web_access_expires_at')
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -676,7 +677,7 @@ router.get('/clients/:id/subscription', requireAdmin, async (req, res) => {
     .eq('business_id', req.params.id)
     .order('created_at', { ascending: false })
     .limit(5);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -710,7 +711,7 @@ router.post('/clients/:id/subscription/renew', requireAdmin, async (req, res) =>
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Auto-create invoice if plan has a price
   if (plan && plan.price > 0) {
@@ -759,7 +760,7 @@ router.get('/clients/:id/billing', requireAdmin, async (req, res) => {
     .select('*')
     .eq('business_id', req.params.id)
     .order('created_at', { ascending: false });
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -786,7 +787,7 @@ router.post('/clients/:id/billing', requireAdmin, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -811,7 +812,7 @@ router.patch('/clients/:id/billing/:invoiceId', requireAdmin, async (req, res) =
 
   const { data, error } = await supabase
     .from('invoices').update(updates).eq('id', invoiceId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -824,7 +825,7 @@ router.get('/clients/:id/notes', requireAdmin, async (req, res) => {
     .eq('business_id', req.params.id)
     .order('pinned', { ascending: false })
     .order('created_at', { ascending: false });
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -846,7 +847,7 @@ router.post('/clients/:id/notes', requireAdmin, async (req, res) => {
     })
     .select()
     .single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -866,7 +867,7 @@ router.get('/audit', requireAdmin, async (req, res) => {
   if (action)      query = query.ilike('action', `%${action}%`);
 
   const { data, count, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ logs: data ?? [], total: count ?? 0 });
 });
 
@@ -874,7 +875,7 @@ router.get('/audit', requireAdmin, async (req, res) => {
 
 router.get('/plans', requireAdmin, async (req, res) => {
   const { data, error } = await supabase.from('plans').select('*').order('price');
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -885,7 +886,7 @@ router.get('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
     .from('admin_users')
     .select('id, email, name, role, is_active, last_login_at, created_at')
     .order('created_at');
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -907,7 +908,7 @@ router.post('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
     .select('id, email, name, role, is_active, created_at')
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -932,7 +933,7 @@ router.patch('/team/:id', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { data, error } = await supabase
     .from('admin_users').update(updates).eq('id', req.params.id)
     .select('id, email, name, role, is_active').single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -954,7 +955,7 @@ router.get('/clients/:id/branches', requireAdmin, async (req, res) => {
     .order('is_main', { ascending: false })
     .order('created_at');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -1008,7 +1009,7 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req,
     .select()
     .single();
 
-  if (updateErr) { res.status(500).json({ error: updateErr.message }); return; }
+  if (updateErr) { sendError(res, updateErr); return; }
 
   // Auto-create invoice when licensing a new branch
   if (licensed && invoice_amount && invoice_amount > 0) {
@@ -1075,7 +1076,7 @@ router.post('/branches/:branchId/reveal-code/regenerate', requireAdmin, async (r
 
   const code = generateRevealCode();
   const { error } = await supabase.from('branches').update({ tech_reveal_code: code }).eq('id', branchId);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -1155,7 +1156,7 @@ router.post('/tech/generate-token', requireAdmin, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Create confirmation notification (admin must confirm within 48h)
   await supabase.from('admin_audit_log').insert({
@@ -1209,7 +1210,7 @@ router.get('/tech/tokens', requireAdmin, async (req, res) => {
   if (req.adminRole !== 'super_admin') query = query.eq('admin_id', req.adminId);
 
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -1318,7 +1319,7 @@ router.post('/mode-switch/generate', requireAdmin, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,
@@ -1349,7 +1350,7 @@ router.get('/mode-switch/requests', requireAdmin, async (req, res) => {
     .select('*, businesses(name), branches(name)')
     .order('created_at', { ascending: false })
     .limit(100);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 

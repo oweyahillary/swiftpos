@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, assertBranchAccess } from '../middleware/rbac';
@@ -133,7 +134,7 @@ router.get('/invoices', requirePermission('reports.view'), async (req, res) => {
   if (req.query.status) q = q.eq('status', req.query.status as string);
 
   const { data, error } = await q;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 

@@ -12,6 +12,8 @@
  */
 
 import { Router }      from 'express';
+import { sendError } from '../lib/sendError';
+import { assertSafeWebhookUrl } from '../lib/webhooks';
 import { safeRouter } from '../middleware/asyncHandler';
 import crypto          from 'crypto';
 import { supabase }    from '../lib/supabase';
@@ -30,7 +32,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -61,7 +63,7 @@ router.post('/', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Return the secret once — it won't be shown again
   res.status(201).json({ ...data, secret });
@@ -91,7 +93,7 @@ router.patch('/:id', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Webhook not found' }); return; }
   res.json(data);
 });
@@ -104,7 +106,7 @@ router.delete('/:id', async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
@@ -127,7 +129,7 @@ router.get('/:id/deliveries', async (req, res) => {
     .order('created_at', { ascending: false })
     .limit(50);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -159,13 +161,30 @@ router.post('/:id/test', async (req, res) => {
     headers['X-SwiftPOS-Signature'] = `sha256=${sig}`;
   }
 
+  // SSRF guard — same protection the delivery path uses. Never fetch an
+  // internal/private target even for a test ping.
+  try {
+    await assertSafeWebhookUrl(hook.url);
+  } catch (e: any) {
+    res.json({ success: false, error: `Webhook URL not allowed: ${e?.message ?? 'unsafe URL'}` });
+    return;
+  }
+
   try {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 10_000);
-    const response = await fetch(hook.url, { method: 'POST', headers, body, signal: controller.signal });
+    const response = await fetch(hook.url, {
+      method: 'POST', headers, body,
+      redirect: 'error', // don't follow a redirect to an internal target
+      signal: controller.signal,
+    });
     res.json({ success: response.ok, status: response.status });
   } catch (err: any) {
-    res.json({ success: false, error: err.message });
+    // This error describes the OWNER'S OWN endpoint (connection refused, TLS,
+    // timeout) — it's the point of a test ping and contains no SwiftPOS
+    // internals, so it's safe (and useful) to surface here.
+    console.error('[webhooks] test ping failed:', err?.message ?? err);
+    res.json({ success: false, error: err?.message ?? 'Delivery failed' });
   }
 });
 

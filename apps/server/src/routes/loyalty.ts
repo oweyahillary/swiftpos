@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -66,7 +67,7 @@ router.post('/customer', async (req, res) => {
     if (error.code === '23505') {
       res.status(409).json({ error: 'A customer with this phone number already exists' });
     } else {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
     return;
   }
@@ -97,7 +98,7 @@ router.get('/customer/:id/transactions', async (req, res) => {
     .order('created_at', { ascending: false })
     .limit(20);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ transactions: data ?? [] });
 });
 
@@ -125,7 +126,7 @@ router.get('/customers', async (req, res) => {
 
   const { data, error, count } = await query;
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const customers = (data ?? []).map(c => ({ ...c, tier: getTier(c.loyalty_points) }));
   res.json({ customers, total: count ?? 0, page, limit });
@@ -161,7 +162,7 @@ router.patch('/customer/:id', async (req, res) => {
     if (error.code === '23505') {
       res.status(409).json({ error: 'A customer with this phone number already exists' });
     } else {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
     return;
   }
@@ -179,7 +180,7 @@ router.delete('/customer/:id', async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

@@ -12,6 +12,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -145,7 +146,7 @@ router.get('/ingredients', async (req, res) => {
   if (status)   query = query.eq('status', status);
   if (category) query = query.eq('category', category);
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -163,7 +164,7 @@ router.post('/ingredients', async (req, res) => {
     notes: notes?.trim() || null,
   }).select().single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   if (Number(current_stock ?? 0) > 0) {
     await supabase.from('ingredient_stock_movements').insert({
@@ -189,7 +190,7 @@ router.patch('/ingredients/:id', async (req, res) => {
 
   const { data, error } = await supabase.from('ingredients').update(updates)
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Ingredient not found' }); return; }
   res.json(data);
 });
@@ -213,7 +214,7 @@ router.post('/ingredients/:id/adjust', async (req, res) => {
   const { data, error } = await supabase.from('ingredients')
     .update({ current_stock: newQty, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await supabase.from('ingredient_stock_movements').insert({
     business_id: req.businessId, ingredient_id: req.params.id,
@@ -230,7 +231,7 @@ router.get('/ingredients/:id/movements', async (req, res) => {
     .select('*, users ( name )')
     .eq('ingredient_id', req.params.id).eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -243,7 +244,7 @@ router.get('/suppliers', async (req, res) => {
   let query = supabase.from('suppliers').select('*').eq('business_id', req.businessId).order('name');
   if (status) query = query.eq('status', status);
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -253,7 +254,7 @@ router.post('/suppliers', async (req, res) => {
   const { data, error } = await supabase.from('suppliers')
     .insert({ business_id: req.businessId, name, contact_name, email, phone, address, notes })
     .select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -262,7 +263,7 @@ router.patch('/suppliers/:id', async (req, res) => {
   const { data, error } = await supabase.from('suppliers')
     .update({ name, contact_name, email, phone, address, notes, status, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -270,7 +271,7 @@ router.delete('/suppliers/:id', async (req, res) => {
   const { error } = await supabase.from('suppliers')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
@@ -290,7 +291,7 @@ router.get('/purchase-orders', async (req, res) => {
   if (supplier_id) query = query.eq('supplier_id', supplier_id);
   if (branch_id)   query = query.eq('branch_id', branch_id);
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -318,7 +319,7 @@ router.post('/purchase-orders', async (req, res) => {
     expected_date: expected_date || null, notes: notes || null,
     total_amount: totalAmount, created_by: req.userId, status: 'draft',
   }).select().single();
-  if (poErr) { res.status(500).json({ error: poErr.message }); return; }
+  if (poErr) { sendError(res, poErr); return; }
 
   const lineItems = items.map((i: any) => ({
     purchase_order_id: po.id, ingredient_id: i.ingredient_id,
@@ -326,7 +327,7 @@ router.post('/purchase-orders', async (req, res) => {
   }));
 
   const { error: itemErr } = await supabase.from('purchase_order_items').insert(lineItems);
-  if (itemErr) { res.status(500).json({ error: itemErr.message }); return; }
+  if (itemErr) { sendError(res, itemErr); return; }
   res.status(201).json({ ...po, purchase_order_items: lineItems });
 });
 
@@ -341,7 +342,7 @@ router.patch('/purchase-orders/:id', async (req, res) => {
   const { data, error } = await supabase.from('purchase_orders')
     .update({ status, notes, expected_date, supplier_id, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -358,7 +359,7 @@ router.post('/purchase-orders/:id/cancel', async (req, res) => {
   const { data, error } = await supabase.from('purchase_orders')
     .update({ status: 'cancelled', notes: updatedNotes, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -386,7 +387,7 @@ router.get('/grn', async (req, res) => {
   if (purchase_order_id) query = query.eq('purchase_order_id', purchase_order_id);
   if (branch_id)         query = query.eq('branch_id', branch_id);
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -403,7 +404,7 @@ router.post('/grn', async (req, res) => {
     received_date: received_date || new Date().toISOString().slice(0, 10),
     notes: notes || null, received_by: req.userId,
   }).select().single();
-  if (grnErr) { res.status(500).json({ error: grnErr.message }); return; }
+  if (grnErr) { sendError(res, grnErr); return; }
 
   const lineItems = items.map((i: any) => ({
     grn_id: grn.id, ingredient_id: i.ingredient_id,
@@ -412,7 +413,7 @@ router.post('/grn', async (req, res) => {
     notes: i.notes || null,
   }));
   const { error: itemErr } = await supabase.from('grn_items').insert(lineItems);
-  if (itemErr) { res.status(500).json({ error: itemErr.message }); return; }
+  if (itemErr) { sendError(res, itemErr); return; }
 
   await applyIngredientStockIn(
     items.map((i: any) => ({ ingredient_id: i.ingredient_id, quantity: Number(i.quantity_received), unit_cost: i.unit_cost })),
@@ -460,7 +461,7 @@ router.get('/transfers', async (req, res) => {
   if (status)    query = query.eq('status', status);
   if (branch_id) query = query.or(`from_branch_id.eq.${branch_id},to_branch_id.eq.${branch_id}`);
   const { data: transfers, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (transfers?.length) {
     const branchIds = [...new Set(transfers.flatMap(t => [t.from_branch_id, t.to_branch_id]))];
     const branches = await chunkIn<any>('branches', 'id', branchIds, q => q.select('id, name'));
@@ -481,10 +482,10 @@ router.post('/transfers', async (req, res) => {
     business_id: req.businessId, from_branch_id, to_branch_id,
     transfer_number, status: 'received', notes: notes || null, created_by: req.userId,
   }).select().single();
-  if (tErr) { res.status(500).json({ error: tErr.message }); return; }
+  if (tErr) { sendError(res, tErr); return; }
   const lineItems = items.map((i: any) => ({ transfer_id: transfer.id, product_id: i.product_id, quantity: Number(i.quantity) }));
   const { error: itemErr } = await supabase.from('stock_transfer_items').insert(lineItems);
-  if (itemErr) { res.status(500).json({ error: itemErr.message }); return; }
+  if (itemErr) { sendError(res, itemErr); return; }
   await applyProductStockOut(items.map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) })), from_branch_id, req.userId, 'transfer_out', `Transfer ${transfer_number} → ${to_branch_id}`);
   await applyProductStockIn(items.map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) })), to_branch_id, req.userId, 'transfer_in', `Transfer ${transfer_number} ← ${from_branch_id}`);
   res.status(201).json({ ...transfer, stock_transfer_items: lineItems });
@@ -496,7 +497,7 @@ router.patch('/transfers/:id/status', async (req, res) => {
   const { data, error } = await supabase.from('stock_transfers')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 

@@ -12,6 +12,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, branchScope, assertBranchAccess } from '../middleware/rbac';
@@ -45,7 +46,7 @@ router.get('/categories', requirePermission('expenses.view'), async (req, res) =
     .eq('business_id', req.businessId)
     .order('name');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -60,7 +61,7 @@ router.post('/categories', requirePermission('expenses.manage'), async (req, res
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -77,7 +78,7 @@ router.patch('/categories/:id', requirePermission('expenses.manage'), async (req
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Category not found' }); return; }
   res.json(data);
 });
@@ -102,7 +103,7 @@ router.delete('/categories/:id', requirePermission('expenses.manage'), async (re
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
@@ -133,7 +134,7 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
   if (category_id) query = query.eq('expense_category_id', category_id as string);
 
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Flatten joins for easy consumption
   const expenses = (data ?? []).map((e: any) => ({
@@ -173,7 +174,7 @@ router.get('/summary', requirePermission('expenses.view'), async (req, res) => {
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
 
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const byCategory: Record<string, number> = {};
   let total = 0;
@@ -234,7 +235,7 @@ router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSch
     `)
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -261,7 +262,7 @@ router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Expense not found' }); return; }
   res.json(data);
 });
@@ -274,7 +275,7 @@ router.delete('/:id', requirePermission('expenses.manage'), async (req, res) => 
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

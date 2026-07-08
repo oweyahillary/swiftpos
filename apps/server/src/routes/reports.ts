@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
@@ -74,7 +75,7 @@ router.get('/sales', async (req, res) => {
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
 
   const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const o = orders ?? [];
   const totalRevenue  = o.reduce((s, x) => s + Number(x.total), 0);
@@ -181,7 +182,7 @@ router.get('/staff', async (req, res) => {
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
 
   const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Collect unique user IDs then fetch names in one query
   const userIds = [...new Set((orders ?? []).map(o => o.cashier_id).filter(Boolean))];
@@ -259,7 +260,7 @@ router.get('/inventory', async (req, res) => {
 
   if (scopedBranch) adjQuery = adjQuery.eq('branch_id', scopedBranch);
   const { data: adjustments, error: adjErr } = await adjQuery;
-  if (adjErr) { res.status(500).json({ error: adjErr.message }); return; }
+  if (adjErr) { sendError(res, adjErr); return; }
 
   const adjMap: Record<string, { name: string; restocked: number; written_off: number }> = {};
   (adjustments ?? [] as Array<{ product_id: string; quantity: string; type: string; created_at: string }>).forEach((a) => {
@@ -313,7 +314,7 @@ router.get('/eod', async (req, res) => {
   if (cashier_id) query = query.eq('cashier_id', cashier_id as string);
 
   const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const o = orders ?? [];
   const completed = o.filter(x => x.status === 'completed');
@@ -492,7 +493,7 @@ router.get('/shifts', async (req, res) => {
   if (cashier_id)              query = query.eq('cashier_id', cashier_id as string);
 
   const { data: shifts, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!shifts?.length) {
     res.json({ shifts: [], summary: { totalShifts: 0, closedShifts: 0, openShifts: 0, totalVariance: 0, totalOpeningFloat: 0, avgVariance: 0 } });
     return;
@@ -608,7 +609,7 @@ router.get('/master', async (req, res) => {
 
   if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
   const { data: allOrders, error: oErr } = await ordersQ;
-  if (oErr) { res.status(500).json({ error: oErr.message }); return; }
+  if (oErr) { sendError(res, oErr); return; }
 
   const completed = (allOrders ?? []).filter(o => o.status === 'completed');
   const voided    = (allOrders ?? []).filter(o => o.status === 'voided');
@@ -753,7 +754,7 @@ router.get('/hourly', async (req, res) => {
 
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
   const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Aggregate by hour (0-23)
   const hourMap: Record<number, { revenue: number; orders: number }> = {};
@@ -836,7 +837,7 @@ router.get('/voids', async (req, res) => {
   if (cashier_id)    query = query.eq('cashier_id', cashier_id as string);
 
   const { data: voids, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Enrich cashier + authorizer (supervisor) names in one lookup.
   const userIds = [...new Set(
@@ -908,7 +909,7 @@ router.get('/tax', async (req, res) => {
 
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
   const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Authoritative figures are per-order and post-discount:
   //   gross (VAT-incl) = total ; VAT = vat_amount (what was actually charged).
@@ -1001,7 +1002,7 @@ router.get('/products-v2', async (req, res) => {
       'order_items', 'order_id', orderIds,
       q => q.select('product_id, product_name, category_name, quantity, subtotal'),
     );
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const productMap: Record<string, { name: string; category: string; qty: number; revenue: number }> = {};
   for (const item of items ?? []) {
@@ -1234,7 +1235,7 @@ router.get('/aggregator', async (req, res) => {
 
   if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
   const { data: orders, error } = await ordersQ;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // 2. Fetch commission settings
   const { data: settings } = await supabase
@@ -1315,7 +1316,7 @@ router.get('/splh', async (req, res) => {
 
   if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
   const { data: shifts, error: sErr } = await shiftsQ;
-  if (sErr) { res.status(500).json({ error: sErr.message }); return; }
+  if (sErr) { sendError(res, sErr); return; }
   if (!shifts?.length) {
     return res.json({ period: { from: start, to: end }, summary: { totalRevenue: 0, totalHours: 0, splh: 0, labourCostPct: null }, shifts: [], staff: [] });
   }
@@ -1444,7 +1445,7 @@ router.get('/fuel-sales', async (req, res) => {
 
   if (branch_id) orderQuery = orderQuery.eq('branch_id', branch_id as string);
   const { data: orders, error: oErr } = await orderQuery;
-  if (oErr) { res.status(500).json({ error: oErr.message }); return; }
+  if (oErr) { sendError(res, oErr); return; }
 
   const orderIds = (orders ?? []).map(o => o.id);
 

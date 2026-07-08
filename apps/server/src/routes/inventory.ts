@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { branchScope, assertBranchAccess } from '../middleware/rbac';
@@ -28,7 +29,7 @@ router.get('/', async (req, res) => {
       .eq('products.business_id', req.businessId)
       .order('quantity', { ascending: true });
 
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
     res.json(data ?? []);
     return;
   }
@@ -46,7 +47,7 @@ router.get('/', async (req, res) => {
     .eq('products.business_id', req.businessId)
     .order('quantity', { ascending: true });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const { data: allProducts } = await supabase
     .from('products')
@@ -135,7 +136,7 @@ router.post('/adjust', async (req, res) => {
     .select()
     .single();
 
-  if (slErr) { res.status(500).json({ error: slErr.message }); return; }
+  if (slErr) { sendError(res, slErr); return; }
 
   // Log movement
   const { error: mvErr } = await supabase
@@ -150,7 +151,7 @@ router.post('/adjust', async (req, res) => {
       created_by: req.userId,
     });
 
-  if (mvErr) { res.status(500).json({ error: mvErr.message }); return; }
+  if (mvErr) { sendError(res, mvErr); return; }
 
   res.json({ stockLevel, previousQty: currentQty, newQty, quantityChange });
 });
@@ -172,7 +173,7 @@ router.patch('/:product_id/threshold', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -195,7 +196,7 @@ router.get('/movements', async (req, res) => {
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
 
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 

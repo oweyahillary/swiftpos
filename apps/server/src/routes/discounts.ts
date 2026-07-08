@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -16,7 +17,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -61,7 +62,7 @@ router.post('/', validate(CreateDiscountSchema), async (req, res) => {
       res.status(409).json({ error: 'Promo code already exists' });
       return;
     }
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
   res.status(201).json(data);
@@ -91,7 +92,7 @@ router.put('/:id', async (req, res) => {
       res.status(409).json({ error: 'Promo code already exists' });
       return;
     }
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
   res.json(data);
@@ -118,7 +119,7 @@ router.patch('/:id/toggle', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -130,7 +131,7 @@ router.delete('/:id', async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ success: true });
 });
 

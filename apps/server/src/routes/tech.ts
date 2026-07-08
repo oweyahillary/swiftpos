@@ -14,6 +14,7 @@
  */
 
 import { Router }    from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -24,7 +25,13 @@ import { execSync }  from 'child_process';
 
 const router = safeRouter();
 
-const TECH_HMAC_SECRET = process.env.TECH_HMAC_SECRET ?? 'swiftpos-tech-dev-secret-change-at-install';
+// No fallback: an unset secret must stop the server booting, never silently
+// fall back to a value that is published in source control (which would let
+// anyone forge a v1 tech token). Mirrors JWT_SECRET / ADMIN_JWT_SECRET handling.
+const TECH_HMAC_SECRET = process.env.TECH_HMAC_SECRET;
+if (!TECH_HMAC_SECRET) {
+  throw new Error('[server] Missing TECH_HMAC_SECRET in environment');
+}
 
 // ── In-memory revocation cache ─────────────────────────────────────────────
 // Refreshed from DB every 5 minutes so revocations propagate to offline machines
@@ -65,7 +72,13 @@ function verifyTechToken(rawToken: string): {
     const payload  = rawToken.slice(0, lastDot);
     const sig      = rawToken.slice(lastDot + 1);
     const expected = crypto.createHmac('sha256', TECH_HMAC_SECRET).update(payload).digest('hex');
-    if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return null;
+    const sigBuf      = Buffer.from(sig, 'hex');
+    const expectedBuf = Buffer.from(expected, 'hex');
+    // Length guard: timingSafeEqual throws RangeError on unequal-length buffers,
+    // which a malformed/attacker-supplied signature can trigger. Compare lengths
+    // first so a bad signature is a clean reject, not an exception.
+    if (sigBuf.length !== expectedBuf.length) return null;
+    if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
     return JSON.parse(Buffer.from(payload, 'base64url').toString());
   } catch { return null; }
 }
@@ -185,7 +198,7 @@ router.post('/audit', requireTechToken, async (req: any, res) => {
     occurred_at: occurred_at ?? new Date().toISOString(),
     token_hash:  req.tokenHash ?? null,
   });
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ ok: true });
 });
 

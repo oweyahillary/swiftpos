@@ -1353,7 +1353,10 @@ export default function CashierScreen() {
                     <div style={s.cartItemName}>{item.product.name}</div>
                     {item.selectedVariants.length > 0 && (
                       <div style={s.cartItemVariants}>
-                        {item.selectedVariants.map((v) => `${v.groupName}: ${v.optionName}`).join(' · ')}
+                        {item.selectedVariants
+                          .map((v: any) => (v.groupName && v.optionName ? `${v.groupName}: ${v.optionName}` : (v.optionName || v.name)))
+                          .filter(Boolean)
+                          .join(' · ')}
                       </div>
                     )}
                     <div style={s.cartItemPrice}>{fmt(item.unitPrice, currency)} {item.isFuel ? '/L' : 'each'}</div>

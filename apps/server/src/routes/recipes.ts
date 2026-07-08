@@ -9,6 +9,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -29,7 +30,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('product_id');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -46,7 +47,7 @@ router.get('/:productId', async (req, res) => {
     .eq('product_id', req.params.productId)
     .order('created_at');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -85,7 +86,7 @@ router.post('/:productId', async (req, res) => {
     .eq('product_id', productId)
     .eq('business_id', req.businessId);
 
-  if (delErr) { res.status(500).json({ error: delErr.message }); return; }
+  if (delErr) { sendError(res, delErr); return; }
 
   // Insert new lines (if any)
   if (lines.length > 0) {
@@ -98,7 +99,7 @@ router.post('/:productId', async (req, res) => {
     }));
 
     const { error: insErr } = await supabase.from('recipes').insert(rows);
-    if (insErr) { res.status(500).json({ error: insErr.message }); return; }
+    if (insErr) { sendError(res, insErr); return; }
   }
 
   // Return the saved recipe
@@ -124,7 +125,7 @@ router.delete('/:productId', async (req, res) => {
     .eq('product_id', req.params.productId)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

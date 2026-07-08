@@ -7,6 +7,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { assertBranchAccess } from '../middleware/rbac';
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
     .order('name');
   if (effectiveBranchId) query = query.eq('branch_id', effectiveBranchId);
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -70,7 +71,7 @@ router.post('/', async (req, res) => {
     enabled:            enabled ?? true,
   }).select().single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -111,7 +112,7 @@ router.patch('/:id', async (req, res) => {
 
   const { data, error } = await supabase.from('branch_printers')
     .update(updates).eq('id', req.params.id).eq('business_id', req.businessId).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -130,7 +131,7 @@ router.delete('/:id', async (req, res) => {
 
   const { error } = await supabase.from('branch_printers')
     .delete().eq('id', req.params.id).eq('business_id', req.businessId);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

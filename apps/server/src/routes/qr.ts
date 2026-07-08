@@ -9,6 +9,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -138,7 +139,7 @@ router.post('/:slug/order', async (req, res) => {
     .select('id, order_number')
     .single();
 
-  if (oErr) { res.status(500).json({ error: oErr.message }); return; }
+  if (oErr) { sendError(res, oErr); return; }
 
   // Insert order items
   await supabase.from('order_items').insert(
@@ -173,7 +174,7 @@ router.get('/settings', requireAuth, async (req, res) => {
     .eq('id', req.businessId)
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -190,7 +191,7 @@ router.patch('/settings', requireAuth, async (req, res) => {
     .select('menu_slug, qr_ordering')
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 

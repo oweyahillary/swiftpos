@@ -1,42 +1,51 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
-import jwt from 'jsonwebtoken';
+import { requireAuth } from '../middleware/auth';
+import { branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
 
-const JWT_SECRET = process.env.JWT_SECRET!;
-
-// The KDS tablet runs without a user session, so this route stays tokenless by
-// design — but "scoped by branch_id" is only safe if every operation is
-// actually constrained to that branch. Previously PATCH took a bare ticket id
-// with no branch/business check, so anyone could advance ANY ticket in the
-// database by guessing its UUID. We now:
-//   1. Honour a SwiftPOS JWT when present (locks to the token's branch), and
-//   2. Always verify the target ticket belongs to the resolved branch.
+// ── Auth ──────────────────────────────────────────────────────────────────────
+// The KDS tablet must authenticate like any other station (a SwiftPOS JWT).
+// branch_id is DERIVED from that token — never taken from the query/body — so it
+// can no longer be used as a bearer capability to read or advance another
+// branch's (or another tenant's) tickets by guessing a UUID.
 //
-// FOLLOW-UP: issue the KDS tablet a dedicated branch-scoped token so branch_id
-// stops being treated as a bearer capability.
+//   • Staff tokens: locked to the token's branch_id.
+//   • Owner tokens: may target any branch THEY own via ?branch_id=...
+//
+// Every branch is additionally verified to belong to the caller's business.
+router.use(requireAuth);
 
-function resolveBranch(req: any): { branchId: string | null; locked: boolean } {
-  const auth = req.headers.authorization;
-  if (auth?.startsWith('Bearer ')) {
-    try {
-      const p = jwt.verify(auth.slice(7), JWT_SECRET) as { isOwner?: boolean; branchId?: string | null };
-      if (!p.isOwner && p.branchId) return { branchId: p.branchId, locked: true };
-    } catch {
-      // ignore — fall back to query/body branch_id
-    }
+// Resolve the branch to operate on and prove it belongs to the caller's business.
+async function resolveScopedBranch(
+  req: any,
+): Promise<{ branchId: string | null; error?: string; status?: number }> {
+  const branchId = branchScope(req); // owner: ?branch_id or null; staff: token branch
+  if (!branchId) {
+    return { branchId: null, error: 'branch_id is required', status: 400 };
   }
-  const fromReq = (req.query.branch_id as string) || (req.body?.branch_id as string) || null;
-  return { branchId: fromReq, locked: false };
+  // Confirm the branch is owned by this business — stops an owner token from
+  // targeting a branch_id that belongs to another tenant.
+  const { data: branch } = await supabase
+    .from('branches')
+    .select('id')
+    .eq('id', branchId)
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+  if (!branch) {
+    return { branchId: null, error: 'Branch not found', status: 404 };
+  }
+  return { branchId };
 }
 
 // GET /api/kitchen/tickets
-// Returns today's non-collected tickets for a branch, oldest first.
+// Returns today's non-collected tickets for the caller's (validated) branch.
 router.get('/tickets', async (req, res) => {
-  const { branchId } = resolveBranch(req);
-  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  const scope = await resolveScopedBranch(req);
+  if (!scope.branchId) { res.status(scope.status ?? 400).json({ error: scope.error }); return; }
 
   // Start of today in UTC
   const todayStart = new Date();
@@ -55,18 +64,18 @@ router.get('/tickets', async (req, res) => {
         )
       )
     `)
-    .eq('branch_id', branchId)
+    .eq('branch_id', scope.branchId)
     .eq('orders.order_items.fire_status', 'fired')
     .neq('status', 'collected')
     .gte('created_at', todayStart.toISOString())
     .order('created_at', { ascending: true });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
 // PATCH /api/kitchen/tickets/:id/status
-// Body: { status: 'preparing' | 'ready' | 'collected', branch_id }
+// Body: { status: 'preparing' | 'ready' | 'collected' }
 router.patch('/tickets/:id/status', async (req, res) => {
   const { status } = req.body;
   const validStatuses = ['preparing', 'ready', 'collected'];
@@ -76,18 +85,18 @@ router.patch('/tickets/:id/status', async (req, res) => {
     return;
   }
 
-  const { branchId } = resolveBranch(req);
-  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  const scope = await resolveScopedBranch(req);
+  if (!scope.branchId) { res.status(scope.status ?? 400).json({ error: scope.error }); return; }
 
-  // The ticket must belong to the resolved branch — prevents advancing a ticket
-  // from another branch/tenant by guessing its id.
+  // The ticket must belong to the resolved (and business-verified) branch —
+  // prevents advancing a ticket from another branch/tenant by guessing its id.
   const { data: ticket } = await supabase
     .from('kitchen_tickets')
     .select('id, branch_id')
     .eq('id', req.params.id)
-    .single();
+    .maybeSingle();
 
-  if (!ticket || ticket.branch_id !== branchId) {
+  if (!ticket || ticket.branch_id !== scope.branchId) {
     res.status(404).json({ error: 'Ticket not found' });
     return;
   }
@@ -102,11 +111,11 @@ router.patch('/tickets/:id/status', async (req, res) => {
     .from('kitchen_tickets')
     .update({ status, [timestampField[status]]: new Date().toISOString() })
     .eq('id', req.params.id)
-    .eq('branch_id', branchId)
+    .eq('branch_id', scope.branchId)
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 

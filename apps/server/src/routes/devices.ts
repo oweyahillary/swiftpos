@@ -12,6 +12,7 @@
  */
 
 import { safeRouter } from '../middleware/asyncHandler';
+import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
 import { supabase }    from '../lib/supabase';
 
@@ -43,7 +44,7 @@ router.get('/', async (req, res) => {
   }
 
   const { data, error } = await q;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   res.json(data ?? []);
 });
@@ -74,7 +75,7 @@ router.patch('/:id/approve', async (req, res) => {
     })
     .eq('id', id);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Write a notification for the cashier so they know to retry
   await supabase.from('notifications').insert({
@@ -114,7 +115,7 @@ router.patch('/:id/reject', async (req, res) => {
     })
     .eq('id', id);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ success: true });
 });
 
@@ -139,7 +140,7 @@ router.delete('/:id', async (req, res) => {
     .delete()
     .eq('id', req.params.id);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

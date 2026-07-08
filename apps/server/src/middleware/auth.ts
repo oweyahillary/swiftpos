@@ -53,7 +53,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   // ── 1. Try SwiftPOS JWT ───────────────────────────────────────────────────
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as {
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as {
       userId:              string;
       businessId:          string;
       branchId?:           string | null;
@@ -75,26 +75,39 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.sessionId          = payload.sessionId ?? null;
     req.permissionsVersion = payload.permissionsVersion ?? 0;
 
-    // ── Fix 3: permissions_version check ─────────────────────────────────
-    // Skip for owners (wildcard '*' permissions — no role to be stale).
-    // Skip if pv = 0 (pre-migration tokens — let them through, they expire in ≤15m).
-    if (!req.isOwner && req.permissionsVersion > 0) {
+    // ── Fix 3 + M1: status & permissions_version check ───────────────────
+    // One indexed PK read per non-owner request (users PK, ~1ms). Covers two
+    // things: (a) the account is still active — closes the window where a
+    // deactivated/fired staff member's access token kept working until it
+    // expired; and (b) the token's permissions haven't been superseded.
+    if (!req.isOwner) {
       const { data: userRow } = await supabase
         .from('users')
-        .select('permissions_version')
+        .select('permissions_version, status')
         .eq('id', req.userId)
         .maybeSingle();
 
-      const currentPv = (userRow as any)?.permissions_version ?? 1;
-
-      if (currentPv !== req.permissionsVersion) {
-        // Permissions changed since this token was issued.
-        // Client must refresh immediately to get the current permission set.
+      const status = (userRow as any)?.status;
+      if (status && status !== 'active') {
         res.status(401).json({
-          error: 'Permissions updated — please refresh your session',
-          code:  'PERMISSIONS_CHANGED',
+          error: 'Account is not active — please contact your manager',
+          code:  'ACCOUNT_INACTIVE',
         });
         return;
+      }
+
+      // Skip pv check if pv = 0 (pre-migration tokens — they expire in ≤15m).
+      if (req.permissionsVersion > 0) {
+        const currentPv = (userRow as any)?.permissions_version ?? 1;
+        if (currentPv !== req.permissionsVersion) {
+          // Permissions changed since this token was issued.
+          // Client must refresh immediately to get the current permission set.
+          res.status(401).json({
+            error: 'Permissions updated — please refresh your session',
+            code:  'PERMISSIONS_CHANGED',
+          });
+          return;
+        }
       }
     }
 
@@ -113,7 +126,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   let supabaseUserId: string;
   let supabaseEmail: string | undefined;
   try {
-    const payload = jwt.verify(token, SUPABASE_JWT_SECRET) as { sub: string; email?: string };
+    const payload = jwt.verify(token, SUPABASE_JWT_SECRET, { algorithms: ['HS256'] }) as { sub: string; email?: string };
     supabaseUserId = payload.sub;
     supabaseEmail  = payload.email;
   } catch {

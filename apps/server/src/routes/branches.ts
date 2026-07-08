@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -16,7 +17,7 @@ router.get('/', requireAuth, async (req, res) => {
     .order('is_main', { ascending: false })
     .order('created_at', { ascending: true });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -55,7 +56,7 @@ router.put('/:id', requireAuth, validate(UpdateBranchSchema), async (req, res) =
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -76,7 +77,7 @@ router.put('/:id/set-main', requireAuth, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -98,7 +99,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ success: true });
 });
 
@@ -114,7 +115,7 @@ router.get('/:id/staff', requireAuth, async (req, res) => {
     `)
     .eq('branch_id', req.params.id);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const staff = (data ?? []).map((row: any) => ({
     ...row.users,
@@ -138,7 +139,7 @@ router.get('/:id/stock', requireAuth, async (req, res) => {
     .eq('products.business_id', req.businessId)
     .order('quantity', { ascending: true });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -156,7 +157,7 @@ router.put('/:id/stock/:productId', requireAuth, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   await supabase.from('stock_movements').insert({
     branch_id,
@@ -182,7 +183,7 @@ router.post('/:id/assign-user', requireAuth, async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -194,7 +195,7 @@ router.delete('/:id/remove-user/:userId', requireAuth, async (req, res) => {
     .eq('branch_id', req.params.id)
     .eq('user_id', req.params.userId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ success: true });
 });
 

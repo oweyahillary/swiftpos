@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { assertBranchAccess } from '../middleware/rbac';
@@ -55,7 +56,7 @@ router.post('/sync', async (req, res) => {
   const { data: bizProducts, error: pErr } = await supabase
     .from('products').select('id')
     .eq('business_id', req.businessId).in('id', productIds);
-  if (pErr) { res.status(500).json({ error: pErr.message }); return; }
+  if (pErr) { sendError(res, pErr); return; }
   const validIds = new Set((bizProducts ?? []).map((p: { id: string }) => p.id));
 
   // Current versions, so we can bump rather than reset them.
@@ -105,7 +106,7 @@ router.post('/sync', async (req, res) => {
     const { error } = await supabase
       .from('branch_prices')
       .upsert(toUpsert, { onConflict: 'branch_id,product_id' });
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
     applied.push(...toUpsert.map(u => u.product_id));
   }
 
@@ -113,7 +114,7 @@ router.post('/sync', async (req, res) => {
     const { error } = await supabase
       .from('branch_prices').delete()
       .eq('branch_id', branch_id).in('product_id', toDelete);
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
     applied.push(...toDelete);
   }
 

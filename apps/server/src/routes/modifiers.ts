@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -28,7 +29,7 @@ router.get('/groups', async (req, res) => {
     .eq('product_id', product_id)
     .order('sort_order');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -53,7 +54,7 @@ router.post('/groups', async (req, res) => {
     .select()
     .single();
 
-  if (gErr) { res.status(500).json({ error: gErr.message }); return; }
+  if (gErr) { sendError(res, gErr); return; }
 
   if (options.length > 0) {
     const { error: oErr } = await supabase
@@ -64,7 +65,7 @@ router.post('/groups', async (req, res) => {
         price: o.price ?? 0,
         sort_order: i,
       })));
-    if (oErr) { res.status(500).json({ error: oErr.message }); return; }
+    if (oErr) { sendError(res, oErr); return; }
   }
 
   const { data: full } = await supabase
@@ -107,7 +108,7 @@ router.patch('/groups/:id', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 
@@ -183,7 +184,7 @@ router.post('/options', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -203,7 +204,7 @@ router.patch('/options/:id', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 

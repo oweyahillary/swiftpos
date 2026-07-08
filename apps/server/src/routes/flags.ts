@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -13,7 +14,7 @@ router.get('/', requireAuth, async (req, res) => {
     .select('key, enabled')
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const flags: Record<string, boolean> = {};
   (data ?? []).forEach((f) => { flags[f.key] = f.enabled; });
@@ -45,7 +46,7 @@ router.put('/:key', requireAuth, requirePermission('settings.manage'), async (re
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data);
 });
 

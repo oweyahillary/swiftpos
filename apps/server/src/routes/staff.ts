@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, assertBranchAccess } from '../middleware/rbac';
@@ -53,7 +54,7 @@ router.get('/', async (req, res) => {
       .eq('business_id', req.businessId)
       .order('name');
 
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
     res.json(data ?? []);
     return;
   }
@@ -72,7 +73,7 @@ router.get('/', async (req, res) => {
     .eq('branch_id', req.branchId!)
     .eq('users.business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Flatten the nested users out
   const staff = (data ?? []).map((row: any) => row.users).filter(Boolean);
@@ -92,7 +93,7 @@ router.get('/authorizers', async (req, res) => {
     .not('override_pin_hash', 'is', null)
     .order('name');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json((data ?? []).map((u: any) => ({
     id:   u.id,
     name: u.name,
@@ -152,7 +153,7 @@ router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema),
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   if (effectiveBranchIds.length) {
     await supabase.from('user_branches').insert(
@@ -188,7 +189,7 @@ router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
     .select()
     .single();
 
-  if (uErr) { res.status(500).json({ error: uErr.message }); return; }
+  if (uErr) { sendError(res, uErr); return; }
 
   if (branch_ids?.length) {
     await supabase.from('user_branches').insert(
@@ -202,7 +203,7 @@ router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
 
   if (invErr) {
     console.error('Invite email failed:', invErr.message);
-    res.status(207).json({ user, warning: 'Staff created but invite email failed: ' + invErr.message });
+    res.status(207).json({ user, warning: 'Staff created, but the invitation email could not be sent' });
     return;
   }
 
@@ -277,7 +278,7 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
 
   const { data, error } = await supabase
     .from('users').update(updates).eq('id', req.params.id).select().single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   if (branch_ids !== undefined) {
     await supabase.from('user_branches').delete().eq('user_id', req.params.id);
@@ -328,7 +329,7 @@ router.delete('/:id', requirePermission('staff.manage'), async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ success: true });
 });
 
@@ -351,7 +352,7 @@ router.get('/roles', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('name');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -362,7 +363,7 @@ router.get('/permissions', async (req, res) => {
     .select('*')
     .order('module, label');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -386,7 +387,7 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.manage'), asyn
     const { error } = await supabase.from('role_permissions').insert(
       permission_ids.map((pid: string) => ({ role_id: req.params.roleId, permission_id: pid }))
     );
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
   }
 
   res.json({ success: true });
@@ -403,7 +404,7 @@ router.post('/roles', requirePermission('staff.manage'), async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -465,7 +466,7 @@ router.post('/clock', async (req, res) => {
       recorded_at: now,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message ?? 'Clock event failed' });
+    sendError(res, err, { message: 'Clock event failed' });
   }
 });
 

@@ -20,6 +20,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -38,7 +39,7 @@ fuelTanksRouter.get('/', async (req, res) => {
     .order('name');
   if (branch_id) query = query.eq('branch_id', branch_id as string);
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -61,7 +62,7 @@ fuelTanksRouter.post('/', async (req, res) => {
     })
     .select()
     .single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -82,7 +83,7 @@ fuelTanksRouter.patch('/:id', async (req, res) => {
     .eq('business_id', req.businessId)
     .select()
     .single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Tank not found' }); return; }
   res.json(data);
 });
@@ -93,7 +94,7 @@ fuelTanksRouter.delete('/:id', async (req, res) => {
     .delete()
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
@@ -119,7 +120,7 @@ fuelTanksRouter.get('/movements', async (req, res) => {
   if (branch_id) query = query.eq('branch_id', branch_id as string);
 
   const { data: movements, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Enrich with tank name via fuel_product_id
   const productIds = [...new Set((movements ?? []).map(m => (m as any).products ? null : null).filter(Boolean))];
@@ -185,7 +186,7 @@ fuelTanksRouter.post('/:id/delivery', async (req, res) => {
     .select()
     .single();
 
-  if (updateErr) { res.status(500).json({ error: updateErr.message }); return; }
+  if (updateErr) { sendError(res, updateErr); return; }
 
   // Log the delivery as a stock movement
   await supabase.from('stock_movements').insert({
@@ -223,7 +224,7 @@ pumpsRouter.get('/', async (req, res) => {
     query = query.or(`branch_id.eq.${branch_id},branch_id.is.null`);
   }
   const { data, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -243,7 +244,7 @@ pumpsRouter.post('/', async (req, res) => {
     })
     .select()
     .single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -263,7 +264,7 @@ pumpsRouter.patch('/:id', async (req, res) => {
     .eq('business_id', req.businessId)
     .select()
     .single();
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Pump not found' }); return; }
   res.json(data);
 });
@@ -274,7 +275,7 @@ pumpsRouter.delete('/:id', async (req, res) => {
     .delete()
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
@@ -293,7 +294,7 @@ pumpsRouter.patch('/:id/activate', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Pump not found or inactive' }); return; }
 
   // Optionally link the pump to the open order in the orders table
@@ -320,7 +321,7 @@ pumpsRouter.patch('/:id/idle', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Pump not found' }); return; }
   res.json(data);
 });

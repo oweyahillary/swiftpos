@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt from 'bcrypt';
 import { requireAuth } from '../middleware/auth';
@@ -22,7 +23,7 @@ router.get('/', requireAuth, async (req, res) => {
     .single();
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
 
@@ -38,7 +39,7 @@ router.get('/settings', requireAuth, async (req, res) => {
     .eq('business_id', req.businessId)
     .order('key');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Unwrap jsonb value to plain string for the dashboard.
   // Never expose secret hashes (e.g. supervisor_pin_hash) — a 4-digit PIN
@@ -90,12 +91,12 @@ router.post('/settings', requireAuth, async (req, res) => {
         .from('business_settings')
         .update({ value: hashJson, updated_at: new Date().toISOString() })
         .eq('id', existingHash.id);
-      if (error) { res.status(500).json({ error: error.message }); return; }
+      if (error) { sendError(res, error); return; }
     } else {
       const { error } = await supabase
         .from('business_settings')
         .insert({ business_id: req.businessId, key: hashKey, value: hashJson });
-      if (error) { res.status(500).json({ error: error.message }); return; }
+      if (error) { sendError(res, error); return; }
     }
 
     // Remove any legacy plaintext row for this key.
@@ -126,14 +127,14 @@ router.post('/settings', requireAuth, async (req, res) => {
       .update({ value: jsonValue, updated_at: new Date().toISOString() })
       .eq('id', existing.id);
 
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
   } else {
     // Insert new
     const { error } = await supabase
       .from('business_settings')
       .insert({ business_id: req.businessId, key, value: jsonValue });
 
-    if (error) { res.status(500).json({ error: error.message }); return; }
+    if (error) { sendError(res, error); return; }
   }
 
   res.json({ key, value: jsonValue });

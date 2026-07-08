@@ -13,6 +13,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -36,7 +37,7 @@ router.get('/', async (req, res) => {
     .eq('is_combo', true)
     .order('name');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -87,7 +88,7 @@ router.post('/', async (req, res) => {
     .select('id')
     .single();
 
-  if (pErr) { res.status(500).json({ error: pErr.message }); return; }
+  if (pErr) { sendError(res, pErr); return; }
 
   // Insert combo items
   if (items.length > 0) {
@@ -101,7 +102,7 @@ router.post('/', async (req, res) => {
           sort_order: i,
         }))
       );
-    if (iErr) { res.status(500).json({ error: iErr.message }); return; }
+    if (iErr) { sendError(res, iErr); return; }
   }
 
   // Return full combo
@@ -187,7 +188,7 @@ router.delete('/:id', async (req, res) => {
     .eq('business_id', req.businessId)
     .eq('is_combo', true);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

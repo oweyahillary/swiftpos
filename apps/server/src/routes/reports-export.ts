@@ -21,6 +21,7 @@
  */
 
 import { Router }    from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
@@ -121,7 +122,7 @@ router.get('/sales', async (req, res) => {
   if (scopedBranch) query = query.eq('branch_id', scopedBranch);
 
   const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const o = orders ?? [];
   const dateLabel = `${(from as string) ?? start.slice(0, 10)}_to_${(to as string) ?? end.slice(0, 10)}`;
@@ -238,7 +239,7 @@ router.get('/products', async (req, res) => {
     .select('product_id, product_name, category_name, quantity, unit_price, subtotal')
     .in('order_id', ids);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const productMap: Record<string, { name: string; category: string; qty: number; revenue: number; orders: number }> = {};
   (items ?? []).forEach((item: any) => {
@@ -419,7 +420,7 @@ router.get('/shifts', async (req, res) => {
     .lte('opened_at', end)
     .order('opened_at', { ascending: false });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const s = shifts ?? [];
   const dateLabel = `${(from as string) ?? start.slice(0, 10)}_to_${(to as string) ?? end.slice(0, 10)}`;

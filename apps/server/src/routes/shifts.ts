@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -24,7 +25,7 @@ router.get('/current', async (req, res) => {
     .limit(1)
     .maybeSingle();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? null);
 });
 
@@ -67,7 +68,7 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -122,7 +123,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     .eq('shift_id', id)
     .eq('status', 'completed');
 
-  if (ordErr) { res.status(500).json({ error: `orders lookup: ${ordErr.message}` }); return; }
+  if (ordErr) { sendError(res, ordErr); return; }
 
   let cashSales = 0;
   const orderIds = (shiftOrders ?? []).map((o: any) => o.id);
@@ -133,7 +134,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       .in('order_id', orderIds)
       .eq('method', 'cash')
       .eq('status', 'completed');
-    if (payErr) { res.status(500).json({ error: `payments lookup: ${payErr.message}` }); return; }
+    if (payErr) { sendError(res, payErr); return; }
     cashSales = (cashPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
   }
 
@@ -174,7 +175,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     .select()
     .single();
 
-  if (closeErr) { res.status(500).json({ error: closeErr.message }); return; }
+  if (closeErr) { sendError(res, closeErr); return; }
   res.json(closed);
 });
 
@@ -223,7 +224,7 @@ router.post('/:id/float', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -248,7 +249,7 @@ router.get('/', async (req, res) => {
   if (to)        query = query.lte('opened_at', to);
 
   const { data: shifts, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   if (!shifts?.length) { res.json([]); return; }
 

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -58,7 +59,7 @@ router.post('/push', async (req, res) => {
         updated_at:    new Date().toISOString(),
       }));
       const { error } = await supabase.from('shifts').upsert(rows, { onConflict: 'id' });
-      if (error) { res.status(500).json({ error: `shifts: ${error.message}` }); return; }
+      if (error) { sendError(res, error); return; }
       upserted.shifts = rows.length;
     }
 
@@ -94,7 +95,7 @@ router.post('/push', async (req, res) => {
         }));
       if (rows.length) {
         const { error } = await supabase.from('float_transactions').upsert(rows, { onConflict: 'id' });
-        if (error) { res.status(500).json({ error: `floats: ${error.message}` }); return; }
+        if (error) { sendError(res, error); return; }
       }
       upserted.floats = rows.length;
     }
@@ -121,13 +122,13 @@ router.post('/push', async (req, res) => {
         shift_id:            e.shift_id ?? null,
       }));
       const { error } = await supabase.from('expenses').upsert(rows, { onConflict: 'id' });
-      if (error) { res.status(500).json({ error: `expenses: ${error.message}` }); return; }
+      if (error) { sendError(res, error); return; }
       upserted.expenses = rows.length;
     }
 
     res.json({ ok: true, upserted });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? 'sync push failed' });
+    sendError(res, err, { message: 'sync push failed' });
   }
 });
 

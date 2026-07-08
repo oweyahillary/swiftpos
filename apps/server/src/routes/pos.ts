@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -50,7 +51,7 @@ router.get('/init', async (req, res) => {
   ]);
 
   if (pErr || cErr || brErr) {
-    res.status(500).json({ error: (pErr || cErr || brErr)?.message });
+    sendError(res, (pErr || cErr || brErr));
     return;
   }
 
@@ -86,7 +87,7 @@ router.get('/init', async (req, res) => {
   ]);
 
   if (vErr) {
-    res.status(500).json({ error: vErr.message });
+    sendError(res, vErr);
     return;
   }
 

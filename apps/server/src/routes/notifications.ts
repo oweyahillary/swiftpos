@@ -1,4 +1,5 @@
 import { safeRouter } from "../middleware/asyncHandler";
+import { sendError } from '../lib/sendError';
 import { requireAuth } from "../middleware/auth";
 import { supabase } from "../lib/supabase";
 
@@ -24,7 +25,7 @@ router.get("/", async (req, res) => {
 
   const { data, error, count } = await query;
   if (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
 
@@ -42,7 +43,7 @@ router.patch("/:id/read", async (req, res) => {
     .is("read_at", null);
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
   res.status(204).send();
@@ -58,7 +59,7 @@ router.patch("/read-all", async (req, res) => {
     .is("read_at", null);
 
   if (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
     return;
   }
   res.status(204).send();

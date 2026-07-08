@@ -12,6 +12,7 @@
  */
 
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -52,7 +53,7 @@ router.get('/', async (req, res) => {
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false });
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json(data ?? []);
 });
 
@@ -71,7 +72,7 @@ router.get('/active', async (req, res) => {
     .eq('business_id', req.businessId)
     .eq('status', 'active');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   const cartProductIds:  string[] = ((req.query.product_ids  as string) ?? '').split(',').filter(Boolean);
   const cartCategoryIds: string[] = ((req.query.category_ids as string) ?? '').split(',').filter(Boolean);
@@ -126,7 +127,7 @@ router.post('/', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(201).json(data);
 });
 
@@ -152,7 +153,7 @@ router.patch('/:id', async (req, res) => {
     .select()
     .single();
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   if (!data)  { res.status(404).json({ error: 'Promotion not found' }); return; }
   res.json(data);
 });
@@ -167,7 +168,7 @@ router.delete('/:id', async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId);
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 

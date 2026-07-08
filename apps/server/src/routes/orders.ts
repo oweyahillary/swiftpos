@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { DbProduct, DbVariantGroup, DbModifierGroup, OrderItemInput, PaymentLegInput, DbOrder, DbPayment, DbCustomer } from '../lib/dbTypes';
 import bcrypt from 'bcrypt';
@@ -349,6 +350,22 @@ router.post('/', async (req, res) => {
       total: authTotal,
       vat: authVat,
     } = recomputed;
+
+    // ── L5: a client-supplied discount_id must belong to this business ───────
+    // Prevents referencing (and incrementing usage on) another tenant's discount.
+    // NOTE: the manual discount_amount is still trusted here, clamped to
+    // [0, subtotal] by recomputeOrderTotals. Gating who may apply a manual
+    // discount, or re-deriving the amount from the discount record, is a product
+    // decision left to you (see PATCH_NOTES).
+    if (discount_id) {
+      const { data: disc } = await supabase
+        .from('discounts')
+        .select('id')
+        .eq('id', discount_id)
+        .eq('business_id', req.businessId)
+        .maybeSingle();
+      if (!disc) { res.status(400).json({ error: 'Invalid discount' }); return; }
+    }
 
     // ── Credit sale pre-check (item 15) ──────────────────────────────────────
     // If any payment leg uses 'credit', a customer is required and their
@@ -806,7 +823,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message ?? 'Failed to create order' });
+    sendError(res, err, { message: 'Failed to create order' });
   }
 });
 
@@ -835,7 +852,7 @@ router.get('/', async (req, res) => {
   if (search)       query = query.ilike('order_number', `%${search}%`);
 
   const { data, error, count } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
   res.json({ orders: data ?? [], total: count ?? 0 });
 });
 
@@ -1069,7 +1086,7 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
 
     res.json({ success: true, orderId });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message ?? 'Failed to void order' });
+    sendError(res, err, { message: 'Failed to void order' });
   }
 });
 
@@ -1143,7 +1160,7 @@ router.post('/open', async (req, res) => {
       .single();
 
     if (oErr || !order) {
-      res.status(500).json({ error: oErr?.message ?? 'Failed to create order' });
+      sendError(res, oErr, { message: 'Failed to create order' });
       return;
     }
 
@@ -1169,7 +1186,7 @@ router.post('/open', async (req, res) => {
       .select();
 
     if (itemErr) {
-      res.status(500).json({ error: itemErr.message });
+      sendError(res, itemErr);
       return;
     }
 
@@ -1182,7 +1199,7 @@ router.post('/open', async (req, res) => {
 
     res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message ?? 'Failed to open order' });
+    sendError(res, err, { message: 'Failed to open order' });
   }
 });
 
@@ -1225,6 +1242,17 @@ router.post('/:id/pay', async (req, res) => {
       return;
     }
 
+    // ── L5: a client-supplied discount_id must belong to this business ───────
+    if (discount_id) {
+      const { data: disc } = await supabase
+        .from('discounts')
+        .select('id')
+        .eq('id', discount_id)
+        .eq('business_id', req.businessId)
+        .maybeSingle();
+      if (!disc) { res.status(400).json({ error: 'Invalid discount' }); return; }
+    }
+
     // 2. Insert payment legs
     const paymentRows = paymentLegs.map((leg: PaymentLegInput) => ({
       order_id:        order.id,
@@ -1241,7 +1269,7 @@ router.post('/:id/pay', async (req, res) => {
     }));
 
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
-    if (pErr) { res.status(500).json({ error: pErr.message }); return; }
+    if (pErr) { sendError(res, pErr); return; }
 
     // 3. Mark order completed
     const { error: uErr } = await supabase
@@ -1254,7 +1282,7 @@ router.post('/:id/pay', async (req, res) => {
       })
       .eq('id', order.id);
 
-    if (uErr) { res.status(500).json({ error: uErr.message }); return; }
+    if (uErr) { sendError(res, uErr); return; }
 
     // 4. Deduct stock for each item
     for (const item of order.order_items ?? []) {
@@ -1308,7 +1336,7 @@ router.post('/:id/pay', async (req, res) => {
 
     res.json({ orderId: order.id, orderNumber: order.order_number });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message ?? 'Failed to process payment' });
+    sendError(res, err, { message: 'Failed to process payment' });
   }
 });
 
@@ -1334,7 +1362,7 @@ router.post('/:id/fire-course', async (req, res) => {
     .update({ fire_status: 'fired', fired_at: new Date().toISOString() })
     .eq('order_id', id).eq('course', course).eq('fire_status', 'held')
     .select('id');
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // New kitchen ticket for the fired course so the KDS/printer picks it up.
   if ((fired?.length ?? 0) > 0) {
@@ -1424,7 +1452,7 @@ router.get('/turnover/report', requirePermission('reports.view'), async (req, re
   if (req.query.to)   q = q.lte('created_at', req.query.to as string);
 
   const { data, error } = await q;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendError(res, error); return; }
 
   // Aggregate avg dwell minutes per table.
   const agg: Record<string, { total: number; count: number }> = {};

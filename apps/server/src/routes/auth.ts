@@ -34,6 +34,7 @@
  */
 
 import { Router }   from 'express';
+import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
@@ -142,7 +143,7 @@ async function validateRefreshToken(refreshToken: string): Promise<{
   // 1. Verify JWT signature + expiry
   let payload: any;
   try {
-    payload = jwt.verify(refreshToken, JWT_SECRET);
+    payload = jwt.verify(refreshToken, JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     throw Object.assign(new Error('Invalid or expired refresh token'), { code: 'TOKEN_INVALID' });
   }
@@ -610,7 +611,14 @@ router.post('/refresh', async (req, res) => {
   try {
     ({ payload, dbRow } = await validateRefreshToken(refreshToken));
   } catch (err: any) {
-    res.status(401).json({ error: err.message, code: err.code });
+    // Deliberate token errors carry a TOKEN_* code and a user-safe message —
+    // surface those so the client can react. Anything else is unexpected and
+    // must not be leaked.
+    if (typeof err?.code === 'string' && err.code.startsWith('TOKEN_')) {
+      res.status(401).json({ error: err.message, code: err.code });
+    } else {
+      sendError(res, err, { status: 401, message: 'Authentication failed' });
+    }
     return;
   }
 
@@ -1051,7 +1059,7 @@ router.patch('/me', requireAuth, async (req, res) => {
     }
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message ?? 'Failed to update profile' });
+    sendError(res, err, { message: 'Failed to update profile' });
   }
 });
 
