@@ -1,0 +1,21 @@
+{
+  "name": "swiftpos-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright UI tests for the SwiftPOS dashboard (owner / POS / manager surfaces).",
+  "scripts": {
+    "install:browsers": "playwright install chromium",
+    "seed:users": "playwright test -c playwright.seed.config.ts",
+    "test": "playwright test",
+    "test:pos": "playwright test --project=pos",
+    "test:manager": "playwright test --project=manager",
+    "test:owner": "playwright test --project=owner",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "dotenv": "^16.6.1"
+  }
+}

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kitchen Display — SwiftPOS</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #030712; color: #fff; font-family: system-ui, sans-serif; min-height: 100vh; display: flex; flex-direction: column; user-select: none; }
+
+    /* Header */
+    #header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
+    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; margin-left: 8px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    #clock { font-family: monospace; font-size: 14px; color: #9ca3af; }
+    #counts { display: flex; gap: 24px; }
+    .count-item { text-align: center; }
+    .count-num { font-size: 24px; font-weight: 700; }
+    .count-label { font-size: 11px; color: #6b7280; }
+    .yellow { color: #facc15; } .blue { color: #60a5fa; } .green { color: #4ade80; }
+
+    /* Filters */
+    #filters { display: flex; gap: 4px; background: #1f2937; border-radius: 8px; padding: 4px; }
+    .filter-btn { padding: 6px 12px; border-radius: 6px; border: none; background: transparent; color: #6b7280; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+    .filter-btn.active { background: #374151; color: #fff; }
+
+    /* Grid */
+    #grid { flex: 1; overflow-y: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-content: start; }
+
+    /* Empty */
+    #empty { display: none; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: #4b5563; font-size: 18px; gap: 12px; }
+    #empty span:first-child { font-size: 48px; }
+
+    /* Ticket card */
+    .ticket { border-radius: 16px; border: 2px solid; padding: 16px; display: flex; flex-direction: column; gap: 12px; transition: all 0.3s; }
+    .ticket.status-new      { border-color: #eab308; background: rgba(234,179,8,0.08); }
+    .ticket.status-preparing{ border-color: #3b82f6; background: rgba(59,130,246,0.08); }
+    .ticket.status-ready    { border-color: #22c55e; background: rgba(34,197,94,0.08); }
+    .ticket.flash           { box-shadow: 0 0 0 4px rgba(250,204,21,0.6); transform: scale(1.03); }
+
+    .ticket-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .ticket-number { font-size: 18px; font-weight: 700; }
+    .ticket-type   { font-size: 11px; color: #9ca3af; margin-top: 2px; text-transform: capitalize; }
+    .ticket-meta   { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+    .badge-new       { background: #eab308; color: #1a1a00; }
+    .badge-preparing { background: #3b82f6; color: #fff; }
+    .badge-ready     { background: #22c55e; color: #052e16; }
+
+    .timer { font-family: monospace; font-size: 11px; color: #9ca3af; }
+    .timer.late { color: #f87171; }
+
+    .items { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .item { }
+    .item-main { display: flex; align-items: baseline; gap: 6px; }
+    .item-qty  { font-weight: 700; font-size: 14px; }
+    .item-name { font-size: 14px; }
+    .item-modifier { font-size: 11px; color: #9ca3af; padding-left: 18px; }
+    .item-addon    { font-size: 11px; color: #c084fc; padding-left: 18px; }
+    .item-note     { font-size: 11px; color: #fbbf24; padding-left: 18px; font-style: italic; }
+
+    .action-btn { width: 100%; padding: 10px; border-radius: 12px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .action-btn:active { transform: scale(0.97); }
+    .action-btn.new       { background: #eab308; color: #1a1a00; }
+    .action-btn.preparing { background: #3b82f6; color: #fff; }
+    .action-btn.ready     { background: #22c55e; color: #052e16; }
+
+    /* Setup screen */
+    #setup { display: flex; align-items: center; justify-content: center; flex: 1; }
+    .setup-card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 40px; width: 380px; }
+    .setup-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .setup-card p  { color: #6b7280; font-size: 14px; margin-bottom: 24px; }
+    .setup-card label { display: block; font-size: 13px; color: #9ca3af; margin-bottom: 6px; }
+    .setup-card input { width: 100%; background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 14px; margin-bottom: 16px; outline: none; }
+    .setup-card input:focus { border-color: #22c55e; }
+    .setup-card button { width: 100%; background: #22c55e; color: #052e16; font-weight: 700; font-size: 14px; padding: 12px; border-radius: 10px; border: none; cursor: pointer; }
+    .setup-card .hint { font-size: 12px; color: #4b5563; margin-top: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+
+<!-- Setup screen (shown if no config) -->
+<div id="setup">
+  <div class="setup-card">
+    <h2>Kitchen Display Setup</h2>
+    <p>Enter your Supabase credentials and branch ID to get started. These are saved in your browser.</p>
+
+    <label>Supabase URL</label>
+    <input id="inp-url" type="text" placeholder="https://xxxx.supabase.co" />
+
+    <label>Supabase Anon Key</label>
+    <input id="inp-key" type="text" placeholder="eyJ..." />
+
+    <label>API Base URL</label>
+    <input id="inp-api" type="text" placeholder="http://localhost:4000" value="http://localhost:4000" />
+
+    <label>Branch ID</label>
+    <input id="inp-branch" type="text" placeholder="UUID from branches table" />
+
+    <button onclick="saveConfig()">Launch KDS</button>
+    <p class="hint">Settings are saved in localStorage — you only need to do this once per device.</p>
+  </div>
+</div>
+
+<!-- Main KDS UI (hidden until configured) -->
+<div id="kds" style="display:none; flex-direction:column; flex:1;">
+  <div id="header">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:20px;font-weight:700;">Kitchen Display</span>
+      <span class="live-dot"></span>
+    </div>
+    <div id="counts">
+      <div class="count-item"><div class="count-num yellow" id="cnt-new">0</div><div class="count-label">Pending</div></div>
+      <div class="count-item"><div class="count-num blue" id="cnt-preparing">0</div><div class="count-label">In Progress</div></div>
+      <div class="count-item"><div class="count-num green" id="cnt-ready">0</div><div class="count-label">Ready</div></div>
+    </div>
+    <div id="filters">
+      <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+      <button class="filter-btn" onclick="setFilter('new', this)">Pending</button>
+      <button class="filter-btn" onclick="setFilter('preparing', this)">In Progress</button>
+      <button class="filter-btn" onclick="setFilter('ready', this)">Ready</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <button onclick="resetConfig()" style="background:none;border:1px solid #374151;color:#6b7280;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;">⚙ Reset</button>
+      <span id="clock"></span>
+    </div>
+  </div>
+
+  <div id="grid"></div>
+  <div id="empty"><span>🍳</span><span>All clear — no pending tickets</span></div>
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────
+  const CONFIG_KEY = 'swiftpos_kds_config';
+  let config = null;
+  let supabaseClient = null;
+  let tickets = [];
+  let currentFilter = 'all';
+  let audioCtx = null;
+  let timers = {};
+
+  const STATUS = {
+    new:       { label: 'Pending',     badge: 'badge-new',       btn: 'new',       next: 'preparing', nextLabel: 'Start →'     },
+    preparing: { label: 'In Progress', badge: 'badge-preparing', btn: 'preparing', next: 'ready',     nextLabel: 'Ready →'     },
+    ready:     { label: 'Ready',       badge: 'badge-ready',     btn: 'ready',     next: 'collected', nextLabel: 'Picked Up ✓' },
+  };
+
+  function saveConfig() {
+    const url    = document.getElementById('inp-url').value.trim();
+    const key    = document.getElementById('inp-key').value.trim();
+    const api    = document.getElementById('inp-api').value.trim();
+    const branch = document.getElementById('inp-branch').value.trim();
+    if (!url || !key || !branch) { alert('Please fill in all fields except API Base (optional)'); return; }
+    localStorage.setItem(CONFIG_KEY, JSON.stringify({ url, key, api, branch }));
+    launch();
+  }
+
+  function resetConfig() {
+    localStorage.removeItem(CONFIG_KEY);
+    location.reload();
+  }
+
+  function launch() {
+    config = JSON.parse(localStorage.getItem(CONFIG_KEY));
+    if (!config) return;
+
+    supabaseClient = supabase.createClient(config.url, config.key);
+
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('kds').style.display = 'flex';
+
+    startClock();
+    fetchTickets();
+    subscribeRealtime();
+
+    // Auto-refresh every 30s as fallback alongside realtime
+    setInterval(fetchTickets, 30000);
+  }
+
+  // ── Clock ────────────────────────────────────────────────
+  function startClock() {
+    const el = document.getElementById('clock');
+    const tick = () => el.textContent = new Date().toLocaleTimeString();
+    tick(); setInterval(tick, 1000);
+  }
+
+  // ── Fetch ────────────────────────────────────────────────
+  async function fetchTickets() {
+    try {
+      const res = await fetch(`${config.api}/api/kitchen/tickets?branch_id=${config.branch}`);
+      tickets = await res.json();
+      render();
+    } catch(e) {
+      console.error('Fetch failed:', e);
+    }
+  }
+
+  // ── Realtime ─────────────────────────────────────────────
+  function subscribeRealtime() {
+    supabaseClient
+      .channel(`kds-${config.branch}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'kitchen_tickets',
+        filter: `branch_id=eq.${config.branch}`
+      }, async (payload) => {
+        if (payload.eventType === 'INSERT') {
+          await fetchTickets();
+          playBeep();
+          flash(payload.new.id);
+        } else if (payload.eventType === 'UPDATE') {
+          if (payload.new.status === 'collected') {
+            tickets = tickets.filter(t => t.id !== payload.new.id);
+          } else {
+            tickets = tickets.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t);
+          }
+          render();
+        } else if (payload.eventType === 'DELETE') {
+          tickets = tickets.filter(t => t.id !== payload.old.id);
+          render();
+        }
+      })
+      .subscribe();
+  }
+
+  // ── Render ───────────────────────────────────────────────
+  function setFilter(f, btn) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render();
+  }
+
+  function render() {
+    const filtered = currentFilter === 'all' ? tickets : tickets.filter(t => t.status === currentFilter);
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+
+    // Update counts
+    document.getElementById('cnt-new').textContent       = tickets.filter(t=>t.status==='new').length;
+    document.getElementById('cnt-preparing').textContent = tickets.filter(t=>t.status==='preparing').length;
+    document.getElementById('cnt-ready').textContent     = tickets.filter(t=>t.status==='ready').length;
+
+    if (filtered.length === 0) {
+      grid.style.display = 'none';
+      empty.style.display = 'flex';
+      return;
+    }
+    grid.style.display = 'grid';
+    empty.style.display = 'none';
+
+    // Clear elapsed timers
+    Object.values(timers).forEach(clearInterval);
+    timers = {};
+
+    grid.innerHTML = filtered.map(t => renderTicket(t)).join('');
+
+    // Start elapsed timers
+    filtered.forEach(t => {
+      const el = document.getElementById(`timer-${t.id}`);
+      if (!el) return;
+      timers[t.id] = setInterval(() => {
+        const secs = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 1000);
+        const m = Math.floor(secs/60), s = secs%60;
+        el.textContent = `${m}:${String(s).padStart(2,'0')}`;
+        el.className = 'timer' + (secs > 600 ? ' late' : '');
+      }, 1000);
+    });
+  }
+
+  function renderTicket(t) {
+    const cfg = STATUS[t.status];
+    if (!cfg) return '';
+    const order = t.orders || {};
+    const items = order.order_items || [];
+    const secs = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 1000);
+    const m = Math.floor(secs/60), s = secs%60;
+
+    return `
+      <div class="ticket status-${t.status}" id="ticket-${t.id}">
+        <div class="ticket-header">
+          <div>
+            <div class="ticket-number">${order.order_number || '—'}</div>
+            <div class="ticket-type">${order.order_type || ''}</div>
+          </div>
+          <div class="ticket-meta">
+            <span class="badge ${cfg.badge}">${cfg.label}</span>
+            <span class="timer${secs>600?' late':''}" id="timer-${t.id}">${m}:${String(s).padStart(2,'0')}</span>
+          </div>
+        </div>
+        <div class="items">
+          ${items.map(item => `
+            <div class="item">
+              <div class="item-main">
+                <span class="item-qty">×${item.quantity}</span>
+                <span class="item-name">${item.product_name}</span>
+              </div>
+              ${(item.order_item_variants||[]).map(v=>`<div class="item-modifier">${v.variant_group_name}: ${v.variant_option_name}</div>`).join('')}
+              ${(item.order_item_modifiers||[]).map(m=>`<div class="item-addon">+${m.modifier_option_name}</div>`).join('')}
+              ${item.notes ? `<div class="item-note">⚠ ${item.notes}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        ${cfg.next ? `<button class="action-btn ${cfg.btn}" onclick="advance('${t.id}','${cfg.next}')">${cfg.nextLabel}</button>` : ''}
+      </div>
+    `;
+  }
+
+  // ── Actions ──────────────────────────────────────────────
+  async function advance(id, nextStatus) {
+    // Optimistic update
+    if (nextStatus === 'collected') {
+      tickets = tickets.filter(t => t.id !== id);
+    } else {
+      tickets = tickets.map(t => t.id === id ? { ...t, status: nextStatus } : t);
+    }
+    render();
+
+    try {
+      const res = await fetch(`${config.api}/api/kitchen/tickets/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      if (!res.ok) throw new Error('Server error');
+    } catch(e) {
+      console.error('Advance failed:', e);
+      // Revert on failure
+      fetchTickets();
+    }
+  }
+
+  // ── Sound ────────────────────────────────────────────────
+  function playBeep() {
+    try {
+      if (!audioCtx) audioCtx = new AudioContext();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+    } catch(e) {}
+  }
+
+  // ── Flash ────────────────────────────────────────────────
+  function flash(id) {
+    setTimeout(() => {
+      const el = document.getElementById(`ticket-${id}`);
+      if (el) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 2000); }
+    }, 300);
+  }
+
+  // ── Boot ─────────────────────────────────────────────────
+  const saved = localStorage.getItem(CONFIG_KEY);
+  if (saved) { launch(); }
+</script>
+</body>
+</html>

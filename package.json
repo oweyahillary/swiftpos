@@ -1,0 +1,14 @@
+{
+  "name": "swiftpos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SwiftPOS \u2014 Multi-tenant Point of Sale System",
+  "scripts": {
+    "dev:server": "cd apps/server && npm run dev",
+    "dev:dashboard": "cd apps/dashboard && npm run dev",
+    "install:all": "cd apps/server && npm install && cd ../dashboard && npm install"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
