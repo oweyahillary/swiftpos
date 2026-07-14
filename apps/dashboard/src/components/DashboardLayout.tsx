@@ -24,7 +24,7 @@ interface Notification {
   read_at: string | null; created_at: string;
 }
 
-interface NavItem  { to: string; label: string; icon: string; end?: boolean; badgeKey?: string; verticals?: string[]; hint?: string; }
+interface NavItem  { to: string; label: string; icon: string; end?: boolean; badgeKey?: string; verticals?: string[]; hint?: string; sub?: string; }
 interface NavGroup { label: string; icon: string; items: NavItem[]; verticals?: string[]; }
 type NavEntry = NavItem | NavGroup;
 
@@ -147,7 +147,12 @@ function NavGroupItem({ group, defaultOpen }: { group: NavGroup; defaultOpen: bo
                 }`
               }>
               <span className="text-sm">{item.icon}</span>
-              {item.label}
+              {item.sub ? (
+                <span className="flex flex-col leading-tight min-w-0">
+                  <span className="truncate">{item.label}</span>
+                  <span className="text-[10px] text-gray-600 truncate">{item.sub}</span>
+                </span>
+              ) : item.label}
             </NavLink>
           ))}
         </div>
@@ -208,10 +213,22 @@ export default function DashboardLayout() {
       default: return undefined;
     }
   };
+  // Short, always-visible sub-labels for the three genuinely-confusable items
+  // (works on touch, unlike the hover tooltip). Kept to a couple of words.
+  const subFor = (to: string): string | undefined => {
+    switch (to) {
+      case '/dashboard/products':          return isFood ? 'What you sell' : undefined;
+      case '/dashboard/stock/ingredients': return 'Raw materials';
+      case '/dashboard/inventory':         return isFood ? 'Packaged goods' : undefined;
+      default: return undefined;
+    }
+  };
   const relabel = (it: NavItem): NavItem => {
     const label = isFood && foodItemLabel[it.to] ? foodItemLabel[it.to] : it.label;
-    const hint  = hintFor(it.to);
-    return hint ? { ...it, label, hint } : { ...it, label };
+    const out: NavItem = { ...it, label };
+    const hint = hintFor(it.to); if (hint) out.hint = hint;
+    const sub  = subFor(it.to);  if (sub)  out.sub  = sub;
+    return out;
   };
   // For food verticals the product-stock page moves out of the top level and into
   // the Inventory group as packaged goods (bottled drinks etc.), so a restaurant
@@ -382,7 +399,12 @@ export default function DashboardLayout() {
                   }`
                 }>
                 <span className="text-base">{entry.icon}</span>
-                {entry.label}
+                {entry.sub ? (
+                  <span className="flex flex-col leading-tight min-w-0">
+                    <span className="truncate">{entry.label}</span>
+                    <span className="text-[10px] text-gray-600 truncate">{entry.sub}</span>
+                  </span>
+                ) : entry.label}
               </NavLink>
             )
           )}

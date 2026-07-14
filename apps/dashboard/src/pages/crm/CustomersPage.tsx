@@ -35,6 +35,12 @@ interface Transaction {
   order_id: string | null;
 }
 
+interface Insights {
+  summary: { orders: number; totalSpent: number; avgOrder: number; firstOrder: string | null; lastOrder: string | null; daysSinceLast: number | null };
+  topItems: { name: string; qty: number; spent: number }[];
+  monthly: { month: string; spent: number; orders: number }[];
+}
+
 interface Props {
   currency: string;
 }
@@ -152,6 +158,8 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
   const [error, setError]           = useState('');
   const [txns, setTxns]             = useState<Transaction[]>([]);
   const [txnsLoading, setTxnsLoad]  = useState(true);
+  const [insights, setInsights]     = useState<Insights | null>(null);
+  const [insightsLoading, setInsLoad] = useState(true);
 
   const [form, setForm] = useState({
     name:  customer.name,
@@ -167,6 +175,11 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
       .then(r => setTxns(r.transactions))
       .catch(() => setTxns([]))
       .finally(() => setTxnsLoad(false));
+    setInsLoad(true);
+    api.get<Insights>(`/api/loyalty/customer/${customer.id}/insights`)
+      .then(setInsights)
+      .catch(() => setInsights(null))
+      .finally(() => setInsLoad(false));
   }, [customer.id]);
 
   const handleSave = async () => {
@@ -331,6 +344,73 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                 <span className="text-gray-600 text-xs">{customer.tier.name === 'Bronze' ? 'Silver' : 'Gold'}</span>
               )}
             </div>
+          </div>
+
+          {/* Purchase insights */}
+          <div className="px-5 py-4 border-b border-gray-800/60">
+            <p className="text-xs text-gray-400 font-medium mb-3">Purchase insights</p>
+            {insightsLoading ? (
+              <div className="h-24 bg-gray-900/40 rounded-xl animate-pulse" />
+            ) : !insights || insights.summary.orders === 0 ? (
+              <p className="text-gray-600 text-sm">No completed purchases yet.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {[
+                    { label: 'Orders',    value: insights.summary.orders.toString() },
+                    { label: 'Avg order', value: `${currency} ${Math.round(insights.summary.avgOrder).toLocaleString()}` },
+                    { label: 'Last visit', value: insights.summary.daysSinceLast == null ? '\u2014' : insights.summary.daysSinceLast === 0 ? 'Today' : `${insights.summary.daysSinceLast}d ago` },
+                  ].map(st => (
+                    <div key={st.label} className="bg-gray-900/60 rounded-xl px-2 py-2.5 text-center">
+                      <p className="text-sm font-bold text-white">{st.value}</p>
+                      <p className="text-gray-500 text-[11px] mt-0.5">{st.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {insights.topItems.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-[11px] text-gray-500 uppercase tracking-wide mb-2">Most bought</p>
+                    <div className="space-y-1.5">
+                      {insights.topItems.map(it => {
+                        const max = insights.topItems[0].qty || 1;
+                        return (
+                          <div key={it.name}>
+                            <div className="flex justify-between mb-0.5">
+                              <span className="text-gray-300 text-xs truncate">{it.name}</span>
+                              <span className="text-gray-500 text-xs shrink-0 ml-2">×{it.qty} · {currency} {Number(it.spent).toLocaleString()}</span>
+                            </div>
+                            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-green-500/70 rounded-full" style={{ width: `${(it.qty / max) * 100}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {insights.monthly.length > 0 && (
+                  <div>
+                    <p className="text-[11px] text-gray-500 uppercase tracking-wide mb-2">Spend (last {insights.monthly.length} mo)</p>
+                    <div className="flex items-end gap-1.5 h-20">
+                      {insights.monthly.map(m => {
+                        const max = Math.max(...insights.monthly.map(x => x.spent)) || 1;
+                        const pct = (m.spent / max) * 100;
+                        return (
+                          <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                            <div className="w-full flex-1 flex items-end">
+                              <div className="w-full bg-blue-500/60 rounded-t" style={{ height: `${Math.max(pct, 3)}%` }} title={`${currency} ${Number(m.spent).toLocaleString()} \u00b7 ${m.orders} orders`} />
+                            </div>
+                            <span className="text-gray-600 text-[10px]">{m.month.slice(5)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* Transaction history */}

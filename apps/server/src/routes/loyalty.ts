@@ -105,6 +105,69 @@ router.get('/customer/:id/transactions', async (req, res) => {
   res.json({ transactions: data ?? [] });
 });
 
+// GET /api/loyalty/customer/:id/insights
+// Per-customer purchase analytics: spend summary, most-bought items, and a
+// monthly spend trend. Business-wide (a customer's whole relationship, across
+// branches) — customer analytics is about the person, not one till.
+router.get('/customer/:id/insights', async (req, res) => {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, total, created_at, order_items ( product_name, quantity, subtotal )')
+    .eq('business_id', req.businessId)
+    .eq('customer_id', req.params.id)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (error) { sendError(res, error); return; }
+
+  const orders = (data ?? []) as Array<{
+    total: number; created_at: string;
+    order_items: Array<{ product_name: string; quantity: number; subtotal: number }> | null;
+  }>;
+
+  const orderCount = orders.length;
+  const totalSpent = orders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const avgOrder   = orderCount ? totalSpent / orderCount : 0;
+  const dates      = orders.map(o => o.created_at).filter(Boolean).sort();
+  const firstOrder = dates[0] ?? null;
+  const lastOrder  = dates[dates.length - 1] ?? null;
+  const daysSinceLast = lastOrder
+    ? Math.floor((Date.now() - new Date(lastOrder).getTime()) / 86_400_000)
+    : null;
+
+  // Most-bought items (by quantity, with spend alongside).
+  const itemMap = new Map<string, { name: string; qty: number; spent: number }>();
+  for (const o of orders) {
+    for (const it of (o.order_items ?? [])) {
+      const name = it.product_name ?? 'Unknown';
+      const cur  = itemMap.get(name) ?? { name, qty: 0, spent: 0 };
+      cur.qty   += Number(it.quantity || 0);
+      cur.spent += Number(it.subtotal || 0);
+      itemMap.set(name, cur);
+    }
+  }
+  const topItems = [...itemMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 8);
+
+  // Monthly spend trend (last 6 months that have activity).
+  const monthMap = new Map<string, { month: string; spent: number; orders: number }>();
+  for (const o of orders) {
+    if (!o.created_at) continue;
+    const month = o.created_at.slice(0, 7); // YYYY-MM
+    const cur   = monthMap.get(month) ?? { month, spent: 0, orders: 0 };
+    cur.spent  += Number(o.total || 0);
+    cur.orders += 1;
+    monthMap.set(month, cur);
+  }
+  const monthly = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month)).slice(-6);
+
+  res.json({
+    summary: { orders: orderCount, totalSpent, avgOrder, firstOrder, lastOrder, daysSinceLast },
+    topItems,
+    monthly,
+  });
+});
+
 // ── New CRM endpoints (Step 15) ───────────────────────────────
 
 // GET /api/loyalty/customers?search=&page=1&limit=20
