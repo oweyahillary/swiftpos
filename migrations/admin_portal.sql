@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS public.admin_client_notes (
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Seed: default super admin account.
--- Password hash below = bcrypt of 'SwiftAdmin2026!' (rounds=12).
+-- Password hash below is a seed placeholder. Rotate immediately via the
+-- reset-admin script with ADMIN_PASSWORD set; never rely on a shipped default.
 -- CHANGE THIS ON FIRST LOGIN via Settings → Change Password.
 -- ─────────────────────────────────────────────────────────────────────────────
 

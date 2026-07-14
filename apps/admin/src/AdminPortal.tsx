@@ -297,7 +297,6 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
               style={{ ...S.btn, ...S.btnPrimary, width: "100%", marginTop: 8 }}>Save API URL</button>
           </div>
         )}
-        <p style={{ textAlign: "center", fontSize: 11, color: C.muted, marginTop: 16 }}>Default: admin@swiftpos.co.ke / SwiftAdmin2026!</p>
       </div>
     </div>
   );

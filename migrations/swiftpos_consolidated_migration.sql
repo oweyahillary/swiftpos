@@ -639,7 +639,7 @@ BEGIN
 END $$;
 
 -- ── 14. Seed default super-admin (CHANGE PASSWORD ON FIRST LOGIN) ─────────────
--- Hash = bcrypt('SwiftAdmin2026!', rounds=12).
+-- Hash is a seed placeholder — rotate via reset-admin (ADMIN_PASSWORD env) after install.
 INSERT INTO public.admin_users (email, name, password_hash, role)
 VALUES (
   'admin@swiftpos.co.ke',
