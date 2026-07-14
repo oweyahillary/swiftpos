@@ -15,6 +15,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from './reports';
 
@@ -35,25 +36,32 @@ async function nextRef(table: string, prefix: string, businessId: string): Promi
 async function applyIngredientStockIn(
   items: { ingredient_id: string; quantity: number; unit_cost?: number | null }[],
   businessId: string,
+  branchId: string,
   createdBy: string,
   movementType: 'restock' | 'adjustment' | 'opening',
   referenceNote: string,
 ) {
   for (const item of items) {
     if (!item.quantity || item.quantity <= 0) continue;
-    const { data: current } = await supabase
-      .from('ingredients')
-      .select('current_stock')
-      .eq('id', item.ingredient_id)
-      .eq('business_id', businessId)
-      .single();
-    const currentQty = Number(current?.current_stock ?? 0);
-    const newQty = currentQty + item.quantity;
-    const upd: Record<string, unknown> = { current_stock: newQty, updated_at: new Date().toISOString() };
-    if (item.unit_cost != null) upd.unit_cost = item.unit_cost;
-    await supabase.from('ingredients').update(upd).eq('id', item.ingredient_id).eq('business_id', businessId);
+
+    // Atomic per-branch increment (no read-modify-write race).
+    const { data: newQty, error } = await supabase.rpc('adjust_ingredient_stock', {
+      p_ingredient_id: item.ingredient_id,
+      p_branch_id:     branchId,
+      p_business_id:   businessId,
+      p_delta:         item.quantity,
+    });
+    if (error) throw error;
+
+    // Keep the catalogue's last-known unit cost fresh (business-level field).
+    if (item.unit_cost != null) {
+      await supabase.from('ingredients')
+        .update({ unit_cost: item.unit_cost, updated_at: new Date().toISOString() })
+        .eq('id', item.ingredient_id).eq('business_id', businessId);
+    }
+
     await supabase.from('ingredient_stock_movements').insert({
-      business_id: businessId, ingredient_id: item.ingredient_id,
+      business_id: businessId, ingredient_id: item.ingredient_id, branch_id: branchId,
       movement_type: movementType, quantity_change: item.quantity,
       quantity_after: newQty, notes: referenceNote, created_by: createdBy,
     });
@@ -139,7 +147,10 @@ async function applyProductStockOut(
 
 router.get('/ingredients', async (req, res) => {
   const { status, category } = req.query as Record<string, string>;
-  let query = supabase.from('ingredients').select('*')
+  const scopedBranch = branchScope(req); // staff -> their branch; owner -> ?branch_id or null (all)
+
+  let query = supabase.from('ingredients')
+    .select('*, ingredient_stock_levels ( branch_id, current_stock, reorder_level )')
     .eq('business_id', req.businessId)
     .order('category', { ascending: true })
     .order('name',     { ascending: true });
@@ -147,33 +158,43 @@ router.get('/ingredients', async (req, res) => {
   if (category) query = query.eq('category', category);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+
+  // Flatten per-branch stock into the current_stock/reorder_level fields the UI
+  // already reads. Staff see their branch; owner (no branch filter) sees the
+  // business-wide total plus a per-branch breakdown in `branch_stock`.
+  const shaped = (data ?? []).map((ing: any) => {
+    const levels = ing.ingredient_stock_levels ?? [];
+    let current_stock = 0;
+    let reorder_level = 0;
+    if (scopedBranch) {
+      const lvl = levels.find((l: any) => l.branch_id === scopedBranch);
+      current_stock = Number(lvl?.current_stock ?? 0);
+      reorder_level = Number(lvl?.reorder_level ?? 0);
+    } else {
+      current_stock = levels.reduce((sum: number, l: any) => sum + Number(l.current_stock ?? 0), 0);
+    }
+    const { ingredient_stock_levels, ...rest } = ing;
+    return { ...rest, current_stock, reorder_level, branch_stock: levels };
+  });
+  res.json(shaped);
 });
 
-router.post('/ingredients', async (req, res) => {
-  const { name, category, unit, unit_cost, current_stock, reorder_level, notes } = req.body;
+router.post('/ingredients', requirePermission('ingredients.manage'), async (req, res) => {
+  const { name, category, unit, unit_cost, notes } = req.body;
   if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
   if (!unit?.trim()) { res.status(400).json({ error: 'unit is required' }); return; }
 
+  // Catalogue entry only — a business-level definition with NO stock. Stock
+  // arrives per-branch via receiving (GRN) or an owner adjustment. reorder_level
+  // is per-branch now (ingredient_stock_levels), set when stock is first added.
   const { data, error } = await supabase.from('ingredients').insert({
     business_id: req.businessId, name: name.trim(),
     category: category?.trim() || null, unit: unit.trim(),
     unit_cost: unit_cost != null ? Number(unit_cost) : null,
-    current_stock: Number(current_stock ?? 0),
-    reorder_level: Number(reorder_level ?? 0),
     notes: notes?.trim() || null,
   }).select().single();
 
   if (error) { sendError(res, error); return; }
-
-  if (Number(current_stock ?? 0) > 0) {
-    await supabase.from('ingredient_stock_movements').insert({
-      business_id: req.businessId, ingredient_id: data.id,
-      movement_type: 'opening', quantity_change: Number(current_stock),
-      quantity_after: Number(current_stock), notes: 'Opening stock', created_by: req.userId,
-    });
-  }
-
   res.status(201).json(data);
 });
 
@@ -195,34 +216,59 @@ router.patch('/ingredients/:id', async (req, res) => {
   res.json(data);
 });
 
-router.post('/ingredients/:id/adjust', async (req, res) => {
-  const { type, quantity, notes } = req.body as { type: 'add'|'remove'|'set'; quantity: number; notes?: string };
-  if (!['add','remove','set'].includes(type)) { res.status(400).json({ error: 'type must be add, remove, or set' }); return; }
-  if (quantity == null || quantity < 0)       { res.status(400).json({ error: 'quantity must be >= 0' }); return; }
+router.post('/ingredients/:id/adjust', requirePermission('inventory.adjust'), async (req, res) => {
+  const { branch_id, type, quantity, notes } = req.body as
+    { branch_id: string; type: 'add' | 'remove' | 'set'; quantity: number; notes?: string };
 
-  const { data: ingredient } = await supabase.from('ingredients')
-    .select('current_stock').eq('id', req.params.id).eq('business_id', req.businessId).single();
-  if (!ingredient) { res.status(404).json({ error: 'Ingredient not found' }); return; }
+  if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
+  if (!['add', 'remove', 'set'].includes(type)) { res.status(400).json({ error: 'type must be add, remove, or set' }); return; }
+  if (quantity == null || quantity < 0) { res.status(400).json({ error: 'quantity must be >= 0' }); return; }
 
-  const currentQty = Number(ingredient.current_stock);
-  let newQty: number;
-  let change: number;
-  if (type === 'add')    { newQty = currentQty + quantity; change = quantity; }
-  else if (type === 'remove') { newQty = Math.max(0, currentQty - quantity); change = newQty - currentQty; }
-  else                   { newQty = quantity; change = quantity - currentQty; }
+  // Read the branch level once (manual, low-frequency op) to compute the delta;
+  // the RPC still performs the write atomically.
+  const { data: lvl } = await supabase.from('ingredient_stock_levels')
+    .select('current_stock').eq('ingredient_id', req.params.id).eq('branch_id', branch_id).maybeSingle();
+  const current = Number(lvl?.current_stock ?? 0);
 
-  const { data, error } = await supabase.from('ingredients')
-    .update({ current_stock: newQty, updated_at: new Date().toISOString() })
-    .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
+  const target = type === 'add' ? current + quantity
+               : type === 'remove' ? Math.max(0, current - quantity)
+               : quantity; // set
+  const delta = target - current;
+
+  const { data: newQty, error } = await supabase.rpc('adjust_ingredient_stock', {
+    p_ingredient_id: req.params.id, p_branch_id: branch_id,
+    p_business_id: req.businessId, p_delta: delta,
+  });
   if (error) { sendError(res, error); return; }
 
   await supabase.from('ingredient_stock_movements').insert({
-    business_id: req.businessId, ingredient_id: req.params.id,
-    movement_type: 'adjustment', quantity_change: change, quantity_after: newQty,
+    business_id: req.businessId, ingredient_id: req.params.id, branch_id,
+    movement_type: 'adjustment', quantity_change: delta, quantity_after: newQty,
     notes: notes?.trim() || `Manual ${type}`, created_by: req.userId,
   });
 
-  res.json(data);
+  res.json({ ingredient_id: req.params.id, branch_id, current_stock: newQty });
+});
+
+// Set the per-branch reorder level for an ingredient (owner-only). Upserts the
+// (ingredient, branch) row; current_stock is preserved on update.
+router.patch('/ingredients/:id/reorder', requirePermission('inventory.adjust'), async (req, res) => {
+  const { branch_id, reorder_level } = req.body as { branch_id: string; reorder_level: number };
+  if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
+  if (reorder_level == null || Number(reorder_level) < 0) { res.status(400).json({ error: 'reorder_level must be >= 0' }); return; }
+
+  const { data, error } = await supabase
+    .from('ingredient_stock_levels')
+    .upsert(
+      { business_id: req.businessId, ingredient_id: req.params.id, branch_id, reorder_level: Number(reorder_level), updated_at: new Date().toISOString() },
+      { onConflict: 'ingredient_id,branch_id' },
+    )
+    .select('current_stock, reorder_level')
+    .single();
+  if (error) { sendError(res, error); return; }
+  res.json({ ingredient_id: req.params.id, branch_id, ...data });
 });
 
 router.get('/ingredients/:id/movements', async (req, res) => {
@@ -316,6 +362,7 @@ router.get('/purchase-orders/:id', async (req, res) => {
 router.post('/purchase-orders', async (req, res) => {
   const { branch_id, supplier_id, order_date, expected_date, notes, items = [] } = req.body;
   if (!branch_id)    { res.status(400).json({ error: 'branch_id is required' }); return; }
+  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
   if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
 
   const po_number   = await nextRef('purchase_orders', 'PO', req.businessId);
@@ -400,7 +447,7 @@ router.get('/grn', async (req, res) => {
   res.json(data ?? []);
 });
 
-router.post('/grn', async (req, res) => {
+router.post('/grn', requirePermission('inventory.receive'), async (req, res) => {
   const { branch_id, purchase_order_id, received_date, notes, items = [] } = req.body;
   if (!branch_id)    { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
@@ -426,7 +473,7 @@ router.post('/grn', async (req, res) => {
 
   await applyIngredientStockIn(
     items.map((i: any) => ({ ingredient_id: i.ingredient_id, quantity: Number(i.quantity_received), unit_cost: i.unit_cost })),
-    req.businessId, req.userId, 'restock', `GRN ${grn_number}`,
+    req.businessId, branch_id, req.userId, 'restock', `GRN ${grn_number}`,
   );
 
   if (purchase_order_id) {

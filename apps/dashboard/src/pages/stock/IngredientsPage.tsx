@@ -4,6 +4,7 @@ import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
+import { useBranch } from '../../context/BranchContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ function stockStatus(i: Ingredient): 'ok' | 'low' | 'out' {
 export default function IngredientsPage() {
   const { can } = usePermissions();
   const { business } = useBusiness();
+  const { activeBranchId } = useBranch();
   const currency = business?.currency ?? 'KES';
   const { toast, showToast } = useToast();
   const canManage = can('ingredients.manage');
@@ -85,6 +87,7 @@ export default function IngredientsPage() {
   const [adjustType, setAdjustType]     = useState<'add' | 'remove' | 'set'>('add');
   const [adjustQty, setAdjustQty]       = useState('');
   const [adjustNote, setAdjustNote]     = useState('');
+  const [adjustReorder, setAdjustReorder] = useState('');
   const [adjusting, setAdjusting]       = useState(false);
 
   // Movements drawer
@@ -101,7 +104,7 @@ export default function IngredientsPage() {
       const data = await api.get<Ingredient[]>(`/api/stock/ingredients?${params}`);
       setIngredients(data ?? []);
     } catch { /* silent */ } finally { setLoading(false); }
-  }, [filterStatus]);
+  }, [filterStatus, activeBranchId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -139,7 +142,6 @@ export default function IngredientsPage() {
         unit_cost: form.unit_cost ? Number(form.unit_cost) : null,
         reorder_level: Number(form.reorder_level || 0),
         notes: form.notes.trim() || null,
-        ...(modal === 'add' ? { current_stock: Number(form.current_stock || 0) } : {}),
       };
       if (modal === 'add') {
         await api.post('/api/stock/ingredients', payload);
@@ -163,20 +165,40 @@ export default function IngredientsPage() {
   // ── Stock Adjustment ───────────────────────────────────────────────────────
   const openAdjust = (i: Ingredient) => {
     setAdjustTarget(i); setAdjustType('add'); setAdjustQty(''); setAdjustNote('');
+    setAdjustReorder(String(i.reorder_level ?? 0));
   };
 
   const doAdjust = async () => {
     if (!adjustTarget) return;
+    if (!activeBranchId) { showToast('Select a specific branch (top bar) before adjusting stock', 'warning'); return; }
+
+    const hasQty = adjustQty.trim() !== '';
     const qty = parseFloat(adjustQty);
-    if (!adjustQty || isNaN(qty) || qty < 0) { showToast('Enter a valid quantity', 'warning'); return; }
+    if (hasQty && (isNaN(qty) || qty < 0)) { showToast('Enter a valid quantity', 'warning'); return; }
+
+    const reorderNum = parseFloat(adjustReorder);
+    const reorderChanged =
+      adjustReorder.trim() !== '' && !isNaN(reorderNum) &&
+      reorderNum !== Number(adjustTarget.reorder_level ?? 0);
+
+    if (!hasQty && !reorderChanged) { showToast('Enter a quantity or change the reorder level', 'warning'); return; }
+
     setAdjusting(true);
     try {
-      await api.post(`/api/stock/ingredients/${adjustTarget.id}/adjust`, {
-        type: adjustType, quantity: qty, notes: adjustNote.trim() || undefined,
-      });
+      if (hasQty) {
+        await api.post(`/api/stock/ingredients/${adjustTarget.id}/adjust`, {
+          branch_id: activeBranchId,
+          type: adjustType, quantity: qty, notes: adjustNote.trim() || undefined,
+        });
+      }
+      if (reorderChanged) {
+        await api.patch(`/api/stock/ingredients/${adjustTarget.id}/reorder`, {
+          branch_id: activeBranchId, reorder_level: reorderNum,
+        });
+      }
       await load();
       setAdjustTarget(null);
-    } catch (e: any) { showToast(e.message ?? 'Adjustment failed', 'error'); }
+    } catch (e: any) { showToast(e.message ?? 'Update failed', 'error'); }
     finally { setAdjusting(false); }
   };
 
@@ -448,6 +470,16 @@ export default function IngredientsPage() {
                 <label className="block text-gray-400 text-xs mb-1.5">Reason (optional)</label>
                 <input type="text" placeholder="e.g. Spoilage, Stock count correction…"
                   value={adjustNote} onChange={e => setAdjustNote(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                />
+              </div>
+              <div className="pt-1 border-t border-gray-800">
+                <label className="block text-gray-400 text-xs mb-1.5 mt-3">
+                  Reorder level (this branch)
+                  <span className="text-gray-600"> — alert when at/below</span>
+                </label>
+                <input type="number" min="0" step="0.01" placeholder="0"
+                  value={adjustReorder} onChange={e => setAdjustReorder(e.target.value)}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
                 />
               </div>

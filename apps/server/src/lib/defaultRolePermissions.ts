@@ -10,20 +10,32 @@ import { supabase } from './supabase';
 //
 // Tiers, by role name (case-insensitive):
 //   • admin / owner            → every permission in the catalogue
-//   • manager / supervisor / branch_manager → everything except owner-level
-//                                business settings (owner can grant more later)
+//   • manager / supervisor / branch_manager → everything except the owner-only
+//                                deny-list below (owner can grant more later)
 //   • cashier                  → a POS-floor subset
 //   • anything else            → nothing (a custom role the owner configures)
 //
 // The grant is future-proof: it reads the live permissions catalogue, so any
-// permission added later is automatically included for admin/manager.
+// permission added later is automatically included for admin/manager unless it
+// is on MANAGER_DENY.
 
 const CASHIER_KEYS = new Set([
   'orders.create', 'products.view', 'inventory.view',
   'customers.view', 'customers.manage', 'invoice.create',
 ]);
 
-const MANAGER_DENY = new Set(['settings.manage']);
+// Owner-only permissions. Managers/supervisors do NOT get these by default.
+//   • settings.manage    — business configuration
+//   • inventory.adjust   — manual stock changes (where shrinkage/theft hides;
+//                          managers RECEIVE against a delivery, only the owner
+//                          can silently change a number)
+//   • ingredients.manage — the ingredient catalogue is a business-level
+//                          definition the owner owns
+const MANAGER_DENY = new Set([
+  'settings.manage',
+  'inventory.adjust',
+  'ingredients.manage',
+]);
 
 export async function seedDefaultRolePermissions(
   roles: { id: string; name: string }[],

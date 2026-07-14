@@ -113,21 +113,24 @@ export async function checkLowStock(
  */
 export async function checkLowIngredients(
   businessId: string,
+  branchId: string,
   ingredientIds: string[],
 ): Promise<void> {
   if (!ingredientIds.length) return;
 
   try {
-    const { data: ingredients } = await supabase
-      .from('ingredients')
-      .select('id, name, current_stock, reorder_level')
+    // Per-branch stock + reorder level, joined to the ingredient catalogue name.
+    const { data: rows } = await supabase
+      .from('ingredient_stock_levels')
+      .select('ingredient_id, current_stock, reorder_level, ingredients ( name )')
       .eq('business_id', businessId)
-      .in('id', ingredientIds)
-      .gt('reorder_level', 0); // only check those with a reorder level set
+      .eq('branch_id', branchId)
+      .in('ingredient_id', ingredientIds)
+      .gt('reorder_level', 0); // only those with a reorder level set for this branch
 
-    if (!ingredients?.length) return;
+    if (!rows?.length) return;
 
-    const lowItems = ingredients.filter(i => Number(i.current_stock) <= Number(i.reorder_level));
+    const lowItems = rows.filter((r: any) => Number(r.current_stock) <= Number(r.reorder_level));
     if (!lowItems.length) return;
 
     const { data: business } = await supabase
@@ -136,35 +139,44 @@ export async function checkLowIngredients(
       .eq('id', businessId)
       .single();
 
+    const { data: branch } = await supabase
+      .from('branches').select('name').eq('id', branchId).maybeSingle();
+    const branchName = branch?.name ?? 'branch';
+
     let ownerEmail: string | null = null;
     if (business?.owner_id) {
       const { data: { user } } = await supabase.auth.admin.getUserById(business.owner_id);
       ownerEmail = user?.email ?? null;
     }
 
-    for (const item of lowItems) {
-      // Dedupe: skip if unread alert already exists for this ingredient
+    for (const item of lowItems as any[]) {
+      const name    = item.ingredients?.name ?? 'Unknown ingredient';
+      const current = Number(item.current_stock);
+      const reorder = Number(item.reorder_level);
+
+      // Dedupe per ingredient+branch: skip if an unread alert already exists.
       const { data: existing } = await supabase
         .from('notifications')
         .select('id')
         .eq('business_id', businessId)
         .eq('type', 'low_stock')
-        .ilike('message', `%${item.id}%`)
+        .ilike('message', `%${item.ingredient_id}|${branchId}%`)
         .is('read_at', null)
         .maybeSingle();
 
       if (existing) continue;
 
-      const isOut = Number(item.current_stock) <= 0;
+      const isOut = current <= 0;
       const title = isOut
-        ? `Out of stock: ${item.name}`
-        : `Low ingredient: ${item.name}`;
+        ? `Out of stock: ${name} (${branchName})`
+        : `Low ingredient: ${name} (${branchName})`;
       const message = isOut
-        ? `${item.name} [${item.id}] is out of stock. Reorder level: ${item.reorder_level}.`
-        : `${item.name} [${item.id}] is at ${item.current_stock} (reorder level: ${item.reorder_level}).`;
+        ? `${name} [${item.ingredient_id}|${branchId}] is out of stock at ${branchName}. Reorder level: ${reorder}.`
+        : `${name} [${item.ingredient_id}|${branchId}] is at ${current} at ${branchName} (reorder level: ${reorder}).`;
 
       await supabase.from('notifications').insert({
         business_id: businessId,
+        branch_id:   branchId,
         user_id:     business?.owner_id ?? null,
         type:        'low_stock',
         title,
@@ -175,12 +187,12 @@ export async function checkLowIngredients(
       if (ownerEmail) {
         await sendEmail({
           to:      ownerEmail,
-          subject: `⚠️ ${isOut ? 'Out of stock' : 'Low ingredient'} — ${item.name}`,
+          subject: `⚠️ ${isOut ? 'Out of stock' : 'Low ingredient'} — ${name} (${branchName})`,
           html:    buildLowIngredientEmail({
-            businessName: business?.name ?? 'Your business',
-            ingredientName: item.name,
-            currentStock:  Number(item.current_stock),
-            reorderLevel:  Number(item.reorder_level),
+            businessName:   business?.name ?? 'Your business',
+            ingredientName: `${name} — ${branchName}`,
+            currentStock:   current,
+            reorderLevel:   reorder,
           }),
         }).catch(err => console.error('[lowStockChecker] Ingredient email failed:', err.message));
       }

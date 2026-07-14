@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
@@ -40,6 +41,7 @@ const STATUS_CONFIG = {
 
 export default function InventoryPage() {
   const { business } = useBusiness();
+  const { term } = useTerm();
   const { activeBranchId } = useBranch();
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +99,7 @@ export default function InventoryPage() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Inventory</h1>
+          <h1 className="text-2xl font-bold text-white">{term('inventory')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">{rows.length} products</p>
         </div>
       </div>

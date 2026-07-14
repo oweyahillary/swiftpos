@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { uploadImage } from '../../lib/upload';
@@ -24,6 +25,7 @@ const EMPTY_FORM = {
 
 export default function ProductsPage() {
   const { business } = useBusiness();
+  const { term, lower } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -187,7 +189,7 @@ export default function ProductsPage() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Products<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
+          <h1 className="text-2xl font-bold text-white">{term('products')}<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-400 text-sm mt-0.5">{products.length} product{products.length !== 1 ? 's' : ''}</p>
         </div>
         <button onClick={openNew} className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
@@ -199,7 +201,7 @@ export default function ProductsPage() {
       <div className="flex gap-3 mb-6">
         <input
           type="text"
-          placeholder="Search products…"
+          placeholder={`Search ${lower('products')}…`}
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors w-64"
@@ -328,7 +330,7 @@ export default function ProductsPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-white font-semibold text-lg">{editing ? 'Edit product' : 'New product'}</h2>
+            <h2 className="text-white font-semibold text-lg">{editing ? `Edit ${lower('product')}` : `New ${lower('product')}`}</h2>
 
             {/* Image upload */}
             <div>

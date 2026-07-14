@@ -5,6 +5,7 @@ import { useTheme }    from '../context/ThemeContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
+import { useBranch } from '../context/BranchContext';
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -23,7 +24,7 @@ interface Notification {
   read_at: string | null; created_at: string;
 }
 
-interface NavItem  { to: string; label: string; icon: string; end?: boolean; badgeKey?: string; verticals?: string[]; }
+interface NavItem  { to: string; label: string; icon: string; end?: boolean; badgeKey?: string; verticals?: string[]; hint?: string; }
 interface NavGroup { label: string; icon: string; items: NavItem[]; verticals?: string[]; }
 type NavEntry = NavItem | NavGroup;
 
@@ -93,7 +94,7 @@ const NAV: NavEntry[] = [
   },
 ];
 
-const DEFAULT_OPEN = new Set(['Menu', 'Catalogue', 'Stock', 'Finance', 'Setup']);
+const DEFAULT_OPEN = new Set(['Menu', 'Catalogue', 'Stock', 'Inventory', 'Purchasing', 'Finance', 'Setup']);
 
 const TYPE_ICON: Record<string, string> = {
   low_stock: '⚠️', daily_summary: '📊', default: '🔔',
@@ -139,7 +140,7 @@ function NavGroupItem({ group, defaultOpen }: { group: NavGroup; defaultOpen: bo
       {open && (
         <div className="mt-0.5 ml-3 pl-3 border-l border-gray-800 space-y-0.5">
           {group.items.map(item => (
-            <NavLink key={item.to} to={item.to} end={item.end ?? item.to === '/dashboard'}
+            <NavLink key={item.to} to={item.to} title={item.hint} end={item.end ?? item.to === '/dashboard'}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                   isActive ? 'bg-green-500/10 text-green-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
@@ -158,6 +159,7 @@ function NavGroupItem({ group, defaultOpen }: { group: NavGroup; defaultOpen: bo
 export default function DashboardLayout() {
   const { signOut } = useAuth();
   const { business } = useBusiness();
+  const { activeBranchId } = useBranch();
 
   // Build Setup group dynamically — inject business-type link
   const setupGroup: NavGroup = {
@@ -184,12 +186,56 @@ export default function DashboardLayout() {
   const allowed = (v?: string[]) => !v || !known || v.includes(vertical);
   const isFood = !known || FOOD_VERTICALS.includes(vertical);
 
+  // Restaurant-friendly item relabels (food verticals only). Retail keeps the
+  // generic terms (Products, Categories) that a minimart owner expects.
+  const foodItemLabel: Record<string, string> = {
+    '/dashboard/products':   'Menu Items',
+    '/dashboard/categories': 'Menu Sections',
+    '/dashboard/promotions': 'Specials',
+    '/dashboard/combos':     'Set Meals',
+    '/dashboard/inventory':  'Bar & Packaged Stock',
+  };
+  // Tooltips to disambiguate the easily-confused items (users can hover; a full
+  // manual can expand on these later).
+  const hintFor = (to: string): string | undefined => {
+    switch (to) {
+      case '/dashboard/products':          return 'The items you sell';
+      case '/dashboard/categories':        return isFood ? 'Groups menu items into sections' : 'Groups products into categories';
+      case '/dashboard/stock/ingredients': return 'Raw materials that deplete automatically when a dish is sold';
+      case '/dashboard/inventory':         return isFood
+        ? 'Countable packaged goods sold as-is (bottled drinks, snacks)'
+        : 'Stock on hand for each product';
+      default: return undefined;
+    }
+  };
+  const relabel = (it: NavItem): NavItem => {
+    const label = isFood && foodItemLabel[it.to] ? foodItemLabel[it.to] : it.label;
+    const hint  = hintFor(it.to);
+    return hint ? { ...it, label, hint } : { ...it, label };
+  };
+  // For food verticals the product-stock page moves out of the top level and into
+  // the Inventory group as packaged goods (bottled drinks etc.), so a restaurant
+  // has ONE inventory section: ingredients + packaged goods.
+  const packagedStockItem: NavItem = {
+    to: '/dashboard/inventory', label: 'Bar & Packaged Stock', icon: '🥤', badgeKey: 'inventory',
+  };
+
   const nav: NavEntry[] = NAV
     .map(e => (isGroup(e) && e.label === 'Settings' ? setupGroup : e))
+    // Food: drop the top-level Inventory tab (folded into the Inventory group below).
+    .filter(e => !(isFood && !isGroup(e) && e.to === '/dashboard/inventory'))
     .map(e => {
-      if (!isGroup(e)) return e;
-      const label = e.label === 'Menu' && !isFood ? 'Catalogue' : e.label;
-      return { ...e, label, items: e.items.filter(it => allowed(it.verticals)) };
+      if (!isGroup(e)) return allowed(e.verticals) ? relabel(e) : e;
+      let label = e.label;
+      if (e.label === 'Menu')  label = isFood ? 'Menu' : 'Catalogue';
+      if (e.label === 'Stock') label = isFood ? 'Inventory' : 'Purchasing';
+      let items = e.items.filter(it => allowed(it.verticals)).map(relabel);
+      if (isFood && e.label === 'Stock') {
+        const idx = items.findIndex(i => i.to === '/dashboard/stock/ingredients');
+        const at  = idx >= 0 ? idx + 1 : 0;
+        items = [...items.slice(0, at), relabel(packagedStockItem), ...items.slice(at)];
+      }
+      return { ...e, label, items };
     })
     .filter(e => (isGroup(e) ? allowed(e.verticals) && e.items.length > 0 : allowed(e.verticals)));
 
@@ -329,7 +375,7 @@ export default function DashboardLayout() {
             isGroup(entry) ? (
               <NavGroupItem key={entry.label} group={entry} defaultOpen={DEFAULT_OPEN.has(entry.label)} />
             ) : (
-              <NavLink key={entry.to} to={entry.to} end={entry.end ?? entry.to === '/dashboard'}
+              <NavLink key={entry.to} to={entry.to} title={entry.hint} end={entry.end ?? entry.to === '/dashboard'}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                     isActive ? 'bg-green-500/10 text-green-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
@@ -353,7 +399,7 @@ export default function DashboardLayout() {
       </aside>
 
       <main className="flex-1 overflow-y-auto flex flex-col">
-        <Outlet />
+        <Outlet key={activeBranchId ?? 'all'} />
       </main>
     </div>
   );

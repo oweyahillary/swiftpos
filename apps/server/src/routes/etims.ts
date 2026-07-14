@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission, assertBranchAccess } from '../middleware/rbac';
+import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { registerBranch } from '../lib/etims';
 import { processPending } from '../lib/etims/queue';
@@ -12,7 +12,7 @@ router.use(requireAuth);
 
 // GET /api/etims/config?branch_id=  — current eTIMS config + enabled flag
 router.get('/config', requirePermission('settings.manage'), async (req, res) => {
-  const branchId = (req.query.branch_id as string) || req.branchId;
+  const branchId = branchScope(req) || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
 
@@ -101,7 +101,7 @@ router.get('/order/:orderId', async (req, res) => {
 // GET /api/etims/status?branch_id=  — fiscalisation health for a branch
 // Counts by status so the dashboard can surface pending/failed invoices.
 router.get('/status', async (req, res) => {
-  const branchId = (req.query.branch_id as string) || req.branchId;
+  const branchId = branchScope(req) || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
 
@@ -121,7 +121,7 @@ router.get('/status', async (req, res) => {
 
 // GET /api/etims/invoices?branch_id=&status=  — list fiscalisation records
 router.get('/invoices', requirePermission('reports.view'), async (req, res) => {
-  const branchId = (req.query.branch_id as string) || req.branchId;
+  const branchId = branchScope(req) || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'Forbidden' }); return; }
 

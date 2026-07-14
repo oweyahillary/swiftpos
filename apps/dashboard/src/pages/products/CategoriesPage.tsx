@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import type { Category } from '../../types';
@@ -10,6 +11,7 @@ const EMPTY = { name: '', color: COLORS[0] };
 
 export default function CategoriesPage() {
   const { business } = useBusiness();
+  const { term, lower } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +95,7 @@ export default function CategoriesPage() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Categories</h1>
+          <h1 className="text-2xl font-bold text-white">{term('categories')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">Organise your products into categories · <span className="text-blue-400/70">shared across all branches</span></p>
         </div>
         <button onClick={openNew} className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
@@ -145,7 +147,7 @@ export default function CategoriesPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm space-y-4">
-            <h2 className="text-white font-semibold text-lg">{editing ? 'Edit category' : 'New category'}</h2>
+            <h2 className="text-white font-semibold text-lg">{editing ? `Edit ${lower('category')}` : `New ${lower('category')}`}</h2>
 
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Name</label>

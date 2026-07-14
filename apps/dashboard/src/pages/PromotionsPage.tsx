@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTerm } from '../lib/terminology';
 import { api } from '../lib/api';
 import ConfirmModal, { useConfirm } from '../components/ConfirmModal';
 
@@ -78,6 +79,7 @@ function fmtDays(days: number[]): string {
 }
 
 export default function PromotionsPage() {
+  const { term } = useTerm();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [promos, setPromos]     = useState<Promotion[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -202,7 +204,7 @@ export default function PromotionsPage() {
       {/* Header */}
       <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex-shrink-0 flex items-center justify-between">
         <div>
-          <h1 className="text-white text-2xl font-bold">Promotions</h1>
+          <h1 className="text-white text-2xl font-bold">{term('promotions')}</h1>
           <p className="text-gray-500 text-sm mt-1">
             Happy hour, BOGO, and quantity deals — applied automatically at the POS
           </p>

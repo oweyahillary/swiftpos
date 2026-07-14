@@ -45,8 +45,10 @@ export function requirePermission(permission: string) {
 
 export function branchScope(req: Request): string | null {
   if (req.isOwner) {
-    // Owner may optionally filter by a specific branch
-    return (req.query.branch_id as string) || null;
+    // Owner's selected branch arrives as the X-Branch-Id header (set globally by
+    // the dashboard api client); a query param still works as a fallback.
+    // Absent both = owner is viewing "All Branches" → no filter.
+    return (req.headers['x-branch-id'] as string) || (req.query.branch_id as string) || null;
   }
   // Staff are always locked to their JWT branch
   return req.branchId;

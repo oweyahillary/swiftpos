@@ -13,3 +13,7 @@ apps/desktop/release/
 .turbo/
 *.tsbuildinfo
 Eugene
+
+pos.zip
+apps/server/dist/
+migrations/*.xlsx

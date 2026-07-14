@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { branchScope } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -234,7 +235,8 @@ router.post('/:id/float', async (req, res) => {
 // Enriches with cashier name (fetched separately to avoid Supabase FK join issues).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
-  const { branch_id, status, from, to, limit = '50' } = req.query as Record<string, string>;
+  const { status, from, to, limit = '50' } = req.query as Record<string, string>;
+  const branch_id = branchScope(req);
 
   let query = supabase
     .from('shifts')

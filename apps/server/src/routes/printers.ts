@@ -10,7 +10,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { assertBranchAccess } from '../middleware/rbac';
+import { assertBranchAccess, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -18,10 +18,9 @@ router.use(requireAuth);
 
 // GET /api/printers?branch_id=
 router.get('/', async (req, res) => {
-  const { branch_id } = req.query as Record<string, string>;
-
-  // Non-owners are always locked to their JWT branch — ignore any branch_id param
-  const effectiveBranchId = req.isOwner ? (branch_id || null) : req.branchId;
+  // Branch follows the global selector (X-Branch-Id header); staff are
+  // locked to their JWT branch by branchScope.
+  const effectiveBranchId = branchScope(req);
 
   let query = supabase
     .from('branch_printers')

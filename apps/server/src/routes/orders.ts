@@ -709,43 +709,36 @@ router.post('/', async (req, res) => {
           }
         }
 
-        // Apply deductions
+        // Apply deductions per-branch via the atomic RPC (concurrency-safe:
+        // the read+write happen in one statement, so simultaneous sales of the
+        // same item can't clobber each other's stock).
         const ingredientIds = Object.keys(deductions);
         if (ingredientIds.length > 0) {
-          const { data: currentStocks } = await supabase
-            .from('ingredients')
-            .select('id, current_stock')
-            .in('id', ingredientIds)
-            .eq('business_id', req.businessId);
-
-          const stockMap: Record<string, number> = {};
-          (currentStocks ?? [] as { id: string; current_stock: string }[]).forEach(i => { stockMap[i.id] = Number(i.current_stock); });
-
           for (const [ingredientId, deductQty] of Object.entries(deductions)) {
-            const currentQty = stockMap[ingredientId] ?? 0;
-            const newQty = currentQty - deductQty; // allow negative — don't block sale
-
-            await supabase
-              .from('ingredients')
-              .update({ current_stock: newQty, updated_at: new Date().toISOString() })
-              .eq('id', ingredientId)
-              .eq('business_id', req.businessId);
+            const { data: newQty, error: decErr } = await supabase.rpc('adjust_ingredient_stock', {
+              p_ingredient_id: ingredientId,
+              p_branch_id:     branch_id,
+              p_business_id:   req.businessId,
+              p_delta:         -deductQty, // negative = deduct; allowed to go negative (never block a sale)
+            });
+            if (decErr) { console.error('Ingredient deduction error (non-fatal):', decErr.message); continue; }
 
             await supabase
               .from('ingredient_stock_movements')
               .insert({
-                business_id:    req.businessId,
-                ingredient_id:  ingredientId,
-                movement_type:  'sale',
+                business_id:     req.businessId,
+                ingredient_id:   ingredientId,
+                branch_id,
+                movement_type:   'sale',
                 quantity_change: -deductQty,
                 quantity_after:  newQty,
-                notes:          `Order ${order_number}`,
-                created_by:     req.userId,
+                notes:           `Order ${order_number}`,
+                created_by:      req.userId,
               });
           }
 
           // Fire low-ingredient alerts (non-blocking)
-          checkLowIngredients(req.businessId, ingredientIds).catch(() => {});
+          checkLowIngredients(req.businessId, branch_id, ingredientIds).catch(() => {});
         }
       }
     } catch (recipeErr) {

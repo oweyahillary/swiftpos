@@ -16,6 +16,7 @@
  */
 
 import { Router } from 'express';
+import { branchScope } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
@@ -27,7 +28,8 @@ router.use(requireAuth);
 // ── Reservations ──────────────────────────────────────────────────────────────
 
 router.get('/', async (req, res) => {
-  const { date, branch_id } = req.query;
+  const { date } = req.query;
+  const branch_id = branchScope(req);
   const today = new Date().toISOString().slice(0, 10);
 
   let query = supabase
@@ -106,7 +108,7 @@ router.delete('/:id', async (req, res) => {
 // ── Waitlist ──────────────────────────────────────────────────────────────────
 
 router.get('/waitlist', async (req, res) => {
-  const { branch_id } = req.query;
+  const branch_id = branchScope(req);
 
   let query = supabase
     .from('waitlist')

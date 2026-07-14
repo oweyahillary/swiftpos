@@ -145,6 +145,17 @@ async function getAuthHeader(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// ── Active-branch header ──────────────────────────────────────────────
+// Every request carries the branch the user currently has selected (persisted
+// by BranchContext under the same key). The server scopes branch-aware queries
+// to it via branchScope(). 'all' (owner viewing all branches) sends no header,
+// so the server returns business-wide data. Staff are branch-locked server-side
+// regardless, so this header is only meaningful for owners.
+function activeBranchHeader(): Record<string, string> {
+  const b = localStorage.getItem(TOKEN_KEYS.activeBranch);
+  return b && b !== 'all' ? { 'X-Branch-Id': b } : {};
+}
+
 // ── Core request ──────────────────────────────────────────────────────────────
 
 async function request<T>(
@@ -157,7 +168,7 @@ async function request<T>(
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', ...authHeader },
+    headers: { 'Content-Type': 'application/json', ...authHeader, ...activeBranchHeader() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
