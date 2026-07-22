@@ -7,6 +7,27 @@ import { supabase } from '../lib/supabase';
 const router = safeRouter();
 router.use(requireAuth);
 
+// Normalise a variant option's stock-impact fields (Track C). An option carries
+// at most ONE stock target: a scale factor, a linked product, or a linked
+// ingredient. Empties coerce to safe defaults; product wins if both links given.
+function stockFields(o: any): {
+  stock_factor: number;
+  linked_product_id: string | null;
+  linked_ingredient_id: string | null;
+  deduct_qty: number;
+} {
+  const factor = Number(o?.stock_factor);
+  const dq     = Number(o?.deduct_qty);
+  const prod   = o?.linked_product_id || null;
+  const ing    = prod ? null : (o?.linked_ingredient_id || null); // product XOR ingredient
+  return {
+    stock_factor:         Number.isFinite(factor) && factor > 0 ? factor : 1,
+    linked_product_id:    prod,
+    linked_ingredient_id: ing,
+    deduct_qty:           Number.isFinite(dq) && dq > 0 ? dq : 1,
+  };
+}
+
 // ── Variant Groups ──────────────────────────────────────────
 
 // GET /api/variants/groups?product_id=xxx
@@ -66,6 +87,7 @@ router.post('/groups', async (req, res) => {
         name: o.name,
         price_adjustment: o.price_adjustment ?? 0,
         sort_order: i,
+        ...stockFields(o),
       })));
     if (oErr) { sendError(res, oErr); return; }
   }
@@ -188,7 +210,7 @@ router.post('/options', async (req, res) => {
 
   const { data, error } = await supabase
     .from('variant_options')
-    .insert({ variant_group_id, name, price_adjustment, sort_order: 0 })
+    .insert({ variant_group_id, name, price_adjustment, sort_order: 0, ...stockFields(req.body) })
     .select()
     .single();
 
@@ -205,9 +227,14 @@ router.patch('/options/:id', async (req, res) => {
     res.status(404).json({ error: 'Variant option not found' }); return;
   }
 
+  // Only touch stock fields when the caller sends them, so a name/price edit
+  // can't accidentally reset a factor or clear a link.
+  const hasStockIntent = ['stock_factor', 'linked_product_id', 'linked_ingredient_id', 'deduct_qty']
+    .some(k => k in (req.body ?? {}));
+
   const { data, error } = await supabase
     .from('variant_options')
-    .update({ name, price_adjustment })
+    .update({ name, price_adjustment, ...(hasStockIntent ? stockFields(req.body) : {}) })
     .eq('id', id)
     .select()
     .single();
