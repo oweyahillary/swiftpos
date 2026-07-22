@@ -146,7 +146,7 @@ async function applyProductStockOut(
 // =============================================================================
 
 router.get('/ingredients', async (req, res) => {
-  const { status, category } = req.query as Record<string, string>;
+  const { status, category, packaging } = req.query as Record<string, string>;
   const scopedBranch = branchScope(req); // staff -> their branch; owner -> ?branch_id or null (all)
 
   let query = supabase.from('ingredients')
@@ -156,6 +156,8 @@ router.get('/ingredients', async (req, res) => {
     .order('name',     { ascending: true });
   if (status)   query = query.eq('status', status);
   if (category) query = query.eq('category', category);
+  if (packaging === 'true')  query = query.eq('is_packaging', true);
+  if (packaging === 'false') query = query.eq('is_packaging', false);
   const { data, error } = await query;
   if (error) { sendError(res, error); return; }
 
@@ -180,7 +182,7 @@ router.get('/ingredients', async (req, res) => {
 });
 
 router.post('/ingredients', requirePermission('ingredients.manage'), async (req, res) => {
-  const { name, category, unit, unit_cost, notes } = req.body;
+  const { name, category, unit, unit_cost, notes, is_packaging } = req.body;
   if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
   if (!unit?.trim()) { res.status(400).json({ error: 'unit is required' }); return; }
 
@@ -192,6 +194,7 @@ router.post('/ingredients', requirePermission('ingredients.manage'), async (req,
     category: category?.trim() || null, unit: unit.trim(),
     unit_cost: unit_cost != null ? Number(unit_cost) : null,
     notes: notes?.trim() || null,
+    is_packaging: !!is_packaging,
   }).select().single();
 
   if (error) { sendError(res, error); return; }
@@ -199,7 +202,7 @@ router.post('/ingredients', requirePermission('ingredients.manage'), async (req,
 });
 
 router.patch('/ingredients/:id', async (req, res) => {
-  const { name, category, unit, unit_cost, reorder_level, notes, status } = req.body;
+  const { name, category, unit, unit_cost, reorder_level, notes, status, is_packaging } = req.body;
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (name !== undefined)          updates.name          = name?.trim();
   if (category !== undefined)      updates.category      = category?.trim() || null;
@@ -208,6 +211,7 @@ router.patch('/ingredients/:id', async (req, res) => {
   if (reorder_level !== undefined) updates.reorder_level = Number(reorder_level);
   if (notes !== undefined)         updates.notes         = notes?.trim() || null;
   if (status !== undefined)        updates.status        = status;
+  if (is_packaging !== undefined)  updates.is_packaging  = !!is_packaging;
 
   const { data, error } = await supabase.from('ingredients').update(updates)
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
