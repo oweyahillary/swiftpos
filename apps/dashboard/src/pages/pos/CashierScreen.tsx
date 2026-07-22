@@ -168,6 +168,8 @@ export default function CashierScreen() {
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     loading,
+    error:         posDataError,
+    reload:        reloadPOSData,
   } = usePOSData();
 
   // ── Business mode (from usePOSData) ──────────────────────────────────────
@@ -829,6 +831,23 @@ export default function CashierScreen() {
   }
 
   if (loading) return <POSLoadingSkeleton />;
+
+  // Init failed (e.g. a licence 403). Show the real error instead of silently
+  // dropping into an empty retail-mode screen.
+  if (posDataError) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-slate-900 p-6 text-center text-slate-200">
+        <div className="text-lg font-semibold">Couldn’t load the POS</div>
+        <div className="max-w-md text-sm text-slate-400">{posDataError}</div>
+        <button
+          onClick={() => reloadPOSData()}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={s.root} data-pos-theme={posTheme}>

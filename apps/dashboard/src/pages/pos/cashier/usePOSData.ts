@@ -37,6 +37,7 @@ export interface POSData {
   loyaltyEnabled:    boolean;
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
+  error:             string | null;
   reload:            () => void;
 }
 
@@ -54,11 +55,13 @@ export function usePOSData(): POSData {
   const [loyaltyEnabled,    setLoyaltyEnabled]    = useState(false);
   const [orderMode,         setOrderMode]         = useState<'pay_first' | 'order_first'>('pay_first');
   const [loading,           setLoading]           = useState(true);
+  const [error,             setError]             = useState<string | null>(null);
   const [tick,              setTick]              = useState(0);
 
   const load = useCallback(async () => {
     if (!session) return;
     setLoading(true);
+    setError(null);
 
     try {
       // ── Core POS init ──────────────────────────────────────────────────────
@@ -116,8 +119,13 @@ export function usePOSData(): POSData {
       // Connect to print server (non-blocking)
       connectQZ().catch(() => {});
 
-    } catch {
-      // Silent — session guard at the top prevents auth errors here
+    } catch (err: any) {
+      // Do NOT swallow this. A failed /api/pos/init (e.g. a licence 403) used to
+      // be silently ignored, leaving businessMode at its 'retail' default — which
+      // made a restaurant look like a retail shop. Surface the real error instead.
+      const msg = err?.message || 'Failed to load POS data. Check your connection and try again.';
+      console.error('[usePOSData] init failed:', msg);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -129,7 +137,7 @@ export function usePOSData(): POSData {
     products, categories, variantsByProduct,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, orderMode,
-    loading,
+    loading, error,
     reload: () => setTick(t => t + 1),
   };
 }

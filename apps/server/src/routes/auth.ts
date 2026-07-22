@@ -745,7 +745,9 @@ router.post('/pos-login', async (req, res) => {
       res.status(403).json({ error: 'You are not assigned to this branch' });
       return;
     }
-    if (!allowed.desktop_licensed) {
+    // Desktop-licence gate applies to desktop tills only. A web POS login is
+    // gated by web access, not by the branch's desktop licence.
+    if (callerSurface !== 'web' && !allowed.desktop_licensed) {
       res.status(403).json({
         error: `${allowed.name} does not have a desktop licence. Contact SwiftPOS to activate.`,
         code:  'BRANCH_NOT_LICENSED',
@@ -869,7 +871,10 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     return;
   }
 
-  if (!(branch as any).desktop_licensed) {
+  // verify-pin runs behind requireAuth; the owner opening the web POS carries
+  // surface='web'. The desktop-licence gate is for desktop tills only — web POS
+  // access is already granted by web access at owner login.
+  if (req.surface === 'desktop' && !(branch as any).desktop_licensed) {
     res.status(403).json({
       error: `This branch (${(branch as any).name}) does not have a desktop licence. Please contact SwiftPOS to activate.`,
       code:  'BRANCH_NOT_LICENSED',

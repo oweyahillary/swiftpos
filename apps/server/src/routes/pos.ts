@@ -59,7 +59,10 @@ router.get('/init', async (req, res) => {
   // The branch resolved above must have a paid desktop licence.
   // If it doesn't, the desktop app can't sync — blocks the POS at the data layer.
   // (PIN entry is also blocked in verify-pin, so this is defence-in-depth.)
-  if (branch && !branch.desktop_licensed) {
+  // Desktop-licence gate applies to the DESKTOP surface only. The web POS is
+  // gated by web access at login (businesses.web_access_expires_at), NOT by a
+  // per-branch desktop licence — so web tokens must not be blocked here.
+  if (req.surface === 'desktop' && branch && !branch.desktop_licensed) {
     res.status(403).json({
       error: 'This branch does not have a desktop licence. Please contact SwiftPOS to activate.',
       code:  'BRANCH_NOT_LICENSED',
