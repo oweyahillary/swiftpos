@@ -280,7 +280,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
-  const [{ data: shift, error: sErr }, { data: floatTxns }, { data: orders }] = await Promise.all([
+  const [{ data: shift, error: sErr }, { data: floatTxns }, { data: orders, error: oErr }] = await Promise.all([
     supabase
       .from('shifts')
       .select('*')
@@ -294,12 +294,17 @@ router.get('/:id', async (req, res) => {
       .order('created_at'),
     supabase
       .from('orders')
-      .select('id, total, payment_method, created_at')
+      .select('id, total, created_at')
       .eq('shift_id', id)
       .eq('status', 'completed'),
   ]);
 
   if (sErr || !shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+
+  // Previously this query selected orders.payment_method, which is not a column.
+  // The error was not destructured, so a failed query left `orders` null and the
+  // Z-report showed zero revenue / zero orders instead of failing loudly.
+  if (oErr) console.error('[shifts] order summary failed:', oErr.message);
 
   // Cashier name
   const { data: cashier } = await supabase

@@ -70,7 +70,7 @@ router.get('/sales', async (req, res) => {
     .from('orders')
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount,
-      discount_amount, total, created_at, branch_id, payment_method,
+      discount_amount, total, created_at, branch_id,
       branches ( name ),
       payments ( method, amount, status )
     `)
@@ -103,12 +103,17 @@ router.get('/sales', async (req, res) => {
       }
     });
     // Completed orders with no (or short) payments rows would make the method
-    // breakdown fall short of gross. Attribute the remainder to the order's own
-    // payment_method (or 'unaccounted') so payment methods reconcile to gross sales.
+    // breakdown fall short of gross. Surface the difference as 'unaccounted' so
+    // payment methods reconcile to gross sales.
+    //
+    // `orders` has NO payment_method column — it lives on `invoices` (billing),
+    // and no migration ever added it here. BUGFIXES.md #8 offered two remedies:
+    // fall back to the order's own payment_method, or add an explicit
+    // "Unaccounted" row. The first is impossible against this schema; selecting
+    // the column 500'd every one of these reports. This is the second.
     const remainder = Number(order.total) - paid;
     if (remainder > 0.005) {
-      const m = (order as { payment_method?: string }).payment_method || 'unaccounted';
-      methodTotals[m] = (methodTotals[m] ?? 0) + remainder;
+      methodTotals.unaccounted = (methodTotals.unaccounted ?? 0) + remainder;
     }
   });
 
@@ -318,7 +323,7 @@ router.get('/eod', async (req, res) => {
     .select(`
       id, order_number, order_type, table_number, status,
       subtotal, vat_amount, discount_amount, total, created_at,
-      cashier_id, payment_method,
+      cashier_id,
       branch_id, branches ( name ),
       payments ( method, amount, status )
     `)
@@ -353,8 +358,8 @@ router.get('/eod', async (req, res) => {
     });
     const remainder = Number(order.total) - paid;
     if (remainder > 0.005) {
-      const m = (order as { payment_method?: string }).payment_method || 'unaccounted';
-      methodTotals[m] = (methodTotals[m] ?? 0) + remainder;
+      // See the note in /sales — orders has no payment_method column.
+      methodTotals.unaccounted = (methodTotals.unaccounted ?? 0) + remainder;
     }
   });
 
@@ -544,11 +549,16 @@ router.get('/shifts', async (req, res) => {
 
   // ── Enrich with order totals per shift ────────────────────────────────────
   const shiftIds = shifts.map(s => s.id);
-  const { data: orders } = await supabase
+  // NB: payment_method was selected here but never read (only shift_id/total are
+  // used below). It is not a column on `orders`, so this query failed — and
+  // because the error is not destructured, `orders` came back null and every
+  // shift silently reported zero revenue rather than erroring.
+  const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('shift_id, total, payment_method')
+    .select('shift_id, total')
     .in('shift_id', shiftIds)
     .eq('status', 'completed');
+  if (ordersErr) console.error('[reports/shifts] order totals failed:', ordersErr.message);
 
   const orderMap: Record<string, { count: number; revenue: number }> = {};
   (orders ?? []).forEach(o => {
@@ -623,7 +633,7 @@ router.get('/master', async (req, res) => {
     .select(`
       id, order_number, order_type, aggregator_name, status,
       subtotal, vat_amount, discount_amount, total,
-      created_at, branch_id, cashier_id, payment_method,
+      created_at, branch_id, cashier_id,
       branches ( name ),
       payments ( method, amount, status )
     `)
@@ -678,12 +688,12 @@ router.get('/master', async (req, res) => {
         paid += Number(p.amount);
       }
     }
-    // Attribute any un-recorded remainder to the order's own payment_method so the
-    // payment split reconciles to gross sales (see QA #8).
+    // Surface any un-recorded remainder as 'unaccounted' so the payment split
+    // reconciles to gross sales (see QA #8, and the note in /sales — `orders`
+    // has no payment_method column).
     const remainder = Number(o.total) - paid;
     if (remainder > 0.005) {
-      const m = (o as { payment_method?: string }).payment_method || 'unaccounted';
-      payments[m] = (payments[m] ?? 0) + remainder;
+      payments.unaccounted = (payments.unaccounted ?? 0) + remainder;
     }
   }
 
