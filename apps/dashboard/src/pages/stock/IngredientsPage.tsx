@@ -18,6 +18,7 @@ interface Ingredient {
   reorder_level: number;
   status: 'active' | 'inactive';
   notes: string | null;
+  is_packaging?: boolean;
   updated_at: string;
 }
 
@@ -39,6 +40,7 @@ interface IngredientForm {
   current_stock: string;
   reorder_level: string;
   notes: string;
+  is_packaging: boolean;
 }
 
 const UNITS = ['kg', 'g', 'litres', 'ml', 'pieces', 'bags', 'crates', 'bottles', 'loaves', 'bunches', 'trays', 'packets'];
@@ -46,7 +48,7 @@ const CATEGORIES = ['Dry Goods', 'Produce', 'Meat & Poultry', 'Dairy & Eggs', 'B
 
 const EMPTY_FORM: IngredientForm = {
   name: '', category: '', unit: 'kg',
-  unit_cost: '', current_stock: '0', reorder_level: '0', notes: '',
+  unit_cost: '', current_stock: '0', reorder_level: '0', notes: '', is_packaging: false,
 };
 
 function fmt(n: number, currency: string) {
@@ -125,6 +127,7 @@ export default function IngredientsPage() {
       unit: i.unit, unit_cost: i.unit_cost != null ? String(i.unit_cost) : '',
       current_stock: String(i.current_stock), reorder_level: String(i.reorder_level),
       notes: i.notes ?? '',
+      is_packaging: i.is_packaging ?? false,
     });
     setFormError('');
     setModal(i);
@@ -142,6 +145,7 @@ export default function IngredientsPage() {
         unit_cost: form.unit_cost ? Number(form.unit_cost) : null,
         reorder_level: Number(form.reorder_level || 0),
         notes: form.notes.trim() || null,
+        is_packaging: form.is_packaging,
       };
       if (modal === 'add') {
         await api.post('/api/stock/ingredients', payload);
@@ -296,7 +300,12 @@ export default function IngredientsPage() {
                 return (
                   <tr key={i.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
                     <td className="px-4 py-3">
-                      <p className="text-white font-medium">{i.name}</p>
+                      <p className="text-white font-medium">
+                        {i.name}
+                        {i.is_packaging && (
+                          <span className="ml-2 text-xs text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded align-middle">Packaging</span>
+                        )}
+                      </p>
                       {i.notes && <p className="text-gray-600 text-xs truncate max-w-xs">{i.notes}</p>}
                     </td>
                     <td className="px-4 py-3">
@@ -411,6 +420,22 @@ export default function IngredientsPage() {
                     />
                   </div>
                 )}
+
+                {/* Packaging flag */}
+                <div className="col-span-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.is_packaging}
+                      onChange={e => setForm(f => ({ ...f, is_packaging: e.target.checked }))}
+                      className="accent-green-500"
+                    />
+                    <span className="text-sm text-gray-300">This is a packaging item (box, basket, bag…)</span>
+                  </label>
+                  <p className="text-gray-600 text-xs mt-1 ml-6">
+                    Packaging items are consumables you attach to products for takeaway. They're tracked like ingredients but shown separately.
+                  </p>
+                </div>
 
                 {/* Notes */}
                 <div className="col-span-2">

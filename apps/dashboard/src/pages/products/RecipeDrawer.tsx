@@ -25,6 +25,7 @@ interface Ingredient {
   current_stock: number;
   category: string | null;
   unit_cost: number | null;
+  is_packaging?: boolean;
 }
 
 interface RecipeLine {
@@ -63,16 +64,27 @@ export default function RecipeDrawer({ product, onClose }: Props) {
   // Ingredient search per line
   const [searches, setSearches] = useState<string[]>([]);
 
+  // ── Takeaway packaging (Track C) ───────────────────────────
+  const [packagingItems, setPackagingItems] = useState<Ingredient[]>([]);
+  const [pkgLines, setPkgLines]   = useState<{ ingredient_id: string; quantity: string }[]>([]);
+  const [pkgSaving, setPkgSaving] = useState(false);
+  const [pkgSaved, setPkgSaved]   = useState(false);
+  const [pkgError, setPkgError]   = useState('');
+
   // ── Load existing recipe + ingredient list ─────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ingData, recipeData] = await Promise.all([
+      const [ingData, recipeData, pkgItems, pkgData] = await Promise.all([
         api.get<Ingredient[]>('/api/stock/ingredients?status=active&fields=unit_cost'),
         api.get<SavedRecipeLine[]>(`/api/recipes/${product.id}`),
+        api.get<Ingredient[]>('/api/stock/ingredients?status=active&packaging=true'),
+        api.get<{ ingredient_id: string; quantity: number }[]>(`/api/recipes/${product.id}/packaging`),
       ]);
 
       setIngredients(ingData ?? []);
+      setPackagingItems(pkgItems ?? []);
+      setPkgLines((pkgData ?? []).map(p => ({ ingredient_id: p.ingredient_id, quantity: String(p.quantity) })));
 
       if (recipeData && recipeData.length > 0) {
         const loaded: RecipeLine[] = recipeData.map(r => ({
@@ -169,6 +181,34 @@ export default function RecipeDrawer({ product, onClose }: Props) {
     });
   };
 
+  // ── Takeaway packaging management ──────────────────────────
+  const pkgName = (id: string) => packagingItems.find(p => p.id === id)?.name ?? '';
+  const pkgUnit = (id: string) => packagingItems.find(p => p.id === id)?.unit ?? '';
+
+  const addPkgLine = () => setPkgLines(p => [...p, { ingredient_id: '', quantity: '1' }]);
+  const removePkgLine = (idx: number) => setPkgLines(p => p.filter((_, i) => i !== idx));
+  const setPkgLine = (idx: number, patch: Partial<{ ingredient_id: string; quantity: string }>) =>
+    setPkgLines(p => p.map((l, i) => i === idx ? { ...l, ...patch } : l));
+
+  const savePackaging = async () => {
+    const valid = pkgLines.filter(l => l.ingredient_id && Number(l.quantity) > 0);
+    // Guard against picking the same packaging item twice.
+    const ids = valid.map(l => l.ingredient_id);
+    if (new Set(ids).size !== ids.length) { setPkgError('Each packaging item can only be added once.'); return; }
+    setPkgSaving(true); setPkgError('');
+    try {
+      await api.post(`/api/recipes/${product.id}/packaging`, {
+        lines: valid.map(l => ({ ingredient_id: l.ingredient_id, quantity: Number(l.quantity) })),
+      });
+      setPkgSaved(true);
+      setTimeout(() => setPkgSaved(false), 2000);
+    } catch (e: any) {
+      setPkgError(e.message ?? 'Save failed');
+    } finally {
+      setPkgSaving(false);
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
   const hasRecipe = lines.some(l => l.ingredient_id);
   const usedIngredientIds = new Set(lines.map(l => l.ingredient_id).filter(Boolean));
@@ -220,6 +260,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
               {lines.map((line, idx) => {
                 const search  = searches[idx] ?? '';
                 const options = ingredients.filter(ing => {
+                  if (ing.is_packaging) return false; // packaging is handled in its own section
                   if (usedIngredientIds.has(ing.id) && ing.id !== line.ingredient_id) return false;
                   if (!search) return true;
                   return ing.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -372,6 +413,74 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                   </p>
                 </div>
               )}
+
+              {/* ── Takeaway packaging ── */}
+              <div className="mt-6 pt-5 border-t border-gray-800">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">📦</span>
+                  <h3 className="text-white font-semibold text-sm">Takeaway packaging</h3>
+                </div>
+                <p className="text-gray-600 text-xs mb-3">
+                  Deducted from stock when <span className="text-gray-400">{product.name}</span> is sold as <span className="text-gray-400">takeaway</span> (never dine-in). Flag items as packaging in Stock → Ingredients first.
+                </p>
+
+                {packagingItems.length === 0 ? (
+                  <p className="text-gray-600 text-xs text-center py-4 border border-dashed border-gray-800 rounded-lg">
+                    No packaging items yet. Add one in Stock → Ingredients and tick "This is a packaging item".
+                  </p>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      {pkgLines.map((line, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-7">
+                            <select
+                              value={line.ingredient_id}
+                              onChange={e => setPkgLine(idx, { ingredient_id: e.target.value })}
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                            >
+                              <option value="">— Select packaging —</option>
+                              {packagingItems.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-span-4 relative">
+                            <input
+                              type="number" min="0.001" step="0.001" placeholder="1"
+                              value={line.quantity}
+                              onChange={e => setPkgLine(idx, { quantity: e.target.value })}
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 pr-10"
+                            />
+                            {line.ingredient_id && (
+                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">{pkgUnit(line.ingredient_id)}</span>
+                            )}
+                          </div>
+                          <div className="col-span-1 flex items-center justify-center">
+                            <button onClick={() => removePkgLine(idx)} className="text-gray-600 hover:text-red-400 transition-colors text-base leading-none">✕</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button onClick={addPkgLine} className="flex items-center gap-2 text-green-400 hover:text-green-300 text-sm font-medium transition-colors mt-2">
+                      <span className="text-lg leading-none">+</span> Add packaging
+                    </button>
+
+                    {pkgError && (
+                      <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mt-2">{pkgError}</p>
+                    )}
+
+                    <div className="flex justify-end mt-3">
+                      <button
+                        onClick={savePackaging}
+                        disabled={pkgSaving}
+                        className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${pkgSaved ? 'bg-green-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-green-400 border border-gray-700'}`}
+                      >
+                        {pkgSaving ? 'Saving…' : pkgSaved ? '✓ Saved' : 'Save packaging'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {error && (
                 <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
