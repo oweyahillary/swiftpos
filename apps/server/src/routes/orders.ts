@@ -549,23 +549,27 @@ router.post('/', async (req, res) => {
     // Fetch every option (with these columns) for the products in this order and
     // index it both by option id and by product|group|option, mirroring how
     // recomputeOrderTotals resolves selected variants.
+    type StockLink = { kind: 'product' | 'ingredient'; id: string; qty: number };
     const vFactorById  = new Map<string, number>();
-    const vLinkById    = new Map<string, { productId: string; qty: number }>();
+    const vLinkById    = new Map<string, StockLink>();
     const vFactorByKey = new Map<string, number>();
-    const vLinkByKey   = new Map<string, { productId: string; qty: number }>();
+    const vLinkByKey   = new Map<string, StockLink>();
     const vImpactKey = (pid: string, group: string, option: string) =>
       `${pid}|${(group ?? '').toLowerCase()}|${(option ?? '').toLowerCase()}`;
     {
       const { data: vgroups } = await supabase
         .from('variant_groups')
-        .select('name, product_id, variant_options ( id, name, stock_factor, linked_product_id, deduct_qty )')
+        .select('name, product_id, variant_options ( id, name, stock_factor, linked_product_id, linked_ingredient_id, deduct_qty )')
         .in('product_id', productIds.length ? productIds : ['00000000-0000-0000-0000-000000000000']);
-      for (const g of (vgroups ?? []) as Array<{ name: string; product_id: string; variant_options: Array<{ id: string; name: string; stock_factor: string | number; linked_product_id: string | null; deduct_qty: string | number }> }>) {
+      for (const g of (vgroups ?? []) as Array<{ name: string; product_id: string; variant_options: Array<{ id: string; name: string; stock_factor: string | number; linked_product_id: string | null; linked_ingredient_id: string | null; deduct_qty: string | number }> }>) {
         for (const o of (g.variant_options ?? [])) {
           const factor = Number(o.stock_factor ?? 1) || 1;
-          const link   = o.linked_product_id
-            ? { productId: String(o.linked_product_id), qty: Number(o.deduct_qty ?? 1) || 1 }
-            : null;
+          const qty    = Number(o.deduct_qty ?? 1) || 1;
+          const link: StockLink | null = o.linked_product_id
+            ? { kind: 'product', id: String(o.linked_product_id), qty }
+            : o.linked_ingredient_id
+              ? { kind: 'ingredient', id: String(o.linked_ingredient_id), qty }
+              : null;
           const key = vImpactKey(g.product_id, g.name, o.name);
           if (o.id) { vFactorById.set(String(o.id), factor); if (link) vLinkById.set(String(o.id), link); }
           vFactorByKey.set(key, factor);
@@ -574,11 +578,11 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Effective multiplier + linked-SKU deductions for one order line. The factor
+    // Effective multiplier + linked deductions for one order line. The factor
     // is the product of every selected option's stock_factor (default 1 → no-op).
-    const lineStockImpact = (item: OrderItemInput): { factor: number; links: Array<{ productId: string; qty: number }> } => {
+    const lineStockImpact = (item: OrderItemInput): { factor: number; links: StockLink[] } => {
       let factor = 1;
-      const links: Array<{ productId: string; qty: number }> = [];
+      const links: StockLink[] = [];
       const pid = item.product?.id ?? '';
       for (const v of (item.selectedVariants ?? []) as Array<{ groupName?: string; optionName?: string; optionId?: string; id?: string }>) {
         const oid = String(v.optionId ?? v.id ?? '');
@@ -661,18 +665,23 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 6a-linked. Distinct-SKU variant deductions (Track C).
+    // 6a-linked. Distinct-SKU / ingredient variant deductions (Track C).
     // A selected option with linked_product_id deducts THAT product's stock
-    // (e.g. bottled Coke 1L), not the umbrella menu button's. Aggregated across
-    // lines, deducted from the order's branch. Best-effort — never blocks a sale.
+    // (e.g. bottled Coke 1L); one with linked_ingredient_id deducts an ingredient
+    // (e.g. Large chips → extra frozen fries). Aggregated across lines, from the
+    // order's branch. Best-effort — never blocks a sale.
     try {
-      const linkedDeductions: Record<string, number> = {};
+      const linkedProductDeductions:    Record<string, number> = {};
+      const linkedIngredientDeductions: Record<string, number> = {};
       for (const item of items) {
         for (const l of lineStockImpact(item).links) {
-          linkedDeductions[l.productId] = (linkedDeductions[l.productId] ?? 0) + l.qty * item.quantity;
+          const bucket = l.kind === 'ingredient' ? linkedIngredientDeductions : linkedProductDeductions;
+          bucket[l.id] = (bucket[l.id] ?? 0) + l.qty * item.quantity;
         }
       }
-      for (const [linkedPid, qty] of Object.entries(linkedDeductions)) {
+
+      // Product-linked SKUs → deduct product stock (stock_levels).
+      for (const [linkedPid, qty] of Object.entries(linkedProductDeductions)) {
         const { data: stock } = await supabase
           .from('stock_levels')
           .select('quantity')
@@ -698,8 +707,36 @@ router.post('/', async (req, res) => {
             notes: `Order ${order_number} (variant SKU)`,
           });
       }
+
+      // Ingredient-linked options → deduct ingredient stock via the same atomic
+      // RPC recipes use, with movement audit + low-stock alert.
+      const linkedIngredientIds = Object.keys(linkedIngredientDeductions);
+      for (const [ingredientId, qty] of Object.entries(linkedIngredientDeductions)) {
+        const { data: newStock, error: iErr } = await supabase.rpc('adjust_ingredient_stock', {
+          p_ingredient_id: ingredientId,
+          p_branch_id:     branch_id,
+          p_business_id:   req.businessId,
+          p_delta:         -qty,
+        });
+        if (iErr) { console.error('Linked-ingredient deduction error (non-fatal):', iErr.message); continue; }
+        await supabase
+          .from('ingredient_stock_movements')
+          .insert({
+            business_id:     req.businessId,
+            ingredient_id:   ingredientId,
+            branch_id,
+            movement_type:   'sale',
+            quantity_change: -qty,
+            quantity_after:  newStock,
+            notes:           `Order ${order_number} (variant ingredient)`,
+            created_by:      req.userId,
+          });
+      }
+      if (linkedIngredientIds.length > 0) {
+        checkLowIngredients(req.businessId, branch_id, linkedIngredientIds).catch(() => {});
+      }
     } catch (err) {
-      console.error('[orders] linked-SKU variant deduction failed (non-blocking):', err);
+      console.error('[orders] linked variant deduction failed (non-blocking):', err);
     }
 
     // 6a-bis. Fuel wet-stock deduction.
