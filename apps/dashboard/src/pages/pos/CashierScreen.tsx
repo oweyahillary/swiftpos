@@ -42,8 +42,8 @@ interface Table {
 // Floor plan constants
 const FLOOR_W = 800;
 const FLOOR_H = 520;
-const TABLE_W = 96;   // was 72 — bigger, easier-to-tap floor tiles
-const TABLE_H = 68;   // was 52
+const TABLE_W = 112;  // bigger, easier-to-tap floor tiles
+const TABLE_H = 80;
 const ZONE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   'Main Hall': { bg: '#1e3a5f', border: '#2563eb', text: '#93c5fd' },
   'Terrace':   { bg: '#14532d', border: '#16a34a', text: '#86efac' },
@@ -1086,15 +1086,15 @@ export default function CashierScreen() {
                           cursor: 'pointer', padding: 0, userSelect: 'none',
                           boxShadow: occ ? '0 0 0 3px rgba(245,158,11,0.2)' : 'none',
                         }}>
-                          <span style={{ color: occ ? '#f59e0b' : c.text, fontSize: 13, fontWeight: 700, pointerEvents: 'none' }}>
+                          <span style={{ color: occ ? '#f59e0b' : c.text, fontSize: 15, fontWeight: 700, pointerEvents: 'none' }}>
                             {table.name}
                           </span>
                           {order && order.cart.length > 0 ? (
-                            <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 600, marginTop: 3, pointerEvents: 'none' }}>
+                            <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600, marginTop: 3, pointerEvents: 'none' }}>
                               {order.cart.reduce((s, i) => s + i.quantity, 0)} · {timeAgo(order.openedAt)}
                             </span>
                           ) : (
-                            <span style={{ color: occ ? '#f59e0b' : c.text, fontSize: 11, opacity: 0.7, marginTop: 3, pointerEvents: 'none' }}>
+                            <span style={{ color: occ ? '#f59e0b' : c.text, fontSize: 12, opacity: 0.7, marginTop: 3, pointerEvents: 'none' }}>
                               👥{table.capacity}
                             </span>
                           )}
@@ -2489,10 +2489,10 @@ const s: Record<string, React.CSSProperties> = {
   slotViewTitle: { fontSize: 12, fontWeight: 700, color: 'var(--pos-text3)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
   slotLegend: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--pos-text3)' },
   legendDot: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 4 },
-  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 14 },
+  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 16 },
   slotCard: {
-    height: 132,
-    padding: '18px 14px 16px',
+    height: 152,
+    padding: '20px 16px 18px',
     borderRadius: 16,
     border: '1px solid transparent',
     cursor: 'pointer',
@@ -2515,8 +2515,8 @@ const s: Record<string, React.CSSProperties> = {
     background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', opacity: 0.45,
     boxShadow: 'none',
   },
-  slotName: { fontSize: 18, fontWeight: 800, color: 'var(--pos-text)', letterSpacing: '-0.3px' },
-  slotSub: { fontSize: 12.5, color: 'var(--pos-text4)' },
+  slotName: { fontSize: 20, fontWeight: 800, color: 'var(--pos-text)', letterSpacing: '-0.3px' },
+  slotSub: { fontSize: 13.5, color: 'var(--pos-text4)' },
   slotOrderInfo: { display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2, marginTop: 4 },
   slotItemCount: { fontSize: 12, color: '#f59e0b', fontWeight: 700 },
   slotTime: { fontSize: 10, color: 'var(--pos-text4)' },
