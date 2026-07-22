@@ -55,6 +55,11 @@ export interface VariantOption {
   name: string;
   price_adjustment: number;
   sort_order: number;
+  // Track C — stock impact (all optional; default = no effect)
+  stock_factor?: number;
+  linked_product_id?: string | null;
+  linked_ingredient_id?: string | null;
+  deduct_qty?: number;
 }
 
 export interface VariantGroup {

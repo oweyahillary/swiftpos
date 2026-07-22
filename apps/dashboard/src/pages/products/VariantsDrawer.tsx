@@ -1,12 +1,194 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import type { Product, VariantGroup, ModifierGroup } from '../../types';
+import type { Product, VariantGroup, VariantOption, ModifierGroup } from '../../types';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 
 interface Props {
   product: Product;
   onClose: () => void;
   onUpdated: () => void; // triggers product list refresh so has_variants/has_modifiers badges update
+}
+
+// Minimal ingredient shape for the picker (no shared type in types/index.ts).
+interface IngredientLite { id: string; name: string; unit?: string }
+
+// ── Stock impact (Track C) ──────────────────────────────────
+// A variant option can carry ONE stock consequence:
+//   • scale       — deduct N× this product's own stock/recipe (Large fries)
+//   • product     — deduct a different product's stock (bottled drink SKU)
+//   • ingredient  — deduct an ingredient (Large chips → extra frozen fries)
+type StockMode = 'none' | 'scale' | 'product' | 'ingredient';
+
+interface StockForm {
+  stock_factor: string;         // string for inputs; '1' = no scaling
+  linked_product_id: string;    // '' = none
+  linked_ingredient_id: string; // '' = none
+  deduct_qty: string;           // qty of the linked target per unit sold
+}
+
+const EMPTY_STOCK: StockForm = {
+  stock_factor: '1',
+  linked_product_id: '',
+  linked_ingredient_id: '',
+  deduct_qty: '1',
+};
+
+function stockModeOf(s: StockForm): StockMode {
+  if (s.linked_product_id) return 'product';
+  if (s.linked_ingredient_id) return 'ingredient';
+  if (s.stock_factor && Number(s.stock_factor) !== 1) return 'scale';
+  return 'none';
+}
+
+// Convert a saved VariantOption back into a StockForm (for editing).
+function stockFormFromOption(o: VariantOption): StockForm {
+  return {
+    stock_factor: o.stock_factor != null ? String(o.stock_factor) : '1',
+    linked_product_id: o.linked_product_id ?? '',
+    linked_ingredient_id: o.linked_ingredient_id ?? '',
+    deduct_qty: o.deduct_qty != null ? String(o.deduct_qty) : '1',
+  };
+}
+
+// Convert a StockForm into the API payload fields.
+function stockPayload(s: StockForm) {
+  return {
+    stock_factor: parseFloat(s.stock_factor) || 1,
+    linked_product_id: s.linked_product_id || null,
+    linked_ingredient_id: s.linked_ingredient_id || null,
+    deduct_qty: parseFloat(s.deduct_qty) || 1,
+  };
+}
+
+const inputCls =
+  'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors';
+
+// Shared editor for an option's stock rule. Used in Add-group and Edit-option.
+function StockImpactEditor({
+  value,
+  onChange,
+  products,
+  ingredients,
+}: {
+  value: StockForm;
+  onChange: (s: StockForm) => void;
+  products: Product[];
+  ingredients: IngredientLite[];
+}) {
+  const mode = stockModeOf(value);
+
+  const setMode = (m: StockMode) => {
+    if (m === 'none') onChange({ ...EMPTY_STOCK, deduct_qty: value.deduct_qty });
+    else if (m === 'scale')
+      onChange({
+        ...EMPTY_STOCK,
+        stock_factor: Number(value.stock_factor) !== 1 && value.stock_factor ? value.stock_factor : '1.5',
+      });
+    else if (m === 'product')
+      onChange({ ...EMPTY_STOCK, linked_product_id: products[0]?.id ?? '', deduct_qty: value.deduct_qty || '1' });
+    else if (m === 'ingredient')
+      onChange({ ...EMPTY_STOCK, linked_ingredient_id: ingredients[0]?.id ?? '', deduct_qty: value.deduct_qty || '1' });
+  };
+
+  return (
+    <div className="mt-2 pl-3 border-l-2 border-gray-800 space-y-2">
+      <select
+        value={mode}
+        onChange={e => setMode(e.target.value as StockMode)}
+        className={inputCls}
+      >
+        <option value="none">No stock effect (price only)</option>
+        <option value="scale">Scale this item's stock (×)</option>
+        <option value="product">Deduct a stock product</option>
+        <option value="ingredient">Deduct an ingredient</option>
+      </select>
+
+      {mode === 'scale' && (
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Multiplier</label>
+          <input
+            type="number" step="0.1" min="0.1"
+            value={value.stock_factor}
+            onChange={e => onChange({ ...value, stock_factor: e.target.value })}
+            className={inputCls}
+          />
+          <p className="text-gray-600 text-xs mt-1">e.g. 1.5 = deducts 1.5× the normal amount (Large).</p>
+        </div>
+      )}
+
+      {mode === 'product' && (
+        <div className="space-y-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Product to deduct</label>
+            {products.length === 0 ? (
+              <p className="text-amber-400/80 text-xs">No products found.</p>
+            ) : (
+              <select
+                value={value.linked_product_id}
+                onChange={e => onChange({ ...value, linked_product_id: e.target.value })}
+                className={inputCls}
+              >
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Quantity per sale</label>
+            <input
+              type="number" step="0.01" min="0.01"
+              value={value.deduct_qty}
+              onChange={e => onChange({ ...value, deduct_qty: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+          <p className="text-gray-600 text-xs">e.g. link a "Soda 1.25L" option to your bottled 1.25L product.</p>
+        </div>
+      )}
+
+      {mode === 'ingredient' && (
+        <div className="space-y-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Ingredient to deduct</label>
+            {ingredients.length === 0 ? (
+              <p className="text-amber-400/80 text-xs">No ingredients found.</p>
+            ) : (
+              <select
+                value={value.linked_ingredient_id}
+                onChange={e => onChange({ ...value, linked_ingredient_id: e.target.value })}
+                className={inputCls}
+              >
+                {ingredients.map(i => (
+                  <option key={i.id} value={i.id}>{i.name}{i.unit ? ` (${i.unit})` : ''}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Quantity per sale</label>
+            <input
+              type="number" step="0.01" min="0.01"
+              value={value.deduct_qty}
+              onChange={e => onChange({ ...value, deduct_qty: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+          <p className="text-gray-600 text-xs">e.g. "Large chips" deducts extra frozen fries (kg).</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One-line summary badge of an option's stock rule, shown on saved rows.
+function stockBadge(
+  o: VariantOption,
+  productName: (id: string) => string,
+  ingredientName: (id: string) => string,
+): string | null {
+  if (o.linked_product_id) return `→ ${productName(o.linked_product_id)} ×${o.deduct_qty ?? 1}`;
+  if (o.linked_ingredient_id) return `→ ${ingredientName(o.linked_ingredient_id)} ×${o.deduct_qty ?? 1}`;
+  if (o.stock_factor != null && Number(o.stock_factor) !== 1) return `×${o.stock_factor} stock`;
+  return null;
 }
 
 // ── Small reusable components ───────────────────────────────
@@ -25,54 +207,43 @@ function SectionHeader({ title, onAdd }: { title: string; onAdd: () => void }) {
   );
 }
 
-function OptionRow({
-  name,
-  price,
-  label,
-  onDelete,
-}: {
+// ── Add Group Modal (shared for variant + modifier) ─────────
+
+interface OptionForm extends StockForm {
   name: string;
   price: string;
-  label: string;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-1.5 px-3 bg-gray-800/60 rounded-lg text-sm">
-      <span className="text-gray-300">{name}</span>
-      <div className="flex items-center gap-3">
-        <span className="text-gray-500 text-xs">{label} {price}</span>
-        <button onClick={onDelete} className="text-gray-600 hover:text-red-400 transition-colors text-xs">✕</button>
-      </div>
-    </div>
-  );
 }
-
-// ── Add Group Modal (shared for variant + modifier) ─────────
 
 interface AddGroupState {
   name: string;
   required: boolean;       // variants only
   min_select: number;      // modifiers only
   max_select: string;      // modifiers only — string so input can be empty
-  options: { name: string; price: string }[];
+  options: OptionForm[];
 }
+
+const EMPTY_OPTION: OptionForm = { name: '', price: '0', ...EMPTY_STOCK };
 
 const EMPTY_GROUP: AddGroupState = {
   name: '',
   required: false,
   min_select: 0,
   max_select: '',
-  options: [{ name: '', price: '0' }],
+  options: [{ ...EMPTY_OPTION }],
 };
 
 function AddGroupModal({
   mode,
   currency,
+  products,
+  ingredients,
   onSave,
   onClose,
 }: {
   mode: 'variant' | 'modifier';
   currency: string;
+  products: Product[];
+  ingredients: IngredientLite[];
   onSave: (state: AddGroupState) => Promise<void>;
   onClose: () => void;
 }) {
@@ -81,15 +252,15 @@ function AddGroupModal({
   const [error, setError] = useState('');
 
   const addOption = () =>
-    setForm(f => ({ ...f, options: [...f.options, { name: '', price: '0' }] }));
+    setForm(f => ({ ...f, options: [...f.options, { ...EMPTY_OPTION }] }));
 
   const removeOption = (i: number) =>
     setForm(f => ({ ...f, options: f.options.filter((_, idx) => idx !== i) }));
 
-  const updateOption = (i: number, field: 'name' | 'price', val: string) =>
+  const updateOption = (i: number, patch: Partial<OptionForm>) =>
     setForm(f => ({
       ...f,
-      options: f.options.map((o, idx) => idx === i ? { ...o, [field]: val } : o),
+      options: f.options.map((o, idx) => idx === i ? { ...o, ...patch } : o),
     }));
 
   const handleSave = async () => {
@@ -117,7 +288,7 @@ function AddGroupModal({
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
             placeholder={mode === 'variant' ? 'e.g. Size' : 'e.g. Extras'}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+            className={inputCls}
           />
         </div>
 
@@ -138,22 +309,20 @@ function AddGroupModal({
             <div>
               <label className="block text-xs text-gray-400 mb-1">Min select</label>
               <input
-                type="number"
-                min={0}
+                type="number" min={0}
                 value={form.min_select}
                 onChange={e => setForm(f => ({ ...f, min_select: Number(e.target.value) }))}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                className={inputCls}
               />
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Max select <span className="text-gray-600">(blank = unlimited)</span></label>
               <input
-                type="number"
-                min={0}
+                type="number" min={0}
                 value={form.max_select}
                 onChange={e => setForm(f => ({ ...f, max_select: e.target.value }))}
                 placeholder="∞"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                className={inputCls}
               />
             </div>
           </div>
@@ -164,27 +333,39 @@ function AddGroupModal({
             <label className="text-xs text-gray-400">Options</label>
             <button onClick={addOption} className="text-xs text-green-400 hover:text-green-300 transition-colors">+ Add option</button>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {form.options.map((opt, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input
-                  value={opt.name}
-                  onChange={e => updateOption(i, 'name', e.target.value)}
-                  placeholder={mode === 'variant' ? 'e.g. Large' : 'e.g. Extra Cheese'}
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
-                />
-                <div className="relative w-28">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">{currency}</span>
+              <div key={i} className="border border-gray-800 rounded-xl p-3">
+                <div className="flex gap-2 items-center">
                   <input
-                    type="number"
-                    value={opt.price}
-                    onChange={e => updateOption(i, 'price', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                    value={opt.name}
+                    onChange={e => updateOption(i, { name: e.target.value })}
+                    placeholder={mode === 'variant' ? 'e.g. Large' : 'e.g. Extra Cheese'}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
                   />
+                  <div className="relative w-28">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">{currency}</span>
+                    <input
+                      type="number"
+                      value={opt.price}
+                      onChange={e => updateOption(i, { price: e.target.value })}
+                      placeholder="0"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                    />
+                  </div>
+                  {form.options.length > 1 && (
+                    <button onClick={() => removeOption(i)} className="text-gray-600 hover:text-red-400 transition-colors">✕</button>
+                  )}
                 </div>
-                {form.options.length > 1 && (
-                  <button onClick={() => removeOption(i)} className="text-gray-600 hover:text-red-400 transition-colors">✕</button>
+
+                {/* Stock rule — variants only */}
+                {mode === 'variant' && (
+                  <StockImpactEditor
+                    value={opt}
+                    onChange={s => updateOption(i, s)}
+                    products={products}
+                    ingredients={ingredients}
+                  />
                 )}
               </div>
             ))}
@@ -206,28 +387,128 @@ function AddGroupModal({
   );
 }
 
-// ── Main Drawer ─────────────────────────────────────────────
+// ── Edit Option Modal (variants only — set name, price, stock rule) ──
+function EditOptionModal({
+  option,
+  currency,
+  products,
+  ingredients,
+  onSave,
+  onClose,
+}: {
+  option: VariantOption;
+  currency: string;
+  products: Product[];
+  ingredients: IngredientLite[];
+  onSave: (patch: { name: string; price_adjustment: number } & ReturnType<typeof stockPayload>) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(option.name);
+  const [price, setPrice] = useState(String(option.price_adjustment ?? 0));
+  const [stock, setStock] = useState<StockForm>(stockFormFromOption(option));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError('Name is required'); return; }
+    setSaving(true);
+    try {
+      await onSave({ name: name.trim(), price_adjustment: parseFloat(price) || 0, ...stockPayload(stock) });
+    } catch (err: any) {
+      setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[85vh] overflow-y-auto">
+        <h3 className="text-white font-semibold">Edit option</h3>
+
+        <div className="flex gap-2 items-start">
+          <div className="flex-1">
+            <label className="block text-xs text-gray-400 mb-1">Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} className={inputCls} />
+          </div>
+          <div className="w-28">
+            <label className="block text-xs text-gray-400 mb-1">Price +</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">{currency}</span>
+              <input
+                type="number"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Stock rule</label>
+          <StockImpactEditor value={stock} onChange={setStock} products={products} ingredients={ingredients} />
+        </div>
+
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main drawer ─────────────────────────────────────────────
 
 export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
-  const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [variantGroups, setVariantGroups] = useState<VariantGroup[]>([]);
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [ingredients, setIngredients] = useState<IngredientLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingMode, setAddingMode] = useState<'variant' | 'modifier' | null>(null);
+  const [editingOption, setEditingOption] = useState<VariantOption | null>(null);
+  const [confirmState, showConfirm, closeConfirm] = useConfirm();
 
   const currency = 'KES'; // TODO: pull from business context if needed
 
   const fetchAll = async () => {
-    const [vGroups, mGroups] = await Promise.all([
+    const [vg, mg] = await Promise.all([
       api.get<VariantGroup[]>(`/api/variants/groups?product_id=${product.id}`),
       api.get<ModifierGroup[]>(`/api/modifiers/groups?product_id=${product.id}`),
     ]);
-    setVariantGroups(vGroups ?? []);
-    setModifierGroups(mGroups ?? []);
-    setLoading(false);
+    setVariantGroups(vg);
+    setModifierGroups(mg);
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        await fetchAll();
+        // Pickers for linked-stock options. Non-fatal if either fails.
+        const [prods, ings] = await Promise.all([
+          api.get<Product[]>('/api/products').catch(() => [] as Product[]),
+          api.get<IngredientLite[]>('/api/stock/ingredients').catch(() => [] as IngredientLite[]),
+        ]);
+        // Don't let a product link to itself.
+        setProducts(prods.filter(p => p.id !== product.id));
+        setIngredients(ings);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id]);
+
+  const productName = (id: string) => products.find(p => p.id === id)?.name ?? 'product';
+  const ingredientName = (id: string) => ingredients.find(i => i.id === id)?.name ?? 'ingredient';
 
   const handleAddVariantGroup = async (form: AddGroupState) => {
     await api.post('/api/variants/groups', {
@@ -237,6 +518,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
       options: form.options.map(o => ({
         name: o.name,
         price_adjustment: parseFloat(o.price) || 0,
+        ...stockPayload(o),
       })),
     });
     await fetchAll();
@@ -258,6 +540,15 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
     await fetchAll();
     onUpdated();
     setAddingMode(null);
+  };
+
+  const saveOptionEdit = async (
+    patch: { name: string; price_adjustment: number } & ReturnType<typeof stockPayload>,
+  ) => {
+    if (!editingOption) return;
+    await api.patch(`/api/variants/options/${editingOption.id}`, patch);
+    await fetchAll();
+    setEditingOption(null);
   };
 
   const deleteVariantGroup = async (id: string) => {
@@ -325,7 +616,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
               <div>
                 <SectionHeader title="Variant groups" onAdd={() => setAddingMode('variant')} />
                 <p className="text-gray-600 text-xs mb-4">
-                  Variants change the base price (e.g. Size: Small +0, Large +50). Customer must pick one option per required group.
+                  Variants change the base price (e.g. Size: Small +0, Large +50) and can move stock. Customer picks one option per group.
                 </p>
 
                 {variantGroups.length === 0 ? (
@@ -351,15 +642,35 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                           </button>
                         </div>
                         <div className="space-y-1.5">
-                          {group.variant_options.map(opt => (
-                            <OptionRow
-                              key={opt.id}
-                              name={opt.name}
-                              price={Number(opt.price_adjustment) === 0 ? 'Included' : `+${currency} ${Number(opt.price_adjustment).toLocaleString()}`}
-                              label=""
-                              onDelete={() => deleteVariantOption(opt.id)}
-                            />
-                          ))}
+                          {group.variant_options.map(opt => {
+                            const badge = stockBadge(opt, productName, ingredientName);
+                            const priceLabel = Number(opt.price_adjustment) === 0
+                              ? 'Included'
+                              : `+${currency} ${Number(opt.price_adjustment).toLocaleString()}`;
+                            return (
+                              <div key={opt.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-800/60 rounded-lg text-sm">
+                                <span className="text-gray-300">{opt.name}</span>
+                                <div className="flex items-center gap-3">
+                                  {badge && (
+                                    <span className="text-green-400/80 text-xs bg-green-400/10 px-1.5 py-0.5 rounded">{badge}</span>
+                                  )}
+                                  <span className="text-gray-500 text-xs">{priceLabel}</span>
+                                  <button
+                                    onClick={() => setEditingOption(opt)}
+                                    className="text-gray-500 hover:text-green-400 transition-colors text-xs"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => deleteVariantOption(opt.id)}
+                                    className="text-gray-600 hover:text-red-400 transition-colors text-xs"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -399,13 +710,13 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                         </div>
                         <div className="space-y-1.5">
                           {group.modifier_options.map(opt => (
-                            <OptionRow
-                              key={opt.id}
-                              name={opt.name}
-                              price={opt.price === 0 ? 'Free' : `+${currency} ${opt.price.toLocaleString()}`}
-                              label=""
-                              onDelete={() => deleteModifierOption(opt.id)}
-                            />
+                            <div key={opt.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-800/60 rounded-lg text-sm">
+                              <span className="text-gray-300">{opt.name}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-gray-500 text-xs">{opt.price === 0 ? 'Free' : `+${currency} ${opt.price.toLocaleString()}`}</span>
+                                <button onClick={() => deleteModifierOption(opt.id)} className="text-gray-600 hover:text-red-400 transition-colors text-xs">✕</button>
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -423,10 +734,25 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
         <AddGroupModal
           mode={addingMode}
           currency={currency}
+          products={products}
+          ingredients={ingredients}
           onSave={addingMode === 'variant' ? handleAddVariantGroup : handleAddModifierGroup}
           onClose={() => setAddingMode(null)}
         />
       )}
+
+      {/* Edit Option Modal */}
+      {editingOption && (
+        <EditOptionModal
+          option={editingOption}
+          currency={currency}
+          products={products}
+          ingredients={ingredients}
+          onSave={saveOptionEdit}
+          onClose={() => setEditingOption(null)}
+        />
+      )}
+
       <ConfirmModal state={confirmState} onClose={closeConfirm} />
     </>
   );
