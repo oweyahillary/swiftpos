@@ -541,10 +541,63 @@ router.post('/', async (req, res) => {
 
     const trackedMap = new Map((trackedProducts ?? [] as { id: string; track_inventory: boolean }[]).map(p => [p.id, p]));
 
+    // ── Variant stock impact (Track C: 25_variant_stock_and_packaging.sql) ─────
+    // A selected variant option can carry a stock consequence:
+    //   • stock_factor      — scales the PARENT product's deduction (Large = 1.5)
+    //   • linked_product_id — deducts a DIFFERENT product's stock (bottled drink SKU)
+    //   • deduct_qty        — units of the linked product per unit sold
+    // Fetch every option (with these columns) for the products in this order and
+    // index it both by option id and by product|group|option, mirroring how
+    // recomputeOrderTotals resolves selected variants.
+    const vFactorById  = new Map<string, number>();
+    const vLinkById    = new Map<string, { productId: string; qty: number }>();
+    const vFactorByKey = new Map<string, number>();
+    const vLinkByKey   = new Map<string, { productId: string; qty: number }>();
+    const vImpactKey = (pid: string, group: string, option: string) =>
+      `${pid}|${(group ?? '').toLowerCase()}|${(option ?? '').toLowerCase()}`;
+    {
+      const { data: vgroups } = await supabase
+        .from('variant_groups')
+        .select('name, product_id, variant_options ( id, name, stock_factor, linked_product_id, deduct_qty )')
+        .in('product_id', productIds.length ? productIds : ['00000000-0000-0000-0000-000000000000']);
+      for (const g of (vgroups ?? []) as Array<{ name: string; product_id: string; variant_options: Array<{ id: string; name: string; stock_factor: string | number; linked_product_id: string | null; deduct_qty: string | number }> }>) {
+        for (const o of (g.variant_options ?? [])) {
+          const factor = Number(o.stock_factor ?? 1) || 1;
+          const link   = o.linked_product_id
+            ? { productId: String(o.linked_product_id), qty: Number(o.deduct_qty ?? 1) || 1 }
+            : null;
+          const key = vImpactKey(g.product_id, g.name, o.name);
+          if (o.id) { vFactorById.set(String(o.id), factor); if (link) vLinkById.set(String(o.id), link); }
+          vFactorByKey.set(key, factor);
+          if (link) vLinkByKey.set(key, link);
+        }
+      }
+    }
+
+    // Effective multiplier + linked-SKU deductions for one order line. The factor
+    // is the product of every selected option's stock_factor (default 1 → no-op).
+    const lineStockImpact = (item: OrderItemInput): { factor: number; links: Array<{ productId: string; qty: number }> } => {
+      let factor = 1;
+      const links: Array<{ productId: string; qty: number }> = [];
+      const pid = item.product?.id ?? '';
+      for (const v of (item.selectedVariants ?? []) as Array<{ groupName?: string; optionName?: string; optionId?: string; id?: string }>) {
+        const oid = String(v.optionId ?? v.id ?? '');
+        const key = vImpactKey(pid, v.groupName ?? '', v.optionName ?? '');
+        const f = (oid && vFactorById.has(oid)) ? vFactorById.get(oid)! : vFactorByKey.get(key);
+        if (f !== undefined) factor *= f;
+        const link = (oid && vLinkById.has(oid)) ? vLinkById.get(oid)! : vLinkByKey.get(key);
+        if (link) links.push(link);
+      }
+      return { factor, links };
+    };
+
     for (const item of items) {
       if (!item.product?.id) continue; // skip non-catalogue items (custom/fuel/parking)
       const prod = trackedMap.get(item.product.id);
       if (!prod) continue;
+
+      // Scale mode: Large fries (factor 1.5) deducts 1.5× the finished-good units.
+      const deductUnits = item.quantity * lineStockImpact(item).factor;
 
       if (prod.sold_by === 'piece') {
         // ── Piece-level deduction ─────────────────────────────────────────────
@@ -557,7 +610,7 @@ router.post('/', async (req, res) => {
           .single();
 
         const currentPieces = stock?.qty_pieces ?? 0;
-        const newPieces = Math.max(0, currentPieces - item.quantity);
+        const newPieces = Math.max(0, currentPieces - deductUnits);
 
         await supabase
           .from('stock_levels')
@@ -572,7 +625,7 @@ router.post('/', async (req, res) => {
             product_id: item.product.id,
             branch_id,
             movement_type: 'sale',
-            quantity_change: -item.quantity,
+            quantity_change: -deductUnits,
             quantity_after: newPieces,
             notes: `Order ${order_number} (pieces)`,
           });
@@ -586,7 +639,7 @@ router.post('/', async (req, res) => {
           .single();
 
         const currentQty = stock?.quantity ?? 0;
-        const newQty = Math.max(0, currentQty - item.quantity);
+        const newQty = Math.max(0, currentQty - deductUnits);
 
         await supabase
           .from('stock_levels')
@@ -601,11 +654,52 @@ router.post('/', async (req, res) => {
             product_id: item.product.id,
             branch_id,
             movement_type: 'sale',
-            quantity_change: -item.quantity,
+            quantity_change: -deductUnits,
             quantity_after: newQty,
             notes: `Order ${order_number}`,
           });
       }
+    }
+
+    // 6a-linked. Distinct-SKU variant deductions (Track C).
+    // A selected option with linked_product_id deducts THAT product's stock
+    // (e.g. bottled Coke 1L), not the umbrella menu button's. Aggregated across
+    // lines, deducted from the order's branch. Best-effort — never blocks a sale.
+    try {
+      const linkedDeductions: Record<string, number> = {};
+      for (const item of items) {
+        for (const l of lineStockImpact(item).links) {
+          linkedDeductions[l.productId] = (linkedDeductions[l.productId] ?? 0) + l.qty * item.quantity;
+        }
+      }
+      for (const [linkedPid, qty] of Object.entries(linkedDeductions)) {
+        const { data: stock } = await supabase
+          .from('stock_levels')
+          .select('quantity')
+          .eq('product_id', linkedPid)
+          .eq('branch_id', branch_id)
+          .single();
+        const currentQty = stock?.quantity ?? 0;
+        const newQty = Math.max(0, currentQty - qty);
+        await supabase
+          .from('stock_levels')
+          .upsert(
+            { product_id: linkedPid, branch_id, quantity: newQty, updated_at: new Date().toISOString() },
+            { onConflict: 'product_id,branch_id' }
+          );
+        await supabase
+          .from('stock_movements')
+          .insert({
+            product_id: linkedPid,
+            branch_id,
+            movement_type: 'sale',
+            quantity_change: -qty,
+            quantity_after: newQty,
+            notes: `Order ${order_number} (variant SKU)`,
+          });
+      }
+    } catch (err) {
+      console.error('[orders] linked-SKU variant deduction failed (non-blocking):', err);
     }
 
     // 6a-bis. Fuel wet-stock deduction.
@@ -702,9 +796,11 @@ router.post('/', async (req, res) => {
         const deductions: Record<string, number> = {};
 
         for (const item of items) {
+          // Scale recipe consumption by the variant factor (Large deducts more).
+          const factor = lineStockImpact(item).factor;
           const recipe = recipeRows.filter((r: { product_id: string; ingredient_id: string; quantity_per_serving: string }) => item.product?.id && r.product_id === item.product.id);
           for (const line of recipe) {
-            const totalQty = line.quantity_per_serving * item.quantity;
+            const totalQty = line.quantity_per_serving * item.quantity * factor;
             deductions[line.ingredient_id] = (deductions[line.ingredient_id] ?? 0) + totalQty;
           }
         }
@@ -744,6 +840,61 @@ router.post('/', async (req, res) => {
     } catch (recipeErr) {
       // Never let recipe deduction fail an order
       console.error('Recipe deduction error (non-fatal):', recipeErr?.message);
+    }
+
+    // 6c. Takeaway packaging deduction (Track C).
+    // On a takeaway order, each line's product consumes its configured packaging
+    // (product_packaging → packaging ingredient). Deducted per-branch via the
+    // same atomic RPC as recipes. Dine-in never consumes takeaway packaging, and
+    // the cost is captured once at purchase — this is consumption, not an expense.
+    if (order_type === 'takeaway') {
+      try {
+        const { data: pkgRows } = await supabase
+          .from('product_packaging')
+          .select('product_id, ingredient_id, quantity')
+          .eq('business_id', req.businessId)
+          .in('product_id', productIds);
+
+        if (pkgRows && pkgRows.length > 0) {
+          const pkgDeductions: Record<string, number> = {};
+          for (const item of items) {
+            const rows = pkgRows.filter((r: { product_id: string }) => item.product?.id && r.product_id === item.product.id);
+            for (const r of rows as Array<{ ingredient_id: string; quantity: string | number }>) {
+              pkgDeductions[r.ingredient_id] = (pkgDeductions[r.ingredient_id] ?? 0) + Number(r.quantity) * item.quantity;
+            }
+          }
+
+          const pkgIds = Object.keys(pkgDeductions);
+          for (const [ingredientId, deductQty] of Object.entries(pkgDeductions)) {
+            const { data: newQty, error: pErr } = await supabase.rpc('adjust_ingredient_stock', {
+              p_ingredient_id: ingredientId,
+              p_branch_id:     branch_id,
+              p_business_id:   req.businessId,
+              p_delta:         -deductQty,
+            });
+            if (pErr) { console.error('Packaging deduction error (non-fatal):', pErr.message); continue; }
+
+            await supabase
+              .from('ingredient_stock_movements')
+              .insert({
+                business_id:     req.businessId,
+                ingredient_id:   ingredientId,
+                branch_id,
+                movement_type:   'sale',
+                quantity_change: -deductQty,
+                quantity_after:  newQty,
+                notes:           `Order ${order_number} (packaging)`,
+                created_by:      req.userId,
+              });
+          }
+
+          if (pkgIds.length > 0) {
+            checkLowIngredients(req.businessId, branch_id, pkgIds).catch(() => {});
+          }
+        }
+      } catch (pkgErr: any) {
+        console.error('Packaging deduction error (non-fatal):', pkgErr?.message);
+      }
     }
 
     // 7. Kitchen ticket
