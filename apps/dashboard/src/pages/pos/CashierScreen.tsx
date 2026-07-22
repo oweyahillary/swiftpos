@@ -88,6 +88,7 @@ interface OpenOrder {
   cart: CartItem[];
   covers: number;
   openedAt: number;
+  orderType?: string; // e.g. 'takeaway' for non-table orders; undefined = derive from tableId
   // parking
   parkingSessionId?: string;
   vehiclePlate?: string;
@@ -453,6 +454,27 @@ export default function CashierScreen() {
     setView('products');
   }
 
+  // Start a non-table takeaway order (restaurant/cafe). No table, no covers —
+  // flagged order_type = 'takeaway' so packaging deducts and the KOT/receipt
+  // read correctly.
+  function startTakeaway() {
+    const key = `takeaway-${Date.now()}`;
+    setOpenOrders((prev) => ({
+      ...prev,
+      [key]: {
+        tableId: null,
+        tableName: 'Takeaway',
+        cart: [],
+        covers: 0,
+        openedAt: Date.now(),
+        orderType: 'takeaway',
+      },
+    }));
+    setActiveKey(key);
+    setCart([]);
+    setView('products');
+  }
+
   function goBackToSlotPicker() {
     if (activeKey) {
       setOpenOrders((prev) => ({
@@ -713,13 +735,14 @@ export default function CashierScreen() {
     try {
       const order = openOrders[activeKey];
       const orderNumber = `ORD-${Date.now()}`;
+      const otype = order.orderType ?? (order.tableId ? 'dine_in' : 'retail');
       const result = await posApi.post<{ orderId: string; orderNumber: string }>(
         '/api/orders/open',
         {
           branch_id:    session.branchId,
           order_number: orderNumber,
-          order_type:   'dine_in',
-          table_number: order.tableName,
+          order_type:   otype,
+          table_number: order.tableId ? order.tableName : null,
           covers:       order.covers,
           subtotal,
           vat_amount:   vatAmount,
@@ -734,7 +757,7 @@ export default function CashierScreen() {
       if (branchPrinters.length > 0) {
         printKOTs(
           cart,
-          { orderNumber: result.orderNumber, tableNumber: order.tableName, orderType: 'dine_in', branchName: session.branchName },
+          { orderNumber: result.orderNumber, tableNumber: order.tableId ? order.tableName : undefined, orderType: otype, branchName: session.branchName },
           branchPrinters,
           printerSettings,
         ).catch(err => console.error('[KOT]', err));
@@ -826,7 +849,9 @@ export default function CashierScreen() {
   function getOrderType(): string {
     if (isParking) return 'parking_session';
     if (isPetrol) return 'fuel_sale';
-    if (activeKey && openOrders[activeKey]?.tableId) return 'dine_in';
+    const o = activeKey ? openOrders[activeKey] : null;
+    if (o?.orderType) return o.orderType;              // explicit (e.g. takeaway)
+    if (o?.tableId) return 'dine_in';                  // seated at a table
     return 'retail';
   }
 
@@ -1010,6 +1035,13 @@ export default function CashierScreen() {
               <div style={{ ...s.slotViewHeader, marginBottom: 12 }}>
                 <span style={s.slotViewTitle}>Select a Table</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button onClick={startTakeaway} style={{
+                    padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    border: '1px solid var(--pos-accent)', cursor: 'pointer',
+                    background: 'var(--pos-accent)', color: '#fff',
+                  }}>
+                    🥡 Takeaway
+                  </button>
                   <span style={s.slotLegend}>
                     <span style={{ ...s.legendDot, background: '#22c55e' }} /> Free
                     <span style={{ ...s.legendDot, background: '#f59e0b' }} /> Occupied
