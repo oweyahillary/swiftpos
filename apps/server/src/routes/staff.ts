@@ -377,8 +377,37 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.manage'), asyn
 
   // Verify role belongs to this business
   const { data: role } = await supabase
-    .from('roles').select('id, is_default').eq('id', req.params.roleId).eq('business_id', req.businessId).single();
+    .from('roles').select('id, name, is_default').eq('id', req.params.roleId).eq('business_id', req.businessId).single();
   if (!role) { res.status(404).json({ error: 'Role not found' }); return; }
+
+  // ── C3: a non-owner with staff.manage had no further restriction here — they
+  // could grant ANY role (including their own) permissions they don't hold
+  // themselves (e.g. settings.manage, which defaultRolePermissions.ts already
+  // treats as owner-only), or wipe an elevated role's permissions outright.
+  // Two guards, both owner-exempt:
+  //   1. Can never grant a permission the caller doesn't currently hold —
+  //      structurally closes every escalation path (own role, another role,
+  //      a freshly created custom role) without needing to special-case each.
+  //   2. Can never touch an elevated role's permissions at all (reuses the
+  //      same ELEVATED_ROLE_NAMES this file already guards role ASSIGNMENT
+  //      with) — otherwise a manager could silently strip another manager's
+  //      or a role-based "owner" account's access.
+  if (!req.isOwner) {
+    if (ELEVATED_ROLE_NAMES.includes(String(role.name).toLowerCase())) {
+      res.status(403).json({ error: "Only the owner can edit an elevated role's permissions" });
+      return;
+    }
+    if (permission_ids.length) {
+      const callerKeys = new Set(req.permissionKeys ?? []);
+      const { data: requested } = await supabase
+        .from('permissions').select('key').in('id', permission_ids);
+      const notHeld = (requested ?? []).map((p: any) => p.key).filter((k: string) => !callerKeys.has(k));
+      if (notHeld.length) {
+        res.status(403).json({ error: 'You cannot grant permissions you do not hold', missing: notHeld });
+        return;
+      }
+    }
+  }
 
   // Delete existing, insert new
   await supabase.from('role_permissions').delete().eq('role_id', req.params.roleId);

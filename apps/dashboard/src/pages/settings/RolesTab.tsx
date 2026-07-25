@@ -17,6 +17,7 @@ export default function RolesTab({ onRolesChange }: Props) {
   const [localPerms, setLocalPerms] = useState<Record<string, Set<string>>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<{ roleId: string; message: string } | null>(null);
   const [showNewRole, setShowNewRole] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -67,6 +68,7 @@ export default function RolesTab({ onRolesChange }: Props) {
 
   const saveRole = async (roleId: string) => {
     setSaving(roleId);
+    setSaveError(null);
     try {
       await api.put(`/api/staff/roles/${roleId}/permissions`, {
         permission_ids: Array.from(localPerms[roleId] ?? []),
@@ -74,7 +76,9 @@ export default function RolesTab({ onRolesChange }: Props) {
       setSaved(roleId);
       setTimeout(() => setSaved(null), 2000);
       fetchAll();
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      setSaveError({ roleId, message: err?.message ?? 'Failed to save' });
+    }
     finally { setSaving(null); }
   };
 
@@ -186,7 +190,10 @@ export default function RolesTab({ onRolesChange }: Props) {
                     onToggle={id => togglePerm(role.id, id)}
                     onToggleAll={ids => toggleAll(role.id, ids)}
                   />
-                  <div className="px-4 py-3 border-t border-gray-700 flex justify-end">
+                  <div className="px-4 py-3 border-t border-gray-700 flex items-center justify-end gap-3">
+                    {saveError?.roleId === role.id && (
+                      <span className="text-red-400 text-xs">{saveError.message}</span>
+                    )}
                     <button onClick={() => saveRole(role.id)} disabled={saving === role.id}
                       className={`px-5 py-2 rounded-xl text-sm font-semibold transition-colors ${
                         saved === role.id
