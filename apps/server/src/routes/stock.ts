@@ -201,7 +201,11 @@ router.post('/ingredients', requirePermission('ingredients.manage'), async (req,
   res.status(201).json(data);
 });
 
-router.patch('/ingredients/:id', async (req, res) => {
+// H13: any authenticated user could rewrite an ingredient's cost basis here —
+// the quantity door (POST /:id/adjust below) was gated and logged, this one
+// wasn't. ingredients.manage is already owner-only (defaultRolePermissions.ts),
+// so gating the whole endpoint with it closes every field, not just unit_cost.
+router.patch('/ingredients/:id', requirePermission('ingredients.manage'), async (req, res) => {
   const { name, category, unit, unit_cost, reorder_level, notes, status, is_packaging } = req.body;
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (name !== undefined)          updates.name          = name?.trim();
@@ -213,10 +217,26 @@ router.patch('/ingredients/:id', async (req, res) => {
   if (status !== undefined)        updates.status        = status;
   if (is_packaging !== undefined)  updates.is_packaging  = !!is_packaging;
 
+  // Read the current cost first (only when it's actually changing) so the
+  // audit row captures a real before/after, not just the new value.
+  const costChanging = updates.unit_cost !== undefined;
+  const previous = costChanging
+    ? (await supabase.from('ingredients').select('unit_cost').eq('id', req.params.id).eq('business_id', req.businessId).single()).data
+    : null;
+
   const { data, error } = await supabase.from('ingredients').update(updates)
     .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
   if (error) { sendError(res, error); return; }
   if (!data) { res.status(404).json({ error: 'Ingredient not found' }); return; }
+
+  if (costChanging && Number(previous?.unit_cost ?? null) !== Number(updates.unit_cost ?? null)) {
+    await supabase.from('ingredient_cost_history').insert({
+      business_id: req.businessId, ingredient_id: req.params.id,
+      old_unit_cost: previous?.unit_cost ?? null, new_unit_cost: updates.unit_cost,
+      changed_by: req.userId,
+    });
+  }
+
   res.json(data);
 });
 
@@ -289,7 +309,10 @@ router.get('/ingredients/:id/movements', async (req, res) => {
 // SUPPLIERS
 // =============================================================================
 
-router.get('/suppliers', async (req, res) => {
+// H13: suppliers/POs were reachable by any authenticated user (10 endpoints).
+// Gated with inventory.receive — same manager-tier permission GRN already
+// uses, since ordering/managing suppliers is the routine step just before it.
+router.get('/suppliers', requirePermission('inventory.receive'), async (req, res) => {
   const { status } = req.query as Record<string, string>;
   let query = supabase.from('suppliers').select('*').eq('business_id', req.businessId).order('name');
   if (status) query = query.eq('status', status);
@@ -298,7 +321,7 @@ router.get('/suppliers', async (req, res) => {
   res.json(data ?? []);
 });
 
-router.post('/suppliers', async (req, res) => {
+router.post('/suppliers', requirePermission('inventory.receive'), async (req, res) => {
   const { name, contact_name, email, phone, address, notes } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
   const { data, error } = await supabase.from('suppliers')
@@ -308,7 +331,7 @@ router.post('/suppliers', async (req, res) => {
   res.status(201).json(data);
 });
 
-router.patch('/suppliers/:id', async (req, res) => {
+router.patch('/suppliers/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { name, contact_name, email, phone, address, notes, status } = req.body;
   const { data, error } = await supabase.from('suppliers')
     .update({ name, contact_name, email, phone, address, notes, status, updated_at: new Date().toISOString() })
@@ -317,7 +340,8 @@ router.patch('/suppliers/:id', async (req, res) => {
   res.json(data);
 });
 
-router.delete('/suppliers/:id', async (req, res) => {
+// Already a soft delete (flips status to 'inactive', no row removed).
+router.delete('/suppliers/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { error } = await supabase.from('suppliers')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('business_id', req.businessId);
@@ -329,12 +353,13 @@ router.delete('/suppliers/:id', async (req, res) => {
 // PURCHASE ORDERS  (ordering INGREDIENTS, not products)
 // =============================================================================
 
-router.get('/purchase-orders', async (req, res) => {
+router.get('/purchase-orders', requirePermission('inventory.receive'), async (req, res) => {
   const { status, supplier_id, branch_id, limit = '50' } = req.query as Record<string, string>;
   let query = supabase.from('purchase_orders')
     .select(`*, suppliers ( id, name ),
       purchase_order_items ( id, ingredient_id, quantity_ordered, unit_cost, quantity_received, ingredients ( id, name, unit ) )`)
     .eq('business_id', req.businessId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(Math.min(Number(limit), 200));
   if (status)      query = query.eq('status', status);
@@ -352,18 +377,18 @@ router.get('/purchase-orders', async (req, res) => {
   res.json(withTotals);
 });
 
-router.get('/purchase-orders/:id', async (req, res) => {
+router.get('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { data, error } = await supabase.from('purchase_orders')
     .select(`*, suppliers ( id, name, email, phone ),
       purchase_order_items ( id, ingredient_id, quantity_ordered, unit_cost, quantity_received, ingredients ( id, name, unit ) )`)
-    .eq('id', req.params.id).eq('business_id', req.businessId).single();
+    .eq('id', req.params.id).eq('business_id', req.businessId).is('deleted_at', null).single();
   if (error || !data) { res.status(404).json({ error: 'Purchase order not found' }); return; }
   const total_amount = ((data as any).purchase_order_items ?? []).reduce(
     (s: number, it: any) => s + Number(it.unit_cost ?? 0) * Number(it.quantity_ordered ?? 0), 0);
   res.json({ ...data, total_amount });
 });
 
-router.post('/purchase-orders', async (req, res) => {
+router.post('/purchase-orders', requirePermission('inventory.receive'), async (req, res) => {
   const { branch_id, supplier_id, order_date, expected_date, notes, items = [] } = req.body;
   if (!branch_id)    { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
@@ -391,7 +416,7 @@ router.post('/purchase-orders', async (req, res) => {
   res.status(201).json({ ...po, purchase_order_items: lineItems });
 });
 
-router.patch('/purchase-orders/:id', async (req, res) => {
+router.patch('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { status, notes, expected_date, supplier_id } = req.body;
   const { data: current } = await supabase.from('purchase_orders')
     .select('status').eq('id', req.params.id).eq('business_id', req.businessId).single();
@@ -406,7 +431,7 @@ router.patch('/purchase-orders/:id', async (req, res) => {
   res.json(data);
 });
 
-router.post('/purchase-orders/:id/cancel', async (req, res) => {
+router.post('/purchase-orders/:id/cancel', requirePermission('inventory.receive'), async (req, res) => {
   const { reason } = req.body as { reason?: string };
   const { data: po } = await supabase.from('purchase_orders')
     .select('status, notes, po_number').eq('id', req.params.id).eq('business_id', req.businessId).single();
@@ -423,13 +448,17 @@ router.post('/purchase-orders/:id/cancel', async (req, res) => {
   res.json(data);
 });
 
-router.delete('/purchase-orders/:id', async (req, res) => {
+// Soft delete (audit H13 — this used to be a real DELETE of a procurement
+// record). Still draft-only, same as before; just preserved instead of purged.
+router.delete('/purchase-orders/:id', requirePermission('inventory.receive'), async (req, res) => {
   const { data: po } = await supabase.from('purchase_orders')
     .select('status').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!po)                   { res.status(404).json({ error: 'Purchase order not found' }); return; }
   if (po.status !== 'draft') { res.status(409).json({ error: 'Only draft purchase orders can be deleted' }); return; }
-  await supabase.from('purchase_order_items').delete().eq('purchase_order_id', req.params.id);
-  await supabase.from('purchase_orders').delete().eq('id', req.params.id);
+  const { error } = await supabase.from('purchase_orders')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', req.params.id).eq('business_id', req.businessId);
+  if (error) { sendError(res, error); return; }
   res.status(204).send();
 });
 
