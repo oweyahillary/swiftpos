@@ -1210,6 +1210,29 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
           sync_status: 'pending',
         });
       if (rErr) throw rErr;
+
+      // 2b. Reverse the credit charge (audit C5) — a voided credit sale must
+      // not leave the debt standing. Only fires for the credit leg; other
+      // tender types have nothing to reverse here.
+      // Order is already voided/refunded above with no surrounding transaction
+      // (see M7), so a failure here is logged, not thrown — the void itself
+      // already succeeded and the client shouldn't be told otherwise.
+      if (completedPayment.method === 'credit' && order.customer_id) {
+        const { error: crErr } = await supabase.rpc('apply_credit_transaction', {
+          p_business_id:   req.businessId,
+          p_customer_id:   order.customer_id,
+          p_branch_id:     order.branch_id,
+          p_order_id:      orderId,
+          p_type:          'adjustment',
+          p_amount:        -Math.abs(Number(completedPayment.amount) || 0),
+          p_method:        null,
+          p_reference:     null,
+          p_notes:         `Void: ${order.order_number} — ${reason}`,
+          p_created_by:    req.userId ?? null,
+          p_enforce_limit: false,
+        });
+        if (crErr) console.error('[credit] void reversal failed for order', orderId, crErr.message);
+      }
     }
 
     // 3. Reverse stock
@@ -1477,6 +1500,33 @@ router.post('/:id/pay', async (req, res) => {
       if (!disc) { res.status(400).json({ error: 'Invalid discount' }); return; }
     }
 
+    // ── Credit sale pre-check (audit C5) ──────────────────────────────────────
+    // The order-first flow (dine-in) had no credit handling at all — a credit
+    // leg here bypassed both the limit check and the balance write that
+    // POST /orders already had (partially — see below). Mirrors that check.
+    const creditLeg = paymentLegs.find(l => l.method === 'credit');
+    let creditCustomerId: string | null = null;
+    if (creditLeg) {
+      creditCustomerId = customer_id ?? order.customer_id ?? null;
+      if (!creditCustomerId) {
+        res.status(400).json({ error: 'A customer is required for a credit sale' });
+        return;
+      }
+      const creditAmount = Number(creditLeg.amount) || 0;
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('credit_limit, credit_balance')
+        .eq('id', creditCustomerId).eq('business_id', req.businessId).single();
+      if (!cust) { res.status(400).json({ error: 'Invalid customer' }); return; }
+      const available = Number(cust.credit_limit) - Number(cust.credit_balance);
+      if (creditAmount > available) {
+        res.status(400).json({
+          error: `Credit limit exceeded. Available: ${available.toFixed(2)}, required: ${creditAmount.toFixed(2)}`,
+        });
+        return;
+      }
+    }
+
     // 2. Insert payment legs
     const paymentRows = paymentLegs.map((leg: PaymentLegInput) => ({
       order_id:        order.id,
@@ -1496,17 +1546,43 @@ router.post('/:id/pay', async (req, res) => {
     if (pErr) { sendError(res, pErr); return; }
 
     // 3. Mark order completed
+    const orderUpdate: Record<string, unknown> = {
+      status:          'completed',
+      discount_amount: discount_amount ?? 0,
+      discount_id,
+      sync_status:     'pending',
+    };
+    // Only touch customer_id if this request actually supplied one — don't
+    // clobber whatever was set when the order was opened.
+    if (customer_id) orderUpdate.customer_id = customer_id;
+
     const { error: uErr } = await supabase
       .from('orders')
-      .update({
-        status:          'completed',
-        discount_amount: discount_amount ?? 0,
-        discount_id,
-        sync_status:     'pending',
-      })
+      .update(orderUpdate)
       .eq('id', order.id);
 
     if (uErr) { sendError(res, uErr); return; }
+
+    // 3b. Credit sale — record the debt (audit C5). Same RPC and same
+    // log-and-continue pattern as POST /orders' equivalent block: the order
+    // is already marked completed above with no surrounding transaction
+    // (M7), so a failure here is logged, not thrown.
+    if (creditLeg) {
+      const { error: creditErr } = await supabase.rpc('apply_credit_transaction', {
+        p_business_id:   req.businessId,
+        p_customer_id:   creditCustomerId,
+        p_branch_id:     order.branch_id,
+        p_order_id:      order.id,
+        p_type:          'charge',
+        p_amount:        Math.abs(Number(creditLeg.amount) || 0),
+        p_method:        null,
+        p_reference:     null,
+        p_notes:         `Credit sale ${order.order_number}`,
+        p_created_by:    req.userId ?? null,
+        p_enforce_limit: true,
+      });
+      if (creditErr) console.error('[credit] charge failed for order', order.id, creditErr.message);
+    }
 
     // 4. Deduct stock for each item
     for (const item of order.order_items ?? []) {
