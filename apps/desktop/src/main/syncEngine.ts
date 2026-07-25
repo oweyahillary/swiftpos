@@ -148,6 +148,7 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
+    await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -171,6 +172,7 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
+    await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -500,6 +502,13 @@ async function pullCatalogue(): Promise<boolean> {
 // server upserts BY ID, so this is idempotent and preserves the local UUIDs that
 // orders.shift_id (and float/expense shift_id) reference. MUST run before the
 // order push so the parent shift exists server-side when its orders arrive.
+//
+// Audit C6: /api/sync/push only ever writes OPEN-shift fields now — it can't
+// safely trust (or even compute) a close's expected_cash/cash_variance here,
+// because this shift's orders/payments usually haven't synced yet. A locally
+// closed shift's sync_status therefore stays 'pending' after this call; the
+// actual close is reconciled separately once its orders are confirmed synced
+// (see reconcileClosedShifts, called after pushPendingOrders).
 async function pushLocalRecords(errors: string[]): Promise<number> {
   const db = getLocalDb();
   const shifts = db.prepare(`
@@ -536,13 +545,15 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       errors.push(`Shift sync: ${err.error ?? res.status}`);
       return 0;   // leave rows pending — they retry next pass
     }
-    // Server has them now — mark synced. (Re-opening/closing a shift, or adding a
-    // float, resets sync_status to 'pending' again, so later changes re-push.)
+    // Server has the open-shift fields now. Only a still-open shift is fully
+    // done here — a closed one waits for reconcileClosedShifts to confirm the
+    // server-computed close before it's marked synced.
+    const openShiftIds = shifts.filter(s => s.status !== 'closed').map(s => s.id);
     const markShift = db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`);
     const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced' WHERE id=?`);
     const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced' WHERE id=?`);
     db.transaction(() => {
-      for (const s of shifts) markShift.run(s.id);
+      for (const id of openShiftIds) markShift.run(id);
       for (const f of floats) markFloat.run(f.id);
       for (const e of expenses) markExp.run(e.id);
     })();
@@ -674,6 +685,58 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   }
 
   return pushed;
+}
+
+// Reconcile locally closed shifts once their orders have all synced (audit
+// C6). Calls the existing POST /:id/close — the same formula the online till
+// already uses to compute expected_cash/cash_variance server-side from real
+// synced payments — instead of duplicating that math here or letting the
+// till's own number be trusted outright. Runs after pushPendingOrders so
+// "have all this shift's orders synced?" is a real answer, not a guess.
+async function reconcileClosedShifts(errors: string[]): Promise<number> {
+  const db = getLocalDb();
+  const closed = db.prepare(`
+    SELECT id, closing_float, notes FROM shifts WHERE status='closed' AND sync_status='pending'
+  `).all() as { id: string; closing_float: number | null; notes: string | null }[];
+  if (!closed.length) return 0;
+
+  let reconciled = 0;
+  for (const shift of closed) {
+    // Skip until every order from this shift is confirmed synced — closing
+    // early would make the server read cash sales as short/zero and raise a
+    // false variance (see the comment on pushLocalRecords for why).
+    const pending = db.prepare(
+      `SELECT COUNT(*) AS count FROM orders WHERE shift_id=? AND sync_status!='synced'`
+    ).get(shift.id) as { count: number };
+    if (pending.count > 0) continue;
+
+    const doPost = () => fetch(`${_serverUrl}/api/shifts/${shift.id}/close`, {
+      method: 'POST',
+      headers: pushAuthHeaders(),
+      body: JSON.stringify({ closing_float: shift.closing_float, notes: shift.notes }),
+    });
+
+    try {
+      let res = await doPost();
+      if (res.status === 401) {
+        const refreshed = await refreshStaffToken();
+        if (refreshed) res = await doPost();
+      }
+      // 404 here means "not an open shift" — since we generated this id and
+      // pushed it as open ourselves, that can only mean an earlier pass's
+      // close succeeded but its response was lost. Treat as done, not failed.
+      if (res.ok || res.status === 404) {
+        db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`).run(shift.id);
+        reconciled++;
+      } else {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        errors.push(`Shift close: ${err.error ?? res.status}`);
+      }
+    } catch (err: any) {
+      errors.push(`Shift close: ${err.message}`);
+    }
+  }
+  return reconciled;
 }
 
 // Returns the currently open shift row (most recent), or null if none is open.

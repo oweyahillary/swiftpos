@@ -34,33 +34,46 @@ router.post('/push', async (req, res) => {
 
   try {
     // ── Shifts (parent — upsert FIRST so child FKs resolve) ──────────────────
+    // Audit C6: this endpoint used to trust the client's expected_cash /
+    // cash_variance / status='closed' outright — an offline till could report
+    // any numbers it liked with no server check. It can't safely compute the
+    // real figures here either: shifts push BEFORE their orders (see file
+    // header), so this shift's cash payments usually don't exist server-side
+    // yet. So this endpoint now only ever writes OPEN-shift fields. The actual
+    // close — and the server-computed expected_cash/cash_variance — happens
+    // through the existing POST /:id/close (same formula the online till
+    // already uses), called by the sync engine once this shift's orders have
+    // synced. See syncEngine.ts's reconcileClosedShifts().
     if (shifts.length) {
       const ids = shifts.map((s: any) => s.id);
       const { data: existing } = await supabase
-        .from('shifts').select('id, business_id').in('id', ids);
+        .from('shifts').select('id, business_id, status').in('id', ids);
       if ((existing ?? []).some(r => r.business_id !== businessId)) {
         res.status(409).json({ error: 'shift id belongs to another business' });
         return;
       }
 
-      const rows = shifts.map((s: any) => ({
-        id:            s.id,
-        business_id:   businessId,                 // forced from token, not the client
-        branch_id:     s.branch_id,
-        cashier_id:    s.cashier_id,
-        opened_at:     s.opened_at,
-        closed_at:     s.closed_at ?? null,
-        status:        s.status ?? 'open',
-        opening_float: Number(s.opening_float) || 0,
-        closing_float: s.closing_float != null ? Number(s.closing_float) : null,
-        expected_cash: s.expected_cash != null ? Number(s.expected_cash) : null,
-        cash_variance: s.cash_variance != null ? Number(s.cash_variance) : null,
-        notes:         s.notes ?? null,
-        updated_at:    new Date().toISOString(),
-      }));
-      const { error } = await supabase.from('shifts').upsert(rows, { onConflict: 'id' });
-      if (error) { sendError(res, error); return; }
-      upserted.shifts = rows.length;
+      // A shift the server already closed (via /:id/close) must never be
+      // reopened by a stale/retried push — just leave it alone.
+      const alreadyClosed = new Set((existing ?? []).filter(r => r.status === 'closed').map(r => r.id));
+
+      const rows = shifts
+        .filter((s: any) => !alreadyClosed.has(s.id))
+        .map((s: any) => ({
+          id:            s.id,
+          business_id:   businessId,                 // forced from token, not the client
+          branch_id:     s.branch_id,
+          cashier_id:    s.cashier_id,
+          opened_at:     s.opened_at,
+          status:        'open',                      // never trust a client-reported close
+          opening_float: Number(s.opening_float) || 0,
+          updated_at:    new Date().toISOString(),
+        }));
+      if (rows.length) {
+        const { error } = await supabase.from('shifts').upsert(rows, { onConflict: 'id' });
+        if (error) { sendError(res, error); return; }
+      }
+      upserted.shifts = shifts.length; // report all as received, incl. already-closed ones
     }
 
     // ── Float movements — must reference a shift owned by this business, and
