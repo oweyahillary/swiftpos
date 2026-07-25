@@ -5,11 +5,15 @@ services:
     rootDir: apps/server
     buildCommand: npm install && npm run build
     startCommand: node dist/index.js
-    plan: free
+    plan: starter        # was: free. Free tier sleeps + ~50s cold start = missed M-Pesa callbacks.
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
+
+      # ── Supabase ────────────────────────────────────────────────────────────
+      # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY throw at module scope
+      # (lib/supabase.ts:9) — already provisioned.
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
@@ -20,9 +24,64 @@ services:
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
-      - key: CORS_ORIGINS
+
+      # ── BOOT-BLOCKING — the server will not start without these ─────────────
+      # Each throws at module scope, before the HTTP listener is created.
+      # Audit H10.
+
+      # middleware/adminAuth.ts:24 — throw new Error('Missing ADMIN_JWT_SECRET')
+      - key: ADMIN_JWT_SECRET
         sync: false
-      - key: DASHBOARD_URL
+
+      # routes/tech.ts:33 — throw new Error('Missing TECH_HMAC_SECRET')
+      - key: TECH_HMAC_SECRET
+        sync: false
+
+      # lib/techToken.ts:56 — const _keys = loadSigningKeys() runs at import.
+      # With NODE_ENV=production and either key missing it throws
+      # "Refusing to start without an explicitly provisioned Ed25519 keypair."
+      # Imported by routes/tech.ts and routes/admin.ts, both mounted in index.ts.
+      # PEM newlines must be escaped as literal \n — loadSigningKeys() calls
+      # .replace(/\\n/g, '\n') on read.
+      - key: TECH_SIGNING_PRIVATE_KEY
+        sync: false
+      - key: TECH_SIGNING_PUBLIC_KEY
+        sync: false
+
+      # ── Explicit values — dangerous defaults if left unset ───────────────────
+
+      # routes/mpesa.ts:51 — process.env.MPESA_ENVIRONMENT ?? 'sandbox'
+      # Unset points Daraja at the sandbox host AND makes isAllowedCallbackIp()
+      # return true unconditionally. A live deploy that forgets this transacts
+      # against sandbox with the callback allowlist disabled and looks fine.
+      - key: MPESA_ENVIRONMENT
+        value: production
+
+      # jobs/etimsRetry.ts:12 — 'none' stops the retry job scheduling entirely.
+      # Per-business fiscalisation stays gated on feature_flags.etims_enabled,
+      # so this is the outer of two switches. Flip to a real provider only when
+      # a client needs KRA signing.
+      - key: ETIMS_PROVIDER
+        value: none
+
+      # ── At-rest encryption (H9) ─────────────────────────────────────────────
+      # AES-256-GCM key for eTIMS cmc_key and M-Pesa consumer_secret/passkey.
+      # encryptSecret() fails closed without it. Generate: openssl rand -hex 32
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+
+      # ── M-Pesa ──────────────────────────────────────────────────────────────
+      - key: MPESA_CALLBACK_BASE_URL
+        sync: false
+      # Optional: routes/mpesa.ts:76 falls back to DEFAULT_DARAJA_IPS. Set only
+      # if Safaricom's published callback ranges differ from that hardcoded list.
+      # - key: MPESA_ALLOWED_IPS
+      #   sync: false
+
+      # ── Mail — optional, degrades gracefully ────────────────────────────────
+      # lib/mailer.ts:16 guards on presence; unset simply disables outbound mail.
+      # Needed for owner notifications (e.g. device_pending) and daily summaries.
+      - key: RESEND_API_KEY
         sync: false
       - key: SMTP_HOST
         sync: false
@@ -34,5 +93,30 @@ services:
         sync: false
       - key: NOTIFY_FROM_EMAIL
         sync: false
-      - key: MPESA_CALLBACK_BASE_URL
+
+      # ── App ─────────────────────────────────────────────────────────────────
+      - key: CORS_ORIGINS
         sync: false
+      - key: DASHBOARD_URL
+        sync: false
+
+# ── Deliberately NOT set here ─────────────────────────────────────────────────
+#
+# PORT                     Render injects this. index.ts:12 reads
+#                          process.env.PORT ?? 4000. Hardcoding it risks
+#                          binding to a port the health check isn't watching.
+#
+# ADMIN_EMAIL              Read only by scripts/reset-admin.ts, a CLI tool.
+# ADMIN_PASSWORD           Pass inline when running it; never store in the
+#                          manifest. See the C4 note below.
+#
+# DAILY_SUMMARY_CRON       jobs/dailySummary.ts:20 defaults to '0 18 * * *'.
+#
+# ETIMS_BASE_URL           Not read while ETIMS_PROVIDER=none.
+# ETIMS_AUTH_TOKEN         Provision alongside the provider when a client
+# ETIMS_SALES_PATH         actually needs fiscalisation.
+# ETIMS_INIT_PATH
+# ETIMS_QR_BASE
+# ETIMS_RETRY_CRON
+#
+# WHATSAPP_* / TWILIO_*    Out of pilot scope.
