@@ -2,12 +2,16 @@ import { Router } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope } from '../middleware/rbac';
+import { branchScope, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
 router.use(requireAuth);
 router.use(requireWebSurface);   // reports are a web-portal surface — block desktop tokens
+// H6: every report endpoint was reachable by any authenticated web user —
+// requireWebSurface blocks desktop till tokens, not staff. A waiter login
+// could pull the Master DSR, staff performance, food cost, tax, etc.
+router.use(requirePermission('reports.view'));
 
 /**
  * chunkIn — safe replacement for Supabase .in() with large arrays.
@@ -928,7 +932,7 @@ router.get('/voids', async (req, res) => {
 // Kenya tax report — VAT 16% + CTL 2% per period, with category and branch split.
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/tax', async (req, res) => {
+router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
@@ -1097,7 +1101,7 @@ router.get('/products-v2', async (req, res) => {
 //
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/food-cost', async (req, res) => {
+router.get('/food-cost', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
@@ -1262,7 +1266,7 @@ router.get('/food-cost', async (req, res) => {
 // Query: from, to, branch_id
 
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/aggregator', async (req, res) => {
+router.get('/aggregator', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
@@ -1344,7 +1348,7 @@ router.get('/aggregator', async (req, res) => {
 //
 // Query: from, to, branch_id
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/splh', async (req, res) => {
+router.get('/splh', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);

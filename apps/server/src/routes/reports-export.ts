@@ -25,12 +25,16 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
-import { branchScope } from '../middleware/rbac';
+import { branchScope, requirePermission } from '../middleware/rbac';
 import ExcelJS       from 'exceljs';
 
 const router = safeRouter();
 router.use(requireAuth);
 router.use(requireWebSurface);   // export is a web-portal surface — block desktop tokens
+// H6: exports were reachable by any authenticated web user. Classified with
+// tax/food-cost/splh under the stricter key, not the broader reports.view —
+// a downloadable file is easier to walk out with than an on-screen report.
+router.use(requirePermission('reports.financial'));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

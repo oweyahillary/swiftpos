@@ -31,10 +31,14 @@ const CASHIER_KEYS = new Set([
 //                          can silently change a number)
 //   • ingredients.manage — the ingredient catalogue is a business-level
 //                          definition the owner owns
+//   • reports.financial  — tax report, food cost/margins, SPLH & labour cost,
+//                          aggregator commission, and all report exports
+//                          (audit H6; managers still get reports.view)
 const MANAGER_DENY = new Set([
   'settings.manage',
   'inventory.adjust',
   'ingredients.manage',
+  'reports.financial',
 ]);
 
 export async function seedDefaultRolePermissions(
