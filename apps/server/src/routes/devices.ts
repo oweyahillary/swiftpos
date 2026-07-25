@@ -14,6 +14,7 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 import { supabase }    from '../lib/supabase';
 
 const router = safeRouter();
@@ -51,7 +52,7 @@ router.get('/', async (req, res) => {
 
 // ── PATCH /api/devices/:id/approve ───────────────────────────────────────────
 
-router.patch('/:id/approve', async (req, res) => {
+router.patch('/:id/approve', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -91,7 +92,7 @@ router.patch('/:id/approve', async (req, res) => {
 
 // ── PATCH /api/devices/:id/reject ────────────────────────────────────────────
 
-router.patch('/:id/reject', async (req, res) => {
+router.patch('/:id/reject', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -122,7 +123,7 @@ router.patch('/:id/reject', async (req, res) => {
 // ── DELETE /api/devices/:id ───────────────────────────────────────────────────
 // Revoke a previously approved device — e.g. lost/stolen or staff departure.
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, business_id')
