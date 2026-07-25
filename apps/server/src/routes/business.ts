@@ -3,6 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt from 'bcrypt';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -13,6 +14,36 @@ const BCRYPT_ROUNDS = 12;
 // When one of these keys is written we bcrypt-hash the value and persist it
 // under "<key>_hash" instead. The plaintext key is never stored.
 const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
+
+// ── C2: default-deny read allowlist ─────────────────────────────────────────
+// GET /settings used to mask only keys ending in "_hash" — everything else,
+// including mpesa_consumer_secret / mpesa_passkey / mpesa_consumer_key /
+// mpesa_shortcode, came back in clear text to any authenticated user (a
+// waiter's 4-digit PIN was enough to read the merchant's M-Pesa credentials).
+// Flipped to default-deny: only the keys a dashboard screen actually reads
+// back are exposed here; a secret — or any future key nobody remembered to
+// hide — is invisible by default instead of exposed by default.
+// (M-Pesa credentials get proper encryption-at-rest under H9; this closes
+// the read-path leak in the meantime and permanently either way.)
+const READABLE_SETTING_KEYS = new Set([
+  'require_device_registration', 'restaurant_order_mode',
+  'enable_covers', 'enable_course_firing', 'auto_print_kot', 'enable_split_bill',
+  'service_charge_pct', 'table_turnover_alert_mins', 'turnover_alert_minutes',
+  'period_breakfast', 'period_lunch', 'period_dinner', 'period_allday',
+  'fuel_show_litres_dispensed', 'fuel_require_attendant_name', 'fuel_auto_print_receipt', 'fuel_unit_display',
+  'hold_requires_pin', 'minimart_catalogue_default', 'scanner_beep', 'weight_unit',
+  'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
+  'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
+  'loyalty_enabled', 'loyalty_earn_rate',
+]);
+// Dynamic-suffix key families with no secret ever under them — the suffix is
+// per-tenant data (a vehicle type, a delivery platform name), not something
+// that can be pre-enumerated.
+const READABLE_SETTING_PREFIXES = ['parking_rate_', 'aggregator_commission_'];
+
+function isReadableSettingKey(key: string): boolean {
+  return READABLE_SETTING_KEYS.has(key) || READABLE_SETTING_PREFIXES.some(p => key.startsWith(p));
+}
 
 // GET /api/business
 router.get('/', requireAuth, async (req, res) => {
@@ -41,15 +72,14 @@ router.get('/settings', requireAuth, async (req, res) => {
 
   if (error) { sendError(res, error); return; }
 
-  // Unwrap jsonb value to plain string for the dashboard.
-  // Never expose secret hashes (e.g. supervisor_pin_hash) — a 4-digit PIN
-  // behind bcrypt is brute-forceable offline, so the hash is sensitive.
-  const flat = (data ?? []).map((row: any) => ({
-    key:   row.key,
-    value: row.key.endsWith('_hash')
-      ? '****'
-      : (typeof row.value === 'string' ? row.value : JSON.stringify(row.value)),
-  }));
+  // Default-deny (audit C2): only allowlisted keys are ever returned; a
+  // secret, a hash, or anything not on the list is simply omitted.
+  const flat = (data ?? [])
+    .filter((row: any) => isReadableSettingKey(row.key))
+    .map((row: any) => ({
+      key:   row.key,
+      value: typeof row.value === 'string' ? row.value : JSON.stringify(row.value),
+    }));
 
   res.json(flat);
 });
@@ -57,7 +87,7 @@ router.get('/settings', requireAuth, async (req, res) => {
 // POST /api/business/settings
 // Upserts a single key/value pair for this business.
 // Body: { key: string, value: string }
-router.post('/settings', requireAuth, async (req, res) => {
+router.post('/settings', requireAuth, requirePermission('settings.manage'), async (req, res) => {
   const { key, value } = req.body;
 
   if (!key || value === undefined) {
