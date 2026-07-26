@@ -45,7 +45,7 @@ router.get('/init', async (req, res) => {
       .single(),
     supabase
       .from('businesses')
-      .select('type, name, currency, vat_rate')
+      .select('type, name, currency, vat_rate, ctl_rate')
       .eq('id', req.businessId)
       .single(),
   ]);
@@ -149,6 +149,9 @@ router.get('/init', async (req, res) => {
     // and prints the tax this business actually charges — and so a
     // non-VAT-registered business (rate 0) gets no VAT line at all.
     vatRate: business?.vat_rate ?? null,
+    // Catering/Tourism Levy. 0 or null = not applicable, and the till's
+    // arithmetic collapses to VAT-only.
+    ctlRate: business?.ctl_rate ?? 0,
   });
 });
 

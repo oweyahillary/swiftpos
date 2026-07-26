@@ -112,7 +112,7 @@ async function verifyOverrideAuthorizer(
 // selectedModifiers[].price to the authoritative DB values (so denormalised
 // display rows stay truthful). Returns computed money or a structured error.
 type RecomputeResult =
-  | { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number }
+  | { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number; ctl: number }
   | { ok: false; status: number; error: string };
 
 async function recomputeOrderTotals(
@@ -214,11 +214,22 @@ async function recomputeOrderTotals(
   const total = round2(subtotal - discount);
 
   const { data: bizRow } = await supabase
-    .from('businesses').select('vat_rate').eq('id', businessId).single();
+    .from('businesses').select('vat_rate, ctl_rate').eq('id', businessId).single();
   const vatRate = Number(bizRow?.vat_rate ?? 16);
-  const vat = round2(total - total / (1 + vatRate / 100)); // VAT-inclusive prices
+  const ctlRate = Number(bizRow?.ctl_rate ?? 0);
 
-  return { ok: true, lines, subtotal, discount, total, vat };
+  // Menu prices are inclusive of BOTH taxes, so the net is backed out using the
+  // combined rate, then each tax is charged on that net. VAT is on the net, not
+  // on net-plus-CTL — matching how the levy is assessed (base excludes VAT) and
+  // how the incumbent system on site computes it.
+  //   750 / 1.18 = 635.59 net → ctl 12.71, vat 101.69, total 750.00
+  // With ctlRate = 0 this collapses exactly to the previous VAT-only behaviour,
+  // so businesses outside the levy's scope are unaffected.
+  const net = total / (1 + (vatRate + ctlRate) / 100);
+  const vat = round2(net * (vatRate / 100));
+  const ctl = round2(net * (ctlRate / 100));
+
+  return { ok: true, lines, subtotal, discount, total, vat, ctl };
 }
 
 // ── Loyalty helpers ──────────────────────────────────────────
@@ -381,6 +392,7 @@ router.post('/', async (req, res) => {
       discount: authDiscount,
       total: authTotal,
       vat: authVat,
+      ctl: authCtl,
     } = recomputed;
 
     // ── L5: a client-supplied discount_id must belong to this business ───────
@@ -455,6 +467,7 @@ router.post('/', async (req, res) => {
         status: 'completed',
         subtotal: authSubtotal,
         vat_amount: authVat,
+        ctl_amount: authCtl,
         discount_amount: authDiscount,
         discount_id: discount_id ?? null,
         loyalty_points_used: points_redeemed,
@@ -1395,7 +1408,7 @@ router.post('/open', async (req, res) => {
     // Item 4: authoritative totals (no discount applied at open time)
     const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, 0);
     if (!recomputed.ok) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
-    const { lines: authLines, subtotal: authSubtotal, total: authTotal, vat: authVat } = recomputed;
+    const { lines: authLines, subtotal: authSubtotal, total: authTotal, vat: authVat, ctl: authCtl } = recomputed;
 
     // 1. Create the order in 'open' status — no payment yet
     const { data: order, error: oErr } = await supabase
@@ -1409,6 +1422,7 @@ router.post('/open', async (req, res) => {
         covers,
         subtotal:        authSubtotal,
         vat_amount:      authVat,
+        ctl_amount:      authCtl,
         total:           authTotal,
         discount_amount: 0,
         status:          'open',

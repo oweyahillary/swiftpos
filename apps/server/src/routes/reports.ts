@@ -625,11 +625,16 @@ router.get('/master', async (req, res) => {
   const { start, end } = getDateRange(from as string, to as string);
   const scopedBranch = branchScope(req);
 
-  // Catering levy (CTL) only applies to hospitality establishments — not to
-  // retail/minimart/petrol/parking. Gate it on the business type.
+  // Catering/Tourism Levy applies only where the business is actually registered
+  // for it. Was gated on business type with a hardcoded 2%; now driven by the
+  // businesses.ctl_rate column, which is the same source the sale path uses when
+  // computing orders.ctl_amount. Type is a poor proxy — a small restaurant under
+  // the gross-sales threshold is not liable, and the type list would have charged
+  // it anyway.
   const { data: bizRow } = await supabase
-    .from('businesses').select('type').eq('id', req.businessId).single();
-  const ctlApplies = ['restaurant', 'cafe'].includes((bizRow?.type ?? '') as string);
+    .from('businesses').select('type, ctl_rate').eq('id', req.businessId).single();
+  const CTL_RATE = Number(bizRow?.ctl_rate ?? 0) / 100;
+  const ctlApplies = CTL_RATE > 0;
 
   // ── 1. Fetch orders (completed + voided) ─────────────────────────────────
   let ordersQ = supabase
@@ -660,8 +665,7 @@ router.get('/master', async (req, res) => {
   const grossInclVat  = completed.reduce((s, o) => s + Number(o.total), 0);
   const totalVat      = completed.reduce((s, o) => s + Number(o.vat_amount ?? 0), 0);
   const totalDiscount = completed.reduce((s, o) => s + Number(o.discount_amount ?? 0), 0);
-  // CTL (Catering Levy) = 2% of net-of-VAT sales — hospitality only.
-  const CTL_RATE     = 0.02;
+  // CTL is charged on net-of-VAT sales; rate resolved from the business above.
   const netBeforeTax = grossInclVat - totalVat;
   const totalCtl     = ctlApplies ? netBeforeTax * CTL_RATE : 0;
   const totalSale    = grossInclVat;
@@ -939,9 +943,12 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
 
   // CTL (Catering Levy) is hospitality-only; gate it on business type.
   const { data: bizRow } = await supabase
-    .from('businesses').select('type, vat_rate').eq('id', req.businessId).single();
-  const ctlApplies = ['restaurant', 'cafe'].includes((bizRow?.type ?? '') as string);
-  const CTL_RATE = ctlApplies ? 0.02 : 0;
+    .from('businesses').select('type, vat_rate, ctl_rate').eq('id', req.businessId).single();
+  // Was: hardcoded 0.02 whenever the business type was restaurant/cafe, while the
+  // transaction path never separated CTL at all — so the report asserted a levy
+  // the orders it summarised had never recorded. Both now read the same column.
+  const CTL_RATE = Number(bizRow?.ctl_rate ?? 0) / 100;
+  const ctlApplies = CTL_RATE > 0;
   // Finding M1. The rate echoed in the response was the literal 16, while every
   // VAT figure in the report comes from orders.vat_amount — computed at sale
   // time from the business's real rate. A business on any other rate received a
