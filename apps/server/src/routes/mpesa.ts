@@ -43,6 +43,8 @@ import { Router }    from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
+import { decryptSecret } from '../lib/crypto';
 
 const router = safeRouter();
 
@@ -108,6 +110,14 @@ interface MpesaConfig {
   type:           'CustomerBuyGoodsOnline' | 'CustomerPayBillOnline';
 }
 
+// Decrypt without throwing — a missing/rotated APP_ENCRYPTION_KEY or a
+// corrupt value shouldn't crash the payment flow; getMpesaConfig() already
+// treats a missing credential as "M-Pesa not configured", which is the
+// correct, visible failure mode here (same pattern lib/etims/index.ts uses).
+function safeDecrypt(v: string): string | null {
+  try { return decryptSecret(v); } catch { return null; }
+}
+
 async function getMpesaConfig(businessId: string): Promise<MpesaConfig | null> {
   const { data, error } = await supabase
     .from('business_settings')
@@ -126,16 +136,23 @@ async function getMpesaConfig(businessId: string): Promise<MpesaConfig | null> {
   const cfg: Record<string, string> = {};
   data.forEach(row => { cfg[row.key] = row.value; });
 
-  if (!cfg.mpesa_consumer_key || !cfg.mpesa_consumer_secret ||
-      !cfg.mpesa_shortcode    || !cfg.mpesa_passkey) {
+  // H9: consumer_secret and passkey are encrypted at rest (business.ts write
+  // path) — decrypt here. decryptSecret() itself passes any legacy plaintext
+  // value through unchanged, so this also works for rows written before this
+  // fix, without needing the one-time backfill to have run yet.
+  const consumerSecret = cfg.mpesa_consumer_secret ? safeDecrypt(cfg.mpesa_consumer_secret) : null;
+  const passkey        = cfg.mpesa_passkey ? safeDecrypt(cfg.mpesa_passkey) : null;
+
+  if (!cfg.mpesa_consumer_key || !consumerSecret ||
+      !cfg.mpesa_shortcode    || !passkey) {
     return null;
   }
 
   return {
     consumerKey:    cfg.mpesa_consumer_key,
-    consumerSecret: cfg.mpesa_consumer_secret,
+    consumerSecret,
     shortcode:      cfg.mpesa_shortcode,
-    passkey:        cfg.mpesa_passkey,
+    passkey,
     type:           (cfg.mpesa_type as MpesaConfig['type']) ?? 'CustomerBuyGoodsOnline',
   };
 }
@@ -175,16 +192,40 @@ function generatePassword(shortcode: string, passkey: string, timestamp: string)
 // ── POST /api/mpesa/stk-push ──────────────────────────────────────────────────
 
 router.post('/stk-push', requireAuth, async (req, res) => {
-  const { phone, amount, order_id, account_reference, description } = req.body;
+  const { phone, order_id, account_reference, description } = req.body;
 
-  if (!phone || !amount || !order_id) {
-    res.status(400).json({ error: 'phone, amount, and order_id are required' });
+  if (!phone || !order_id) {
+    res.status(400).json({ error: 'phone and order_id are required' });
     return;
   }
 
-  const amountInt = Math.ceil(Number(amount)); // Daraja requires whole numbers
+  // ── H8: tenant scope + real amount ──────────────────────────────────────
+  // Previously: order_id was never checked against req.businessId, and the
+  // amount was whatever the request body said — a user in tenant A could flip
+  // a payment row in tenant B, or a cashier could STK-push a customer for any
+  // amount unrelated to the bill. The amount now comes ONLY from the pending
+  // mpesa payment row that order creation already wrote (orders.ts), which
+  // was itself derived from the order total there — never from this request.
+  const { data: pendingLeg, error: legErr } = await supabase
+    .from('payments')
+    .select('id, amount, status')
+    .eq('order_id', order_id)
+    .eq('business_id', req.businessId)
+    .eq('method', 'mpesa')
+    .single();
+
+  if (legErr || !pendingLeg) {
+    res.status(404).json({ error: 'No M-Pesa payment leg found for that order' });
+    return;
+  }
+  if ((pendingLeg as any).status === 'completed') {
+    res.status(409).json({ error: 'This M-Pesa payment has already been completed' });
+    return;
+  }
+
+  const amountInt = Math.ceil(Number((pendingLeg as any).amount)); // Daraja requires whole numbers
   if (amountInt < 1) {
-    res.status(400).json({ error: 'Amount must be at least KES 1' });
+    res.status(400).json({ error: 'Payment amount must be at least KES 1' });
     return;
   }
 
@@ -258,8 +299,8 @@ router.post('/stk-push', requireAuth, async (req, res) => {
         mpesa_requested_at: new Date().toISOString(),
         mpesa_result_desc:  null,
       })
-      .eq('order_id', order_id)
-      .eq('method', 'mpesa');
+      .eq('id', (pendingLeg as any).id)
+      .eq('business_id', req.businessId);
 
     res.json({
       checkoutRequestId:    checkoutId,
@@ -317,7 +358,7 @@ router.post('/callback', async (req, res) => {
       // the callback. This gives us the expected amount and lets us de-duplicate.
       const { data: payment } = await supabase
         .from('payments')
-        .select('id, order_id, amount, status')
+        .select('id, order_id, amount, status, business_id')
         .eq('mpesa_checkout_id', checkoutId)
         .single();
 
@@ -335,24 +376,30 @@ router.post('/callback', async (req, res) => {
       // Amount validation — the STK push charged Math.ceil(expected), so a
       // genuine payment pays at least that. A shortfall means a tampered/forged
       // callback or an underpayment: do NOT complete the order — record it as
-      // failed and flag loudly for a human to review.
+      // failed and flag it in payment_exceptions for a human to review, rather
+      // than only a server log nobody's watching in real time.
       const expectedInt = Math.ceil(Number((payment as any).amount ?? 0));
       if (expectedInt > 0 && paidAmount < expectedInt) {
-        console.error(
-          `[mpesa] AMOUNT MISMATCH on ${checkoutId}: paid ${paidAmount} < expected ${expectedInt} — order NOT completed, flagged for review`,
-        );
-        // 'failed' is the closest valid payments.status; the console.error above
-        // is the signal to investigate. (If you add a 'flagged' status to the
-        // payments CHECK constraint later, use it here instead.)
+        const mismatchMsg = `Amount mismatch: paid ${paidAmount}, expected ${expectedInt}`;
+        console.error(`[mpesa] AMOUNT MISMATCH on ${checkoutId}: ${mismatchMsg} — order NOT completed, flagged for review`);
         await supabase
           .from('payments')
           .update({
             status:            'failed',
             reference:         mpesaRef,
             mpesa_phone:       phone,
-            mpesa_result_desc: `Amount mismatch: paid ${paidAmount}, expected ${expectedInt}`,
+            mpesa_result_desc: mismatchMsg,
           })
           .eq('id', (payment as any).id);
+        await supabase.from('payment_exceptions').insert({
+          business_id:      (payment as any).business_id,
+          payment_id:       (payment as any).id,
+          order_id:         (payment as any).order_id,
+          checkout_id:      checkoutId,
+          expected_amount:  expectedInt,
+          received_amount:  paidAmount,
+          reason:           mismatchMsg,
+        });
         return;
       }
 
@@ -369,11 +416,29 @@ router.post('/callback', async (req, res) => {
         })
         .eq('id', (payment as any).id);
 
+      // H8: complete the order only once every leg on it is settled — a split
+      // cash+M-Pesa bill must not be closed by the M-Pesa half alone if another
+      // leg (e.g. a second, still-pending M-Pesa number on a shared bill) hasn't
+      // cleared. Note: today every OTHER method is marked 'completed' at order
+      // creation (synchronous by design — cash/card settle immediately at the
+      // till), so in the common single-mpesa-leg case this resolves to "yes,
+      // complete" exactly as before. This check earns its keep the moment a
+      // second async leg exists, and costs nothing when one doesn't.
       if ((payment as any).order_id) {
-        await supabase
-          .from('orders')
-          .update({ status: 'completed' })
-          .eq('id', (payment as any).order_id);
+        const { data: otherLegs } = await supabase
+          .from('payments')
+          .select('status')
+          .eq('order_id', (payment as any).order_id)
+          .neq('id', (payment as any).id);
+        const allSettled = (otherLegs ?? []).every((l: any) => l.status === 'completed');
+        if (allSettled) {
+          await supabase
+            .from('orders')
+            .update({ status: 'completed' })
+            .eq('id', (payment as any).order_id);
+        } else {
+          console.log(`[mpesa] Order ${(payment as any).order_id} has other unsettled legs — not marking completed yet`);
+        }
       }
 
       console.log(`[mpesa] Payment completed: ${mpesaRef} — KES ${paidAmount}`);
@@ -461,6 +526,27 @@ router.get('/config', requireAuth, async (req, res) => {
     shortcode:  config?.shortcode ?? null,
     environment: ENV,
   });
+});
+
+// ── GET /api/mpesa/exceptions ─────────────────────────────────────────────────
+// Amount mismatches from the callback (audit H8) — was console.error only
+// before, now persisted to payment_exceptions. This is the read endpoint for
+// that table; no dashboard UI page consumes it yet (flagged as a follow-up,
+// not built here). Same permission tier as the other financial-sensitive
+// report reads (H6).
+router.get('/exceptions', requireAuth, requirePermission('reports.financial'), async (req, res) => {
+  const { resolved } = req.query as Record<string, string>;
+  let query = supabase
+    .from('payment_exceptions')
+    .select('*')
+    .eq('business_id', req.businessId)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (resolved === 'false') query = query.is('resolved_at', null);
+  if (resolved === 'true')  query = query.not('resolved_at', 'is', null);
+  const { data, error } = await query;
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json(data ?? []);
 });
 
 export default router;

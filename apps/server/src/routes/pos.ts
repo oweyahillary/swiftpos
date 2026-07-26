@@ -45,7 +45,7 @@ router.get('/init', async (req, res) => {
       .single(),
     supabase
       .from('businesses')
-      .select('type, name, currency')
+      .select('type, name, currency, vat_rate')
       .eq('id', req.businessId)
       .single(),
   ]);
@@ -145,6 +145,10 @@ router.get('/init', async (req, res) => {
     businessType: business?.type ?? 'retail',
     businessName: business?.name ?? '',
     currency: business?.currency ?? 'KES',
+    // The desktop till used to hardcode 16. Send the real rate so it computes
+    // and prints the tax this business actually charges — and so a
+    // non-VAT-registered business (rate 0) gets no VAT line at all.
+    vatRate: business?.vat_rate ?? null,
   });
 });
 

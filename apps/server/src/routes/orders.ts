@@ -19,6 +19,22 @@ router.use(requireAuth);
 // Round to 2 dp (money) avoiding binary-float drift.
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+// ── Discount ceiling (pilot stopgap for finding M4) ──────────────────────────
+// Manual discounts are ungated: no permission check, no reason code, no
+// supervisor authorisation, and the only limit was the order subtotal — so a
+// cashier could zero out any sale. That is the most common POS fraud vector.
+//
+// This is NOT the M4 fix. It is a blunt ceiling that bounds the exposure so a
+// supervised pilot can run while the real control (permission + reason code +
+// approval trail) is built. Override per-deployment with MAX_DISCOUNT_PCT, but
+// raise it deliberately and preferably alongside that work.
+const MAX_DISCOUNT_PCT = Number(process.env.MAX_DISCOUNT_PCT ?? 10);
+
+function capDiscount(requested: unknown, subtotal: number): number {
+  const asked = Math.max(0, Number(requested) || 0);
+  return round2(Math.min(asked, subtotal * (MAX_DISCOUNT_PCT / 100), subtotal));
+}
+
 // Verifies a supervisor PIN against the bcrypt hash stored in business_settings
 // (key: supervisor_pin_hash). Falls back to a legacy plaintext supervisor_pin
 // row for installs predating hashing. Returns 'not_configured' if neither set.
@@ -194,7 +210,7 @@ async function recomputeOrderTotals(
   }
 
   const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
-  const discount = round2(Math.min(Math.max(0, Number(discountAmount) || 0), subtotal));
+  const discount = capDiscount(discountAmount, subtotal);
   const total = round2(subtotal - discount);
 
   const { data: bizRow } = await supabase
@@ -1548,7 +1564,11 @@ router.post('/:id/pay', async (req, res) => {
     // 3. Mark order completed
     const orderUpdate: Record<string, unknown> = {
       status:          'completed',
-      discount_amount: discount_amount ?? 0,
+      // The create path clamps discounts; this one wrote whatever it was given,
+      // with no ceiling and not even a clamp to subtotal. Same cap applied for
+      // consistency. Note this path still does NOT recompute VAT after the
+      // discount — that is finding H2 and is not addressed here.
+      discount_amount: capDiscount(discount_amount, Number(order.subtotal) || 0),
       discount_id,
       sync_status:     'pending',
     };

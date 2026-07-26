@@ -939,9 +939,15 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
 
   // CTL (Catering Levy) is hospitality-only; gate it on business type.
   const { data: bizRow } = await supabase
-    .from('businesses').select('type').eq('id', req.businessId).single();
+    .from('businesses').select('type, vat_rate').eq('id', req.businessId).single();
   const ctlApplies = ['restaurant', 'cafe'].includes((bizRow?.type ?? '') as string);
   const CTL_RATE = ctlApplies ? 0.02 : 0;
+  // Finding M1. The rate echoed in the response was the literal 16, while every
+  // VAT figure in the report comes from orders.vat_amount — computed at sale
+  // time from the business's real rate. A business on any other rate received a
+  // statement whose stated rate contradicted its own totals, and this is a
+  // report people file returns from.
+  const taxVatRate = Number(bizRow?.vat_rate ?? 16);
 
   let query = supabase
     .from('orders')
@@ -1011,7 +1017,7 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
 
   res.json({
     period:    { from: start, to: end },
-    rates:     { vatRate: 16, ctlRate: CTL_RATE * 100 },
+    rates:     { vatRate: taxVatRate, ctlRate: CTL_RATE * 100 },
     summary: {
       grossSales,
       vatTotal,

@@ -4,6 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt from 'bcrypt';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -14,6 +15,16 @@ const BCRYPT_ROUNDS = 12;
 // When one of these keys is written we bcrypt-hash the value and persist it
 // under "<key>_hash" instead. The plaintext key is never stored.
 const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
+
+// ── H9: settings encrypted at rest, never a hash (need to be readable back) ─
+// consumer_secret and passkey are used directly as Daraja credentials — they
+// have to round-trip to plaintext, unlike supervisor_pin, so bcrypt (one-way)
+// doesn't apply. encryptSecret()/decryptSecret() (AES-256-GCM, lib/crypto.ts)
+// is the same utility already used for the eTIMS cmc_key. mpesa_consumer_key
+// and mpesa_shortcode are left plaintext deliberately — they're closer to a
+// public identifier (shortcode is printed on the customer's receipt) than a
+// secret, matching the audit's own scope.
+const ENCRYPTED_SETTING_KEYS = new Set(['mpesa_consumer_secret', 'mpesa_passkey']);
 
 // ── C2: default-deny read allowlist ─────────────────────────────────────────
 // GET /settings used to mask only keys ending in "_hash" — everything else,
@@ -141,6 +152,7 @@ router.post('/settings', requireAuth, requirePermission('settings.manage'), asyn
   }
 
   const jsonValue = typeof value === 'string' ? value : JSON.stringify(value);
+  const storedValue = ENCRYPTED_SETTING_KEYS.has(key) ? encryptSecret(jsonValue) : jsonValue;
 
   // Check if a row already exists for this business + key
   const { data: existing } = await supabase
@@ -154,7 +166,7 @@ router.post('/settings', requireAuth, requirePermission('settings.manage'), asyn
     // Update in place
     const { error } = await supabase
       .from('business_settings')
-      .update({ value: jsonValue, updated_at: new Date().toISOString() })
+      .update({ value: storedValue, updated_at: new Date().toISOString() })
       .eq('id', existing.id);
 
     if (error) { sendError(res, error); return; }
@@ -162,12 +174,13 @@ router.post('/settings', requireAuth, requirePermission('settings.manage'), asyn
     // Insert new
     const { error } = await supabase
       .from('business_settings')
-      .insert({ business_id: req.businessId, key, value: jsonValue });
+      .insert({ business_id: req.businessId, key, value: storedValue });
 
     if (error) { sendError(res, error); return; }
   }
 
-  res.json({ key, value: jsonValue });
+  // Never echo a secret back in the write response, encrypted or not.
+  res.json({ key, value: ENCRYPTED_SETTING_KEYS.has(key) ? '****' : jsonValue });
 });
 
 export default router;
