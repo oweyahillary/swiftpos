@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -57,7 +58,7 @@ router.get('/groups', async (req, res) => {
 
 // POST /api/variants/groups
 // Body: { product_id, name, required, options: [{ name, price_adjustment }] }
-router.post('/groups', async (req, res) => {
+router.post('/groups', requirePermission('products.manage'), async (req, res) => {
   const { product_id, name, required = false, options = [] } = req.body;
   if (!product_id || !name) { res.status(400).json({ error: 'product_id and name required' }); return; }
 
@@ -106,7 +107,7 @@ router.post('/groups', async (req, res) => {
 });
 
 // PATCH /api/variants/groups/:id
-router.patch('/groups/:id', async (req, res) => {
+router.patch('/groups/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
   const { name, required } = req.body;
 
@@ -140,7 +141,7 @@ router.patch('/groups/:id', async (req, res) => {
 });
 
 // DELETE /api/variants/groups/:id  (cascades to variant_options)
-router.delete('/groups/:id', async (req, res) => {
+router.delete('/groups/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
 
   const { data: group } = await supabase
@@ -200,7 +201,7 @@ async function variantOptionOwned(optionId: string, businessId: string): Promise
 }
 
 // POST /api/variants/options
-router.post('/options', async (req, res) => {
+router.post('/options', requirePermission('products.manage'), async (req, res) => {
   const { variant_group_id, name, price_adjustment = 0 } = req.body;
   if (!variant_group_id || !name) { res.status(400).json({ error: 'variant_group_id and name required' }); return; }
 
@@ -219,7 +220,7 @@ router.post('/options', async (req, res) => {
 });
 
 // PATCH /api/variants/options/:id
-router.patch('/options/:id', async (req, res) => {
+router.patch('/options/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
   const { name, price_adjustment } = req.body;
 
@@ -244,7 +245,7 @@ router.patch('/options/:id', async (req, res) => {
 });
 
 // DELETE /api/variants/options/:id
-router.delete('/options/:id', async (req, res) => {
+router.delete('/options/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
 
   if (!(await variantOptionOwned(id, req.businessId))) {

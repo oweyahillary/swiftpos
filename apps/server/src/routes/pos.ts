@@ -3,6 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
+import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 
 const router = safeRouter();
 
@@ -23,6 +24,8 @@ router.get('/init', async (req, res) => {
   const [
     { data: products, error: pErr },
     { data: categories, error: cErr },
+    { data: comboRows },
+    { data: receiptTextRows },
     { data: branch, error: brErr },
     { data: business },
   ] = await Promise.all([
@@ -37,6 +40,23 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       .eq('status', 'active')
       .order('sort_order'),
+    // Combo definitions. The till sells a combo as ONE line, but the dispatcher
+    // and kitchen tickets must expand it into components — and each component
+    // routes to the kitchen on its OWN category, so is_kitchen comes along.
+    supabase
+      .from('products')
+      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, categories ( is_kitchen ) ) )')
+      .eq('business_id', req.businessId)
+      .eq('is_combo', true)
+      .eq('status', 'active'),
+    // Owner-controlled receipt text. Lives in business_settings so it is set
+    // once and reaches all three tills, rather than being retyped per device
+    // and lost on reinstall.
+    supabase
+      .from('business_settings')
+      .select('key, value')
+      .eq('business_id', req.businessId)
+      .in('key', ['receipt_header', 'receipt_footer']),
     supabase
       .from('branches')
       .select('id, desktop_licensed')
@@ -135,8 +155,35 @@ router.get('/init', async (req, res) => {
     for (const p of productsOut as any[]) p.branch_price = null;
   }
 
+  // combo_id -> ordered component list. Flattened here rather than in the till so
+  // the desktop stores exactly what it prints and nothing has to understand
+  // Supabase's nested join shape offline.
+  const comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>> = {};
+  for (const c of (comboRows ?? []) as any[]) {
+    const items = (c.combo_items ?? [])
+      .slice()
+      .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((ci: any) => ({
+        product_id: ci.product?.id ?? '',
+        name:       ci.product?.name ?? '',
+        quantity:   Number(ci.quantity ?? 1),
+        is_kitchen: !!ci.product?.categories?.is_kitchen,
+      }))
+      .filter((i: any) => i.product_id);
+    if (items.length) comboItems[c.id] = items;
+  }
+
+  // JSONB: a plain string arrives unwrapped, anything else is coerced.
+  const receiptText: Record<string, string> = {};
+  for (const r of (receiptTextRows ?? []) as any[]) {
+    receiptText[r.key] = typeof r.value === 'string' ? r.value : String(r.value ?? '');
+  }
+
   res.json({
     products: productsOut,
+    comboItems,
+    receiptHeader: receiptText.receipt_header ?? '',
+    receiptFooter: receiptText.receipt_footer ?? '',
     categories: categories ?? [],
     branchId: branch?.id ?? null,
     pricingBranchId,
@@ -152,6 +199,12 @@ router.get('/init', async (req, res) => {
     // Catering/Tourism Levy. 0 or null = not applicable, and the till's
     // arithmetic collapses to VAT-only.
     ctlRate: business?.ctl_rate ?? 0,
+    // The discount ceiling this server enforces on write. Sent so the till
+    // clamps to the same number BEFORE it computes a total, takes cash and
+    // prints a receipt — otherwise the paper, the drawer and the stored order
+    // describe three different discounts and the difference surfaces as a cash
+    // shortage nobody can trace.
+    maxDiscountPct: MAX_DISCOUNT_PCT,
   });
 });
 

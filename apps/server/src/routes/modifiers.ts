@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -35,7 +36,7 @@ router.get('/groups', async (req, res) => {
 
 // POST /api/modifiers/groups
 // Body: { product_id, name, min_select, max_select, options: [{ name, price }] }
-router.post('/groups', async (req, res) => {
+router.post('/groups', requirePermission('products.manage'), async (req, res) => {
   const { product_id, name, min_select = 0, max_select = null, options = [] } = req.body;
   if (!product_id || !name) { res.status(400).json({ error: 'product_id and name required' }); return; }
 
@@ -80,7 +81,7 @@ router.post('/groups', async (req, res) => {
 });
 
 // PATCH /api/modifiers/groups/:id
-router.patch('/groups/:id', async (req, res) => {
+router.patch('/groups/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
   const { name, min_select, max_select } = req.body;
 
@@ -113,7 +114,7 @@ router.patch('/groups/:id', async (req, res) => {
 });
 
 // DELETE /api/modifiers/groups/:id  (cascades to modifier_options)
-router.delete('/groups/:id', async (req, res) => {
+router.delete('/groups/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
 
   const { data: group } = await supabase
@@ -170,7 +171,7 @@ async function modifierOptionOwned(optionId: string, businessId: string): Promis
 }
 
 // POST /api/modifiers/options
-router.post('/options', async (req, res) => {
+router.post('/options', requirePermission('products.manage'), async (req, res) => {
   const { modifier_group_id, name, price = 0 } = req.body;
   if (!modifier_group_id || !name) { res.status(400).json({ error: 'modifier_group_id and name required' }); return; }
 
@@ -189,7 +190,7 @@ router.post('/options', async (req, res) => {
 });
 
 // PATCH /api/modifiers/options/:id
-router.patch('/options/:id', async (req, res) => {
+router.patch('/options/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
   const { name, price } = req.body;
 
@@ -209,7 +210,7 @@ router.patch('/options/:id', async (req, res) => {
 });
 
 // DELETE /api/modifiers/options/:id
-router.delete('/options/:id', async (req, res) => {
+router.delete('/options/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
 
   if (!(await modifierOptionOwned(id, req.businessId))) {

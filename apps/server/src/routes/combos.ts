@@ -17,6 +17,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requirePermission } from '../middleware/rbac';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -27,10 +28,10 @@ router.get('/', async (req, res) => {
   const { data, error } = await supabase
     .from('products')
     .select(`
-      id, name, description, price, combo_price, status, image_url,
+      id, name, description, base_price, combo_price, status, image_url,
       combo_items!combo_id (
         id, quantity, sort_order,
-        product:product_id ( id, name, price, image_url )
+        product:product_id ( id, name, base_price, image_url )
       )
     `)
     .eq('business_id', req.businessId)
@@ -47,10 +48,10 @@ router.get('/:id', async (req, res) => {
   const { data, error } = await supabase
     .from('products')
     .select(`
-      id, name, description, price, combo_price, status, image_url,
+      id, name, description, base_price, combo_price, status, image_url,
       combo_items!combo_id (
         id, quantity, sort_order,
-        product:product_id ( id, name, price, image_url )
+        product:product_id ( id, name, base_price, image_url )
       )
     `)
     .eq('id', req.params.id)
@@ -64,7 +65,7 @@ router.get('/:id', async (req, res) => {
 
 // ── Create combo ──────────────────────────────────────────────────────────────
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('products.manage'), async (req, res) => {
   const { name, description, combo_price, category_id, items = [] } = req.body;
 
   if (!name?.trim())  { res.status(400).json({ error: 'name is required' }); return; }
@@ -79,7 +80,10 @@ router.post('/', async (req, res) => {
       business_id:  req.businessId,
       name:         name.trim(),
       description:  description?.trim() || null,
-      price:        Number(combo_price),
+      // Was `price:` — a column products.ts never writes and the till never
+      // reads. Either the insert failed outright or base_price defaulted to 0
+      // and the combo sold for nothing. base_price is the canonical column.
+      base_price:   Number(combo_price),
       combo_price:  Number(combo_price),
       is_combo:     true,
       category_id:  category_id || null,
@@ -108,8 +112,8 @@ router.post('/', async (req, res) => {
   // Return full combo
   const { data: full } = await supabase
     .from('products')
-    .select(`id, name, description, price, combo_price, status,
-      combo_items!combo_id(id, quantity, sort_order, product:product_id(id, name, price))`)
+    .select(`id, name, description, base_price, combo_price, status,
+      combo_items!combo_id(id, quantity, sort_order, product:product_id(id, name, base_price))`)
     .eq('id', product.id)
     .single();
 
@@ -118,12 +122,13 @@ router.post('/', async (req, res) => {
 
 // ── Update combo ──────────────────────────────────────────────────────────────
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
   const { name, description, combo_price, status } = req.body;
   const updates: Record<string, unknown> = {};
   if (name        !== undefined) { updates.name = name.trim(); }
   if (description !== undefined) { updates.description = description; }
-  if (combo_price !== undefined) { updates.combo_price = Number(combo_price); updates.price = Number(combo_price); }
+  // base_price is what the till sells from; combo_price is kept in step.
+  if (combo_price !== undefined) { updates.combo_price = Number(combo_price); updates.base_price = Number(combo_price); }
   if (status      !== undefined) { updates.status = status; }
 
   const { data, error } = await supabase
@@ -132,7 +137,7 @@ router.patch('/:id', async (req, res) => {
     .eq('id', req.params.id)
     .eq('business_id', req.businessId)
     .eq('is_combo', true)
-    .select('id, name, combo_price, status')
+    .select('id, name, base_price, combo_price, status')
     .single();
 
   if (error || !data) { res.status(404).json({ error: 'Combo not found' }); return; }
@@ -141,7 +146,7 @@ router.patch('/:id', async (req, res) => {
 
 // ── Replace all items ─────────────────────────────────────────────────────────
 
-router.put('/:id/items', async (req, res) => {
+router.put('/:id/items', requirePermission('products.manage'), async (req, res) => {
   const { items = [] } = req.body;
 
   // Verify ownership
@@ -171,7 +176,7 @@ router.put('/:id/items', async (req, res) => {
   const { data: full } = await supabase
     .from('products')
     .select(`id, name, combo_price, status,
-      combo_items!combo_id(id, quantity, sort_order, product:product_id(id, name, price))`)
+      combo_items!combo_id(id, quantity, sort_order, product:product_id(id, name, base_price))`)
     .eq('id', req.params.id)
     .single();
 
@@ -180,7 +185,7 @@ router.put('/:id/items', async (req, res) => {
 
 // ── Delete combo ──────────────────────────────────────────────────────────────
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('products.manage'), async (req, res) => {
   const { error } = await supabase
     .from('products')
     .delete()

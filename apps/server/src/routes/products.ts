@@ -354,6 +354,25 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   const catMap: Record<string, string> = {};
   (categories ?? []).forEach(c => { catMap[c.name.toLowerCase()] = c.id; });
 
+  // Existing products by lower-cased name, so a re-import UPDATES rather than
+  // duplicating. Matching was previously on barcode only, and a restaurant menu
+  // has no barcodes — so importing a corrected price list produced a second copy
+  // of every item. Product deletion is deliberately not offered (hide and
+  // deactivate only), which made that unrecoverable except by hiding a hundred
+  // rows by hand.
+  const { data: existingProducts } = await supabase
+    .from('products')
+    .select('id, name')
+    .eq('business_id', req.businessId);
+
+  const byName: Record<string, string> = {};
+  for (const pr of (existingProducts ?? []) as any[]) {
+    // First wins: if the catalogue already holds two products with the same
+    // name, an import must not pick a different one on each run.
+    const key = String(pr.name ?? '').trim().toLowerCase();
+    if (key && !(key in byName)) byName[key] = pr.id;
+  }
+
   const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[] };
 
   for (let i = 0; i < rows.length; i++) {
@@ -410,19 +429,48 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
       }
     }
 
-    const { error } = await supabase.from('products').insert(productData);
+    // No barcode match — fall back to name within this business.
+    const nameKey = productData.name.toLowerCase();
+    const existingByName = byName[nameKey];
+    if (existingByName) {
+      const { error } = await supabase
+        .from('products')
+        .update(productData)
+        .eq('id', existingByName)
+        .eq('business_id', req.businessId);
+
+      if (error) { results.errors.push({ row: i + 1, error: error.message }); }
+      else { results.updated++; }
+      continue;
+    }
+
+    const { data: inserted, error } = await supabase
+      .from('products')
+      .insert(productData)
+      .select('id')
+      .single();
     if (error) { results.errors.push({ row: i + 1, error: error.message }); }
-    else { results.created++; }
+    else {
+      results.created++;
+      // Register it, so a file that repeats a name within ITSELF updates the row
+      // it just created rather than inserting a second one.
+      if (inserted?.id) byName[nameKey] = inserted.id;
+    }
   }
 
+  // Flat fields AND the summary object. The desktop Import tab reads
+  // res.created / res.updated at the top level, so a nested-only response made
+  // every successful import report "0 added, 0 updated".
   res.json({
+    created: results.created,
+    updated: results.updated,
+    errors:  results.errors,
     summary: {
       total:   rows.length,
       created: results.created,
       updated: results.updated,
       failed:  results.errors.length,
     },
-    errors: results.errors,
   });
 });
 

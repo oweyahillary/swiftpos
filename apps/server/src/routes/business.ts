@@ -46,6 +46,10 @@ const READABLE_SETTING_KEYS = new Set([
   'default_parking_rate', 'parking_min_hours', 'parking_billing_mode',
   'parking_overstay_hours', 'parking_grace_minutes', 'parking_print_ticket', 'parking_receipt_plate',
   'loyalty_enabled', 'loyalty_earn_rate',
+  // Free-text blocks the owner controls, printed above and below the receipt
+  // body — address, PIN, phone, thank-you line, social handles. Multi-line;
+  // newlines are preserved and rendered as separate lines.
+  'receipt_header', 'receipt_footer',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something

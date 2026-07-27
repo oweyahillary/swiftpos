@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
+import { capDiscount } from '../lib/discountPolicy';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { DbProduct, DbVariantGroup, DbModifierGroup, OrderItemInput, PaymentLegInput, DbOrder, DbPayment, DbCustomer } from '../lib/dbTypes';
 import bcrypt from 'bcrypt';
@@ -24,16 +25,9 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 // supervisor authorisation, and the only limit was the order subtotal — so a
 // cashier could zero out any sale. That is the most common POS fraud vector.
 //
-// This is NOT the M4 fix. It is a blunt ceiling that bounds the exposure so a
-// supervised pilot can run while the real control (permission + reason code +
-// approval trail) is built. Override per-deployment with MAX_DISCOUNT_PCT, but
-// raise it deliberately and preferably alongside that work.
-const MAX_DISCOUNT_PCT = Number(process.env.MAX_DISCOUNT_PCT ?? 10);
-
-function capDiscount(requested: unknown, subtotal: number): number {
-  const asked = Math.max(0, Number(requested) || 0);
-  return round2(Math.min(asked, subtotal * (MAX_DISCOUNT_PCT / 100), subtotal));
-}
+// The ceiling itself now lives in lib/discountPolicy so pos/init can advertise
+// it to the till, which clamps to the same number before it prints anything.
+// Enforcement here is unchanged and remains authoritative.
 
 // Verifies a supervisor PIN against the bcrypt hash stored in business_settings
 // (key: supervisor_pin_hash). Falls back to a legacy plaintext supervisor_pin
@@ -321,6 +315,8 @@ router.post('/', async (req, res) => {
     vat_amount,
     total,
     items,
+    // Rider name for a delivery. Free text — see migrations/35_delivery_person.sql.
+    delivery_person,
     payment,   // legacy single-payment (kept for backwards compat)
     payments,  // new: array of payment legs for split support
     // Loyalty (all optional)
@@ -464,6 +460,11 @@ router.post('/', async (req, res) => {
         customer_phone: customer_phone ?? null,
         order_number,
         order_type,
+        // Only meaningful on a delivery; stored null otherwise so a stale field
+        // left on the client can't attach a rider to a counter sale.
+        delivery_person: order_type === 'delivery'
+          ? (String(delivery_person ?? '').trim().slice(0, 120) || null)
+          : null,
         status: 'completed',
         subtotal: authSubtotal,
         vat_amount: authVat,
