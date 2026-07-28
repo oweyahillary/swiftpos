@@ -30,15 +30,65 @@ function hashOverridePin(pin: string): Promise<string> {
 // in the role picker, but that is client-side only; this is the server guard.
 const ELEVATED_ROLE_NAMES = ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'];
 
-// Returns true if role_id refers to an elevated role within this business.
-async function roleIsElevated(roleId: string, businessId: string): Promise<boolean> {
-  const { data: role } = await supabase
-    .from('roles').select('name').eq('id', roleId).eq('business_id', businessId).single();
-  if (!role) return false;
+// Returns true if role_id refers to an elevated role.
+//
+// Two deliberate changes from the original, both about failing CLOSED:
+//
+//  1. No business_id filter. Roles may be seeded globally (business_id NULL) and
+//     shared across tenants. With the filter, the lookup found nothing for such
+//     a role, the function returned false, and every caller concluded "not
+//     elevated" — so a branch manager could deactivate the proprietor's account
+//     and nothing stopped them. Business ownership of a role is checked
+//     separately where it matters (assigning one); this function answers only
+//     "is this role privileged".
+//
+//  2. A missing or unreadable role is treated as elevated. If we cannot tell,
+//     the safe answer to "may a manager modify this account" is no.
+async function roleIsElevated(roleId: string, _businessId: string): Promise<boolean> {
+  const { data: role, error } = await supabase
+    .from('roles').select('name').eq('id', roleId).maybeSingle();
+  if (error || !role) return true;
   return ELEVATED_ROLE_NAMES.includes(String(role.name).toLowerCase());
 }
 
+// Blocks a non-owner from touching a proprietor account at all.
+//
+// Checked by joining the role off the user, the same shape the listing uses, so
+// it does not depend on roles being business-scoped. Returns a reason string
+// when the caller must be refused, or null when it may proceed.
+async function refuseIfProprietor(targetUserId: string, businessId: string): Promise<string | null> {
+  const { data: target, error } = await supabase
+    .from('users')
+    .select('id, roles ( name )')
+    .eq('id', targetUserId)
+    .eq('business_id', businessId)
+    .maybeSingle();
+
+  if (error) return 'Could not verify this staff member';
+  if (!target) return null;   // handled as 404 by the caller
+
+  const roleName = String((target as any)?.roles?.name ?? '').toLowerCase();
+  if (roleName === 'owner' || roleName === 'admin') {
+    return 'The business owner account can only be changed by the owner';
+  }
+  return null;
+}
+
 // GET /api/staff — list staff for business
+// Whether this user can authorise a void/override, as a boolean.
+//
+// Void authority is NOT decided by role name anywhere in this codebase — it is
+// decided by having an override PIN set (see GET /authorizers, which selects on
+// override_pin_hash). Naming a role "Supervisor" grants nothing on its own, so
+// the staff list has to show the thing that actually matters. The hash itself is
+// stripped before the response leaves.
+function shapeStaff(rows: any[]): any[] {
+  return (rows ?? []).map((u: any) => {
+    const { override_pin_hash, pin_hash, ...rest } = u ?? {};
+    return { ...rest, can_authorize: !!override_pin_hash };
+  });
+}
+
 // Owner: sees all staff. Non-owners: only staff assigned to their branch.
 router.get('/', async (req, res) => {
   if (req.isOwner) {
@@ -46,7 +96,7 @@ router.get('/', async (req, res) => {
     const { data, error } = await supabase
       .from('users')
       .select(`
-        id, name, email, phone, status, created_at, updated_at,
+        id, name, email, phone, status, created_at, updated_at, override_pin_hash,
         roles ( id, name, description ),
         user_branches ( branch_id, branches ( id, name ) ),
         user_permissions ( permission_id, granted )
@@ -55,7 +105,7 @@ router.get('/', async (req, res) => {
       .order('name');
 
     if (error) { sendError(res, error); return; }
-    res.json(data ?? []);
+    res.json(shapeStaff(data ?? []));
     return;
   }
 
@@ -64,7 +114,7 @@ router.get('/', async (req, res) => {
     .from('user_branches')
     .select(`
       users (
-        id, name, email, phone, status, created_at, updated_at,
+        id, name, email, phone, status, created_at, updated_at, override_pin_hash,
         roles ( id, name, description ),
         user_branches ( branch_id, branches ( id, name ) ),
         user_permissions ( permission_id, granted )
@@ -76,8 +126,25 @@ router.get('/', async (req, res) => {
   if (error) { sendError(res, error); return; }
 
   // Flatten the nested users out
-  const staff = (data ?? []).map((row: any) => row.users).filter(Boolean);
-  res.json(staff);
+  let staff = (data ?? []).map((row: any) => row.users).filter(Boolean);
+
+  // Hide proprietor accounts from non-owners.
+  //
+  // An owner usually has a user_branches row for the branch they work out of,
+  // so the branch filter alone let a branch manager see the owner in the staff
+  // list — complete with a Deactivate button. Deactivating the proprietor stops
+  // their PIN immediately, and on a single-branch pilot that is the account the
+  // whole business is run from.
+  //
+  // Enforced here rather than hidden in the UI: the desktop sends the STAFF
+  // token for these calls, so the server knows who is asking, and a client-side
+  // filter would be undone by anyone talking to the API directly.
+  staff = staff.filter((u: any) => {
+    const roleName = String(u?.roles?.name ?? '').toLowerCase();
+    return roleName !== 'owner' && roleName !== 'admin';
+  });
+
+  res.json(shapeStaff(staff));
 });
 
 // GET /api/staff/authorizers — list staff who can authorize overrides.
@@ -218,6 +285,14 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
     .from('users').select('id').eq('id', req.params.id).eq('business_id', req.businessId).single();
   if (!existing) { res.status(404).json({ error: 'Staff member not found' }); return; }
 
+  // Non-owners: never touch a proprietor account, whatever branch it sits in.
+  // This is the guard that matters — hiding the row in the list is presentation,
+  // the endpoint is the boundary.
+  if (!req.isOwner) {
+    const refusal = await refuseIfProprietor(req.params.id, req.businessId);
+    if (refusal) { res.status(403).json({ error: refusal }); return; }
+  }
+
   // Non-owners: verify target staff belongs to their branch
   if (!req.isOwner) {
     const { data: branchCheck } = await supabase
@@ -311,6 +386,22 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
 router.delete('/:id', requirePermission('staff.manage'), async (req, res) => {
   // Non-owners: verify target is in their branch
   if (!req.isOwner) {
+    // Same refusal as PATCH. This route had NO elevated-role check whatsoever —
+    // only the branch check below — while doing exactly what PATCH does: set
+    // status to inactive. Guarding one and not the other left the front door
+    // locked and the back door open.
+    const refusal = await refuseIfProprietor(req.params.id, req.businessId);
+    if (refusal) { res.status(403).json({ error: refusal }); return; }
+
+    // And a manager must not be able to deactivate a peer manager or
+    // supervisor either — the same rule PATCH already applies.
+    const { data: target } = await supabase
+      .from('users').select('role_id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+    if (target?.role_id && await roleIsElevated(target.role_id, req.businessId)) {
+      res.status(403).json({ error: 'You are not allowed to manage this staff member' });
+      return;
+    }
+
     const { data: branchCheck } = await supabase
       .from('user_branches')
       .select('user_id')

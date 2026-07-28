@@ -95,6 +95,7 @@ router.post('/', requirePermission('products.manage'), async (req, res) => {
     cost_price, reorder_level,
     pieces_per_unit, unit_label, source,
     tax_type, kra_item_class_code,
+    is_kitchen,
   } = req.body;
 
   if (!name?.trim()) {
@@ -208,6 +209,10 @@ router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
   if (has_variants  !== undefined) updates.has_variants  = has_variants;
   if (has_modifiers !== undefined) updates.has_modifiers = has_modifiers;
   if (status        !== undefined) updates.status        = status;
+  // Tri-state (migration 38): true / false force routing, null follows the
+  // category. `?? null` on purpose — sending null is how the override is
+  // CLEARED, and coercing it to false would silently mean "never cook this".
+  if (is_kitchen    !== undefined) updates.is_kitchen    = is_kitchen === null ? null : !!is_kitchen;
   if (barcode       !== undefined) updates.barcode       = barcode?.trim() ?? null;
   if (plu_code      !== undefined) updates.plu_code      = plu_code?.trim() ?? null;
   if (sold_by           !== undefined) updates.sold_by           = sold_by;

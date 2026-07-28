@@ -45,7 +45,7 @@ router.get('/init', async (req, res) => {
     // routes to the kitchen on its OWN category, so is_kitchen comes along.
     supabase
       .from('products')
-      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, categories ( is_kitchen ) ) )')
+      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, is_kitchen, categories ( is_kitchen ) ) )')
       .eq('business_id', req.businessId)
       .eq('is_combo', true)
       .eq('status', 'active'),
@@ -167,7 +167,12 @@ router.get('/init', async (req, res) => {
         product_id: ci.product?.id ?? '',
         name:       ci.product?.name ?? '',
         quantity:   Number(ci.quantity ?? 1),
-        is_kitchen: !!ci.product?.categories?.is_kitchen,
+        // Product override wins; NULL falls back to the category. Written out
+        // long-hand rather than with ?? because the override is a tri-state and
+        // `false` must beat a kitchen category, not be treated as absent.
+        is_kitchen: typeof ci.product?.is_kitchen === 'boolean'
+          ? ci.product.is_kitchen
+          : !!ci.product?.categories?.is_kitchen,
       }))
       .filter((i: any) => i.product_id);
     if (items.length) comboItems[c.id] = items;

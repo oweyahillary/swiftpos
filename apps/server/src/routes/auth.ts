@@ -386,12 +386,35 @@ async function checkDeviceRegistration(
   }
 
   if (device.status === 'approved') {
-    // Update last_seen_at
-    await supabase
+    // Update last_seen_at, and the app build this till is running.
+    //
+    // Written here because it is the one place every till touches on every
+    // sign-in. Best-effort throughout: if migration 36 has not been applied the
+    // column does not exist and this update errors — which must NOT stop
+    // somebody signing in to sell. The version is a diagnostic, not a gate.
+    const reportedVersion = typeof (req as any)?.body?.app_version === 'string'
+      ? String((req as any).body.app_version).slice(0, 32)
+      : (typeof req?.headers?.['x-app-version'] === 'string'
+          ? String(req.headers['x-app-version']).slice(0, 32)
+          : null);
+
+    const patch: Record<string, unknown> = { last_seen_at: new Date().toISOString() };
+    if (reportedVersion) patch.app_version = reportedVersion;
+
+    const { error: seenErr } = await supabase
       .from('user_devices')
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq('id', device.id)
-      .catch(() => {});
+      .update(patch)
+      .eq('id', device.id);
+
+    if (seenErr && reportedVersion) {
+      // Most likely the column is missing. Retry without it so last_seen_at
+      // still lands, and say so once rather than failing silently forever.
+      console.warn('[device-version] could not record app_version — is migration 36 applied?', seenErr.message);
+      await supabase
+        .from('user_devices')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', device.id);
+    }
     return { result: 'allowed', deviceId: device.id };
   }
 

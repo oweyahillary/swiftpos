@@ -20,6 +20,35 @@ router.use(requireAuth);
 // Round to 2 dp (money) avoiding binary-float drift.
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+// ── Payment integrity check (audit H1, detection only) ───────────────────────
+//
+// Nothing has ever verified that the payment legs on an order sum to the order
+// total. A mismatch is money: the drawer and the books describe different sales,
+// and it surfaces days later as an unexplained cash variance.
+//
+// This LOGS and does not reject. That is a deliberate choice for a pilot: an
+// enforcement bug here refuses a real sale at the counter, mid-service, which is
+// a worse failure than the one being prevented. Run detection for a week of live
+// data first, confirm it is silent, then consider turning it into a 400.
+//
+// The log line is greppable: search the server log for [payment-mismatch].
+function checkPaymentIntegrity(
+  orderNumber: string,
+  orderId: string,
+  total: number,
+  legs: Array<{ method?: string; amount?: unknown }>,
+): void {
+  const paid = legs.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+  const diff = Math.round((paid - total) * 100) / 100;
+  if (Math.abs(diff) < 0.01) return;
+
+  console.error(
+    `[payment-mismatch] order ${orderNumber} (${orderId}): legs sum to ${paid.toFixed(2)} `
+    + `but total is ${total.toFixed(2)} — difference ${diff > 0 ? '+' : ''}${diff.toFixed(2)}. `
+    + `Legs: ${legs.map(l => `${l.method ?? '?'} ${Number(l.amount) || 0}`).join(', ') || '(none)'}`,
+  );
+}
+
 // ── Discount ceiling (pilot stopgap for finding M4) ──────────────────────────
 // Manual discounts are ungated: no permission check, no reason code, no
 // supervisor authorisation, and the only limit was the order subtotal — so a
@@ -558,6 +587,8 @@ router.post('/', async (req, res) => {
 
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
     if (pErr) throw pErr;
+
+    checkPaymentIntegrity(order.order_number, order.id, Number(authTotal), paymentRows);
 
     // 6. Stock deduction
     // 6a. Product-level stock (for minimart / retail products with track_stock=true)
@@ -1153,6 +1184,198 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/orders/:id/void
 const VOID_WINDOW_MINUTES = 30;
 
+
+// ── POST /api/orders/:id/refund ──────────────────────────────────────────────
+//
+// Give money back on a sale that legitimately happened (audit finding M3).
+//
+// Distinct from a void, and deliberately so:
+//
+//   VOID    "this sale should not have happened" — within 30 minutes, order
+//           becomes 'voided', drops out of sales entirely.
+//   REFUND  "the sale happened, the money is going back" — any time, order stays
+//           'completed', reversal recorded against it.
+//
+// The distinction matters for tax and for reporting. A voided order was never a
+// sale; a refunded one was, and the VAT and levy on it were charged and are a
+// real position for the period in which they were taken.
+//
+// Full refunds only. A partial needs line-level selection to restore the right
+// stock and to recompute the tax split, and half-right money handling is worse
+// than none — staff can refund in full and re-ring what the customer keeps.
+router.post('/:id/refund', requirePermission('orders.void'), async (req, res) => {
+  const { reason, override_pin, supervisor_pin, authorizer_id } = req.body;
+  const orderId = req.params.id;
+
+  if (!reason || !String(reason).trim()) {
+    res.status(400).json({ error: 'A reason is required to refund an order' });
+    return;
+  }
+
+  const { data: order, error: oErr } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      order_items ( product_id, quantity ),
+      payments ( id, status, amount, method )
+    `)
+    .eq('id', orderId)
+    .eq('business_id', req.businessId)
+    .single();
+
+  if (oErr || !order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (order.status === 'voided') {
+    res.status(400).json({ error: 'That order was voided — there is nothing to refund' });
+    return;
+  }
+  if (order.status !== 'completed') {
+    res.status(400).json({ error: 'Only a completed sale can be refunded' });
+    return;
+  }
+  if (order.refunded_at) {
+    res.status(400).json({ error: 'That order has already been refunded' });
+    return;
+  }
+
+  // What was actually taken, per leg. Refunding is bounded by this rather than
+  // by the order total: if a leg failed, that money never arrived and must not
+  // be handed back.
+  const completedPayments = (order.payments ?? []).filter(
+    (p: { status: string; amount: string; method: string }) => p.status === 'completed',
+  );
+  const takenTotal = completedPayments.reduce(
+    (sum: number, p: { amount: string }) => sum + (Number(p.amount) || 0), 0,
+  );
+
+  if (takenTotal <= 0) {
+    res.status(400).json({ error: 'No completed payment on that order — nothing was taken' });
+    return;
+  }
+
+  // Supervisor authorisation, exactly as for a void. Money leaving the drawer is
+  // the event worth gating, and it is the same event in both cases.
+  const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
+  let authorizedBy: string | null = null;
+
+  if (ov.result === 'ok') {
+    authorizedBy = ov.userId ?? null;
+  } else if (ov.result === 'no_authorizers') {
+    const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
+    if (legacy === 'not_configured') {
+      res.status(400).json({
+        error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
+        code:  'NO_OVERRIDE_CONFIGURED',
+      });
+      return;
+    }
+    if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
+  } else {
+    res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
+    return;
+  }
+
+  try {
+    // 1. Reverse every completed leg, in the same tender it came in on, so the
+    //    drawer reconciles per method. Cash back for cash; an M-Pesa leg is
+    //    recorded here but must still be sent back through M-Pesa by hand.
+    const { error: rErr } = await supabase
+      .from('payments')
+      .insert(completedPayments.map((leg: { method: string; amount: string }) => ({
+        order_id: orderId,
+        business_id: req.businessId,
+        branch_id: order.branch_id,
+        method: leg.method,
+        amount: -Math.abs(Number(leg.amount) || 0),
+        amount_tendered: 0,
+        change_given: 0,
+        reference: `REFUND-${order.order_number}`,
+        status: 'refunded',
+        sync_status: 'pending',
+      })));
+    if (rErr) throw rErr;
+
+    // 2. Mark the order refunded. Status stays 'completed' on purpose — see
+    //    migration 37.
+    const { error: uErr } = await supabase
+      .from('orders')
+      .update({
+        refunded_at:          new Date().toISOString(),
+        refunded_amount:      round2(takenTotal),
+        refund_reason:        String(reason).trim(),
+        refunded_by:          req.userId,
+        refund_authorized_by: authorizedBy,
+      })
+      .eq('id', orderId);
+    if (uErr) throw uErr;
+
+    // 3. Credit legs: clear the debt, same as a void.
+    if (order.customer_id) {
+      for (const leg of completedPayments.filter((l: { method: string }) => l.method === 'credit')) {
+        const { error: crErr } = await supabase.rpc('apply_credit_transaction', {
+          p_business_id:   req.businessId,
+          p_customer_id:   order.customer_id,
+          p_branch_id:     order.branch_id,
+          p_order_id:      orderId,
+          p_type:          'adjustment',
+          p_amount:        -Math.abs(Number(leg.amount) || 0),
+          p_method:        null,
+          p_reference:     null,
+          p_notes:         `Refund: ${order.order_number} — ${reason}`,
+          p_created_by:    req.userId ?? null,
+          p_enforce_limit: false,
+        });
+        if (crErr) console.error('[credit] refund reversal failed for order', orderId, crErr.message);
+      }
+    }
+
+    // 4. Put the stock back. Goods are assumed returned; a refund where the
+    //    customer keeps the food is a write-off, which is a stock adjustment and
+    //    a different conversation.
+    const productIds = (order.order_items ?? []).map((i: any) => i.product_id).filter(Boolean);
+    if (productIds.length > 0) {
+      const { data: tracked } = await supabase
+        .from('products').select('id').in('id', productIds).eq('track_stock', true);
+      const trackedIds = new Set((tracked ?? []).map((p: any) => p.id));
+
+      for (const item of order.order_items ?? []) {
+        if (!trackedIds.has(item.product_id)) continue;
+        const { data: stock } = await supabase
+          .from('stock_levels').select('quantity')
+          .eq('product_id', item.product_id).eq('branch_id', order.branch_id).maybeSingle();
+
+        const newQty = (stock?.quantity ?? 0) + Number(item.quantity);
+        await supabase.from('stock_levels').upsert(
+          { product_id: item.product_id, branch_id: order.branch_id, quantity: newQty, updated_at: new Date().toISOString() },
+          { onConflict: 'product_id,branch_id' },
+        );
+        await supabase.from('stock_movements').insert({
+          product_id: item.product_id,
+          branch_id: order.branch_id,
+          movement_type: 'correction',
+          quantity_change: Number(item.quantity),
+          quantity_after: newQty,
+          notes: `Refund of Order ${order.order_number}: ${reason}`,
+          // stock_movements has created_by, NOT cashier_id. The column does not
+          // exist, so this insert was silently rejected and voided stock was
+          // never restored to the ledger — the level was corrected, the audit
+          // trail explaining why was not.
+          created_by: req.userId,
+        });
+      }
+    }
+
+    res.json({
+      ok: true,
+      orderNumber: order.order_number,
+      refunded: round2(takenTotal),
+      byMethod: completedPayments.map((l: any) => ({ method: l.method, amount: Number(l.amount) || 0 })),
+      authorizedBy,
+    });
+  } catch (err) {
+    sendError(res, err, { message: 'Failed to refund order' });
+  }
+});
+
 router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   const { reason, supervisor_pin, override_pin, authorizer_id } = req.body;
   const orderId = req.params.id;
@@ -1185,9 +1408,19 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
     return;
   }
 
-  const completedPayment = (order.payments ?? []).find((p: { id: string; status: string; amount: string; method: string }) => p.status === 'completed');
+  // EVERY completed leg, not the first one.
+  //
+  // This used to be `.find(...)` — singular. A split tender (600 cash + 400
+  // M-Pesa) reversed only the leg that happened to come back first, so 400 was
+  // recorded as taken for a sale that never happened, and the credit reversal
+  // below fired only if the credit leg was the one picked. Audit finding H3.
+  const completedPayments = (order.payments ?? []).filter(
+    (p: { id: string; status: string; amount: string; method: string }) => p.status === 'completed',
+  );
+  const isPaid = completedPayments.length > 0;
+
   let authorizedBy: string | null = null;
-  if (completedPayment) {
+  if (isPaid) {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
 
@@ -1223,45 +1456,53 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
       .eq('id', orderId);
     if (vErr) throw vErr;
 
-    // 2. Refund payment record
-    if (completedPayment) {
+    // 2. Refund EVERY completed leg — one reversal row per leg, same method and
+    // amount, so a split tender comes back in the same shape it went out and the
+    // drawer reconciles per tender type rather than only in aggregate.
+    if (isPaid) {
       const { error: rErr } = await supabase
         .from('payments')
-        .insert({
+        .insert(completedPayments.map((leg: { method: string; amount: string }) => ({
           order_id: orderId,
           business_id: req.businessId,
           branch_id: order.branch_id,
-          method: completedPayment.method,
-          amount: -completedPayment.amount,
+          method: leg.method,
+          // Negate defensively: `amount` arrives as a string from PostgREST and
+          // a leg that was somehow already negative must not flip positive.
+          amount: -Math.abs(Number(leg.amount) || 0),
           amount_tendered: 0,
           change_given: 0,
           reference: `VOID-${order.order_number}`,
           status: 'refunded',
           sync_status: 'pending',
-        });
+        })));
       if (rErr) throw rErr;
 
       // 2b. Reverse the credit charge (audit C5) — a voided credit sale must
-      // not leave the debt standing. Only fires for the credit leg; other
-      // tender types have nothing to reverse here.
+      // not leave the debt standing. Runs for EVERY credit leg; previously it
+      // fired only when credit happened to be the single leg `.find()` returned,
+      // so a part-credit sale left the balance of the debt on the customer.
+      //
       // Order is already voided/refunded above with no surrounding transaction
       // (see M7), so a failure here is logged, not thrown — the void itself
       // already succeeded and the client shouldn't be told otherwise.
-      if (completedPayment.method === 'credit' && order.customer_id) {
-        const { error: crErr } = await supabase.rpc('apply_credit_transaction', {
-          p_business_id:   req.businessId,
-          p_customer_id:   order.customer_id,
-          p_branch_id:     order.branch_id,
-          p_order_id:      orderId,
-          p_type:          'adjustment',
-          p_amount:        -Math.abs(Number(completedPayment.amount) || 0),
-          p_method:        null,
-          p_reference:     null,
-          p_notes:         `Void: ${order.order_number} — ${reason}`,
-          p_created_by:    req.userId ?? null,
-          p_enforce_limit: false,
-        });
-        if (crErr) console.error('[credit] void reversal failed for order', orderId, crErr.message);
+      if (order.customer_id) {
+        for (const leg of completedPayments.filter((l: { method: string }) => l.method === 'credit')) {
+          const { error: crErr } = await supabase.rpc('apply_credit_transaction', {
+            p_business_id:   req.businessId,
+            p_customer_id:   order.customer_id,
+            p_branch_id:     order.branch_id,
+            p_order_id:      orderId,
+            p_type:          'adjustment',
+            p_amount:        -Math.abs(Number(leg.amount) || 0),
+            p_method:        null,
+            p_reference:     null,
+            p_notes:         `Void: ${order.order_number} — ${reason}`,
+            p_created_by:    req.userId ?? null,
+            p_enforce_limit: false,
+          });
+          if (crErr) console.error('[credit] void reversal failed for order', orderId, crErr.message);
+        }
       }
     }
 
@@ -1304,7 +1545,7 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
           quantity_change: item.quantity,
           quantity_after: newQty,
           notes: `Void of Order ${order.order_number}: ${reason}`,
-          cashier_id: req.userId,
+          created_by: req.userId,
         });
     }
 
@@ -1575,6 +1816,8 @@ router.post('/:id/pay', async (req, res) => {
 
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
     if (pErr) { sendError(res, pErr); return; }
+
+    checkPaymentIntegrity(order.order_number, order.id, Number(order.total), paymentRows);
 
     // 3. Mark order completed
     const orderUpdate: Record<string, unknown> = {

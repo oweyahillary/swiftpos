@@ -5,6 +5,7 @@ import helmet      from 'helmet';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import apiRoutes   from './routes';
 import { supabase } from './lib/supabase';
+import { checkSchema, schemaAdvice } from './lib/schemaCheck';
 import { startDailySummaryJob } from './jobs/dailySummary';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 
@@ -101,13 +102,24 @@ app.get('/health', async (_req, res) => {
     const { error } = (await Promise.race([ping, timeout])) as Awaited<typeof ping>;
     if (error) throw error;
 
+    const schema = await checkSchema();
+
     const body: Record<string, unknown> = {
-      status: 'ok',
+      status: schema.ok ? 'ok' : 'degraded',
       service: 'swiftpos-server',
       db: 'up',
+      // Whether the database actually has the columns this build writes.
+      // "up" only ever meant reachable — three unapplied migrations once left
+      // every order failing on push while this endpoint reported ok.
+      schema: schema.ok ? 'ok' : 'drift',
       latencyMs: Date.now() - started,
       ts: new Date().toISOString(),
     };
+    if (!schema.ok) {
+      body.missing = schema.missing;
+      body.advice  = schemaAdvice(schema);
+      log.warn('Schema drift detected', { missing: schema.missing });
+    }
     // Only expose version + env outside production to avoid fingerprinting.
     if (!isProd) {
       body.version = '1.0.0';
@@ -123,6 +135,27 @@ app.get('/health', async (_req, res) => {
       ts: new Date().toISOString(),
     });
   }
+});
+
+// GET /health/schema — strict. 503 when the database is missing columns this
+// build writes.
+//
+// Kept separate from /health because render.yaml points healthCheckPath at
+// /health: returning 503 there would take the whole service down for a problem
+// that may only affect some routes, turning a bad deploy into an outage. This
+// endpoint is for people and deploy scripts to ask deliberately, and it is
+// meant to be the last step of DEPLOY_AND_TEST §1:
+//
+//     curl -sf $API/health/schema || echo "MIGRATIONS NOT APPLIED"
+app.get('/health/schema', async (_req, res) => {
+  const schema = await checkSchema();
+  res.status(schema.ok ? 200 : 503).json({
+    status:  schema.ok ? 'ok' : 'drift',
+    missing: schema.missing,
+    ...(schema.error ? { error: schema.error } : {}),
+    ...(schema.ok ? {} : { advice: schemaAdvice(schema) }),
+    ts: new Date().toISOString(),
+  });
 });
 
 // ── API routes ────────────────────────────────────────────────────────────────

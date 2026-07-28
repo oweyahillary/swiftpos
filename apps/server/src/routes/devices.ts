@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
     .from('user_devices')
     .select(`
       id, fingerprint, device_label, ip_address, status,
-      requested_at, reviewed_at, last_seen_at,
+      requested_at, reviewed_at, last_seen_at, app_version,
       user_id,
       users ( id, name, email,
         roles ( name )

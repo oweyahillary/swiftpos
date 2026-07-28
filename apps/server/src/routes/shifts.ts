@@ -129,12 +129,22 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   let cashSales = 0;
   const orderIds = (shiftOrders ?? []).map((o: any) => o.id);
   if (orderIds.length > 0) {
+    // Completed AND refunded rows.
+    //
+    // A refund inserts a NEGATIVE cash row with status 'refunded'. Filtering to
+    // 'completed' alone counted the money in and not the money back out, so
+    // expected cash was overstated by every refund and the drawer read short by
+    // exactly that amount — an unexplained shortage at close, which is the
+    // single most corrosive thing a till can report. Audit finding M8.
+    //
+    // A void needs no such handling: the order itself leaves the set above, so
+    // both its legs disappear together.
     const { data: cashPayments, error: payErr } = await supabase
       .from('payments')
-      .select('amount')
+      .select('amount, status')
       .in('order_id', orderIds)
       .eq('method', 'cash')
-      .eq('status', 'completed');
+      .in('status', ['completed', 'refunded']);
     if (payErr) { sendError(res, payErr); return; }
     cashSales = (cashPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
   }
