@@ -13,6 +13,7 @@ import inventoryRoutes     from './inventory';
 import kitchenRoutes       from './kitchen';
 import staffRoutes         from './staff';
 import reportsExportRoutes from './reports-export';
+import reportsDailyRoutes  from './reports-daily';
 import reportsRoutes       from './reports';
 import loyaltyRoutes       from './loyalty';
 import creditRoutes        from './credit';
@@ -79,6 +80,9 @@ router.use('/pumps',          pumpsRouter);
 router.use('/etims',          etimsRoutes);
 
 // IMPORTANT: reports/export must come before /reports
+// Daily / hourly / audit share the same prefix and middleware. Mounted first so
+// its specific paths win before the broader export router's handlers.
+router.use('/reports/export', reportsDailyRoutes);
 router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);
 
