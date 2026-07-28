@@ -109,6 +109,32 @@ function issueTokenPair(payload: TokenPayload): IssuedTokenPair {
 }
 
 /**
+ * What counts as "this device" for session bookkeeping.
+ *
+ * Prefers the client's own stable device id, falling back to the User-Agent.
+ *
+ * The fallback used to be the ONLY identifier, and on a multi-till site that is
+ * badly wrong: every till runs the same Electron build on the same Windows
+ * version, so their User-Agents are byte-identical. Signing in on till 2 as the
+ * owner therefore revoked till 1's refresh token, and till 3 revoked till 2's —
+ * each new install silently signed out the one before it, and the till only
+ * discovered it on its next refresh, reporting "this till was signed out" with
+ * no cause a person could see.
+ *
+ * The desktop has had a stable device_id since install; it simply was not being
+ * sent. It now is, and it is what this keys on.
+ *
+ * The User-Agent fallback stays for the web portal and for older desktop builds
+ * that do not send device_id — for those, previous behaviour is unchanged.
+ */
+function deviceKey(req: any): string | null {
+  const explicit = typeof req?.body?.device_id === 'string' ? req.body.device_id.trim() : '';
+  if (explicit) return explicit.slice(0, 200);
+  const ua = req?.headers?.['user-agent'];
+  return typeof ua === 'string' ? ua.slice(0, 200) : null;
+}
+
+/**
  * Store a refresh token in the DB.
  * jti stored as sha256 hash — raw token never touches the DB.
  */
@@ -670,7 +696,13 @@ router.post('/refresh', async (req, res) => {
 
   await storeRefreshToken(newRefreshToken, newPayload,
     req.ip ?? undefined,
-    req.headers['user-agent'] ?? undefined,
+    // Carry the ORIGINAL device key forward rather than re-deriving it.
+    //
+    // A refresh does not carry a request body, so deviceKey() would fall back to
+    // the User-Agent and the row would silently revert to the shared value on the
+    // first rotation — undoing the fix an hour after sign-in, which is worse than
+    // not having made it, because the failure would look intermittent.
+    dbRow.device_hint ?? req.headers['user-agent'] ?? undefined,
   );
 
   res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken });
@@ -822,15 +854,21 @@ router.post('/pos-login', async (req, res) => {
     return;
   }
 
-  // Fix 5: revoke any prior active session for this user+device before issuing new one
-  // (prevents stale sessions accumulating on shared devices)
+  // Revoke any prior active session for this user ON THIS DEVICE before issuing
+  // a new one, so stale sessions do not accumulate when someone signs in
+  // repeatedly on one machine.
+  //
+  // Keyed on deviceKey(), NOT the User-Agent — see its docblock. Keying on the
+  // User-Agent meant one till's sign-in revoked every other till's session,
+  // because they are all the same build on the same OS.
   const userAgent = req.headers['user-agent']?.slice(0, 200) ?? null;
-  if (userAgent) {
+  const devKey = deviceKey(req);
+  if (devKey) {
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
       .eq('user_id', (user as any).id)
-      .eq('device_hint', userAgent)
+      .eq('device_hint', devKey)
       .is('revoked_at', null);
   }
 
@@ -854,7 +892,10 @@ router.post('/pos-login', async (req, res) => {
 
   await storeRefreshToken(refreshToken, tokenPayload,
     req.ip ?? undefined,
-    userAgent ?? undefined,
+    // Store the SAME key the revoke above queries on. Storing the User-Agent
+    // while revoking on device id would mean nothing ever matched, and stale
+    // sessions would pile up unnoticed.
+    devKey ?? userAgent ?? undefined,
   );
 
   res.json({
@@ -987,14 +1028,15 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     return;
   }
 
-  // Fix 5: revoke prior session for this user on this device
+  // Same as above: this device only, not every till sharing a User-Agent.
   const userAgent = req.headers['user-agent']?.slice(0, 200) ?? null;
-  if (userAgent) {
+  const devKeyV = deviceKey(req);
+  if (devKeyV) {
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
       .eq('user_id', matchedUser.id)
-      .eq('device_hint', userAgent)
+      .eq('device_hint', devKeyV)
       .is('revoked_at', null);
   }
 
@@ -1018,7 +1060,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
 
   await storeRefreshToken(refreshToken, tokenPayload,
     req.ip ?? undefined,
-    userAgent ?? undefined,
+    devKeyV ?? userAgent ?? undefined,
   );
 
   res.json({
