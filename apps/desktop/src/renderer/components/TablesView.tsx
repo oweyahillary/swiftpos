@@ -91,7 +91,7 @@ export default function TablesView({ tables, heldOrders, currency, onTableTap, o
       <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-white font-semibold">Tables</h2>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-300">
             {tables.length - occupiedCount} free · <span className="text-amber-400">{occupiedCount} occupied</span>
             {overCount > 0 && <> · <span className="text-red-400">{overCount} over</span></>}
           </span>
@@ -118,7 +118,7 @@ export default function TablesView({ tables, heldOrders, currency, onTableTap, o
 
       {tables.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-center px-8">
-          <p className="text-gray-600 text-sm">
+          <p className="text-gray-400 text-sm">
             No tables synced yet. Configure them in the dashboard under
             Setup → Restaurant Setup, then hit Sync in the top bar.
           </p>
@@ -186,7 +186,7 @@ export default function TablesView({ tables, heldOrders, currency, onTableTap, o
                   }`}
                 >
                   <p className={`text-sm font-bold ${over ? 'text-red-400' : occ ? 'text-amber-400' : 'text-white'}`}>{table.name}</p>
-                  <p className="text-gray-500 text-xs mt-0.5">👥 {table.capacity}</p>
+                  <p className="text-gray-300 text-xs mt-0.5">👥 {table.capacity}</p>
                   {occ ? (
                     <p className={`${over ? 'text-red-400' : 'text-amber-400'} text-[10px] mt-1.5 font-medium`}>
                       {items} item{items === 1 ? '' : 's'} · {currency} {total.toLocaleString()}
@@ -194,7 +194,7 @@ export default function TablesView({ tables, heldOrders, currency, onTableTap, o
                       <span className="opacity-70">{over ? '⏰ ' : ''}{dwell(tab!.heldAt)} · tap to view</span>
                     </p>
                   ) : (
-                    <p className="text-gray-600 text-[10px] mt-1.5">tap to open</p>
+                    <p className="text-gray-400 text-[10px] mt-1.5">tap to open</p>
                   )}
                 </button>
               );

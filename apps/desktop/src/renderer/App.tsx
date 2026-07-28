@@ -55,12 +55,27 @@ export default function App() {
     setState('pin');
   };
 
+  // Does this staff member get the manager tools? Used both to route after PIN
+  // entry and to decide whether the POS screen offers a way back to them.
+  //
+  // The wildcard matters: ManagerPage gates each of its own tabs with
+  // `perms['*'] === true || perms[key] === true`, so an owner carrying '*' can
+  // see every tab — but this check didn't recognise '*' at all. Anyone granted
+  // blanket permission rather than a named role or an explicit
+  // 'settings.manage' was therefore routed to the till and, once the Manager
+  // button became the way back, had no route to the manager screen at all.
+  const hasManagerRights = (s: StaffSession | null) => {
+    if (!s) return false;
+    const perms = (s.permissions ?? {}) as Record<string, unknown>;
+    return MANAGER_ROLES.includes((s.role ?? '').toLowerCase())
+      || perms['*'] === true
+      || perms['settings.manage'] === true;
+  };
+
   // Staff PIN verified → route by role.
   const handleStaffLogin = (s: StaffSession) => {
     setStaff(s);
-    const isManager = MANAGER_ROLES.includes((s.role ?? '').toLowerCase())
-      || (s.permissions as any)?.['settings.manage'] === true;
-    setState(isManager ? 'manager' : 'pos');
+    setState(hasManagerRights(s) ? 'manager' : 'pos');
   };
 
   // End the current staff shift -> back to PIN pad (owner stays signed in).
@@ -116,6 +131,7 @@ export default function App() {
         staff={staff}
         onOpenPOS={() => setState('pos')}
         onLogout={handleEndShift}
+        onSwitchAccount={handleSignOut}
       />
     );
   }
@@ -124,6 +140,10 @@ export default function App() {
     <POSPage
       business={session!.business}
       onLogout={handleEndShift}
+      // Cashiers get no button at all — the tools they can't use shouldn't be
+      // visible, and ManagerPage gates each tab on its own permission anyway.
+      onOpenManager={hasManagerRights(staff) ? () => setState('manager') : undefined}
+      canManagePrinters={hasManagerRights(staff)}
     />
   );
 }

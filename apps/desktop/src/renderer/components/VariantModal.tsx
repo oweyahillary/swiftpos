@@ -75,9 +75,9 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
         <div className="px-6 pt-5 pb-4 border-b border-gray-800 flex items-start justify-between">
           <div>
             <h2 className="text-white font-semibold text-base">{product.name}</h2>
-            <p className="text-gray-500 text-xs mt-0.5">Customise your order</p>
+            <p className="text-gray-300 text-xs mt-0.5">Customise your order</p>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors mt-0.5">✕</button>
+          <button onClick={onClose} className="text-gray-300 hover:text-white transition-colors mt-0.5">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
@@ -93,7 +93,7 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
                     <p className="text-white text-sm font-medium">{group.name}</p>
                     {group.required
                       ? <span className="text-xs text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">Required</span>
-                      : <span className="text-xs text-gray-600">Optional</span>}
+                      : <span className="text-xs text-gray-400">Optional</span>}
                   </div>
                   <div className="space-y-2">
                     {group.variant_options.map((opt: any) => {
@@ -107,7 +107,7 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
                             </span>
                             {opt.name}
                           </div>
-                          <span className={opt.price_adjustment === 0 ? 'text-gray-500 text-xs' : 'text-green-400 text-xs'}>
+                          <span className={opt.price_adjustment === 0 ? 'text-gray-300 text-xs' : 'text-green-400 text-xs'}>
                             {opt.price_adjustment === 0 ? 'Included' : `+${currency} ${opt.price_adjustment.toLocaleString()}`}
                           </span>
                         </button>
@@ -121,7 +121,7 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
                 <div key={group.id}>
                   <div className="flex items-center gap-2 mb-2">
                     <p className="text-white text-sm font-medium">{group.name}</p>
-                    <span className="text-xs text-gray-600">
+                    <span className="text-xs text-gray-400">
                       {group.min_select > 0 ? `min ${group.min_select}` : 'Optional'}
                       {group.max_select ? `, max ${group.max_select}` : ''}
                     </span>
@@ -134,14 +134,14 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
                         Object.values(selectedModifiers).filter((m: any) => m.groupId === group.id).length >= group.max_select && !isSelected;
                       return (
                         <button key={opt.id} onClick={() => !atMax && toggleModifier(group, opt.id)} disabled={atMax}
-                          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors ${isSelected ? 'border-green-500 bg-green-500/10 text-white' : atMax ? 'border-gray-800 bg-gray-800/40 text-gray-600 cursor-not-allowed' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}`}>
+                          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors ${isSelected ? 'border-green-500 bg-green-500/10 text-white' : atMax ? 'border-gray-800 bg-gray-800/40 text-gray-400 cursor-not-allowed' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}`}>
                           <div className="flex items-center gap-2">
                             <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-green-500 bg-green-500' : 'border-gray-600'}`}>
                               {isSelected && <span className="text-gray-950 text-xs leading-none">✓</span>}
                             </span>
                             {opt.name}
                           </div>
-                          <span className={opt.price === 0 ? 'text-gray-500 text-xs' : 'text-green-400 text-xs'}>
+                          <span className={opt.price === 0 ? 'text-gray-300 text-xs' : 'text-green-400 text-xs'}>
                             {opt.price === 0 ? 'Free' : `+${currency} ${opt.price.toLocaleString()}`}
                           </span>
                         </button>

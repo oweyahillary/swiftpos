@@ -18,7 +18,7 @@
 import http from 'http';
 import crypto from 'crypto';
 import { getLocalDb } from './localDb';
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
@@ -32,6 +32,34 @@ function readBody(req: http.IncomingMessage): Promise<any> {
     req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });
+}
+
+// ── LAN authentication ───────────────────────────────────────────────────────
+// Every /node/* request must present the branch secret in X-Node-Secret.
+//
+// This server binds to all interfaces on port 4100. Before this check existed,
+// anyone on the same network — which in a shop means the customer wifi — could
+// POST a fabricated order (ingested locally AND forwarded to Supabase as a real
+// sale), GET the branch's full sales report, and read or overwrite the live
+// tech token. The branch_id comparison in the orders handler is not a substitute:
+// it compares against a value the caller supplies.
+//
+// Fails closed. No secret configured means no requests served, rather than
+// falling back to the previous open behaviour.
+function authorised(req: http.IncomingMessage): boolean {
+  const expected = getDeviceConfig()?.node_secret;
+  if (!expected) return false;
+
+  const raw = req.headers['x-node-secret'];
+  const presented = Array.isArray(raw) ? raw[0] : raw;
+  if (!presented) return false;
+
+  const a = Buffer.from(presented, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  // timingSafeEqual throws on a length mismatch, so compare lengths first. That
+  // leaks only the length of a secret whose length is fixed and public anyway.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 function json(res: http.ServerResponse, status: number, body: any) {
@@ -51,16 +79,24 @@ function ingestOrder(body: any): { duplicate: boolean } {
   const existing = db.prepare(`SELECT id FROM orders WHERE id=?`).get(orderId) as any;
   if (existing) return { duplicate: true };  // already have it — no-op (dedupe)
 
-  const cfg = getDeviceConfig();
   const createdAt = body._createdAt ?? new Date().toISOString();
+  // Fall back to the node's OWN business, not its branch. The previous fallback
+  // was `cfg?.branch_id`, which wrote a branch id into the business_id column
+  // whenever a peer omitted business_id — wrong tenant on the row, and it then
+  // propagated to Supabase on forward.
+  const sessionRow = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, status, subtotal, vat_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
-      orderId, body.business_id ?? cfg?.branch_id ?? null, body.branch_id, body.order_number,
-      body.order_type ?? 'retail', body.subtotal ?? 0, body.vat_amount ?? 0,
+      orderId, body.business_id ?? sessionRow?.business_id ?? null, body.branch_id, body.order_number,
+      body.order_type ?? 'retail',
+      // Both were dropped here while the verbatim cloud payload kept them, so
+      // Supabase was right and the node's own branch report was not.
+      body.order_type === 'delivery' ? (body.delivery_person ?? null) : null,
+      body.subtotal ?? 0, body.vat_amount ?? 0, body.ctl_amount ?? 0,
       body.discount_amount ?? 0, body.tip_amount ?? 0, body.total ?? 0,
       body.cashier_id ?? null, body.shift_id ?? null,
       body.customer_id ?? null, body.customer_name ?? null, body.customer_phone ?? null,
@@ -98,9 +134,51 @@ export function startNodeServer(): void {
   const cfg = getDeviceConfig();
   if (cfg?.device_role !== 'node') return;          // only the branch server runs this
 
+  // Mint on first start if absent — covers installs upgraded from a build that
+  // predates the node_secret column, which would otherwise come up unauthenticated.
+  // Logged so the code is recoverable from the node's own machine if the install
+  // slip is lost; see also the SQLite query in the deploy notes.
+  const secret = ensureNodeSecret();
+  console.log(`[node] branch access code: ${secret}`);
+
   server = http.createServer(async (req, res) => {
     try {
       const url = (req.url ?? '').split('?')[0];
+
+      // Applied before routing, so it covers health, orders, report and the
+      // tech-session pair without any route being able to opt out by omission.
+      if (!authorised(req)) {
+        return json(res, 401, { error: 'unauthorised — bad or missing X-Node-Secret' });
+      }
+
+      // Cloud-delivery confirmation.
+      //
+      // A peer till marks its orders 'node_ack' when THIS node accepts them, but
+      // the node still has to forward them to Supabase. Until that happens the
+      // cloud has no record of those sales — and a till that closed its shift on
+      // node acceptance alone would have the server compute expected cash short
+      // and report a variance that never existed.
+      //
+      // The till sends the ids it is waiting on; we answer with the subset whose
+      // queue row is 'synced' — i.e. the cloud has accepted them. An id with no
+      // queue row at all also counts as delivered: the only way to reach this
+      // call is for the node to have accepted the order, and ingestOrder always
+      // enqueues, so an absent row means the queue was pruned after a successful
+      // push rather than that the order was lost.
+      if (url === '/node/confirm' && req.method === 'POST') {
+        const body = await readBody(req);
+        const ids: string[] = Array.isArray(body?.order_ids) ? body.order_ids.map(String) : [];
+        if (ids.length === 0) return json(res, 200, { delivered: [] });
+
+        const db = getLocalDb();
+        const placeholders = ids.map(() => '?').join(',');
+        const stillQueued = db.prepare(
+          `SELECT order_id FROM sync_queue WHERE order_id IN (${placeholders}) AND status != 'synced'`
+        ).all(...ids) as Array<{ order_id: string }>;
+
+        const waiting = new Set(stillQueued.map(r => r.order_id));
+        return json(res, 200, { delivered: ids.filter(id => !waiting.has(id)) });
+      }
 
       // Health — tills probe this to decide reachability.
       if (req.method === 'GET' && url === '/node/health') {
@@ -115,8 +193,25 @@ export function startNodeServer(): void {
         if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
           return json(res, 403, { error: 'branch mismatch' });
         }
-        const { duplicate } = ingestOrder(body);
-        return json(res, duplicate ? 200 : 201, { ok: true, duplicate });
+        try {
+          const { duplicate } = ingestOrder(body);
+          return json(res, duplicate ? 200 : 201, { ok: true, duplicate });
+        } catch (err: any) {
+          // orders.order_number is UNIQUE locally. A till that was wiped and
+          // reinstalled restarts its bill counter at 1, so it re-mints numbers
+          // this node already holds from before the wipe. Left as a generic 500
+          // the till just retried forever, showing only a pending count that
+          // never cleared and no way to find out why.
+          if (String(err?.message ?? '').includes('UNIQUE') && /order_number/i.test(String(err?.message))) {
+            return json(res, 409, {
+              error: `bill number ${body.order_number} already exists on this branch server — `
+                   + 'that till was probably reinstalled and restarted its counter. '
+                   + 'Give it a different terminal code and re-run setup on that till only.',
+              conflict: 'order_number',
+            });
+          }
+          throw err;
+        }
       }
 
       // Combined branch report — any till's manager view reads this.

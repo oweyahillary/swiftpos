@@ -28,7 +28,7 @@ export default function HeldOrdersModal({ orders, currency, cartHasItems, onReca
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="text-white font-semibold text-lg">Held orders</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">✕</button>
+          <button onClick={onClose} className="text-gray-300 hover:text-white transition-colors">✕</button>
         </div>
 
         {cartHasItems && (
@@ -38,7 +38,7 @@ export default function HeldOrdersModal({ orders, currency, cartHasItems, onReca
         )}
 
         {orders.length === 0 ? (
-          <p className="text-sm text-gray-600 text-center py-10">No held orders</p>
+          <p className="text-sm text-gray-400 text-center py-10">No held orders</p>
         ) : (
           <div className="space-y-2">
             {orders.map(o => {
@@ -49,7 +49,7 @@ export default function HeldOrdersModal({ orders, currency, cartHasItems, onReca
                 <div key={o.id} className="bg-gray-800/40 border border-gray-800 rounded-xl px-4 py-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm font-medium truncate">{o.label}</p>
-                    <p className="text-gray-500 text-xs">
+                    <p className="text-gray-300 text-xs">
                       {o.orderNumber} · {items} item{items === 1 ? '' : 's'} · {timeAgo(o.heldAt)}
                       {unsent > 0 && <span className="text-amber-400"> · {unsent} not sent</span>}
                     </p>
@@ -75,7 +75,7 @@ export default function HeldOrdersModal({ orders, currency, cartHasItems, onReca
                     ) : (
                       <button
                         onClick={() => setConfirmDelete(o.id)}
-                        className="text-gray-600 hover:text-red-400 text-xs rounded-lg px-2 py-1.5 transition-colors"
+                        className="text-gray-400 hover:text-red-400 text-xs rounded-lg px-2 py-1.5 transition-colors"
                         title="Discard this order"
                       >
                         ✕

@@ -18,6 +18,9 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
   const [branchId, setBranchId] = useState<string | null>(null);
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(true);
+  // Two taps to sign the business out. The button only shows on a screen
+  // that is already broken, which is exactly when someone is jabbing at it.
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
 
@@ -129,7 +132,7 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
             onPointerLeave={cancelPress}
             title=""
           >{businessName}</h1>
-          <p className="text-gray-500 text-sm mt-1">Enter your PIN to start a shift</p>
+          <p className="text-gray-300 text-sm mt-1">Enter your PIN to start a shift</p>
         </div>
 
         {techStage && (
@@ -138,7 +141,7 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
               {techStage === 'reveal' ? (
                 <>
                   <h2 className="text-lg font-bold text-white">Technician access</h2>
-                  <p className="text-xs text-gray-500 mt-1 mb-4">Enter the branch access code.</p>
+                  <p className="text-xs text-gray-300 mt-1 mb-4">Enter the branch access code.</p>
                   <input
                     autoFocus value={revealInput}
                     onChange={e => { setRevealInput(e.target.value.toUpperCase()); setTechErr(''); }}
@@ -158,7 +161,7 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
               ) : (
                 <>
                   <h2 className="text-lg font-bold text-white">Technician token</h2>
-                  <p className="text-xs text-gray-500 mt-1 mb-4">Paste the access token issued for this branch.</p>
+                  <p className="text-xs text-gray-300 mt-1 mb-4">Paste the access token issued for this branch.</p>
                   <textarea
                     autoFocus value={tokenInput}
                     onChange={e => { setTokenInput(e.target.value); setTechErr(''); }}
@@ -185,7 +188,7 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
             {loading ? (
               <div className="h-10 rounded-lg bg-[#0f172a] animate-pulse" />
             ) : branches.length === 0 ? (
-              <p className="text-sm text-gray-500">No branches available.</p>
+              <p className="text-sm text-gray-300">No branches available.</p>
             ) : showBranchPicker || !selectedBranch ? (
               <>
                 <label className="block text-sm text-gray-400 mb-1.5">Branch</label>
@@ -205,12 +208,12 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
             ) : (
               <div className="flex items-center justify-between bg-[#0f172a] border border-[#1e293b] rounded-lg px-4 py-2">
                 <span className="text-sm text-gray-300">
-                  <span className="text-gray-500">Branch:</span> {selectedBranch.name}
+                  <span className="text-gray-300">Branch:</span> {selectedBranch.name}
                 </span>
                 {branches.length > 1 && (
                   <button
                     onClick={() => setShowBranchPicker(true)}
-                    className="text-xs text-gray-500 hover:text-green-400 transition-colors"
+                    className="text-xs text-gray-300 hover:text-green-400 transition-colors"
                   >
                     change
                   </button>
@@ -287,12 +290,49 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
           </button>
         </div>
 
-        <button
-          onClick={onBackToOwner}
-          className="w-full text-center text-gray-600 hover:text-gray-400 text-xs mt-6"
-        >
-          Sign out / switch account
-        </button>
+        {/* Signing out the OWNER is not a cashier's action — restoring it needs
+            the owner's email and password, which nobody on the floor has at
+            07:00. It lives on the manager screen instead.
+
+            The exception is when this screen cannot function: no branches
+            loaded, or the session failed outright. Hiding it unconditionally
+            would mean a till whose refresh token has died is bricked, with no
+            route to sign in again. So it appears only as a way out of a screen
+            that is already broken. */}
+        {(error || branches.length === 0) && !loading && (
+          confirmSignOut ? (
+            <div className="mt-6 border border-gray-800 rounded-xl p-3">
+              <p className="text-xs text-gray-200 text-center">
+                Sign this till out of the business?
+              </p>
+              <p className="text-xs text-gray-400 text-center mt-1">
+                Getting back in needs the owner's email and password. Staff PINs will
+                not work until then.
+              </p>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => setConfirmSignOut(false)}
+                  className="flex-1 py-2 rounded-lg text-xs border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={onBackToOwner}
+                  className="flex-1 py-2 rounded-lg text-xs bg-red-600 hover:bg-red-500 text-white transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmSignOut(true)}
+              className="w-full text-center text-gray-400 hover:text-white text-xs mt-6"
+            >
+              Sign out / switch account
+            </button>
+          )
+        )}
       </div>
     </div>
   );

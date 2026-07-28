@@ -74,7 +74,7 @@ export default function TechPage({ onExit }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-amber-400">Technician mode</h1>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-300">
               {session?.techName} · session ends in {fmtRemaining(remaining)}
             </p>
           </div>
@@ -87,13 +87,13 @@ export default function TechPage({ onExit }: Props) {
         <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Device</h2>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-            <dt className="text-gray-500">Device ID</dt><dd className="font-mono text-gray-300 truncate">{dev?.device_id ?? '—'}</dd>
-            <dt className="text-gray-500">Name</dt><dd className="text-gray-300">{dev?.device_name ?? '—'}</dd>
-            <dt className="text-gray-500">Role</dt><dd className="text-gray-300">{dev?.device_role ?? '—'}</dd>
-            <dt className="text-gray-500">Branch</dt><dd className="font-mono text-gray-300 truncate">{dev?.branch_id ?? '—'}</dd>
-            <dt className="text-gray-500">Mode</dt><dd className="text-gray-300">{dev?.deploy_mode ?? '—'}</dd>
-            <dt className="text-gray-500">Server</dt><dd className="font-mono text-gray-300 truncate">{dev?.server_url ?? '—'}</dd>
-            {dev?.node_url && (<><dt className="text-gray-500">Branch server</dt><dd className="font-mono text-gray-300 truncate">{dev.node_url}</dd></>)}
+            <dt className="text-gray-300">Device ID</dt><dd className="font-mono text-gray-300 truncate">{dev?.device_id ?? '—'}</dd>
+            <dt className="text-gray-300">Name</dt><dd className="text-gray-300">{dev?.device_name ?? '—'}</dd>
+            <dt className="text-gray-300">Role</dt><dd className="text-gray-300">{dev?.device_role ?? '—'}</dd>
+            <dt className="text-gray-300">Branch</dt><dd className="font-mono text-gray-300 truncate">{dev?.branch_id ?? '—'}</dd>
+            <dt className="text-gray-300">Mode</dt><dd className="text-gray-300">{dev?.deploy_mode ?? '—'}</dd>
+            <dt className="text-gray-300">Server</dt><dd className="font-mono text-gray-300 truncate">{dev?.server_url ?? '—'}</dd>
+            {dev?.node_url && (<><dt className="text-gray-300">Branch server</dt><dd className="font-mono text-gray-300 truncate">{dev.node_url}</dd></>)}
           </dl>
         </section>
 
@@ -103,15 +103,15 @@ export default function TechPage({ onExit }: Props) {
           <div className="grid grid-cols-3 gap-3 text-center mb-4">
             <div className="bg-[#0a0f1a] rounded-lg py-3">
               <div className="text-lg font-bold text-white">{sync?.pending ?? '—'}</div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-wide">Pending</div>
+              <div className="text-[10px] text-gray-300 uppercase tracking-wide">Pending</div>
             </div>
             <div className="bg-[#0a0f1a] rounded-lg py-3">
               <div className={`text-lg font-bold ${(sync?.failed ?? 0) > 0 ? 'text-red-400' : 'text-white'}`}>{sync?.failed ?? '—'}</div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-wide">Failed</div>
+              <div className="text-[10px] text-gray-300 uppercase tracking-wide">Failed</div>
             </div>
             <div className="bg-[#0a0f1a] rounded-lg py-3">
-              <div className={`text-lg font-bold ${sync?.online ? 'text-green-400' : 'text-gray-500'}`}>{sync?.online ? 'On' : 'Off'}</div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-wide">Online</div>
+              <div className={`text-lg font-bold ${sync?.online ? 'text-green-400' : 'text-gray-300'}`}>{sync?.online ? 'On' : 'Off'}</div>
+              <div className="text-[10px] text-gray-300 uppercase tracking-wide">Online</div>
             </div>
           </div>
           <div className="flex gap-2">
@@ -127,14 +127,14 @@ export default function TechPage({ onExit }: Props) {
             <button onClick={testPrinters} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Scan printers</button>
           </div>
           {/* Mode switch (offline<->web) lands in step 5 — placeholder so the slot is visible. */}
-          <p className="text-[11px] text-gray-600 mt-3">Mode switch (offline ↔ web) arrives with the sync bridge.</p>
+          <p className="text-[11px] text-gray-400 mt-3">Mode switch (offline ↔ web) arrives with the sync bridge.</p>
         </section>
 
         {(busy || msg) && (
           <p className="text-xs text-center text-gray-400">{busy ? `${busy}…` : msg}</p>
         )}
 
-        <p className="text-center text-gray-700 text-[11px]">
+        <p className="text-center text-gray-400 text-[11px]">
           All actions in this session are recorded against {session?.techName} for this branch.
         </p>
       </div>

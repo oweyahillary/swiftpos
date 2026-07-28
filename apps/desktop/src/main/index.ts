@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net } from 'electron';
+import { app, BrowserWindow, Menu, net, shell } from 'electron';
 import path from 'path';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
@@ -8,6 +8,48 @@ import { startNodeServer } from './nodeServer';
 
 const isDev = !app.isPackaged;
 
+/**
+ * Replaces Electron's default menu with a minimal hidden one.
+ *
+ * The stock menu ships File / Edit / View / Window / Help — and View holds
+ * "Reload" and "Toggle Developer Tools", Window holds "Close". On a till, on a
+ * touchscreen, mid-service, those are one mis-tap from a blank screen or a
+ * developer console in front of a customer.
+ *
+ * NOT Menu.setApplicationMenu(null), which would be simpler but breaks
+ * copy/paste: on Windows the Ctrl+C / Ctrl+V accelerators are wired up by the
+ * Edit menu's roles, and the install wizard has fields people paste a server URL
+ * and a node secret into. So the roles stay and the menu bar is hidden instead.
+ *
+ * DevTools remain reachable on Ctrl+Shift+I for support, but are no longer a
+ * visible menu item a cashier can find by accident.
+ */
+function installMenu() {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Support',
+      submenu: [
+        {
+          label: 'Developer tools',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: (_i, win) => (win as BrowserWindow)?.webContents.toggleDevTools(),
+        },
+        { type: 'separator' },
+        { label: `SwiftPOS ${app.getVersion()}`, enabled: false },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -15,11 +57,24 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 600,
     title: 'SwiftPOS',
+    // Hidden, not absent — see installMenu(). Alt still reveals it if a
+    // technician needs it.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  win.setMenuBarVisibility(false);
+
+  // Anything that would navigate away from the app opens in the real browser
+  // instead. A till that has wandered off to a web page is a till that cannot
+  // sell, and there is no address bar to get back.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   if (isDev) {
@@ -30,10 +85,42 @@ function createWindow() {
   }
 }
 
+/**
+ * One SwiftPOS per machine.
+ *
+ * Two instances share one SQLite file and one session row, and that is not
+ * merely untidy — it revokes the till.
+ *
+ * Refresh tokens are single-use with replay detection: present one twice and the
+ * server revokes EVERY session for that user, deliberately, because a reused
+ * token is what a stolen one looks like. Two instances both refreshing on launch
+ * is exactly that pattern. The result is "This till was signed out", and getting
+ * back in needs the owner's email and password — which nobody on the floor has
+ * at seven in the morning.
+ *
+ * On a till, a double-clicked shortcut is enough to cause it. So the second
+ * launch focuses the first window and exits, rather than starting a rival.
+ */
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const [win] = BrowserWindow.getAllWindows();
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+}
+
 app.whenReady().then(() => {
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {
+    installMenu();
+
     // Init DB schema (runs additive migrations on older local DBs)
     getLocalDb();
 

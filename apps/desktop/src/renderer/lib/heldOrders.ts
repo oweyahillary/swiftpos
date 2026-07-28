@@ -18,8 +18,11 @@ export interface HeldOrder {
   id: string;                 // local key
   orderNumber: string;        // pre-assigned, reused at charge
   label: string;              // "Table 4" / "Amina — takeaway"
-  orderType: 'dine_in' | 'takeaway' | 'retail';
+  orderType: 'dine_in' | 'takeaway' | 'retail' | 'delivery';
   tableNumber: string;
+  // Rider, on a held delivery. Without this a recalled delivery loses the name
+  // and the receipt prints "Delivery Boy: —".
+  deliveryPerson?: string;
   cart: CartItem[];           // per-line kotSent flags travel with the items
   heldAt: string;             // ISO
 }

@@ -27,6 +27,11 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
   // Close form
   const [closingFloat, setClosingFloat] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
+  // Forced close: a manager ending a shift nobody counted. Kept behind a second
+  // click and a reason, because it writes an UNRECONCILED shift and that record
+  // is permanent.
+  const [showForce, setShowForce] = useState(false);
+  const [forceReason, setForceReason] = useState('');
   const [finalReport, setFinalReport] = useState<ZReport | null>(null);
 
   // Expense form
@@ -107,6 +112,18 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
   const variance   = hasCount ? counted - expected : 0;
   const noteRequired = hasCount && Math.round(variance * 100) !== 0 && !closeNotes.trim();
 
+  const handleForceClose = async () => {
+    if (!forceReason.trim()) return;
+    setBusy(true);
+    try {
+      const z = await posApi.shift.forceClose(forceReason.trim());
+      setFinalReport(z);
+      onShiftChange?.(null);
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not close the shift.');
+    } finally { setBusy(false); }
+  };
+
   const handleClose = async () => {
     if (!hasCount)    { setError('Enter the counted cash amount'); return; }
     if (noteRequired) { setError('A note is required to close with a variance'); return; }
@@ -128,7 +145,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
     win.document.close(); win.focus(); win.print(); win.close();
   };
 
-  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors';
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center px-4 z-50">
@@ -139,7 +156,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
           <h2 className="text-white font-bold">
             {finalReport ? 'Shift closed' : report ? 'Current shift' : 'Open shift'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">✕</button>
+          <button onClick={onClose} className="text-gray-300 hover:text-white transition-colors">✕</button>
         </div>
 
         {/* Tabs — only when a shift is open and not finalised */}
@@ -150,7 +167,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors capitalize ${
                   activeTab === t
                     ? 'text-white border-b-2 border-green-500'
-                    : 'text-gray-500 hover:text-gray-300'
+                    : 'text-gray-300 hover:text-white'
                 }`}>
                 {t === 'expenses' && expList.length > 0
                   ? `Expenses (${expList.length})`
@@ -161,7 +178,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
         )}
 
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
-          {loading && <p className="text-gray-500 text-sm">Loading…</p>}
+          {loading && <p className="text-gray-300 text-sm">Loading…</p>}
 
           {error && (
             <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2.5">{error}</p>
@@ -223,7 +240,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Close shift</p>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Counted cash in drawer ({currency})</label>
+                  <label className="block text-xs text-gray-300 mb-1">Counted cash in drawer ({currency})</label>
                   <input type="number" inputMode="decimal" value={closingFloat} onChange={e => setClosingFloat(e.target.value)} placeholder="0.00" className={inputCls} />
                 </div>
                 {hasCount && (
@@ -237,6 +254,50 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
                 <button onClick={handleClose} disabled={busy || !hasCount || noteRequired} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
                   {busy ? 'Closing…' : 'Close shift & print Z-report'}
                 </button>
+
+                {/* The escape hatch for a shift nobody counted — typically one
+                    left open overnight. Kept below the real close, styled as a
+                    plain link, because it must be available and must never look
+                    like the normal way to end a day. */}
+                {!showForce ? (
+                  <button
+                    onClick={() => setShowForce(true)}
+                    className="w-full text-xs text-gray-400 hover:text-amber-400 transition-colors pt-1"
+                  >
+                    Can't count the drawer?
+                  </button>
+                ) : (
+                  <div className="border border-amber-500/30 bg-amber-500/5 rounded-lg p-3 space-y-2">
+                    <p className="text-xs text-amber-200">
+                      This closes the shift <span className="font-semibold">without a cash count</span>.
+                      The variance will be recorded as unknown, not zero, and the shift is marked
+                      unreconciled permanently. Use it only when the drawer genuinely cannot be counted —
+                      a till left open overnight, for example.
+                    </p>
+                    <textarea
+                      value={forceReason}
+                      onChange={e => setForceReason(e.target.value)}
+                      placeholder="Why can the drawer not be counted?"
+                      rows={2}
+                      className={inputCls}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setShowForce(false); setForceReason(''); }}
+                        className="flex-1 py-2 rounded-lg text-xs border border-gray-700 text-gray-200 hover:bg-gray-800 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleForceClose}
+                        disabled={busy || !forceReason.trim()}
+                        className="flex-1 py-2 rounded-lg text-xs bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white transition-colors"
+                      >
+                        {busy ? 'Closing…' : 'Close unreconciled'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -289,13 +350,13 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
               {/* List of expenses this shift */}
               {expList.length > 0 ? (
                 <div className="border border-gray-800 rounded-xl overflow-hidden">
-                  <p className="text-xs text-gray-500 px-4 py-2 border-b border-gray-800">This shift</p>
+                  <p className="text-xs text-gray-300 px-4 py-2 border-b border-gray-800">This shift</p>
                   <div className="divide-y divide-gray-800">
                     {expList.map(e => (
                       <div key={e.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
                         <div className="min-w-0">
                           <p className="text-white text-sm truncate">{e.description}</p>
-                          <p className="text-gray-600 text-xs">
+                          <p className="text-gray-400 text-xs">
                             {new Date(e.created_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}
                             {e.sync_status === 'pending' && <span className="ml-1.5 text-amber-500">● not synced</span>}
                           </p>
@@ -312,7 +373,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
                   </div>
                 </div>
               ) : (
-                <p className="text-gray-600 text-sm text-center py-4">No expenses recorded this shift.</p>
+                <p className="text-gray-400 text-sm text-center py-4">No expenses recorded this shift.</p>
               )}
             </>
           )}
@@ -342,7 +403,7 @@ function ZReportRows({ report, money }: { report: ZReport; money: (n: number) =>
       <Line l="Gross sales" v={money(totals.grossSales)} strong />
       <div className="border-t border-gray-800 my-2" />
       {byMethod.length === 0
-        ? <p className="text-xs text-gray-600">No sales yet this shift</p>
+        ? <p className="text-xs text-gray-400">No sales yet this shift</p>
         : byMethod.map(m => (
           <Line key={m.method} l={`${m.method === 'mpesa' ? 'M-Pesa' : m.method[0].toUpperCase() + m.method.slice(1)} (${m.orders})`} v={money(m.amount)} />
         ))}

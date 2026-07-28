@@ -7,6 +7,21 @@
 export const EPSILON = 0.01;
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// Discount ceiling — MUST match capDiscount() in apps/server/src/routes/orders.ts.
+//
+// The server silently caps every manual discount at this percentage of subtotal
+// and stores the capped figure. The till previously clamped only to 0–100%, so a
+// cashier entering 25% took 25% off at the drawer and printed a receipt saying
+// so, while the order landed in the database discounted by 10. The paper and the
+// books then disagreed by the difference: the payment legs no longer summed to
+// the order total (finding H1), and expected cash came back high, reporting a
+// shortage that never happened — the same class of phantom variance A14 removed.
+//
+// The real rate arrives from the server on each catalogue pull. This constant is
+// only the fallback for a till that has not synced yet, and is deliberately the
+// server's own default so an unsynced till can never over-discount.
+export const DEFAULT_MAX_DISCOUNT_PCT = 10;
+
 export type LegMethod = 'cash' | 'mpesa' | 'card';
 
 export interface DraftLeg {
@@ -23,18 +38,37 @@ export function computeTotals(subtotal: number, opts: {
   discountMode: 'amount' | 'percent';
   tipRaw: number;
   vatRate: number;
+  ctlRate?: number;        // Catering/Tourism Levy %. Omitted or 0 = not applicable.
+  maxDiscountPct?: number; // Ceiling from the server; falls back to the shared default.
 }) {
-  const { discountRaw, discountMode, tipRaw, vatRate } = opts;
-  const discountAmount = round2(
+  const { discountRaw, discountMode, tipRaw, vatRate, ctlRate = 0,
+          maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT } = opts;
+
+  // Clamp to the SAME ceiling the server applies, so the receipt, the drawer and
+  // the stored order can never describe three different discounts.
+  const ceiling = round2(subtotal * (Math.max(0, maxDiscountPct) / 100));
+  const asked = round2(
     discountMode === 'percent'
       ? subtotal * Math.min(Math.max(discountRaw, 0), 100) / 100
       : Math.min(Math.max(discountRaw, 0), subtotal)
   );
+  const discountAmount = round2(Math.min(asked, ceiling, subtotal));
+  // True when the cashier asked for more than policy allows. The modal surfaces
+  // this rather than quietly charging a different number than was typed.
+  const discountCapped = asked > discountAmount + EPSILON;
   const tipAmount = round2(Math.max(tipRaw, 0));
   const discountedSubtotal = round2(subtotal - discountAmount);
-  const vatAmount = round2(discountedSubtotal - discountedSubtotal / (1 + vatRate / 100));
+  // Prices are inclusive of BOTH taxes, so back the net out with the combined
+  // rate and charge each on that net — VAT on the net, not on net-plus-CTL.
+  // Mirrors recomputeOrderTotals on the server, which is authoritative; if these
+  // ever diverge the customer's receipt would contradict the books.
+  //   750 / 1.18 = 635.59 net → ctl 12.71, vat 101.69
+  // ctlRate 0 collapses this to the previous VAT-only arithmetic exactly.
+  const net = discountedSubtotal / (1 + (vatRate + ctlRate) / 100);
+  const vatAmount = round2(net * (vatRate / 100));
+  const ctlAmount = round2(net * (ctlRate / 100));
   const total = round2(discountedSubtotal + tipAmount);
-  return { discountAmount, tipAmount, vatAmount, total };
+  return { discountAmount, tipAmount, vatAmount, ctlAmount, total, discountCapped, maxDiscountPct };
 }
 
 // Resolves draft legs against the total due. A blank amount means "the

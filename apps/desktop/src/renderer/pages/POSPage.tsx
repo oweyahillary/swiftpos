@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { posApi } from '../lib/posApi';
-import { cartSubtotal, extractVat, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
+import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
 import type { CartItem } from '../lib/cart';
 import { modeFlags } from '../lib/posMode';
 import type { ModeFlags } from '../lib/posMode';
@@ -10,6 +10,9 @@ import TablesView from '../components/TablesView';
 import PumpsView from '../components/PumpsView';
 import type { DiningTable, Pump } from '../lib/posApi';
 import { printKOT } from '../lib/printKOT';
+import { printDispatcher } from '../lib/printDispatcher';
+import { buildTicketLines, kitchenOnly } from '../lib/ticketLines';
+import type { ComboMap } from '../lib/ticketLines';
 import { printReceipt } from '../lib/printReceipt';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import VariantModal from '../components/VariantModal';
@@ -25,12 +28,61 @@ import type { ZReport } from '../lib/posApi';
 interface Props {
   business: { id: string; name: string; currency: string };
   onLogout: () => void;
+  // Present only when the signed-in staff member has manager rights. The POS
+  // screen was previously a one-way trip: an owner who opened it to check a
+  // change had to sign out and re-enter a PIN to get back to the Menu tab,
+  // which on a setup day is that loop every few minutes.
+  onOpenManager?: () => void;
+  /**
+   * May this person change printer configuration? Same test as onOpenManager,
+   * but passed explicitly rather than inferred from it — inferring a permission
+   * from the presence of a navigation callback is the kind of coupling that
+   * quietly grants access the day someone adds a second reason to show the
+   * button.
+   */
+  canManagePrinters?: boolean;
 }
 
-export default function POSPage({ business, onLogout }: Props) {
+export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
+  // Real business rate from /api/pos/init, persisted locally by each catalogue
+  // pull. Null only before the first sync completes.
+  const [vatRateFromServer, setVatRateFromServer] = useState<number | null>(null);
+  const [ctlRateFromServer, setCtlRateFromServer] = useState<number>(0);
+  // Discount ceiling the server will enforce on write. Null until the first
+  // sync, when the shared default (the server's own) applies instead.
+  const [maxDiscountPct, setMaxDiscountPct] = useState<number | null>(null);
+  // Combo definitions and kitchen routing, refreshed by each catalogue pull.
+  const [comboItems, setComboItems] = useState<ComboMap>({});
+  const [kitchenCategoryIds, setKitchenCategoryIds] = useState<string[]>([]);
+  // Printed on the dispatcher ticket so a packing station serving three tills
+  // can tell which one sent the order.
+  const [deviceName, setDeviceName] = useState<string | null>(null);
+  // Cashier on the receipt — attribution matters when three tills share a branch.
+  const [cashierName, setCashierName] = useState<string | null>(null);
+  // One bill number held in reserve so ensureOrderNumber() can stay synchronous —
+  // it is called from non-async paths like autoHold, which several table
+  // handlers invoke and then immediately depend on having cleared the cart.
+  //
+  // Drawn LAZILY: when the cart goes from empty to non-empty, not when this
+  // screen mounts. Reserving at mount meant every visit to the POS screen
+  // consumed a number whether or not anything was sold, so the bill sequence
+  // acquired gaps just from navigating — and the Manager button added today
+  // makes that round trip far easier to make. A bill sequence with unexplained
+  // holes is an awkward thing to hand a tax inspector.
+  //
+  // A number can still be burned by closing the app mid-order. That is a real
+  // sale that was abandoned, which is the kind of gap a sequence is allowed to
+  // have.
+  const [reservedBill, setReservedBill] = useState<string | null>(null);
+  // How many times this order was sent to the kitchen. Printed on the receipt
+  // the way the incumbent does it, so a manager reconciling a bill against the
+  // kitchen's tickets can see whether it was fired once or amended twice.
+  const [kotCount, setKotCount] = useState(0);
+  const [receiptHeader, setReceiptHeader] = useState('');
+  const [receiptFooter, setReceiptFooter] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
@@ -39,7 +91,10 @@ export default function POSPage({ business, onLogout }: Props) {
   // Business mode — from device config (written at install). Defaults to the
   // retail grid until the config loads; restaurant/café unlock tabs + KOT.
   const [flags, setFlags] = useState<ModeFlags>(modeFlags('retail'));
-  const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'retail'>('retail');
+  const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'retail' | 'delivery'>('retail');
+  // Rider name, only meaningful on a delivery. Cleared whenever the type changes
+  // so a name can never leak onto a counter sale.
+  const [deliveryPerson, setDeliveryPerson] = useState('');
   const [tableNumber, setTableNumber] = useState('');
   // Pre-assigned at first kitchen send / hold so the KOT and the final receipt
   // carry the same number; null until the ticket needs to exist.
@@ -47,6 +102,12 @@ export default function POSPage({ business, onLogout }: Props) {
   const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
   const [showHeld, setShowHeld] = useState(false);
   const [kitchenMsg, setKitchenMsg] = useState('');
+  // A shift somebody forgot to close. Checked on mount and hourly: a till left
+  // running overnight would otherwise never re-check, and the whole point is
+  // catching it before the next day's sales land on yesterday's reconciliation.
+  const [staleShift, setStaleShift] = useState<null | {
+    id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number; orders: number;
+  }>(null);
 
   // Table map — synced reference data. Restaurants with tables configured
   // open on the map (like the web cashier); without tables, the product
@@ -88,14 +149,25 @@ export default function POSPage({ business, onLogout }: Props) {
   const currency = business.currency ?? 'KES';
 
   useEffect(() => {
-    posApi.pos.init().then(({ products, categories, branchId }) => {
+    posApi.pos.init().then(({ products, categories, branchId, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, receiptHeader: rh, receiptFooter: rf }) => {
       setProducts(products);
       setCategories(categories);
       setBranchId(branchId);
+      if (typeof vatRate === 'number') setVatRateFromServer(vatRate);
+      if (typeof ctlRate === 'number') setCtlRateFromServer(ctlRate);
+      if (typeof mdp === 'number') setMaxDiscountPct(mdp);
+      if (ci) setComboItems(ci as ComboMap);
+      if (Array.isArray(kitchenCategories)) setKitchenCategoryIds(kitchenCategories);
+      if (typeof rh === 'string') setReceiptHeader(rh);
+      if (typeof rf === 'string') setReceiptFooter(rf);
     });
 
     // Business mode from the device config written at install time.
+    posApi.auth.getStaffSession().then(ss => setCashierName(ss?.staff?.name ?? null)).catch(() => {});
+    // NOT reserving a bill number here. See the reservedBill declaration.
+
     posApi.config.get().then(async cfg => {
+      setDeviceName(cfg?.device_name ?? null);
       const f = modeFlags(cfg?.business_type);
       setFlags(f);
       setOrderType(f.defaultOrderType);
@@ -265,16 +337,54 @@ export default function POSPage({ business, onLogout }: Props) {
   };
 
   const removeItem = (index: number) => setCart(prev => prev.filter((_, i) => i !== index));
-  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setKitchenMsg(''); };
+  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); };
 
   // ── Restaurant: kitchen / tabs ─────────────────────────
 
   // The KOT and the receipt must show the same number, so it's assigned the
   // first time either the kitchen or a hold needs it and reused at charge.
+  // Draw the reserve as soon as there is something to sell, and only then. By
+  // the time any consumer fires, the cashier has added an item and reached for
+  // another button — the reserve is a local SQLite round trip, so it has landed.
+  useEffect(() => {
+    if (cart.length > 0 && !reservedBill && !orderNumber) {
+      posApi.orders.nextBillNumber().then(setReservedBill).catch(() => {});
+    }
+  }, [cart.length, reservedBill, orderNumber]);
+
+  /**
+   * Async form, for callers that can await one. Guarantees a terminal-prefixed
+   * number even if the reserve has not landed — the sync fallback returns the old
+   * unprefixed ORD- form, which is precisely the A7 gap fixed earlier today, and
+   * the charge path must never reintroduce it.
+   */
+  const ensureOrderNumberAsync = async (): Promise<string> => {
+    if (orderNumber) return orderNumber;
+    if (reservedBill) return ensureOrderNumber();
+    try {
+      const n = await posApi.orders.nextBillNumber();
+      if (n) { setOrderNumber(n); return n; }
+    } catch { /* fall through to the sync path */ }
+    return ensureOrderNumber();
+  };
+
+  useEffect(() => {
+    const check = () => posApi.shift.stale().then(setStaleShift).catch(() => {});
+    check();
+    const t = setInterval(check, 60 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [shift]);
+
   const ensureOrderNumber = (): string => {
     if (orderNumber) return orderNumber;
-    const n = generateOrderNumber();
+    // Terminal-prefixed number from the reserve; generateOrderNumber() is only
+    // a fallback for the window before the first reserve lands.
+    const n = reservedBill ?? generateOrderNumber();
     setOrderNumber(n);
+    // Consumed. Deliberately NOT replaced here — the next order draws its own
+    // when its first item is added. Pre-fetching a replacement is what made an
+    // abandoned cart, or a visit to the manager screen, cost a number.
+    setReservedBill(null);
     return n;
   };
 
@@ -283,16 +393,34 @@ export default function POSPage({ business, onLogout }: Props) {
   const handleSendToKitchen = async () => {
     const unsent = cart.filter(i => !i.kotSent);
     if (unsent.length === 0) return;
-    const num = ensureOrderNumber();
+    const num = await ensureOrderNumberAsync();
     setKitchenMsg('');
     try {
-      await printKOT(unsent, {
+      const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds);
+
+      // Kitchen gets only what is cooked; the packer gets everything. Both come
+      // from the same expansion so they can never disagree about an order.
+      const kot = await printKOT(kitchenOnly(allLines), {
         orderNumber: num,
         tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
         orderType,
       }, printerSettings);
+
+      await printDispatcher(allLines, {
+        orderNumber: num,
+        billNumber: num,
+        deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
+        stationName: deviceName ?? undefined,
+        tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
+        orderType,
+      }, printerSettings);
       setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
-      setKitchenMsg(`Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
+      setKotCount(n => n + 1);
+      // Don't claim it reached the kitchen when no printer is bound — the
+      // cashier would walk away believing the order was fired.
+      setKitchenMsg(kot.reason
+        ? kot.reason
+        : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
     } catch (err: any) {
       setKitchenMsg(`Kitchen print failed: ${err?.message ?? 'unknown'}`);
     }
@@ -311,8 +439,10 @@ export default function POSPage({ business, onLogout }: Props) {
     const num = ensureOrderNumber();
     const label = orderType === 'dine_in'
       ? `Table ${tableNumber || '?'}`
-      : `Takeaway ${num.slice(-4)}`;
-    holdOrder({ orderNumber: num, label, orderType, tableNumber, cart });
+      : orderType === 'delivery'
+        ? `Delivery ${deliveryPerson.trim() || num.slice(-4)}`
+        : `Takeaway ${num.slice(-4)}`;
+    holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined });
     setHeldOrders(listHeldOrders());
     clearCart();
     setOrderType(flags.defaultOrderType);
@@ -330,6 +460,7 @@ export default function POSPage({ business, onLogout }: Props) {
       if (held) {
         setCart(held.cart);
         setOrderType(held.orderType);
+        setDeliveryPerson(held.deliveryPerson ?? '');
         setTableNumber(held.tableNumber);
         setOrderNumber(held.orderNumber);
         setHeldOrders(listHeldOrders());
@@ -356,9 +487,13 @@ export default function POSPage({ business, onLogout }: Props) {
   // cashier is left looking at the table map with nothing happening. Switching to
   // Dine in with no table chosen and an empty cart opens the map to pick one;
   // mid-order it leaves the view alone.
-  const chooseOrderType = (val: 'dine_in' | 'takeaway') => {
+  const chooseOrderType = (val: 'dine_in' | 'takeaway' | 'delivery') => {
     setOrderType(val);
-    if (val === 'takeaway') {
+    if (val !== 'delivery') setDeliveryPerson('');
+    if (val === 'delivery') {
+      setTableNumber('');
+      setView('products');
+    } else if (val === 'takeaway') {
       setTableNumber('');
       setView('products');
     } else if (flags.isRestaurant && tables.length > 0 && !tableNumber && cart.length === 0) {
@@ -393,6 +528,7 @@ export default function POSPage({ business, onLogout }: Props) {
     if (!held) return;
     setCart(held.cart);
     setOrderType(held.orderType);
+    setDeliveryPerson(held.deliveryPerson ?? '');
     setTableNumber(held.tableNumber);
     setOrderNumber(held.orderNumber);
     setHeldOrders(listHeldOrders());
@@ -405,9 +541,16 @@ export default function POSPage({ business, onLogout }: Props) {
     setHeldOrders(listHeldOrders());
   };
 
-  const vatRate = 16;
+  // Was hardcoded to 16, which computed the wrong tax for any business on a
+  // different rate — in the payment modal, the on-screen total AND the printed
+  // receipt — while the server recomputed correctly on push, so the paper and
+  // the database silently disagreed. Falls back to 16 only until the first sync.
+  const vatRate = vatRateFromServer ?? 16;
+  // Defaults to 0 — a business not registered for the levy must never be charged
+  // it, so the safe fallback is 'no levy', unlike VAT where 16 is the norm.
+  const ctlRate = ctlRateFromServer;
   const subtotal = cartSubtotal(cart);
-  const vatAmount = extractVat(subtotal, vatRate);
+  const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(subtotal, vatRate, ctlRate);
 
   // ── Payment ────────────────────────────────────────────
 
@@ -416,18 +559,29 @@ export default function POSPage({ business, onLogout }: Props) {
     setPlacing(true);
     setPayError('');
 
-    // Reuse the KOT's number if one was assigned; otherwise generate now.
-    const num = orderNumber ?? generateOrderNumber();
+    // Reuse the KOT's number if one was assigned; otherwise take the terminal-
+    // prefixed reserve now.
+    //
+    // This used to fall straight through to generateOrderNumber(), which mints
+    // the old unprefixed ORD-<ts>-<rand> form. ensureOrderNumber() is only
+    // reached from Send to kitchen and from hold, so an order that was rung and
+    // charged directly — every counter sale on the pay-first path this pilot is
+    // configured for — got an unprefixed number. That is A7 not applying to the
+    // common case, and it removes exactly the cross-till collision protection
+    // the terminal prefix exists to provide.
+    const num = await ensureOrderNumberAsync();
 
     try {
       await posApi.order.create({
         branch_id: branchId,
         order_number: num,
         order_type: flags.isPetrol ? 'fuel_sale' : flags.isRestaurant ? orderType : 'retail',
+        delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
         subtotal,
         discount_amount: payment.discountAmount,
         tip_amount: payment.tipAmount,
         vat_amount: payment.vatAmount,
+        ctl_amount: payment.ctlAmount,
         total: payment.total,
         items: cart.map(item => ({
           product: { id: item.product.id, name: item.product.name, categories: item.product.categories ?? null },
@@ -440,7 +594,7 @@ export default function POSPage({ business, onLogout }: Props) {
         payments: payment.legs,
       });
 
-      setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType });
+      setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim() });
       setShowPayment(false);
       setPlacing(false);
 
@@ -488,7 +642,7 @@ export default function POSPage({ business, onLogout }: Props) {
           <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-center justify-between">
             <div>
               <p className="text-green-400 font-semibold">Payment successful</p>
-              <p className="text-gray-500 text-xs mt-0.5">{completedOrder.orderNumber}</p>
+              <p className="text-gray-300 text-xs mt-0.5">{completedOrder.orderNumber}</p>
             </div>
             <span className="text-2xl">✓</span>
           </div>
@@ -503,6 +657,16 @@ export default function POSPage({ business, onLogout }: Props) {
               tipAmount={completedOrder.payment.tipAmount}
               total={completedOrder.payment.total}
               vatAmount={completedOrder.payment.vatAmount}
+              vatRate={vatRate}
+              ctlAmount={completedOrder.payment.ctlAmount}
+              ctlRate={ctlRate}
+              billNumber={completedOrder.orderNumber}
+              kots={kotCount}
+              deliveryPerson={completedOrder.deliveryPerson}
+              headerText={receiptHeader}
+              footerText={receiptFooter}
+              tillNumber={deviceName ?? undefined}
+              cashierName={cashierName ?? undefined}
               currency={currency}
               payments={completedOrder.payment.legs}
               orderType={flags.isRestaurant ? completedOrder.orderType : undefined}
@@ -530,7 +694,7 @@ export default function POSPage({ business, onLogout }: Props) {
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900">
         <span className="text-green-400 font-bold text-sm">SwiftPOS</span>
-        <span className="text-gray-400 text-sm">{business.name}</span>
+        <span className="text-gray-200 text-sm">{business.name}</span>
         <div className="flex items-center gap-3">
           {/* Sync indicator */}
           <button
@@ -546,7 +710,7 @@ export default function POSPage({ business, onLogout }: Props) {
                 }).catch(() => {});
               }
             })}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white transition-colors"
             title="Sync now"
           >
             <span className={`w-2 h-2 rounded-full ${syncStatus.online ? 'bg-green-400' : 'bg-red-400'}`} />
@@ -573,7 +737,7 @@ export default function POSPage({ business, onLogout }: Props) {
             title="Shift / cash-up"
           >
             <span className={`w-2 h-2 rounded-full ${shift ? 'bg-green-400' : 'bg-gray-600'}`} />
-            <span className={shift ? 'text-green-400' : 'text-gray-500'}>
+            <span className={shift ? 'text-green-400' : 'text-amber-400'}>
               {shift ? 'Shift open' : 'No shift'}
             </span>
           </button>
@@ -581,7 +745,7 @@ export default function POSPage({ business, onLogout }: Props) {
           {flags.isRestaurant && (
             <button
               onClick={() => setShowHeld(true)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors"
+              className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white transition-colors"
               title="Held orders"
             >
               📋 {heldOrders.length > 0 && <span className="text-amber-400 font-medium">{heldOrders.length}</span>}
@@ -600,7 +764,7 @@ export default function POSPage({ business, onLogout }: Props) {
                 } catch { setRecentOrders([]); }
                 finally { setLoadingHistory(false); }
               }}
-              className="text-xs text-gray-500 hover:text-white transition-colors"
+              className="text-xs text-gray-300 hover:text-white transition-colors"
               title="Order history / void"
             >
               History
@@ -609,16 +773,51 @@ export default function POSPage({ business, onLogout }: Props) {
           {/* Printer settings */}
           <button
             onClick={() => setShowPrinters(true)}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
+            className="text-xs text-gray-300 hover:text-white transition-colors"
             title="Printer settings"
           >
             🖨
           </button>
-          <button onClick={onLogout} className="text-xs text-gray-500 hover:text-red-400 transition-colors">
+          {/* Deliberately not styled like its neighbours. This is the only way
+              back to the manager screen, and as plain grey text among five other
+              plain grey links it was easy to miss entirely. */}
+          {onOpenManager && (
+            <button
+              onClick={onOpenManager}
+              className="text-xs text-green-400 hover:text-green-300 border border-green-900 hover:border-green-700 rounded-md px-2 py-1 transition-colors"
+              title="Back to manager tools"
+            >
+              ← Manager
+            </button>
+          )}
+          <button onClick={onLogout} className="text-xs text-gray-300 hover:text-red-400 transition-colors">
             Sign out
           </button>
         </div>
       </div>
+
+      {/* A shift nobody closed.
+          A banner rather than a modal, deliberately: this must be impossible to
+          miss and equally impossible for it to stop someone serving a customer.
+          Blocking the till because of yesterday's paperwork would guarantee the
+          feature gets worked around, and a worked-around control is no control. */}
+      {staleShift && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
+          <span className="text-amber-400 text-sm">⚠</span>
+          <p className="text-xs text-amber-200 flex-1">
+            <span className="font-semibold">{staleShift.cashier_name}</span>'s shift has been open{' '}
+            <span className="font-semibold">{staleShift.hoursOpen} hours</span> —{' '}
+            {staleShift.orders} sales, {currency} {staleShift.expectedCash.toLocaleString('en-KE', { minimumFractionDigits: 2 })} expected in the drawer.
+            Today's sales are being counted against it.
+          </p>
+          <button
+            onClick={() => setShowShift(true)}
+            className="text-xs px-3 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white transition-colors whitespace-nowrap"
+          >
+            Close it now
+          </button>
+        </div>
+      )}
 
       {/* Shift / cash-up panel */}
       {showShift && (
@@ -678,20 +877,20 @@ export default function POSPage({ business, onLogout }: Props) {
               placeholder="Search products…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-green-500 transition-colors"
             />
           </div>
 
           <div className="flex gap-2 px-4 py-3 border-b border-gray-800 overflow-x-auto">
             <button
               onClick={() => setActiveCategory('all')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === 'all' ? 'bg-green-500 text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === 'all' ? 'bg-green-500 text-gray-950' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
             >All</button>
             {categories.map((cat: any) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === cat.id ? 'text-gray-950 font-semibold' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === cat.id ? 'text-gray-950 font-semibold' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
                 style={activeCategory === cat.id ? { backgroundColor: cat.color ?? '#22c55e' } : {}}
               >
                 {cat.icon && <span className="mr-1">{cat.icon}</span>}{cat.name}
@@ -701,7 +900,7 @@ export default function POSPage({ business, onLogout }: Props) {
 
           <div className="flex-1 overflow-y-auto p-4">
             {filtered.length === 0 ? (
-              <div className="text-center py-20 text-gray-600 text-sm">No products found</div>
+              <div className="text-center py-20 text-gray-400 text-sm">No products found</div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 {filtered.map((product: any) => {
@@ -746,9 +945,9 @@ export default function POSPage({ business, onLogout }: Props) {
           <div className="px-4 py-4 border-b border-gray-800 flex items-center justify-between">
             <h2 className="text-white font-semibold">
               Current order
-              {orderNumber && <span className="text-gray-600 text-xs font-normal ml-2">{orderNumber}</span>}
+              {orderNumber && <span className="text-gray-300 text-xs font-normal ml-2">{orderNumber}</span>}
             </h2>
-            {cart.length > 0 && <button onClick={clearCart} className="text-xs text-gray-500 hover:text-red-400 transition-colors">Clear</button>}
+            {cart.length > 0 && <button onClick={clearCart} className="text-xs text-gray-300 hover:text-red-400 transition-colors">Clear</button>}
           </div>
 
           {/* Restaurant / café — order type, table, kitchen, hold */}
@@ -756,16 +955,25 @@ export default function POSPage({ business, onLogout }: Props) {
             <div className="px-4 py-3 border-b border-gray-800 space-y-2">
               <div className="flex gap-2">
                 <div className="flex flex-1 rounded-lg overflow-hidden border border-gray-700">
-                  {([['dine_in', 'Dine in'], ['takeaway', 'Takeaway']] as const).map(([val, label]) => (
+                  {([['dine_in', 'Dine in'], ['takeaway', 'Takeaway'], ['delivery', 'Delivery']] as const).map(([val, label]) => (
                     <button
                       key={val}
                       onClick={() => chooseOrderType(val)}
-                      className={`flex-1 py-1.5 text-xs font-medium transition-colors ${orderType === val ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                      className={`flex-1 py-1.5 text-xs font-medium transition-colors ${orderType === val ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
+                {orderType === 'delivery' && (
+                  <input
+                    type="text"
+                    value={deliveryPerson}
+                    onChange={e => setDeliveryPerson(e.target.value)}
+                    placeholder="Rider"
+                    className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                  />
+                )}
                 {orderType === 'dine_in' && (
                   tables.length > 0 ? (
                     <span className="w-20 flex items-center justify-center bg-green-500/10 border border-green-500/40 rounded-lg text-green-400 text-xs font-semibold truncate px-1" title="Selected from the table map">
@@ -777,7 +985,7 @@ export default function POSPage({ business, onLogout }: Props) {
                       value={tableNumber}
                       onChange={e => setTableNumber(e.target.value)}
                       placeholder="Table #"
-                      className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
                     />
                   )
                 )}
@@ -800,13 +1008,13 @@ export default function POSPage({ business, onLogout }: Props) {
                   ⏸ Hold order
                 </button>
               </div>
-              {kitchenMsg && <p className="text-xs text-gray-500">{kitchenMsg}</p>}
+              {kitchenMsg && <p className="text-xs text-gray-300">{kitchenMsg}</p>}
             </div>
           )}
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {cart.length === 0 ? (
-              <div className="text-center py-16 text-gray-600 text-sm">Add products to get started</div>
+              <div className="text-center py-16 text-gray-400 text-sm">Add products to get started</div>
             ) : cart.map((item, index) => (
               <div key={index} className="space-y-1">
                 <div className="flex items-center gap-3">
@@ -817,7 +1025,7 @@ export default function POSPage({ business, onLogout }: Props) {
                         <span className="ml-1.5 text-[10px] text-amber-500/80" title="Already sent to kitchen">🍳</span>
                       )}
                     </p>
-                    <p className="text-gray-400 text-xs">
+                    <p className="text-gray-300 text-xs">
                       {item.isFuel
                         ? `${currency} ${item.unitPrice.toLocaleString()}/L`
                         : `${currency} ${item.unitPrice.toLocaleString()} each`}
@@ -833,7 +1041,7 @@ export default function POSPage({ business, onLogout }: Props) {
                         <button onClick={() => updateQty(index, 1)} className="w-6 h-6 bg-gray-800 hover:bg-gray-700 text-white rounded-md text-sm flex items-center justify-center transition-colors">+</button>
                       </>
                     )}
-                    <button onClick={() => removeItem(index)} className="w-6 h-6 text-gray-600 hover:text-red-400 flex items-center justify-center transition-colors">✕</button>
+                    <button onClick={() => removeItem(index)} className="w-6 h-6 text-gray-400 hover:text-red-400 flex items-center justify-center transition-colors">✕</button>
                   </div>
                 </div>
                 {(item.selectedVariants.length > 0 || item.selectedModifiers.length > 0) && (
@@ -846,18 +1054,25 @@ export default function POSPage({ business, onLogout }: Props) {
                     ))}
                   </div>
                 )}
-                <p className="text-right text-xs text-gray-400">{currency} {item.lineTotal.toLocaleString()}</p>
+                <p className="text-right text-sm text-gray-200 font-medium">{currency} {item.lineTotal.toLocaleString()}</p>
               </div>
             ))}
           </div>
 
           <div className="px-4 py-4 border-t border-gray-800 space-y-2">
-            <div className="flex justify-between text-sm text-gray-400">
-              <span>Subtotal (incl. VAT)</span><span>{currency} {subtotal.toLocaleString()}</span>
+            <div className="flex justify-between text-sm text-gray-200">
+              <span>{vatRate > 0 ? 'Subtotal (incl. VAT)' : 'Subtotal'}</span><span>{currency} {subtotal.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>VAT ({vatRate}%)</span><span>{currency} {vatAmount.toFixed(2)}</span>
-            </div>
+            {ctlRate > 0 && (
+              <div className="flex justify-between text-sm text-gray-300">
+                <span>CTL ({ctlRate}%)</span><span>{currency} {ctlAmount.toFixed(2)}</span>
+              </div>
+            )}
+            {vatRate > 0 && (
+              <div className="flex justify-between text-sm text-gray-300">
+                <span>VAT ({vatRate}%)</span><span>{currency} {vatAmount.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-white font-bold text-lg pt-1 border-t border-gray-800">
               <span>Total</span><span>{currency} {subtotal.toLocaleString()}</span>
             </div>
@@ -889,6 +1104,8 @@ export default function POSPage({ business, onLogout }: Props) {
         <PaymentModal
           subtotal={subtotal}
           vatRate={vatRate}
+          ctlRate={ctlRate}
+          maxDiscountPct={maxDiscountPct ?? undefined}
           currency={currency}
           placing={placing}
           error={payError}
@@ -901,6 +1118,7 @@ export default function POSPage({ business, onLogout }: Props) {
       {showPrinters && (
         <PrinterSettingsModal
           isRestaurant={flags.isRestaurant}
+          canEdit={canManagePrinters}
           onClose={() => setShowPrinters(false)}
         />
       )}
@@ -925,23 +1143,23 @@ export default function POSPage({ business, onLogout }: Props) {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-500 text-xs mt-0.5">Last 30 orders · tap a completed order to void</p>
+                <p className="text-gray-300 text-xs mt-0.5">Last 30 orders · tap a completed order to void</p>
               </div>
               <button onClick={() => setShowHistory(false)}
-                className="text-gray-500 hover:text-white transition-colors text-lg">✕</button>
+                className="text-gray-300 hover:text-white transition-colors text-lg">✕</button>
             </div>
 
             <div className="flex-1 overflow-y-auto">
               {loadingHistory ? (
-                <div className="flex items-center justify-center py-12 text-gray-500 text-sm">Loading…</div>
+                <div className="flex items-center justify-center py-12 text-gray-300 text-sm">Loading…</div>
               ) : recentOrders.length === 0 ? (
-                <div className="py-12 text-center text-gray-500 text-sm">No orders in local storage yet.</div>
+                <div className="py-12 text-center text-gray-300 text-sm">No orders in local storage yet.</div>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-900">
                     <tr className="border-b border-gray-800">
                       {['Order #', 'Time', 'Type', 'Payment', 'Total', 'Status', ''].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -987,7 +1205,7 @@ export default function POSPage({ business, onLogout }: Props) {
                               </button>
                             )}
                             {o.status === 'completed' && ageMin > 30 && (
-                              <span className="text-xs text-gray-600">expired</span>
+                              <span className="text-xs text-gray-400">expired</span>
                             )}
                           </td>
                         </tr>

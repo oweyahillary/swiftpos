@@ -70,7 +70,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
 
       <div className="flex-1 overflow-y-auto p-4">
         {pumps.length === 0 ? (
-          <div className="text-center text-gray-500 text-sm mt-12 px-6">
+          <div className="text-center text-gray-300 text-sm mt-12 px-6">
             No pumps configured. Add pumps in the dashboard (Settings → Pumps),
             then press Sync on the till.
           </div>
@@ -98,7 +98,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
                   </div>
                   {priced ? (
                     <div className="mt-3 text-sm font-medium text-green-400">
-                      {currency} {fmt(pump.price_per_litre!)}<span className="text-gray-500 font-normal">/L</span>
+                      {currency} {fmt(pump.price_per_litre!)}<span className="text-gray-300 font-normal">/L</span>
                     </div>
                   ) : (
                     <div className="mt-3 text-xs text-amber-400">Map a fuel product in the dashboard</div>
@@ -116,7 +116,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
           <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-5">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-lg font-semibold text-white">{active.name}</h3>
-              <button onClick={() => setActive(null)} className="text-gray-500 hover:text-white text-xl leading-none">×</button>
+              <button onClick={() => setActive(null)} className="text-gray-300 hover:text-white text-xl leading-none">×</button>
             </div>
             <div className="text-xs text-gray-400 mb-4">
               {active.fuel_product_name ?? 'Fuel'} · {currency} {fmt(price)}/L

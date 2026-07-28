@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { computeTotals, buildLegView, round2, EPSILON } from '../lib/payment';
+import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 
 // Payment modal — split tender + discount + tip.
@@ -25,12 +25,17 @@ export interface PaymentResult {
   tipAmount: number;
   total: number;
   vatAmount: number;
+  ctlAmount: number;
   legs: PaymentLeg[];
 }
 
 interface Props {
   subtotal: number;       // VAT-inclusive cart subtotal
   vatRate: number;        // e.g. 16
+  ctlRate?: number;       // Catering/Tourism Levy %, 0 = not applicable
+  // Discount ceiling the SERVER will enforce. Passed in so the till clamps to
+  // the same number rather than printing a discount the books won't record.
+  maxDiscountPct?: number;
   currency: string;
   placing: boolean;
   error: string;
@@ -44,7 +49,7 @@ const METHOD_META: Record<LegMethod, { label: string; icon: string }> = {
   card:  { label: 'Card',   icon: '💳' },
 };
 
-export default function PaymentModal({ subtotal, vatRate, currency, placing, error, onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, onConfirm, onClose }: Props) {
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
@@ -53,9 +58,9 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
   const [localError, setLocalError] = useState('');
 
   const discountRaw = parseFloat(discountInput) || 0;
-  const { discountAmount, tipAmount, vatAmount, total } = useMemo(
-    () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate }),
-    [subtotal, discountRaw, discountMode, tipInput, vatRate]
+  const { discountAmount, tipAmount, vatAmount, ctlAmount, total, discountCapped } = useMemo(
+    () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct }),
+    [subtotal, discountRaw, discountMode, tipInput, vatRate, ctlRate, maxDiscountPct]
   );
 
   // ── Payment legs ────────────────────────────────────────
@@ -98,6 +103,7 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
       tipAmount,
       total,
       vatAmount,
+      ctlAmount,
       legs: legView.map(l => ({
         method: l.method,
         amount: l.resolvedAmount,
@@ -115,7 +121,7 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="text-white font-semibold text-lg">Payment</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">✕</button>
+          <button onClick={onClose} className="text-gray-300 hover:text-white transition-colors">✕</button>
         </div>
 
         {/* Totals */}
@@ -134,9 +140,16 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
               <span>Tip</span><span>{fmt(tipAmount)}</span>
             </div>
           )}
-          <div className="flex justify-between text-gray-500 text-xs">
-            <span>incl. VAT ({vatRate}%)</span><span>{fmt(vatAmount)}</span>
-          </div>
+          {ctlRate > 0 && (
+            <div className="flex justify-between text-gray-300 text-xs">
+              <span>incl. CTL ({ctlRate}%)</span><span>{fmt(ctlAmount)}</span>
+            </div>
+          )}
+          {vatRate > 0 && (
+            <div className="flex justify-between text-gray-300 text-xs">
+              <span>incl. VAT ({vatRate}%)</span><span>{fmt(vatAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-white font-bold text-xl pt-1 border-t border-gray-700">
             <span>Total due</span><span>{fmt(total)}</span>
           </div>
@@ -145,7 +158,7 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
         {/* Discount / tip */}
         <button
           onClick={() => setShowAdjustments(s => !s)}
-          className="text-xs text-gray-500 hover:text-white transition-colors"
+          className="text-xs text-gray-300 hover:text-white transition-colors"
         >
           {showAdjustments ? '▾' : '▸'} Discount / tip
         </button>
@@ -168,6 +181,15 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
                   {discountMode === 'amount' ? currency : '%'}
                 </button>
               </div>
+              {/* The server caps this and stores the capped figure. Saying so
+                  here is the difference between a cashier correcting the entry
+                  and a drawer that reads short at close for reasons nobody can
+                  reconstruct the next morning. */}
+              {discountCapped && (
+                <p className="text-xs text-amber-400 mt-1">
+                  Capped at {maxDiscountPct}% — {fmt(discountAmount)} applied. Ask a manager for more.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Tip ({currency})</label>
@@ -198,13 +220,13 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
                   ))}
                 </div>
                 {legs.length > 1 && (
-                  <button onClick={() => removeLeg(i)} className="text-gray-600 hover:text-red-400 transition-colors px-1">✕</button>
+                  <button onClick={() => removeLeg(i)} className="text-gray-400 hover:text-red-400 transition-colors px-1">✕</button>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Amount</label>
+                  <label className="block text-xs text-gray-300 mb-1">Amount</label>
                   <input
                     type="number" min="0" value={legs[i].amount}
                     onChange={e => setLeg(i, { amount: e.target.value })}
@@ -214,7 +236,7 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
                 </div>
                 {leg.method === 'cash' ? (
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Tendered</label>
+                    <label className="block text-xs text-gray-300 mb-1">Tendered</label>
                     <input
                       type="number" min="0" value={legs[i].tendered}
                       onChange={e => setLeg(i, { tendered: e.target.value })}
@@ -224,8 +246,8 @@ export default function PaymentModal({ subtotal, vatRate, currency, placing, err
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Reference <span className="text-gray-600">(optional)</span>
+                    <label className="block text-xs text-gray-300 mb-1">
+                      Reference <span className="text-gray-400">(optional)</span>
                     </label>
                     <input
                       type="text" value={legs[i].reference}

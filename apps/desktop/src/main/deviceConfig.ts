@@ -14,6 +14,7 @@
 // module-level const. The config does not exist on first boot, and after the
 // install screen writes it we want the new URL to take effect without a restart.
 
+import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
 
@@ -38,6 +39,24 @@ export interface DeviceConfig {
   // LAN URL of the branch's aggregation node that this till pushes to (e.g.
   // http://192.168.1.10:4000). Null on the node itself / single-till installs.
   node_url: string | null;
+  // Shared secret for the branch LAN channel. Every /node/* request must carry
+  // it in an X-Node-Secret header. Minted on the node at install and copied by
+  // hand onto each peer till. Before this existed the node accepted order
+  // injection, served the whole branch's sales report and handed out the live
+  // tech token to anything on the same wifi.
+  node_secret: string | null;
+  // Short terminal identifier — 'T1', 'T2', 'T3'. Prefixes bill numbers so the
+  // three tills at a branch cannot collide, and tells you at a glance which
+  // machine rang a sale.
+  terminal_code: string | null;
+  // Business VAT percentage (e.g. 16). Null until the first catalogue sync.
+  vat_rate: number | null;
+  // Catering/Tourism Levy percentage. 0/null = not applicable.
+  ctl_rate: number | null;
+  max_discount_pct: number | null;
+  // Free-text blocks printed above and below the receipt body. Multi-line.
+  receipt_header: string | null;
+  receipt_footer: string | null;
   configured: boolean;
 }
 
@@ -59,6 +78,13 @@ export function getDeviceConfig(): DeviceConfig | null {
     device_id: row.device_id ?? null,
     device_role: (row.device_role as DeviceRole) ?? 'till',
     node_url: row.node_url ?? null,
+    node_secret: row.node_secret ?? null,
+    terminal_code: row.terminal_code ?? null,
+    vat_rate: row.vat_rate ?? null,
+    ctl_rate: row.ctl_rate ?? null,
+    max_discount_pct: row.max_discount_pct ?? null,
+    receipt_header: row.receipt_header ?? null,
+    receipt_footer: row.receipt_footer ?? null,
     configured: row.configured === 1,
   };
 }
@@ -96,14 +122,21 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     device_id: patch.device_id ?? current?.device_id ?? uuid(),
     device_role: patch.device_role ?? current?.device_role ?? 'till',
     node_url: patch.node_url !== undefined ? patch.node_url : (current?.node_url ?? null),
+    node_secret: patch.node_secret !== undefined ? patch.node_secret : (current?.node_secret ?? null),
+    terminal_code: patch.terminal_code !== undefined ? patch.terminal_code : (current?.terminal_code ?? null),
+    vat_rate: patch.vat_rate !== undefined ? patch.vat_rate : (current?.vat_rate ?? null),
+    ctl_rate: patch.ctl_rate !== undefined ? patch.ctl_rate : (current?.ctl_rate ?? null),
+    max_discount_pct: patch.max_discount_pct !== undefined ? patch.max_discount_pct : (current?.max_discount_pct ?? null),
+    receipt_header: patch.receipt_header !== undefined ? patch.receipt_header : (current?.receipt_header ?? null),
+    receipt_footer: patch.receipt_footer !== undefined ? patch.receipt_footer : (current?.receipt_footer ?? null),
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
 
   db.prepare(`
     INSERT INTO device_config
-      (id, deploy_mode, server_url, branch_id, business_type, device_name, device_id, device_role, node_url, configured, created_at, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, deploy_mode, server_url, branch_id, business_type, device_name, device_id, device_role, node_url, node_secret, terminal_code, vat_rate, ctl_rate, max_discount_pct, receipt_header, receipt_footer, configured, created_at, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       deploy_mode=excluded.deploy_mode,
       server_url=excluded.server_url,
@@ -113,6 +146,13 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
       device_id=excluded.device_id,
       device_role=excluded.device_role,
       node_url=excluded.node_url,
+      node_secret=excluded.node_secret,
+      terminal_code=excluded.terminal_code,
+      vat_rate=excluded.vat_rate,
+      ctl_rate=excluded.ctl_rate,
+      max_discount_pct=excluded.max_discount_pct,
+      receipt_header=excluded.receipt_header,
+      receipt_footer=excluded.receipt_footer,
       configured=excluded.configured,
       updated_at=excluded.updated_at
   `).run(
@@ -124,12 +164,46 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     merged.device_id,
     merged.device_role,
     merged.node_url,
+    merged.node_secret,
+    merged.terminal_code,
+    merged.vat_rate,
+    merged.ctl_rate,
+    merged.max_discount_pct,
+    merged.receipt_header,
+    merged.receipt_footer,
     merged.configured ? 1 : 0,
     current ? (db.prepare(`SELECT created_at FROM device_config WHERE id=1`).get() as any)?.created_at ?? now : now,
     now,
   );
 
   return merged;
+}
+
+// ── Branch LAN secret ───────────────────────────────────────────────────────
+// Read off the node's screen and typed into each till, so it avoids characters
+// that are ambiguous in that workflow: no 0/O, no 1/I/L, no U. 16 characters
+// from a 30-symbol alphabet is ~78 bits, far beyond what a LAN needs, and
+// crypto.randomInt is rejection-sampled so there is no modulo bias.
+const SECRET_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+export function generateNodeSecret(): string {
+  let out = '';
+  for (let i = 0; i < 16; i++) {
+    out += SECRET_ALPHABET[crypto.randomInt(0, SECRET_ALPHABET.length)];
+    if (i % 4 === 3 && i < 15) out += '-';
+  }
+  return out;
+}
+
+// Returns this device's node secret, minting and persisting one if absent.
+// Called by startNodeServer so an install upgraded from a build without this
+// column comes up authenticated rather than open.
+export function ensureNodeSecret(): string {
+  const existing = getDeviceConfig()?.node_secret;
+  if (existing) return existing;
+  const secret = generateNodeSecret();
+  saveDeviceConfig({ node_secret: secret });
+  return secret;
 }
 
 // Factory reset — wipes the config so the device returns to the open install

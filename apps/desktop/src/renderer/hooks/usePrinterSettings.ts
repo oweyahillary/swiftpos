@@ -7,7 +7,8 @@
  * Extended over the dashboard version with the QZ printer bindings, because
  * the desktop has no branch_printers table to read them from:
  *   receiptPrinterName — QZ printer for customer receipts ('' = browser print)
- *   kitchenPrinterName — QZ printer for KOTs ('' = browser print)
+ *   kitchenPrinterName    — printer for the kitchen prep ticket
+ *   dispatcherPrinterName — printer for the packing ticket ('' = feature off)
  *   kitchenEnabled     — whether "Send to kitchen" prints at all
  */
 
@@ -21,6 +22,9 @@ export interface PrinterSettings {
   footerMessage:      string;
   receiptPrinterName: string;            // '' = use browser print dialog
   kitchenPrinterName: string;            // '' = use browser print dialog
+  // '' = no packing station at this site, so the dispatcher ticket is simply
+  // never produced. Unlike the others this does NOT fall back to a dialog.
+  dispatcherPrinterName: string;
   kitchenEnabled:     boolean;
 }
 
@@ -34,6 +38,7 @@ export const PRINTER_DEFAULTS: PrinterSettings = {
   footerMessage:      'Thank you for your business!',
   receiptPrinterName: '',
   kitchenPrinterName: '',
+  dispatcherPrinterName: '',
   kitchenEnabled:     true,
 };
 

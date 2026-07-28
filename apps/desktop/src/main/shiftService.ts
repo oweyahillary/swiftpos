@@ -52,10 +52,68 @@ function sessionInfo() {
 
 // Open a shift for the active cashier. Rejects if one is already open (mirrors
 // the server's 409 guard).
+/**
+ * How long a shift may stay open before it is treated as forgotten.
+ *
+ * 18 hours, not 24: a shift opened at 08:00 and never closed is stale by 02:00
+ * the following night, before the next day's opening cashier arrives to find
+ * their sales landing on yesterday's reconciliation.
+ */
+const STALE_SHIFT_HOURS = 18;
+
+export interface StaleShift {
+  id: string;
+  opened_at: string;
+  hoursOpen: number;
+  cashier_name: string;
+  expectedCash: number;
+  orders: number;
+}
+
+/**
+ * Is a shift sitting open past the point of plausibility?
+ *
+ * Deliberately does NOT close it. Closing a shift records a COUNTED drawer, and
+ * a count nobody made is not a reconciliation — it is a fabricated one, which is
+ * worse than none because it looks fine. An open shift is visibly wrong; a fake
+ * close is invisibly wrong, and the variance it reports as zero is the number
+ * somebody will later rely on.
+ *
+ * So this reports, and a human decides. Either the drawer is counted late, or a
+ * manager forces it closed and the record says plainly that nobody counted.
+ */
+export function getStaleShift(): StaleShift | null {
+  const shift = getOpenShift();
+  if (!shift) return null;
+
+  const hoursOpen = (Date.now() - new Date(shift.opened_at).getTime()) / 3_600_000;
+  if (hoursOpen < STALE_SHIFT_HOURS) return null;
+
+  const z = computeZReport(shift.id);
+  return {
+    id: shift.id,
+    opened_at: shift.opened_at,
+    hoursOpen: Math.floor(hoursOpen),
+    cashier_name: z.shift.cashier_name,
+    expectedCash: z.totals.expectedCash,
+    orders: z.totals.orderCount ?? 0,
+  };
+}
+
 export function openShift(opening_float = 0): any {
   const db = getLocalDb();
   const existing = getOpenShift();
-  if (existing) throw new Error('A shift is already open');
+  if (existing) {
+    // Name the obstacle. "A shift is already open" sent the next cashier looking
+    // for a settings screen; whose shift it is and how old tells them what to do.
+    const hours = Math.floor((Date.now() - new Date(existing.opened_at).getTime()) / 3_600_000);
+    const who = (getLocalDb().prepare(`SELECT name FROM staff WHERE id=?`).get(existing.cashier_id) as any)?.name;
+    throw new Error(
+      hours >= STALE_SHIFT_HOURS
+        ? `${who ?? 'A cashier'}'s shift has been open ${hours} hours and must be closed before a new one starts.`
+        : `A shift opened by ${who ?? 'another cashier'} is already running. Close it first.`,
+    );
+  }
 
   const { session, staff } = sessionInfo();
   if (!staff?.staff_id) throw new Error('No cashier — sign in with a PIN first');
@@ -190,14 +248,62 @@ export function closeShift(closing_float: number, notes?: string): ZReport {
   db.prepare(`
     UPDATE shifts SET
       status='closed', closed_at=?, closing_float=?, expected_cash=?, cash_variance=?,
-      notes=?, sync_status='pending'
+      notes=?, close_method='counted', closed_by=?, sync_status='pending'
     WHERE id=?
-  `).run(now, Number(closing_float), expectedCash, variance, notes ?? null, shift.id);
+  `).run(now, Number(closing_float), expectedCash, variance, notes ?? null,
+         sessionInfo().staff?.staff_id ?? null, shift.id);
 
   return computeZReport(shift.id);
 }
 
 // Current open shift enriched with its live Z-report, or null if none open.
+/**
+ * Ends a shift nobody closed, without inventing a cash count.
+ *
+ * The distinction from closeShift() is the whole point:
+ *
+ *   closeShift()       a human counted the drawer. closing_float is real,
+ *                      cash_variance is meaningful, status 'closed'.
+ *   forceCloseShift()  nobody counted. closing_float and cash_variance are
+ *                      NULL — not zero — and the status is
+ *                      'closed_unreconciled'.
+ *
+ * NULL rather than 0 matters more than it looks. A zero variance is a claim:
+ * "we checked, and it balanced". Writing that when nobody looked corrupts every
+ * report built on it, and it corrupts them invisibly — the number is there, it
+ * looks fine, and it is a lie somebody will act on. NULL says "unknown", which
+ * is the truth, and it makes the row impossible to average away.
+ *
+ * Requires a manager, and requires a reason. If a till is closed out without a
+ * count, the record should say who decided that and why.
+ */
+export function forceCloseShift(reason: string, closedByStaffId?: string | null): ZReport {
+  const db = getLocalDb();
+  const shift = getOpenShift();
+  if (!shift) throw new Error('No open shift to close');
+  if (!reason || !reason.trim()) throw new Error('A reason is required to close a shift without counting the drawer');
+
+  const pre = computeZReport(shift.id);
+  const now = new Date().toISOString();
+  const hours = Math.floor((Date.now() - new Date(shift.opened_at).getTime()) / 3_600_000);
+
+  db.prepare(`
+    UPDATE shifts SET
+      status='closed_unreconciled', closed_at=?,
+      closing_float=NULL, cash_variance=NULL, expected_cash=?,
+      notes=?, close_method='forced', closed_by=?, sync_status='pending'
+    WHERE id=?
+  `).run(
+    now,
+    pre.totals.expectedCash,
+    `FORCED CLOSE after ${hours}h without a drawer count — ${reason.trim()}`,
+    closedByStaffId ?? sessionInfo().staff?.staff_id ?? null,
+    shift.id,
+  );
+
+  return computeZReport(shift.id);
+}
+
 export function currentShiftReport(): ZReport | null {
   const shift = getOpenShift();
   if (!shift) return null;

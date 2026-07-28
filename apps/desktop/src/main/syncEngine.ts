@@ -10,8 +10,8 @@
 
 import { net } from 'electron';
 import { getLocalDb } from './localDb';
-import { getDeviceConfig } from './deviceConfig';
-import { hasNode, pushOrderToNode } from './nodeClient';
+import { getDeviceConfig, saveDeviceConfig, getServerUrl } from './deviceConfig';
+import { hasNode, pushOrderToNode, confirmNodeDelivery } from './nodeClient';
 import { v4 as uuid } from 'uuid';
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
@@ -28,7 +28,7 @@ import { v4 as uuid } from 'uuid';
 // creates rows — there is nothing to push until then, so no push code exists yet.
 export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
   // Pull-down, remote wins
-  products: 'pull', categories: 'pull',
+  products: 'pull', categories: 'pull', combo_items: 'pull',
   variant_groups: 'pull', variant_options: 'pull',
   modifier_groups: 'pull', modifier_options: 'pull',
   stock_levels: 'pull', branches: 'pull', users: 'pull', tables: 'pull', pumps: 'pull',
@@ -67,13 +67,30 @@ function authHeaders() {
 
 // Silently refreshes the access token using the stored refresh token.
 // Updates in-memory tokens and persists them back to SQLite session.
-async function refreshAccessToken(): Promise<boolean> {
-  if (!_refreshToken) return false;
+//
+// Exported because the IPC handlers need it too. The PIN screen calls
+// /api/branches with the token straight out of SQLite, and that token has
+// usually expired overnight — the first launch of the day showed "Invalid or
+// expired token" and an empty branch list, and only worked on the SECOND launch
+// because the background sync had refreshed and persisted a new one in the
+// meantime. Anything holding the owner token must be able to refresh and retry.
+export async function refreshAccessToken(): Promise<boolean> {
+  // The in-memory token is empty until configureSyncEngine() has run, which
+  // happens on auth:getSession. Don't depend on that ordering — a handler can
+  // fire before it. Fall back to whatever is persisted.
+  let refresh = _refreshToken;
+  if (!refresh) {
+    try {
+      const row = getLocalDb().prepare(`SELECT refresh_token FROM session WHERE id=1`).get() as any;
+      refresh = row?.refresh_token ?? '';
+    } catch { /* no db yet */ }
+  }
+  if (!refresh) return false;
   try {
-    const res = await fetch(`${_serverUrl}/api/auth/refresh`, {
+    const res = await fetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: _refreshToken }),
+      body: JSON.stringify({ refreshToken: refresh }),
     });
     if (!res.ok) return false;
     const { accessToken, refreshToken } = await res.json();
@@ -87,6 +104,27 @@ async function refreshAccessToken(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Turns a server error body into a message worth storing.
+ *
+ * The server hides internal detail behind a generic message and returns a short
+ * `ref` keying the full detail in its own logs. Discarding that ref made a real
+ * failure — three unapplied migrations, every order rejected with "Failed to
+ * create order" — take most of a day to trace, because nothing on the till
+ * pointed at the log line naming the cause.
+ *
+ * Keeping it means last_error reads:
+ *     Failed to create order (ref: fae3cb28)
+ * and one search of the server log gives the answer.
+ */
+function describeServerError(body: any, status: number): string {
+  const base   = body?.error ?? `HTTP ${status}`;
+  const detail = typeof body?.detail === 'string' ? body.detail : '';   // dev builds only
+  const ref    = typeof body?.ref === 'string' ? body.ref : '';
+  if (detail) return `${base} — ${detail}`;
+  return ref ? `${base} (ref: ${ref})` : String(base);
 }
 
 function isOnline(): boolean {
@@ -148,6 +186,7 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
+    await confirmCloudDelivery(errors);  // peer tills: node_ack -> synced
     await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
@@ -172,6 +211,7 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
+    await confirmCloudDelivery(errors);  // peer tills: node_ack -> synced
     await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
@@ -191,7 +231,12 @@ export function getSyncStatus(): { online: boolean; pendingCount: number; failed
     SELECT
       (SELECT COUNT(*) FROM shifts             WHERE sync_status='pending') +
       (SELECT COUNT(*) FROM float_transactions WHERE sync_status='pending') +
-      (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending') AS count
+      (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending') +
+      -- Handed to the branch node but not yet confirmed onto the cloud. The
+      -- sync_queue row is already 'synced' at that point, so without this the
+      -- header would read "Synced" while the cloud still had none of the sales —
+      -- exactly when a manager should NOT be closing the shift.
+      (SELECT COUNT(*) FROM orders              WHERE sync_status='node_ack') AS count
   `).get() as { count: number };
   return { online: isOnline(), pendingCount: pending.count + localPending.count, failedCount: failed.count };
 }
@@ -221,9 +266,27 @@ async function pullCatalogue(): Promise<boolean> {
   const res = await fetch(initUrl, { headers: authHeaders() });
   if (!res.ok) return false;
 
-  const { products, categories, branchId } = await res.json();
+  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, comboItems, receiptHeader, receiptFooter } = await res.json();
   const db = getLocalDb();
   const now = new Date().toISOString();
+
+  // Persist the business VAT rate on every pull. POSPage used to hardcode 16,
+  // which meant a business on any other rate had the wrong tax computed at the
+  // till, shown in the payment modal and printed on the customer's receipt —
+  // while the server recomputed the correct figure on push, so the receipt and
+  // the database disagreed with nothing to flag it.
+  const pulledVat = Number(vatRate);
+  if (Number.isFinite(pulledVat)) saveDeviceConfig({ vat_rate: pulledVat });
+  const pulledCtl = Number(ctlRate);
+  if (Number.isFinite(pulledCtl)) saveDeviceConfig({ ctl_rate: pulledCtl });
+  // Same reasoning as VAT: the server caps discounts on write and stores the
+  // capped figure, so a till clamping to a different ceiling prints a receipt
+  // the database will not agree with. Pull the real policy and clamp to it.
+  const pulledMaxDiscount = Number(maxDiscountPct);
+  if (Number.isFinite(pulledMaxDiscount)) saveDeviceConfig({ max_discount_pct: pulledMaxDiscount });
+  // Cached so an offline till still prints the owner's current header/footer.
+  if (typeof receiptHeader === 'string') saveDeviceConfig({ receipt_header: receiptHeader });
+  if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });
 
   // The branch this till actually operates on. The device is BOUND to a
   // branch (written at first PIN login / install); /api/pos/init's branchId
@@ -327,23 +390,47 @@ async function pullCatalogue(): Promise<boolean> {
   // Write everything in a single transaction
   db.transaction(() => {
     const upsertCat = db.prepare(`
-      INSERT INTO categories (id, name, color, icon, sort_order, status, synced_at)
-      VALUES (@id, @name, @color, @icon, @sort_order, @status, @synced_at)
+      INSERT INTO categories (id, name, color, icon, sort_order, status, is_kitchen, synced_at)
+      VALUES (@id, @name, @color, @icon, @sort_order, @status, @is_kitchen, @synced_at)
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name, color=excluded.color, icon=excluded.icon,
-        sort_order=excluded.sort_order, status=excluded.status, synced_at=excluded.synced_at
+        sort_order=excluded.sort_order, status=excluded.status,
+        is_kitchen=excluded.is_kitchen, synced_at=excluded.synced_at
     `);
-    for (const c of categories) upsertCat.run({ ...c, synced_at: now });
+    for (const c of categories) {
+      upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
+    }
+
+    // Combo components. Replaced wholesale rather than upserted — a component
+    // REMOVED from a combo upstream must disappear here too, and an upsert would
+    // leave it behind to be packed and cooked forever.
+    db.prepare(`DELETE FROM combo_items`).run();
+    const upsertCombo = db.prepare(`
+      INSERT INTO combo_items (combo_id, product_id, name, quantity, sort_order, is_kitchen, synced_at)
+      VALUES (@combo_id, @product_id, @name, @quantity, @sort_order, @is_kitchen, @synced_at)
+    `);
+    for (const [comboId, items] of Object.entries((comboItems ?? {}) as Record<string, any[]>)) {
+      items.forEach((it, idx) => upsertCombo.run({
+        combo_id:   comboId,
+        product_id: it.product_id,
+        name:       it.name,
+        quantity:   Number(it.quantity) || 1,
+        sort_order: idx,
+        is_kitchen: it.is_kitchen ? 1 : 0,
+        synced_at:  now,
+      }));
+    }
 
     const upsertProd = db.prepare(`
-      INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, synced_at)
-      VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @synced_at)
+      INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, synced_at)
+      VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @synced_at)
       ON CONFLICT(id) DO UPDATE SET
         category_id=excluded.category_id, name=excluded.name, description=excluded.description,
         base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
         has_variants=excluded.has_variants, has_modifiers=excluded.has_modifiers,
         track_stock=excluded.track_stock, status=excluded.status,
         barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
+        is_kitchen=excluded.is_kitchen,
         synced_at=excluded.synced_at
     `);
     for (const p of products) {
@@ -356,6 +443,8 @@ async function pullCatalogue(): Promise<boolean> {
         barcode:       (p as any).barcode ?? null,
         plu:           (p as any).plu ?? null,
         branch_price:  (p as any).branch_price ?? null,
+        // Preserve the tri-state: null must stay null, not become 0.
+        is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,
         synced_at:     now,
       });
     }
@@ -542,7 +631,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      errors.push(`Shift sync: ${err.error ?? res.status}`);
+      errors.push(`Shift sync: ${describeServerError(err, res.status)}`);
       return 0;   // leave rows pending — they retry next pass
     }
     // Server has the open-shift fields now. Only a still-open shift is fully
@@ -593,7 +682,7 @@ async function pushBranchPriceEdits(errors: string[]): Promise<number> {
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      errors.push(`Price sync: ${err.error ?? res.status}`);
+      errors.push(`Price sync: ${describeServerError(err, res.status)}`);
       return 0;   // leave rows unsynced — they retry next pass
     }
     const { applied } = await res.json() as { applied: string[] };
@@ -625,11 +714,22 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         const ok = await pushOrderToNode({ orderId: row.order_id, createdAt: row.created_at, payload: row.payload });
         if (ok) {
           db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
-          db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`).run(row.order_id);
+          // 'node_ack', NOT 'synced'. The node has the order; the CLOUD may not
+          // yet. Marking it synced here is what made a peer till close its shift
+          // against a server that had not received the sales, computing expected
+          // cash as short and reporting a phantom variance every evening.
+          // confirmCloudDelivery() promotes these to 'synced' once the node says
+          // it has actually forwarded them.
+          db.prepare(`UPDATE orders SET sync_status='node_ack' WHERE id=?`).run(row.order_id);
           pushed++;
         } else {
-          // Node unreachable/declined — stay pending and retry next pass. The
-          // till keeps selling regardless; nothing is lost.
+          // Node unreachable — stay pending and retry next pass. The till keeps
+          // selling regardless; nothing is lost, and a branch server that is off
+          // for ten minutes must not burn through the retry budget.
+          //
+          // Note this branch is now genuinely "unreachable" only: pushOrderToNode
+          // throws on a node that answered and refused, so a real rejection lands
+          // in the catch below and escalates to 'failed' like any other error.
           db.prepare(`UPDATE sync_queue SET attempts=attempts+1, last_error='node unreachable' WHERE id=?`).run(row.id);
           errors.push(`Order ${row.order_id}: node unreachable`);
         }
@@ -672,14 +772,23 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         pushed++;
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        const message = describeServerError(err, res.status);
         db.prepare(`
           UPDATE sync_queue SET attempts=attempts+1, last_error=?,
           status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?
-        `).run(err.error ?? 'Server error', row.id);
-        errors.push(`Order ${row.order_id}: ${err.error}`);
+        `).run(message, row.id);
+        errors.push(`Order ${row.order_id}: ${message}`);
       }
     } catch (err: any) {
-      db.prepare(`UPDATE sync_queue SET attempts=attempts+1, last_error=? WHERE id=?`).run(err.message, row.id);
+      // Same escalation as the HTTP-error branch above. Without it an order the
+      // node actively refused sat 'pending' forever — invisible except as a
+      // count that never cleared, with no reason recorded anywhere the cashier
+      // or a manager could see. 'failed' surfaces the ⟳ N failed button, whose
+      // retry is idempotent on the stable order id.
+      db.prepare(`
+        UPDATE sync_queue SET attempts=attempts+1, last_error=?,
+        status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?
+      `).run(err.message ?? 'Push failed', row.id);
       errors.push(`Order ${row.order_id}: ${err.message}`);
     }
   }
@@ -693,6 +802,43 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 // synced payments — instead of duplicating that math here or letting the
 // till's own number be trusted outright. Runs after pushPendingOrders so
 // "have all this shift's orders synced?" is a real answer, not a guess.
+/**
+ * Promote 'node_ack' orders to 'synced' once the node confirms the cloud has them.
+ *
+ * On a peer till the uplink is till → node → cloud, so node acceptance is only
+ * the first hop. Shift close is computed by the SERVER from the payments it
+ * holds, which means closing a shift whose orders are still sitting on the node
+ * makes the server read cash sales as short and report a variance that does not
+ * exist. That is finding C6 reappearing one hop further out.
+ *
+ * Silence is not consent: an unreachable node returns null and nothing is
+ * promoted, so the shift simply stays open until the answer is known. A shift
+ * that closes late is an inconvenience; a shift that closes on a guess produces
+ * a cash figure someone will act on.
+ */
+async function confirmCloudDelivery(errors: string[]): Promise<number> {
+  if (!hasNode()) return 0;
+  const db = getLocalDb();
+
+  const waiting = db.prepare(
+    `SELECT id FROM orders WHERE sync_status='node_ack' ORDER BY created_at LIMIT 200`
+  ).all() as Array<{ id: string }>;
+  if (waiting.length === 0) return 0;
+
+  const ids = waiting.map(r => r.id);
+  const delivered = await confirmNodeDelivery(ids);
+  if (delivered === null) {
+    // Don't push this into errors — a node that is briefly busy is normal and
+    // the till would otherwise show a sync error after every ordinary sale.
+    return 0;
+  }
+
+  if (delivered.length === 0) return 0;
+  const mark = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
+  db.transaction(() => { for (const id of delivered) mark.run(id); })();
+  return delivered.length;
+}
+
 async function reconcileClosedShifts(errors: string[]): Promise<number> {
   const db = getLocalDb();
   const closed = db.prepare(`
@@ -730,7 +876,7 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
         reconciled++;
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        errors.push(`Shift close: ${err.error ?? res.status}`);
+        errors.push(`Shift close: ${describeServerError(err, res.status)}`);
       }
     } catch (err: any) {
       errors.push(`Shift close: ${err.message}`);
@@ -772,11 +918,14 @@ export function createLocalOrder(orderPayload: any): string {
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, status, subtotal, vat_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
-      orderPayload.order_type ?? 'retail', orderPayload.subtotal, orderPayload.vat_amount,
+      orderPayload.order_type ?? 'retail',
+      orderPayload.order_type === 'delivery' ? (orderPayload.delivery_person ?? null) : null,
+      orderPayload.subtotal, orderPayload.vat_amount,
+      orderPayload.ctl_amount ?? 0,
       orderPayload.discount_amount ?? 0, orderPayload.tip_amount ?? 0,
       orderPayload.total,
       cashierId, shiftId,

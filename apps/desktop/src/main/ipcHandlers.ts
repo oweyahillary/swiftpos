@@ -11,15 +11,17 @@
 //   sync:trigger      → run syncAll()
 //   sync:status       → return { online, pendingCount }
 
-import { ipcMain, net } from 'electron';
+import { app, ipcMain, net } from 'electron';
 import { getLocalDb } from './localDb';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder } from './syncEngine';
+import { v4 as uuid } from 'uuid';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport } from './shiftService';
+import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
-import { listPrinters, printHtmlSilent } from './printService';
+import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit } from './techService';
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken } from './nodeClient';
+import { startNodeServer, stopNodeServer } from './nodeServer';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
 // and on logout (so the next user never sees stale data on boot).
@@ -123,14 +125,54 @@ export function registerIpcHandlers() {
   // verify-pin requires the owner bearer token (requireAuth) + a branch_id.
   // The owner token lives in the session row; the renderer never sees it.
 
-  ipcMain.handle('auth:listBranches', async () => {
+  /**
+   * Calls the server with the OWNER access token, refreshing and retrying once
+   * on a 401.
+   *
+   * Every caller used to read session.token straight out of SQLite and give up
+   * if the server rejected it. Access tokens are short-lived, so the first
+   * launch after a shop has been closed overnight always failed: the PIN screen
+   * showed "Invalid or expired token" with an empty branch list, and staff had
+   * to close the app and open it again. That worked purely by accident — the
+   * failed launch had started the sync engine, which refreshed the token and
+   * persisted it, so the SECOND launch read a valid one.
+   *
+   * Refreshing here makes the first launch work, which is the one that happens
+   * in front of the customer at opening time.
+   */
+  async function ownerFetch(path: string, init: RequestInit = {}): Promise<Response> {
     const db = getLocalDb();
-    const session = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
-    if (!session?.token) throw new Error('Not signed in');
+    const readToken = () =>
+      (db.prepare(`SELECT token FROM session WHERE id=1`).get() as any)?.token as string | undefined;
 
-    const res = await fetch(`${getServerUrl()}/api/branches`, {
-      headers: { Authorization: `Bearer ${session.token}` },
+    let token = readToken();
+    if (!token) throw new Error('Not signed in');
+
+    const call = (t: string) => fetch(`${getServerUrl()}${path}`, {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        Authorization: `Bearer ${t}`,
+        'X-App-Version': app.getVersion(),
+      },
     });
+
+    let res = await call(token);
+    if (res.status !== 401) return res;
+
+    // Expired, not wrong. Refresh persists the new token to SQLite, so read it
+    // back rather than assuming what it is.
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) return res;          // let the caller surface the 401 body
+
+    token = readToken();
+    if (!token) return res;
+    res = await call(token);
+    return res;
+  }
+
+  ipcMain.handle('auth:listBranches', async () => {
+    const res  = await ownerFetch('/api/branches');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to load branches');
 
@@ -144,16 +186,18 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('auth:verifyPin', async (_event, { pin, branch_id }) => {
     const db = getLocalDb();
-    const session = db.prepare(`SELECT token, business_name, currency FROM session WHERE id=1`).get() as any;
-    if (!session?.token) throw new Error('Not signed in');
+    const session = db.prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
 
-    const res = await fetch(`${getServerUrl()}/api/auth/verify-pin`, {
+    // Same expiry problem as listBranches: the PIN pad is the first thing
+    // touched each morning, so this is exactly where a stale owner token bites.
+    const res = await ownerFetch('/api/auth/verify-pin', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.token}`,
-      },
-      body: JSON.stringify({ pin, branch_id }),
+      headers: { 'Content-Type': 'application/json' },
+      // The running build, reported on the one call every till makes every day.
+      // Three tills are updated by hand and drift; without this a bug report
+      // cannot be tied to a version, so a fixed bug and an un-updated till look
+      // identical from the outside.
+      body: JSON.stringify({ pin, branch_id, app_version: app.getVersion() }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
@@ -283,6 +327,38 @@ export function registerIpcHandlers() {
       products: shaped,
       categories,
       branchId: branch?.id ?? null,
+      // Real business rate, refreshed by every catalogue pull. Null until the
+      // first successful sync — POSPage falls back to 16 in that window only.
+      vatRate: getDeviceConfig()?.vat_rate ?? null,
+      ctlRate: getDeviceConfig()?.ctl_rate ?? 0,
+      // Null until the first sync — POSPage falls back to the shared default,
+      // which is the server's own, so an unsynced till cannot over-discount.
+      maxDiscountPct: getDeviceConfig()?.max_discount_pct ?? null,
+      receiptHeader: getDeviceConfig()?.receipt_header ?? '',
+      receiptFooter: getDeviceConfig()?.receipt_footer ?? '',
+      // combo_id -> components, for dispatcher/kitchen ticket expansion. Sent
+      // whole because a busy till should never hit SQLite mid-print.
+      comboItems: (() => {
+        const rows = db.prepare(
+          `SELECT combo_id, product_id, name, quantity, is_kitchen
+             FROM combo_items ORDER BY combo_id, sort_order`
+        ).all() as any[];
+        const out: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>> = {};
+        for (const r of rows) {
+          (out[r.combo_id] ??= []).push({
+            product_id: r.product_id,
+            name:       r.name,
+            quantity:   Number(r.quantity) || 1,
+            is_kitchen: r.is_kitchen === 1,
+          });
+        }
+        return out;
+      })(),
+      // category_id -> is_kitchen, for routing non-combo lines.
+      kitchenCategories: (() => {
+        const rows = db.prepare(`SELECT id FROM categories WHERE is_kitchen = 1`).all() as any[];
+        return rows.map(r => r.id as string);
+      })(),
     };
   });
 
@@ -293,16 +369,13 @@ export function registerIpcHandlers() {
     `).all(productId) as any[];
 
     if (groups.length === 0) {
-      // Not in SQLite — fetch directly from server as fallback
-      const session = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
-      if (session?.token) {
-        try {
-          const res = await fetch(`${getServerUrl()}/api/variants/groups?product_id=${productId}`, {
-            headers: { Authorization: `Bearer ${session.token}` },
-          });
-          if (res.ok) return await res.json();
-        } catch { /* offline — return empty */ }
-      }
+      // Not in SQLite — fetch directly from server as fallback. Goes through
+      // ownerFetch so an expired token refreshes rather than silently dropping
+      // the option groups and letting the item be rung with no size chosen.
+      try {
+        const res = await ownerFetch(`/api/variants/groups?product_id=${productId}`);
+        if (res.ok) return await res.json();
+      } catch { /* offline or signed out — return empty */ }
       return [];
     }
 
@@ -322,16 +395,13 @@ export function registerIpcHandlers() {
     `).all(productId) as any[];
 
     if (groups.length === 0) {
-      // Not in SQLite — fetch directly from server as fallback
-      const session = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
-      if (session?.token) {
-        try {
-          const res = await fetch(`${getServerUrl()}/api/modifiers/groups?product_id=${productId}`, {
-            headers: { Authorization: `Bearer ${session.token}` },
-          });
-          if (res.ok) return await res.json();
-        } catch { /* offline — return empty */ }
-      }
+      // Not in SQLite — fetch directly from server as fallback. Goes through
+      // ownerFetch so an expired token refreshes rather than silently dropping
+      // the option groups and letting the item be rung with no size chosen.
+      try {
+        const res = await ownerFetch(`/api/modifiers/groups?product_id=${productId}`);
+        if (res.ok) return await res.json();
+      } catch { /* offline or signed out — return empty */ }
       return [];
     }
 
@@ -357,6 +427,22 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('print:list', async () => {
     return await listPrinters();
+  });
+
+  // Ping a printer without printing. Cashiers use this constantly; it must not
+  // consume paper.
+  ipcMain.handle('print:probe', async (_event, deviceName: string) =>
+    probePrinter(String(deviceName ?? '')));
+
+  // Preview: renders the ticket in a visible window instead of printing it.
+  // The only way to see a ticket without thermal hardware, since the silent
+  // path deliberately suppresses every OS dialog.
+  ipcMain.handle('print:preview', async (_event, opts: any) => {
+    return openPrintPreview({
+      html: String(opts?.html ?? ''),
+      paperWidthMm: opts?.paperWidthMm === 58 ? 58 : 80,
+      title: opts?.title ? String(opts.title) : undefined,
+    });
   });
 
   ipcMain.handle('print:html', async (_event, opts: any) => {
@@ -403,8 +489,51 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('config:save', async (_event, patch: any) => {
-    return saveDeviceConfig(patch ?? {});
+    const saved = saveDeviceConfig(patch ?? {});
+    try {
+      if (saved.device_role === 'node') startNodeServer();
+      else stopNodeServer();
+    } catch (e) {
+      console.error('[config:save] node server transition failed:', e);
+    }
+    return saved;
   });
+
+  // Synchronous so preload can expose it as a plain string at bridge-build
+  // time. process.env.npm_package_version is only set when Electron is launched
+  // through an npm script, so every packaged build reported '0.0.1'.
+  // ── Bill numbering ──────────────────────────────────────────────────────
+  // Every bill is prefixed with this till's terminal code, so three machines in
+  // one branch can mint numbers offline and independently without ever
+  // colliding — which the previous ORD-<timestamp>-<random> scheme could not
+  // guarantee, and which told you nothing about where a sale came from.
+  //
+  // The counter is per-device and monotonic. Gaps are expected and harmless:
+  // one number is held in reserve by the till, so a restart can skip one.
+  // A wiped local database restarts the sequence — deliberate, since a wipe is
+  // an explicit act, and the terminal prefix still separates the tills.
+  ipcMain.handle('orders:nextBillNumber', async () => {
+    const db = getLocalDb();
+    const code = getDeviceConfig()?.terminal_code?.trim();
+
+    // better-sqlite3 transactions are synchronous and atomic, so no two callers
+    // can interleave. Deliberately avoids RETURNING, which needs SQLite 3.35+ —
+    // not worth a runtime failure on a till over one saved statement.
+    const bump = db.transaction(() => {
+      db.prepare(`INSERT INTO counters (name, value) VALUES ('bill_seq', 0) ON CONFLICT(name) DO NOTHING`).run();
+      db.prepare(`UPDATE counters SET value = value + 1 WHERE name = 'bill_seq'`).run();
+      return (db.prepare(`SELECT value FROM counters WHERE name = 'bill_seq'`).get() as any)?.value;
+    });
+    const seq = Number(bump() ?? 1);
+
+    // No terminal code yet (upgraded install that never re-ran setup) falls back
+    // to the old scheme rather than minting an unprefixed number that could
+    // collide with a sibling till.
+    if (!code) return `ORD-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+    return `${code}--${seq}`;
+  });
+
+  ipcMain.on('app:version', (event) => { event.returnValue = app.getVersion(); });
 
   ipcMain.handle('config:clear', async () => {
     clearDeviceConfig();
@@ -429,6 +558,9 @@ export function registerIpcHandlers() {
       const timer = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(`${base}/health`, { signal: controller.signal });
       clearTimeout(timer);
+      // ok is 2xx ONLY. A 404 means something answered but it is not our
+      // /health endpoint — almost always a URL with an extra path on it, which
+      // the install screen used to report as a green "Server reachable".
       return { ok: res.ok, reachable: true, status: res.status };
     } catch (err: any) {
       return { ok: false, reachable: false, error: err?.message ?? 'Could not reach server' };
@@ -440,6 +572,13 @@ export function registerIpcHandlers() {
   ipcMain.handle('shift:current', async () => {
     return currentShiftReport();
   });
+
+  // A shift left open past ~18h. Reported, never auto-closed — see
+  // forceCloseShift() for why a fabricated cash count is worse than none.
+  ipcMain.handle('shift:stale', async () => getStaleShift());
+
+  ipcMain.handle('shift:forceClose', async (_e, { reason }: { reason: string }) =>
+    forceCloseShift(String(reason ?? '')));
 
   ipcMain.handle('shift:open', async (_event, { opening_float }: { opening_float: number }) => {
     openShift(Number(opening_float) || 0);
@@ -459,6 +598,152 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('shift:zreport', async (_event, shiftId: string) => {
     return computeZReport(shiftId);
+  });
+
+  // ── Catalogue & staff management ─────────────────────────────────────────
+  //
+  // Deliberately ONLINE-ONLY. Orders queue offline because a sale must never be
+  // refused, but catalogue edits must not: two tills inventing the same product
+  // on a dead network would produce duplicates nobody can reconcile, and there
+  // is no natural merge for "manager A renamed it, manager B repriced it".
+  // These fail loudly with a message the owner can act on instead.
+  //
+  // Every call runs under the STAFF token, so the server's own permission
+  // checks (products.manage, staff.manage) apply exactly as they do on the web.
+  // The till does not get to decide who may edit the menu.
+  async function manageFetch(path: string, method: string, body?: any) {
+    const db = getLocalDb();
+    const row = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
+    if (!row?.token) throw new Error('Not signed in');
+
+    let res: Response;
+    try {
+      res = await fetch(`${getServerUrl()}${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${row.token}` },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch {
+      throw new Error('No connection — menu and staff changes need internet. Try again once you are back online.');
+    }
+
+    const text = await res.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
+
+    if (!res.ok) {
+      if (res.status === 403) throw new Error('Your role does not allow this change.');
+      throw new Error(data?.error ?? `Request failed (${res.status})`);
+    }
+    return data;
+  }
+
+  // A catalogue write is pointless until the till re-reads it, so pull straight
+  // after. Failure here is non-fatal — the edit landed on the server and the
+  // next scheduled sync will collect it.
+  async function refreshCatalogue() {
+    try { await syncAll(); } catch (e: any) { console.warn('[manage] post-edit sync failed:', e?.message); }
+  }
+
+  ipcMain.handle('manage:listProducts', async () => manageFetch('/api/products', 'GET'));
+  ipcMain.handle('manage:createProduct', async (_e, payload: any) => {
+    const out = await manageFetch('/api/products', 'POST', payload);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:updateProduct', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/products/${id}`, 'PATCH', patch);
+    await refreshCatalogue();
+    return out;
+  });
+
+  ipcMain.handle('manage:listCategories', async () => manageFetch('/api/categories', 'GET'));
+  ipcMain.handle('manage:createCategory', async (_e, payload: any) => {
+    const out = await manageFetch('/api/categories', 'POST', payload);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:updateCategory', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/categories/${id}`, 'PATCH', patch);
+    await refreshCatalogue();
+    return out;
+  });
+
+  // Combos. The till sells a combo as one line; these define what the dispatcher
+  // and kitchen tickets expand it into.
+  // Bulk product import. The server maps category_name to EXISTING categories
+  // and silently writes null when there is no match, so the UI creates any
+  // missing categories first and only then calls this.
+  ipcMain.handle('manage:bulkProducts', async (_e, rows: any[]) => {
+    const out = await manageFetch('/api/products/bulk', 'POST', { rows });
+    await refreshCatalogue();
+    return out;
+  });
+
+  ipcMain.handle('manage:listCombos', async () => manageFetch('/api/combos', 'GET'));
+  ipcMain.handle('manage:createCombo', async (_e, payload: any) => {
+    const out = await manageFetch('/api/combos', 'POST', payload);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:updateCombo', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/combos/${id}`, 'PATCH', patch);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:setComboItems', async (_e, { id, items }: { id: string; items: any[] }) => {
+    const out = await manageFetch(`/api/combos/${id}/items`, 'PUT', { items });
+    await refreshCatalogue();
+    return out;
+  });
+
+  // Variants — the Spice group and anything else a product needs choosing.
+  ipcMain.handle('manage:listVariantGroups', async (_e, productId: string) =>
+    manageFetch(`/api/variants/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
+  ipcMain.handle('manage:createVariantGroup', async (_e, payload: any) => {
+    const out = await manageFetch('/api/variants/groups', 'POST', payload);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:deleteVariantGroup', async (_e, id: string) => {
+    const out = await manageFetch(`/api/variants/groups/${id}`, 'DELETE');
+    await refreshCatalogue();
+    return out;
+  });
+
+  // Add-on groups (modifier_groups). Distinct from variant groups: variants are
+  // pick-exactly-one and change the unit price; modifiers are tick-any-number and
+  // add on top. A meal whose fries AND drink can each be upgraded independently
+  // needs modifiers — as one variant group the two upgrades are mutually
+  // exclusive, so a customer could have a large chips or a bigger soda but never
+  // both. The POS has always rendered these; nothing could create them.
+  ipcMain.handle('manage:listModifierGroups', async (_e, productId: string) =>
+    manageFetch(`/api/modifiers/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
+  ipcMain.handle('manage:createModifierGroup', async (_e, payload: any) =>
+    manageFetch('/api/modifiers/groups', 'POST', payload));
+  ipcMain.handle('manage:deleteModifierGroup', async (_e, id: string) =>
+    manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'));
+
+  ipcMain.handle('manage:listStaff', async () => manageFetch('/api/staff', 'GET'));
+  ipcMain.handle('manage:listRoles', async () => manageFetch('/api/staff/roles', 'GET'));
+  ipcMain.handle('manage:createStaff', async (_e, payload: any) =>
+    manageFetch('/api/staff', 'POST', payload));
+  ipcMain.handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) =>
+    manageFetch(`/api/staff/${id}`, 'PATCH', patch));
+
+  ipcMain.handle('manage:getReceiptText', async () => {
+    const cfg = getDeviceConfig();
+    return { header: cfg?.receipt_header ?? '', footer: cfg?.receipt_footer ?? '' };
+  });
+  ipcMain.handle('manage:setReceiptText', async (_e, { header, footer }: { header: string; footer: string }) => {
+    // The endpoint upserts ONE key/value pair per call — posting an object of
+    // keys returns "key and value are required". Two sequential calls.
+    await manageFetch('/api/business/settings', 'POST', { key: 'receipt_header', value: header });
+    const out = await manageFetch('/api/business/settings', 'POST', { key: 'receipt_footer', value: footer });
+    // Cache immediately so the next receipt is right even before a full sync.
+    saveDeviceConfig({ receipt_header: header, receipt_footer: footer });
+    await refreshCatalogue();
+    return out;
   });
 
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
@@ -536,7 +821,8 @@ export function registerIpcHandlers() {
   });
 
   // ── Order void (manager/supervisor only — server enforces permission) ──────
-  ipcMain.handle('order:void', async (_event, { orderId, reason, supervisor_pin }: { orderId: string; reason: string; supervisor_pin?: string }) => {
+  ipcMain.handle('order:void', async (_event, { orderId, reason, supervisor_pin, override_pin, authorizer_id }:
+    { orderId: string; reason: string; supervisor_pin?: string; override_pin?: string; authorizer_id?: string }) => {
     const db = getLocalDb();
     // Get server URL + best available auth token
     const cfg = getDeviceConfig();
@@ -549,14 +835,90 @@ export function registerIpcHandlers() {
     const res = await fetch(`${cfg.server_url}/api/orders/${orderId}/void`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ reason, ...(supervisor_pin ? { supervisor_pin } : {}) }),
+      // The server accepts an authorizer_id + that person's override PIN, which
+      // records WHO approved the void rather than just that someone knew a PIN.
+      body: JSON.stringify({
+        reason,
+        ...(supervisor_pin ? { supervisor_pin } : {}),
+        ...(override_pin   ? { override_pin }   : {}),
+        ...(authorizer_id  ? { authorizer_id }  : {}),
+      }),
     });
     const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    if (!res.ok) throw new Error(data.error ?? 'Void failed');
+    if (!res.ok) {
+      // requirePermission answers a bare "Forbidden" and puts the useful part in
+      // `detail` ("Missing permission: orders.void"). Dropping it left the
+      // cashier — and whoever they phoned — with a one-word error and no way to
+      // tell a permission problem from a wrong PIN or an expired void window.
+      const detail = typeof data?.detail === 'string' ? data.detail : '';
+      if (res.status === 403 && /missing permission/i.test(detail)) {
+        throw new Error(
+          'This role cannot void orders. A manager needs to grant the "orders.void" permission to it.',
+        );
+      }
+      throw new Error(detail ? `${data.error ?? 'Void failed'} — ${detail}` : (data.error ?? 'Void failed'));
+    }
 
     // Mark local order voided so order history reflects it immediately
     db.prepare(`UPDATE orders SET status='voided' WHERE id=?`).run(orderId);
     return { ok: true };
+  });
+
+  // Refund a completed sale (audit M3). Online only, like void — money leaving
+  // the drawer needs supervisor authorisation, and authorising offline would
+  // mean trusting a PIN this till cannot verify.
+  ipcMain.handle('order:refund', async (_event, { orderId, reason, override_pin, authorizer_id }:
+    { orderId: string; reason: string; override_pin?: string; authorizer_id?: string }) => {
+    const db = getLocalDb();
+    const cfg = getDeviceConfig();
+    if (!cfg?.server_url) throw new Error('Device not configured');
+    const staffRow = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
+    const ownerRow = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const token = staffRow?.token ?? ownerRow?.token;
+    if (!token) throw new Error('Not signed in');
+
+    const res = await fetch(`${cfg.server_url}/api/orders/${orderId}/refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        reason,
+        ...(override_pin  ? { override_pin }  : {}),
+        ...(authorizer_id ? { authorizer_id } : {}),
+      }),
+    });
+    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      const detail = typeof data?.detail === 'string' ? data.detail : '';
+      if (res.status === 403 && /missing permission/i.test(detail)) {
+        throw new Error('This role cannot refund. A manager needs to grant the "orders.void" permission to it.');
+      }
+      throw new Error(detail ? `${data.error ?? 'Refund failed'} — ${detail}` : (data.error ?? 'Refund failed'));
+    }
+
+    // Mirror it locally so the Z-report on THIS till is right immediately, and
+    // stays right if the network drops before the next catalogue pull. The
+    // negative rows are what make expected cash come out correct: the till's
+    // shift query sums every payment row for a non-voided order, so the money
+    // out cancels the money in. Without them the drawer would read short by the
+    // refunded amount — audit M8.
+    const now = new Date().toISOString();
+    const legs: Array<{ method: string; amount: number }> = Array.isArray(data?.byMethod) ? data.byMethod : [];
+    const insert = db.prepare(`
+      INSERT INTO payments (id, order_id, method, amount, amount_tendered, change_given, reference, status, created_at, sync_status)
+      VALUES (?, ?, ?, ?, 0, 0, ?, 'refunded', ?, 'synced')
+    `);
+    const orderRow = db.prepare(`SELECT order_number FROM orders WHERE id=?`).get(orderId) as any;
+    const applyLocal = db.transaction(() => {
+      for (const leg of legs) {
+        insert.run(uuid(), orderId, leg.method, -Math.abs(Number(leg.amount) || 0),
+          `REFUND-${orderRow?.order_number ?? ''}`, now);
+      }
+      db.prepare(`UPDATE orders SET refunded_at=?, refunded_amount=?, refund_reason=? WHERE id=?`)
+        .run(now, Number(data?.refunded) || 0, String(reason ?? ''), orderId);
+    });
+    applyLocal();
+
+    return { ok: true, refunded: Number(data?.refunded) || 0 };
   });
 
   // ── Tech access ────────────────────────────────────────────────────────────

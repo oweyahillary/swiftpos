@@ -25,7 +25,18 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
   const rule = <p style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />;
 
   return (
-    <div ref={ref} style={{ fontFamily: "'Courier New', monospace", fontSize: '12px', color: '#000', lineHeight: '1.6' }}>
+      // Paper. The receipt is authored in print colours — black on white — and
+      // was previously rendered straight onto the dark modal, so the preview was
+      // near-black text on a near-black panel. Giving it an actual white sheet
+      // both fixes readability and makes the preview look like the thing that
+      // comes out of the printer.
+      //
+      // Safe for printing: printReceipt captures ref.innerHTML, so this root
+      // element's own styles are never part of the printed document.
+    <div ref={ref} style={{
+      fontFamily: "'Courier New', monospace", fontSize: '12px', color: '#000',
+      lineHeight: '1.6', background: '#fff', padding: '16px 14px', borderRadius: '3px',
+    }}>
       <div style={{ textAlign: 'center', marginBottom: '8px' }}>
         <p style={{ fontSize: '16px', fontWeight: 'bold' }}>{businessName.toUpperCase()}</p>
         <p style={{ fontSize: '14px', fontWeight: 'bold' }}>{isClosed ? 'Z-REPORT (SHIFT CLOSE)' : 'SHIFT REPORT (LIVE)'}</p>

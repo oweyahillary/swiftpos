@@ -19,6 +19,22 @@ const BUSINESS_TYPES: { value: string; label: string }[] = [
   { value: 'other',          label: 'Other' },
 ];
 
+// Mirrors generateNodeSecret() in src/main/deviceConfig.ts — same alphabet and
+// grouping, because the branch server displays one and the tills have it typed
+// in by hand. No 0/O, no 1/I/L, no U.
+const SECRET_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+function makeNodeSecret(): string {
+  const buf = new Uint32Array(16);
+  crypto.getRandomValues(buf);
+  let out = '';
+  for (let i = 0; i < 16; i++) {
+    out += SECRET_ALPHABET[buf[i] % SECRET_ALPHABET.length];
+    if (i % 4 === 3 && i < 15) out += '-';
+  }
+  return out;
+}
+
 const LOCAL_URL_HINT = 'http://192.168.1.100:4000';
 const CLOUD_URL_HINT = 'https://api.your-swiftpos-domain.com';
 
@@ -45,9 +61,18 @@ export default function InstallPage({ onComplete }: Props) {
   const [branchId, setBranchId] = useState('');
   const [role, setRole] = useState<DeviceRole>('till');
   const [nodeUrl, setNodeUrl] = useState('');
+  // On a 'node' this is minted here and shown to the technician. On a 'till' it
+  // is typed in from the branch server's screen.
+  const [nodeSecret, setNodeSecret] = useState('');
+  // Prefixes every bill number. Must differ on each till at a branch.
+  const [terminalCode, setTerminalCode] = useState('T1');
   const [businessType, setBusinessType] = useState('retail');
   const [deviceName, setDeviceName] = useState('');
 
+  // Set only by a 2xx response from the health check. Gates Continue so a wrong
+  // URL cannot be saved silently — the previous flow let you straight through
+  // and the failure surfaced two screens later as a JSON parse error.
+  const [verified, setVerified] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -58,6 +83,7 @@ export default function InstallPage({ onComplete }: Props) {
   const switchMode = (next: DeployMode) => {
     setMode(next);
     setTestMsg(null);
+    setVerified(false);
     setServerUrl(prev => {
       const t = prev.trim();
       if (t === '' || t === LOCAL_URL_HINT || t === CLOUD_URL_HINT) {
@@ -72,9 +98,22 @@ export default function InstallPage({ onComplete }: Props) {
     setTesting(true); setTestMsg(null);
     try {
       const r = await posApi.config.testConnection(cleanUrl);
-      if (r.ok || r.reachable) {
-        setTestMsg({ kind: 'ok', text: `Server reachable${r.status ? ` (HTTP ${r.status})` : ''}.` });
+      if (r.ok) {
+        setVerified(true);
+        setTestMsg({ kind: 'ok', text: 'Connected — SwiftPOS server responded.' });
+      } else if (r.reachable) {
+        // Something answered, but it is not our /health endpoint. By far the
+        // most common cause is a URL carrying an extra path, e.g. pasting the
+        // /health URL itself, or a LAN address where some other device replies.
+        setVerified(false);
+        setTestMsg({
+          kind: 'warn',
+          text: r.status === 404
+            ? `Something answered but it is not the SwiftPOS server (HTTP 404). Check the address is the base URL only — no /health or other path on the end.`
+            : `Reachable but unhealthy (HTTP ${r.status}). The server is up but not responding correctly.`,
+        });
       } else {
+        setVerified(false);
         setTestMsg({ kind: 'warn', text: `Couldn't reach server${r.error ? `: ${r.error}` : ''}.` });
       }
     } catch (err: any) {
@@ -124,6 +163,14 @@ export default function InstallPage({ onComplete }: Props) {
     if (role === 'till' && nodeUrl.trim() && !/^https?:\/\//i.test(nodeUrl.trim())) {
       setError('Aggregation node address must start with http:// or https://'); return;
     }
+    // A till pointed at a branch server without the access code would be refused
+    // on every push and silently stop aggregating, so block it at install time.
+    if (!/^[A-Z0-9]{1,4}$/.test(terminalCode.trim().toUpperCase())) {
+      setError('Terminal code must be 1–4 letters or digits, e.g. T1'); return;
+    }
+    if (role === 'till' && nodeUrl.trim() && !nodeSecret.trim()) {
+      setError('Enter the branch server access code — it is shown on that machine\u2019s setup screen'); return;
+    }
     setSaving(true); setError('');
     try {
       await posApi.config.save({
@@ -132,6 +179,8 @@ export default function InstallPage({ onComplete }: Props) {
         branch_id: branchId,
         device_role: role,
         node_url: role === 'till' ? (nodeUrl.trim().replace(/\/+$/, '') || null) : null,
+        node_secret: nodeSecret.trim().toUpperCase() || null,
+        terminal_code: terminalCode.trim().toUpperCase(),
         business_type: businessType,
         device_name: deviceName.trim() || null,
         configured: true,
@@ -149,21 +198,28 @@ export default function InstallPage({ onComplete }: Props) {
         mode === m ? 'border-green-500 bg-green-500/10' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
       }`}>
       <div className={`font-semibold ${mode === m ? 'text-green-400' : 'text-white'}`}>{title}</div>
-      <div className="text-xs text-gray-500 mt-0.5">{sub}</div>
+      <div className="text-xs text-gray-300 mt-0.5">{sub}</div>
     </button>
   );
 
+  const selectRole = (r: DeviceRole) => {
+    setRole(r);
+    // Mint once, on first selection, so re-clicking Branch server doesn't hand
+    // the technician a different code than the one already written down.
+    if (r === 'node' && !nodeSecret) setNodeSecret(makeNodeSecret());
+  };
+
   const roleBtn = (r: DeviceRole, title: string, sub: string) => (
-    <button onClick={() => setRole(r)}
+    <button onClick={() => selectRole(r)}
       className={`flex-1 text-left rounded-xl border px-4 py-3 transition-colors ${
         role === r ? 'border-green-500 bg-green-500/10' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
       }`}>
       <div className={`font-semibold ${role === r ? 'text-green-400' : 'text-white'}`}>{title}</div>
-      <div className="text-xs text-gray-500 mt-0.5">{sub}</div>
+      <div className="text-xs text-gray-300 mt-0.5">{sub}</div>
     </button>
   );
 
-  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors';
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
   const stepNum = step === 'connection' ? 1 : step === 'activate' ? 2 : 3;
 
   return (
@@ -172,7 +228,7 @@ export default function InstallPage({ onComplete }: Props) {
 
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-green-400">SwiftPOS</h1>
-          <p className="text-gray-500 text-sm mt-1">Device setup · step {stepNum} of 3</p>
+          <p className="text-gray-300 text-sm mt-1">Device setup · step {stepNum} of 3</p>
         </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 space-y-5">
@@ -192,7 +248,7 @@ export default function InstallPage({ onComplete }: Props) {
                   {mode === 'local' ? 'Local server address' : 'Cloud server URL'}
                 </label>
                 <input type="text" value={serverUrl} autoFocus
-                  onChange={e => { setServerUrl(e.target.value); setTestMsg(null); }}
+                  onChange={e => { setServerUrl(e.target.value); setTestMsg(null); setVerified(false); }}
                   placeholder={urlPlaceholder} className={`${inputCls} font-mono text-sm`} />
                 <button onClick={testConnection} disabled={testing || !urlValid}
                   className="mt-2 text-xs text-green-400 hover:text-green-300 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -206,10 +262,18 @@ export default function InstallPage({ onComplete }: Props) {
                   </p>
                 )}
               </div>
-              <button onClick={goToActivate} disabled={!urlValid}
-                className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors">
-                Continue
+              <button onClick={goToActivate} disabled={!urlValid || (!verified && !testMsg)}
+                className={`w-full font-bold rounded-xl py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  verified ? 'bg-green-500 hover:bg-green-400 text-gray-950'
+                           : 'bg-amber-500/80 hover:bg-amber-500 text-gray-950'}`}>
+                {verified ? 'Continue' : testMsg ? 'Continue anyway' : 'Test connection first'}
               </button>
+              {!verified && testMsg && (
+                <p className="text-xs text-gray-300 -mt-2">
+                  The server did not respond correctly. Continuing is allowed — a local server PC
+                  may not be switched on yet — but if this is a cloud install, fix the address first.
+                </p>
+              )}
             </>
           )}
 
@@ -218,7 +282,7 @@ export default function InstallPage({ onComplete }: Props) {
             <>
               <div>
                 <p className="text-sm text-gray-300 font-medium">Activate this device</p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-300 mt-1">
                   Sign in once with the owner account to confirm the business and load its branches.
                   Requires internet for this step only.
                 </p>
@@ -259,7 +323,7 @@ export default function InstallPage({ onComplete }: Props) {
                   {branches.length === 0 && <option value="">No branches found</option>}
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
-                <p className="text-xs text-gray-600 mt-1.5">This device is bound to one branch. All its sales belong here.</p>
+                <p className="text-xs text-gray-400 mt-1.5">This device is bound to one branch. All its sales belong here.</p>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Device role</label>
@@ -268,15 +332,49 @@ export default function InstallPage({ onComplete }: Props) {
                   {roleBtn('node', 'Branch server', 'Other tills sync to this one')}
                 </div>
               </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Terminal code</label>
+                <input type="text" value={terminalCode} maxLength={4}
+                  onChange={e => setTerminalCode(e.target.value.toUpperCase())}
+                  placeholder="T1"
+                  className={`${inputCls} font-mono text-sm tracking-widest`} />
+                <p className="text-xs text-gray-400 mt-1.5">
+                  Prefixes every bill number from this till, e.g. <span className="font-mono">T1--1042</span>.
+                  <span className="text-amber-400/80"> Each till at this branch must have a different code</span> — T1, T2, T3 — or their bill numbers will collide.
+                </p>
+              </div>
+
+              {role === 'node' && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+                  <label className="block text-sm text-amber-300 mb-1.5">Branch access code</label>
+                  <div className="font-mono text-lg tracking-widest text-white select-all break-all">{nodeSecret}</div>
+                  <p className="text-xs text-amber-200/70 mt-2">
+                    Write this down now. Every other till at this branch must be given the same code
+                    during its setup, or it will not be able to sync to this machine.
+                  </p>
+                </div>
+              )}
               {role === 'till' && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-1.5">
-                    Branch server address <span className="text-gray-600">(optional)</span>
+                    Branch server address <span className="text-gray-400">(optional)</span>
                   </label>
                   <input type="text" value={nodeUrl} onChange={e => setNodeUrl(e.target.value)}
                     placeholder="http://192.168.1.100:4000" className={`${inputCls} font-mono text-sm`} />
-                  <p className="text-xs text-gray-600 mt-1.5">
+                  <p className="text-xs text-gray-400 mt-1.5">
                     The branch server till this one pushes to for combined manager reports. Leave blank for a single-till branch.
+                  </p>
+                </div>
+              )}
+              {role === 'till' && nodeUrl.trim() !== '' && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Branch access code</label>
+                  <input type="text" value={nodeSecret}
+                    onChange={e => setNodeSecret(e.target.value.toUpperCase())}
+                    placeholder="XXXX-XXXX-XXXX-XXXX"
+                    className={`${inputCls} font-mono text-sm tracking-widest`} />
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    Shown on the branch server during its setup. Without it this till cannot push to that machine.
                   </p>
                 </div>
               )}
@@ -287,7 +385,7 @@ export default function InstallPage({ onComplete }: Props) {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Device name <span className="text-gray-600">(optional)</span></label>
+                <label className="block text-sm text-gray-400 mb-1.5">Device name <span className="text-gray-400">(optional)</span></label>
                 <input type="text" value={deviceName} onChange={e => setDeviceName(e.target.value)}
                   placeholder="Front till 1" className={inputCls} />
               </div>
@@ -296,14 +394,14 @@ export default function InstallPage({ onComplete }: Props) {
                 className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors">
                 {saving ? 'Saving…' : 'Complete setup'}
               </button>
-              <p className="text-xs text-gray-600 text-center">
+              <p className="text-xs text-gray-400 text-center">
                 After setup this screen locks. Changing it again requires a technician.
               </p>
             </>
           )}
         </div>
 
-        <p className="text-center text-gray-700 text-xs mt-6">
+        <p className="text-center text-gray-400 text-xs mt-6">
           SwiftPOS v{posApi.version} · {posApi.platform}
         </p>
       </div>

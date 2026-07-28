@@ -56,6 +56,16 @@ export function extractVat(total: number, vatRate: number): number {
   return total - total / (1 + vatRate / 100);
 }
 
+// Splits a tax-inclusive total into net, VAT and Catering/Tourism Levy.
+// The net is backed out with the COMBINED rate, then each tax is charged on that
+// net — VAT on the net, not on net-plus-CTL. ctlRate 0 makes this identical to
+// extractVat above. Must stay in step with recomputeOrderTotals on the server,
+// which is authoritative; divergence means the receipt contradicts the books.
+export function extractTaxes(total: number, vatRate: number, ctlRate = 0) {
+  const net = total / (1 + (vatRate + ctlRate) / 100);
+  return { net, vat: net * (vatRate / 100), ctl: net * (ctlRate / 100) };
+}
+
 export function generateOrderNumber(): string {
   const ts = Date.now().toString().slice(-6);
   const rand = Math.floor(Math.random() * 900 + 100);

@@ -13,6 +13,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
+import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
+import PrintersTab from './PrintersTab';
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printReceipt } from '../lib/printReceipt';
@@ -42,6 +44,9 @@ const I = {
   warning:   'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
   refresh:   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
   menu:      'M4 6h16M4 12h16M4 18h16',
+  staffIcon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
+  receipt:   'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2z',
+  printer:   'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -64,7 +69,7 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
     <div className={`rounded-xl p-4 border ${accent ? 'bg-blue-600 border-blue-500' : 'bg-gray-800 border-gray-700'}`}>
       <p className={`text-xs font-medium uppercase tracking-wide mb-1 ${accent ? 'text-blue-100' : 'text-gray-400'}`}>{label}</p>
       <p className={`text-xl font-bold tabular-nums ${accent ? 'text-white' : 'text-white'}`}>{value}</p>
-      {sub && <p className={`text-xs mt-0.5 ${accent ? 'text-blue-200' : 'text-gray-500'}`}>{sub}</p>}
+      {sub && <p className={`text-xs mt-0.5 ${accent ? 'text-blue-200' : 'text-gray-300'}`}>{sub}</p>}
     </div>
   );
 }
@@ -82,7 +87,7 @@ function Card({ title, children, action }: { title: string; children: React.Reac
 }
 
 function Spinner() {
-  return <div className="flex items-center justify-center py-12 text-gray-500 text-sm">Loading…</div>;
+  return <div className="flex items-center justify-center py-12 text-gray-300 text-sm">Loading…</div>;
 }
 
 // ── Overview Tab — Restaurant ─────────────────────────────────────────────────
@@ -129,7 +134,7 @@ function RestaurantOverview({ currency }: { currency: string }) {
         {/* Payment split */}
         <Card title="Payment methods — today">
           {!sales?.paymentMethods || Object.keys(sales.paymentMethods).length === 0
-            ? <p className="text-gray-500 text-sm">No payments yet today.</p>
+            ? <p className="text-gray-300 text-sm">No payments yet today.</p>
             : (
               <div className="space-y-2">
                 {Object.entries(sales.paymentMethods as Record<string, number>)
@@ -141,7 +146,7 @@ function RestaurantOverview({ currency }: { currency: string }) {
                       <div key={method}>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
-                          <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-500 text-xs">{pct}%</span></span>
+                          <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                         </div>
                         <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
                           <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -156,16 +161,16 @@ function RestaurantOverview({ currency }: { currency: string }) {
         {/* Top items */}
         <Card title="Top sellers — today">
           {topItems.length === 0
-            ? <p className="text-gray-500 text-sm">No sales yet today.</p>
+            ? <p className="text-gray-300 text-sm">No sales yet today.</p>
             : (
               <div className="divide-y divide-gray-700">
                 {topItems.map((p, i) => (
                   <div key={p.name} className="flex items-center justify-between py-2 gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-gray-600 text-xs w-4 tabular-nums">{i + 1}</span>
+                      <span className="text-gray-400 text-xs w-4 tabular-nums">{i + 1}</span>
                       <div className="min-w-0">
                         <p className="text-white text-sm truncate">{p.name}</p>
-                        <p className="text-gray-500 text-xs">{Number(p.qty).toFixed(0)} sold</p>
+                        <p className="text-gray-300 text-xs">{Number(p.qty).toFixed(0)} sold</p>
                       </div>
                     </div>
                     <span className="text-white text-sm font-medium tabular-nums flex-shrink-0">{fmt(Number(p.revenue), currency)}</span>
@@ -183,7 +188,7 @@ function RestaurantOverview({ currency }: { currency: string }) {
             {tables.map(t => (
               <div key={t.id} className="bg-gray-700/50 border border-gray-600 rounded-lg p-2 text-center">
                 <p className="text-white text-sm font-medium truncate">{t.name}</p>
-                <p className="text-gray-500 text-[10px] mt-0.5">{t.capacity} seats</p>
+                <p className="text-gray-300 text-[10px] mt-0.5">{t.capacity} seats</p>
               </div>
             ))}
           </div>
@@ -245,14 +250,14 @@ function PetrolOverview({ currency }: { currency: string }) {
       {/* Pump monitor table */}
       <Card title="Pump Monitor — today">
         {pumps.length === 0
-          ? <p className="text-gray-500 text-sm">No pumps configured. Add pumps in server settings.</p>
+          ? <p className="text-gray-300 text-sm">No pumps configured. Add pumps in server settings.</p>
           : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-700">
                     {['Pump', 'Grade', 'Sold today', 'Revenue', 'Status'].map(h => (
-                      <th key={h} className="pb-2 text-left text-xs font-medium text-gray-500 pr-4">{h}</th>
+                      <th key={h} className="pb-2 text-left text-xs font-medium text-gray-300 pr-4">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -274,7 +279,7 @@ function PetrolOverview({ currency }: { currency: string }) {
                   ))}
                   {/* Totals row */}
                   <tr className="border-t border-gray-600 font-semibold text-xs">
-                    <td colSpan={2} className="pt-2 text-gray-500">Total</td>
+                    <td colSpan={2} className="pt-2 text-gray-300">Total</td>
                     <td className="pt-2 text-amber-400 tabular-nums">
                       {fmtL(pumps.reduce((s, p) => s + Number(p.sold_litres), 0))}
                     </td>
@@ -323,7 +328,7 @@ function PetrolOverview({ currency }: { currency: string }) {
                   <div key={method}>
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
-                      <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-500 text-xs">{pct}%</span></span>
+                      <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                     </div>
                     <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
                       <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -376,7 +381,7 @@ function RetailOverview({ currency }: { currency: string }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Payment methods — today">
           {!sales?.paymentMethods || Object.keys(sales.paymentMethods).length === 0
-            ? <p className="text-gray-500 text-sm">No payments yet.</p>
+            ? <p className="text-gray-300 text-sm">No payments yet.</p>
             : (
               <div className="space-y-2">
                 {Object.entries(sales.paymentMethods as Record<string, number>).sort(([, a], [, b]) => b - a).map(([method, amount]) => {
@@ -386,7 +391,7 @@ function RetailOverview({ currency }: { currency: string }) {
                     <div key={method}>
                       <div className="flex justify-between text-sm mb-1">
                         <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
-                        <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-500 text-xs">{pct}%</span></span>
+                        <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                       </div>
                       <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -400,18 +405,18 @@ function RetailOverview({ currency }: { currency: string }) {
 
         <Card title="Top sellers — today">
           {topItems.length === 0
-            ? <p className="text-gray-500 text-sm">No sales yet today.</p>
+            ? <p className="text-gray-300 text-sm">No sales yet today.</p>
             : (
               <div className="divide-y divide-gray-700">
                 {topItems.map((p, i) => (
                   <div key={p.name} className="flex items-center justify-between py-2 gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-gray-600 text-xs w-4 tabular-nums">{i + 1}</span>
+                      <span className="text-gray-400 text-xs w-4 tabular-nums">{i + 1}</span>
                       <p className="text-white text-sm truncate">{p.name}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-white text-sm font-medium tabular-nums">{fmt(Number(p.revenue), currency)}</p>
-                      <p className="text-gray-500 text-xs">{Number(p.qty).toFixed(0)} units</p>
+                      <p className="text-gray-300 text-xs">{Number(p.qty).toFixed(0)} units</p>
                     </div>
                   </div>
                 ))}
@@ -436,7 +441,7 @@ function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: nu
 
   return (
     <>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-gray-300 mb-3">
         Peak: {peakHour?.hour}:00 · {fmt(peakHour?.revenue ?? 0, currency)} · {peakHour?.orders ?? 0} orders
       </p>
       <div className="flex items-end gap-0.5 h-20">
@@ -454,7 +459,7 @@ function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: nu
         })}
       </div>
       <div className="flex justify-between mt-1">
-        {[0, 6, 12, 18, 23].map(h => <span key={h} className="text-[9px] text-gray-600">{h}:00</span>)}
+        {[0, 6, 12, 18, 23].map(h => <span key={h} className="text-[9px] text-gray-400">{h}:00</span>)}
       </div>
     </>
   );
@@ -478,7 +483,7 @@ function OrdersTab({ currency }: { currency: string }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-white">Recent Orders</h2>
-          <p className="text-gray-500 text-sm">Last {orders.length} orders from local storage</p>
+          <p className="text-gray-300 text-sm">Last {orders.length} orders from local storage</p>
         </div>
         <button onClick={() => { setLoading(true); posApi.manager.recentOrders().then(setOrders).catch(() => {}).finally(() => setLoading(false)); }}
           className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5 transition-colors">
@@ -487,14 +492,14 @@ function OrdersTab({ currency }: { currency: string }) {
       </div>
 
       {orders.length === 0
-        ? <div className="text-center py-12 text-gray-500">No orders found in local storage.</div>
+        ? <div className="text-center py-12 text-gray-300">No orders found in local storage.</div>
         : (
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700">
                   {['Order #', 'Time', 'Type', 'Payment', 'Total', 'Status'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -546,7 +551,7 @@ function ShiftTab({ currency }: { currency: string }) {
     return (
       <div className="text-center py-16">
         <p className="text-gray-400 font-medium">No open shift</p>
-        <p className="text-gray-600 text-sm mt-1">A cashier must open a shift from the POS to see shift data here.</p>
+        <p className="text-gray-400 text-sm mt-1">A cashier must open a shift from the POS to see shift data here.</p>
       </div>
     );
   }
@@ -557,7 +562,7 @@ function ShiftTab({ currency }: { currency: string }) {
     <div className="space-y-4 max-w-2xl">
       <div>
         <h2 className="text-lg font-bold text-white">Current Shift</h2>
-        <p className="text-gray-500 text-sm">
+        <p className="text-gray-300 text-sm">
           {shift.cashier_name} · opened {timeAgo(shift.opened_at)}
         </p>
       </div>
@@ -572,7 +577,7 @@ function ShiftTab({ currency }: { currency: string }) {
       {/* Payment split */}
       <Card title="Sales by payment method">
         {byMethod.length === 0
-          ? <p className="text-gray-500 text-sm">No payments yet this shift.</p>
+          ? <p className="text-gray-300 text-sm">No payments yet this shift.</p>
           : (
             <div className="divide-y divide-gray-700">
               {byMethod.map(m => (
@@ -580,7 +585,7 @@ function ShiftTab({ currency }: { currency: string }) {
                   <span className="text-gray-300 capitalize text-sm">{m.method.replace(/_/g, ' ')}</span>
                   <div className="text-right">
                     <p className="text-white font-semibold tabular-nums text-sm">{fmt(m.amount, currency)}</p>
-                    <p className="text-gray-500 text-xs">{m.orders} order{m.orders !== 1 ? 's' : ''}</p>
+                    <p className="text-gray-300 text-xs">{m.orders} order{m.orders !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
               ))}
@@ -620,7 +625,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
   if (!report)  return (
     <div className="text-center py-16">
       <p className="text-gray-400 font-medium">No open shift</p>
-      <p className="text-gray-600 text-sm mt-1">Open a shift from the POS first.</p>
+      <p className="text-gray-400 text-sm mt-1">Open a shift from the POS first.</p>
     </div>
   );
 
@@ -629,7 +634,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-white">Shift Report</h2>
-          <p className="text-gray-500 text-sm">Live preview — not a closed Z-report</p>
+          <p className="text-gray-300 text-sm">Live preview — not a closed Z-report</p>
         </div>
         <button onClick={handlePrint}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
@@ -665,7 +670,7 @@ function StockTab({ currency }: { currency: string }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-bold text-white">Stock Levels</h2>
-          <p className="text-gray-500 text-sm">{stock.length} products · {low.length} low or critical</p>
+          <p className="text-gray-300 text-sm">{stock.length} products · {low.length} low or critical</p>
         </div>
         <div className="flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-1">
           {(['all', 'low'] as const).map(f => (
@@ -680,7 +685,7 @@ function StockTab({ currency }: { currency: string }) {
       </div>
 
       {visible.length === 0
-        ? <div className="text-center py-12 text-gray-500">
+        ? <div className="text-center py-12 text-gray-300">
             {filter === 'low' ? 'All stock is healthy.' : 'No products found in local storage.'}
           </div>
         : (
@@ -689,7 +694,7 @@ function StockTab({ currency }: { currency: string }) {
               <thead>
                 <tr className="border-b border-gray-700">
                   {['Product', 'Category', 'Qty', 'Threshold', 'Status'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -704,7 +709,7 @@ function StockTab({ currency }: { currency: string }) {
                       <td className={`px-4 py-2.5 font-semibold tabular-nums ${critical ? 'text-red-400' : isLow ? 'text-amber-400' : 'text-white'}`}>
                         {s.quantity}
                       </td>
-                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{s.low_stock_threshold}</td>
+                      <td className="px-4 py-2.5 text-gray-300 tabular-nums">{s.low_stock_threshold}</td>
                       <td className="px-4 py-2.5">
                         {critical
                           ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-medium">Critical</span>
@@ -742,18 +747,18 @@ function TopItemsTab({ currency }: { currency: string }) {
     <div className="space-y-3">
       <div>
         <h2 className="text-lg font-bold text-white">Item Mix — today</h2>
-        <p className="text-gray-500 text-sm">Top sellers from local order data · {fmt(totalRev, currency)} total</p>
+        <p className="text-gray-300 text-sm">Top sellers from local order data · {fmt(totalRev, currency)} total</p>
       </div>
 
       {items.length === 0
-        ? <div className="text-center py-12 text-gray-500">No sales yet today.</div>
+        ? <div className="text-center py-12 text-gray-300">No sales yet today.</div>
         : (
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700">
                   {['#', 'Item', 'Qty sold', 'Revenue', '% of total'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -762,7 +767,7 @@ function TopItemsTab({ currency }: { currency: string }) {
                   const pct = totalRev > 0 ? Math.round((item.revenue / totalRev) * 100) : 0;
                   return (
                     <tr key={item.name} className="hover:bg-gray-700/30">
-                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{i + 1}</td>
+                      <td className="px-4 py-2.5 text-gray-300 tabular-nums">{i + 1}</td>
                       <td className="px-4 py-2.5 text-white font-medium">{item.name}</td>
                       <td className="px-4 py-2.5 text-gray-300 tabular-nums">{Number(item.qty).toFixed(0)}</td>
                       <td className="px-4 py-2.5 font-semibold text-white tabular-nums">{fmt(Number(item.revenue), currency)}</td>
@@ -792,6 +797,10 @@ interface Props {
   staff:     { role: string | null; branchId: string; branchName: string | null; staff: { name: string } | null };
   onOpenPOS: () => void;   // switch back to till
   onLogout:  () => void;   // end shift → PIN screen
+  // Full owner sign-out → email login. Moved off the PIN pad, where any
+  // cashier could end the owner session and leave the floor unable to sign
+  // back in without the owner's password.
+  onSwitchAccount?: () => void;
 }
 
 // ── Prices Tab — branch price management (manager = branch authority) ─────────
@@ -838,7 +847,7 @@ function PricesTab({ currency }: { currency: string }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-bold text-white">Branch Prices</h2>
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-300 text-sm">
             {rows.length} products · {overrides} with a branch price
           </p>
         </div>
@@ -856,14 +865,14 @@ function PricesTab({ currency }: { currency: string }) {
       </div>
 
       {visible.length === 0
-        ? <div className="text-center py-12 text-gray-500">No matching products.</div>
+        ? <div className="text-center py-12 text-gray-300">No matching products.</div>
         : (
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700">
                   {['Product', 'Category', 'Default', 'Branch price', ''].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -880,10 +889,10 @@ function PricesTab({ currency }: { currency: string }) {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-gray-400">{r.category_name ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-gray-500 tabular-nums">{fmt(r.base_price, currency)}</td>
+                      <td className="px-4 py-2.5 text-gray-300 tabular-nums">{fmt(r.base_price, currency)}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-500 text-xs">{currency}</span>
+                          <span className="text-gray-300 text-xs">{currency}</span>
                           <input
                             type="number" min="0" step="0.01"
                             value={draft !== undefined ? draft : (hasOverride ? String(r.branch_price) : '')}
@@ -921,14 +930,29 @@ function PricesTab({ currency }: { currency: string }) {
     </div>
   );
 }
-export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Props) {
+export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSwitchAccount }: Props) {
   const currency     = business.currency ?? 'KES';
   const businessName = business.name;
   const flags        = modeFlags(business.type);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // Server enforces these too — hiding a tab is a courtesy, not the control.
+  const perms = (staff as any)?.permissions ?? {};
+  const has = (key: string) => perms['*'] === true || perms[key] === true;
+  const canManageProducts = has('products.manage');
+  const canManageStaff    = has('staff.manage');
+  const canManageSettings = has('settings.manage');
+
+  // Stock tab only appears once something actually tracks stock.
+  const [showStock, setShowStock] = useState(false);
+  useEffect(() => {
+    posApi.manager.stockLevels()
+      .then((rows: any[]) => setShowStock(Array.isArray(rows) && rows.length > 0))
+      .catch(() => setShowStock(false));
+  }, []);
+
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'zreport' | 'stock' | 'items' | 'prices';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
@@ -937,7 +961,23 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
     { key: 'zreport',  label: 'Shift Report', icon: I.zreport  },
     ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
     { key: 'prices',   label: 'Prices',       icon: I.prices   },
-    { key: 'stock',    label: 'Stock',        icon: I.stock    },
+    // Editing, not just viewing. Without these the owner has to phone us to add
+    // a product or fix a price, which for fast food is a daily event.
+    ...(canManageProducts ? [{ key: 'menu' as TabKey,    label: 'Menu',    icon: I.menu      }] : []),
+    ...(canManageProducts ? [{ key: 'combos' as TabKey,  label: 'Combos',  icon: I.items     }] : []),
+    ...(canManageProducts ? [{ key: 'import' as TabKey,  label: 'Import',  icon: I.refresh   }] : []),
+    ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
+    ...(canManageSettings ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
+    // Gated like the other configuration tabs. It was briefly left open on the
+    // reasoning that printer bindings are per-device, so whoever stands at the
+    // till is who needs them. That was wrong: re-pointing a printer mid-service
+    // sends receipts to the wrong station and nobody notices until the queue
+    // backs up. Cashiers keep the read-only view on the POS screen, where they
+    // can see connection status and fire a test print.
+    ...(canManageSettings ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
+    // Hidden when nothing is stock-tracked — an owner who turned stock off
+    // shouldn't be shown an empty Stock screen and conclude it's broken.
+    ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
   ];
 
   const [active, setActive] = useState<TabKey>('overview');
@@ -953,6 +993,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
+      case 'menu':    return <MenuTab    currency={currency} />;
+      case 'combos':  return <CombosTab  currency={currency} />;
+      case 'import':  return <ImportTab  currency={currency} />;
+      case 'staff':   return <StaffTab   branchId={staff.branchId} />;
+      case 'receipt': return <ReceiptTextTab />;
+      case 'printers': return <PrintersTab currency={currency} />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }
@@ -971,7 +1017,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
           {sidebarOpen && (
             <div className="min-w-0">
               <p className="text-sm font-bold text-white truncate">{businessName}</p>
-              <p className="text-xs text-gray-500 truncate capitalize">{staff.role ?? 'Manager'} · {staff.branchName ?? 'Branch'}</p>
+              <p className="text-xs text-gray-300 truncate capitalize">{staff.role ?? 'Manager'} · {staff.branchName ?? 'Branch'}</p>
             </div>
           )}
         </div>
@@ -1000,12 +1046,32 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
             <Icon d={I.pos} size={18} cls="flex-shrink-0" />
             {sidebarOpen && <span>Open POS</span>}
           </button>
+          {/* This ends the STAFF shift and returns to the PIN pad — it was
+              labelled "Sign out", which reads like it signs the business out.
+              The owner sign-out below is the one that actually does that. */}
           <button onClick={onLogout}
-            title={!sidebarOpen ? 'Sign out' : undefined}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-colors">
+            title={!sidebarOpen ? 'Lock till' : undefined}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-gray-200 hover:bg-gray-800 hover:text-white transition-colors">
             <Icon d={I.logout} size={18} cls="flex-shrink-0" />
-            {sidebarOpen && <span>Sign out</span>}
+            {sidebarOpen && <span>Lock till</span>}
           </button>
+          {/* The running build, where someone on the phone can read it out.
+              Three tills are updated by hand and drift; "which version are you
+              on?" is the first question of any support call and there was
+              nowhere to answer it outside the install wizard. */}
+          {sidebarOpen && (
+            <p className="px-3 pt-1 pb-2 text-[11px] text-gray-400">
+              SwiftPOS v{posApi.version} · {posApi.platform}
+            </p>
+          )}
+          {onSwitchAccount && canManageSettings && (
+            <button onClick={onSwitchAccount}
+              title={!sidebarOpen ? 'Sign out business' : undefined}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-colors">
+              <Icon d={I.logout} size={18} cls="flex-shrink-0" />
+              {sidebarOpen && <span>Sign out business</span>}
+            </button>
+          )}
         </div>
       </aside>
 
@@ -1015,7 +1081,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
         <header className="flex items-center justify-between px-6 h-16 bg-gray-900 border-b border-gray-800 flex-shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setSidebarOpen(o => !o)}
-              className="text-gray-500 hover:text-white transition-colors">
+              className="text-gray-300 hover:text-white transition-colors">
               <Icon d={I.menu} size={20} />
             </button>
             <h1 className="text-base font-semibold text-white">
@@ -1024,7 +1090,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout }: Pr
           </div>
           <div className="text-right">
             <p className="text-sm font-medium text-white">{staff.staff?.name ?? 'Manager'}</p>
-            <p className="text-xs text-gray-500 capitalize">{staff.role} · {staff.branchName}</p>
+            <p className="text-xs text-gray-300 capitalize">{staff.role} · {staff.branchName}</p>
           </div>
         </header>
 

@@ -89,6 +89,31 @@ function initSchema(db: Database.Database) {
       synced_at     TEXT
     );
 
+    -- Monotonic counters, currently just the bill sequence. Kept in its own
+    -- table rather than device_config so the increment is one small atomic
+    -- transaction with no read-modify-write race between windows. Deliberately
+    -- NOT using UPDATE...RETURNING, which needs SQLite 3.35+ and would fail at
+    -- runtime on a till rather than at build time.
+    CREATE TABLE IF NOT EXISTS counters (
+      name  TEXT PRIMARY KEY,
+      value INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Combo component definitions, refreshed by each catalogue pull. A combo is
+    -- sold as ONE cart line; these rows exist so the dispatcher and kitchen
+    -- tickets can expand it. is_kitchen is denormalised from the component's
+    -- own category so ticket printing never needs a join while offline.
+    CREATE TABLE IF NOT EXISTS combo_items (
+      combo_id    TEXT NOT NULL,
+      product_id  TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      quantity    INTEGER NOT NULL DEFAULT 1,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      is_kitchen  INTEGER NOT NULL DEFAULT 0,
+      synced_at   TEXT,
+      PRIMARY KEY (combo_id, product_id)
+    );
+
     CREATE TABLE IF NOT EXISTS variant_groups (
       id          TEXT PRIMARY KEY,
       product_id  TEXT NOT NULL,
@@ -344,6 +369,15 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'session', [
     ['refresh_token', 'TEXT'],
   ]);
+
+  // How a shift was closed. 'counted' means a human counted the drawer;
+  // 'forced' means a manager ended it without a count. Kept distinct forever so
+  // an unverified close can never be mistaken for a verified one in any report.
+  migrateColumns(db, 'shifts', [
+    ['closed_by', 'TEXT'],
+    ['close_method', 'TEXT'],
+  ]);
+
   migrateColumns(db, 'orders', [
     ['tip_amount', 'REAL DEFAULT 0'],
     ['customer_id', 'TEXT'],
@@ -356,14 +390,55 @@ function initSchema(db: Database.Database) {
     ['void_reason', 'TEXT'],
     ['voided_at', 'TEXT'],
     ['voided_by', 'TEXT'],
+    // Refunds (migration 37). The order stays 'completed' — the sale happened —
+    // so these columns, not the status, are what a report keys on. Held locally
+    // so the Z-report is right on a till that has not synced.
+    ['refunded_at', 'TEXT'],
+    ['refunded_amount', 'REAL DEFAULT 0'],
+    ['refund_reason', 'TEXT'],
     // Desktop multi-till — which physical terminal created this order.
     ['device_id', 'TEXT'],
   ]);
   // Desktop multi-till identity + aggregation-node role on the device config.
+  migrateColumns(db, 'orders', [
+    // Rider name on a delivery. Local copy so the branch/manager views can show
+    // it without a round trip; the cloud payload carries it independently.
+    ['delivery_person', 'TEXT'],
+    // Catering/Tourism Levy charged on this sale. The cloud payload always
+    // carried it, but there was no local column, so the till's own Z-report and
+    // the node's branch report showed VAT alone — the tax on the customer's
+    // paper did not reconcile with the tax in the till's own reports.
+    ['ctl_amount', 'REAL DEFAULT 0'],
+  ]);
+
+  migrateColumns(db, 'categories', [
+    // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
+    ['is_kitchen', 'INTEGER DEFAULT 0'],
+  ]);
+
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
     ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
     ['node_url', 'TEXT'],
+    // Shared secret for the branch LAN channel (X-Node-Secret). Nullable so
+    // existing installs migrate cleanly; the node mints one on first start.
+    ['node_secret', 'TEXT'],
+    // Short terminal identifier ('T1', 'T2'...). Prefixes every bill number so
+    // three tills in one branch cannot mint the same one.
+    ['terminal_code', 'TEXT'],
+    // Business VAT rate, refreshed from /api/pos/init on every catalogue pull.
+    // The till used to hardcode 16, which computed the wrong tax for any
+    // business on a different rate and printed it on the customer's receipt.
+    ['vat_rate', 'REAL'],
+    // Catering/Tourism Levy percentage, same refresh path as vat_rate.
+    ['ctl_rate', 'REAL'],
+    // Discount ceiling the server enforces on write, same refresh path again.
+    // Cached so an offline till clamps to the real policy rather than guessing.
+    ['max_discount_pct', 'REAL'],
+    // Owner-authored receipt text, refreshed by each catalogue pull. Cached
+    // locally so an offline till still prints the right address and footer.
+    ['receipt_header', 'TEXT'],
+    ['receipt_footer', 'TEXT'],
   ]);
   migrateColumns(db, 'order_items', [
     ['course', 'TEXT'],
@@ -376,6 +451,10 @@ function initSchema(db: Database.Database) {
     // Per-branch price override for the branch this till is bound to (nullable).
     // Effective price = branch_price ?? base_price. See BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6.
     ['branch_price', 'REAL'],
+    // Kitchen routing override (migration 38). NULL = follow the category,
+    // which is why it is nullable INTEGER rather than a 0/1 default: "nobody
+    // has said" and "explicitly not kitchen" are different answers.
+    ['is_kitchen', 'INTEGER'],
   ]);
 }
 
