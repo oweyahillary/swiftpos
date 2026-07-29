@@ -1,0 +1,110 @@
+# CI for SwiftPOS.
+#
+# Nothing was running on push before this file existed — no type-check, no build,
+# no test, no secret scan. Start here; add the E2E suite (e2e/) once it has a
+# CI-reachable environment to point at.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same branch — Render free tier + long installs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Type-check (ratchet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20' # matches apps/server engines.node
+          cache: npm
+          cache-dependency-path: |
+            apps/server/package-lock.json
+            apps/dashboard/package-lock.json
+
+      # Each app has its own lockfile — there is no workspace root, so install
+      # them separately. (See REVIEW: consolidating these into one pnpm/npm
+      # workspace is a recommended follow-up.)
+      - name: Install server deps
+        working-directory: apps/server
+        run: npm ci
+
+      - name: Install dashboard deps
+        working-directory: apps/dashboard
+        run: npm ci
+
+      - name: Type-check ratchet
+        run: node scripts/typecheck-ratchet.mjs server dashboard
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            apps/server/package-lock.json
+            apps/dashboard/package-lock.json
+
+      - name: Install server deps
+        working-directory: apps/server
+        run: npm ci
+
+      - name: Build server
+        working-directory: apps/server
+        run: npm run build
+
+      # `npm run build` runs `tsc` with noEmitOnError — a type error fails the
+      # build and emits nothing (it used to end in `|| true` and could not fail).
+      # This assert is belt-and-braces so a green deploy always has an entrypoint.
+      - name: Assert server build emitted an entrypoint
+        working-directory: apps/server
+        run: |
+          test -f dist/index.js || { echo "::error::dist/index.js was not emitted — the build silently failed"; exit 1; }
+          echo "dist/index.js present ($(wc -c < dist/index.js) bytes)"
+
+      - name: Install dashboard deps
+        working-directory: apps/dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: apps/dashboard
+        run: npm run build
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks needs history to scan commits
+
+      # This repo previously leaked a hardcoded Ed25519 signing key to a public
+      # remote (see handoffs/handoff-14-07-2026.md §1). This job is the guardrail
+      # that makes a repeat fail loudly instead of quietly.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Belt and braces: fail if a real .env is ever committed.
+      - name: Assert no committed .env files
+        run: |
+          found=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|production)$' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Real .env file(s) tracked in git:"; echo "$found"; exit 1
+          fi
+          echo "No tracked .env files."
