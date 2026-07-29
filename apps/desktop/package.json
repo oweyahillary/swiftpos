@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -80,5 +80,6 @@
     }
   },
   "description": "SwiftPOS offline-first point of sale terminal",
-  "author": "SwiftPOS"
+  "author": "SwiftPOS",
+  "productName": "SwiftPOS"
 }

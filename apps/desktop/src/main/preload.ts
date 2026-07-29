@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     isConfigured:   ()             => ipcRenderer.invoke('config:isConfigured'),
     save:           (patch: any)   => ipcRenderer.invoke('config:save', patch),
     clear:          ()             => ipcRenderer.invoke('config:clear'),
+    resetPreview:   ()             => ipcRenderer.invoke('device:resetPreview'),
+    reset:          (force?: boolean) => ipcRenderer.invoke('device:reset', { force }),
     testConnection: (url: string)  => ipcRenderer.invoke('config:testConnection', url),
   },
 

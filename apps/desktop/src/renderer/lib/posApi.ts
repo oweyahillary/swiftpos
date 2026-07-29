@@ -160,6 +160,8 @@ declare global {
         isConfigured: () => Promise<boolean>;
         save: (patch: Partial<DeviceConfig>) => Promise<DeviceConfig>;
         clear: () => Promise<boolean>;
+        resetPreview: () => Promise<{ terminalCode: string | null; deviceRole: string | null; unsyncedOrders: number; unsyncedValue: number; openShifts: number; safe: boolean }>;
+        reset: (force?: boolean) => Promise<boolean>;
         testConnection: (url: string) => Promise<ConnectionTestResult>;
       };
       tech: {
@@ -252,6 +254,13 @@ const ERROR_LABEL = /^(?:Uncaught\s+)?(?:Error|TypeError|RangeError):\s*/;
 /** Technical strings the user should never see, and what to say instead. */
 const FRIENDLY: Array<[RegExp, string]> = [
   [/invalid pin/i,                       'That PIN was not recognised. Please try again.'],
+  // Order matters: activation runs BEFORE any session exists, so a 401 there is
+  // a wrong address or wrong credentials, never an expiry. Matching the generic
+  // "unauthorised" first told a technician the till had been signed out when it
+  // had never been signed in — and sent an hour into the wrong problem.
+  [/bad or missing x-node-secret|node.?secret/i,
+                                         'That address is a branch server, not the main server. Branch servers relay sales between tills and cannot sign anyone in.'],
+  [/desktop-login|activate/i,            'The server did not accept that sign-in. Check the email, the password, and the server address.'],
   [/invalid or expired token|jwt expired|unauthor/i,
                                          'This till was signed out. Ask a manager to sign in again.'],
   [/not signed in/i,                     'This till is not signed in. Ask a manager to sign in.'],

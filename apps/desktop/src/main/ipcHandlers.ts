@@ -12,8 +12,9 @@
 //   sync:status       → return { online, pendingCount }
 
 import { app, ipcMain, net } from 'electron';
-import { getLocalDb } from './localDb';
+import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
+import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
@@ -52,7 +53,15 @@ export function registerIpcHandlers() {
     const res = await fetch(`${getServerUrl()}/api/auth/desktop-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      // device_id is generated once at install and never changes. Sending it
+      // lets the server tell this till apart from the others.
+      //
+      // Without it the server fell back to the User-Agent, which is identical on
+      // every till — same Electron build, same Windows — so signing in on till 2
+      // revoked till 1's session and till 3 revoked till 2's. Each new install
+      // silently signed out the one before it, and the till only found out on its
+      // next refresh.
+      body: JSON.stringify({ email, password, device_id: getDeviceConfig()?.device_id ?? undefined }),
     });
 
     const data = await res.json();
@@ -79,6 +88,13 @@ export function registerIpcHandlers() {
       data.business.currency ?? 'KES',
       new Date().toISOString(),
     );
+
+    // The business type is decided when the business is created, and the server
+    // returns it here. Persist it rather than asking the technician — the
+    // install wizard used to offer a picker, which meant a till could be set to
+    // "retail" for a restaurant and quietly lose tables, dine-in and the whole
+    // kitchen flow, with nothing on screen to say why.
+    if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
 
     // Configure sync engine with new credentials (incl. refresh token)
     configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
@@ -197,7 +213,11 @@ export function registerIpcHandlers() {
       // Three tills are updated by hand and drift; without this a bug report
       // cannot be tied to a version, so a fixed bug and an un-updated till look
       // identical from the outside.
-      body: JSON.stringify({ pin, branch_id, app_version: app.getVersion() }),
+      body: JSON.stringify({
+        pin, branch_id,
+        app_version: app.getVersion(),
+        device_id: getDeviceConfig()?.device_id ?? undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
@@ -537,6 +557,72 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('config:clear', async () => {
     clearDeviceConfig();
+    return true;
+  });
+
+  /**
+   * What a full device reset would destroy. Called before offering one.
+   *
+   * The count that matters is unsynced orders. Wiping a till holding sales the
+   * cloud has never seen deletes real takings, silently — no warning, no total,
+   * nothing to reconcile against later. On install day the instinct when a till
+   * misbehaves is to wipe and start over, which is exactly when this bites.
+   */
+  ipcMain.handle('device:resetPreview', async () => {
+    const db = getLocalDb();
+    const cfg = getDeviceConfig();
+    const unsynced = (db.prepare(
+      `SELECT COUNT(*) n FROM orders WHERE sync_status IS NULL OR sync_status != 'synced'`,
+    ).get() as any)?.n ?? 0;
+    const value = (db.prepare(
+      `SELECT COALESCE(SUM(total),0) v FROM orders WHERE sync_status IS NULL OR sync_status != 'synced'`,
+    ).get() as any)?.v ?? 0;
+    const openShift = (db.prepare(`SELECT COUNT(*) n FROM shifts WHERE status='open'`).get() as any)?.n ?? 0;
+
+    return {
+      terminalCode: cfg?.terminal_code ?? null,
+      deviceRole:   cfg?.device_role ?? null,
+      unsyncedOrders: Number(unsynced),
+      unsyncedValue:  Number(value),
+      openShifts:     Number(openShift),
+      safe: Number(unsynced) === 0 && Number(openShift) === 0,
+    };
+  });
+
+  /**
+   * Wipes this device back to a fresh install.
+   *
+   * REFUSES while orders are unsynced, unless explicitly forced. A reset button
+   * that quietly discards takings is worse than no reset button — someone would
+   * press it in good faith on a till showing "7 pending" and nobody would find
+   * out until the day's totals failed to add up.
+   */
+  ipcMain.handle('device:reset', async (_e, { force }: { force?: boolean } = {}) => {
+    const db = getLocalDb();
+    const unsynced = (db.prepare(
+      `SELECT COUNT(*) n FROM orders WHERE sync_status IS NULL OR sync_status != 'synced'`,
+    ).get() as any)?.n ?? 0;
+
+    if (Number(unsynced) > 0 && !force) {
+      throw new Error(
+        `${unsynced} order${unsynced === 1 ? '' : 's'} on this till have not reached the server. ` +
+        'Get it back online and let them sync before resetting, or they are lost.',
+      );
+    }
+
+    // Drop the file rather than the tables: a reset should leave nothing behind,
+    // including schema drift from an older build.
+    const dbPath = getDbPath();
+    try { db.close(); } catch { /* already closed */ }
+    closeLocalDb?.();
+    try { fs.rmSync(dbPath, { force: true }); } catch { /* fall through */ }
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.rmSync(dbPath + suffix, { force: true }); } catch { /* ignore */ }
+    }
+
+    // Relaunch so the wizard runs against a clean database.
+    app.relaunch();
+    app.exit(0);
     return true;
   });
 

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, net, shell } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
@@ -7,6 +8,44 @@ import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
 
 const isDev = !app.isPackaged;
+
+/**
+ * Moves the data folder from the old name to the new one, once.
+ *
+ * Electron derives userData from package.json's top-level `productName`, or
+ * `name` when that is absent. It was absent, so every till has been storing its
+ * database in %APPDATA%\desktop\ — a generic folder name for a point-of-sale
+ * system, undiscoverable for support and easy to mistake for something else.
+ *
+ * Setting productName fixes new installs but STRANDS existing ones: the app
+ * would look in %APPDATA%\SwiftPOS\, find nothing, and present the install
+ * wizard to a till that is already configured and may hold unsynced sales. So
+ * the old folder is moved across on first launch.
+ *
+ * Runs before anything opens the database — which is why getDbPath() had to
+ * become lazy. Deliberately conservative:
+ *   - only when the new folder does NOT already exist, so it can never
+ *     overwrite a working install
+ *   - a rename, not a copy, so there is no window where both exist and a till
+ *     could be opened against the wrong one
+ *   - a failure is logged and swallowed; a folder move must never stop a till
+ *     from starting, and the worst case is a re-run of the wizard
+ */
+function migrateUserDataFolder(): void {
+  try {
+    const newDir = app.getPath('userData');            // ...\AppData\Roaming\SwiftPOS
+    const oldDir = path.join(path.dirname(newDir), 'desktop');
+
+    if (newDir === oldDir) return;                     // nothing to do
+    if (fs.existsSync(newDir)) return;                 // already migrated, or a fresh install
+    if (!fs.existsSync(path.join(oldDir, 'swiftpos.db'))) return;  // not ours — don't touch it
+
+    fs.renameSync(oldDir, newDir);
+    console.log(`[userData] moved ${oldDir} -> ${newDir}`);
+  } catch (err) {
+    console.error('[userData] migration failed, continuing with a fresh folder:', (err as Error).message);
+  }
+}
 
 /**
  * Replaces Electron's default menu with a minimal hidden one.
@@ -119,6 +158,9 @@ app.whenReady().then(() => {
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {
+    // MUST come before anything opens the database.
+    migrateUserDataFolder();
+
     installMenu();
 
     // Init DB schema (runs additive migrations on older local DBs)

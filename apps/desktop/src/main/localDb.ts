@@ -3,13 +3,29 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { app } from 'electron';
 
-const DB_PATH = path.join(app.getPath('userData'), 'swiftpos.db');
+// Resolved lazily, NOT at import time.
+//
+// app.getPath('userData') was being read while this module loaded, and imports
+// hoist — so nothing could run before it. That made it impossible to relocate
+// the folder on startup, because the path was already fixed by the time any
+// migration code could execute. Deferring it to first use costs nothing and
+// leaves that window open.
+export function getDbPath(): string {
+  return path.join(app.getPath('userData'), 'swiftpos.db');
+}
+
 let _db: Database.Database | null = null;
+
+/** Closes the handle so the file can be deleted. Used only by device:reset. */
+export function closeLocalDb(): void {
+  try { _db?.close(); } catch { /* already closed */ }
+  _db = null;
+}
 
 export function getLocalDb(): Database.Database {
   if (_db) return _db;
 
-  _db = new Database(DB_PATH);
+  _db = new Database(getDbPath());
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
 

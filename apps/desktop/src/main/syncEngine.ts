@@ -266,7 +266,7 @@ async function pullCatalogue(): Promise<boolean> {
   const res = await fetch(initUrl, { headers: authHeaders() });
   if (!res.ok) return false;
 
-  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, comboItems, receiptHeader, receiptFooter } = await res.json();
+  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter } = await res.json();
   const db = getLocalDb();
   const now = new Date().toISOString();
 
@@ -284,6 +284,12 @@ async function pullCatalogue(): Promise<boolean> {
   // the database will not agree with. Pull the real policy and clamp to it.
   const pulledMaxDiscount = Number(maxDiscountPct);
   if (Number.isFinite(pulledMaxDiscount)) saveDeviceConfig({ max_discount_pct: pulledMaxDiscount });
+
+  // Business type comes from the server too. Set at activation, refreshed here,
+  // so a change made centrally reaches every till without anyone visiting them.
+  if (typeof businessType === 'string' && businessType) {
+    saveDeviceConfig({ business_type: businessType });
+  }
   // Cached so an offline till still prints the owner's current header/footer.
   if (typeof receiptHeader === 'string') saveDeviceConfig({ receipt_header: receiptHeader });
   if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });

@@ -35,7 +35,6 @@ function makeNodeSecret(): string {
   return out;
 }
 
-const LOCAL_URL_HINT = 'http://192.168.1.100:4000';
 const CLOUD_URL_HINT = 'https://api.your-swiftpos-domain.com';
 
 type Step = 'connection' | 'activate' | 'bind';
@@ -45,7 +44,9 @@ export default function InstallPage({ onComplete }: Props) {
   const [step, setStep] = useState<Step>('connection');
 
   // ── Step 1: connection ──
-  const [mode, setMode] = useState<DeployMode>('cloud');
+  // Always 'cloud'. The picker was removed (see step 1) but the value is still
+  // written to device_config, where the tech screen reads it back.
+  const [mode] = useState<DeployMode>('cloud');
   const [serverUrl, setServerUrl] = useState('');
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null);
@@ -66,7 +67,10 @@ export default function InstallPage({ onComplete }: Props) {
   const [nodeSecret, setNodeSecret] = useState('');
   // Prefixes every bill number. Must differ on each till at a branch.
   const [terminalCode, setTerminalCode] = useState('T1');
-  const [businessType, setBusinessType] = useState('retail');
+  // Set by the server at activation (see ipcHandlers desktop-login) and
+  // refreshed on every catalogue pull. Read here only so the value already
+  // on the device is not overwritten when the rest of the config is saved.
+  const [businessType, setBusinessType] = useState<string>('');
   const [deviceName, setDeviceName] = useState('');
 
   // Set only by a 2xx response from the health check. Gates Continue so a wrong
@@ -78,20 +82,8 @@ export default function InstallPage({ onComplete }: Props) {
 
   const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
   const urlValid = /^https?:\/\//i.test(cleanUrl);
-  const urlPlaceholder = mode === 'local' ? LOCAL_URL_HINT : CLOUD_URL_HINT;
+  const urlPlaceholder = CLOUD_URL_HINT;
 
-  const switchMode = (next: DeployMode) => {
-    setMode(next);
-    setTestMsg(null);
-    setVerified(false);
-    setServerUrl(prev => {
-      const t = prev.trim();
-      if (t === '' || t === LOCAL_URL_HINT || t === CLOUD_URL_HINT) {
-        return next === 'local' ? LOCAL_URL_HINT : '';
-      }
-      return prev;
-    });
-  };
 
   const testConnection = async () => {
     if (!urlValid) { setTestMsg({ kind: 'warn', text: 'Enter a valid URL first (http:// or https://).' }); return; }
@@ -181,7 +173,9 @@ export default function InstallPage({ onComplete }: Props) {
         node_url: role === 'till' ? (nodeUrl.trim().replace(/\/+$/, '') || null) : null,
         node_secret: nodeSecret.trim().toUpperCase() || null,
         terminal_code: terminalCode.trim().toUpperCase(),
-        business_type: businessType,
+        // Only send it if activation somehow did not — never blank an
+        // existing value.
+        ...(businessType ? { business_type: businessType } : {}),
         device_name: deviceName.trim() || null,
         configured: true,
       });
@@ -192,15 +186,6 @@ export default function InstallPage({ onComplete }: Props) {
     }
   };
 
-  const modeBtn = (m: DeployMode, title: string, sub: string) => (
-    <button onClick={() => switchMode(m)}
-      className={`flex-1 text-left rounded-xl border px-4 py-3 transition-colors ${
-        mode === m ? 'border-green-500 bg-green-500/10' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
-      }`}>
-      <div className={`font-semibold ${mode === m ? 'text-green-400' : 'text-white'}`}>{title}</div>
-      <div className="text-xs text-gray-300 mt-0.5">{sub}</div>
-    </button>
-  );
 
   const selectRole = (r: DeviceRole) => {
     setRole(r);
@@ -236,20 +221,32 @@ export default function InstallPage({ onComplete }: Props) {
           {/* ── STEP 1: connection ── */}
           {step === 'connection' && (
             <>
+              {/* Deployment mode picker removed.
+                  'Local' means the whole API runs on a branch PC — a different
+                  architecture that this product does not ship. Offering it here
+                  invited a specific, costly mistake: entering the BRANCH SERVER
+                  address (port 4100) as the API. The branch server is a relay
+                  with three endpoints and no auth routes, so activation got a
+                  401 and the till appeared broken for reasons nothing on screen
+                  explained.
+                  Every till is 'cloud'. The branch server is a separate field at
+                  step 3, and only tills 2 and 3 fill it in. */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Deployment mode</label>
-                <div className="flex gap-3">
-                  {modeBtn('cloud', 'Cloud', 'Sells against the hosted server')}
-                  {modeBtn('local', 'Local', 'Server PC on the branch LAN')}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1.5">
-                  {mode === 'local' ? 'Local server address' : 'Cloud server URL'}
-                </label>
+                <label className="block text-sm text-gray-400 mb-1.5">Server address</label>
                 <input type="text" value={serverUrl} autoFocus
                   onChange={e => { setServerUrl(e.target.value); setTestMsg(null); setVerified(false); }}
                   placeholder={urlPlaceholder} className={`${inputCls} font-mono text-sm`} />
+                {/* Catch the branch-server address before Test connection does,
+                    because a 401 from the node server reads as a credentials
+                    problem and sends people looking in the wrong place. */}
+                {/:4100(\/|$)/.test(serverUrl.trim()) && (
+                  <p className="text-xs mt-2 rounded-lg px-3 py-2 border text-amber-400 bg-amber-400/10 border-amber-400/20">
+                    That looks like a <span className="font-semibold">branch server</span> address.
+                    Port 4100 relays sales between tills — it cannot sign anyone in.
+                    Put the hosted server URL here (https://…), and the branch server
+                    address at step 3.
+                  </p>
+                )}
                 <button onClick={testConnection} disabled={testing || !urlValid}
                   className="mt-2 text-xs text-green-400 hover:text-green-300 disabled:opacity-40 disabled:cursor-not-allowed">
                   {testing ? 'Testing…' : 'Test connection'}
@@ -270,8 +267,8 @@ export default function InstallPage({ onComplete }: Props) {
               </button>
               {!verified && testMsg && (
                 <p className="text-xs text-gray-300 -mt-2">
-                  The server did not respond correctly. Continuing is allowed — a local server PC
-                  may not be switched on yet — but if this is a cloud install, fix the address first.
+                  The server did not respond correctly. Fix the address before continuing —
+                  a wrong one here means this till cannot sign in, load the menu, or sync.
                 </p>
               )}
             </>
@@ -380,10 +377,23 @@ export default function InstallPage({ onComplete }: Props) {
               )}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Business type</label>
-                <select value={businessType} onChange={e => setBusinessType(e.target.value)} className={inputCls}>
-                  {BUSINESS_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+                <div className="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200 text-sm">
+                  {businessType
+                    ? BUSINESS_TYPES.find(t => t.value === businessType)?.label ?? businessType
+                    : 'from the server'}
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  Set when the business was created. Changing it is a server-side decision,
+                  not a per-till one.
+                </p>
               </div>
+
+              {/* Business type picker removed.
+                  It is decided when the business is created and the server
+                  returns it at activation, so asking again could only introduce
+                  a disagreement — and the failure was silent: a restaurant set
+                  to "retail" loses tables, dine-in and the kitchen flow, with
+                  nothing on screen to explain why. */}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Device name <span className="text-gray-400">(optional)</span></label>
                 <input type="text" value={deviceName} onChange={e => setDeviceName(e.target.value)}
