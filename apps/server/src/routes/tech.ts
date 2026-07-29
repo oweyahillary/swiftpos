@@ -111,7 +111,7 @@ async function requireTechToken(req: any, res: any, next: any) {
     .update({ used_at: new Date().toISOString(), status: 'used' })
     .eq('token_hash', tokenHash)
     .is('used_at', null)
-    .then(() => {}).catch(() => {});
+    .then(() => {}, () => {});   // PromiseLike has no .catch — use the reject handler
 
   next();
 }

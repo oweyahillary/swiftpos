@@ -65,7 +65,7 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts — please try again in 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req), // handles IPv4-mapped IPv6 correctly
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''), // handles IPv4-mapped IPv6 correctly
 });
 
 // General API: generous — safety net against runaway clients / scrapers

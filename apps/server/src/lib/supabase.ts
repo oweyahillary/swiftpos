@@ -16,7 +16,9 @@ if (!url || !serviceRoleKey) {
 // query to run as that user (RLS applies, admin queries break).
 export const supabase = createClient(url, serviceRoleKey, {
   auth:     { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  realtime: { transport: ws },
+  // @types/ws's WebSocket and supabase-js's WebSocketLikeConstructor describe the
+  // same runtime object with incompatible event typings. Structural only.
+  realtime: { transport: ws as unknown as never },
 });
 
 // ── Auth-only client ──────────────────────────────────────────────────────────
@@ -27,6 +29,6 @@ export const supabase = createClient(url, serviceRoleKey, {
 export const authClient = anonKey
   ? createClient(url, anonKey, {
       auth:     { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      realtime: { transport: ws },
+      realtime: { transport: ws as unknown as never },
     })
   : supabase;

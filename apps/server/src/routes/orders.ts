@@ -134,9 +134,14 @@ async function verifyOverrideAuthorizer(
 // trusted. Mutates each line's selectedVariants[].priceAdjustment and
 // selectedModifiers[].price to the authoritative DB values (so denormalised
 // display rows stay truthful). Returns computed money or a structured error.
-type RecomputeResult =
-  | { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number; ctl: number }
-  | { ok: false; status: number; error: string };
+type RecomputeOk   = { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number; ctl: number };
+type RecomputeFail = { ok: false; status: number; error: string };
+type RecomputeResult = RecomputeOk | RecomputeFail;
+
+// tsconfig has strict:false, under which truthiness narrowing on a boolean
+// discriminant is unreliable — `if (!r.ok)` did not narrow to RecomputeFail.
+// An explicit type predicate narrows correctly regardless of strictness.
+const recomputeFailed = (r: RecomputeResult): r is RecomputeFail => !r.ok;
 
 async function recomputeOrderTotals(
   businessId: string,
@@ -410,7 +415,7 @@ router.post('/', async (req, res) => {
 
     // ── Item 4: authoritative price recomputation (anti-tampering) ───────────
     const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, discount_amount);
-    if (!recomputed.ok) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
+    if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     const {
       lines: authLines,
       subtotal: authSubtotal,
@@ -539,8 +544,10 @@ router.post('/', async (req, res) => {
     if (iErr) throw iErr;
 
     // 4. Variants + modifiers
-    const variantRows: Array<{ order_item_id: string; group_name: string; option_name: string; price_adjustment: number }> = [];
-    const modifierRows: Array<{ order_item_id: string; group_name: string; option_name: string; price: number }> = [];
+    // Columns are variant_group_name / variant_option_name and
+    // modifier_group_name / modifier_option_name — confirmed against the schema.
+    const variantRows: Array<{ order_item_id: string; variant_group_name: string; variant_option_name: string; price_adjustment?: number }> = [];
+    const modifierRows: Array<{ order_item_id: string; modifier_group_name: string; modifier_option_name: string; price?: number }> = [];
 
     items.forEach((item: OrderItemInput, idx: number) => {
       const orderItemId = orderItems[idx].id;
@@ -600,7 +607,10 @@ router.post('/', async (req, res) => {
       .in('id', productIds)
       .eq('track_stock', true);
 
-    const trackedMap = new Map((trackedProducts ?? [] as { id: string; track_inventory: boolean }[]).map(p => [p.id, p]));
+    const trackedMap = new Map(
+      ((trackedProducts ?? []) as Array<{ id: string; track_stock: boolean; sold_by?: string | null; pieces_per_unit?: number | null }>)
+        .map(p => [p.id, p] as const),
+    );
 
     // ── Variant stock impact (Track C: 25_variant_stock_and_packaging.sql) ─────
     // A selected variant option can carry a stock consequence:
@@ -860,7 +870,7 @@ router.post('/', async (req, res) => {
             const newLevel = Math.max(0, Number(tank.current_level) - litres);
             await supabase.from('fuel_tanks').update({ current_level: newLevel }).eq('id', tank.id);
             supabase.from('stock_movements').insert({
-              business_id:     req.businessId,
+              // No business_id column — tenancy is via branch_id -> branches.
               product_id:      tank.fuel_product_id,
               branch_id:       branch_id ?? null,
               movement_type:   'sale',
@@ -870,7 +880,7 @@ router.post('/', async (req, res) => {
               reference_type:  'order',
               reference_id:    order.id,
               created_by:      req.userId ?? null,
-            }).then(() => {}).catch(e => console.error('[fuel-sale] movement log failed:', e));
+            }).then(() => {}, e => console.error('[fuel-sale] movement log failed:', e));
           }
         }
       }
@@ -1649,7 +1659,7 @@ router.post('/open', async (req, res) => {
 
     // Item 4: authoritative totals (no discount applied at open time)
     const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, 0);
-    if (!recomputed.ok) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
+    if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     const { lines: authLines, subtotal: authSubtotal, total: authTotal, vat: authVat, ctl: authCtl } = recomputed;
 
     // 1. Create the order in 'open' status — no payment yet

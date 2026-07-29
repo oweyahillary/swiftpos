@@ -15,7 +15,9 @@ export function validate<T>(schema: ZodSchema<T>) {
     if (!result.success) {
       res.status(400).json({
         error: 'Validation failed',
-        errors: result.error.errors.map(e => ({
+        // Zod 4 renamed ZodError.errors -> .issues. Reading .errors gave
+        // undefined, so this .map threw and every 400 surfaced as a 500.
+        errors: result.error.issues.map(e => ({
           field: e.path.join('.'),
           message: e.message,
         })),

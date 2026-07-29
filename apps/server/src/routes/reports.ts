@@ -26,11 +26,24 @@ router.use(requirePermission('reports.view'));
  *     q => q.select('amount, method').eq('status', 'completed')
  *   );
  */
+// PostgREST returns a to-one embed as an object, but as a one-element array when
+// it resolves the relationship through a different path. Code here asserted the
+// object form against rows typed as the array form, which is what produced the
+// TS2352 "neither type sufficiently overlaps" errors throughout this file.
+function embedOne<T>(v: T | T[] | null | undefined): T | undefined {
+  if (v == null) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
 export async function chunkIn<T>(
   table: string,
   column: string,
   ids: string[],
-  refine: (q: ReturnType<typeof supabase.from>) => ReturnType<typeof supabase.from>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // chunkIn already calls .select('*') before handing the builder over, so what
+  // refine receives is a filter builder, not a query builder. The old signature
+  // claimed the latter and made every `q => q.select(...)` caller fail to typecheck.
+  refine: (q: any) => any,
   chunkSize = 500,
 ): Promise<T[]> {
   if (ids.length === 0) return [];
@@ -133,7 +146,7 @@ router.get('/sales', async (req, res) => {
   const branchMap: Record<string, { name: string; revenue: number; orders: number }> = {};
   o.forEach(order => {
     const bid = order.branch_id;
-    const bname = (order as { branches?: { name: string } | null }).branches?.name ?? bid;
+    const bname = embedOne<{ name: string }>((order as any).branches)?.name ?? bid;
     if (!branchMap[bid]) branchMap[bid] = { name: bname, revenue: 0, orders: 0 };
     branchMap[bid].revenue += Number(order.total);
     branchMap[bid].orders++;
@@ -226,7 +239,7 @@ router.get('/staff', async (req, res) => {
   (orders ?? [] as ReportOrderRow[]).forEach((o) => {
     const key    = o.cashier_id ?? 'unknown';
     const name   = userMap[o.cashier_id] ?? 'Unknown';
-    const branch = (o as { branches?: { name: string } | null }).branches?.name ?? '';
+    const branch = embedOne<{ name: string }>((o as any).branches)?.name ?? '';
     if (!staffMap[key]) staffMap[key] = { name, branch, orders: 0, revenue: 0 };
     staffMap[key].orders++;
     staffMap[key].revenue += Number(o.total);
@@ -383,7 +396,7 @@ router.get('/eod', async (req, res) => {
     topProducts = [...pm.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   }
 
-  const branchName = completed[0] ? (completed[0] as { branches?: { name: string } | null }).branches?.name ?? '' : '';
+  const branchName = completed[0] ? embedOne<{ name: string }>((completed[0] as any).branches)?.name ?? '' : '';
 
   // Fetch cashier name separately (avoid broken FK join inference)
   let cashierName = 'Unknown';
@@ -707,7 +720,9 @@ router.get('/master', async (req, res) => {
 
   // ── 5. Category breakdown ─────────────────────────────────────────────────
   const orderIds = completed.map(o => o.id);
-  let categoryBreakdown: Array<{ category_name: string | null; subtotal: string }> = [];
+  // Shape of what the loop below actually produces — the previous declaration
+  // described the raw order_items row, not the aggregate.
+  let categoryBreakdown: Array<{ category: string; superCategory: string; qty: number; netSales: number }> = [];
   if (orderIds.length) {
     const items = await chunkIn<any>(
       'order_items', 'order_id', orderIds,
@@ -751,7 +766,8 @@ router.get('/master', async (req, res) => {
   });
 
   // ── 7. Branch name ────────────────────────────────────────────────────────
-  const branchName = (completed[0] as { branches?: { name: string } | null } | undefined)?.branches?.name ?? (allOrders?.[0] as { branches?: { name: string } | null } | undefined)?.branches?.name ?? '';
+  const branchName = embedOne<{ name: string }>((completed[0] as any)?.branches)?.name
+    ?? embedOne<{ name: string }>((allOrders?.[0] as any)?.branches)?.name ?? '';
 
   const totalRevenue = completed.reduce((s, o) => s + Number(o.total), 0);
 
@@ -905,7 +921,7 @@ router.get('/voids', async (req, res) => {
     ...o,
     cashier_name:       nameMap[o.cashier_id] ?? 'Unknown',
     authorized_by_name: (o as any).authorized_by ? (nameMap[(o as any).authorized_by] ?? 'Unknown') : null,
-    branch_name:        (o as { branches?: { name: string } | null }).branches?.name ?? '—',
+    branch_name:        embedOne<{ name: string }>((o as any).branches)?.name ?? '—',
   }));
 
   // Per-cashier summary
@@ -1010,7 +1026,7 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
   const branchTaxMap: Record<string, { branchName: string; grossSales: number; vatAmount: number; ctlAmount: number; netSales: number }> = {};
   for (const o of orders ?? []) {
     const bid   = o.branch_id;
-    const bname = (o as { branches?: { name: string } | null }).branches?.name ?? bid;
+    const bname = embedOne<{ name: string }>((o as any).branches)?.name ?? bid;
     if (!branchTaxMap[bid]) branchTaxMap[bid] = { branchName: bname, grossSales: 0, vatAmount: 0, ctlAmount: 0, netSales: 0 };
     const oGross = Number(o.total);
     const oVat   = Number(o.vat_amount ?? 0);
@@ -1163,7 +1179,7 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
   const idealMap: Record<string, { name: string; unit: string; unitCost: number | null; idealQty: number; idealCost: number }> = {};
 
   for (const recipe of recipes ?? []) {
-    const ing  = (recipe as { ingredients?: { name: string } | null }).ingredients;
+    const ing  = embedOne<{ name: string; unit: string; unit_cost: string | number | null }>((recipe as any).ingredients);
     const sale = productSales[recipe.product_id];
     if (!sale || !ing) continue;
 
@@ -1224,7 +1240,7 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
   const productCostMap: Record<string, { name: string; qtySold: number; revenue: number; idealCost: number; hasCost: boolean }> = {};
 
   for (const recipe of recipes ?? []) {
-    const ing  = (recipe as { ingredients?: { name: string } | null }).ingredients;
+    const ing  = embedOne<{ name: string; unit: string; unit_cost: string | number | null }>((recipe as any).ingredients);
     const sale = productSales[recipe.product_id];
     if (!sale || !ing) continue;
 
@@ -1420,7 +1436,7 @@ router.get('/splh', requirePermission('reports.financial'), async (req, res) => 
       shift_id:     s.id,
       cashier_id:   s.cashier_id,
       cashier_name: userMap[s.cashier_id]?.name ?? 'Unknown',
-      branch_name:  (s as { branches?: { name: string } | null }).branches?.name ?? '',
+      branch_name:  embedOne<{ name: string }>((s as any).branches)?.name ?? '',
       opened_at:    s.opened_at,
       closed_at:    s.closed_at,
       hours:        Math.round(hours * 100) / 100,
@@ -1511,7 +1527,8 @@ router.get('/fuel-sales', async (req, res) => {
   const orderIds = (orders ?? []).map(o => o.id);
 
   // Get all order items for these fuel orders
-  let itemData: Array<{ fuel_product_id: string | null; quantity: string; subtotal: string; order_id: string }> = [];
+  // Matches the select below: product_id / product_name, not fuel_product_id.
+  let itemData: Array<{ product_id: string | null; product_name: string | null; quantity: string; subtotal: string; order_id: string }> = [];
   if (orderIds.length) {
     const items = await chunkIn<any>(
       'order_items', 'order_id', orderIds,
@@ -1564,7 +1581,7 @@ router.get('/fuel-sales', async (req, res) => {
 
   if (pumps) {
     for (const pump of pumps) {
-      const pumpOrders = (orders ?? [] as Array<{ id: string; pump_id: string | null; total: string }>).filter(o => o.pump_id === pump.id);
+      const pumpOrders = ((orders ?? []) as unknown as Array<{ id: string; pump_id: string | null; total: string }>).filter(o => o.pump_id === pump.id);
       const pumpOrderIds = pumpOrders.map(o => o.id);
       const pumpItems = itemData.filter(i => pumpOrderIds.includes(i.order_id));
       const tank = pump.fuel_product_id ? tankByProduct[pump.fuel_product_id] : null;
@@ -1629,8 +1646,19 @@ router.get('/pump-monitor', async (req, res) => {
     .select('id, name, fuel_product_id, capacity_litres, current_level, reorder_level, products(name, base_price)')
     .eq('business_id', req.businessId);
 
-  const tankByProduct: Record<string, unknown> = {};
-  (tanks ?? [] as Array<{ fuel_product_id: string; capacity: number | string; current_level: number | string; products?: { name: string } | null }>).forEach(t => { tankByProduct[t.fuel_product_id] = t; });
+  // fuel_tanks has capacity_litres / current_level / reorder_level (there is no
+  // `capacity` column), and products is a to-one embed.
+  type TankRow = {
+    fuel_product_id: string;
+    capacity_litres: number | string | null;
+    current_level:   number | string | null;
+    reorder_level:   number | string | null;
+    products?: { name: string; base_price: number | string | null } | null;
+  };
+  const tankByProduct: Record<string, TankRow> = {};
+  ((tanks ?? []) as unknown as TankRow[]).forEach(t => {
+    tankByProduct[t.fuel_product_id] = { ...t, products: embedOne((t as any).products) };
+  });
 
   // Today's fuel sales (litres + revenue per product)
   let ordQ = supabase

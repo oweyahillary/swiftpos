@@ -175,7 +175,13 @@ export interface ReportOrderRow {
 // ── Request body shapes ───────────────────────────────────────────────────────
 
 export interface OrderItemInput {
-  product?: { id: string; name: string } | null;
+  // The products embed may carry the category, either as an object or as a
+  // one-element array depending on how PostgREST resolves the relationship.
+  product?: {
+    id: string;
+    name: string;
+    categories?: { name: string | null } | Array<{ name: string | null }> | null;
+  } | null;
   productId?: string;
   quantity:  number | string;
   unitPrice: number | string;
@@ -193,6 +199,9 @@ export interface OrderItemInput {
   course?:      string | null;
   fire_status?: string | null;
   isFuel?:      boolean;
+  notes?:       string | null;
+  product_name?: string | null;
+  category_name?: string | null;
 }
 
 export interface PaymentLegInput {
@@ -200,4 +209,9 @@ export interface PaymentLegInput {
   amount:    number | string;
   tendered?: number | string;
   reference?: string;
+  // Written to `payments` on every sale; all three columns exist. Verified
+  // against the schema — the declaration was the only thing missing them.
+  amount_tendered?:   number | string | null;
+  change_given?:      number | string | null;
+  mpesa_checkout_id?: string | null;
 }
