@@ -544,7 +544,7 @@ router.post('/clock', async (req, res) => {
     // Look up staff member by PIN
     const { data: staff, error: staffErr } = await supabase
       .from('users')
-      .select('id, name, role')
+      .select('id, name, role_id, roles ( name )')
       .eq('business_id', req.businessId)
       .eq('pin', pin)
       .eq('status', 'active')

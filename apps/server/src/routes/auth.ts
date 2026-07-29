@@ -406,7 +406,7 @@ async function checkDeviceRegistration(
       title:       'New device login request',
       message:     `A cashier is trying to log in from a new device (${deviceLabel}). Go to Settings → Devices to approve or reject.`,
       link:        '/dashboard/settings?tab=devices',
-    }).catch(() => {});
+    });
 
     return { result: 'pending', deviceId: newDevice?.id };
   }

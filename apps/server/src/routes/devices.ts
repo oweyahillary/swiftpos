@@ -85,7 +85,7 @@ router.patch('/:id/approve', requirePermission('settings.manage'), async (req, r
     title:       'Device approved',
     message:     'Your device has been approved. You can now log in.',
     link:        '/pos',
-  }).catch(() => {}); // non-blocking
+  });
 
   res.json({ success: true });
 });

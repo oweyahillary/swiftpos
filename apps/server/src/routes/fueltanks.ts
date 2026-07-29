@@ -189,8 +189,9 @@ fuelTanksRouter.post('/:id/delivery', async (req, res) => {
   if (updateErr) { sendError(res, updateErr); return; }
 
   // Log the delivery as a stock movement
-  await supabase.from('stock_movements').insert({
-    business_id:    req.businessId,
+  // NB: stock_movements has no business_id column (tenancy is via branch_id ->
+  // branches.business_id). Sending one made every fuel delivery movement fail.
+  const { error: movementErr } = await supabase.from('stock_movements').insert({
     product_id:     tank.fuel_product_id,
     branch_id:      req.query.branch_id ?? null,
     movement_type:  'restock',
@@ -199,7 +200,8 @@ fuelTanksRouter.post('/:id/delivery', async (req, res) => {
     notes:          delivery_note ?? `Fuel delivery to ${tank.name}`,
     reference_type: 'delivery',
     created_by:     req.userId,
-  }).throwOnError().catch(err => console.error('[fuel-delivery] movement log failed:', err)); // non-fatal
+  });
+  if (movementErr) console.error('[fuel-delivery] movement log failed:', movementErr); // non-fatal
 
   res.json({ tank: data, delivered_litres: Number(litres), new_level: newLevel });
 });
@@ -299,12 +301,12 @@ pumpsRouter.patch('/:id/activate', async (req, res) => {
 
   // Optionally link the pump to the open order in the orders table
   if (order_id) {
-    await supabase
+    const { error: linkErr } = await supabase
       .from('orders')
       .update({ pump_id: data.id })
       .eq('id', order_id)
-      .eq('business_id', req.businessId)
-      .catch(err => console.error('[pump-activate] order link failed:', err)); // non-fatal
+      .eq('business_id', req.businessId);
+    if (linkErr) console.error('[pump-activate] order link failed:', linkErr); // non-fatal
   }
 
   res.json(data);

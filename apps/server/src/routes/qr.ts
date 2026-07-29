@@ -12,6 +12,8 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }    from '../lib/supabase';
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 import { requireAuth } from '../middleware/auth';
 
 const router = safeRouter();
@@ -43,7 +45,9 @@ router.get('/:slug/menu', async (req, res) => {
 
   const { data: products } = await supabase
     .from('products')
-    .select('id, name, description, price, image_url, category_id, has_modifiers')
+    // PostgREST alias: the column is base_price; the public menu contract
+    // (QRMenuPage.tsx Product.price) stays `price`.
+    .select('id, name, description, price:base_price, image_url, category_id, has_modifiers')
     .eq('business_id', biz.id)
     .eq('status', 'active')
     .eq('is_combo', false)   // don't show raw combo-only items
@@ -80,7 +84,7 @@ router.post('/:slug/order', async (req, res) => {
 
   const { data: biz } = await supabase
     .from('businesses')
-    .select('id, qr_ordering')
+    .select('id, qr_ordering, vat_rate, ctl_rate')
     .eq('menu_slug', slug)
     .single();
 
@@ -89,34 +93,57 @@ router.post('/:slug/order', async (req, res) => {
     return;
   }
 
+  // orders has no table_id column — it stores the table's display name in
+  // table_number. Resolve it here; an unknown id leaves the order unassigned
+  // rather than failing the whole insert.
+  let tableNumber: string | null = null;
+  if (table_id) {
+    const { data: tbl } = await supabase
+      .from('tables')
+      .select('name')
+      .eq('id', table_id)
+      .eq('business_id', biz.id)
+      .single();
+    tableNumber = tbl?.name ?? null;
+  }
+
   // Calculate totals
   let subtotal = 0;
   const orderItems: any[] = [];
   for (const item of items) {
     const { data: product } = await supabase
       .from('products')
-      .select('id, name, price, vat_rate')
+      .select('id, name, base_price')
       .eq('id', item.product_id)
       .eq('business_id', biz.id)
       .single();
 
     if (!product) continue;
-    const lineTotal = product.price * item.quantity;
-    subtotal += lineTotal;
+    const unitPrice = Number(product.base_price);
+    const lineTotal = round2(unitPrice * item.quantity);
+    subtotal = round2(subtotal + lineTotal);
+    // order_items has no modifier_summary column; notes is the free-text field.
     orderItems.push({
       product_id:   product.id,
       product_name: product.name,
       quantity:     item.quantity,
-      unit_price:   product.price,
+      unit_price:   unitPrice,
       subtotal:     lineTotal,
-      modifier_summary: item.modifier_summary || null,
-      notes: item.notes || null,
+      notes: [item.modifier_summary, item.notes].filter(Boolean).join(' · ') || null,
     });
   }
 
-  const vatRate = 0.16;
-  const vatAmount = subtotal * vatRate;
-  const total = subtotal + vatAmount;
+  // Mirror the till's tax model (routes/orders.ts): menu prices are inclusive of
+  // BOTH taxes, so back the net out using the combined rate, then charge each on
+  // that net. VAT was previously hardcoded at 16% here, ignoring the business's
+  // configured rate, and the catering levy (migration 33) was never applied to a
+  // QR order at all.
+  const vatRate = Number((biz as any).vat_rate ?? 16);
+  const ctlRate = Number((biz as any).ctl_rate ?? 0);
+  const total     = subtotal;
+  const net       = total / (1 + (vatRate + ctlRate) / 100);
+  const vatAmount = round2(net * (vatRate / 100));
+  const ctlAmount = round2(net * (ctlRate / 100));
 
   const orderNumber = `QR-${Date.now().toString(36).toUpperCase()}`;
 
@@ -132,8 +159,9 @@ router.post('/:slug/order', async (req, res) => {
       source:       'qr',
       subtotal,
       vat_amount:   vatAmount,
+      ctl_amount:   ctlAmount,
       total,
-      table_id:     table_id || null,
+      table_number: tableNumber,
       notes:        [guest_name ? `Guest: ${guest_name}` : '', notes].filter(Boolean).join(' · ') || null,
     })
     .select('id, order_number')
@@ -147,20 +175,19 @@ router.post('/:slug/order', async (req, res) => {
   );
 
   // Push to KDS
-  await supabase.from('kitchen_tickets').insert({
-    business_id:  biz.id,
+  // kitchen_tickets has exactly: id, order_id, branch_id, station, status,
+  // printed_at, preparing_at, ready_at, collected_at, created_at.
+  // Ticket contents are joined through orders -> order_items by kitchen.ts,
+  // so the row is deliberately minimal. Every other field previously sent here
+  // was phantom, and status:'pending' violated kitchen_tickets_status_check.
+  const { error: ticketErr } = await supabase.from('kitchen_tickets').insert({
+    order_id:  order.id,
     branch_id,
-    order_id:     order.id,
-    order_number: order.order_number,
-    order_type:   'dine_in',
-    table_id:     table_id || null,
-    source:       'qr',
-    status:       'pending',
-    items: orderItems.map(i => ({
-      product_id: i.product_id, name: i.product_name,
-      quantity: i.quantity, notes: i.notes,
-    })),
-  }).catch(() => {});  // non-blocking
+    status:    'new',
+  });
+  // Non-blocking for the customer, but never silent: a lost ticket means the
+  // kitchen never sees a paid order.
+  if (ticketErr) console.error('[qr] kitchen ticket insert failed:', ticketErr);
 
   res.status(201).json({ order_id: order.id, order_number: order.order_number });
 });

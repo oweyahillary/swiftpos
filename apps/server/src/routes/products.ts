@@ -91,7 +91,7 @@ router.post('/', requirePermission('products.manage'), async (req, res) => {
   const {
     name, description, base_price, category_id, image_url,
     track_stock, has_variants, has_modifiers,
-    barcode, plu_code, sold_by, is_fuel, fuel_unit,
+    barcode, plu_code, sold_by, is_fuel, fuel_unit, is_kitchen,
     cost_price, reorder_level,
     pieces_per_unit, unit_label, source,
     tax_type, kra_item_class_code,

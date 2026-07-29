@@ -77,7 +77,7 @@ async function sendSummaryForBusiness(
   // ── 1. Sales summary ──────────────────────────────────────
   const { data: orders } = await supabase
     .from('orders')
-    .select('id, total, vat_amount, status, created_by')
+    .select('id, total, vat_amount, status, cashier_id')
     .eq('business_id', biz.id)
     .eq('status', 'completed')
     .gte('created_at', dateFrom)
@@ -117,9 +117,9 @@ async function sendSummaryForBusiness(
   if (orderIds.length) {
     const staffTotals = new Map<string, { orders: number; revenue: number }>();
     for (const o of orders ?? []) {
-      if (!o.created_by) continue;
-      const existing = staffTotals.get(o.created_by) ?? { orders: 0, revenue: 0 };
-      staffTotals.set(o.created_by, {
+      if (!o.cashier_id) continue;
+      const existing = staffTotals.get(o.cashier_id) ?? { orders: 0, revenue: 0 };
+      staffTotals.set(o.cashier_id, {
         orders: existing.orders + 1,
         revenue: existing.revenue + Number(o.total),
       });
@@ -128,12 +128,15 @@ async function sendSummaryForBusiness(
     if (staffTotals.size) {
       const staffIds = [...staffTotals.keys()];
       const { data: staffMembers } = await supabase
-        .from('staff')
-        .select('id, full_name')
+        // There is no `staff` table — staff are rows in `users`, and the
+        // column is `name`, not `full_name`. This query has never returned a row,
+        // so the daily summary's staff-performance section has always been empty.
+        .from('users')
+        .select('id, name')
         .in('id', staffIds);
 
       staffRows = (staffMembers ?? []).map(s => ({
-        name: s.full_name ?? 'Unknown',
+        name: s.name ?? 'Unknown',
         ...(staffTotals.get(s.id) ?? { orders: 0, revenue: 0 }),
       })).sort((a, b) => b.revenue - a.revenue);
     }

@@ -313,9 +313,13 @@ router.get('/pnl', async (req, res) => {
   const { data: items } = await itemsQ;
 
   // Expenses
-  let expQ = supabase.from('expenses').select('amount, category, description')
+  // expenses has expense_category_id (FK -> expense_categories) and
+  // expense_date. `category` and `date` were both phantom columns, so this
+  // select errored 42703 and took the whole P&L export down with it.
+  let expQ = supabase.from('expenses')
+    .select('amount, description, expense_categories ( name )')
     .eq('business_id', req.businessId)
-    .gte('date', start.slice(0, 10)).lte('date', end.slice(0, 10));
+    .gte('expense_date', start.slice(0, 10)).lte('expense_date', end.slice(0, 10));
   if (scopedBranch) expQ = expQ.eq('branch_id', scopedBranch);
   const { data: expenses } = await expQ;
 
@@ -391,7 +395,8 @@ router.get('/pnl', async (req, res) => {
   addSection('OPERATING EXPENSES');
   const expByCategory: Record<string, number> = {};
   (expenses ?? []).forEach((e: any) => {
-    expByCategory[e.category ?? 'Other'] = (expByCategory[e.category ?? 'Other'] ?? 0) + Number(e.amount);
+    const cat = e.expense_categories?.name ?? 'Other';
+    expByCategory[cat] = (expByCategory[cat] ?? 0) + Number(e.amount);
   });
   Object.entries(expByCategory).forEach(([cat, amt]) => addLine(`  ${cat}`, amt));
   addLine('Total expenses', totalExpenses, true);
