@@ -17,3 +17,6 @@ Eugene
 pos.zip
 apps/server/dist/
 migrations/*.xlsx
+
+# Local working files — never committed
+no-commit/
