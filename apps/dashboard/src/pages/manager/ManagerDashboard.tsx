@@ -58,19 +58,21 @@ const I = {
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
-interface NavItem { key: string; label: React.ReactNode; permission: string | null; }
+// `label` is JSX (icon + text); `title` is the plain-text tooltip used when
+// the sidebar is collapsed. The two cannot be the same value.
+interface NavItem { key: string; label: React.ReactNode; title: string; permission: string | null; }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  permission: null },
-  { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   permission: 'reports.view' },
-  { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    permission: 'orders.view_all' },
-  { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, permission: 'inventory.view' },
-  { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  permission: 'expenses.view' },
-  { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, permission: 'customers.view' },
-  { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    permission: 'customers.view' },
-  { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  permission: 'orders.view_all' },
-  { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     permission: 'staff.manage' },
-  { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  permission: 'settings.manage' },
+  { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null },
+  { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: 'reports.view' },
+  { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all' },
+  { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view' },
+  { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view' },
+  { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view' },
+  { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view' },
+  { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all' },
+  { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.manage' },
+  { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'settings.manage' },
 ];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1250,7 +1252,7 @@ export default function ManagerDashboard() {
         <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 px-2">
           {visibleNav.map(item => (
             <button key={item.key} onClick={() => setActive(item.key)}
-              title={!sidebarOpen ? item.label : undefined}
+              title={!sidebarOpen ? item.title : undefined}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 active === item.key
                   ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'

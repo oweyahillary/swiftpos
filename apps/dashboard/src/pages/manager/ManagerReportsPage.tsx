@@ -15,7 +15,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { usePOSAuth } from '../../context/POSAuthContext';
+import { usePOSAuth , type PosApi } from '../../context/POSAuthContext';
 import { localDateStr } from '../../lib/localDate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
 
 // ── Tab: Summary ──────────────────────────────────────────────────────────────
 
-function SummaryTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function SummaryTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const [from, setFrom] = useState(weekAgo());
   const [to,   setTo]   = useState(today());
   const [data, setData] = useState<SalesSummary | null>(null);
@@ -231,7 +231,7 @@ function SummaryTab({ posApi, session, currency }: { posApi: any; session: any; 
 
 // ── Tab: Hourly ───────────────────────────────────────────────────────────────
 
-function HourlyTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const [from, setFrom] = useState(today());
   const [to,   setTo]   = useState(today());
   const [rows, setRows] = useState<HourlyRow[]>([]);
@@ -311,7 +311,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: any; session: any; c
 
 // ── Tab: Item Mix ─────────────────────────────────────────────────────────────
 
-function ItemMixTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const [from, setFrom]   = useState(weekAgo());
   const [to,   setTo]     = useState(today());
   const [rows, setRows]   = useState<ProductRow[]>([]);
@@ -384,7 +384,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: any; session: any; 
 
 // ── Tab: Voids ────────────────────────────────────────────────────────────────
 
-function VoidsTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function VoidsTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const [from, setFrom] = useState(today());
   const [to,   setTo]   = useState(today());
   const [rows, setRows] = useState<VoidRow[]>([]);
@@ -456,7 +456,7 @@ function VoidsTab({ posApi, session, currency }: { posApi: any; session: any; cu
 
 // ── Tab: Staff Performance ────────────────────────────────────────────────────
 
-function StaffPerfTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const [from, setFrom] = useState(today());
   const [to,   setTo]   = useState(today());
   const [rows, setRows] = useState<StaffRow[]>([]);
@@ -530,7 +530,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: any; session: any
 
 // ── Tab: Shifts ───────────────────────────────────────────────────────────────
 
-function ShiftsTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const [from, setFrom] = useState(today());
   const [to,   setTo]   = useState(today());
   const [rows, setRows] = useState<ShiftRow[]>([]);
@@ -612,7 +612,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: any; session: any; c
 
 // ── Fuel Sales Tab (Manager) ──────────────────────────────────────────────────
 
-function FuelSalesTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function FuelSalesTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const today = localDateStr();
   const [from, setFrom] = useState(today);
   const [to,   setTo]   = useState(today);
@@ -719,7 +719,7 @@ function FuelSalesTab({ posApi, session, currency }: { posApi: any; session: any
 
 // ── Wet Stock Tab (Manager) ───────────────────────────────────────────────────
 
-function WetStockTab({ posApi, session, currency }: { posApi: any; session: any; currency: string }) {
+function WetStockTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
   const today = localDateStr();
   const [from, setFrom] = useState(today);
   const [to,   setTo]   = useState(today);

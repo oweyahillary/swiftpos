@@ -158,7 +158,10 @@ export function useCart(): CartActions {
   }, []);
 
   const confirmVariants = useCallback((
-    modifiers: { id: string; name: string; price: number }[],
+    // The modifier picker passes a flat option list; SelectedModifier needs the
+    // group it came from, so the group fields are filled in below rather than
+    // left off (which silently produced modifier-less cart lines).
+    modifiers: { id: string; name: string; price: number; groupId?: string; groupName?: string }[],
   ) => {
     if (!variantProduct) return;
     const variants = Object.values(selectedVariants);
@@ -177,7 +180,16 @@ export function useCart(): CartActions {
         optionName:      v.name,
         priceAdjustment: Number(v.price_adjustment ?? 0),
       })),
-      selectedModifiers: modifiers,
+      // SelectedModifier requires the owning group. The picker only supplies
+      // the option, so unknown groups are recorded explicitly rather than left
+      // undefined — the receipt and KDS both read groupName.
+      selectedModifiers: modifiers.map(m => ({
+        groupId:    m.groupId   ?? '',
+        groupName:  m.groupName ?? '',
+        optionId:   m.id,
+        optionName: m.name,
+        price:      Number(m.price ?? 0),
+      })),
       unitPrice,
       lineTotal,
     }]);

@@ -25,17 +25,23 @@ export interface CashierSession {
   permissions:  Record<string, boolean>;
 }
 
+// Exported so consumers can type the prop instead of falling back to `any`.
+// Calling `.get<T>()` on an `any` value is TS2347 ("untyped function calls may
+// not accept type arguments"), which is what produced eight of the dashboard's
+// fourteen errors.
+export interface PosApi {
+  get:    <T>(path: string)                => Promise<T>;
+  post:   <T>(path: string, body: unknown) => Promise<T>;
+  patch:  <T>(path: string, body: unknown) => Promise<T>;
+  delete: <T>(path: string)                => Promise<T>;
+}
+
 interface POSAuthContextType {
   session:             CashierSession | null;
   setCashierSession:   (s: CashierSession) => void;
   clearCashierSession: (callServer?: boolean) => Promise<void>;
   hasPermission:       (key: string) => boolean;
-  posApi: {
-    get:    <T>(path: string)                => Promise<T>;
-    post:   <T>(path: string, body: unknown) => Promise<T>;
-    patch:  <T>(path: string, body: unknown) => Promise<T>;
-    delete: <T>(path: string)                => Promise<T>;
-  };
+  posApi: PosApi;
 }
 
 // ── Storage key — scoped to userId (Fix 4) ────────────────────────────────────

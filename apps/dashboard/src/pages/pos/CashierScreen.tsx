@@ -10,7 +10,7 @@ import { useBusiness } from '../../context/BusinessContext';
 import { api } from '../../lib/api';
 import { cartSubtotal, extractVat, generateOrderNumber } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
-import type { Product, Category, VariantGroup, VariantOption, SelectedVariant } from '../../types';
+import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, OrderType } from '../../types';
 import PaymentModal from './PaymentModal';
 import DiscountPanel from './DiscountPanel';
 import type { DiscountState } from './DiscountPanel';
@@ -846,11 +846,11 @@ export default function CashierScreen() {
     .every((g) => !!selectedVariants[g.id]);
 
   // Derived order type for PaymentModal
-  function getOrderType(): string {
+  function getOrderType(): OrderType {
     if (isParking) return 'parking_session';
     if (isPetrol) return 'fuel_sale';
     const o = activeKey ? openOrders[activeKey] : null;
-    if (o?.orderType) return o.orderType;              // explicit (e.g. takeaway)
+    if (o?.orderType) return o.orderType as OrderType; // explicit (e.g. takeaway)
     if (o?.tableId) return 'dine_in';                  // seated at a table
     return 'retail';
   }

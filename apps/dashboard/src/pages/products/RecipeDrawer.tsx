@@ -110,7 +110,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
 
   // ── Line management ────────────────────────────────────────────────────────
   const addLine = () => {
-    setLines(p => [...p, { ingredient_id: '', ingredient_name: '', ingredient_unit: '', quantity_per_serving: '' }]);
+    setLines(p => [...p, { ingredient_id: '', ingredient_name: '', ingredient_unit: '', ingredient_unit_cost: null, quantity_per_serving: '' }]);
     setSearches(p => [...p, '']);
   };
 
@@ -175,7 +175,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
       confirmLabel: 'Remove recipe',
       onConfirm: async () => {
         await api.delete(`/api/recipes/${product.id}`);
-        setLines([{ ingredient_id: '', ingredient_name: '', ingredient_unit: '', quantity_per_serving: '' }]);
+        setLines([{ ingredient_id: '', ingredient_name: '', ingredient_unit: '', ingredient_unit_cost: null, quantity_per_serving: '' }]);
         setSearches(['']);
       },
     });

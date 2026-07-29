@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import type { BusinessMode } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { SELECTED_BRANCH_KEY } from './BranchSelectScreen';
 
@@ -78,7 +79,7 @@ export default function PinPadScreen() {
           role:         data.staff.role,
           branchId:     branch.id,
           branchName:   branch.name,
-          businessType: business?.type ?? 'retail',
+          businessType: (business?.type ?? 'retail') as BusinessMode,
           currency:     business?.currency ?? 'KES',
           permissions:  data.permissions,
         });
