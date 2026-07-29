@@ -108,3 +108,28 @@ jobs:
             echo "::error::Real .env file(s) tracked in git:"; echo "$found"; exit 1
           fi
           echo "No tracked .env files."
+
+  schema:
+    name: Schema drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # supabase-js types `.from('x')` as `any`, so tsc is structurally blind to
+      # a select or insert naming a column that does not exist. Everything below
+      # catches the class tsc cannot: it is the only gate on schema drift.
+
+      # `.catch()` on a PostgrestFilterBuilder throws TypeError at runtime. Fixed
+      # and regressed at least three times — see the script header.
+      - name: No .catch() on Supabase builders
+        run: node scripts/check-supabase-catch.mjs
+
+      # Cross-checks every select/insert against scripts/schema-index.json.
+      # NB: regenerate that index whenever the schema changes, or this job
+      # silently checks against a stale picture and stops being worth reading.
+      - name: Schema audit
+        run: python3 scripts/schema-audit.py --strict

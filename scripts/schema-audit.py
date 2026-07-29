@@ -25,6 +25,15 @@ def embed_target(name: str):
     if ':' in n:
         n = n.split(':', 1)[1]
     n = n.split('!')[0].strip()
+    # `alias:fk_column(cols)` is valid PostgREST: the part after the colon can be
+    # the FOREIGN KEY COLUMN rather than the table, used to disambiguate when a
+    # table has several FKs to the same target. combos.ts and pos.ts both use
+    # `product:product_id ( ... )`. Resolve the column form back to its table so
+    # it is not reported as a missing table.
+    if n not in schema and n.endswith('_id'):
+        guess = n[:-3] + 's'
+        if guess in schema:
+            return guess
     return n
 
 def parse_select(s: str):
@@ -140,3 +149,10 @@ if problems['bad_col']:
 
 total = sum(len(v) for v in problems.values())
 print(f"total: {total}")
+
+# Exit non-zero when run with --strict, so CI can gate on this.
+if '--strict' in sys.argv and total:
+    print()
+    print("FAIL — schema drift. Fix the code, or regenerate scripts/schema-index.json")
+    print("       if the schema itself changed.")
+    sys.exit(1)
