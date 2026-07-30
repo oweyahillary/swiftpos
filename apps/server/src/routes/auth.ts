@@ -424,8 +424,16 @@ async function checkDeviceRegistration(
           ? String(req.headers['x-app-version']).slice(0, 32)
           : null);
 
+    // The till's own device_id. Already sent on every verify-pin and previously
+    // discarded; stored so sync telemetry has a stable key to attach to, and so
+    // the fleet view can join a terminal to the orders it actually rang.
+    const reportedDeviceId = typeof (req as any)?.body?.device_id === 'string'
+      ? String((req as any).body.device_id).slice(0, 64)
+      : null;
+
     const patch: Record<string, unknown> = { last_seen_at: new Date().toISOString() };
     if (reportedVersion) patch.app_version = reportedVersion;
+    if (reportedDeviceId) patch.device_id = reportedDeviceId;
 
     const { error: seenErr } = await supabase
       .from('user_devices')

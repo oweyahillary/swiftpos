@@ -4,6 +4,8 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 
+import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
+
 const router = safeRouter();
 router.use(requireAuth);
 
@@ -24,27 +26,8 @@ router.use(requireAuth);
 // Note: desktop tooling does not create expenses yet; that arm is here for
 // forward-compatibility and is a no-op until a till-side expense flow exists.
 // ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// Desktop schema expectations.
-//
-// Tills are updated by installing an .exe by hand, so at any moment some
-// terminal is behind. Two thresholds, because "behind" and "broken" are not the
-// same thing:
-//
-//   REQUIRED — the schema this server was written against. A till below this is
-//              WARNED, not blocked: it is still pushing valid rows and must keep
-//              trading while someone walks round with the installer. Blocking a
-//              working till to enforce tidiness is how a shop loses a lunch rush.
-//
-//   HARD_MIN — below this the till's payloads are genuinely incompatible and
-//              would fail with an opaque column error mid-service. Better to say
-//              so plainly than to let it look like a network fault.
-//
-// Raise HARD_MIN only when a change actually breaks old payloads. Raising it for
-// convenience turns every deploy into a fleet-wide outage.
-// ─────────────────────────────────────────────────────────────────────────────
-const REQUIRED_DESKTOP_SCHEMA = 42;
-const HARD_MIN_DESKTOP_SCHEMA = 41;
+// Desktop schema expectations live in lib/desktopSchema.ts — shared with
+// /api/devices/fleet so the warning and the screen can never disagree.
 
 router.post('/push', async (req, res) => {
   const businessId = req.businessId;
@@ -63,6 +46,26 @@ router.post('/push', async (req, res) => {
     });
     return;
   }
+  // Fleet telemetry, fire-and-forget.
+  //
+  // Deliberately NOT awaited and deliberately swallowing its own errors: this is
+  // a diagnostic, and a till must never fail to push a day's sales because a
+  // statistics column is missing or a telemetry write timed out. If migration 43
+  // has not been applied this simply does nothing.
+  const deviceId = String(req.header('X-Device-Id') ?? '').slice(0, 64);
+  if (deviceId) {
+    void supabase
+      .from('user_devices')
+      .update({
+        last_sync_at: new Date().toISOString(),
+        ...(clientSchema ? { schema_version: clientSchema } : {}),
+      })
+      .eq('device_id', deviceId)
+      .then(({ error }) => {
+        if (error) console.warn('[fleet] telemetry not recorded — is migration 43 applied?', error.message);
+      });
+  }
+
   const schemaStatus = clientSchema < REQUIRED_DESKTOP_SCHEMA
     ? {
         behind: true,
@@ -114,6 +117,23 @@ router.post('/push', async (req, res) => {
           opened_at:     s.opened_at,
           status:        'open',                      // never trust a client-reported close
           opening_float: Number(s.opening_float) || 0,
+
+          // Attribution. Safe to take from the client because these are facts
+          // about the TERMINAL, not about money: which till, which trading day,
+          // which physical drawer, who authorised the opening count. None of them
+          // can misstate cash, which is why the status/close fields above are
+          // still refused while these are trusted.
+          //
+          // Without them the cloud could not tell one drawer from another —
+          // business_days keys its one-open-per-till index on device_id, so three
+          // tills reporting NULL collapse to a single key.
+          business_day_id: s.business_day_id ?? null,
+          business_date:   s.business_date ?? null,
+          device_id:       s.device_id ?? null,
+          terminal_code:   s.terminal_code ?? null,
+          drawer_label:    s.drawer_label ?? null,
+          opened_by:       s.opened_by ?? null,
+
           updated_at:    new Date().toISOString(),
         }));
       if (rows.length) {

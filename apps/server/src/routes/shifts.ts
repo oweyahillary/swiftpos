@@ -192,7 +192,8 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
   const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
 
-  const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut;
+  const expensesOut   = await shiftExpenses(id);
+  const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut;
   const cashVariance  = Number(closing_float) - expectedCash;
 
   // Require an explanatory note whenever the count doesn't match expected cash.
@@ -223,6 +224,65 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   if (closeErr) { sendError(res, closeErr); return; }
   res.json(closed);
 });
+
+
+/**
+ * Cash paid out of a drawer as recorded EXPENSES.
+ *
+ * Must be subtracted from expected cash. Expenses are written without a matching
+ * float_out, so cash leaves the drawer while expected_cash does not move — a
+ * cashier who paid a supplier from the till and recorded it honestly counted
+ * short at close and was reported as down by exactly that amount, indistinguishable
+ * from someone who had simply taken it.
+ *
+ * Kept identical to the desktop's computeZReport, deliberately: the offline
+ * Z-report the cashier signs and the figure the server stores on close have to be
+ * the same number, or every reconciliation becomes an argument about which
+ * screen to believe.
+ */
+async function shiftExpenses(shiftId: string): Promise<number> {
+  const { data } = await supabase
+    .from('expenses').select('amount').eq('shift_id', shiftId);
+  return (data ?? []).reduce((sum, e: { amount: number }) => sum + Number(e.amount), 0);
+}
+
+/**
+ * Expected cash in a drawer right now, for ONE shift.
+ *
+ *     opening_float + cash_sales + float_in - float_out - expenses
+ *
+ * Extracted so the open-shift list can show a manager what they are about to
+ * write off before force-closing a dead terminal's drawer. Previously this lived
+ * inline in /close only, so the figure existed exactly at the moment it was too
+ * late to be useful.
+ *
+ * Refunds are included as NEGATIVE cash rows (status 'refunded'): omitting them
+ * overstated expected cash by every refund and made the drawer read short by that
+ * amount — an unexplained shortage, which is the most corrosive thing a till can
+ * report. Audit finding M8.
+ */
+async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {
+  const { data: shiftOrders } = await supabase
+    .from('orders').select('id').eq('shift_id', shiftId).eq('status', 'completed');
+  const orderIds = (shiftOrders ?? []).map((o: { id: string }) => o.id);
+
+  let cashSales = 0;
+  if (orderIds.length > 0) {
+    const { data: cashPayments } = await supabase
+      .from('payments').select('amount, status')
+      .in('order_id', orderIds).eq('method', 'cash')
+      .in('status', ['completed', 'refunded']);
+    cashSales = (cashPayments ?? []).reduce((s, p: { amount: number }) => s + Number(p.amount), 0);
+  }
+
+  const { data: floatTxns } = await supabase
+    .from('float_transactions').select('type, amount').eq('shift_id', shiftId);
+  const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
+  const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
+
+  const expenses = await shiftExpenses(shiftId);
+  return Number(openingFloat) + cashSales + floatIn - floatOut - expenses;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/shifts/:id/force-close
@@ -298,7 +358,8 @@ router.post('/:id/force-close', requirePermission('settings.manage'), async (req
   const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
   const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
 
-  const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut;
+  const expensesOut = await shiftExpenses(id);
+  const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut;
 
   const { data: closed, error: closeErr } = await supabase
     .from('shifts')
@@ -405,9 +466,23 @@ router.get('/', async (req, res) => {
   const nameMap: Record<string, string> = {};
   (users ?? []).forEach(u => { nameMap[u.id] = u.name; });
 
+  // For OPEN shifts, compute expected cash now. Bounded to 50 so a wide date
+  // range cannot turn this into hundreds of round trips; open shifts in practice
+  // number in single figures, and only they can be force-closed.
+  const openOnes = shifts.filter(s => s.status === 'open').slice(0, 50);
+  const expectedById = new Map<string, number>();
+  await Promise.all(openOnes.map(async s => {
+    try {
+      expectedById.set(s.id, await computeExpectedCash(s.id, Number(s.opening_float)));
+    } catch {
+      /* leave absent — the UI shows "unavailable" rather than a wrong number */
+    }
+  }));
+
   const enriched = shifts.map(s => ({
     ...s,
     cashier_name: nameMap[s.cashier_id] ?? 'Unknown',
+    expected_cash_live: expectedById.has(s.id) ? expectedById.get(s.id) : null,
   }));
 
   res.json(enriched);
