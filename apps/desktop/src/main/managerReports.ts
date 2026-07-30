@@ -1,26 +1,162 @@
 /**
- * managerReports.ts — Local SQLite report queries for the desktop manager dashboard.
+ * managerReports.ts — local SQLite report queries for the desktop manager screens.
  *
- * Decision D9 (architecture doc): "Reporting is tiered, not gated."
- * Desktop = today/shift/branch, summary, view-only.
- * Web     = any range, full slicing, cross-branch, export.
+ * ── ON DECISION D9 ──────────────────────────────────────────────────────────
+ * The architecture doc says "reporting is tiered, not gated": desktop = today
+ * only, summary, view-only; web = any range, full slicing, export. This file has
+ * been changed to support arbitrary date ranges and CSV export on the desktop,
+ * at the owner's explicit request, because in practice the till is where managers
+ * actually stand at closing time.
  *
- * All queries run against the local SQLite DB. No server calls here.
+ * The reason D9 existed is real and has NOT gone away, so it is handled rather
+ * than ignored:
+ *
+ *   A TILL ONLY HOLDS ITS OWN SALES.
+ *
+ *   Each terminal has a standalone SQLite database. Orders reach a peer only via
+ *   the aggregation node (POST /node/orders), so:
+ *     • on a plain till, any report covers THAT TILL alone;
+ *     • on the node, it covers the whole branch.
+ *
+ *   A manager reading a date-range total off till 2 and treating it as the shop's
+ *   takings would be wrong by however much tills 1 and 3 sold — silently, with no
+ *   indication anything was missing. That is worse than having no report.
+ *
+ *   So every range query is paired with getReportScope(), and the UI and the CSV
+ *   both state which machine the figures came from and what they cover. The report
+ *   is allowed to be partial; it is not allowed to be silently partial.
+ *
+ * Local history is never pruned, so a range can reach back to the first order this
+ * terminal ever recorded — reported as `earliestOrder` so a range starting before
+ * that is not mistaken for a quiet month.
  */
 
 import { getLocalDb } from './localDb';
+import { getDeviceConfig } from './deviceConfig';
 
+export type RangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
+
+export interface ReportRange {
+  /** Inclusive ISO start. */
+  from: string;
+  /** Inclusive ISO end. */
+  to: string;
+  label: string;
+}
+
+/** Local midnight-to-midnight for a YYYY-MM-DD date, in the terminal's own time. */
+function dayBounds(ymd: string): { start: Date; end: Date } {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return {
+    start: new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0),
+    end: new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59, 999),
+  };
+}
+
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * Turn a preset or an explicit pair of dates into a range.
+ *
+ * Local time throughout, deliberately — the same reasoning as business_date. A
+ * trading day belongs to the shop's clock, and using UTC would cut the day at
+ * 03:00 Nairobi and split an evening's takings across two dates.
+ */
+export function resolveRange(preset: RangePreset = 'today', from?: string, to?: string): ReportRange {
+  const now = new Date();
+  const today = ymd(now);
+
+  const mk = (a: string, b: string, label: string): ReportRange => ({
+    from: dayBounds(a).start.toISOString(),
+    to: dayBounds(b).end.toISOString(),
+    label,
+  });
+
+  switch (preset) {
+    case 'yesterday': {
+      const y = new Date(now); y.setDate(y.getDate() - 1);
+      return mk(ymd(y), ymd(y), `Yesterday (${ymd(y)})`);
+    }
+    case 'last7': {
+      const s = new Date(now); s.setDate(s.getDate() - 6);
+      return mk(ymd(s), today, `Last 7 days (${ymd(s)} to ${today})`);
+    }
+    case 'last30': {
+      const s = new Date(now); s.setDate(s.getDate() - 29);
+      return mk(ymd(s), today, `Last 30 days (${ymd(s)} to ${today})`);
+    }
+    case 'month': {
+      const s = new Date(now.getFullYear(), now.getMonth(), 1);
+      return mk(ymd(s), today, `This month (${ymd(s)} to ${today})`);
+    }
+    case 'custom': {
+      // Swap rather than reject a reversed pair: a manager who picks the dates in
+      // the wrong order means the range between them, and an empty report would
+      // read as "no sales" rather than "you inverted the dates".
+      const a = from || today;
+      const b = to || today;
+      const [lo, hi] = a <= b ? [a, b] : [b, a];
+      return mk(lo, hi, lo === hi ? lo : `${lo} to ${hi}`);
+    }
+    default:
+      return mk(today, today, `Today (${today})`);
+  }
+}
+
+export interface ReportScope {
+  terminalCode: string | null;
+  deviceRole: 'till' | 'node';
+  /** True when this machine holds every till's orders, not just its own. */
+  coversBranch: boolean;
+  /** Plain-English scope, printed on the report and the CSV. */
+  scopeLabel: string;
+  /** ISO timestamp of the oldest order held locally, or null if there are none. */
+  earliestOrder: string | null;
+}
+
+/**
+ * What these figures actually cover. Must accompany every range report.
+ *
+ * Without this a manager cannot tell a quiet week from a report that only ever
+ * had one till's data in it.
+ */
+export function getReportScope(): ReportScope {
+  const db = getLocalDb();
+  const cfg = getDeviceConfig();
+  const role = (cfg?.device_role ?? 'till') as 'till' | 'node';
+  const code = cfg?.terminal_code ?? null;
+
+  const earliest = (db.prepare(
+    `SELECT MIN(created_at) AS m FROM orders WHERE status = 'completed'`,
+  ).get() as { m: string | null } | undefined)?.m ?? null;
+
+  const tills = (db.prepare(
+    `SELECT COUNT(DISTINCT COALESCE(device_id,'')) AS n FROM orders WHERE status='completed'`,
+  ).get() as { n: number } | undefined)?.n ?? 0;
+
+  const coversBranch = role === 'node';
+  return {
+    terminalCode: code,
+    deviceRole: role,
+    coversBranch,
+    scopeLabel: coversBranch
+      ? `All tills at this branch (${tills} seen)`
+      : `This till only${code ? ` (${code})` : ''} — other tills are not included`,
+    earliestOrder: earliest,
+  };
+}
+
+/** Kept so callers that want today can stay unchanged. */
 function todayRange() {
-  const now  = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-  return { from, to };
+  const r = resolveRange('today');
+  return { from: r.from, to: r.to };
 }
 
 // ── Sales KPIs (today, this branch) ──────────────────────────────────────────
-export function getSalesSummary() {
+export function getSalesSummary(range?: ReportRange) {
   const db = getLocalDb();
-  const { from, to } = todayRange();
+  const { from, to } = range ?? todayRange();
 
   const row = db.prepare(`
     SELECT
@@ -71,9 +207,9 @@ export function getSalesSummary() {
 }
 
 // ── Top products today ────────────────────────────────────────────────────────
-export function getTopProducts(limit = 8) {
+export function getTopProducts(limit = 8, range?: ReportRange) {
   const db = getLocalDb();
-  const { from, to } = todayRange();
+  const { from, to } = range ?? todayRange();
 
   return db.prepare(`
     SELECT
@@ -91,24 +227,52 @@ export function getTopProducts(limit = 8) {
 }
 
 // ── Order history (last N orders) ────────────────────────────────────────────
-export function getRecentOrders(limit = 30) {
+export function getRecentOrders(limit = 30, range?: ReportRange) {
   const db = getLocalDb();
 
-  const orders = db.prepare(`
-    SELECT id, order_number, order_type, status, total, vat_amount,
-           discount_amount, created_at, cashier_id, shift_id
-    FROM orders
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).all(limit) as any[];
+  // The N+1 below is deliberate and bounded for the on-screen list, but an export
+  // can span a month. Payments are therefore fetched in ONE pass and grouped in
+  // memory: at ~2,000 orders the per-order query was the difference between an
+  // instant CSV and a visibly frozen window.
+  const where = range ? 'WHERE created_at >= ? AND created_at <= ?' : '';
+  const params: (string | number)[] = range ? [range.from, range.to] : [];
 
-  // Enrich with payment method(s)
-  return orders.map(o => {
-    const payments = db.prepare(`
-      SELECT method, amount FROM payments WHERE order_id = ?
-    `).all(o.id) as { method: string; amount: number }[];
-    return { ...o, payments };
-  });
+  const orders = db.prepare(`
+    SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
+           discount_amount, tip_amount, created_at, cashier_id, shift_id, device_id
+    FROM orders
+    ${where}
+    ORDER BY created_at DESC
+    ${limit > 0 ? 'LIMIT ?' : ''}
+  `).all(...(limit > 0 ? [...params, limit] : params)) as any[];
+
+  if (!orders.length) return [];
+
+  const ids = orders.map(o => o.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const allPayments = db.prepare(`
+    SELECT order_id, method, amount FROM payments WHERE order_id IN (${placeholders})
+  `).all(...ids) as { order_id: string; method: string; amount: number }[];
+
+  const byOrder = new Map<string, { method: string; amount: number }[]>();
+  for (const p of allPayments) {
+    const list = byOrder.get(p.order_id) ?? [];
+    list.push({ method: p.method, amount: Number(p.amount) });
+    byOrder.set(p.order_id, list);
+  }
+
+  // Cashier names resolved once. `users`, not `staff` — there is no local staff
+  // table, only staff_session for whoever is signed in.
+  const names = new Map<string, string>();
+  for (const u of db.prepare(`SELECT id, name FROM users`).all() as { id: string; name: string }[]) {
+    names.set(u.id, u.name);
+  }
+
+  return orders.map(o => ({
+    ...o,
+    cashier_name: o.cashier_id ? (names.get(o.cashier_id) ?? null) : null,
+    payments: byOrder.get(o.id) ?? [],
+  }));
 }
 
 // ── Stock levels ──────────────────────────────────────────────────────────────
@@ -131,9 +295,9 @@ export function getStockLevels() {
 }
 
 // ── Fuel sales today (petrol) — from local order_items ────────────────────────
-export function getFuelSalesToday() {
+export function getFuelSalesToday(range?: ReportRange) {
   const db = getLocalDb();
-  const { from, to } = todayRange();
+  const { from, to } = range ?? todayRange();
 
   // Grade breakdown
   const grades = db.prepare(`
