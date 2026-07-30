@@ -72,6 +72,9 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/dashboard/expenses', label: 'Expenses', icon: '💸' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: '📊' },
+      // Under Finance rather than Settings: it is a cash-custody action, and it is
+      // the only route to a drawer stranded on a terminal that has died.
+      { to: '/dashboard/open-drawers', label: 'Open Drawers', icon: '🗄️' },
     ],
   },
   {
@@ -86,6 +89,8 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/dashboard/branches', label: 'Branches',         icon: '🏪' },
       { to: '/dashboard/printers', label: 'Printers',         icon: '🖨️' },
+      // Fleet health. Under Settings because it is estate management, not cash.
+      { to: '/dashboard/terminals', label: 'Terminals',        icon: '🖥️' },
       { to: '/dashboard/turnover', label: 'Table Turnover',   icon: '⏱️', verticals: FOOD_VERTICALS },
       { to: '/dashboard/settings/etims', label: 'KRA eTIMS',        icon: '🧾' },
       { to: '/dashboard/settings', label: 'Staff Management', icon: '👥', end: true },

@@ -15,6 +15,8 @@ import { PermissionsProvider } from './context/PermissionsContext';
 import { POSAuthProvider }     from './context/POSAuthContext';
 import ErrorBoundary           from './components/ErrorBoundary';
 import ProtectedRoute          from './components/ProtectedRoute';
+import OpenShiftsPage         from './pages/OpenShiftsPage';
+import FleetPage              from './pages/FleetPage';
 
 // ── Lazily-loaded pages (each becomes its own on-demand chunk) ───────────────
 const LoginPage               = lazy(() => import('./pages/LoginPage'));
@@ -112,6 +114,8 @@ export default function App() {
                       <Route path="pos"                       element={<POSPage />} />
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
+                      <Route path="open-drawers"              element={<OpenShiftsPage />} />
+                      <Route path="terminals"                 element={<FleetPage />} />
                       <Route path="customers"                 element={<CustomersPage currency="KES" />} />
                       <Route path="customers/credit"          element={<CreditAccountsPage />} />
                       <Route path="turnover"                  element={<TableTurnoverPage />} />
