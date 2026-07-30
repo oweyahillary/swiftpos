@@ -86,10 +86,37 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
   const rule = (dashed = true) => (
     <p style={{ borderTop: dashed ? '1px dashed #000' : '1px solid #000', margin: '6px 0' }} />
   );
+  // Fixed-layout table, not flex.
+  //
+  // Flex items default to min-width:auto, so they refuse to shrink below their
+  // longest word but WILL push a sibling below its content — which is how
+  // "Total Invoice Value:" squeezed the amount column until 1,940.00 printed as
+  // "1,940.0" on one line and "0" on the next. A currency figure broken across
+  // two lines is the worst thing this receipt can do. Fixed table columns can't
+  // do that, and nowrap on the value makes it impossible by construction.
+  // AUTO layout, not fixed.
+  //
+  // A fixed 42% value column plus nowrap meant anything longer than 42% ran past
+  // the column and was clipped by the ticket's overflow:hidden — which is how
+  // "Eugene Oweya" printed as "Eugene Owe" and the date lost its year. Auto
+  // layout gives the value exactly the width it needs and lets the LABEL give
+  // way instead, since labels are short, known, and safe to shrink.
+  //
+  // nowrap stays on the value: that is what stops a currency figure breaking
+  // across two lines, which is a far worse failure than a wrapped label.
   const row = (label: React.ReactNode, value: React.ReactNode, style: React.CSSProperties = {}) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', ...style }}>
-      <span>{label}</span><span>{value}</span>
-    </div>
+    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto', ...style }}>
+      <tbody><tr>
+        {/* Label shrinks to its own text; the value takes what is left.
+            A long value must WRAP, not overflow: with nowrap the table grows
+            past the ticket width and the print head simply stops at its last
+            dot, so "Eugene Oweya" arrived as "Eugene Owe" and the date lost its
+            seconds. Silent truncation of a cashier name reads as a data bug,
+            which is the most expensive kind of layout fault. */}
+        <td style={{ padding: 0, verticalAlign: 'top', whiteSpace: 'nowrap' }}>{label}</td>
+        <td style={{ padding: 0, textAlign: 'right', paddingLeft: '6px', verticalAlign: 'top', wordBreak: 'break-word' }}>{value}</td>
+      </tr></tbody>
+    </table>
   );
 
   const typeLabel =
@@ -132,27 +159,33 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {kots ? row('Kots:', kots) : null}
       {rule()}
 
-      <div style={{ display: 'flex', fontWeight: 'bold' }}>
-        <span style={{ flex: 1 }}>Item</span>
-        <span style={{ width: '34px', textAlign: 'right' }}>Qty</span>
-        <span style={{ width: '72px', textAlign: 'right' }}>Amt</span>
-      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontWeight: 'bold' }}>
+        <tbody><tr>
+          <td style={{ padding: 0 }}>Item</td>
+          <td style={{ padding: 0, width: '11%', textAlign: 'right' }}>Qty</td>
+          <td style={{ padding: 0, width: '27%', textAlign: 'right' }}>Amt</td>
+        </tr></tbody>
+      </table>
       {rule()}
 
       {cart.map((item, index) => (
         <div key={index} style={{ marginBottom: '3px' }}>
-          <div style={{ display: 'flex' }}>
-            <span style={{ flex: 1, paddingRight: '4px' }}>{item.product.name}</span>
-            <span style={{ width: '34px', textAlign: 'right' }}>
-              {item.isFuel ? item.quantity.toFixed(2) : item.quantity}
-            </span>
-            <span style={{ width: '72px', textAlign: 'right' }}>{money(lineNet(item.lineTotal))}</span>
-          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <tbody><tr>
+              <td style={{ padding: 0, paddingRight: '4px', verticalAlign: 'top' }}>{item.product.name}</td>
+              <td style={{ padding: 0, width: '11%', textAlign: 'right', verticalAlign: 'top' }}>
+                {item.isFuel ? item.quantity.toFixed(2) : item.quantity}
+              </td>
+              <td style={{ padding: 0, width: '27%', textAlign: 'right', whiteSpace: 'nowrap', verticalAlign: 'top', paddingLeft: '4px' }}>
+                {money(lineNet(item.lineTotal))}
+              </td>
+            </tr></tbody>
+          </table>
           {item.selectedVariants.map((v: any) => (
-            <div key={v.optionId} style={{ paddingLeft: '10px', color: '#555' }}>{v.optionName}</div>
+            <div key={v.optionId} style={{ paddingLeft: '10px' }}>{v.optionName}</div>
           ))}
           {item.selectedModifiers.map((m: any) => (
-            <div key={m.optionId} style={{ paddingLeft: '10px', color: '#555' }}>+ {m.optionName}</div>
+            <div key={m.optionId} style={{ paddingLeft: '10px' }}>+ {m.optionName}</div>
           ))}
         </div>
       ))}
@@ -169,7 +202,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {(ctlRate > 0 || vatRate > 0) && rule()}
 
       {row('Round Off:', money(roundOff))}
-      {row('Total Invoice Value:', moneyBig(total), { fontWeight: 'bold' })}
+      {row('Total:', moneyBig(total), { fontWeight: 'bold' })}
       {rule()}
 
       <p style={{ fontSize: '17px', fontWeight: 'bold', margin: '4px 0' }}>
@@ -181,13 +214,13 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {rule(false)}
       {payments.map((p, i) => (
         <div key={i}>
-          {row(METHOD_LABEL[p.method] ?? p.method.toUpperCase(), money(p.amount))}
+          {row(METHOD_LABEL[p.method] ?? p.method.toUpperCase(), moneyBig(p.amount))}
           {p.method === 'cash' && p.amount_tendered > p.amount &&
-            row('  Tendered', money(p.amount_tendered), { color: '#555' })}
-          {p.reference && row('  Ref', p.reference, { color: '#555' })}
+            row('  Tendered', moneyBig(p.amount_tendered), {})}
+          {p.reference && row('  Ref', p.reference, {})}
         </div>
       ))}
-      {totalChange > 0 && row('Change', money(totalChange))}
+      {totalChange > 0 && row('Change', moneyBig(totalChange))}
       {rule()}
 
       <div style={{ textAlign: 'center', marginTop: '6px' }}>
@@ -198,7 +231,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
           ? lines(footerText).map((l, i) => <p key={i}>{l}</p>)
           : <p>{footerMessage || 'Thank you, visit again!'}</p>}
         {vatRate > 0 && <p style={{ fontSize: '11px' }}>TAX RECEIPT UPON REQUEST</p>}
-        <p style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>Powered by SwiftPOS</p>
+        <p style={{ fontSize: '10px', marginTop: '4px' }}>Powered by SwiftPOS</p>
       </div>
     </div>
   );

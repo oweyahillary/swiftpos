@@ -18,8 +18,9 @@ import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
+import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts } from './dayService';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
-import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter } from './printService';
+import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit } from './techService';
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken } from './nodeClient';
 import { startNodeServer, stopNodeServer } from './nodeServer';
@@ -454,6 +455,12 @@ export function registerIpcHandlers() {
   ipcMain.handle('print:probe', async (_event, deviceName: string) =>
     probePrinter(String(deviceName ?? '')));
 
+  // Reads the driver's real media size and imageable area, so paper width does
+  // not have to be a setting the user can silently get wrong. Returns null when
+  // it cannot be determined and the caller falls back to the dot table.
+  ipcMain.handle('print:geometry', async (_event, deviceName: string) =>
+    probeGeometry(String(deviceName ?? '')));
+
   // Preview: renders the ticket in a visible window instead of printing it.
   // The only way to see a ticket without thermal hardware, since the silent
   // path deliberately suppresses every OS dialog.
@@ -662,6 +669,20 @@ export function registerIpcHandlers() {
   // A shift left open past ~18h. Reported, never auto-closed — see
   // forceCloseShift() for why a fabricated cash count is worse than none.
   ipcMain.handle('shift:stale', async () => getStaleShift());
+
+  // ── Trading day (per till) ────────────────────────────────────────────────
+  // checkDayGate is what the POS screen reads to decide whether it may sell at
+  // all. closeDay is manager-gated inside dayService, NOT by hiding the button:
+  // a control that exists only in the UI is a suggestion.
+  ipcMain.handle('day:gate', async () => checkDayGate());
+  ipcMain.handle('day:current', async () => getOpenDay());
+  ipcMain.handle('day:summary', async () => getDayCloseSummary());
+  ipcMain.handle('day:isManager', async () => isManager());
+  ipcMain.handle('day:conflicts', async () => getConflictedShifts());
+  ipcMain.handle('day:close', async (_e, { countedCash, notes }: { countedCash: number; notes?: string }) => {
+    try { return { ok: true, summary: closeDay(Number(countedCash), notes) }; }
+    catch (err: any) { return { ok: false, error: err?.message ?? 'Could not close the day' }; }
+  });
 
   ipcMain.handle('shift:forceClose', async (_e, { reason }: { reason: string }) =>
     forceCloseShift(String(reason ?? '')));

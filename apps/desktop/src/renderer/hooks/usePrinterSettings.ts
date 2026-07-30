@@ -26,6 +26,28 @@ export interface PrinterSettings {
   // never produced. Unlike the others this does NOT fall back to a dialog.
   dispatcherPrinterName: string;
   kitchenEnabled:     boolean;
+  /**
+   * How paper width is decided.
+   *
+   * 'auto' asks the DRIVER (media size and imageable area) and is the default,
+   * because the old 58/80 toggle was a setting the user could get wrong with no
+   * feedback — a till left on 58mm laid a 48mm column onto an 80mm roll, wasted
+   * a third of the paper and truncated long values, and nothing said so.
+   * 58 or 80 pin it manually for printers the driver misreports.
+   */
+  paperMode:          'auto' | 58 | 80;
+  /**
+   * Last width the DRIVER reported, in mm. Cached here — rather than kept in
+   * React state — because printing happens from POSPage, ManagerPage and the
+   * sync path, all of which already carry `settings` and none of which can call
+   * a hook. Kept SEPARATE from printWidthMm so a detected value never looks
+   * like a human decision, and a human decision always wins.
+   */
+  detectedWidthMm:    number;
+  /** Layout width override in mm. 0/undefined = use the print head width
+   *  (72.07mm on 80mm paper, 48.05mm on 58mm). Set only when a calibration
+   *  print shows this printer can reach further than the head spec. */
+  printWidthMm:       number;
 }
 
 const STORAGE_KEY = 'swiftpos_printer_settings';
@@ -40,6 +62,9 @@ export const PRINTER_DEFAULTS: PrinterSettings = {
   kitchenPrinterName: '',
   dispatcherPrinterName: '',
   kitchenEnabled:     true,
+  printWidthMm:       0,
+  paperMode:          'auto',
+  detectedWidthMm:    0,
 };
 
 function load(): PrinterSettings {

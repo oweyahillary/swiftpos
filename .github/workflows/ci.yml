@@ -133,3 +133,31 @@ jobs:
       # silently checks against a stale picture and stops being worth reading.
       - name: Schema audit
         run: python3 scripts/schema-audit.py --strict
+
+      # Postgres vs the till's SQLite. Sync moves DATA only and never reconciles
+      # STRUCTURE, so the two schemas drift by hand — `shifts` carried
+      # closed_by/close_method locally for months with neither column in Postgres.
+      #
+      # Fails only on divergence that actually breaks sync: a NOT NULL column
+      # with no default that the till cannot fill, or a local-only column on a
+      # PUSH table. Both reject /api/sync/push on every pass, so a terminal stops
+      # syncing entirely — and it surfaces at 06:00, not at deploy.
+      #
+      # Warnings (a Postgres column the till simply does not populate) do NOT
+      # fail: that is a feature the terminal has not implemented, not a fault.
+      #
+      # Unlike the audit above, this derives from migrations/*.sql rather than
+      # from schema-index.json — that index is hand-maintained and is the very
+      # artefact that went stale for eleven days.
+      - name: Schema parity (Postgres vs desktop SQLite)
+        run: node scripts/schema-parity.mjs
+
+      # The parser is regex-based, so its own failure mode is finding nothing and
+      # reporting perfect parity. It exits 2 below its parse floor; this asserts
+      # that guard is alive rather than trusting it.
+      - name: Assert parity guard detects a broken parse
+        run: |
+          if PARITY_MIN_SHARED=999 node scripts/schema-parity.mjs > /dev/null 2>&1; then
+            echo "parity guard did not fire — it would pass on a broken parse"
+            exit 1
+          fi

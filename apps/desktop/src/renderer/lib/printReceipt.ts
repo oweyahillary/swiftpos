@@ -1,125 +1,139 @@
 /**
- * printReceipt — native Electron silent printing (zero-install).
+ * printReceipt — sending tickets to a thermal printer.
  *
- * Priority:
- *   1. Native silent print through the main process (print:html IPC) when a
- *      receipt printer is configured — no dialog, no QZ Tray, no extra MB.
- *   2. window.open() print-dialog fallback otherwise (or if native fails).
+ * Document construction lives in thermal.ts; this file only decides WHERE a
+ * ticket goes and what happens when it does not arrive.
  *
- * QZ Tray is no longer required on the desktop. It remains a WEB dashboard
- * concern, where the browser cannot print silently.
+ * The window.open() dialog fallback that used to live here has been deleted
+ * outright rather than fixed. The app's main window sets a setWindowOpenHandler
+ * that denies every request, so window.open() returned null and the fallback
+ * silently returned having printed nothing — no paper, no error, a resolved
+ * promise. Every sale receipt on a till with no receipt printer saved went
+ * there and vanished. A fallback that cannot work is worse than none, because
+ * it makes the failure look like success.
  */
 
 import { posApi } from './posApi';
 import type { PrinterSettings } from '../hooks/usePrinterSettings';
+import {
+  buildTicketDocument,
+  buildCalibrationTicket as buildCalibration,
+  detectPaperWidth as detectWidth,
+  type PaperWidth,
+} from './thermal';
 
-// Paper width in pixels at 96dpi: 58mm ≈ 219px, 80mm ≈ 302px
-const PAPER_PX: Record<number, number> = { 58: 219, 80: 302 };
-const FONT_SIZE: Record<string, string> = { small: '8pt', normal: '9pt' };
+export { charsPerLine, printableMm, HEAD_DOTS } from './thermal';
+export const detectPaperWidth = detectWidth;
+export const buildCalibrationTicket = buildCalibration;
 
-// Builds the complete thermal-sized HTML document. Shared by the native
-// silent path (hidden window in main) and the dialog fallback.
+// 10pt matches the density of the reference receipts; 'small' stays available
+// for sites that want more on a page.
+const FONT_PT: Record<string, number> = { small: 9, normal: 10 };
+
+/**
+ * Wraps ticket content in a print-ready document.
+ *
+ * Kept under the old name because several call sites use it, but it now
+ * delegates to thermal.ts, which sizes the column to the print HEAD (576 dots
+ * = 72.06mm on 80mm paper) rather than to the paper. Laying out at the paper
+ * width is what was cutting the amount column off the right-hand edge.
+ */
 export function buildThermalDocument(
   contentHtml: string,
   settings: PrinterSettings,
   title: string,
   copies: 1 | 2 = 1,
 ): string {
-  const paperPx  = PAPER_PX[settings.paperWidth] ?? PAPER_PX[80];
-  const fontSize = FONT_SIZE[settings.fontSize] ?? FONT_SIZE.normal;
+  const paper = settings.paperWidth as PaperWidth;
+  const fontPt = FONT_PT[settings.fontSize] ?? 9;
 
-  const cutLine = settings.autoCut
-    ? `<div style="border-top:1px dashed #000;margin:12px 0;text-align:center;font-size:8pt;color:#999;">✂ cut here</div>`
-    : '';
+  // A second copy is a second ticket in the same document, separated by a
+  // tear line. Done here rather than via the driver's `copies` because many
+  // thermal drivers ignore that field entirely.
+  const body = copies === 2
+    ? `${contentHtml}<div class="rule-dashed"></div><p class="center">- - - TEAR - - -</p>` +
+      `<div class="rule-dashed"></div>${contentHtml}`
+    : contentHtml;
 
-  const single = `<div class="receipt">${contentHtml}</div>`;
-  const body = copies === 2 ? `${single}${cutLine}${single}` : single;
+  // Precedence, widest authority last-resort first:
+  //   1. printWidthMm  — a human measured the paper and typed a number.
+  //   2. detectedWidthMm — the driver's own imageable area.
+  //   3. null          — fall back to the head spec (576/384 dots) in thermal.ts.
+  // A manual value always beats detection; detection always beats a guess.
+  const widthMm = settings.printWidthMm || settings.detectedWidthMm || null;
+  return buildTicketDocument(body, { paper, fontPt, title, widthMm });
+}
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${title}</title>
-  <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: ${paperPx}px;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: ${fontSize};
-      color: #000;
-      background: #fff;
-      line-height: 1.5;
+export interface PrintResult {
+  ok: boolean;
+  /** Set when nothing reached paper. Callers MUST surface this: a cashier who
+   *  believes a receipt printed will hand over goods without one. */
+  error?: string;
+  /** True when the ticket was shown on screen instead of printed. */
+  previewed?: boolean;
+}
+
+/**
+ * Sends a document to a named printer, then to the OS default, then to screen.
+ *
+ * Jobs are serialised in the main process, so calling this for a receipt, a
+ * kitchen ticket and a packing ticket in quick succession is safe even when all
+ * three are bound to the same physical device — which is the normal case on a
+ * single-printer till and previously caused all but the first to be dropped.
+ */
+export async function printDocument(
+  doc: string,
+  paperWidthMm: PaperWidth,
+  deviceName: string,
+  title: string,
+  opts: { previewOnFailure?: boolean } = {},
+): Promise<PrintResult> {
+  const attempt = async (device: string) => {
+    try {
+      return await posApi.print.html({ html: doc, deviceName: device, paperWidthMm, copies: 1 });
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'IPC failed' };
     }
-    body { padding: 4px 4px 16px 4px; }
-    .receipt { width: 100%; word-break: break-word; }
-    p[style*="border-top"] { margin: 5px 0 !important; }
-    div[style*="display: flex"] { display: flex !important; width: 100%; }
-    @media print {
-      html, body {
-        width: ${paperPx}px; max-width: ${paperPx}px;
-        margin: 0 !important; padding: 2px !important;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-      }
-      .receipt { page-break-inside: avoid; break-inside: avoid; }
-      * { color: #000 !important; background: transparent !important; text-shadow: none !important; box-shadow: none !important; }
-    }
-  </style>
-</head>
-<body>${body}</body>
-</html>`;
+  };
+
+  if (deviceName) {
+    const res = await attempt(deviceName);
+    if (res.ok) return { ok: true };
+    console.warn(`[print] ${title}: configured printer failed:`, res.error);
+  }
+
+  // '' means OS default to the main process. This is the case that used to
+  // disappear entirely — a printer TESTED in settings but never SAVED leaves
+  // receiptPrinterName empty, so nothing was ever bound and nothing printed.
+  const fallback = await attempt('');
+  if (fallback.ok) return { ok: true };
+  console.warn(`[print] ${title}: default printer failed:`, fallback.error);
+
+  if (opts.previewOnFailure) {
+    try {
+      await posApi.print.preview({ html: doc, paperWidthMm, title });
+      return {
+        ok: false,
+        previewed: true,
+        error: `${title} did not print — shown on screen instead. Check Settings → Printers.`,
+      };
+    } catch { /* fall through to the plain failure below */ }
+  }
+
+  return { ok: false, error: `${title} did not print. Check Settings → Printers.` };
 }
 
 export async function printReceipt(
   receiptHtml: string,
   settings: PrinterSettings,
   title: string,
-): Promise<void> {
+): Promise<PrintResult> {
   const doc = buildThermalDocument(receiptHtml, settings, title, settings.copies);
-
-  // ── Native silent print ────────────────────────────────────────────────
-  if (settings.receiptPrinterName) {
-    try {
-      // Copies are duplicated in the document (with a cut line between), so
-      // the driver prints 1; this also works on drivers that ignore copies.
-      const res = await posApi.print.html({
-        html: doc,
-        deviceName: settings.receiptPrinterName,
-        paperWidthMm: settings.paperWidth,
-        copies: 1,
-      });
-      if (res.ok) return;
-      console.warn('[printReceipt] Native print failed, falling back to dialog:', res.error);
-    } catch (err: any) {
-      console.warn('[printReceipt] Native print error, falling back to dialog:', err?.message);
-    }
-  }
-
-  // ── Dialog fallback ────────────────────────────────────────────────────
-  browserPrint(receiptHtml, settings, title, settings.copies);
-}
-
-// Print-dialog fallback — opens a paper-width window and prints.
-export function browserPrint(
-  contentHtml: string,
-  settings: PrinterSettings,
-  title: string,
-  copies: 1 | 2 = 1,
-): void {
-  const paperPx = PAPER_PX[settings.paperWidth] ?? PAPER_PX[80];
-  const html = buildThermalDocument(contentHtml, settings, title, copies);
-
-  const win = window.open('', '_blank', `width=${paperPx + 40},height=600,scrollbars=yes,resizable=yes`);
-  if (!win) return;
-
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-
-  win.onload = () => {
-    win.focus();
-    setTimeout(() => win.print(), 300);
-  };
-  setTimeout(() => {
-    if (!win.closed) { win.focus(); win.print(); }
-  }, 800);
+  return printDocument(
+    doc,
+    settings.paperWidth as PaperWidth,
+    settings.receiptPrinterName,
+    title,
+    { previewOnFailure: true },   // the customer is standing there; show something
+  );
 }

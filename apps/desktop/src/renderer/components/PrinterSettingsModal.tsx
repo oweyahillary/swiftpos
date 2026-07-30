@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import { posApi } from '../lib/posApi';
 import type { PrinterInfo } from '../lib/posApi';
-import { buildThermalDocument } from '../lib/printReceipt';
+import { buildThermalDocument, buildCalibrationTicket } from '../lib/printReceipt';
+import PaperWidthControl from './PaperWidthControl';
 
 // Printer settings — per-till, persisted in localStorage.
 //
@@ -75,6 +76,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
         <p>${new Date().toLocaleString('en-KE')}</p>
         <p style="border-top:1px dashed #000;margin:8px 0;"></p>
         <p style="text-align:center;">If you can read this, you're good.</p>
+        <p style="text-align:center;font-size:10px;">Build v${posApi.version} &middot; ${settings.paperWidth}mm</p>
       </div>`;
     try {
       const res = await posApi.print.html({
@@ -86,6 +88,27 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
       setTestMsg(res.ok ? `Test sent to ${printerName}` : `Test failed: ${res.error ?? 'unknown error'}`);
     } catch (err: any) {
       setTestMsg(`Test failed: ${err?.message ?? 'unknown error'}`);
+    }
+  };
+
+  // Prints a ruler so print scaling can be measured with a physical ruler
+  // instead of inferred from photographs of finished receipts.
+  const handleCalibrate = async (printerName: string) => {
+    setTestMsg('Printing width test…');
+    try {
+      const res = await posApi.print.html({
+        html: buildThermalDocument(
+          buildCalibrationTicket(settings.paperWidth, posApi.version, settings.printWidthMm || null),
+          settings, 'Width test', 1),
+        deviceName: printerName,
+        paperWidthMm: settings.paperWidth,
+        copies: 1,
+      });
+      setTestMsg(res.ok
+        ? 'Width test sent. The widest bar whose number still prints is the usable width — enter it below.'
+        : `Width test failed: ${res.error ?? 'unknown error'}`);
+    } catch (err: any) {
+      setTestMsg(`Calibration failed: ${err?.message ?? 'unknown error'}`);
     }
   };
 
@@ -165,7 +188,17 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
         {/* Receipt printer */}
         <div className="space-y-1.5">
           <label className="block text-sm text-gray-300 font-medium">Receipt printer</label>
+          {/* Just record the choice. Paper width is settled by PaperWidthControl,
+              which asks the DRIVER for its media size and imageable area. That
+              used to be a guess based on whether "80" appeared in the printer's
+              name — which is a coin flip on models like "TM-T88" and told us
+              nothing about the printable area or its offset. */}
           {printerSelect(settings.receiptPrinterName, name => save({ receiptPrinterName: name }))}
+          {settings.receiptPrinterName && (
+            <button onClick={() => handleCalibrate(settings.receiptPrinterName)} className="text-xs text-gray-300 hover:text-white transition-colors mr-3">
+              📏 Calibration ruler
+            </button>
+          )}
           {settings.receiptPrinterName && (
             <button onClick={() => handleTest(settings.receiptPrinterName)} className="text-xs text-gray-300 hover:text-white transition-colors">
               Print test ticket
@@ -213,18 +246,11 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
             hidden entirely rather than shown disabled, which would only invite
             "why can't I press this" during service. */}
         {canEdit && (
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Paper</label>
-            <div className="flex rounded-lg overflow-hidden border border-gray-700">
-              {([58, 80] as const).map(w => (
-                <button key={w} onClick={() => save({ paperWidth: w })}
-                  className={`flex-1 py-1.5 text-xs ${settings.paperWidth === w ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-400'}`}>
-                  {w}mm
-                </button>
-              ))}
-            </div>
-          </div>
+          <PaperWidthControl settings={settings} save={save} onWidthTest={() => handleCalibrate(settings.receiptPrinterName)} />
+        )}
+
+        {canEdit && (
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Copies</label>
             <div className="flex rounded-lg overflow-hidden border border-gray-700">

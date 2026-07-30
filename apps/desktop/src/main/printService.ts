@@ -12,6 +12,91 @@
 // which on a busy till is most of a roll an hour.
 
 import { BrowserWindow } from 'electron';
+import { execFile } from 'node:child_process';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Printer geometry — asking Windows instead of guessing.
+//
+// The paper width was a setting the user had to get right, and getting it wrong
+// was silent: a till set to 58mm laid out a 48mm column on an 80mm roll, wasting
+// a third of the paper and truncating anything long, with nothing to indicate a
+// mismatch. Meanwhile Windows knew the answer all along — the Properties dialog
+// shows "80(72.1) x 297 mm" because the driver reports both the media size and
+// its imageable area.
+//
+// System.Drawing.Printing exposes exactly that: PaperSize for the media,
+// PrintableArea for the extent the head can reach, and PrintableArea.X for the
+// left offset. All in hundredths of an inch. On an XP-80 that comes back as
+// roughly 315 / 284 / 16 — which is 80mm paper, 72.1mm printable, 4mm offset,
+// matching a ruler to a tenth of a millimetre.
+//
+// Windows only, and deliberately best-effort: any failure returns null and the
+// caller falls back to the dot table (576/384), which is correct for essentially
+// every receipt printer ever made. A detection that guesses when it cannot see
+// would be worse than one that admits it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PrinterGeometry {
+  /** Media width in mm, e.g. 80. */
+  paperMm: number;
+  /** Width the head can actually reach, in mm, e.g. 72.1. */
+  printableMm: number;
+  /** Unprintable left margin in mm, e.g. 4.0. */
+  offsetMm: number;
+}
+
+const _geometryCache = new Map<string, PrinterGeometry | null>();
+
+const HUNDREDTHS_INCH_TO_MM = 25.4 / 100;
+
+export function probeGeometry(deviceName: string): Promise<PrinterGeometry | null> {
+  if (process.platform !== 'win32' || !deviceName) return Promise.resolve(null);
+  if (_geometryCache.has(deviceName)) return Promise.resolve(_geometryCache.get(deviceName)!);
+
+  // Windows PowerShell (5.1) specifically, not pwsh: System.Drawing.Printing is
+  // a Windows-only assembly and is not present in PowerShell Core on all hosts.
+  const script = `
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Drawing
+$ps = New-Object System.Drawing.Printing.PrinterSettings
+$ps.PrinterName = '${deviceName.replace(/'/g, "''")}'
+if (-not $ps.IsValid) { exit 3 }
+$pg = $ps.DefaultPageSettings
+[Console]::Out.Write(('{0},{1},{2}' -f $pg.PaperSize.Width, $pg.PrintableArea.Width, $pg.PrintableArea.X))
+`.trim();
+
+  return new Promise(resolve => {
+    const finish = (g: PrinterGeometry | null) => { _geometryCache.set(deviceName, g); resolve(g); };
+
+    const child = execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { timeout: 8_000, windowsHide: true },
+      (err, stdout) => {
+        if (err) { finish(null); return; }
+        const parts = String(stdout).trim().split(',').map(Number);
+        if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) { finish(null); return; }
+
+        const [paperRaw, printableRaw, offsetRaw] = parts;
+        const paperMm = paperRaw * HUNDREDTHS_INCH_TO_MM;
+        const printableMm = printableRaw * HUNDREDTHS_INCH_TO_MM;
+        const offsetMm = offsetRaw * HUNDREDTHS_INCH_TO_MM;
+
+        // Sanity-check before trusting it. A driver configured for A4, or one
+        // reporting nonsense, must not silently reconfigure a receipt printer:
+        // too WIDE a column deletes the amount column, which is the one failure
+        // we cannot allow a guess to cause.
+        const plausible =
+          paperMm > 40 && paperMm < 120 &&
+          printableMm > 20 && printableMm <= paperMm + 0.5 &&
+          offsetMm >= 0 && offsetMm < 15;
+
+        finish(plausible ? { paperMm, printableMm, offsetMm } : null);
+      },
+    );
+    child.on('error', () => finish(null));
+  });
+}
 
 // 96 CSS px per inch, 25,400 microns per inch.
 const MICRONS_PER_PX = 25_400 / 96;
@@ -23,6 +108,10 @@ const MIN_HEIGHT_MICRONS = 40_000;      // 40mm
 const MAX_HEIGHT_MICRONS = 3_000_000;   // 3m
 const FALLBACK_HEIGHT_MICRONS = 297_000;
 
+// Thermal head resolution. Rasterising at the device's own dpi keeps glyph
+// edges 1-bit instead of resampled grey — see the note on printOnce.
+const THERMAL_DPI = 203;
+
 export interface PrinterInfo {
   name: string;
   displayName: string;
@@ -30,6 +119,11 @@ export interface PrinterInfo {
   /** Windows printer status bitfield. 0 = ready. Undefined on platforms that
    *  don't report one, which probePrinter treats as ready. */
   status?: number;
+  /** Raw driver options. CUPS (Linux/macOS) puts the paper size in here under
+   *  keys like `media` or `media-default` — e.g. `Custom.72x200mm`, `X80MM`.
+   *  Windows drivers rarely populate it, so anything reading this must treat
+   *  an empty object as "unknown" rather than as a default. */
+  options?: Record<string, string>;
 }
 
 export interface SilentPrintOptions {
@@ -50,6 +144,7 @@ export async function listPrinters(): Promise<PrinterInfo[]> {
       displayName: p.displayName || p.name,
       isDefault: !!p.isDefault,
       status: typeof (p as any).status === 'number' ? (p as any).status : 0,
+      options: ((p as any).options ?? {}) as Record<string, string>,
     }));
   } catch {
     return [];
@@ -141,12 +236,49 @@ export async function probePrinter(deviceName: string): Promise<{ ok: boolean; s
   return { ok: true, state: 'Busy' };
 }
 
-export function printHtmlSilent(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: string }> {
+// ─────────────────────────────────────────────────────────────────────────────
+// Silent printing — rewritten.
+//
+// Three faults in the previous implementation, all of which showed up on an
+// XP-80 at a live till:
+//
+//  1. NO scaleFactor. Left unset, Chromium fits the page to whatever printable
+//     area the driver reports. Output landed at roughly 70% of the paper and
+//     pinned left. Now pinned to 100 — render what we asked for.
+//
+//  2. NO dpi. Chromium rasterises at 96dpi and the driver resamples up to 203.
+//     Resampling turns crisp 1-bit glyph edges into grey, and a thermal head
+//     dithers grey into a sparse scatter of dots — which is exactly what "very
+//     faded" looks like. Asking for 203 means the raster matches the head and
+//     each dot is on or off.
+//
+//  3. NO serialisation. Every call opened its own hidden window and printed
+//     immediately. Firing a receipt, a kitchen ticket and a packing ticket at
+//     one physical printer within a few milliseconds of each other left the
+//     spooler to arbitrate, and jobs were dropped — the reported symptom being
+//     that only the first ticket appeared. Jobs are now queued and run one at a
+//     time, so a till with three "printers" all pointing at one device behaves
+//     the same as three separate devices.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Serial print queue. One job at a time, in submission order. */
+let _chain: Promise<unknown> = Promise.resolve();
+
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  const run = _chain.then(job, job);
+  // Keep the chain alive regardless of outcome; a failed job must not wedge
+  // every later ticket, which would take the till out of service silently.
+  _chain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function printOnce(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: string }> {
   return new Promise(resolve => {
     let settled = false;
     const done = (result: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       try { win.destroy(); } catch { /* already gone */ }
       resolve(result);
     };
@@ -156,13 +288,12 @@ export function printHtmlSilent(opts: SilentPrintOptions): Promise<{ ok: boolean
       webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true },
     });
 
-    // Never leave a hidden window hanging if the driver stalls.
     const timeout = setTimeout(() => done({ ok: false, error: 'Print timed out' }), 20_000);
 
     win.webContents.once('did-finish-load', async () => {
-      // Ask the rendered document how tall it actually is. Any failure falls
-      // back to the old fixed height — a receipt that wastes paper is still
-      // better than one that doesn't print.
+      // Measure the rendered height rather than sending a fixed page length.
+      // The fixed 297mm this once used is A4: drivers that honour it literally
+      // fed ~30cm of blank paper after every receipt.
       let heightMicrons = FALLBACK_HEIGHT_MICRONS;
       try {
         const px: number = await win.webContents.executeJavaScript(
@@ -174,36 +305,44 @@ export function printHtmlSilent(opts: SilentPrintOptions): Promise<{ ok: boolean
           true,
         );
         if (Number.isFinite(px) && px > 0) {
-          // A few mm of tail so the last line clears the cutter.
-          const measured = Math.round(px * MICRONS_PER_PX) + 6_000;
-          heightMicrons = Math.min(Math.max(measured, MIN_HEIGHT_MICRONS), MAX_HEIGHT_MICRONS);
+          heightMicrons = Math.min(
+            Math.max(Math.round(px * MICRONS_PER_PX) + 2_000, MIN_HEIGHT_MICRONS),
+            MAX_HEIGHT_MICRONS,
+          );
         }
       } catch {
-        /* keep the fallback */
+        /* keep the fallback — a receipt that wastes paper beats one that vanishes */
       }
-      if (settled) return;   // timed out while we were measuring
+      if (settled) return;
 
       win.webContents.print(
         {
           silent: true,
-          deviceName: opts.deviceName || undefined,   // undefined = default printer
+          deviceName: opts.deviceName || undefined,   // undefined = OS default
           copies: Math.max(1, opts.copies),
           margins: { marginType: 'none' },
+          // The page is the MEDIA width. The content column inside it is the
+          // head width (see thermal.ts) — the driver's own form is declared the
+          // same way, e.g. "80(72.1) x 297 mm".
           pageSize: { width: opts.paperWidthMm * 1000, height: heightMicrons },
-          printBackground: true,
+          printBackground: false,   // nothing here has a background worth burning
+          scaleFactor: 100,
+          dpi: { horizontal: THERMAL_DPI, vertical: THERMAL_DPI },
         },
         (success, failureReason) => {
-          clearTimeout(timeout);
           done(success ? { ok: true } : { ok: false, error: failureReason || 'Print failed' });
         },
       );
     });
 
     win.webContents.once('did-fail-load', (_e, _code, desc) => {
-      clearTimeout(timeout);
       done({ ok: false, error: `Failed to render: ${desc}` });
     });
 
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(opts.html));
   });
+}
+
+export function printHtmlSilent(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: string }> {
+  return enqueue(() => printOnce(opts));
 }

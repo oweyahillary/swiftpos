@@ -12,6 +12,8 @@
 
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
+import { getDeviceConfig } from './deviceConfig';
+import { checkDayGate, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 
 export interface ZReport {
@@ -100,8 +102,16 @@ export function getStaleShift(): StaleShift | null {
   };
 }
 
-export function openShift(opening_float = 0): any {
+export function openShift(opening_float = 0, drawerLabel?: string | null): any {
   const db = getLocalDb();
+
+  // The trading-day gate first: a till whose previous day was never closed may
+  // not start a new drawer, and only a manager can clear it. Checked before the
+  // open-shift check so the message names the real obstacle rather than sending
+  // the cashier to close a shift that is not the problem.
+  const gate = checkDayGate();
+  if (!gate.canTrade) throw new Error(gate.reason ?? 'This till cannot trade yet');
+
   const existing = getOpenShift();
   if (existing) {
     // Name the obstacle. "A shift is already open" sent the next cashier looking
@@ -118,12 +128,26 @@ export function openShift(opening_float = 0): any {
   const { session, staff } = sessionInfo();
   if (!staff?.staff_id) throw new Error('No cashier — sign in with a PIN first');
 
+  // Opens today's day if this is the first drawer of the date.
+  const day = ensureDayOpen(staff.staff_id);
+
+  const cfg = getDeviceConfig();
   const id = uuid();
   const now = new Date().toISOString();
+
+  // opening_float is COUNTED at open and never carried over from the previous
+  // shift on this till. Sites move physical drawers between terminals and we get
+  // no say in it, so inferring cash from where a drawer sits would silently
+  // poison the reconciliation the first time one moved.
   db.prepare(`
-    INSERT INTO shifts (id, business_id, branch_id, cashier_id, opened_at, status, opening_float, created_at, sync_status)
-    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, 'pending')
-  `).run(id, session.business_id, staff.branch_id, staff.staff_id, now, Number(opening_float) || 0, now);
+    INSERT INTO shifts (id, business_id, branch_id, cashier_id, opened_at, status, opening_float,
+                        created_at, sync_status, business_day_id, business_date,
+                        device_id, terminal_code, drawer_label, opened_by)
+    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+  `).run(id, session.business_id, staff.branch_id, staff.staff_id, now,
+         Number(opening_float) || 0, now, day.id, day.business_date,
+         cfg?.device_id ?? null, cfg?.terminal_code ?? null,
+         drawerLabel?.trim() || null, staff.staff_id);
 
   return db.prepare(`SELECT * FROM shifts WHERE id=?`).get(id);
 }

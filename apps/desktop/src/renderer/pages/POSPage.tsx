@@ -105,6 +105,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // A shift somebody forgot to close. Checked on mount and hourly: a till left
   // running overnight would otherwise never re-check, and the whole point is
   // catching it before the next day's sales land on yesterday's reconciliation.
+  // Trading-day gate. Polled because the block can begin without the cashier
+  // doing anything: at midnight, an unclosed day becomes yesterday's.
+  const [dayGate, setDayGate] = useState<{ canTrade: boolean; reason?: string } | null>(null);
   const [staleShift, setStaleShift] = useState<null | {
     id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number; orders: number;
   }>(null);
@@ -124,6 +127,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [showPayment, setShowPayment] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [payError, setPayError] = useState('');
+  // Surfaced on the receipt screen when a ticket did not reach paper.
+  const [printMsg, setPrintMsg] = useState('');
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
@@ -375,6 +380,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     return () => clearInterval(t);
   }, [shift]);
 
+  // Checked every minute, not hourly: an unclosed day starts blocking the moment
+  // the date rolls over, and a cashier who has just been locked out needs to know
+  // now rather than when they next try to take payment.
+  useEffect(() => {
+    const check = () => posApi.day.gate().then(setDayGate).catch(() => {});
+    check();
+    const t = setInterval(check, 60 * 1000);
+    return () => clearInterval(t);
+  }, [shift]);
+
+  const blocked = dayGate ? !dayGate.canTrade : false;
+
   const ensureOrderNumber = (): string => {
     if (orderNumber) return orderNumber;
     // Terminal-prefixed number from the reserve; generateOrderNumber() is only
@@ -406,7 +423,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         orderType,
       }, printerSettings);
 
-      await printDispatcher(allLines, {
+      const pack = await printDispatcher(allLines, {
         orderNumber: num,
         billNumber: num,
         deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
@@ -418,8 +435,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       setKotCount(n => n + 1);
       // Don't claim it reached the kitchen when no printer is bound — the
       // cashier would walk away believing the order was fired.
-      setKitchenMsg(kot.reason
-        ? kot.reason
+      // Report whichever ticket failed. Announcing "sent to kitchen" when the
+      // packing ticket silently died is how a bag goes out with items missing.
+      const problems = [kot.reason, pack.printed ? null : pack.reason].filter(Boolean);
+      setKitchenMsg(problems.length
+        ? problems.join(' · ')
         : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
     } catch (err: any) {
       setKitchenMsg(`Kitchen print failed: ${err?.message ?? 'unknown'}`);
@@ -609,14 +629,19 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const handlePrint = async () => {
     const content = receiptRef.current;
     if (!content) return;
-    // QZ silent print when a receipt printer is configured; print dialog otherwise.
-    await printReceipt(content.innerHTML, printerSettings, `${business.name} — Receipt`);
+    setPrintMsg('');
+    // Native silent print, falling back to the OS default printer and finally
+    // to an on-screen preview. It CANNOT be allowed to fail quietly: a cashier
+    // who believes the receipt printed will hand over goods without one.
+    const res = await printReceipt(content.innerHTML, printerSettings, `${business.name} — Receipt`);
+    if (!res.ok) setPrintMsg(res.error ?? 'Receipt did not print.');
   };
 
   const handleNewOrder = () => {
     clearCart();
     setCompletedOrder(null);
     setPayError('');
+    setPrintMsg('');
     setOrderType(flags.defaultOrderType);
     if (flags.isRestaurant) setView('tables');
     if (flags.isPetrol) setView('pumps');
@@ -674,6 +699,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               footerMessage={printerSettings.footerMessage}
             />
           </div>
+          {printMsg && (
+            <div className="px-6 pb-1">
+              <p className="text-amber-400 text-xs leading-snug">⚠ {printMsg}</p>
+            </div>
+          )}
           <div className="px-6 pb-6 flex gap-3">
             <button onClick={handlePrint} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">
               🖨 Print receipt
@@ -693,7 +723,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900">
-        <span className="text-green-400 font-bold text-sm">SwiftPOS</span>
+        <span className="text-green-400 font-bold text-sm">
+          SwiftPOS <span className="text-gray-500 font-normal text-[10px] align-middle">v{posApi.version}</span>
+        </span>
         <span className="text-gray-200 text-sm">{business.name}</span>
         <div className="flex items-center gap-3">
           {/* Sync indicator */}
@@ -799,8 +831,32 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       {/* A shift nobody closed.
           A banner rather than a modal, deliberately: this must be impossible to
           miss and equally impossible for it to stop someone serving a customer.
-          Blocking the till because of yesterday's paperwork would guarantee the
-          feature gets worked around, and a worked-around control is no control. */}
+
+          It stays ADVISORY on purpose, and that is not in tension with the hard
+          block above: they answer different questions. This fires when a drawer
+          has been open a long time but the trading day is still TODAY — mid-
+          service, with a customer waiting, where stopping the till would achieve
+          nothing except teaching staff to route around the control. The block
+          above fires only once the DATE has rolled over, when continuing would
+          post today's takings against yesterday's drawer. */}
+      {/* HARD BLOCK. Unlike the stale-shift notice below, this is not advisory and
+          cannot be dismissed: a till whose previous trading day was never closed
+          must not sell, because those sales would post against yesterday's
+          drawer — the precise harm the day close exists to prevent. Only a
+          manager can clear it, from Manager → Close Day. */}
+      {blocked && (
+        <div className="bg-red-500/15 border-b border-red-500/40 px-4 py-3 flex items-center gap-3">
+          <span className="text-red-400 text-base">⛔</span>
+          <div className="flex-1">
+            <p className="text-sm text-red-200 font-medium">This till cannot sell yet</p>
+            <p className="text-xs text-red-300/80 mt-0.5">{dayGate?.reason}</p>
+          </div>
+          <span className="text-xs text-red-300/70 whitespace-nowrap">
+            Manager → Close Day
+          </span>
+        </div>
+      )}
+
       {staleShift && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
           <span className="text-amber-400 text-sm">⚠</span>
@@ -1078,7 +1134,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             </div>
             <button
               onClick={() => setShowPayment(true)}
-              disabled={cart.length === 0}
+              // Stopped here as well as in the main process. assertCanSell is the
+              // real enforcement, but letting a cashier ring a full basket and
+              // then fail at payment wastes their time and the customer's.
+              disabled={cart.length === 0 || blocked}
               className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors mt-1"
             >
               Charge {currency} {subtotal.toLocaleString()}

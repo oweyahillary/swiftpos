@@ -52,10 +52,20 @@ contextBridge.exposeInMainWorld('swiftpos', {
     nextBillNumber: () => ipcRenderer.invoke('orders:nextBillNumber'),
   },
 
+  day: {
+    gate:      () => ipcRenderer.invoke('day:gate'),
+    current:   () => ipcRenderer.invoke('day:current'),
+    summary:   () => ipcRenderer.invoke('day:summary'),
+    isManager: () => ipcRenderer.invoke('day:isManager'),
+    conflicts: () => ipcRenderer.invoke('day:conflicts'),
+    close:     (countedCash: number, notes?: string) =>
+      ipcRenderer.invoke('day:close', { countedCash, notes }),
+  },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
     preview: (opts: any) => ipcRenderer.invoke('print:preview', opts),
     probe: (deviceName: string) => ipcRenderer.invoke('print:probe', deviceName),
+    geometry: (deviceName: string) => ipcRenderer.invoke('print:geometry', deviceName),
     html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) =>
       ipcRenderer.invoke('print:html', opts),
   },

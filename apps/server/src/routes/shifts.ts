@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { branchScope } from '../middleware/rbac';
+import { branchScope, requirePermission } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -43,17 +43,38 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
     return;
   }
 
-  // Guard: no duplicate open shifts for this cashier
-  const { data: existing } = await supabase
+  // Guard: no duplicate open shifts for this cashier.
+  //
+  // This used to call .maybeSingle() and destructure only `data`. maybeSingle()
+  // returns an ERROR and null data when MORE than one row matches, so once a
+  // cashier had accumulated two open shifts — which /api/sync/push could create,
+  // having no guard of its own — `existing` came back null, this check passed,
+  // and the route opened a third. It failed open at exactly the point the thing
+  // it guards against had already happened twice.
+  //
+  // Ordered so the message names the oldest offender, which is the drawer a
+  // manager needs to go and deal with.
+  const { data: openShifts, error: guardError } = await supabase
     .from('shifts')
-    .select('id')
+    .select('id, branch_id, device_id, terminal_code, opened_at')
     .eq('business_id', req.businessId)
     .eq('cashier_id', req.userId)
     .eq('status', 'open')
-    .maybeSingle();
+    .order('opened_at', { ascending: true });
 
-  if (existing) {
-    res.status(409).json({ error: 'You already have an open shift', shiftId: existing.id });
+  // Never fall through to the insert on a failed read: not knowing whether a
+  // shift is open is not the same as knowing none is.
+  if (guardError) { sendError(res, guardError); return; }
+
+  if (openShifts && openShifts.length > 0) {
+    const oldest = openShifts[0];
+    res.status(409).json({
+      error: 'You already have an open shift. It must be closed before you can start another.',
+      shiftId: oldest.id,
+      terminal: oldest.terminal_code ?? oldest.device_id ?? null,
+      openedAt: oldest.opened_at,
+      openShiftCount: openShifts.length,
+    });
     return;
   }
 
@@ -69,7 +90,20 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
     .select()
     .single();
 
-  if (error) { sendError(res, error); return; }
+  if (error) {
+    // The guard above is a read-then-write, so two concurrent requests can both
+    // pass it. shifts_one_open_per_cashier (migration 41) is what actually
+    // decides, and it surfaces here as 23505. Same condition as the 409 above,
+    // not a server fault — so it must not be reported as one.
+    if ((error as { code?: string }).code === '23505') {
+      res.status(409).json({
+        error: 'You already have an open shift. It must be closed before you can start another.',
+      });
+      return;
+    }
+    sendError(res, error);
+    return;
+  }
   res.status(201).json(data);
 });
 
@@ -181,6 +215,102 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       cash_variance: cashVariance,
       notes: notes ?? null,
       denomination_breakdown: denomination_breakdown ?? null,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (closeErr) { sendError(res, closeErr); return; }
+  res.json(closed);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/shifts/:id/force-close
+// Ends a shift NOBODY COUNTED. Manager-only.
+//
+// WHY THIS HAS TO EXIST
+//   A cashier who abandons a drawer leaves a shift open forever. The till can
+//   force-close it locally, but there was no server-side counterpart — so
+//   syncEngine.reconcileClosedShifts() (which selects status='closed') never
+//   matched it, never posted anything, and the row stayed 'open' in Postgres
+//   permanently. With shifts_one_open_per_cashier now enforced, that stranded
+//   row locks the cashier out of every surface for good, fixable only by hand
+//   in the database.
+//
+//   It cannot reuse /:id/close: that requires a closing_float, and the entire
+//   point here is that no count exists.
+//
+// WHAT IT DELIBERATELY DOES NOT DO
+//   No closing_float, no cash_variance — they stay NULL, never 0. A zero
+//   variance asserts that somebody checked and it balanced. Nobody checked.
+//   expected_cash IS computed, because what the drawer SHOULD have held is
+//   knowable from the sales and is exactly what an investigation needs.
+//
+// Permission: settings.manage — the same key the desktop uses for manager
+// rights (see App.tsx hasManagerRights), so the two surfaces agree on who is a
+// manager rather than drifting apart.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/:id/force-close', requirePermission('settings.manage'), async (req, res) => {
+  const { id } = req.params;
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+  // A forced close with no stated reason is an unexplained hole in the cash
+  // record, which is worse than the open shift it replaces.
+  if (!reason) {
+    res.status(400).json({ error: 'A reason is required to force-close a shift' });
+    return;
+  }
+
+  const { data: shift, error: shiftErr } = await supabase
+    .from('shifts')
+    .select('*')
+    .eq('id', id)
+    .eq('business_id', req.businessId)
+    .eq('status', 'open')
+    .single();
+
+  if (shiftErr || !shift) {
+    res.status(404).json({ error: 'Open shift not found' });
+    return;
+  }
+
+  // Same expected-cash formula as /:id/close, including refunds as negative
+  // cash rows — see the comment there for why omitting them overstates expected.
+  const { data: shiftOrders, error: ordErr } = await supabase
+    .from('orders').select('id').eq('shift_id', id).eq('status', 'completed');
+  if (ordErr) { sendError(res, ordErr); return; }
+
+  let cashSales = 0;
+  const orderIds = (shiftOrders ?? []).map((o: { id: string }) => o.id);
+  if (orderIds.length > 0) {
+    const { data: cashPayments, error: payErr } = await supabase
+      .from('payments')
+      .select('amount, status')
+      .in('order_id', orderIds)
+      .eq('method', 'cash')
+      .in('status', ['completed', 'refunded']);
+    if (payErr) { sendError(res, payErr); return; }
+    cashSales = (cashPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+  }
+
+  const { data: floatTxns } = await supabase
+    .from('float_transactions').select('type, amount').eq('shift_id', id);
+  const floatIn  = (floatTxns ?? []).filter(f => f.type === 'float_in') .reduce((s, f) => s + Number(f.amount), 0);
+  const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
+
+  const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut;
+
+  const { data: closed, error: closeErr } = await supabase
+    .from('shifts')
+    .update({
+      status: 'closed_unreconciled',
+      close_method: 'forced',
+      closed_at: new Date().toISOString(),
+      closed_by: req.userId,
+      expected_cash: expectedCash,
+      closing_float: null,
+      cash_variance: null,
+      notes: [shift.notes, `Force-closed by manager: ${reason}`].filter(Boolean).join('\n'),
     })
     .eq('id', id)
     .select()

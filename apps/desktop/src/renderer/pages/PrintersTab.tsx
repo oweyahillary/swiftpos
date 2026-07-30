@@ -17,7 +17,8 @@
 import { useEffect, useState } from 'react';
 import { usePrinterSettings, PRINTER_DEFAULTS } from '../hooks/usePrinterSettings';
 import { posApi } from '../lib/posApi';
-import { printReceipt } from '../lib/printReceipt';
+import { printReceipt, buildCalibrationTicket, buildThermalDocument } from '../lib/printReceipt';
+import PaperWidthControl from '../components/PaperWidthControl';
 import { printKOT, buildKOTHtml } from '../lib/printKOT';
 import { printDispatcher, buildDispatcherHtml } from '../lib/printDispatcher';
 import type { TicketLine } from '../lib/ticketLines';
@@ -47,6 +48,21 @@ const kitchenSample = SAMPLE_LINES
 type Status = { kind: 'idle' | 'busy' | 'ok' | 'warn' | 'err'; msg?: string };
 
 export default function PrintersTab({ currency = 'KES' }: { currency?: string }) {
+  // Prints the nested-bar width test. This lives here as well as in the POS
+  // modal because the Printers tab is where anyone actually sets a printer up,
+  // and the test was previously only reachable from the till screen.
+  const handleWidthTest = async () => {
+    const doc = buildThermalDocument(
+      buildCalibrationTicket(settings.paperWidth, posApi.version, settings.printWidthMm || null),
+      settings, 'Width test', 1);
+    await posApi.print.html({
+      html: doc,
+      deviceName: settings.receiptPrinterName,
+      paperWidthMm: settings.paperWidth,
+      copies: 1,
+    }).catch(() => {});
+  };
+
   const { settings, save, reset } = usePrinterSettings();
   const [printers, setPrinters] = useState<Array<{ name: string; displayName: string; isDefault: boolean }>>([]);
   const [loading, setLoading]   = useState(true);
@@ -274,15 +290,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         />
         <div className="flex gap-3">
           <div className="flex-1">
-            <label className="block text-sm text-gray-300 mb-1">Paper width</label>
-            <select
-              value={settings.paperWidth}
-              onChange={e => save({ paperWidth: Number(e.target.value) as 58 | 80 })}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-            >
-              <option value={80}>80mm</option>
-              <option value={58}>58mm</option>
-            </select>
+            <PaperWidthControl settings={settings} save={save} onWidthTest={handleWidthTest} />
           </div>
           <div className="flex-1">
             <label className="block text-sm text-gray-300 mb-1">Copies</label>

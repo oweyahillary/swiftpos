@@ -1,0 +1,51 @@
+{
+  "_README": [
+    "Declared, intentional differences between the Postgres schema (migrations/) and",
+    "the till's SQLite schema (apps/desktop/src/main/localDb.ts).",
+    "",
+    "Every entry needs a REASON. An exceptions file that accumulates bare column",
+    "names becomes a place to silence the check, and then the check is worthless —",
+    "which is how scripts/schema-index.json ended up stale for eleven days.",
+    "",
+    "Before adding an entry, ask which of these it is:",
+    "  1. Local bookkeeping the till never sends  -> localOnlyColumns",
+    "  2. Server-derived, so the till must NOT send it -> ignoreColumns[table]",
+    "  3. Neither -> it is real drift. Fix the schema, not this file."
+  ],
+
+  "localOnlyColumns": [
+    "sync_status",
+    "synced_at"
+  ],
+  "_localOnlyColumnReasons": {
+    "sync_status": "Per-row push state on the till: pending | synced | conflict. Verified absent from every push payload — pushLocalRecords selects an explicit column list that excludes it, and it is meaningless server-side because the server is the destination.",
+    "synced_at": "When the till last pulled this row. Local cache metadata; the server has no concept of a particular terminal's freshness."
+  },
+
+  "ignoreColumns": {
+    "payments": ["business_id", "branch_id"],
+    "customer_credit_transactions": ["business_id", "balance_after"],
+    "shifts": [],
+    "orders": []
+  },
+  "_ignoreColumnReasons": {
+    "payments.business_id": "Forced from the caller's token server-side (routes/sync.ts: 'forced from token, not the client'). The till MUST NOT send it — accepting a client-supplied business_id would let one tenant write rows into another.",
+    "payments.branch_id": "Resolved server-side from the parent order. Sending it from the till would allow a payment to be attributed to a branch the order does not belong to.",
+    "customer_credit_transactions.business_id": "Same tenant-safety rule as payments.business_id.",
+    "customer_credit_transactions.balance_after": "A running balance, computed server-side. A client-supplied value would let an offline till rewrite a customer's credit history."
+  },
+
+  "localOnlyTables": [
+    "session", "staff_session", "device_config", "sync_queue", "local_price_edits"
+  ],
+  "_localOnlyTableReasons": {
+    "session": "Owner/device auth state for this terminal.",
+    "staff_session": "The cashier currently signed in at this terminal.",
+    "device_config": "Terminal identity and role — device_id, terminal_code, node secret.",
+    "sync_queue": "The till's own outbound queue. A Postgres table of the same name exists and is unrelated.",
+    "local_price_edits": "Branch price edits awaiting push; reconciled through /api/branch-prices/sync, not the generic sync path."
+  },
+
+  "postgresOnlyTables": [],
+  "_postgresOnlyTablesNote": "Left empty deliberately: the till holding a subset of Postgres is the normal case and needs no declaration. Only the reverse is dangerous."
+}

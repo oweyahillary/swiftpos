@@ -24,13 +24,60 @@ router.use(requireAuth);
 // Note: desktop tooling does not create expenses yet; that arm is here for
 // forward-compatibility and is a no-op until a till-side expense flow exists.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Desktop schema expectations.
+//
+// Tills are updated by installing an .exe by hand, so at any moment some
+// terminal is behind. Two thresholds, because "behind" and "broken" are not the
+// same thing:
+//
+//   REQUIRED — the schema this server was written against. A till below this is
+//              WARNED, not blocked: it is still pushing valid rows and must keep
+//              trading while someone walks round with the installer. Blocking a
+//              working till to enforce tidiness is how a shop loses a lunch rush.
+//
+//   HARD_MIN — below this the till's payloads are genuinely incompatible and
+//              would fail with an opaque column error mid-service. Better to say
+//              so plainly than to let it look like a network fault.
+//
+// Raise HARD_MIN only when a change actually breaks old payloads. Raising it for
+// convenience turns every deploy into a fleet-wide outage.
+// ─────────────────────────────────────────────────────────────────────────────
+const REQUIRED_DESKTOP_SCHEMA = 42;
+const HARD_MIN_DESKTOP_SCHEMA = 41;
+
 router.post('/push', async (req, res) => {
   const businessId = req.businessId;
   const shifts   = Array.isArray(req.body?.shifts)   ? req.body.shifts   : [];
   const floats   = Array.isArray(req.body?.floats)   ? req.body.floats   : [];
   const expenses = Array.isArray(req.body?.expenses) ? req.body.expenses : [];
+  const businessDays = Array.isArray(req.body?.business_days) ? req.body.business_days : [];
 
-  const upserted = { shifts: 0, floats: 0, expenses: 0 };
+  // 0 = a build predating the header. Treated as ancient rather than trusted.
+  const clientSchema = Number(req.header('X-Schema-Version') ?? 0) || 0;
+  if (clientSchema && clientSchema < HARD_MIN_DESKTOP_SCHEMA) {
+    res.status(426).json({
+      error: `This till is running schema ${clientSchema}; this server needs at least ` +
+             `${HARD_MIN_DESKTOP_SCHEMA}. Install the current SwiftPOS build on this terminal.`,
+      code: 'desktop_upgrade_required',
+    });
+    return;
+  }
+  const schemaStatus = clientSchema < REQUIRED_DESKTOP_SCHEMA
+    ? {
+        behind: true,
+        client: clientSchema,
+        required: REQUIRED_DESKTOP_SCHEMA,
+        message: `This till is on schema ${clientSchema || 'unknown'}; current is ` +
+                 `${REQUIRED_DESKTOP_SCHEMA}. It is still syncing, but install the ` +
+                 `latest build when you can.`,
+      }
+    : { behind: false, client: clientSchema, required: REQUIRED_DESKTOP_SCHEMA };
+
+  const upserted = { shifts: 0, floats: 0, expenses: 0, businessDays: 0 };
+  // Rows the database refused for a reason no retry can fix. Returned to the
+  // client so it can flag them for a human rather than looping on them.
+  const rejected: { id: string; code: string; error: string }[] = [];
 
   try {
     // ── Shifts (parent — upsert FIRST so child FKs resolve) ──────────────────
@@ -70,10 +117,45 @@ router.post('/push', async (req, res) => {
           updated_at:    new Date().toISOString(),
         }));
       if (rows.length) {
-        const { error } = await supabase.from('shifts').upsert(rows, { onConflict: 'id' });
-        if (error) { sendError(res, error); return; }
+        // Per-row, not one batch upsert.
+        //
+        // A batch call fails entirely if ANY row is rejected — and it would take
+        // floats and expenses down with it, because this handler returns on the
+        // first error. syncEngine then retries the same payload forever, so a
+        // single bad shift stops a till syncing anything at all.
+        //
+        // The rejection that matters is 23505 from shifts_one_open_per_cashier
+        // (migration 42): a cashier already holds an open drawer elsewhere. That
+        // is not a transport failure and retrying will never clear it — it needs
+        // a manager to close the other shift. So it is reported back per id and
+        // the client marks that shift for attention instead of looping.
+        //
+        // The fast path is preserved: rows are upserted concurrently, so this is
+        // one round trip's worth of latency, not one per shift.
+        const results = await Promise.all(
+          rows.map(async row => {
+            const { error } = await supabase.from('shifts').upsert(row, { onConflict: 'id' });
+            return { id: row.id, error };
+          }),
+        );
+
+        for (const r of results) {
+          if (!r.error) { upserted.shifts++; continue; }
+
+          if ((r.error as { code?: string }).code === '23505') {
+            rejected.push({
+              id: r.id,
+              code: 'duplicate_open_shift',
+              error: 'This cashier already has an open shift. It must be closed before this one can sync.',
+            });
+            continue;
+          }
+
+          // Anything else is a genuine failure worth surfacing and retrying.
+          sendError(res, r.error);
+          return;
+        }
       }
-      upserted.shifts = shifts.length; // report all as received, incl. already-closed ones
     }
 
     // ── Float movements — must reference a shift owned by this business, and
@@ -139,7 +221,75 @@ router.post('/push', async (req, res) => {
       upserted.expenses = rows.length;
     }
 
-    res.json({ ok: true, upserted });
+    // ── Trading days ─────────────────────────────────────────────────────────
+    // Originated by the till, like shifts. Without this arm a day closed on the
+    // terminal never leaves it, so the cloud shows every trading day as open
+    // forever and no dashboard report can ever see a reconciled one.
+    //
+    // Unlike shifts, the close IS trusted from the client here. That is a
+    // deliberate difference: a shift's expected_cash cannot be computed
+    // server-side at push time because its orders usually have not arrived yet
+    // (see the note above), whereas a day's figures are the manager's own
+    // physical count plus a sum over shifts the till already holds. There is no
+    // server-side alternative to trust — the count only exists at the terminal.
+    if (businessDays.length) {
+      const ids = businessDays.map((d: any) => d.id);
+      const { data: existing } = await supabase
+        .from('business_days').select('id, business_id').in('id', ids);
+      if ((existing ?? []).some((r: any) => r.business_id !== businessId)) {
+        res.status(409).json({ error: 'business_day id belongs to another business' });
+        return;
+      }
+
+      const rows = businessDays.map((d: any) => ({
+        id:            d.id,
+        business_id:   businessId,                 // forced from token
+        branch_id:     d.branch_id,
+        device_id:     d.device_id ?? null,
+        terminal_code: d.terminal_code ?? null,
+        business_date: d.business_date,
+        opened_at:     d.opened_at,
+        opened_by:     d.opened_by ?? null,
+        closed_at:     d.closed_at ?? null,
+        closed_by:     d.closed_by ?? null,
+        status:        d.status === 'closed' ? 'closed' : 'open',
+        // NULL, never 0. A zero variance asserts somebody counted and it
+        // balanced; an unclosed day has had no count at all.
+        counted_cash:  d.counted_cash ?? null,
+        expected_cash: d.expected_cash ?? null,
+        cash_variance: d.cash_variance ?? null,
+        notes:         d.notes ?? null,
+        updated_at:    new Date().toISOString(),
+      }));
+
+      // Per-row, for the same reason as shifts: business_days_one_open_per_till
+      // can reject a row, and a batch call would take the whole push down with it.
+      const results = await Promise.all(
+        rows.map(async row => {
+          const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
+          return { id: row.id, error };
+        }),
+      );
+      for (const r of results) {
+        if (!r.error) { upserted.businessDays++; continue; }
+        if ((r.error as { code?: string }).code === '23505') {
+          rejected.push({
+            id: r.id,
+            code: 'duplicate_open_day',
+            error: 'This till already has an open trading day. It must be closed before this one can sync.',
+          });
+          continue;
+        }
+        sendError(res, r.error);
+        return;
+      }
+    }
+
+    // `rejected` is deliberately part of a 200, not an error status. These rows
+    // were understood and refused on their merits; the push itself succeeded and
+    // everything else in it landed. Returning 4xx would make the client retry
+    // the whole payload, which is the behaviour this change exists to remove.
+    res.json({ ok: true, upserted, rejected, schema: schemaStatus });
   } catch (err: any) {
     sendError(res, err, { message: 'sync push failed' });
   }

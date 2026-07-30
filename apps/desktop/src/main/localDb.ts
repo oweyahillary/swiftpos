@@ -333,6 +333,52 @@ function initSchema(db: Database.Database) {
       sync_status     TEXT NOT NULL DEFAULT 'pending'
     );
 
+    -- ── Trading days, per till ────────────────────────────────────────────────
+    -- Mirrors public.business_days (migration 41). One row per TILL per trading
+    -- date. Opens implicitly when the first cashier opens a drawer that date;
+    -- closes only when a MANAGER counts the cash.
+    --
+    -- Local origin, PUSH-UP. This table is the authority while offline: the till
+    -- must be able to refuse a sale at 6am with no network, so the gate cannot
+    -- live on the server.
+    CREATE TABLE IF NOT EXISTS business_days (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL,
+      branch_id     TEXT NOT NULL,
+      device_id     TEXT,
+      terminal_code TEXT,
+      -- LOCAL calendar date at this till, 'YYYY-MM-DD'. Taken from the machine's
+      -- own clock, not derived from a timestamp: the terminal is physically in
+      -- the shop, so it is the authority on which trading day a sale belongs to.
+      business_date TEXT NOT NULL,
+      opened_at     TEXT NOT NULL,
+      opened_by     TEXT,
+      closed_at     TEXT,
+      closed_by     TEXT,           -- MUST be a manager
+      status        TEXT NOT NULL DEFAULT 'open',
+      -- The manager's independent count at day close. This is the SECOND count:
+      -- each cashier already counted their own drawer blind at their own close.
+      counted_cash  REAL,
+      expected_cash REAL,
+      cash_variance REAL,
+      notes         TEXT,
+      created_at    TEXT NOT NULL,
+      sync_status   TEXT NOT NULL DEFAULT 'pending'
+    );
+
+    -- One day row per till per date.
+    CREATE UNIQUE INDEX IF NOT EXISTS business_days_till_date
+      ON business_days (branch_id, COALESCE(device_id, ''), business_date);
+
+    -- The rule itself, in the database rather than only in code: a till may have
+    -- ONE open day at a time. So "you cannot start a new day until yesterday's
+    -- is closed" survives a bug in the calling code.
+    CREATE UNIQUE INDEX IF NOT EXISTS business_days_one_open_per_till
+      ON business_days (branch_id, COALESCE(device_id, ''))
+      WHERE status = 'open';
+
+    CREATE INDEX IF NOT EXISTS business_days_date_idx ON business_days (business_date DESC);
+
     -- Float in/out movements within a shift. PUSH-UP, local origin.
     CREATE TABLE IF NOT EXISTS float_transactions (
       id          TEXT PRIMARY KEY,
@@ -389,10 +435,54 @@ function initSchema(db: Database.Database) {
   // How a shift was closed. 'counted' means a human counted the drawer;
   // 'forced' means a manager ended it without a count. Kept distinct forever so
   // an unverified close can never be mistaken for a verified one in any report.
+  //
+  // The rest mirror migration 41. device_id/terminal_code matter because a branch
+  // runs three tills and, without them, three drawers reach the server
+  // distinguishable only by cashier — so one person covering two tills in a day
+  // produces a reconciliation nobody can attribute.
+  //
+  // drawer_label is free text on purpose. Sites move physical drawers between
+  // terminals and we get no say in it, so cash is never inferred from where a
+  // drawer sits: opening_float is counted at open, closing_float at close, and
+  // each shift stands alone. The label only records WHICH drawer, which is the
+  // first question anyone asks when a variance appears.
   migrateColumns(db, 'shifts', [
     ['closed_by', 'TEXT'],
     ['close_method', 'TEXT'],
+    ['business_day_id', 'TEXT'],
+    ['business_date', 'TEXT'],
+    ['device_id', 'TEXT'],
+    ['terminal_code', 'TEXT'],
+    ['drawer_label', 'TEXT'],
+    ['opened_by', 'TEXT'],
   ]);
+
+  // Records what this install has applied. Two jobs: it makes a terminal's
+  // schema reportable, and it lets one-off backfills be skipped once done —
+  // without it every backfill re-runs on every boot, which is tolerable while
+  // they are all `WHERE x IS NULL` but not once one does real work.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      id          INTEGER PRIMARY KEY CHECK (id = 1),
+      version     INTEGER NOT NULL,
+      applied_at  TEXT NOT NULL
+    );
+  `);
+
+  // Backfill business_date on shifts written before the column existed, from the
+  // local opened_at. SQLite stores these as ISO strings, so the date is the first
+  // ten characters — and because opened_at was written by THIS machine in local
+  // time, no timezone conversion is needed or wanted here.
+  db.exec(`
+    UPDATE shifts
+       SET business_date = substr(opened_at, 1, 10)
+     WHERE business_date IS NULL AND opened_at IS NOT NULL
+  `);
+
+  db.prepare(`
+    INSERT INTO schema_version (id, version, applied_at) VALUES (1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET version=excluded.version, applied_at=excluded.applied_at
+  `).run(LOCAL_SCHEMA_VERSION, new Date().toISOString());
 
   migrateColumns(db, 'orders', [
     ['tip_amount', 'REAL DEFAULT 0'],
@@ -475,6 +565,30 @@ function initSchema(db: Database.Database) {
 }
 
 // Adds columns that don't yet exist on a table (SQLite has no ADD COLUMN IF NOT EXISTS).
+/**
+ * The local schema generation this build ships.
+ *
+ * Bumped whenever localDb.ts gains a table or column. Reported to the server on
+ * every sync so a terminal running an old build is VISIBLE rather than
+ * discovered when its push starts failing at 06:00 — the till updates by
+ * installing an .exe by hand, so some terminal is always behind.
+ *
+ * Numbered to track the Postgres migration it pairs with: 42 = the schema after
+ * migrations 41 and 42.
+ */
+export const LOCAL_SCHEMA_VERSION = 42;
+
+/** What this install has actually applied, for support and for skipping backfills. */
+export function getLocalSchemaVersion(): number {
+  try {
+    const row = getLocalDb().prepare(
+      `SELECT version FROM schema_version WHERE id=1`).get() as { version: number } | undefined;
+    return row?.version ?? 0;
+  } catch {
+    return 0;   // table predates this mechanism
+  }
+}
+
 function migrateColumns(db: Database.Database, table: string, cols: [string, string][]) {
   const existing = new Set(
     (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).map(c => c.name)

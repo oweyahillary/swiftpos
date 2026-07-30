@@ -14,7 +14,7 @@ import type { PrinterSettings } from '../hooks/usePrinterSettings';
 import type { TicketLine } from './ticketLines';
 import { totalQty } from './ticketLines';
 import { posApi } from './posApi';
-import { browserPrint, buildThermalDocument } from './printReceipt';
+import { buildThermalDocument, printDocument } from './printReceipt';
 
 export interface DispatcherContext {
   orderNumber: string;
@@ -111,30 +111,23 @@ export async function printDispatcher(
   ctx: DispatcherContext,
   settings: PrinterSettings,
   heading = 'DISPATCH',
-): Promise<void> {
-  // No printer configured means the feature is simply off — same convention as
-  // the kitchen ticket. A site without a packing station never sees it, and
-  // nothing has to be conditionally compiled out.
-  if (lines.length === 0) return;
+): Promise<{ printed: boolean; reason?: string }> {
+  if (lines.length === 0) return { printed: false, reason: 'Nothing to pack' };
+
+  // No printer bound means this site has no packing station, so the ticket is
+  // simply never produced. Unlike the receipt this does NOT fall back to the
+  // OS default: printing a packing list to whatever device happens to be
+  // default would push paper at a till that never asked for it.
+  if (!settings.dispatcherPrinterName) {
+    return { printed: false, reason: 'No packing printer set' };
+  }
 
   const html = buildDispatcherHtml(lines, ctx, settings.paperWidth, heading);
   const title = `${heading} ${ctx.orderNumber}`;
+  const doc = buildThermalDocument(html, settings, title, 1);
 
-  if (settings.dispatcherPrinterName) {
-    try {
-      const res = await posApi.print.html({
-        html: buildThermalDocument(html, settings, title, 1),
-        deviceName: settings.dispatcherPrinterName,
-        paperWidthMm: settings.paperWidth,
-        copies: 1,
-      });
-      if (res.ok) return;
-      console.warn('[printDispatcher] Native print failed, falling back to dialog:', res.error);
-    } catch (err: any) {
-      console.warn('[printDispatcher] Native print error, falling back to dialog:', err?.message);
-    }
-    browserPrint(html, settings, title, 1);
-  }
-  // Silent no-op when unconfigured — deliberately NOT falling back to a dialog,
-  // which would throw a print window at a cashier who never asked for one.
+  const res = await printDocument(doc, settings.paperWidth, settings.dispatcherPrinterName, title);
+  return res.ok
+    ? { printed: true }
+    : { printed: false, reason: 'Packing printer did not respond — the ticket has NOT printed' };
 }

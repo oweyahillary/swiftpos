@@ -15,6 +15,7 @@ import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
 import PrintersTab from './PrintersTab';
+import DayCloseTab from './DayCloseTab';
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printReceipt } from '../lib/printReceipt';
@@ -952,13 +953,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   }, []);
 
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
     { key: 'orders',   label: 'Orders',       icon: I.orders   },
     { key: 'shift',    label: 'Shift',        icon: I.shift    },
     { key: 'zreport',  label: 'Shift Report', icon: I.zreport  },
+    // Manager-only: this is the escape route for the trading-day gate. Without
+    // it a till stays frozen the first morning nobody closed the day.
+    ...(canManageSettings ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
     ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
     { key: 'prices',   label: 'Prices',       icon: I.prices   },
     // Editing, not just viewing. Without these the owner has to phone us to add
@@ -990,6 +994,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         return <RetailOverview currency={currency} />;
       case 'orders':  return <OrdersTab  currency={currency} />;
       case 'shift':   return <ShiftTab   currency={currency} />;
+      case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;

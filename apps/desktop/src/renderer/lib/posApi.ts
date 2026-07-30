@@ -149,10 +149,28 @@ declare global {
       orders: {
         nextBillNumber: () => Promise<string>;
       };
+      day: {
+        gate: () => Promise<{ canTrade: boolean; reason?: string; needsManager?: boolean;
+                              staleDay?: { id: string; business_date: string }; }>;
+        current: () => Promise<{ id: string; business_date: string; status: string } | null>;
+        summary: () => Promise<{
+          day: { id: string; business_date: string };
+          shifts: number; unreconciledShifts: number;
+          expectedCash: number; countedCash: number; variance: number;
+        } | null>;
+        isManager: () => Promise<boolean>;
+        conflicts: () => Promise<{ id: string; cashier_name: string;
+                                   business_date: string | null; notes: string | null }[]>;
+        close: (countedCash: number, notes?: string) =>
+          Promise<{ ok: boolean; error?: string; summary?: unknown }>;
+      };
       print: {
         list: () => Promise<PrinterInfo[]>;
         preview: (opts: { html: string; paperWidthMm: 58 | 80; title?: string }) => Promise<{ ok: boolean }>;
         probe: (deviceName: string) => Promise<{ ok: boolean; state: string }>;
+        geometry: (deviceName: string) => Promise<
+          { paperMm: number; printableMm: number; offsetMm: number } | null
+        >;
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
       config: {

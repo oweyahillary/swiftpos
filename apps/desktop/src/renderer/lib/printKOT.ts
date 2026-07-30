@@ -16,7 +16,7 @@
 import type { TicketLine } from './ticketLines';
 import type { PrinterSettings } from '../hooks/usePrinterSettings';
 import { posApi } from './posApi';
-import { browserPrint, buildThermalDocument } from './printReceipt';
+import { buildThermalDocument, printDocument } from './printReceipt';
 
 export interface KOTContext {
   orderNumber: string;
@@ -81,7 +81,7 @@ export function buildKOTHtml(items: TicketLine[], ctx: KOTContext, paperWidth: 5
     // combo, so repeating it against each component would be noise at best and
     // wrong at worst for components that don't come spicy.
     if (line.qualifier) {
-      html += `<p style="font-size:11px;padding-left:10px;color:#333;">↳ ${esc(line.qualifier)}</p>`;
+      html += `<p style="font-size:11px;padding-left:10px;color:#333;">- ${esc(line.qualifier)}</p>`;
     }
     // Already filtered to cooked components by kitchenOnly().
     for (const c of line.components) {
@@ -137,22 +137,16 @@ export async function printKOT(
   }
 
   const html = buildKOTHtml(items, ctx, settings.paperWidth);
+  const title = `KOT ${ctx.orderNumber}`;
+  const doc = buildThermalDocument(html, settings, title, 1);
 
-  try {
-    const res = await posApi.print.html({
-      html: buildThermalDocument(html, settings, `KOT ${ctx.orderNumber}`, 1),
-      deviceName: settings.kitchenPrinterName,
-      paperWidthMm: settings.paperWidth,
-      copies: 1,            // KOTs always 1 copy
-    });
-    if (res.ok) return { printed: true };
-    console.warn('[printKOT] Native print failed, falling back to dialog:', res.error);
-  } catch (err: any) {
-    console.warn('[printKOT] Native print error, falling back to dialog:', err?.message);
-  }
+  // Same dispatch path as the receipt: named printer, then OS default. No
+  // on-screen preview — a kitchen ticket shown on the till screen helps nobody
+  // in the kitchen, and pretending otherwise is what caused the old code to
+  // return { printed: true } after printing nothing at all.
+  const res = await printDocument(doc, settings.paperWidth, settings.kitchenPrinterName, title);
 
-  // A CONFIGURED printer that failed is different from no printer at all: the
-  // ticket matters and the dialog is the last way to get it onto paper.
-  browserPrint(html, settings, `KOT ${ctx.orderNumber}`, 1);
-  return { printed: true };
+  return res.ok
+    ? { printed: true }
+    : { printed: false, reason: 'Kitchen printer did not respond — the ticket has NOT printed' };
 }

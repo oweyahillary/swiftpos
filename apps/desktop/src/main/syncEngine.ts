@@ -9,7 +9,7 @@
 //   This means an offline sale is always applied on top of whatever quantity is current
 
 import { net } from 'electron';
-import { getLocalDb } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { getDeviceConfig, saveDeviceConfig, getServerUrl } from './deviceConfig';
 import { hasNode, pushOrderToNode, confirmNodeDelivery } from './nodeClient';
 import { v4 as uuid } from 'uuid';
@@ -37,6 +37,7 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
   order_item_variants: 'push', order_item_modifiers: 'push',
   payments: 'push', customer_credit_transactions: 'push',
   shifts: 'push', float_transactions: 'push', expenses: 'push',
+  business_days: 'push',
 };
 
 let _serverUrl   = '';
@@ -138,6 +139,10 @@ function pushAuthHeaders() {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
+    // Which local schema this build carries. Tills are updated by installing an
+    // .exe by hand, so one is always behind; sending this lets the server say so
+    // instead of the mismatch surfacing as an opaque column error mid-service.
+    'X-Schema-Version': String(LOCAL_SCHEMA_VERSION),
   };
 }
 
@@ -610,6 +615,9 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     SELECT id, business_id, branch_id, cashier_id, opened_at, closed_at, status,
            opening_float, closing_float, expected_cash, cash_variance, notes, created_at
     FROM shifts WHERE sync_status='pending'
+    -- 'conflict' rows are excluded: the server refused them for a reason no
+    -- retry clears, and re-sending every pass would loop forever while burying
+    -- the real error in the sync log.
   `).all() as any[];
   const floats = db.prepare(`
     SELECT id, shift_id, branch_id, cashier_id, type, amount, reason, created_at
@@ -620,13 +628,22 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
            paid_by, expense_date, shift_id, created_at
     FROM expenses WHERE sync_status='pending'
   `).all() as any[];
+  // Trading days. Pushed like shifts: the till originates them and the cloud is
+  // the reporting surface, so a day closed on the terminal has to arrive or the
+  // dashboard never sees a reconciled day at all.
+  const business_days = db.prepare(`
+    SELECT id, business_id, branch_id, device_id, terminal_code, business_date,
+           opened_at, opened_by, closed_at, closed_by, status,
+           counted_cash, expected_cash, cash_variance, notes
+    FROM business_days WHERE sync_status='pending'
+  `).all() as any[];
 
-  if (!shifts.length && !floats.length && !expenses.length) return 0;
+  if (!shifts.length && !floats.length && !expenses.length && !business_days.length) return 0;
 
   const doPost = () => fetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
     headers: pushAuthHeaders(),
-    body: JSON.stringify({ shifts, floats, expenses }),
+    body: JSON.stringify({ shifts, floats, expenses, business_days }),
   });
 
   try {
@@ -640,19 +657,54 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       errors.push(`Shift sync: ${describeServerError(err, res.status)}`);
       return 0;   // leave rows pending — they retry next pass
     }
+    const body = await res.json().catch(() => ({} as any));
+
+    // Rows the server understood and refused on their merits — currently only a
+    // cashier who already holds an open drawer elsewhere. Retrying cannot fix
+    // that; a manager has to close the other shift. So they are parked as
+    // 'conflict' rather than left pending, which stops the sync engine looping on
+    // them every pass and gives a human something to act on.
+    // The server compares X-Schema-Version against what it needs. A behind build
+    // is reported, not blocked — a terminal that still syncs correctly must keep
+    // trading while someone walks round with the installer.
+    if (body?.schema?.behind) {
+      errors.push(String(body.schema.message ?? 'This till is running an older build — update it.'));
+    }
+
+    const rejected: { id: string; code: string; error: string }[] =
+      Array.isArray(body?.rejected) ? body.rejected : [];
+    const rejectedIds = new Set(rejected.map(r => r.id));
+
+    if (rejected.length) {
+      const mark = db.prepare(`UPDATE shifts SET sync_status='conflict', notes =
+        TRIM(COALESCE(notes,'') || char(10) || ?) WHERE id=?`);
+      db.transaction(() => {
+        for (const r of rejected) mark.run(`Sync rejected: ${r.error}`, r.id);
+      })();
+      errors.push(
+        rejected.length === 1
+          ? `A shift could not sync: ${rejected[0].error}`
+          : `${rejected.length} shifts could not sync — a cashier has an open drawer on another till.`,
+      );
+    }
+
     // Server has the open-shift fields now. Only a still-open shift is fully
     // done here — a closed one waits for reconcileClosedShifts to confirm the
     // server-computed close before it's marked synced.
-    const openShiftIds = shifts.filter(s => s.status !== 'closed').map(s => s.id);
+    const openShiftIds = shifts
+      .filter(s => s.status !== 'closed' && !rejectedIds.has(s.id))
+      .map(s => s.id);
     const markShift = db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`);
     const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced' WHERE id=?`);
     const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced' WHERE id=?`);
+    const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced' WHERE id=?`);
     db.transaction(() => {
       for (const id of openShiftIds) markShift.run(id);
       for (const f of floats) markFloat.run(f.id);
       for (const e of expenses) markExp.run(e.id);
+      for (const d of business_days) markDay.run(d.id);
     })();
-    return shifts.length + floats.length + expenses.length;
+    return shifts.length + floats.length + expenses.length + business_days.length;
   } catch (err: any) {
     errors.push(`Shift sync: ${err.message}`);
     return 0;
@@ -847,9 +899,21 @@ async function confirmCloudDelivery(errors: string[]): Promise<number> {
 
 async function reconcileClosedShifts(errors: string[]): Promise<number> {
   const db = getLocalDb();
+  // Both terminal states, not just 'closed'.
+  //
+  // This used to select status='closed' alone. A manager force-closing an
+  // abandoned drawer writes 'closed_unreconciled', which never matched — so the
+  // row was never posted, stayed sync_status='pending' forever, and remained
+  // OPEN on the server indefinitely. Now that one-open-shift-per-cashier is
+  // enforced, that stranded row locks the cashier out of every surface until
+  // someone edits the database by hand. Force-close is the path every forgotten
+  // drawer takes, so this sat on the common route, not an edge case.
   const closed = db.prepare(`
-    SELECT id, closing_float, notes FROM shifts WHERE status='closed' AND sync_status='pending'
-  `).all() as { id: string; closing_float: number | null; notes: string | null }[];
+    SELECT id, status, closing_float, notes
+      FROM shifts
+     WHERE status IN ('closed', 'closed_unreconciled')
+       AND sync_status = 'pending'
+  `).all() as { id: string; status: string; closing_float: number | null; notes: string | null }[];
   if (!closed.length) return 0;
 
   let reconciled = 0;
@@ -862,10 +926,22 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
     ).get(shift.id) as { count: number };
     if (pending.count > 0) continue;
 
-    const doPost = () => fetch(`${_serverUrl}/api/shifts/${shift.id}/close`, {
+    // A forced close has no count to report, so it cannot go through /close —
+    // that route requires a closing_float, and inventing one would fabricate a
+    // reconciliation nobody performed. /force-close records the same absence
+    // server-side: expected_cash computed, closing_float and variance left NULL.
+    const forced = shift.status === 'closed_unreconciled';
+    const url = forced
+      ? `${_serverUrl}/api/shifts/${shift.id}/force-close`
+      : `${_serverUrl}/api/shifts/${shift.id}/close`;
+    const body = forced
+      ? { reason: shift.notes?.trim() || 'Force-closed on terminal; no cash count was taken' }
+      : { closing_float: shift.closing_float, notes: shift.notes };
+
+    const doPost = () => fetch(url, {
       method: 'POST',
       headers: pushAuthHeaders(),
-      body: JSON.stringify({ closing_float: shift.closing_float, notes: shift.notes }),
+      body: JSON.stringify(body),
     });
 
     try {
@@ -877,9 +953,16 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
       // 404 here means "not an open shift" — since we generated this id and
       // pushed it as open ourselves, that can only mean an earlier pass's
       // close succeeded but its response was lost. Treat as done, not failed.
+      //
+      // 403 on a forced close means this staff token lacks manager rights.
+      // Retrying will never fix that, but the shift must not be marked synced
+      // either — it stays pending until a manager's session settles it, and the
+      // message says so instead of repeating an opaque HTTP code every pass.
       if (res.ok || res.status === 404) {
         db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`).run(shift.id);
         reconciled++;
+      } else if (forced && res.status === 403) {
+        errors.push('A force-closed shift is waiting for a manager to sign in and sync it.');
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         errors.push(`Shift close: ${describeServerError(err, res.status)}`);
@@ -910,11 +993,32 @@ export function createLocalOrder(orderPayload: any): string {
   // Cashier attribution for OFFLINE reports. The server sets cashier_id from the
   // staff token on push (req.userId), so we deliberately do NOT add it to the
   // sync payload — it would be ignored. We only need it on the local row so
-  // offline shift/EOD reports can attribute the sale. shift_id is stamped when a
-  // shift is open (Phase C opens shifts; until then it's simply null).
+  // offline shift/EOD reports can attribute the sale.
   const staff = db.prepare(`SELECT staff_id FROM staff_session WHERE id=1`).get() as any;
   const cashierId = staff?.staff_id ?? null;
-  const shiftId = (getOpenShift() as any)?.id ?? null;
+
+  // THE SELL GATE.
+  //
+  // shift_id used to be `getOpenShift()?.id ?? null` — so with no drawer open
+  // this stamped null and sold anyway, and a cashier could trade an entire day
+  // having never opened a shift. Every cash control downstream (Z-report,
+  // variance, day close) is computed from shift_id, so a null there does not
+  // merely lose attribution: it removes the sale from the reconciliation
+  // altogether, silently.
+  //
+  // assertCanSell also enforces the trading-day rule, because a till whose
+  // previous day was never closed must not sell either — doing so posts today's
+  // takings against yesterday's drawer, which is exactly the harm the day close
+  // exists to prevent.
+  //
+  // Enforced here in the main process rather than in the UI: this is the single
+  // choke point every sale passes through, offline included.
+  // Lazy require: dayService imports getOpenShift from this module, so a
+  // top-level import here would close a cycle.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { assertCanSell } = require('./dayService') as typeof import('./dayService');
+  const { shiftId } = assertCanSell();
+
   // The physical terminal that created this sale — travels with the order through
   // till → aggregation node → cloud for per-till attribution and audit.
   const deviceId = getDeviceConfig()?.device_id ?? null;
