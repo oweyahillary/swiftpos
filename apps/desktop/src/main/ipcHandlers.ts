@@ -18,6 +18,12 @@ import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
+import { resolveRange, getReportScope, type RangePreset } from './managerReports';
+import { exportReportCsv } from './reportExport';
+import { exportDailySalesReport } from './dailySalesReport';
+
+/** Range selection sent from the manager report screens. */
+type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts } from './dayService';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
@@ -674,6 +680,16 @@ export function registerIpcHandlers() {
   // checkDayGate is what the POS screen reads to decide whether it may sell at
   // all. closeDay is manager-gated inside dayService, NOT by hiding the button:
   // a control that exists only in the UI is a suggestion.
+  // Which terminal this is. Read-only identity for display: the cashier should
+  // not be asked which till they are standing at when the install already knows.
+  ipcMain.handle('device:identity', async () => {
+    const cfg = getDeviceConfig();
+    return {
+      deviceId:     cfg?.device_id ?? null,
+      terminalCode: cfg?.terminal_code ?? null,
+    };
+  });
+
   ipcMain.handle('day:gate', async () => checkDayGate());
   ipcMain.handle('day:current', async () => getOpenDay());
   ipcMain.handle('day:summary', async () => getDayCloseSummary());
@@ -687,8 +703,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('shift:forceClose', async (_e, { reason }: { reason: string }) =>
     forceCloseShift(String(reason ?? '')));
 
-  ipcMain.handle('shift:open', async (_event, { opening_float }: { opening_float: number }) => {
-    openShift(Number(opening_float) || 0);
+  ipcMain.handle('shift:open', async (_event, { opening_float, drawer_label }: { opening_float: number; drawer_label?: string }) => {
+    openShift(Number(opening_float) || 0, drawer_label);
     return currentShiftReport();
   });
 
@@ -855,9 +871,21 @@ export function registerIpcHandlers() {
 
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
 
-  ipcMain.handle('manager:salesSummary',  async () => getSalesSummary());
-  ipcMain.handle('manager:topProducts',   async () => getTopProducts(8));
-  ipcMain.handle('manager:recentOrders',  async () => getRecentOrders(30));
+  // Range is optional so existing callers keep today's behaviour untouched.
+  ipcMain.handle('manager:salesSummary',  async (_e, r?: RangeArg) =>
+    getSalesSummary(r ? resolveRange(r.preset, r.from, r.to) : undefined));
+  ipcMain.handle('manager:topProducts',   async (_e, r?: RangeArg) =>
+    getTopProducts(r?.limit ?? 8, r ? resolveRange(r.preset, r.from, r.to) : undefined));
+  ipcMain.handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
+    getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));
+
+  // What the figures cover. Paired with every range query so a till's partial
+  // view can never be read as the branch's takings.
+  ipcMain.handle('manager:reportScope', async () => getReportScope());
+  ipcMain.handle('manager:resolveRange', async (_e, r: RangeArg) =>
+    resolveRange(r?.preset, r?.from, r?.to));
+  ipcMain.handle('manager:exportCsv', async (_e, req: any) => exportReportCsv(req));
+  ipcMain.handle('manager:dailyReport', async (_e, req: any) => exportDailySalesReport(req ?? {}));
   ipcMain.handle('manager:stockLevels',   async () => getStockLevels());
   ipcMain.handle('manager:fuelSales',     async () => getFuelSalesToday());
   ipcMain.handle('manager:pumpStatus',    async () => getPumpStatus());

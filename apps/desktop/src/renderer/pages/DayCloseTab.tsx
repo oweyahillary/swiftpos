@@ -54,14 +54,35 @@ export default function DayCloseTab({ currency }: Props) {
   const [result, setResult] = useState<Summary | null>(null);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
 
+  const [loadError, setLoadError] = useState('');
+
+  // Four INDEPENDENT calls, deliberately not Promise.all.
+  //
+  // With Promise.all, one rejection skipped every setState and the screen fell
+  // through to "No trading day is open on this till" — which is not just unhelpful
+  // but WRONG: a day was open, we simply could not ask. A UI that reports absence
+  // when it means failure sends someone hunting for a data problem that does not
+  // exist. (That is exactly what happened: day:conflicts threw "no such table:
+  // staff" and blanked the whole tab.)
   const load = useCallback(async () => {
+    setLoadError('');
+    const fail = (what: string) => (e: unknown) => {
+      console.error(`[DayClose] ${what} failed:`, e);
+      setLoadError(`Could not read ${what}. The figures below may be incomplete.`);
+      return null;
+    };
+
     const [s, g, m, c] = await Promise.all([
-      posApi.day.summary(), posApi.day.gate(), posApi.day.isManager(), posApi.day.conflicts(),
+      posApi.day.summary().catch(fail('the day summary')),
+      posApi.day.gate().catch(fail('the trading-day status')),
+      posApi.day.isManager().catch(fail('your permissions')),
+      posApi.day.conflicts().catch(fail('unsynced shifts')),
     ]);
-    setSummary(s as Summary | null);
+
+    setSummary((s ?? null) as Summary | null);
     setGate(g);
-    setIsManager(m);
-    setConflicts(c);
+    setIsManager(m === true);
+    setConflicts(Array.isArray(c) ? c : []);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -111,6 +132,11 @@ export default function DayCloseTab({ currency }: Props) {
     return (
       <div className="max-w-xl space-y-3">
         <h2 className="text-lg font-semibold text-white">Close the day</h2>
+        {loadError && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+            <p className="text-sm text-red-300">{loadError}</p>
+          </div>
+        )}
         <p className="text-sm text-gray-400">
           No trading day is open on this till. A day opens automatically when the
           first cashier opens a drawer.
@@ -132,6 +158,12 @@ export default function DayCloseTab({ currency }: Props) {
           Trading date <span className="text-white">{summary.day.business_date}</span> on this till.
         </p>
       </div>
+
+      {loadError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+          <p className="text-sm text-red-300">{loadError}</p>
+        </div>
+      )}
 
       {/* Shifts the server refused. Shown first because each one is a cashier who
           cannot open a drawer anywhere until it is resolved — more urgent than

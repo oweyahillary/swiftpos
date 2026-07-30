@@ -20,6 +20,7 @@ import ReceiptView from '../components/ReceiptView';
 import PaymentModal from '../components/PaymentModal';
 import type { PaymentResult } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';
+import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
 import ShiftPanel from './ShiftPanel';
@@ -96,6 +97,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // so a name can never leak onto a counter sale.
   const [deliveryPerson, setDeliveryPerson] = useState('');
   const [tableNumber, setTableNumber] = useState('');
+  // Diners on this bill, for Average Per Cover. Dine-in only: a takeaway bag is
+  // one transaction, not one diner, and a forced headcount there would fill APC
+  // with numbers that mean nothing.
+  const [covers, setCovers] = useState('');
   // Pre-assigned at first kitchen send / hold so the KOT and the final receipt
   // carry the same number; null until the ticket needs to exist.
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
@@ -107,7 +112,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // catching it before the next day's sales land on yesterday's reconciliation.
   // Trading-day gate. Polled because the block can begin without the cashier
   // doing anything: at midnight, an unclosed day becomes yesterday's.
-  const [dayGate, setDayGate] = useState<{ canTrade: boolean; reason?: string } | null>(null);
+  const [dayGate, setDayGate] = useState<{ canTrade: boolean; reason?: string;
+    needsManager?: boolean; needsShift?: boolean } | null>(null);
   const [staleShift, setStaleShift] = useState<null | {
     id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number; orders: number;
   }>(null);
@@ -342,7 +348,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   };
 
   const removeItem = (index: number) => setCart(prev => prev.filter((_, i) => i !== index));
-  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); };
+  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); };
 
   // ── Restaurant: kitchen / tabs ─────────────────────────
 
@@ -388,9 +394,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     check();
     const t = setInterval(check, 60 * 1000);
     return () => clearInterval(t);
-  }, [shift]);
+  }, [shift, showShift]);
 
   const blocked = dayGate ? !dayGate.canTrade : false;
+  // Two obstructions with different remedies. Conflating them was the first
+  // release's mistake: a cashier with no drawer open saw nothing, rang a basket,
+  // and met the refusal at payment.
+  const needsShift = !!dayGate?.needsShift;
+  const needsManager = !!dayGate?.needsManager;
 
   const ensureOrderNumber = (): string => {
     if (orderNumber) return orderNumber;
@@ -603,6 +614,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         vat_amount: payment.vatAmount,
         ctl_amount: payment.ctlAmount,
         total: payment.total,
+        covers: orderType === 'dine_in' ? Math.max(1, Number(covers) || 1) : 1,
         items: cart.map(item => ({
           product: { id: item.product.id, name: item.product.name, categories: item.product.categories ?? null },
           unitPrice: item.unitPrice,
@@ -844,7 +856,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           must not sell, because those sales would post against yesterday's
           drawer — the precise harm the day close exists to prevent. Only a
           manager can clear it, from Manager → Close Day. */}
-      {blocked && (
+      {/* Yesterday was never closed. Manager only — so no button here would help
+          the person standing at the till, and pretending otherwise wastes their
+          time. Red, because trading really is stopped. */}
+      {needsManager && (
         <div className="bg-red-500/15 border-b border-red-500/40 px-4 py-3 flex items-center gap-3">
           <span className="text-red-400 text-base">⛔</span>
           <div className="flex-1">
@@ -1031,6 +1046,16 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   />
                 )}
                 {orderType === 'dine_in' && (
+                  <input
+                    type="number" min={1} max={99} inputMode="numeric"
+                    value={covers}
+                    onChange={e => setCovers(e.target.value)}
+                    placeholder="Pax"
+                    title="Number of diners — used for Average Per Cover"
+                    className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                  />
+                )}
+                {orderType === 'dine_in' && (
                   tables.length > 0 ? (
                     <span className="w-20 flex items-center justify-center bg-green-500/10 border border-green-500/40 rounded-lg text-green-400 text-xs font-semibold truncate px-1" title="Selected from the table map">
                       {tableNumber ? `T: ${tableNumber}` : 'No table'}
@@ -1179,6 +1204,26 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           isRestaurant={flags.isRestaurant}
           canEdit={canManagePrinters}
           onClose={() => setShowPrinters(false)}
+        />
+      )}
+
+      {/* No drawer open, and nothing a manager needs to clear first.
+          Blocking rather than a banner: Pay is disabled anyway and there is
+          nothing else on this screen worth doing, so a banner would only ask the
+          cashier to notice a message and go and find a button.
+          Suppressed while needsManager, so we never ask for a counted float that
+          cannot be used until yesterday's day is closed. */}
+      {needsShift && !needsManager && (
+        <OpenDrawerModal
+          cashierName={cashierName ?? undefined}
+          currency={currency}
+          onLogout={onLogout}
+          onOpened={() => {
+            // Refresh both: the shift pill in the top bar, and the gate that is
+            // rendering this modal — otherwise it stays up until the next poll.
+            posApi.shift.current().then(setShift).catch(() => setShift(null));
+            posApi.day.gate().then(setDayGate).catch(() => {});
+          }}
         />
       )}
 

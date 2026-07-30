@@ -143,6 +143,9 @@ function pushAuthHeaders() {
     // .exe by hand, so one is always behind; sending this lets the server say so
     // instead of the mismatch surfacing as an opaque column error mid-service.
     'X-Schema-Version': String(LOCAL_SCHEMA_VERSION),
+    // Stable per-install identity, so the fleet view can attribute sync recency
+    // to a specific terminal rather than to a User-Agent hash shared by all three.
+    'X-Device-Id': getDeviceConfig()?.device_id ?? '',
   };
 }
 
@@ -613,7 +616,13 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
   const db = getLocalDb();
   const shifts = db.prepare(`
     SELECT id, business_id, branch_id, cashier_id, opened_at, closed_at, status,
-           opening_float, closing_float, expected_cash, cash_variance, notes, created_at
+           opening_float, closing_float, expected_cash, cash_variance, notes, created_at,
+           -- Attribution added by migration 41. These were missing from this SELECT,
+           -- so every column that exists to tell three drawers apart stayed on the
+           -- till: the cloud saw device_id and terminal_code as NULL for every
+           -- shift a terminal originated, and the dashboard's Open Drawers screen
+           -- showed "Till: unknown" for all of them.
+           business_day_id, business_date, device_id, terminal_code, drawer_label, opened_by
     FROM shifts WHERE sync_status='pending'
     -- 'conflict' rows are excluded: the server refused them for a reason no
     -- retry clears, and re-sending every pass would loop forever while burying
@@ -1028,8 +1037,8 @@ export function createLocalOrder(orderPayload: any): string {
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -1038,6 +1047,10 @@ export function createLocalOrder(orderPayload: any): string {
       orderPayload.ctl_amount ?? 0,
       orderPayload.discount_amount ?? 0, orderPayload.tip_amount ?? 0,
       orderPayload.total,
+      // Only dine-in has covers. A takeaway bag is one transaction, not one
+      // diner, so forcing a headcount there would pollute APC with numbers that
+      // mean nothing.
+      Math.max(1, Number(orderPayload.covers) || 1),
       cashierId, shiftId,
       orderPayload.customer_id ?? null, orderPayload.customer_name ?? null, orderPayload.customer_phone ?? null,
       now, deviceId,

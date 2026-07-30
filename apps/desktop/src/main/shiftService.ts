@@ -13,7 +13,7 @@
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig } from './deviceConfig';
-import { checkDayGate, ensureDayOpen } from './dayService';
+import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 
 export interface ZReport {
@@ -109,7 +109,7 @@ export function openShift(opening_float = 0, drawerLabel?: string | null): any {
   // not start a new drawer, and only a manager can clear it. Checked before the
   // open-shift check so the message names the real obstacle rather than sending
   // the cashier to close a shift that is not the problem.
-  const gate = checkDayGate();
+  const gate = checkStaleDay();
   if (!gate.canTrade) throw new Error(gate.reason ?? 'This till cannot trade yet');
 
   const existing = getOpenShift();
@@ -117,7 +117,10 @@ export function openShift(opening_float = 0, drawerLabel?: string | null): any {
     // Name the obstacle. "A shift is already open" sent the next cashier looking
     // for a settings screen; whose shift it is and how old tells them what to do.
     const hours = Math.floor((Date.now() - new Date(existing.opened_at).getTime()) / 3_600_000);
-    const who = (getLocalDb().prepare(`SELECT name FROM staff WHERE id=?`).get(existing.cashier_id) as any)?.name;
+    // `users`, not `staff` — there is no local staff table. This sat in the
+    // "a shift is already open" path, so it would have thrown instead of showing
+    // the message explaining which cashier to go and find.
+    const who = (getLocalDb().prepare(`SELECT name FROM users WHERE id=?`).get(existing.cashier_id) as any)?.name;
     throw new Error(
       hours >= STALE_SHIFT_HOURS
         ? `${who ?? 'A cashier'}'s shift has been open ${hours} hours and must be closed before a new one starts.`
@@ -215,7 +218,24 @@ export function computeZReport(shiftId: string): ZReport {
     SELECT COUNT(*) AS c FROM orders WHERE shift_id=? AND status='voided'
   `).get(shiftId) as { c: number };
 
-  const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut;
+  // Expenses PAID OUT OF THIS DRAWER.
+  //
+  // This was missing, and it made honesty look like theft. expense:create writes
+  // only to `expenses` — it records no float_out — so cash left the drawer while
+  // expected_cash did not move. A cashier who paid 500 for gas and recorded it
+  // properly counted 500 short at close and was reported as 500 down, while one
+  // who took the money and said nothing produced the identical variance. The
+  // control actively punished the person doing the right thing.
+  //
+  // Fixed HERE rather than by making expense:create also write a float_out, for
+  // two reasons: one place computes the truth, and a cashier who records both an
+  // expense and a matching pay-out would otherwise be debited twice.
+  const expensesOut = (db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) AS amt FROM expenses WHERE shift_id = ?
+  `).get(shiftId) as { amt: number } | undefined)?.amt ?? 0;
+
+  const expectedCash =
+    Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut);
 
   return {
     shift: {

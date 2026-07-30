@@ -485,6 +485,11 @@ function initSchema(db: Database.Database) {
   `).run(LOCAL_SCHEMA_VERSION, new Date().toISOString());
 
   migrateColumns(db, 'orders', [
+    // Diners on the bill, for Average Per Cover. Postgres has had this since the
+    // baseline (DEFAULT 1 NOT NULL); the till never did, so APC could not be
+    // computed offline and the parity check flagged it. Defaults to 1 so a
+    // non-dine-in sale still divides sensibly and existing rows stay valid.
+    ['covers', 'INTEGER DEFAULT 1'],
     ['tip_amount', 'REAL DEFAULT 0'],
     ['customer_id', 'TEXT'],
     ['customer_name', 'TEXT'],
@@ -574,9 +579,11 @@ function initSchema(db: Database.Database) {
  * installing an .exe by hand, so some terminal is always behind.
  *
  * Numbered to track the Postgres migration it pairs with: 42 = the schema after
- * migrations 41 and 42.
+ * migrations 41 and 42. 43 adds orders.covers locally — Postgres already had it,
+ * so there is no migration 43; the number moves because a till on 42 cannot send
+ * covers and its reports will read APC as unavailable.
  */
-export const LOCAL_SCHEMA_VERSION = 42;
+export const LOCAL_SCHEMA_VERSION = 43;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

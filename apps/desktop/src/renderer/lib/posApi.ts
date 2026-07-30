@@ -105,6 +105,14 @@ export interface ZReport {
   currency: string;
 }
 
+/** Date-range selection for the manager reports. */
+export interface ReportRangeArg {
+  preset?: 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
 export interface PrinterInfo {
   name: string;
   displayName: string;
@@ -150,7 +158,8 @@ declare global {
         nextBillNumber: () => Promise<string>;
       };
       day: {
-        gate: () => Promise<{ canTrade: boolean; reason?: string; needsManager?: boolean;
+        gate: () => Promise<{ canTrade: boolean; reason?: string;
+                              needsManager?: boolean; needsShift?: boolean;
                               staleDay?: { id: string; business_date: string }; }>;
         current: () => Promise<{ id: string; business_date: string; status: string } | null>;
         summary: () => Promise<{
@@ -178,6 +187,7 @@ declare global {
         isConfigured: () => Promise<boolean>;
         save: (patch: Partial<DeviceConfig>) => Promise<DeviceConfig>;
         clear: () => Promise<boolean>;
+        identity: () => Promise<{ deviceId: string | null; terminalCode: string | null }>;
         resetPreview: () => Promise<{ terminalCode: string | null; deviceRole: string | null; unsyncedOrders: number; unsyncedValue: number; openShifts: number; safe: boolean }>;
         reset: (force?: boolean) => Promise<boolean>;
         testConnection: (url: string) => Promise<ConnectionTestResult>;
@@ -202,7 +212,7 @@ declare global {
         // variance — never zero, which would claim a check that never happened.
         forceClose: (reason: string) => Promise<ZReport>;
         current: () => Promise<ZReport | null>;
-        open: (opening_float: number) => Promise<ZReport | null>;
+        open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         float: (type: 'float_in' | 'float_out', amount: number, reason?: string) => Promise<ZReport | null>;
         close: (closing_float: number, notes?: string) => Promise<ZReport>;
         zreport: (shiftId: string) => Promise<ZReport>;
@@ -233,9 +243,21 @@ declare global {
         setReceiptText: (header: string, footer: string) => Promise<any>;
       };
       manager: {
-        salesSummary:    () => Promise<any>;
-        topProducts:     () => Promise<any[]>;
-        recentOrders:    () => Promise<any[]>;
+        reportScope: () => Promise<{
+          terminalCode: string | null;
+          deviceRole: 'till' | 'node';
+          coversBranch: boolean;
+          scopeLabel: string;
+          earliestOrder: string | null;
+        }>;
+        resolveRange: (range: ReportRangeArg) => Promise<{ from: string; to: string; label: string }>;
+        exportCsv: (req: { kind: 'sales' | 'orders' | 'products' } & ReportRangeArg) =>
+          Promise<{ ok: boolean; path?: string; error?: string; rows?: number }>;
+        dailyReport: (req?: ReportRangeArg) =>
+          Promise<{ ok: boolean; path?: string; error?: string }>;
+        salesSummary:    (range?: ReportRangeArg) => Promise<any>;
+        topProducts:     (range?: ReportRangeArg) => Promise<any[]>;
+        recentOrders:    (range?: ReportRangeArg) => Promise<any[]>;
         stockLevels:     () => Promise<any[]>;
         fuelSales:       () => Promise<any>;
         pumpStatus:      () => Promise<any[]>;

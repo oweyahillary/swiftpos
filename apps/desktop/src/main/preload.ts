@@ -75,6 +75,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     isConfigured:   ()             => ipcRenderer.invoke('config:isConfigured'),
     save:           (patch: any)   => ipcRenderer.invoke('config:save', patch),
     clear:          ()             => ipcRenderer.invoke('config:clear'),
+    // Read-only terminal identity, for display. Lives here with the other
+    // device:* calls rather than in a namespace of its own.
+    identity:       ()             => ipcRenderer.invoke('device:identity'),
     resetPreview:   ()             => ipcRenderer.invoke('device:resetPreview'),
     reset:          (force?: boolean) => ipcRenderer.invoke('device:reset', { force }),
     testConnection: (url: string)  => ipcRenderer.invoke('config:testConnection', url),
@@ -92,7 +95,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
 
   shift: {
     current: ()                                                          => ipcRenderer.invoke('shift:current'),
-    open:    (opening_float: number)                                     => ipcRenderer.invoke('shift:open', { opening_float }),
+    open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
     stale: () => ipcRenderer.invoke('shift:stale'),
     forceClose: (reason: string) => ipcRenderer.invoke('shift:forceClose', { reason }),
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason }),
@@ -128,9 +131,14 @@ contextBridge.exposeInMainWorld('swiftpos', {
   },
 
   manager: {
-    salesSummary:   () => ipcRenderer.invoke('manager:salesSummary'),
-    topProducts:    () => ipcRenderer.invoke('manager:topProducts'),
-    recentOrders:   () => ipcRenderer.invoke('manager:recentOrders'),
+    // `range` optional: omitted keeps the original today-only behaviour.
+    salesSummary:   (range?: any) => ipcRenderer.invoke('manager:salesSummary', range),
+    topProducts:    (range?: any) => ipcRenderer.invoke('manager:topProducts', range),
+    recentOrders:   (range?: any) => ipcRenderer.invoke('manager:recentOrders', range),
+    reportScope:    ()            => ipcRenderer.invoke('manager:reportScope'),
+    resolveRange:   (range: any)  => ipcRenderer.invoke('manager:resolveRange', range),
+    exportCsv:      (req: any)    => ipcRenderer.invoke('manager:exportCsv', req),
+    dailyReport:    (req?: any)   => ipcRenderer.invoke('manager:dailyReport', req),
     stockLevels:    () => ipcRenderer.invoke('manager:stockLevels'),
     fuelSales:      () => ipcRenderer.invoke('manager:fuelSales'),
     pumpStatus:     () => ipcRenderer.invoke('manager:pumpStatus'),

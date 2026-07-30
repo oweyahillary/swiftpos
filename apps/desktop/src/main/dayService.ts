@@ -126,17 +126,27 @@ export interface DayGate {
   needsManager?: boolean;
   /** The stale day, when that is what is blocking. */
   staleDay?: BusinessDay;
-  /** The open shift blocking a day close, if any. */
-  openShiftId?: string;
+  /**
+   * Distinguishes "nobody has opened a drawer" from "a manager must clear
+   * yesterday". Both stop a sale, but the cashier's next action is completely
+   * different — open your own drawer, or go and find a manager — and the first
+   * release reported only the stale-day case. A cashier with no drawer open
+   * therefore saw nothing at all, rang up a full basket, and met the refusal for
+   * the first time at payment.
+   */
+  needsShift?: boolean;
 }
 
 /**
  * May this till trade?
  *
- * The rule you asked for: a till whose PREVIOUS day is still open cannot start a
- * new one and cannot sell. Selling would post today's takings against yesterday's
- * drawer, which is the exact harm the day close exists to prevent — so the block
- * covers sales, not just the open action.
+ * Two obstructions, reported separately because they need different actions:
+ *
+ *   needsManager — the PREVIOUS day was never closed. Selling now would post
+ *                  today's takings against yesterday's drawer, which is the exact
+ *                  harm the day close exists to prevent. Manager only.
+ *   needsShift   — no drawer is open on this till. The cashier clears this
+ *                  themselves by opening one with a counted float.
  */
 export function checkDayGate(): DayGate {
   const today = businessDateNow();
@@ -153,6 +163,14 @@ export function checkDayGate(): DayGate {
     };
   }
 
+  if (!getOpenShift()) {
+    return {
+      canTrade: false,
+      needsShift: true,
+      reason: 'No drawer is open. Open a shift with its counted float to start selling.',
+    };
+  }
+
   return { canTrade: true };
 }
 
@@ -164,8 +182,20 @@ export function checkDayGate(): DayGate {
  * that a cashier can forget is a step that gets worked around, and the day has
  * no meaning independent of a drawer being open.
  */
-export function ensureDayOpen(openedByStaffId?: string | null): BusinessDay {
+/**
+ * The manager-only obstruction, on its own.
+ *
+ * Separate from checkDayGate because that now also reports "no drawer open" —
+ * and opening a drawer is precisely what ensureDayOpen and openShift are doing.
+ * Consulting the full gate there would refuse to open the shift that clears it.
+ */
+export function checkStaleDay(): DayGate {
   const gate = checkDayGate();
+  return gate.needsManager ? gate : { canTrade: true };
+}
+
+export function ensureDayOpen(openedByStaffId?: string | null): BusinessDay {
+  const gate = checkStaleDay();
   if (!gate.canTrade) throw new Error(gate.reason ?? 'This till cannot trade yet');
 
   const existing = getOpenDay();
@@ -216,7 +246,11 @@ export function getConflictedShifts(): ConflictedShift[] {
     SELECT s.id, s.business_date, s.notes,
            COALESCE(st.name, 'Unknown cashier') AS cashier_name
       FROM shifts s
-      LEFT JOIN staff st ON st.id = s.cashier_id
+      -- users, NOT staff: there is no local staff table, only staff_session (one
+      -- row for whoever is signed in). Cashier names live in users, pulled down
+      -- from the server. Joining staff threw "no such table", which rejected
+      -- day:conflicts and blanked the entire Close Day screen.
+      LEFT JOIN users st ON st.id = s.cashier_id
      WHERE s.sync_status = 'conflict'
      ORDER BY s.opened_at DESC
   `).all() as ConflictedShift[];

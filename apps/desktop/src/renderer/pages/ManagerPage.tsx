@@ -16,6 +16,8 @@ import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
 import PrintersTab from './PrintersTab';
 import DayCloseTab from './DayCloseTab';
+import ReportRangeBar from '../components/ReportRangeBar';
+import type { ReportRangeArg } from '../lib/posApi';
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printReceipt } from '../lib/printReceipt';
@@ -470,31 +472,50 @@ function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: nu
 function OrdersTab({ currency }: { currency: string }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
+
+  // 500 rather than 30: a date range is asked for in order to see the range, and
+  // silently showing the newest 30 of a month would be a lie the totals confirm.
+  // The CSV export is uncapped — the screen is capped only to stay responsive.
+  const load = (r: ReportRangeArg) => {
+    setLoading(true);
+    posApi.manager.recentOrders({ ...r, limit: 500 })
+      .then(setOrders).catch(() => {}).finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     let live = true;
-    posApi.manager.recentOrders().then(o => { if (live) setOrders(o); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    posApi.manager.recentOrders({ ...range, limit: 500 })
+      .then(o => { if (live) setOrders(o); }).catch(() => {})
+      .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, []);
+  }, [range.preset, range.from, range.to]);
 
-  if (loading) return <Spinner />;
+  const rangeTotal = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-white">Recent Orders</h2>
-          <p className="text-gray-300 text-sm">Last {orders.length} orders from local storage</p>
+          <h2 className="text-lg font-bold text-white">Orders</h2>
+          <p className="text-gray-300 text-sm">
+            {loading ? 'Loading…' : `${orders.length} order${orders.length === 1 ? '' : 's'} · ${fmt(rangeTotal, currency)}`}
+            {orders.length === 500 && <span className="text-amber-400"> · showing first 500, download for all</span>}
+          </p>
         </div>
-        <button onClick={() => { setLoading(true); posApi.manager.recentOrders().then(setOrders).catch(() => {}).finally(() => setLoading(false)); }}
+        <button onClick={() => load(range)}
           className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5 transition-colors">
           <Icon d={I.refresh} size={14} /> Refresh
         </button>
       </div>
 
-      {orders.length === 0
-        ? <div className="text-center py-12 text-gray-300">No orders found in local storage.</div>
-        : (
+      <ReportRangeBar value={range} onChange={setRange} exportKind="orders" showDailyReport />
+
+      {loading && <Spinner />}
+
+      {!loading && orders.length === 0
+        ? <div className="text-center py-12 text-gray-300">No orders in this date range.</div>
+        : loading ? null : (
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -944,6 +965,21 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   const canManageStaff    = has('staff.manage');
   const canManageSettings = has('settings.manage');
 
+  // Closing the trading day is a CASH operation, not a settings one, so it must
+  // not hide behind settings.manage. Gated on the same rule dayService.isManager()
+  // applies in the main process — role, wildcard, or settings.manage — so the
+  // button appears exactly when the action will actually be permitted.
+  //
+  // This was wrong on first release: the tab was gated on settings.manage alone,
+  // so a user whose role IS Manager but who lacks that specific permission saw no
+  // Close Day tab at all — and since the day gate blocks the till until the day is
+  // closed, that left the terminal with no way out. Same gate is why Receipt and
+  // Printers were also missing for that user.
+  const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
+  const isManagerRole =
+    MANAGER_ROLES.includes(String((staff as any)?.role ?? '').toLowerCase())
+    || has('settings.manage');
+
   // Stock tab only appears once something actually tracks stock.
   const [showStock, setShowStock] = useState(false);
   useEffect(() => {
@@ -962,7 +998,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     { key: 'zreport',  label: 'Shift Report', icon: I.zreport  },
     // Manager-only: this is the escape route for the trading-day gate. Without
     // it a till stays frozen the first morning nobody closed the day.
-    ...(canManageSettings ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
+    ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
     ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
     { key: 'prices',   label: 'Prices',       icon: I.prices   },
     // Editing, not just viewing. Without these the owner has to phone us to add
