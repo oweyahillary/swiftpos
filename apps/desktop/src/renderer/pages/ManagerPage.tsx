@@ -16,6 +16,7 @@ import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
 import PrintersTab from './PrintersTab';
 import DayCloseTab from './DayCloseTab';
+import MenuWorkbench from './MenuWorkbench';
 import ReportRangeBar from '../components/ReportRangeBar';
 import type { ReportRangeArg } from '../lib/posApi';
 import { modeFlags } from '../lib/posMode';
@@ -1000,21 +1001,24 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // it a till stays frozen the first morning nobody closed the day.
     ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
     ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
-    { key: 'prices',   label: 'Prices',       icon: I.prices   },
     // Editing, not just viewing. Without these the owner has to phone us to add
     // a product or fix a price, which for fast food is a daily event.
-    ...(canManageProducts ? [{ key: 'menu' as TabKey,    label: 'Menu',    icon: I.menu      }] : []),
-    ...(canManageProducts ? [{ key: 'combos' as TabKey,  label: 'Combos',  icon: I.items     }] : []),
-    ...(canManageProducts ? [{ key: 'import' as TabKey,  label: 'Import',  icon: I.refresh   }] : []),
+    // ONE Menu tab. Prices, Combos and Import were three views of the same menu,
+    // organised around database tables rather than around a menu item — and a
+    // combo was never a different kind of thing, only a different query. To change
+    // a combo's price and its contents you had to visit three tabs, and none of
+    // them mentioned the other two. Import stays reachable from inside the Menu
+    // screen rather than as a sibling nobody connects to the menu they are editing.
+    ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
     ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
-    ...(canManageSettings ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
+    ...(isManagerRole ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
     // Gated like the other configuration tabs. It was briefly left open on the
     // reasoning that printer bindings are per-device, so whoever stands at the
     // till is who needs them. That was wrong: re-pointing a printer mid-service
     // sends receipts to the wrong station and nobody notices until the queue
     // backs up. Cashiers keep the read-only view on the POS screen, where they
     // can see connection status and fire a test print.
-    ...(canManageSettings ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
+    ...(isManagerRole ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
     // Hidden when nothing is stock-tracked — an owner who turned stock off
     // shouldn't be shown an empty Stock screen and conclude it's broken.
     ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
@@ -1034,7 +1038,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
-      case 'menu':    return <MenuTab    currency={currency} />;
+      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => setActive('import')} />;
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;

@@ -113,6 +113,26 @@ export interface ReportRangeArg {
   limit?: number;
 }
 
+export type StationKind = 'kitchen' | 'dispatch' | 'receipt';
+
+/**
+ * What a variant group IS.
+ *   choice  — free preference, exactly one, no price anywhere
+ *   upgrade — priced ladder; the first option is the included baseline at 0
+ *   review  — migration 45 could not classify it safely and left it untouched
+ */
+export type VariantKind = 'choice' | 'upgrade' | 'review';
+
+/** A named print destination. The physical printer is bound per till, not here. */
+export interface PrintStation {
+  id: string;
+  name: string;
+  kind: StationKind;
+  sort_order: number;
+  active: boolean;
+  category_ids: string[];
+}
+
 export interface PrinterInfo {
   name: string;
   displayName: string;
@@ -137,6 +157,10 @@ declare global {
         init: () => Promise<{ products: any[]; categories: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
           comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>>;
           kitchenCategories: string[];
+        stationRouting?: {
+          stations: Array<{ id: string; name: string; kind: 'kitchen' | 'dispatch' | 'receipt'; sort_order: number }>;
+          byCategory: Record<string, string[]>;
+        };
           receiptHeader: string; receiptFooter: string }>;
         getVariants: (productId: string) => Promise<any[]>;
         getModifiers: (productId: string) => Promise<any[]>;
@@ -150,7 +174,8 @@ declare global {
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
-        status: () => Promise<{ online: boolean; pendingCount: number; failedCount: number }>;
+        status: () => Promise<{ online: boolean; pendingCount: number; failedCount: number;
+                                failedReason?: string; failedSince?: string }>;
         retryFailed: () => Promise<{ requeued: number; pushed: number; errors: string[] }>;
         notifyNetworkChange: (online: boolean) => Promise<{ online: boolean; pendingCount: number; failedCount: number }>;
       };
@@ -223,6 +248,13 @@ declare global {
         updateProduct:  (id: string, patch: any) => Promise<any>;
         listCategories: () => Promise<any[]>;
         createCategory: (payload: any) => Promise<any>;
+        listStations:  () => Promise<PrintStation[]>;
+        unassignedCategories: () => Promise<{ id: string; name: string }[]>;
+        createStation: (payload: { name: string; kind?: StationKind; sort_order?: number }) => Promise<PrintStation>;
+        updateStation: (id: string, patch: Partial<{ name: string; kind: StationKind; sort_order: number; active: boolean }>) => Promise<PrintStation>;
+        deleteStation: (id: string) => Promise<any>;
+        setStationCategories: (id: string, categoryIds: string[]) =>
+          Promise<{ station_id: string; category_ids: string[]; rejected: string[] }>;
         updateCategory: (id: string, patch: any) => Promise<any>;
         bulkProducts:       (rows: any[]) => Promise<{ created: number; updated: number; errors: Array<{ row: number; error: string }> }>;
         listCombos:         () => Promise<any[]>;
@@ -234,6 +266,10 @@ declare global {
         deleteModifierGroup: (id: string) => Promise<any>;
         listVariantGroups:  (productId: string) => Promise<any[]>;
         createVariantGroup: (payload: any) => Promise<any>;
+        updateVariantGroup: (id: string, patch: { name?: string; required?: boolean; kind?: VariantKind; combo_item_id?: string | null }) => Promise<any>;
+        createVariantOption: (payload: { variant_group_id: string; name: string; price_adjustment?: number; sort_order?: number }) => Promise<any>;
+        updateVariantOption: (id: string, patch: { name?: string; price_adjustment?: number; sort_order?: number }) => Promise<any>;
+        deleteVariantOption: (id: string) => Promise<any>;
         deleteVariantGroup: (id: string) => Promise<any>;
         listStaff:      () => Promise<any[]>;
         listRoles:      () => Promise<any[]>;

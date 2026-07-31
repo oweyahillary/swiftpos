@@ -22,13 +22,16 @@ export const round2 = (n: number) => Math.round(n * 100) / 100;
 // server's own default so an unsynced till can never over-discount.
 export const DEFAULT_MAX_DISCOUNT_PCT = 10;
 
-export type LegMethod = 'cash' | 'mpesa' | 'card';
+// glovo settles to the business later and never touches the drawer, so it is a
+// payment method rather than an order type. Cash reconciliation filters on
+// method = 'cash' specifically, so adding one here cannot inflate expected cash.
+export type LegMethod = 'cash' | 'mpesa' | 'card' | 'glovo';
 
 export interface DraftLeg {
   method: LegMethod;
   amount: string;     // raw input; '' means "the remaining balance"
   tendered: string;   // cash only
-  reference: string;  // mpesa/card only
+  reference: string;  // mpesa/card/glovo — the aggregator's order reference
 }
 
 // VAT-inclusive pricing: VAT is extracted from the post-discount goods total.

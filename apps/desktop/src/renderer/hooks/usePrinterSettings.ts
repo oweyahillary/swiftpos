@@ -37,6 +37,18 @@ export interface PrinterSettings {
    */
   paperMode:          'auto' | 58 | 80;
   /**
+   * Which physical printer serves each station, on THIS terminal.
+   *
+   * Keyed on station id. Stations are defined once for the business ("Grill"),
+   * but the printer attached to till 1 is not the printer attached to till 3, so
+   * the binding cannot live in the shared schema — it is a property of the
+   * machine, like receiptPrinterName already is.
+   *
+   * A station with no entry falls back to the legacy kitchen/dispatcher printer
+   * settings, so nothing stops printing the moment stations are introduced.
+   */
+  stationPrinters:    Record<string, string>;
+  /**
    * Last width the DRIVER reported, in mm. Cached here — rather than kept in
    * React state — because printing happens from POSPage, ManagerPage and the
    * sync path, all of which already carry `settings` and none of which can call
@@ -64,6 +76,7 @@ export const PRINTER_DEFAULTS: PrinterSettings = {
   kitchenEnabled:     true,
   printWidthMm:       0,
   paperMode:          'auto',
+  stationPrinters:    {},
   detectedWidthMm:    0,
 };
 

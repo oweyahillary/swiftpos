@@ -12,7 +12,16 @@ router.use(requireAuth);
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/sync/push
 // Idempotent upsert (BY ID) of records created OFFLINE on a desktop terminal:
-// shifts, float_transactions, expenses. The client generates the UUIDs, so:
+// business_days, shifts, float_transactions, expenses.
+//
+// ARM ORDER IS LOAD-BEARING — parents before children:
+//     business_days  →  shifts  →  floats / expenses      (orders push separately)
+// `shifts.business_day_id` references `business_days.id` (migration 41), so a
+// shift upserted before its day fails 23503 and, because a non-23505 error
+// returns straight away, the day it needed never gets inserted. See the note on
+// the trading-days arm before moving anything.
+//
+// The client generates the UUIDs, so:
 //   • orders.shift_id / float.shift_id / expense.shift_id resolve once the parent
 //     shift is here (the client pushes shifts before its orders);
 //   • a re-push after a lost response UPDATES in place instead of duplicating.
@@ -83,7 +92,90 @@ router.post('/push', async (req, res) => {
   const rejected: { id: string; code: string; error: string }[] = [];
 
   try {
-    // ── Shifts (parent — upsert FIRST so child FKs resolve) ──────────────────
+    // ── Trading days (parent of shifts — upsert FIRST) ───────────────────────
+    // Originated by the till, like shifts. Without this arm a day closed on the
+    // terminal never leaves it, so the cloud shows every trading day as open
+    // forever and no dashboard report can ever see a reconciled one.
+    //
+    // Unlike shifts, the close IS trusted from the client here. That is a
+    // deliberate difference: a shift's expected_cash cannot be computed
+    // server-side at push time because its orders usually have not arrived yet
+    // (see the shifts note below), whereas a day's figures are the manager's own
+    // physical count plus a sum over shifts the till already holds. There is no
+    // server-side alternative to trust — the count only exists at the terminal.
+    //
+    // ── WHY THIS ARM RUNS FIRST (moved 31 Jul 2026) ─────────────────────────
+    // Migration 41 added
+    //     shifts.business_day_id REFERENCES business_days(id)
+    // which made `shifts` a CHILD of this table. This arm nonetheless ran LAST,
+    // after shifts/floats/expenses, so every shift carrying a business_day_id
+    // whose day had not yet reached the cloud failed shifts_business_day_id_fkey
+    // (23503) — and because any non-23505 error returns immediately, the handler
+    // never reached this arm to insert the parent it was missing.
+    //
+    // That is a closed loop, not a transient failure: the till retried the
+    // identical payload every 60s indefinitely, its orders failed
+    // orders_shift_id_fkey behind the shift that never landed, and the terminal
+    // showed a permanent "N failed" that no retry could clear. Observed live on
+    // 31 Jul 2026, business_day_id 0d3f3fe2, ~13 minutes of identical 500s.
+    //
+    // Parents before children. Do not reorder these arms without checking the FK
+    // graph in migrations/41_business_days_and_shift_attribution.sql.
+    const syncedDayIds = new Set<string>();
+    if (businessDays.length) {
+      const ids = businessDays.map((d: any) => d.id);
+      const { data: existing } = await supabase
+        .from('business_days').select('id, business_id').in('id', ids);
+      if ((existing ?? []).some((r: any) => r.business_id !== businessId)) {
+        res.status(409).json({ error: 'business_day id belongs to another business' });
+        return;
+      }
+
+      const rows = businessDays.map((d: any) => ({
+        id:            d.id,
+        business_id:   businessId,                 // forced from token
+        branch_id:     d.branch_id,
+        device_id:     d.device_id ?? null,
+        terminal_code: d.terminal_code ?? null,
+        business_date: d.business_date,
+        opened_at:     d.opened_at,
+        opened_by:     d.opened_by ?? null,
+        closed_at:     d.closed_at ?? null,
+        closed_by:     d.closed_by ?? null,
+        status:        d.status === 'closed' ? 'closed' : 'open',
+        // NULL, never 0. A zero variance asserts somebody counted and it
+        // balanced; an unclosed day has had no count at all.
+        counted_cash:  d.counted_cash ?? null,
+        expected_cash: d.expected_cash ?? null,
+        cash_variance: d.cash_variance ?? null,
+        notes:         d.notes ?? null,
+        updated_at:    new Date().toISOString(),
+      }));
+
+      // Per-row, for the same reason as shifts: business_days_one_open_per_till
+      // can reject a row, and a batch call would take the whole push down with it.
+      const results = await Promise.all(
+        rows.map(async row => {
+          const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
+          return { id: row.id, error };
+        }),
+      );
+      for (const r of results) {
+        if (!r.error) { upserted.businessDays++; syncedDayIds.add(r.id); continue; }
+        if ((r.error as { code?: string }).code === '23505') {
+          rejected.push({
+            id: r.id,
+            code: 'duplicate_open_day',
+            error: 'This till already has an open trading day. It must be closed before this one can sync.',
+          });
+          continue;
+        }
+        sendError(res, r.error);
+        return;
+      }
+    }
+
+    // ── Shifts ───────────────────────────────────────────────────────────────
     // Audit C6: this endpoint used to trust the client's expected_cash /
     // cash_variance / status='closed' outright — an offline till could report
     // any numbers it liked with no server check. It can't safely compute the
@@ -107,8 +199,47 @@ router.post('/push', async (req, res) => {
       // reopened by a stale/retried push — just leave it alone.
       const alreadyClosed = new Set((existing ?? []).filter(r => r.status === 'closed').map(r => r.id));
 
-      const rows = shifts
-        .filter((s: any) => !alreadyClosed.has(s.id))
+      // ── The parent trading day must exist, or the upsert fails 23503 ────────
+      // With the days arm running first, the parent is normally already in
+      // `syncedDayIds`. It can still legitimately be absent: a day refused above
+      // as duplicate_open_day never landed, and its shifts would then fail the FK
+      // and — under the old ordering — 500 the whole push, taking floats,
+      // expenses and every other row in the payload down with them.
+      //
+      // Report them per id instead. `rejected` is the correct bucket and a silent
+      // skip is not: syncEngine marks every shift NOT in `rejected` as synced, so
+      // a skipped shift would be recorded as delivered and never retried — the
+      // drawer would simply disappear from the cloud with nothing reporting it.
+      const candidates = shifts.filter((s: any) => !alreadyClosed.has(s.id));
+      const neededDayIds: string[] = Array.from(new Set<string>(
+        candidates
+          .map((s: any) => (typeof s.business_day_id === 'string' ? s.business_day_id : ''))
+          .filter((id: string) => id.length > 0),
+      ));
+      const lookupDayIds = neededDayIds.filter(id => !syncedDayIds.has(id));
+      if (lookupDayIds.length) {
+        const { data: presentDays } = await supabase
+          .from('business_days')
+          .select('id')
+          .in('id', lookupDayIds)
+          .eq('business_id', businessId);
+        for (const d of (presentDays ?? []) as { id: string }[]) syncedDayIds.add(d.id);
+      }
+      const orphanedDayIds = new Set(neededDayIds.filter(id => !syncedDayIds.has(id)));
+
+      const rows = candidates
+        .filter((s: any) => {
+          if (s.business_day_id && orphanedDayIds.has(s.business_day_id)) {
+            rejected.push({
+              id: s.id,
+              code: 'missing_business_day',
+              error: 'This shift\'s trading day is not on the server — the day was refused ' +
+                     'or has not synced yet. Resolve the trading day first.',
+            });
+            return false;
+          }
+          return true;
+        })
         .map((s: any) => ({
           id:            s.id,
           business_id:   businessId,                 // forced from token, not the client
@@ -239,70 +370,6 @@ router.post('/push', async (req, res) => {
       const { error } = await supabase.from('expenses').upsert(rows, { onConflict: 'id' });
       if (error) { sendError(res, error); return; }
       upserted.expenses = rows.length;
-    }
-
-    // ── Trading days ─────────────────────────────────────────────────────────
-    // Originated by the till, like shifts. Without this arm a day closed on the
-    // terminal never leaves it, so the cloud shows every trading day as open
-    // forever and no dashboard report can ever see a reconciled one.
-    //
-    // Unlike shifts, the close IS trusted from the client here. That is a
-    // deliberate difference: a shift's expected_cash cannot be computed
-    // server-side at push time because its orders usually have not arrived yet
-    // (see the note above), whereas a day's figures are the manager's own
-    // physical count plus a sum over shifts the till already holds. There is no
-    // server-side alternative to trust — the count only exists at the terminal.
-    if (businessDays.length) {
-      const ids = businessDays.map((d: any) => d.id);
-      const { data: existing } = await supabase
-        .from('business_days').select('id, business_id').in('id', ids);
-      if ((existing ?? []).some((r: any) => r.business_id !== businessId)) {
-        res.status(409).json({ error: 'business_day id belongs to another business' });
-        return;
-      }
-
-      const rows = businessDays.map((d: any) => ({
-        id:            d.id,
-        business_id:   businessId,                 // forced from token
-        branch_id:     d.branch_id,
-        device_id:     d.device_id ?? null,
-        terminal_code: d.terminal_code ?? null,
-        business_date: d.business_date,
-        opened_at:     d.opened_at,
-        opened_by:     d.opened_by ?? null,
-        closed_at:     d.closed_at ?? null,
-        closed_by:     d.closed_by ?? null,
-        status:        d.status === 'closed' ? 'closed' : 'open',
-        // NULL, never 0. A zero variance asserts somebody counted and it
-        // balanced; an unclosed day has had no count at all.
-        counted_cash:  d.counted_cash ?? null,
-        expected_cash: d.expected_cash ?? null,
-        cash_variance: d.cash_variance ?? null,
-        notes:         d.notes ?? null,
-        updated_at:    new Date().toISOString(),
-      }));
-
-      // Per-row, for the same reason as shifts: business_days_one_open_per_till
-      // can reject a row, and a batch call would take the whole push down with it.
-      const results = await Promise.all(
-        rows.map(async row => {
-          const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
-          return { id: row.id, error };
-        }),
-      );
-      for (const r of results) {
-        if (!r.error) { upserted.businessDays++; continue; }
-        if ((r.error as { code?: string }).code === '23505') {
-          rejected.push({
-            id: r.id,
-            code: 'duplicate_open_day',
-            error: 'This till already has an open trading day. It must be closed before this one can sync.',
-          });
-          continue;
-        }
-        sendError(res, r.error);
-        return;
-      }
     }
 
     // `rejected` is deliberately part of a 200, not an error status. These rows

@@ -60,6 +60,11 @@ const MODE_ROWS: { label: string; methods: string[] }[] = [
   { label: 'M-Pesa', methods: ['mpesa'] },
   { label: 'Card', methods: ['card'] },
   { label: 'On Account', methods: ['credit'] },
+  // Aggregator. Listed explicitly so it appears in its own right rather than
+  // falling into the unlisted catch-all below — a Glovo day showing up under a
+  // generic heading is how aggregator income stops being reconciled against what
+  // Glovo actually settles.
+  { label: 'Glovo', methods: ['glovo'] },
 ];
 
 interface Totals {

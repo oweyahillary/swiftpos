@@ -24,6 +24,15 @@ export interface KOTContext {
   orderType:   string;   // 'dine_in' | 'takeaway' | 'retail'
   staffName?:  string;
   notes?:      string;
+  /**
+   * Which station this copy is for — printed in the header.
+   *
+   * With several stations a branch can have three tickets for one order landing
+   * in three places. Without the name on the paper they are indistinguishable,
+   * and the first person to pick one up cannot tell whether they are holding the
+   * grill's copy or the bar's.
+   */
+  stationName?: string;
 }
 
 // ─── KOT HTML builder (same layout as the dashboard) ─────────────────────────
@@ -49,7 +58,10 @@ export function buildKOTHtml(items: TicketLine[], ctx: KOTContext, paperWidth: 5
   let html = `<div style="font-family:'Courier New',monospace;font-size:${paperWidth === 58 ? '11px' : '13px'};line-height:1.6;color:#000;">`;
 
   html += `<div style="text-align:center;margin-bottom:6px;">`;
-  html += `<p style="font-size:${paperWidth === 58 ? '18px' : '22px'};font-weight:bold;letter-spacing:2px;">KITCHEN</p>`;
+  // The station's own name when there is one, so three tickets for one order
+  // landing at three stations can be told apart on the paper.
+  html += `<p style="font-size:${paperWidth === 58 ? '18px' : '22px'};font-weight:bold;letter-spacing:2px;">${
+    ctx.stationName ? esc(ctx.stationName.toUpperCase()) : 'KITCHEN'}</p>`;
   html += `</div>`;
   html += rule('1px dashed #000');
 

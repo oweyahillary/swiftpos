@@ -7,8 +7,11 @@
 name: CI
 
 on:
+  # dev is where work lands; main is what the tills run. CI must gate BOTH, and
+  # dev especially — a check that only fires on a PR to main lets a broken commit
+  # sit on dev for a week, and by then the failure is buried under later work.
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 # Cancel superseded runs on the same branch — Render free tier + long installs.

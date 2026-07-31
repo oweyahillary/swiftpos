@@ -57,19 +57,51 @@ async function runDailySummary(): Promise<void> {
     try {
       await sendSummaryForBusiness(biz, dateFrom, dateTo);
     } catch (err: any) {
-      console.error(`[dailySummary] Failed for business ${biz.id}:`, err.message);
+      console.error(`[dailySummary] Failed for ${biz.name} (${biz.id}):`, err.message);
     }
   }
 }
+
+/**
+ * `supabase.auth.admin.getUserById` THROWS on a malformed id rather than
+ * returning an error in the response — "@supabase/auth-js: Expected parameter to
+ * be UUID but is not". That aborted the whole summary for the affected business.
+ * Observed live 31 Jul 2026 on business 395e8a31-82ec-4e29-8d64-48ad8266dd59.
+ *
+ * lowStockChecker.ts already guarded this with `if (business?.owner_id)`; this
+ * job never did. A null guard alone is not quite enough either — an empty string
+ * or a truncated id is truthy-adjacent and still throws — so check the shape.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function sendSummaryForBusiness(
   biz: { id: string; name: string; owner_id: string; currency: string },
   dateFrom: string,
   dateTo: string,
 ): Promise<void> {
-  // Get owner email
-  const { data: { user } } = await supabase.auth.admin.getUserById(biz.owner_id);
-  const ownerEmail = user?.email;
+  // A business with no valid owner has nobody to send to. That is a data problem
+  // to fix in the dashboard, not a reason to throw out of this job.
+  if (!biz.owner_id || !UUID_RE.test(biz.owner_id)) {
+    console.warn(
+      `[dailySummary] ${biz.name} (${biz.id}) has no valid owner_id ` +
+      `(${JSON.stringify(biz.owner_id)}) — no recipient, skipping.`,
+    );
+    return;
+  }
+
+  // Get owner email.
+  //
+  // Destructured defensively: the original `const { data: { user } } = …` throws
+  // "Cannot destructure property 'user' of ... as it is null" whenever the call
+  // returns an error, because `data` is null on the error path. A missing owner
+  // record should skip this business quietly, not crash it.
+  const { data: ownerData, error: ownerErr } =
+    await supabase.auth.admin.getUserById(biz.owner_id);
+  if (ownerErr) {
+    console.warn(`[dailySummary] ${biz.name} (${biz.id}): owner lookup failed — ${ownerErr.message}`);
+    return;
+  }
+  const ownerEmail = ownerData?.user?.email;
   if (!ownerEmail) return;
 
   const currency = biz.currency ?? 'KES';

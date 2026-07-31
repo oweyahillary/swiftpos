@@ -181,12 +181,24 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
               </td>
             </tr></tbody>
           </table>
-          {item.selectedVariants.map((v: any) => (
-            <div key={v.optionId} style={{ paddingLeft: '10px' }}>{v.optionName}</div>
-          ))}
-          {item.selectedModifiers.map((m: any) => (
-            <div key={m.optionId} style={{ paddingLeft: '10px' }}>+ {m.optionName}</div>
-          ))}
+          {/* CUSTOMER RECEIPT: menu item and price only.
+              ────────────────────────────────────────────────────────────────
+              Variant and modifier names — "Normal", "Spicy", "+ Large fries" —
+              are the DESCRIPTION, and the owner's decision is that description
+              belongs on the kitchen and packing tickets, not the customer's copy.
+              It matches the incumbent receipt the staff already read, which
+              carries no sub-lines at all.
+
+              No prices are added anywhere here. The amount against the item is
+              already the true charge: computeLineTotal folds every variant
+              adjustment and modifier price into lineTotal, so the column still
+              foots to the total with nothing hidden and nothing double-counted.
+
+              Worth knowing, since it will surface at the counter one day: a
+              priced upgrade now has no explanation on the paper, so a combo
+              advertised at 787 prints as 847 with nothing saying why. The
+              kitchen and packing tickets still carry the detail, so the answer
+              exists — it is just not in the customer's hand. */}
         </div>
       ))}
       {rule()}

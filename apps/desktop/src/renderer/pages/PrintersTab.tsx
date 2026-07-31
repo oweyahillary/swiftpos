@@ -19,6 +19,7 @@ import { usePrinterSettings, PRINTER_DEFAULTS } from '../hooks/usePrinterSetting
 import { posApi } from '../lib/posApi';
 import { printReceipt, buildCalibrationTicket, buildThermalDocument } from '../lib/printReceipt';
 import PaperWidthControl from '../components/PaperWidthControl';
+import StationsPanel from '../components/StationsPanel';
 import { printKOT, buildKOTHtml } from '../lib/printKOT';
 import { printDispatcher, buildDispatcherHtml } from '../lib/printDispatcher';
 import type { TicketLine } from '../lib/ticketLines';
@@ -27,18 +28,21 @@ import type { TicketLine } from '../lib/ticketLines';
 // components, a line with a variant qualifier, a non-kitchen line that must be
 // filtered off the KOT but kept on the dispatcher ticket, and a long name that
 // tests wrapping at 58mm.
+// stationIds empty throughout: the sample exercises the UNCONFIGURED path, which
+// is what a till prints before anyone has set stations up — and therefore the
+// behaviour most worth being able to preview.
 const SAMPLE_LINES: TicketLine[] = [
   {
-    name: 'Kanka Combo', quantity: 2, qualifier: '', isKitchen: false,
+    name: 'Kanka Combo', quantity: 2, qualifier: '', isKitchen: false, stationIds: [],
     components: [
-      { name: 'Kanka Beef',     quantity: 1, isKitchen: true  },
-      { name: 'Ugali',          quantity: 1, isKitchen: true  },
-      { name: 'Kachumbari',     quantity: 1, isKitchen: true  },
-      { name: 'Coca-Cola 500ml', quantity: 1, isKitchen: false },
+      { name: 'Kanka Beef',      quantity: 1, isKitchen: true,  stationIds: [] },
+      { name: 'Ugali',           quantity: 1, isKitchen: true,  stationIds: [] },
+      { name: 'Kachumbari',      quantity: 1, isKitchen: true,  stationIds: [] },
+      { name: 'Coca-Cola 500ml', quantity: 1, isKitchen: false, stationIds: [] },
     ],
   },
-  { name: '3PC Chicken & Chips Large', quantity: 1, qualifier: 'Spicy, Extra sauce', components: [], isKitchen: true },
-  { name: 'Dasani Water 500ml',        quantity: 3, qualifier: '',                   components: [], isKitchen: false },
+  { name: '3PC Chicken & Chips Large', quantity: 1, qualifier: 'Spicy, Extra sauce', components: [], isKitchen: true,  stationIds: [] },
+  { name: 'Dasani Water 500ml',        quantity: 3, qualifier: '',                   components: [], isKitchen: false, stationIds: [] },
 ];
 
 const kitchenSample = SAMPLE_LINES
@@ -279,6 +283,10 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
           Windows reports no printers installed. Add one in Windows Settings, then press Refresh.
         </p>
       )}
+
+      <Card title="Stations and routing">
+        <StationsPanel printers={printers} settings={settings} save={save} canEdit />
+      </Card>
 
       <Card title="Customer receipt">
         <PrinterPicker

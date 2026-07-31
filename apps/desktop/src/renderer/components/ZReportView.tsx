@@ -55,7 +55,7 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {byMethod.length === 0 && <p style={{ color: '#555' }}>No sales this shift</p>}
       {byMethod.map(m => (
         <div key={m.method} style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ textTransform: 'uppercase' }}>{m.method === 'mpesa' ? 'M-PESA' : m.method} ({m.orders})</span>
+          <span style={{ textTransform: 'uppercase' }}>{m.method === 'mpesa' ? 'M-PESA' : m.method === 'glovo' ? 'GLOVO' : m.method} ({m.orders})</span>
           <span>{money(m.amount)}</span>
         </div>
       ))}

@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.5",
+  "version": "0.4.4",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -19,8 +19,6 @@
   "dependencies": {
     "better-sqlite3": "^11.10.0",
     "exceljs": "^4.4.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
@@ -38,7 +36,9 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
-    "wait-on": "^8.0.3"
+    "wait-on": "^8.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "build": {
     "appId": "com.swiftpos.desktop",
@@ -46,10 +46,18 @@
     "directories": {
       "output": "release"
     },
-    "compression": "store",
+    "compression": "normal",
     "files": [
       "dist/**/*",
-      "resources/**/*"
+      "resources/**/*",
+      "!**/*.map",
+      "!**/*.ts",
+      "!**/*.md",
+      "!**/{test,__tests__,tests,powered-test,example,examples}/**",
+      "!**/{.eslintrc,.prettierrc,.editorconfig,tsconfig.json,.npmignore}",
+      "!node_modules/exceljs/dist/**",
+      "!node_modules/better-sqlite3/{src,deps,build/Release/obj,build/Release/obj.target}/**",
+      "!node_modules/better-sqlite3/build/**/*.{o,a,lib,exp,pdb,ilk}"
     ],
     "linux": {
       "target": [
@@ -80,7 +88,10 @@
     },
     "portable": {
       "artifactName": "SwiftPOS-${version}-portable.exe"
-    }
+    },
+    "electronLanguages": [
+      "en-US"
+    ]
   },
   "description": "SwiftPOS offline-first point of sale terminal",
   "author": "SwiftPOS",

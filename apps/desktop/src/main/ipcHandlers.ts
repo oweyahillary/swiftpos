@@ -366,25 +366,53 @@ export function registerIpcHandlers() {
       // combo_id -> components, for dispatcher/kitchen ticket expansion. Sent
       // whole because a busy till should never hit SQLite mid-print.
       comboItems: (() => {
+        // category_id joined in so a COMPONENT can be routed the same way a
+        // top-level line is. Without it, station routing would work for a plain
+        // product and silently fall back to is_kitchen inside every combo — which
+        // is most of the menu.
         const rows = db.prepare(
-          `SELECT combo_id, product_id, name, quantity, is_kitchen
-             FROM combo_items ORDER BY combo_id, sort_order`
+          `SELECT ci.combo_id, ci.product_id, ci.name, ci.quantity, ci.is_kitchen,
+                  p.category_id
+             FROM combo_items ci
+             LEFT JOIN products p ON p.id = ci.product_id
+            ORDER BY ci.combo_id, ci.sort_order`
         ).all() as any[];
-        const out: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>> = {};
+        const out: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean; category_id: string | null }>> = {};
         for (const r of rows) {
           (out[r.combo_id] ??= []).push({
-            product_id: r.product_id,
-            name:       r.name,
-            quantity:   Number(r.quantity) || 1,
-            is_kitchen: r.is_kitchen === 1,
+            product_id:  r.product_id,
+            name:        r.name,
+            quantity:    Number(r.quantity) || 1,
+            is_kitchen:  r.is_kitchen === 1,
+            category_id: r.category_id ?? null,
           });
         }
         return out;
       })(),
-      // category_id -> is_kitchen, for routing non-combo lines.
+      // category_id -> is_kitchen. Still sent, and still used as the FALLBACK
+      // when no stations are configured — see stationRouting below.
       kitchenCategories: (() => {
         const rows = db.prepare(`SELECT id FROM categories WHERE is_kitchen = 1`).all() as any[];
         return rows.map(r => r.id as string);
+      })(),
+      /**
+       * Station routing, sent whole with the rest of the catalogue.
+       *
+       * `stations` empty means routing is NOT configured, and every caller must
+       * fall back to the old is_kitchen behaviour. That fallback is the single
+       * most important property here: a till that upgrades before anyone has set
+       * up stations must keep printing exactly as it did yesterday, or the first
+       * symptom is a kitchen receiving nothing during service.
+       */
+      stationRouting: (() => {
+        const stations = db.prepare(
+          `SELECT id, name, kind, sort_order FROM print_stations WHERE active = 1
+            ORDER BY sort_order, name`
+        ).all() as any[];
+        const links = db.prepare(`SELECT category_id, station_id FROM category_stations`).all() as any[];
+        const byCategory: Record<string, string[]> = {};
+        for (const l of links) (byCategory[l.category_id] ??= []).push(l.station_id);
+        return { stations, byCategory };
       })(),
     };
   });
@@ -781,6 +809,34 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('manage:listCategories', async () => manageFetch('/api/categories', 'GET'));
+  // ── Print stations ────────────────────────────────────────────────────────
+  // Server-backed like categories, so one configuration reaches all three tills
+  // rather than each terminal holding its own idea of where an order prints.
+  // refreshCatalogue() after every write pulls the change straight back down.
+  ipcMain.handle('manage:listStations', async () => manageFetch('/api/stations', 'GET'));
+  ipcMain.handle('manage:unassignedCategories', async () =>
+    manageFetch('/api/stations/unassigned', 'GET'));
+  ipcMain.handle('manage:createStation', async (_e, payload: any) => {
+    const out = await manageFetch('/api/stations', 'POST', payload);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/stations/${id}`, 'PATCH', patch);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:deleteStation', async (_e, id: string) => {
+    const out = await manageFetch(`/api/stations/${id}`, 'DELETE');
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:setStationCategories', async (_e, { id, categoryIds }: { id: string; categoryIds: string[] }) => {
+    const out = await manageFetch(`/api/stations/${id}/categories`, 'PUT', { category_ids: categoryIds });
+    await refreshCatalogue();
+    return out;
+  });
+
   ipcMain.handle('manage:createCategory', async (_e, payload: any) => {
     const out = await manageFetch('/api/categories', 'POST', payload);
     await refreshCatalogue();
@@ -823,6 +879,30 @@ export function registerIpcHandlers() {
   // Variants — the Spice group and anything else a product needs choosing.
   ipcMain.handle('manage:listVariantGroups', async (_e, productId: string) =>
     manageFetch(`/api/variants/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
+  // Editing a group's kind, and its options. Without these the manager screen can
+  // display what migration 45 classified but cannot resolve anything it left as
+  // 'review' — which is exactly where a human is needed.
+  ipcMain.handle('manage:updateVariantGroup', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/variants/groups/${id}`, 'PATCH', patch);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:createVariantOption', async (_e, payload: any) => {
+    const out = await manageFetch('/api/variants/options', 'POST', payload);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:updateVariantOption', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/variants/options/${id}`, 'PATCH', patch);
+    await refreshCatalogue();
+    return out;
+  });
+  ipcMain.handle('manage:deleteVariantOption', async (_e, id: string) => {
+    const out = await manageFetch(`/api/variants/options/${id}`, 'DELETE');
+    await refreshCatalogue();
+    return out;
+  });
+
   ipcMain.handle('manage:createVariantGroup', async (_e, payload: any) => {
     const out = await manageFetch('/api/variants/groups', 'POST', payload);
     await refreshCatalogue();

@@ -11,7 +11,8 @@ import PumpsView from '../components/PumpsView';
 import type { DiningTable, Pump } from '../lib/posApi';
 import { printKOT } from '../lib/printKOT';
 import { printDispatcher } from '../lib/printDispatcher';
-import { buildTicketLines, kitchenOnly } from '../lib/ticketLines';
+import { buildTicketLines, kitchenOnly, linesForStation, routingIsConfigured, ROUTING_UNCONFIGURED } from '../lib/ticketLines';
+import type { StationRouting } from '../lib/ticketLines';
 import type { ComboMap } from '../lib/ticketLines';
 import { printReceipt } from '../lib/printReceipt';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
@@ -58,6 +59,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Combo definitions and kitchen routing, refreshed by each catalogue pull.
   const [comboItems, setComboItems] = useState<ComboMap>({});
   const [kitchenCategoryIds, setKitchenCategoryIds] = useState<string[]>([]);
+  // Station routing, pulled with the catalogue. Empty stations means unconfigured,
+  // and every path below falls back to the old kitchen/dispatcher behaviour.
+  const [routing, setRouting] = useState<StationRouting>(ROUTING_UNCONFIGURED);
   // Printed on the dispatcher ticket so a packing station serving three tills
   // can tell which one sent the order.
   const [deviceName, setDeviceName] = useState<string | null>(null);
@@ -141,7 +145,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const receiptRef = useRef<HTMLDivElement>(null);
 
   // Sync status
-  const [syncStatus, setSyncStatus] = useState<{ online: boolean; pendingCount: number; failedCount: number }>({ online: true, pendingCount: 0, failedCount: 0 });
+  const [syncStatus, setSyncStatus] = useState<{
+    online: boolean; pendingCount: number; failedCount: number;
+    failedReason?: string; failedSince?: string;
+  }>({ online: true, pendingCount: 0, failedCount: 0 });
+  // Shown after a retry, so the cashier learns whether it worked instead of
+  // watching the same number sit there.
+  const [retryMsg, setRetryMsg] = useState('');
 
   // Shift state
   const [showShift, setShowShift] = useState(false);
@@ -160,7 +170,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const currency = business.currency ?? 'KES';
 
   useEffect(() => {
-    posApi.pos.init().then(({ products, categories, branchId, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, receiptHeader: rh, receiptFooter: rf }) => {
+    posApi.pos.init().then(({ products, categories, branchId, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }) => {
       setProducts(products);
       setCategories(categories);
       setBranchId(branchId);
@@ -169,6 +179,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       if (typeof mdp === 'number') setMaxDiscountPct(mdp);
       if (ci) setComboItems(ci as ComboMap);
       if (Array.isArray(kitchenCategories)) setKitchenCategoryIds(kitchenCategories);
+      if (stationRouting && Array.isArray(stationRouting.stations)) setRouting(stationRouting);
       if (typeof rh === 'string') setReceiptHeader(rh);
       if (typeof rf === 'string') setReceiptFooter(rf);
     });
@@ -424,31 +435,75 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     const num = await ensureOrderNumberAsync();
     setKitchenMsg('');
     try {
-      const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds);
+      const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds, routing);
+      const problems: string[] = [];
 
-      // Kitchen gets only what is cooked; the packer gets everything. Both come
-      // from the same expansion so they can never disagree about an order.
-      const kot = await printKOT(kitchenOnly(allLines), {
-        orderNumber: num,
-        tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-        orderType,
-      }, printerSettings);
+      if (routingIsConfigured(routing)) {
+        // One ticket per configured station, each seeing only what routes to it.
+        // Sequential rather than parallel: printing is already serialised in the
+        // main process, and firing them together only reorders the queue while
+        // making a failure harder to attribute to a station.
+        for (const st of routing.stations) {
+          const lines = linesForStation(allLines, st.id, routing);
+          if (lines.length === 0) continue;   // nothing here routes to this station
 
-      const pack = await printDispatcher(allLines, {
-        orderNumber: num,
-        billNumber: num,
-        deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
-        stationName: deviceName ?? undefined,
-        tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-        orderType,
-      }, printerSettings);
+          const printerName = printerSettings.stationPrinters?.[st.id]
+            // Fall back to the legacy per-kind printer so a station created before
+            // anyone bound hardware still prints somewhere sensible.
+            ?? (st.kind === 'dispatch' ? printerSettings.dispatcherPrinterName
+              : st.kind === 'receipt'  ? printerSettings.receiptPrinterName
+              : printerSettings.kitchenPrinterName);
+
+          if (!printerName) {
+            problems.push(`${st.name}: no printer set on this till`);
+            continue;
+          }
+
+          const res = st.kind === 'dispatch'
+            ? await printDispatcher(lines, {
+                orderNumber: num,
+                billNumber: num,
+                deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
+                stationName: st.name,
+                tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
+                orderType,
+              }, { ...printerSettings, dispatcherPrinterName: printerName })
+            : await printKOT(lines, {
+                orderNumber: num,
+                tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
+                orderType,
+                stationName: st.name,
+              }, { ...printerSettings, kitchenPrinterName: printerName });
+
+          if (!res.printed) problems.push(`${st.name}: ${res.reason ?? 'did not print'}`);
+        }
+      } else {
+        // UNCONFIGURED: exactly the previous behaviour. A till that upgrades
+        // before stations exist must print as it did yesterday — anything else
+        // means a kitchen receiving nothing, discovered mid-service.
+        const kot = await printKOT(kitchenOnly(allLines), {
+          orderNumber: num,
+          tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
+          orderType,
+        }, printerSettings);
+
+        const pack = await printDispatcher(allLines, {
+          orderNumber: num,
+          billNumber: num,
+          deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
+          stationName: deviceName ?? undefined,
+          tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
+          orderType,
+        }, printerSettings);
+
+        if (kot.reason) problems.push(kot.reason);
+        if (!pack.printed && pack.reason) problems.push(pack.reason);
+      }
+
       setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
       setKotCount(n => n + 1);
-      // Don't claim it reached the kitchen when no printer is bound — the
-      // cashier would walk away believing the order was fired.
-      // Report whichever ticket failed. Announcing "sent to kitchen" when the
-      // packing ticket silently died is how a bag goes out with items missing.
-      const problems = [kot.reason, pack.printed ? null : pack.reason].filter(Boolean);
+      // Report whichever ticket failed. Announcing "sent to kitchen" when a
+      // station silently died is how a bag goes out with items missing.
       setKitchenMsg(problems.length
         ? problems.join(' · ')
         : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
@@ -767,13 +822,44 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           {/* Failed orders — re-arm exhausted retries (idempotent on the server) */}
           {syncStatus.failedCount > 0 && (
             <button
-              onClick={() => posApi.sync.retryFailed().then(() => posApi.sync.status().then(setSyncStatus))}
+              onClick={async () => {
+                setRetryMsg('Retrying…');
+                try {
+                  const r = await posApi.sync.retryFailed();
+                  const after = await posApi.sync.status();
+                  setSyncStatus(after);
+                  // Say what happened. Re-arming rows that fail again for the same
+                  // reason leaves the count unchanged, which reads as a dead button
+                  // — this is how "9 failed" sat in the header for over a week.
+                  setRetryMsg(
+                    after.failedCount === 0
+                      ? `All ${r.requeued} sent.`
+                      : after.failedReason
+                        ? `Still failing: ${after.failedReason}`
+                        : `${after.failedCount} still failing.`,
+                  );
+                } catch (err: any) {
+                  setRetryMsg(err?.message ?? 'Retry failed');
+                }
+                setTimeout(() => setRetryMsg(''), 8000);
+              }}
               className="text-xs text-red-400 hover:text-red-300 transition-colors font-medium"
-              title="Retry failed orders"
+              // The reason, on hover, without needing a click that changes nothing.
+              title={
+                syncStatus.failedReason
+                  ? `${syncStatus.failedReason}${syncStatus.failedSince ? ` — since ${new Date(syncStatus.failedSince).toLocaleString('en-KE')}` : ''}\n\nClick to retry.`
+                  : 'Retry failed orders'
+              }
             >
               ⟳ {syncStatus.failedCount} failed
             </button>
           )}
+          {retryMsg && (
+            <span className="text-xs text-gray-300 max-w-[22rem] truncate" title={retryMsg}>
+              {retryMsg}
+            </span>
+          )}
+
           {/* Shift pill — open the cash-up panel */}
           <button
             onClick={() => setShowShift(true)}
@@ -1024,25 +1110,34 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           {/* Restaurant / café — order type, table, kitchen, hold */}
           {flags.isRestaurant && (
             <div className="px-4 py-3 border-b border-gray-800 space-y-2">
+              {/* Order type gets the full width on its own row.
+                  It previously shared one flex line with Pax and the table pill —
+                  five controls in a narrow panel — which squeezed the buttons
+                  until "Dine in" wrapped onto two lines and "Takeaway" and
+                  "Delivery" ran together with no gap. The labels are fixed-length
+                  and the panel is not, so anything sharing the row breaks them. */}
+              <div className="flex rounded-lg overflow-hidden border border-gray-700">
+                {([['dine_in', 'Dine in'], ['takeaway', 'Takeaway'], ['delivery', 'Delivery']] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => chooseOrderType(val)}
+                    className={`flex-1 py-2 text-xs font-medium whitespace-nowrap transition-colors ${orderType === val ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Everything that depends on the chosen type goes on its own row,
+                  so adding another field later cannot break the toggle again. */}
               <div className="flex gap-2">
-                <div className="flex flex-1 rounded-lg overflow-hidden border border-gray-700">
-                  {([['dine_in', 'Dine in'], ['takeaway', 'Takeaway'], ['delivery', 'Delivery']] as const).map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => chooseOrderType(val)}
-                      className={`flex-1 py-1.5 text-xs font-medium transition-colors ${orderType === val ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
                 {orderType === 'delivery' && (
                   <input
                     type="text"
                     value={deliveryPerson}
                     onChange={e => setDeliveryPerson(e.target.value)}
-                    placeholder="Rider"
-                    className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                    placeholder="Rider name"
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
                   />
                 )}
                 {orderType === 'dine_in' && (
@@ -1052,12 +1147,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     onChange={e => setCovers(e.target.value)}
                     placeholder="Pax"
                     title="Number of diners — used for Average Per Cover"
-                    className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
                   />
                 )}
                 {orderType === 'dine_in' && (
                   tables.length > 0 ? (
-                    <span className="w-20 flex items-center justify-center bg-green-500/10 border border-green-500/40 rounded-lg text-green-400 text-xs font-semibold truncate px-1" title="Selected from the table map">
+                    <span className="flex-1 flex items-center justify-center bg-green-500/10 border border-green-500/40 rounded-lg text-green-400 text-xs font-semibold truncate px-2 py-1.5" title="Selected from the table map">
                       {tableNumber ? `T: ${tableNumber}` : 'No table'}
                     </span>
                   ) : (

@@ -24,6 +24,8 @@ export interface TicketComponent {
   name: string;
   quantity: number;
   isKitchen: boolean;
+  /** Stations this component prints at. Empty when routing is unconfigured. */
+  stationIds: string[];
 }
 
 export interface TicketLine {
@@ -35,6 +37,8 @@ export interface TicketLine {
   components: TicketComponent[];
   /** Whether the line itself (not its components) is cooked. */
   isKitchen: boolean;
+  /** Stations this line prints at. Empty when routing is unconfigured. */
+  stationIds: string[];
 }
 
 type CartLike = {
@@ -44,7 +48,31 @@ type CartLike = {
   selectedModifiers?: Array<{ optionName: string }>;
 };
 
-export type ComboMap = Record<string, Array<{ name: string; quantity: number; is_kitchen: boolean }>>;
+export type ComboMap = Record<string, Array<{
+  name: string; quantity: number; is_kitchen: boolean;
+  product_id?: string; category_id?: string | null;
+}>>;
+
+/**
+ * Category → station ids, plus the stations themselves.
+ *
+ * `stations` EMPTY means routing is not configured, and every function here falls
+ * back to the old is_kitchen behaviour. That fallback matters more than the
+ * feature: a till upgrading before anyone has created a station must print
+ * exactly as it did yesterday. Anything else means a kitchen receiving nothing,
+ * discovered mid-service.
+ */
+export interface StationRouting {
+  stations: Array<{ id: string; name: string; kind: 'kitchen' | 'dispatch' | 'receipt'; sort_order: number }>;
+  byCategory: Record<string, string[]>;
+}
+
+export const ROUTING_UNCONFIGURED: StationRouting = { stations: [], byCategory: {} };
+
+/** True when stations are set up and should decide routing. */
+export function routingIsConfigured(r?: StationRouting | null): boolean {
+  return !!r && r.stations.length > 0;
+}
 
 function qualifierOf(item: CartLike): string {
   return [
@@ -58,6 +86,7 @@ export function buildTicketLines(
   cart: CartLike[],
   combos: ComboMap,
   kitchenCategoryIds: string[],
+  routing: StationRouting = ROUTING_UNCONFIGURED,
 ): TicketLine[] {
   const kitchenSet = new Set(kitchenCategoryIds);
 
@@ -80,11 +109,16 @@ export function buildTicketLines(
     return product?.category_id ? kitchenSet.has(product.category_id) : false;
   };
 
+  /** Stations a category prints at. Empty when unconfigured or unrouted. */
+  const stationsForCategory = (categoryId?: string | null): string[] =>
+    categoryId ? (routing.byCategory[categoryId] ?? []) : [];
+
   return cart.map(item => {
     const components = (combos[item.product.id] ?? []).map(c => ({
       name: c.name,
       quantity: c.quantity,
       isKitchen: c.is_kitchen,
+      stationIds: stationsForCategory(c.category_id),
     }));
     return {
       name: item.product.name,
@@ -92,8 +126,41 @@ export function buildTicketLines(
       qualifier: qualifierOf(item),
       components,
       isKitchen: routesToKitchen(item.product),
+      stationIds: stationsForCategory(item.product.category_id),
     };
   });
+}
+
+/**
+ * The lines one station should print.
+ *
+ * Mirrors kitchenOnly's shape: a combo appears when ANY of its components route
+ * here, carrying only those components. A packing station therefore gets the whole
+ * order while the grill gets the same order minus the drinks — which is the point
+ * of stations, and what a single is_kitchen flag could never express.
+ *
+ * Falls back to kitchenOnly when routing is unconfigured, so a till that upgrades
+ * before stations are created keeps printing exactly as it did before.
+ */
+export function linesForStation(
+  lines: TicketLine[],
+  stationId: string,
+  routing: StationRouting = ROUTING_UNCONFIGURED,
+): TicketLine[] {
+  if (!routingIsConfigured(routing)) return kitchenOnly(lines);
+
+  return lines
+    .map(l => {
+      if (l.components.length === 0) return l;
+      return { ...l, components: l.components.filter(c => c.stationIds.includes(stationId)) };
+    })
+    .filter(l =>
+      l.components.length > 0
+      // A plain product with no components prints when the line itself routes
+      // here. A combo whose components ALL routed elsewhere is dropped entirely
+      // rather than printed as a bare name — a ticket saying "3PC Combo" with no
+      // contents tells the kitchen nothing and invites a guess.
+      || (l.components.length === 0 && l.stationIds.includes(stationId)));
 }
 
 /**

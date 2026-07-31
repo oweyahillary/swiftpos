@@ -47,6 +47,10 @@ const METHOD_META: Record<LegMethod, { label: string; icon: string }> = {
   cash:  { label: 'Cash',   icon: '💵' },
   mpesa: { label: 'M-Pesa', icon: '📱' },
   card:  { label: 'Card',   icon: '💳' },
+  // Delivery aggregator: Glovo collects from the customer and settles to the
+  // business later, so nothing enters the drawer. Cash reconciliation filters on
+  // method='cash' specifically, so this cannot inflate expected cash.
+  glovo: { label: 'Glovo',  icon: '🛵' },
 };
 
 export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, onConfirm, onClose }: Props) {
@@ -109,7 +113,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
         amount: l.resolvedAmount,
         amount_tendered: l.method === 'cash' ? l.resolvedTendered : l.resolvedAmount,
         change_given: l.method === 'cash' ? l.change : 0,
-        reference: l.method === 'mpesa' || l.method === 'card' ? (l.reference || null) : null,
+        reference: l.method === 'mpesa' || l.method === 'card' || l.method === 'glovo' ? (l.reference || null) : null,
       })),
     });
   };
@@ -252,7 +256,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     <input
                       type="text" value={legs[i].reference}
                       onChange={e => setLeg(i, { reference: leg.method === 'mpesa' ? e.target.value.toUpperCase() : e.target.value })}
-                      placeholder={leg.method === 'mpesa' ? 'QHX4K2L9MP' : 'Txn ID'}
+                      placeholder={leg.method === 'mpesa' ? 'QHX4K2L9MP' : leg.method === 'glovo' ? 'Glovo order #' : 'Txn ID'}
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-green-500"
                     />
                   </div>

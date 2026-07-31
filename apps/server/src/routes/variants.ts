@@ -109,7 +109,27 @@ router.post('/groups', requirePermission('products.manage'), async (req, res) =>
 // PATCH /api/variants/groups/:id
 router.patch('/groups/:id', requirePermission('products.manage'), async (req, res) => {
   const { id } = req.params;
-  const { name, required } = req.body;
+
+  // Build the patch from the keys ACTUALLY sent.
+  //
+  // This used to destructure { name, required } and update both unconditionally.
+  // It survived only because supabase-js drops undefined during serialisation —
+  // so a patch of just the name silently relied on that to avoid clearing
+  // `required`. One JSON-shape change away from wiping a field nobody edited.
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (req.body?.name !== undefined) patch.name = String(req.body.name).trim();
+  if (req.body?.required !== undefined) patch.required = req.body.required === true;
+  if (req.body?.combo_item_id !== undefined) patch.combo_item_id = req.body.combo_item_id || null;
+
+  // kind: 'choice' free preference, 'upgrade' priced ladder, 'review' unclassified.
+  if (req.body?.kind !== undefined) {
+    const kind = String(req.body.kind);
+    if (!['choice', 'upgrade', 'review'].includes(kind)) {
+      res.status(400).json({ error: "kind must be 'choice', 'upgrade' or 'review'" });
+      return;
+    }
+    patch.kind = kind;
+  }
 
   // Verify via product → business chain
   const { data: group } = await supabase
@@ -129,9 +149,18 @@ router.patch('/groups/:id', requirePermission('products.manage'), async (req, re
 
   if (!product) { res.status(403).json({ error: 'Forbidden' }); return; }
 
+  // A group declared a free CHOICE cannot carry prices — that is the whole
+  // distinction. Zeroing the options here rather than trusting the client keeps
+  // the promise true no matter which screen made the call.
+  if (patch.kind === 'choice') {
+    const { error: zeroErr } = await supabase
+      .from('variant_options').update({ price_adjustment: 0 }).eq('variant_group_id', id);
+    if (zeroErr) { sendError(res, zeroErr); return; }
+  }
+
   const { data, error } = await supabase
     .from('variant_groups')
-    .update({ name, required })
+    .update(patch)
     .eq('id', id)
     .select()
     .single();

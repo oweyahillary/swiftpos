@@ -333,6 +333,37 @@ function initSchema(db: Database.Database) {
       sync_status     TEXT NOT NULL DEFAULT 'pending'
     );
 
+    -- ── Print stations ────────────────────────────────────────────────────────
+    -- Mirrors public.print_stations / category_stations (migration 44). PULL-DOWN:
+    -- defined once in the manager screen and pulled by every till, so three
+    -- terminals cannot disagree about where an order prints.
+    --
+    -- Replaces categories.is_kitchen as the routing authority. That boolean is why
+    -- 3PC Chicken never reached the kitchen: routing was one tick box on the
+    -- category, nobody had ticked it, and nothing said so.
+    --
+    -- The PRINTER is deliberately not here. A station is a business idea ("Grill");
+    -- which physical printer serves it is a property of THIS terminal, so that
+    -- binding lives in the local printer settings keyed on station_id.
+    CREATE TABLE IF NOT EXISTS print_stations (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      -- kitchen = prepared items only; dispatch = everything, for packing;
+      -- receipt = the customer copy, item names and not itemised.
+      kind        TEXT NOT NULL DEFAULT 'kitchen',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      active      INTEGER NOT NULL DEFAULT 1,
+      synced_at   TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS category_stations (
+      category_id TEXT NOT NULL,
+      station_id  TEXT NOT NULL,
+      PRIMARY KEY (category_id, station_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS category_stations_station_idx ON category_stations (station_id);
+
     -- ── Trading days, per till ────────────────────────────────────────────────
     -- Mirrors public.business_days (migration 41). One row per TILL per trading
     -- date. Opens implicitly when the first cashier opens a drawer that date;

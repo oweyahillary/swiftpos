@@ -29,6 +29,7 @@ import { v4 as uuid } from 'uuid';
 export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
   // Pull-down, remote wins
   products: 'pull', categories: 'pull', combo_items: 'pull',
+  print_stations: 'pull', category_stations: 'pull',
   variant_groups: 'pull', variant_options: 'pull',
   modifier_groups: 'pull', modifier_options: 'pull',
   stock_levels: 'pull', branches: 'pull', users: 'pull', tables: 'pull', pumps: 'pull',
@@ -229,10 +230,29 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
   return { pushed, errors };
 }
 
-export function getSyncStatus(): { online: boolean; pendingCount: number; failedCount: number } {
+export function getSyncStatus(): {
+  online: boolean; pendingCount: number; failedCount: number;
+  /** Why the failed ones failed. A count alone gives the cashier nothing to act on. */
+  failedReason?: string;
+  failedSince?: string;
+} {
   const db = getLocalDb();
   const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`).get() as { count: number };
   const failed  = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'failed'`).get() as { count: number };
+
+  // The most common reason, and how long it has been stuck.
+  //
+  // "9 failed" sat in the header for over a week with no way to find out why —
+  // the retry button re-armed them, they failed again for the same reason, and
+  // the count never moved. A number nobody can act on is decoration; the reason
+  // is the part that gets it fixed.
+  const failureRow = failed.count > 0
+    ? db.prepare(`
+        SELECT last_error, MIN(created_at) AS since, COUNT(*) AS n
+          FROM sync_queue WHERE status = 'failed' AND last_error IS NOT NULL
+         GROUP BY last_error ORDER BY n DESC LIMIT 1
+      `).get() as { last_error: string; since: string; n: number } | undefined
+    : undefined;
   // Offline-origin records (shifts/floats/expenses) waiting to push count too, so
   // the till's "N pending" reflects everything not yet on the server.
   const localPending = db.prepare(`
@@ -246,7 +266,13 @@ export function getSyncStatus(): { online: boolean; pendingCount: number; failed
       -- exactly when a manager should NOT be closing the shift.
       (SELECT COUNT(*) FROM orders              WHERE sync_status='node_ack') AS count
   `).get() as { count: number };
-  return { online: isOnline(), pendingCount: pending.count + localPending.count, failedCount: failed.count };
+  return {
+    online: isOnline(),
+    pendingCount: pending.count + localPending.count,
+    failedCount: failed.count,
+    failedReason: failureRow?.last_error ?? undefined,
+    failedSince: failureRow?.since ?? undefined,
+  };
 }
 
 // Re-arm rows that exhausted their 5 attempts (cashier-initiated). Resetting
@@ -401,6 +427,23 @@ async function pullCatalogue(): Promise<boolean> {
     }
   }
 
+  // Print stations. Best-effort and non-fatal: a till that cannot fetch them keeps
+  // whatever routing it already holds and carries on selling. Losing the catalogue
+  // refresh must never take the till down — and until migration 44 is applied this
+  // endpoint simply 404s, which is expected rather than an error.
+  let stations: any[] | null = null;
+  try {
+    const stRes = await fetch(`${_serverUrl}/api/stations`, { headers: authHeaders() });
+    if (stRes.ok) {
+      stations = await stRes.json();
+      console.log(`[sync] print stations: pulled ${stations?.length ?? 0}`);
+    } else if (stRes.status !== 404) {
+      console.warn(`[sync] stations fetch failed: HTTP ${stRes.status}`);
+    }
+  } catch (err: any) {
+    console.warn('[sync] stations fetch error:', err?.message ?? err);
+  }
+
   // Write everything in a single transaction
   db.transaction(() => {
     const upsertCat = db.prepare(`
@@ -413,6 +456,36 @@ async function pullCatalogue(): Promise<boolean> {
     `);
     for (const c of categories) {
       upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
+    }
+
+    // Stations and their routing. Replaced wholesale, not upserted: a station
+    // deleted upstream, or a category unrouted from one, must disappear here too.
+    // An upsert would leave stale routing behind and keep sending tickets to a
+    // station that no longer exists — the failure being silent, as ever.
+    //
+    // Guarded on a successful fetch: `null` means we could not ask, and wiping
+    // routing because the network blinked would stop the kitchen printing.
+    if (stations !== null) {
+      db.prepare(`DELETE FROM category_stations`).run();
+      db.prepare(`DELETE FROM print_stations`).run();
+      const upsertStation = db.prepare(`
+        INSERT INTO print_stations (id, name, kind, sort_order, active, synced_at)
+        VALUES (@id, @name, @kind, @sort_order, @active, @synced_at)
+      `);
+      const linkStation = db.prepare(`
+        INSERT OR IGNORE INTO category_stations (category_id, station_id) VALUES (?, ?)
+      `);
+      for (const st of stations) {
+        upsertStation.run({
+          id: st.id,
+          name: st.name,
+          kind: st.kind ?? 'kitchen',
+          sort_order: Number(st.sort_order) || 0,
+          active: st.active === false ? 0 : 1,
+          synced_at: now,
+        });
+        for (const catId of (st.category_ids ?? [])) linkStation.run(catId, st.id);
+      }
     }
 
     // Combo components. Replaced wholesale rather than upserted — a component

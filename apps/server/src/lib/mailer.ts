@@ -25,11 +25,30 @@ const smtpTransport = (
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT ?? '587'),
   secure: process.env.SMTP_PORT === '465',
+
+  connectionTimeout: 10_000,
+  greetingTimeout:   10_000,
+  socketTimeout:     20_000,
+
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 }) : null;
+
+// A free-mail FROM address cannot work on Resend: it will only send from a
+// domain you have verified, so `NOTIFY_FROM_EMAIL=…@gmail.com` fails EVERY send
+// with "The gmail.com domain is not verified" and silently demotes the whole
+// platform to the SMTP fallback. That is a config mistake with no symptom until
+// you read the logs, so name it once at boot instead.
+const FREE_MAIL = /@(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|aol)\./i;
+if (resend && FREE_MAIL.test(DEFAULT_FROM)) {
+  console.warn(
+    `[mailer] NOTIFY_FROM_EMAIL is "${DEFAULT_FROM}" — Resend cannot send from a ` +
+    'free-mail domain and will reject every message. Verify your own domain at ' +
+    'https://resend.com/domains and set NOTIFY_FROM_EMAIL to an address on it.',
+  );
+}
 
 export interface MailOptions {
   to: string;
