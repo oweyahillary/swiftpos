@@ -59,6 +59,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt             from 'bcrypt';
 import crypto            from 'node:crypto'; // required by tech-token + mode-switch generators (crypto.createHmac/createHash/randomBytes)
 import { supabase }       from '../lib/supabase';
+import { isSeededAdminHash, SEEDED_ADMIN_MESSAGE } from '../lib/adminSeedGuard';
 import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
 import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/adminAuth';
 import { signTechToken, generateRevealCode } from '../lib/techToken';
@@ -138,6 +139,19 @@ router.post('/auth/login', async (req, res) => {
 
   if (!admin || !admin.is_active) {
     res.status(401).json({ error: 'Invalid credentials' });
+    return;
+  }
+
+  // Audit C4. This account's bcrypt hash is published in the repository and in
+  // whatever tutorial it came from, so its password is public. Migration 48
+  // disables the row, but a database that never ran migration 48 would still
+  // accept it — so refuse here too, where the row is already in hand.
+  //
+  // Checked BEFORE bcrypt.compare deliberately: the point is that the password
+  // is known, so whether the caller supplied it correctly is beside the point.
+  if (isSeededAdminHash(admin.password_hash)) {
+    console.error(`[admin] refused login for ${admin.email}: seeded default credential (audit C4)`);
+    res.status(403).json({ error: SEEDED_ADMIN_MESSAGE, code: 'seeded_default_credential' });
     return;
   }
 

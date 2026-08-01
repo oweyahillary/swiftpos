@@ -753,26 +753,88 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       errors.push(String(body.schema.message ?? 'This till is running an older build — update it.'));
     }
 
-    const rejected: { id: string; code: string; error: string }[] =
+    const rejected: { id: string; code: string; table?: string; error: string }[] =
       Array.isArray(body?.rejected) ? body.rejected : [];
     const rejectedIds = new Set(rejected.map(r => r.id));
 
+    // Which table a rejected id belongs to.
+    //
+    // This block used to run `UPDATE shifts ... WHERE id=?` for EVERY rejection
+    // regardless. A duplicate_open_day rejection carries a business_days id, so
+    // that statement matched zero rows: the day was never marked, stayed
+    // sync_status='pending', and was re-pushed on every pass forever, while the
+    // cashier read "N shifts could not sync — a cashier has an open drawer on
+    // another till", which describes a different problem entirely.
+    //
+    // The server now names the table on each rejection. The code map is the
+    // fallback for a till talking to a server that predates that field, so this
+    // build is safe to install before the server is redeployed.
+    const TABLE_BY_CODE: Record<string, string> = {
+      duplicate_open_shift: 'shifts',
+      missing_business_day: 'shifts',
+      duplicate_open_day:   'business_days',
+    };
+    const REJECTABLE = new Set(['shifts', 'business_days', 'float_transactions', 'expenses']);
+    // Only shifts and business_days carry a notes column. Preparing an UPDATE
+    // that names `notes` on float_transactions or expenses throws at prepare
+    // time, inside the `if (rejected.length)` branch — so the first rejection of
+    // any kind would take the whole shift sync down with it. The server refuses
+    // floats and expenses with a non-200 today and never lists them here, but
+    // this must not become a landmine the day that changes.
+    const HAS_NOTES = new Set(['shifts', 'business_days']);
+    const tableFor = (r: { code: string; table?: string }): string | null => {
+      const t = r.table ?? TABLE_BY_CODE[r.code];
+      // Never interpolate a server-supplied string into SQL, and never guess:
+      // an unrecognised table is reported to the user rather than written to.
+      return t && REJECTABLE.has(t) ? t : null;
+    };
+
     if (rejected.length) {
-      const mark = db.prepare(`UPDATE shifts SET sync_status='conflict', notes =
-        TRIM(COALESCE(notes,'') || char(10) || ?) WHERE id=?`);
+      // A function per table rather than a bare statement, so the two shapes —
+      // with and without a notes column — present the same call signature and the
+      // loop below does not have to care which it got.
+      const markers: Record<string, (note: string, id: string) => void> = {};
+      for (const t of REJECTABLE) {
+        if (HAS_NOTES.has(t)) {
+          const stmt = db.prepare(
+            `UPDATE ${t} SET sync_status='conflict', notes =
+               TRIM(COALESCE(notes,'') || char(10) || ?) WHERE id=?`);
+          markers[t] = (note, id) => { stmt.run(note, id); };
+        } else {
+          const stmt = db.prepare(`UPDATE ${t} SET sync_status='conflict' WHERE id=?`);
+          markers[t] = (_note, id) => { stmt.run(id); };
+        }
+      }
+      const unroutable: typeof rejected = [];
       db.transaction(() => {
-        for (const r of rejected) mark.run(`Sync rejected: ${r.error}`, r.id);
+        for (const r of rejected) {
+          const t = tableFor(r);
+          if (!t) { unroutable.push(r); continue; }
+          markers[t](`Sync rejected: ${r.error}`, r.id);
+        }
       })();
-      errors.push(
-        rejected.length === 1
-          ? `A shift could not sync: ${rejected[0].error}`
-          : `${rejected.length} shifts could not sync — a cashier has an open drawer on another till.`,
-      );
+
+      // Report what the server actually said. The old message asserted a cause,
+      // so a trading-day rejection was announced as a drawer conflict and the
+      // person reading it went looking in the wrong place.
+      for (const r of rejected) errors.push(`Could not sync: ${r.error}`);
+      for (const r of unroutable) {
+        errors.push(
+          `A record was refused but this build does not know where it belongs ` +
+          `(code: ${r.code}). Update the till.`,
+        );
+      }
     }
 
     // Server has the open-shift fields now. Only a still-open shift is fully
     // done here — a closed one waits for reconcileClosedShifts to confirm the
     // server-computed close before it's marked synced.
+    //
+    // Every one of these excludes rejectedIds. It previously applied only to
+    // shifts, so a refused business_day was marked 'synced' in the very same
+    // transaction that failed to mark it 'conflict' — recorded as delivered,
+    // never retried, gone. A row the server refused is not synced by any
+    // definition; the exclusion belongs on all four.
     const openShiftIds = shifts
       .filter(s => s.status !== 'closed' && !rejectedIds.has(s.id))
       .map(s => s.id);
@@ -782,9 +844,9 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced' WHERE id=?`);
     db.transaction(() => {
       for (const id of openShiftIds) markShift.run(id);
-      for (const f of floats) markFloat.run(f.id);
-      for (const e of expenses) markExp.run(e.id);
-      for (const d of business_days) markDay.run(d.id);
+      for (const f of floats)        if (!rejectedIds.has(f.id)) markFloat.run(f.id);
+      for (const e of expenses)      if (!rejectedIds.has(e.id)) markExp.run(e.id);
+      for (const d of business_days) if (!rejectedIds.has(d.id)) markDay.run(d.id);
     })();
     return shifts.length + floats.length + expenses.length + business_days.length;
   } catch (err: any) {

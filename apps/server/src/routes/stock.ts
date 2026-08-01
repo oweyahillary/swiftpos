@@ -561,31 +561,158 @@ router.get('/transfers', async (req, res) => {
   res.json([]);
 });
 
-router.post('/transfers', async (req, res) => {
+// ── Stock transfers (audit H11) ────────────────────────────────────────
+//
+// These two endpoints previously had no permission gate and no branch check, and
+// POST wrote status:'received' while applying BOTH stock legs at once. The state
+// machine the schema declares was never used, and PATCH accepted any transition
+// from anyone and reversed nothing on cancel. Create a transfer, then cancel it:
+// the stock stayed moved and the record said cancelled — which is how a
+// shrinkage hole gets covered before a stock count.
+//
+// The state machine now actually runs:
+//
+//   pending  ──despatch──▶  in_transit  ──receive──▶  received   (terminal)
+//      │                          │
+//      └───────cancel──────────┼──────▶  cancelled  (terminal)
+//                                 └─ reverses the stock-out
+//
+// Stock moves on the EDGES, never at creation:
+//   despatch → stock-out at source        receive → stock-in at destination
+//
+// Between the two, the goods are genuinely in neither branch, which is the
+// truth while a van is on the road. A transfer that is despatched and never
+// received therefore shows up as missing stock instead of quietly balancing.
+
+const TRANSFER_TRANSITIONS: Record<string, string[]> = {
+  pending:    ['in_transit', 'cancelled'],
+  in_transit: ['received', 'cancelled'],
+  received:   [],            // terminal — see the note in the handler
+  cancelled:  [],
+};
+
+router.post('/transfers', requirePermission('inventory.transfer'), async (req, res) => {
   const { from_branch_id, to_branch_id, notes, items = [] } = req.body;
   if (!from_branch_id || !to_branch_id) { res.status(400).json({ error: 'from_branch_id and to_branch_id are required' }); return; }
   if (from_branch_id === to_branch_id)  { res.status(400).json({ error: 'Source and destination branches must be different' }); return; }
   if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
+
+  // BOTH branches, not just one. Checking only the source would let someone
+  // push stock into a branch they have no rights over, and checking only the
+  // destination would let them drain one they do not.
+  if (!assertBranchAccess(req, from_branch_id)) { res.status(403).json({ error: 'No access to the source branch' }); return; }
+  if (!assertBranchAccess(req, to_branch_id))   { res.status(403).json({ error: 'No access to the destination branch' }); return; }
+
+  const clean = items
+    .map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) }))
+    .filter((i: any) => i.product_id && Number.isFinite(i.quantity) && i.quantity > 0);
+  if (!clean.length) { res.status(400).json({ error: 'Every item needs a product and a quantity greater than zero' }); return; }
+
   const transfer_number = await nextRef('stock_transfers', 'TRF', req.businessId);
   const { data: transfer, error: tErr } = await supabase.from('stock_transfers').insert({
     business_id: req.businessId, from_branch_id, to_branch_id,
-    transfer_number, status: 'received', notes: notes || null, created_by: req.userId,
+    // 'pending'. Nothing has physically moved yet, so no stock is touched here.
+    transfer_number, status: 'pending', notes: notes || null, created_by: req.userId,
   }).select().single();
   if (tErr) { sendError(res, tErr); return; }
-  const lineItems = items.map((i: any) => ({ transfer_id: transfer.id, product_id: i.product_id, quantity: Number(i.quantity) }));
+
+  const lineItems = clean.map((i: any) => ({ transfer_id: transfer.id, product_id: i.product_id, quantity: i.quantity }));
   const { error: itemErr } = await supabase.from('stock_transfer_items').insert(lineItems);
   if (itemErr) { sendError(res, itemErr); return; }
-  await applyProductStockOut(items.map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) })), from_branch_id, req.userId, 'transfer_out', `Transfer ${transfer_number} → ${to_branch_id}`);
-  await applyProductStockIn(items.map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) })), to_branch_id, req.userId, 'transfer_in', `Transfer ${transfer_number} ← ${from_branch_id}`);
+
   res.status(201).json({ ...transfer, stock_transfer_items: lineItems });
 });
 
-router.patch('/transfers/:id/status', async (req, res) => {
-  const { status } = req.body;
-  if (!['pending','in_transit','received','cancelled'].includes(status)) { res.status(400).json({ error: 'Invalid status' }); return; }
+router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), async (req, res) => {
+  const { status, reason, allow_same_user } = req.body;
+  if (!['in_transit', 'received', 'cancelled'].includes(status)) {
+    res.status(400).json({ error: "status must be 'in_transit', 'received' or 'cancelled'" });
+    return;
+  }
+
+  const { data: transfer, error: fErr } = await supabase.from('stock_transfers')
+    .select('*, stock_transfer_items ( product_id, quantity )')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (fErr) { sendError(res, fErr); return; }
+  if (!transfer) { res.status(404).json({ error: 'Transfer not found' }); return; }
+
+  if (!assertBranchAccess(req, transfer.from_branch_id) && !assertBranchAccess(req, transfer.to_branch_id)) {
+    res.status(403).json({ error: 'No access to either branch on this transfer' }); return;
+  }
+
+  const from = String(transfer.status ?? 'pending');
+  const allowed = TRANSFER_TRANSITIONS[from] ?? [];
+  if (!allowed.includes(status)) {
+    // 409, not 400: the request is well formed, the transfer is simply not in a
+    // state where it can happen. A received transfer cannot be cancelled — that
+    // is the exact move this finding exists to stop, and reversing settled stock
+    // days later is a stock adjustment with a reason, not a status change.
+    res.status(409).json({
+      error: allowed.length
+        ? `A transfer that is '${from}' can only become ${allowed.map(a => `'${a}'`).join(' or ')}.`
+        : `This transfer is '${from}', which is final. Correct it with a stock adjustment instead.`,
+      code: 'invalid_transition', from, to: status,
+    });
+    return;
+  }
+
+  const lines = (transfer.stock_transfer_items ?? []).map((i: any) => ({
+    product_id: i.product_id, quantity: Number(i.quantity),
+  }));
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { status, updated_at: now };
+
+  if (status === 'in_transit') {
+    // Stock leaves the source now, not at creation.
+    await applyProductStockOut(lines, transfer.from_branch_id, req.userId, 'transfer_out',
+      `Transfer ${transfer.transfer_number} → ${transfer.to_branch_id}`);
+    patch.despatched_by = req.userId;
+    patch.despatched_at = now;
+
+  } else if (status === 'received') {
+    // Separation of duty. The point of a transfer is that two people agree the
+    // goods that left are the goods that arrived; one person doing both is just
+    // an adjustment with extra steps, and it is the move a shrinkage cover needs.
+    //
+    // Overridable rather than absolute, because a two-person shop at 6am is a
+    // real situation and a rule that stops trading gets worked around. The
+    // override is recorded in notes, so it is visible instead of silent.
+    if (transfer.despatched_by && transfer.despatched_by === req.userId && !allow_same_user) {
+      res.status(409).json({
+        error: 'You despatched this transfer, so someone else should confirm it arrived. '
+             + 'If nobody else is available, resend with allow_same_user: true — it will be recorded.',
+        code: 'same_user_receipt',
+      });
+      return;
+    }
+    await applyProductStockIn(lines, transfer.to_branch_id, req.userId, 'transfer_in',
+      `Transfer ${transfer.transfer_number} ← ${transfer.from_branch_id}`);
+    patch.received_by = req.userId;
+    patch.received_at = now;
+    if (transfer.despatched_by === req.userId) {
+      patch.notes = `${transfer.notes ? transfer.notes + '\n' : ''}Despatched and received by the same user.`;
+    }
+
+  } else if (status === 'cancelled') {
+    if (!reason || !String(reason).trim()) {
+      res.status(400).json({ error: 'A cancellation reason is required', code: 'reason_required' });
+      return;
+    }
+    // Reverse the stock-out if — and only if — one actually happened. Cancelling
+    // from 'pending' has nothing to undo; cancelling from 'in_transit' must put
+    // the goods back at source, which is what previously never happened and left
+    // the stock moved under a record that said cancelled.
+    if (from === 'in_transit') {
+      await applyProductStockIn(lines, transfer.from_branch_id, req.userId, 'transfer_in',
+        `Transfer ${transfer.transfer_number} CANCELLED — returned to source`);
+    }
+    patch.cancelled_by  = req.userId;
+    patch.cancelled_at  = now;
+    patch.cancel_reason = String(reason).trim();
+  }
+
   const { data, error } = await supabase.from('stock_transfers')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', req.params.id).eq('business_id', req.businessId).select().single();
+    .update(patch).eq('id', transfer.id).eq('business_id', req.businessId).select().single();
   if (error) { sendError(res, error); return; }
   res.json(data);
 });

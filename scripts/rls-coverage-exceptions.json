@@ -1,0 +1,3 @@
+{
+  "_README": "Tables deliberately created without RLS. Key = table name, value = the reason. The reason is the point: it is what stops the next person re-deriving it, or removing the exception because it looked arbitrary. Empty today \u2014 every table in the migration set states its RLS."
+}

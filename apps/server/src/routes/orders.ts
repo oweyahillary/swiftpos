@@ -241,23 +241,40 @@ async function recomputeOrderTotals(
   const discount = capDiscount(discountAmount, subtotal);
   const total = round2(subtotal - discount);
 
+  const { vat, ctl } = await taxSplit(businessId, total);
+
+  return { ok: true, lines, subtotal, discount, total, vat, ctl };
+}
+
+/**
+ * Split a tax-INCLUSIVE total into its VAT and catering-levy components.
+ *
+ * Extracted so the two paths that write tax to an order cannot drift. It was
+ * previously inline in recomputeOrderTotals only, which is precisely why
+ * POST /:id/pay — the order-first (dine-in) path — never recomputed tax at all
+ * and left VAT standing at the pre-discount figure (audit H2).
+ *
+ * Menu prices include BOTH taxes, so the net is backed out using the combined
+ * rate and each tax is then charged on that net. VAT is on the net, not on
+ * net-plus-CTL, matching how the levy is assessed (its base excludes VAT) and
+ * how the incumbent system on site computes it:
+ *
+ *     750 / 1.18 = 635.59 net  ->  ctl 12.71, vat 101.69, total 750.00
+ *
+ * With ctlRate = 0 this collapses exactly to VAT-only behaviour, so businesses
+ * outside the levy's scope are unaffected.
+ */
+async function taxSplit(businessId: string, total: number): Promise<{ vat: number; ctl: number }> {
   const { data: bizRow } = await supabase
     .from('businesses').select('vat_rate, ctl_rate').eq('id', businessId).single();
   const vatRate = Number(bizRow?.vat_rate ?? 16);
   const ctlRate = Number(bizRow?.ctl_rate ?? 0);
 
-  // Menu prices are inclusive of BOTH taxes, so the net is backed out using the
-  // combined rate, then each tax is charged on that net. VAT is on the net, not
-  // on net-plus-CTL — matching how the levy is assessed (base excludes VAT) and
-  // how the incumbent system on site computes it.
-  //   750 / 1.18 = 635.59 net → ctl 12.71, vat 101.69, total 750.00
-  // With ctlRate = 0 this collapses exactly to the previous VAT-only behaviour,
-  // so businesses outside the levy's scope are unaffected.
   const net = total / (1 + (vatRate + ctlRate) / 100);
-  const vat = round2(net * (vatRate / 100));
-  const ctl = round2(net * (ctlRate / 100));
-
-  return { ok: true, lines, subtotal, discount, total, vat, ctl };
+  return {
+    vat: round2(net * (vatRate / 100)),
+    ctl: round2(net * (ctlRate / 100)),
+  };
 }
 
 // ── Loyalty helpers ──────────────────────────────────────────
@@ -512,10 +529,22 @@ router.post('/', async (req, res) => {
         // Set seated_at for dine-in so the turnover report (which requires it) sees
         // pay-first orders — previously only the order-first /open path set this.
         seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
-        idempotency_key: idempotencyKey || null,
+        // Never null (audit H14). The unique index is
+        // (business_id, idempotency_key) WHERE idempotency_key IS NOT NULL, and
+        // NULLs are distinct in Postgres, so a null key is protected by nothing.
+        // Every replayed order would insert a duplicate and double the branch's
+        // reported revenue. Falling back to the row's own id gives each order a
+        // stable, unique key without the client having to supply one.
+        idempotency_key: idempotencyKey || crypto.randomUUID(),
         cashier_id:      req.userId ?? null,
         device_id:       req.body?.device_id ?? null,
-        sync_status: 'pending',
+        // 'synced', not 'pending' (audit H14). This row was created BY the cloud
+        // and already lives in it — there is nothing left for it to sync to.
+        // Writing 'pending' and never advancing it meant the tech panel reported
+        // 100% of orders permanently pending and zero synced on every install,
+        // and, worse, the LOCAL->CLOUD switch selects on sync_status='pending'
+        // and so replayed the branch's ENTIRE order history on every switch.
+        sync_status: 'synced',
       })
       .select()
       .single();
@@ -1683,7 +1712,16 @@ router.post('/open', async (req, res) => {
         customer_name,
         shift_id,
         seated_at:       order_type === 'dine_in' ? new Date().toISOString() : null,
-        sync_status:     'pending',
+        // This path set no idempotency_key whatsoever, so every dine-in order
+        // carried NULL and duplicated on replay. See the note on POST / above.
+        idempotency_key: crypto.randomUUID(),
+        // 'synced', not 'pending' (audit H14). This row was created BY the cloud
+        // and already lives in it — there is nothing left for it to sync to.
+        // Writing 'pending' and never advancing it meant the tech panel reported
+        // 100% of orders permanently pending and zero synced on every install,
+        // and, worse, the LOCAL->CLOUD switch selects on sync_status='pending'
+        // and so replayed the branch's ENTIRE order history on every switch.
+        sync_status:     'synced',
       })
       .select()
       .single();
@@ -1809,6 +1847,26 @@ router.post('/:id/pay', async (req, res) => {
       }
     }
 
+    // ── Recompute the money as a SET before anything is written (audit H2) ───
+    // This path used to write discount_amount alone while total and vat_amount
+    // kept the figures computed at /open. The books then did not foot: subtotal
+    // minus discount did not equal total, and VAT was overstated because it had
+    // been charged on the pre-discount figure. Every order-first (dine-in) sale
+    // carrying a discount was affected, and the error is in the operator's
+    // favour, which is the direction a tax authority notices.
+    //
+    // Line prices are deliberately NOT re-derived here. `order.subtotal` was
+    // already computed authoritatively by recomputeOrderTotals at /open, from
+    // the catalogue. Re-deriving it would mean rebuilding the lines from
+    // order_items, which this handler does not load with their variants and
+    // modifiers — so a rebuild would silently drop every variant and modifier
+    // price adjustment and quietly LOWER the bill. Discount and tax are the only
+    // things that change here, so they are the only things recomputed.
+    const paySubtotal = Number(order.subtotal) || 0;
+    const payDiscount = capDiscount(discount_amount, paySubtotal);
+    const payTotal    = round2(paySubtotal - payDiscount);
+    const { vat: payVat, ctl: payCtl } = await taxSplit(req.businessId, payTotal);
+
     // 2. Insert payment legs
     const paymentRows = paymentLegs.map((leg: PaymentLegInput) => ({
       order_id:        order.id,
@@ -1827,16 +1885,18 @@ router.post('/:id/pay', async (req, res) => {
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
     if (pErr) { sendError(res, pErr); return; }
 
-    checkPaymentIntegrity(order.order_number, order.id, Number(order.total), paymentRows);
+    // Against payTotal, not order.total: the stale figure is the pre-discount one,
+    // so comparing to it would report a false [payment-mismatch] on every
+    // discounted order — the very number H2 exists to correct.
+    checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
 
-    // 3. Mark order completed
+    // 3. Mark order completed.
     const orderUpdate: Record<string, unknown> = {
       status:          'completed',
-      // The create path clamps discounts; this one wrote whatever it was given,
-      // with no ceiling and not even a clamp to subtotal. Same cap applied for
-      // consistency. Note this path still does NOT recompute VAT after the
-      // discount — that is finding H2 and is not addressed here.
-      discount_amount: capDiscount(discount_amount, Number(order.subtotal) || 0),
+      discount_amount: payDiscount,
+      total:           payTotal,
+      vat_amount:      payVat,
+      ctl_amount:      payCtl,
       discount_id,
       sync_status:     'pending',
     };
@@ -1898,7 +1958,10 @@ router.post('/:id/pay', async (req, res) => {
           .update({ loyalty_points: supabase.rpc('decrement', { x: points_redeemed }) })
           .eq('id', customer_id);
       }
-      const pointsEarned = Math.floor(order.total / 100);
+      // payTotal, not order.total: order.total is the pre-discount figure this
+      // handler has just superseded, so awarding on it would earn the customer
+      // points for money nobody paid.
+      const pointsEarned = Math.floor(payTotal / 100);
       if (pointsEarned > 0) {
         await supabase.rpc('increment_loyalty_points', {
           p_customer_id: customer_id,
@@ -1915,7 +1978,7 @@ router.post('/:id/pay', async (req, res) => {
     // 7. Fire webhook — non-blocking
     fireWebhook(req.businessId, 'order.completed', {
       order_id: order.id, order_number: order.order_number,
-      order_type: order.order_type, total: order.total,
+      order_type: order.order_type, total: payTotal,
       branch_id: order.branch_id, cashier_id: req.userId,
     }).catch(() => {});
 

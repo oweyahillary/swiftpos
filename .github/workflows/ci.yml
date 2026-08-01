@@ -155,6 +155,16 @@ jobs:
       - name: Schema parity (Postgres vs desktop SQLite)
         run: node scripts/schema-parity.mjs
 
+      # Every table created in a migration must say what its RLS is. Migration 29
+      # enabled RLS across the board, then 44 and 45 created three tables that
+      # said nothing and went unprotected for a day — and this check's first run
+      # also turned up branch_prices, which migration 29 had simply missed since
+      # migration 20. verify_rls_coverage.sql tests the real database and is the
+      # stronger check, but it needs credentials CI does not have; this needs
+      # none, so it actually runs. Run both.
+      - name: RLS coverage (migrations)
+        run: node scripts/check-rls-coverage.mjs
+
       # The parser is regex-based, so its own failure mode is finding nothing and
       # reporting perfect parity. It exits 2 below its parse floor; this asserts
       # that guard is alive rather than trusting it.

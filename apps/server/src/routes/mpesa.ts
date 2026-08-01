@@ -29,7 +29,9 @@
  *
  * ENVIRONMENT VARIABLES
  * ─────────────────────
- *   MPESA_ENVIRONMENT      — 'sandbox' | 'production' (default: sandbox)
+ *   MPESA_ENVIRONMENT      — 'sandbox' | 'production'. REQUIRED in production
+ *                            (lib/env.ts). Unset no longer disables the callback
+ *                            IP allowlist — see isAllowedCallbackIp.
  *   MPESA_CALLBACK_BASE_URL — public HTTPS base URL (e.g. https://api.swiftpos.co.ke)
  *
  * DEVELOPMENT SETUP
@@ -82,7 +84,14 @@ const ALLOWED_CALLBACK_IPS = new Set(
 // NOTE: relies on app.set('trust proxy', 1) in index.ts so req.ip is the real
 // client IP behind Render/nginx, not the load-balancer's.
 function isAllowedCallbackIp(ip: string | undefined): boolean {
-  if (ENV !== 'production') return true;
+  // Fails CLOSED (audit H10). This read `ENV !== 'production'`, and ENV defaults
+  // to 'sandbox' when MPESA_ENVIRONMENT is unset — so a live deploy that forgot
+  // the variable accepted a payment callback from ANY IP. Anyone who knew the
+  // callback URL could mark orders paid, and nothing about the deploy looked
+  // wrong. The allowlist is now skipped only when sandbox is stated explicitly;
+  // anything else, including unset, enforces it. lib/env.ts additionally
+  // requires the variable outright in production.
+  if (ENV === 'sandbox') return true;
   const normalized = (ip ?? '').replace(/^::ffff:/, ''); // strip IPv4-mapped IPv6
   return ALLOWED_CALLBACK_IPS.has(normalized);
 }

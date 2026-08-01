@@ -66,14 +66,27 @@ CREATE TABLE IF NOT EXISTS public.admin_client_notes (
 -- CHANGE THIS ON FIRST LOGIN via Settings → Change Password.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-INSERT INTO public.admin_users (email, name, password_hash, role)
-VALUES (
-  'admin@swiftpos.co.ke',
-  'SwiftPOS Admin',
-  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/Lewm8mCWhBiQF7zO2',
-  'super_admin'
-)
-ON CONFLICT (email) DO NOTHING;
+-- ─────────────────────────────────────────────────────────────────────────────
+-- NO DEFAULT ADMIN IS SEEDED HERE. (audit C4, removed 2026-07-31)
+--
+-- This file used to INSERT admin@swiftpos.co.ke with a hardcoded bcrypt hash and
+-- role super_admin, carrying a comment asking the operator to change it on first
+-- login. That hash is a widely circulated tutorial example, so the password was
+-- public, and the comment was a process control standing in for a technical one.
+-- Every install that ran this file got a fleet-wide super-admin whose password
+-- anyone could look up.
+--
+-- Create the first admin explicitly instead, from apps/server:
+--
+--     ADMIN_PASSWORD='<strong-password>' npx tsx src/scripts/reset-admin.ts
+--
+-- That script refuses to run without ADMIN_PASSWORD and rejects anything under
+-- ten characters, so there is no path back to a shipped default.
+--
+-- migrations/48_retire_seeded_admin.sql disables the row on databases that
+-- already ran this, and adds a CHECK constraint preventing its re-insertion —
+-- so restoring the block below would now fail at the database.
+-- ─────────────────────────────────────────────────────────────────────────────
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Indexes

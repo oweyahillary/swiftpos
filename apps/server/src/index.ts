@@ -1,4 +1,8 @@
 import 'dotenv/config';
+// Must stay directly below dotenv and ABOVE './routes' — see lib/envGuard.ts.
+// It reports every missing variable at once instead of letting the first module
+// that needs one throw a single-line stack trace (audit H10).
+import './lib/envGuard';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors        from 'cors';
 import helmet      from 'helmet';
@@ -8,6 +12,7 @@ import { supabase } from './lib/supabase';
 import { checkSchema, schemaAdvice } from './lib/schemaCheck';
 import { startDailySummaryJob } from './jobs/dailySummary';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
+import { reportSeededAdmins }   from './lib/adminSeedGuard';
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -184,6 +189,12 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   log.info('Server started', { port: PORT, env: ENV, origins: allowedOrigins });
+
+  // Audit C4 diagnostic. Deliberately not awaited and never throws — login
+  // already refuses the seed credential outright, so this exists to make the
+  // problem visible in the log rather than to gate anything. A shop's tills must
+  // not fail to start over an admin-portal seed.
+  void reportSeededAdmins();
   startDailySummaryJob();
   startEtimsRetryJob();
 });

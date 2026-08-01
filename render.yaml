@@ -120,3 +120,72 @@ services:
 # ETIMS_RETRY_CRON
 #
 # WHATSAPP_* / TWILIO_*    Out of pilot scope.
+
+      # ── ADDED 2026-07-31 (audit H10) ────────────────────────────────────────
+      # Diffing every process.env reference in apps/server/src against this
+      # manifest found 19 variables the code reads and this file never declared.
+      # A deploy from the manifest alone could not start, and several of the gaps
+      # were silent rather than loud — see MPESA_ALLOWED_IPS below.
+      #
+      # lib/env.ts now validates the required set at boot and reports every
+      # problem at once instead of dying on the first one.
+
+      # PORT — Render injects this. Declared so it is visible rather than folk
+      # knowledge; src/index.ts falls back to 4000.
+      - key: PORT
+        sync: false
+
+      # M-Pesa callback allowlist. Unset falls back to the built-in Daraja ranges
+      # in mpesa.ts, which is usually right but goes stale when Safaricom changes
+      # them — and a stale allowlist rejects real callbacks, so orders sit unpaid.
+      - key: MPESA_ALLOWED_IPS
+        sync: false
+
+      # Manual discount ceiling (lib/discountPolicy). Unset means the built-in
+      # default; set it per deployment rather than relying on that.
+      - key: MAX_DISCOUNT_PCT
+        sync: false
+
+      # Cron schedules. Both have defaults; declared so a deployment can move
+      # them without a code change.
+      - key: DAILY_SUMMARY_CRON
+        sync: false
+      - key: ETIMS_RETRY_CRON
+        sync: false
+
+      # ── eTIMS (KRA) — only needed when ETIMS_PROVIDER is not 'none' ──────────
+      - key: ETIMS_BASE_URL
+        sync: false
+      - key: ETIMS_AUTH_TOKEN
+        sync: false
+      - key: ETIMS_SALES_PATH
+        sync: false
+      - key: ETIMS_INIT_PATH
+        sync: false
+      - key: ETIMS_QR_BASE
+        sync: false
+
+      # ── WhatsApp / Twilio — only needed when WHATSAPP_PROVIDER is set ────────
+      - key: WHATSAPP_PROVIDER
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_ID
+        sync: false
+      - key: WHATSAPP_TEMPLATE_LANG
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+
+      # ── Admin bootstrap ─────────────────────────────────────────────────────
+      # Read by src/scripts/reset-admin.ts, not by the server itself. Present so
+      # the first admin can be created without editing anything: migrations no
+      # longer seed a default account (audit C4).
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

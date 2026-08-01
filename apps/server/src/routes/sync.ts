@@ -89,7 +89,11 @@ router.post('/push', async (req, res) => {
   const upserted = { shifts: 0, floats: 0, expenses: 0, businessDays: 0 };
   // Rows the database refused for a reason no retry can fix. Returned to the
   // client so it can flag them for a human rather than looping on them.
-  const rejected: { id: string; code: string; error: string }[] = [];
+  // `table` names which table the id belongs to. Without it the client has only
+  // an id and a code, and syncEngine applied every rejection to `shifts` —
+  // a duplicate_open_day carries a business_days id, so that UPDATE matched
+  // nothing and the day was never marked. Older builds simply ignore the field.
+  const rejected: { id: string; code: string; table: string; error: string }[] = [];
 
   try {
     // ── Trading days (parent of shifts — upsert FIRST) ───────────────────────
@@ -166,6 +170,7 @@ router.post('/push', async (req, res) => {
           rejected.push({
             id: r.id,
             code: 'duplicate_open_day',
+            table: 'business_days',
             error: 'This till already has an open trading day. It must be closed before this one can sync.',
           });
           continue;
@@ -233,6 +238,7 @@ router.post('/push', async (req, res) => {
             rejected.push({
               id: s.id,
               code: 'missing_business_day',
+              table: 'shifts',
               error: 'This shift\'s trading day is not on the server — the day was refused ' +
                      'or has not synced yet. Resolve the trading day first.',
             });
@@ -297,6 +303,7 @@ router.post('/push', async (req, res) => {
             rejected.push({
               id: r.id,
               code: 'duplicate_open_shift',
+              table: 'shifts',
               error: 'This cashier already has an open shift. It must be closed before this one can sync.',
             });
             continue;
