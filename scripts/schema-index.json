@@ -581,7 +581,36 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "billed_amount": "\"numeric\"",
     "cashier_id": "\"uuid\"",
-    "notes": "\"text\""
+    "notes": "\"text\"",
+    "tariff_id": "\"uuid\"",
+    "tariff_snapshot": "\"jsonb\"",
+    "price_lines": "\"jsonb\"",
+    "total_cents": "\"integer\"",
+    "lost_ticket": "\"boolean\" NOT NULL",
+    "device_id": "\"uuid\"",
+    "opened_by": "\"uuid\"",
+    "closed_by": "\"uuid\"",
+    "synced_at": "\"timestamp with time zone\"",
+    "clock_skew_seconds": "\"integer\""
+  },
+  "parking_tariffs": {
+    "id": "\"uuid\"",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "name": "\"text\" NOT NULL",
+    "vehicle_class": "\"text\" NOT NULL",
+    "grace_minutes": "\"integer\" NOT NULL",
+    "first_period_minutes": "\"integer\" NOT NULL",
+    "first_period_price_cents": "\"integer\" NOT NULL",
+    "increment_minutes": "\"integer\" NOT NULL",
+    "increment_price_cents": "\"integer\" NOT NULL",
+    "daily_cap_cents": "\"integer\"",
+    "flat_daily_rate_cents": "\"integer\"",
+    "lost_ticket_fee_cents": "\"integer\"",
+    "active": "\"boolean\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "payment_exceptions": {
     "id": "\"uuid\" NOT NULL",
@@ -917,7 +946,14 @@
     "notes": "\"text\"",
     "created_by": "\"uuid\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "despatched_by": "\"uuid\"",
+    "despatched_at": "\"timestamp with time zone\"",
+    "received_by": "\"uuid\"",
+    "received_at": "\"timestamp with time zone\"",
+    "cancelled_by": "\"uuid\"",
+    "cancelled_at": "\"timestamp with time zone\"",
+    "cancel_reason": "\"text\""
   },
   "subscriptions": {
     "id": "\"uuid\" NOT NULL",
@@ -1048,7 +1084,15 @@
     "app_version": "\"text\"",
     "schema_version": "\"integer\"",
     "last_sync_at": "\"timestamp with time zone\"",
-    "device_id": "\"text\""
+    "device_id": "\"text\"",
+    "branch_id": "\"uuid\"",
+    "terminal_code": "\"text\"",
+    "bound_at": "\"timestamp with time zone\"",
+    "previous_branch_id": "\"uuid\"",
+    "branch_changed_at": "\"timestamp with time zone\"",
+    "branch_change_count": "\"integer\" NOT NULL",
+    "rebind_allowed_until": "\"timestamp with time zone\"",
+    "rebind_authorised_by": "\"uuid\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",

@@ -12,31 +12,48 @@
     "  2. Server-derived, so the till must NOT send it -> ignoreColumns[table]",
     "  3. Neither -> it is real drift. Fix the schema, not this file."
   ],
-
   "localOnlyColumns": [
     "sync_status",
-    "synced_at"
+    "synced_at",
+    "seq"
   ],
   "_localOnlyColumnReasons": {
     "sync_status": "Per-row push state on the till: pending | synced | conflict. Verified absent from every push payload — pushLocalRecords selects an explicit column list that excludes it, and it is meaningless server-side because the server is the destination.",
-    "synced_at": "When the till last pulled this row. Local cache metadata; the server has no concept of a particular terminal's freshness."
+    "synced_at": "When the till last pulled this row. Local cache metadata; the server has no concept of a particular terminal's freshness.",
+    "seq": "Phase 1 per-device replication sequence (localDb v45): the LAN outbox/cursor checkpoint between a till and its branch node. Verified absent from every cloud push payload — pushLocalRecords and the sync arms name explicit column lists that exclude it (it appears only in WHERE scoping). Cloud replication keys on ids and idempotency, never on this counter; sending it would mean the server storing one terminal's private LAN checkpoint as data."
   },
-
   "ignoreColumns": {
-    "payments": ["business_id", "branch_id"],
-    "customer_credit_transactions": ["business_id", "balance_after"],
+    "payments": [
+      "business_id",
+      "branch_id"
+    ],
+    "customer_credit_transactions": [
+      "business_id",
+      "balance_after"
+    ],
     "shifts": [],
-    "orders": []
+    "orders": [],
+    "expenses": [
+      "device_id"
+    ],
+    "float_transactions": [
+      "device_id"
+    ]
   },
   "_ignoreColumnReasons": {
     "payments.business_id": "Forced from the caller's token server-side (routes/sync.ts: 'forced from token, not the client'). The till MUST NOT send it — accepting a client-supplied business_id would let one tenant write rows into another.",
     "payments.branch_id": "Resolved server-side from the parent order. Sending it from the till would allow a payment to be attributed to a branch the order does not belong to.",
     "customer_credit_transactions.business_id": "Same tenant-safety rule as payments.business_id.",
-    "customer_credit_transactions.balance_after": "A running balance, computed server-side. A client-supplied value would let an offline till rewrite a customer's credit history."
+    "customer_credit_transactions.balance_after": "A running balance, computed server-side. A client-supplied value would let an offline till rewrite a customer's credit history.",
+    "expenses.device_id": "Local-only for now: added by the Phase 1 ownership work (local v44) so own-row scoping and node replication can attribute the row; the cloud push SELECT deliberately omits it and Postgres has no column. Postgres-side attribution for expenses is planned as migration 53 in the Phase 2a batch — when that lands, REMOVE this entry, add the column to the push SELECT, and let parity enforce the pair.",
+    "float_transactions.device_id": "Same as expenses.device_id — Phase 1 local attribution, omitted from the push, Postgres column pending migration 53. Remove this entry when 53 lands."
   },
-
   "localOnlyTables": [
-    "session", "staff_session", "device_config", "sync_queue", "local_price_edits"
+    "session",
+    "staff_session",
+    "device_config",
+    "sync_queue",
+    "local_price_edits"
   ],
   "_localOnlyTableReasons": {
     "session": "Owner/device auth state for this terminal.",
@@ -45,7 +62,6 @@
     "sync_queue": "The till's own outbound queue. A Postgres table of the same name exists and is unrelated.",
     "local_price_edits": "Branch price edits awaiting push; reconciled through /api/branch-prices/sync, not the generic sync path."
   },
-
   "postgresOnlyTables": [],
   "_postgresOnlyTablesNote": "Left empty deliberately: the till holding a subset of Postgres is the normal case and needs no declaration. Only the reverse is dangerous."
 }
