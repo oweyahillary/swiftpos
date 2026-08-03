@@ -169,3 +169,66 @@ export async function fetchNodeTechToken(timeoutMs = 2500): Promise<string | nul
     return (await res.json())?.token ?? null;
   } catch { return null; }
 }
+
+// ── Central day close (Phase 4) — peer side ──────────────────────────────────
+
+/**
+ * Collect pending instructions from the node, reporting this till's own day
+ * state in the same request. Returns null when the node is unreachable — the
+ * caller simply tries again next tick; there is nothing to repair.
+ */
+export async function pollNodeInstructions(
+  state: unknown, timeoutMs = 5000,
+): Promise<Array<{ id: number; kind: string; payload: any }> | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  const cfg = getDeviceConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/instructions/poll`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        device_id: cfg?.device_id ?? null,
+        branch_id: cfg?.branch_id ?? null,
+        state,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    return Array.isArray(data?.instructions) ? data.instructions : [];
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Report an instruction's outcome. Fire-and-forget is NOT acceptable here —
+ *  an unacked instruction is re-offered forever — so the executor retries the
+ *  ack on the next poll tick if this returns false. */
+export async function ackNodeInstruction(
+  instructionId: number,
+  ack: { ok: boolean; error?: string; summary?: unknown },
+  timeoutMs = 5000,
+): Promise<boolean> {
+  const base = nodeUrl();
+  if (!base) return false;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/instructions/ack`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ instruction_id: instructionId, ...ack }),
+      signal: ctrl.signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}

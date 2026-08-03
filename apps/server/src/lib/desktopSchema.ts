@@ -34,7 +34,7 @@
  * replicating — so the peer would re-offer its whole history every pass and the
  * node would refuse it every pass.
  */
-export const REQUIRED_DESKTOP_SCHEMA = 45;
+export const REQUIRED_DESKTOP_SCHEMA = 46;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -62,6 +62,11 @@ contextBridge.exposeInMainWorld('swiftpos', {
     close:     (countedCash: number, notes?: string) =>
       ipcRenderer.invoke('day:close', { countedCash, notes }),
   },
+  branchClose: {
+    overview: () => ipcRenderer.invoke('branchClose:overview'),
+    closeTill: (device_id: string, counted_cash: number, notes?: string) =>
+      ipcRenderer.invoke('branchClose:closeTill', { device_id, counted_cash, notes }),
+  },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
     preview: (opts: any) => ipcRenderer.invoke('print:preview', opts),
@@ -92,6 +97,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     logAction:    (action: string, detail?: any) => ipcRenderer.invoke('tech:logAction', { action, detail }),
     status:       ()              => ipcRenderer.invoke('tech:status'),
     adoptFromNode:()              => ipcRenderer.invoke('tech:adoptFromNode'),
+    query:        (sql: string)   => ipcRenderer.invoke('tech:query', { sql }),
   },
 
   shift: {

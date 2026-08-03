@@ -21,6 +21,7 @@ import { getLocalDb } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 import { applyPeerRows, isReplicatedTable, listPeers } from './nodeIngest';
+import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -161,6 +162,37 @@ export function startNodeServer(): void {
         return json(res, 200, {
           cursors: device ? all.filter(p => p.device_id === device) : all,
         });
+      }
+
+      // Central day close (Phase 4) — a peer collects its pending instructions
+      // and reports its own day state in the same request. PULL, never push:
+      // the node cannot reach a peer, so this poll is the only channel, and the
+      // piggybacked state is what the manager screen shows instead of the
+      // node's replicated copies (which go stale after a close).
+      if (req.method === 'POST' && url === '/node/instructions/poll') {
+        const body = await readBody(req);
+        const deviceId = String(body?.device_id ?? '');
+        if (!deviceId) return json(res, 400, { error: 'device_id is required' });
+        const c = getDeviceConfig();
+        if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
+          return json(res, 403, { error: 'branch mismatch' });
+        }
+        if (body.state) recordPeerState(deviceId, body.state);
+        return json(res, 200, { instructions: collectInstructions(deviceId) });
+      }
+
+      // The peer's verdict. Only an ack retires an instruction — delivery alone
+      // never does, so a peer that crashed mid-execution is re-offered it.
+      if (req.method === 'POST' && url === '/node/instructions/ack') {
+        const body = await readBody(req);
+        const id = Number(body?.instruction_id);
+        if (!Number.isInteger(id)) return json(res, 400, { error: 'instruction_id is required' });
+        recordAck(id, {
+          ok: body?.ok === true,
+          error: body?.error ?? undefined,
+          summary: body?.summary ?? undefined,
+        });
+        return json(res, 200, { ok: true });
       }
 
       // Node-served time.

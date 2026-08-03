@@ -363,6 +363,31 @@ export function closeDay(countedCash: number, notes?: string): DayCloseSummary {
   if (!isManager()) {
     throw new Error('Only a manager can close the trading day. Ask a manager to sign in.');
   }
+  return closeDayCore(countedCash, notes, staffSession()?.staff_id ?? null);
+}
+
+/**
+ * The central-close variant (Phase 4). Identical body EXCEPT the local
+ * isManager() check: a peer executing this at 22:00 may have a cashier signed
+ * in or be locked, and the authority is the INSTRUCTION — created by a manager
+ * on the branch server, carried over the node-secret channel. closed_by records
+ * that manager, and the notes say the close was central, so the audit reads the
+ * truth: who decided, and that it was not decided at this keyboard.
+ *
+ * Everything else is deliberately unchanged — in particular the open-drawer
+ * refusal, which is what turns into the honest "T2: a drawer is still open
+ * (Eugene)" line on the manager's screen.
+ */
+export function closeDayInstructed(
+  countedCash: number, notes: string | undefined,
+  closedByStaffId: string | null, closedByName: string | null,
+): DayCloseSummary {
+  const centralNote = `Closed centrally from the branch server${closedByName ? ` by ${closedByName}` : ''}.`;
+  const combined = notes && notes.trim() ? `${notes.trim()}\n${centralNote}` : centralNote;
+  return closeDayCore(countedCash, combined, closedByStaffId);
+}
+
+function closeDayCore(countedCash: number, notes: string | undefined, closedByStaffId: string | null): DayCloseSummary {
   if (!Number.isFinite(countedCash) || countedCash < 0) {
     throw new Error('Enter the cash you counted before closing the day');
   }
@@ -381,7 +406,6 @@ export function closeDay(countedCash: number, notes?: string): DayCloseSummary {
   const summary = getDayCloseSummary();
   if (!summary) throw new Error('No open trading day on this till');
 
-  const staff = staffSession();
   const now = new Date().toISOString();
   const variance = countedCash - summary.expectedCash;
 
@@ -393,7 +417,7 @@ export function closeDay(countedCash: number, notes?: string): DayCloseSummary {
                         ELSE TRIM(COALESCE(notes,'') || char(10) || ?) END,
            sync_status='pending'
      WHERE id=?
-  `).run(now, staff?.staff_id ?? null, countedCash, summary.expectedCash, variance,
+  `).run(now, closedByStaffId, countedCash, summary.expectedCash, variance,
          notes ?? null, notes ?? null, notes ?? null, day.id);
 
   return {

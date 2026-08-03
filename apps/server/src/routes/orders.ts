@@ -538,6 +538,10 @@ router.post('/', async (req, res) => {
         idempotency_key: idempotencyKey || crypto.randomUUID(),
         cashier_id:      req.userId ?? null,
         device_id:       req.body?.device_id ?? null,
+        // Pump attribution for fuel sales. The tank-deduction block below
+        // already reads order.pump_id (strategy 1) — it was reading a column
+        // nothing ever wrote, which is why per-pump fuel reports read zero.
+        pump_id:         req.body?.pump_id ? String(req.body.pump_id) : null,
         // 'synced', not 'pending' (audit H14). This row was created BY the cloud
         // and already lives in it — there is nothing left for it to sync to.
         // Writing 'pending' and never advancing it meant the tech panel reported

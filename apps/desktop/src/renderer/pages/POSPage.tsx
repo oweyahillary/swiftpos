@@ -332,6 +332,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       unitPrice: pump.price_per_litre ?? 0,
       lineTotal: amount,
       isFuel: true,
+      pumpId: pump.id,   // survives to the order header — fuel reports key on it
     }]);
   };
 
@@ -670,6 +671,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         ctl_amount: payment.ctlAmount,
         total: payment.total,
         covers: orderType === 'dine_in' ? Math.max(1, Number(covers) || 1) : 1,
+        // Pump attribution: first fuel line's pump. Dropped here previously —
+        // the column existed in both databases and nothing ever wrote it,
+        // which is why fuel reports read zero (audit backlog, rode along with
+        // this rebuild as planned).
+        pump_id: cart.find(i => i.isFuel && i.pumpId)?.pumpId ?? null,
         items: cart.map(item => ({
           product: { id: item.product.id, name: item.product.name, categories: item.product.categories ?? null },
           unitPrice: item.unitPrice,

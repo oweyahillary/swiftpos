@@ -27,6 +27,10 @@ export interface CartItem {
   // Petrol mode: a fuel line (quantity is litres). Drives litre-aware display
   // and suppresses the +/- stepper (fuel is re-entered, not incremented).
   isFuel?: boolean;
+  // Which physical pump dispensed a fuel line. On the order header (first fuel
+  // line wins — one fill-up per order in practice), it is what per-pump fuel
+  // reports and tank deduction key on.
+  pumpId?: string;
 }
 
 // The price this till charges for a product: the per-branch override if one was

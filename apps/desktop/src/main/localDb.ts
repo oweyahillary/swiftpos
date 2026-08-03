@@ -693,6 +693,39 @@ function initSchema(db: Database.Database) {
       PRIMARY KEY (device_id, table_name)
     );
 
+    -- ── Central day close (Phase 4) — node side ─────────────────────────────
+    -- Instructions the node holds for its peers. PULL, never push: peers run no
+    -- server, so the node cannot reach out — a peer collects its instructions
+    -- on a short poll and acks the outcome. An instruction stays collectable
+    -- until it is ACKED, not merely delivered: a peer that crashes between
+    -- collecting and executing must be re-offered, and the executor is
+    -- idempotent (a day already closed acks success, it does not close twice).
+    CREATE TABLE IF NOT EXISTS node_instructions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id   TEXT NOT NULL,             -- target peer
+      kind        TEXT NOT NULL,             -- 'close_day'
+      payload     TEXT NOT NULL,             -- JSON
+      created_by  TEXT,                      -- manager staff_id on the node
+      created_at  TEXT NOT NULL,
+      delivered_at TEXT,
+      status      TEXT NOT NULL DEFAULT 'pending',  -- pending | acked | failed
+      ack         TEXT,                      -- JSON from the peer
+      acked_at    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS node_instructions_pending_idx
+      ON node_instructions (device_id, status);
+
+    -- What each peer last said about itself, piggybacked on its instruction
+    -- poll. Exists because the node's replicated COPIES of peer shifts and days
+    -- go stale after close (append-only; updates are not re-offered until
+    -- Phase 2 events) — so the close screen must never read cash state from
+    -- replicas. Staleness is shown, not hidden: the screen prints last_seen.
+    CREATE TABLE IF NOT EXISTS node_peer_state (
+      device_id   TEXT PRIMARY KEY,
+      state       TEXT NOT NULL,             -- JSON: business_date, day open?, open drawers…
+      updated_at  TEXT NOT NULL
+    );
+
     -- The local counter behind seq. A single row per table rather than
     -- MAX(seq)+1 over the data: on a node those tables hold peers' rows too, and
     -- MAX over the mixed set would hand this device a number derived from
@@ -807,7 +840,7 @@ function initSchema(db: Database.Database) {
 // built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
 // node on 44 would ingest peer rows with no seq, and every one of them would be
 // invisible to the cursor that decides what still needs replicating.
-export const LOCAL_SCHEMA_VERSION = 45;
+export const LOCAL_SCHEMA_VERSION = 46;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

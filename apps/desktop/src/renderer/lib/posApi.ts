@@ -200,6 +200,31 @@ declare global {
         close: (countedCash: number, notes?: string) =>
           Promise<{ ok: boolean; error?: string; summary?: unknown }>;
       };
+      branchClose: {
+        overview: () => Promise<{
+          business_date: string;
+          tills: Array<{
+            device_id: string;
+            is_self: boolean;
+            last_seen: string | null;
+            state: {
+              business_date: string | null; day_open: boolean;
+              open_drawer: { cashier_name: string | null } | null;
+              drawers_on_day: number; cashiers_counted_total: number;
+            } | null;
+            instruction: {
+              id: number; status: string; created_at: string;
+              delivered_at: string | null; acked_at: string | null;
+              payload: { business_date: string; counted_cash: number; notes?: string };
+              ack: { ok: boolean; error?: string; summary?: any; already_closed?: boolean } | null;
+            } | null;
+          }>;
+        } | { error: string }>;
+        closeTill: (deviceId: string, countedCash: number, notes?: string) => Promise<{
+          ok: boolean; error?: string; instruction_id?: number;
+          self?: boolean; summary?: unknown; already_closed?: boolean;
+        }>;
+      };
       print: {
         list: () => Promise<PrinterInfo[]>;
         preview: (opts: { html: string; paperWidthMm: 58 | 80; title?: string }) => Promise<{ ok: boolean }>;
@@ -227,6 +252,10 @@ declare global {
         logAction:    (action: string, detail?: any) => Promise<{ ok: boolean }>;
         status:       () => Promise<TechStatus>;
         adoptFromNode:() => Promise<{ ok: true; session: TechSession } | { ok: false }>;
+        query: (sql: string) => Promise<
+          | { ok: true; result: { columns: string[]; rows: unknown[][]; rowCount: number;
+                                  truncated: boolean; maskedColumns: string[] } }
+          | { ok: false; error: string }>;
       };
       shift: {
         // A shift left open past ~18 hours. Null when there is none, or when

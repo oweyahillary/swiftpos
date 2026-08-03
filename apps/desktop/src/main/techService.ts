@@ -149,6 +149,17 @@ export function getActiveSession(): TechSession | null {
  * Verify a token and open a 4-hour active session. The token must be for THIS
  * device's bound branch. Returns the session or an error reason.
  */
+// The raw token, in MEMORY only, for the life of this app run. Exists for one
+// consumer: device:reset flushing its own audit entry before it deletes the
+// queue the entry lives in. Deliberately NOT persisted — the session survives a
+// reboot via session_json, but the raw credential does not, so a reset in a
+// fresh run before re-unlocking cannot flush. That residue is accepted and
+// bounded: the wipe still shows server-side as the device vanishing from the
+// fleet and a new one registering, which is not nothing, and re-unlock flushes
+// any earlier queued entries.
+let _rawToken: string | null = null;
+export function getRawTechToken(): string | null { return _rawToken; }
+
 export function openTechSession(token: string): { ok: true; session: TechSession } | { ok: false; reason: string } {
   const payload = verifyTokenOffline(token);
   if (!payload) return { ok: false, reason: 'Invalid or expired token' };
@@ -169,6 +180,7 @@ export function openTechSession(token: string): { ok: true; session: TechSession
   };
   persistSession(session);
   logTechAction('tech.session.open', { techName: payload.techName });
+  _rawToken = token;
   return { ok: true, session };
 }
 
@@ -211,5 +223,98 @@ export async function flushTechAudit(token: string): Promise<void> {
       });
       if (res.ok) db.prepare(`UPDATE tech_audit_queue SET synced=1 WHERE id=?`).run(e.id);
     } catch { /* stay queued; retry next flush */ }
+  }
+}
+
+// ── Read-only database console ──────────────────────────────────────────────
+//
+// A tech can READ this till's database from the tech panel — never write.
+// The guardrails are the design, each closing a specific hole:
+//
+//   • Read-only is enforced by the CONNECTION (a dedicated readonly handle),
+//     not by parsing SQL. The engine refuses writes; a parser would be a list
+//     of the mistakes we had thought of.
+//   • Sensitive columns are MASKED BY NAME in the results. The unmasked
+//     console would hand out the owner's bearer token (session.token = full
+//     API access), the branch node_secret, and staff PIN hashes — a 4-6 digit
+//     PIN space cracks instantly offline. Structure stays visible; secrets
+//     never leave.
+//   • One statement, SELECT/WITH/EXPLAIN only, capped rows. A console is for
+//     looking, and every write we have ever actually needed became a proper
+//     audited feature instead (the conflict Retry button is the pattern).
+//   • Every query is audited VERBATIM through the same server-flushed log as
+//     every other tech action. Reading is allowed; reading unseen is not.
+
+import Database from 'better-sqlite3';
+import { getDbPath } from './localDb';
+
+const MASK_COLUMN = /pin|token|secret|password|hash|key/i;
+const MAX_ROWS = 500;
+
+let _roDb: Database.Database | null = null;
+function readonlyDb(): Database.Database {
+  if (_roDb) return _roDb;
+  _roDb = new Database(getDbPath(), { readonly: true, fileMustExist: true });
+  return _roDb;
+}
+/** device:reset closes every handle so the file can be deleted. */
+export function closeTechReadonlyDb(): void {
+  try { _roDb?.close(); } catch { /* already closed */ }
+  _roDb = null;
+}
+
+export interface TechQueryResult {
+  columns: string[];
+  rows: unknown[][];
+  rowCount: number;
+  truncated: boolean;
+  maskedColumns: string[];
+}
+
+export function runTechQuery(sql: string):
+  { ok: true; result: TechQueryResult } | { ok: false; error: string } {
+  const trimmed = String(sql ?? '').trim().replace(/;\s*$/, '');
+  if (!trimmed) return { ok: false, error: 'Enter a query.' };
+
+  // One statement. A second one after a semicolon is how "SELECT …; DELETE …"
+  // gets pasted from somewhere. (The readonly handle would refuse the write
+  // anyway — this refusal just says why instead of failing on statement two.)
+  if (trimmed.includes(';')) {
+    return { ok: false, error: 'One statement at a time.' };
+  }
+  if (!/^(select|with|explain)\b/i.test(trimmed)) {
+    return { ok: false, error: 'Read-only console: SELECT, WITH, or EXPLAIN only.' };
+  }
+
+  let stmt: Database.Statement;
+  try {
+    stmt = readonlyDb().prepare(trimmed);
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? 'Could not prepare that query' };
+  }
+  if (!stmt.reader) {
+    return { ok: false, error: 'That statement returns no rows — the console is read-only.' };
+  }
+
+  try {
+    const raw = stmt.all() as Record<string, unknown>[];
+    const truncated = raw.length > MAX_ROWS;
+    const page = truncated ? raw.slice(0, MAX_ROWS) : raw;
+    // Mask on the SOURCE column, not the result alias — better-sqlite3 exposes
+    // it via columns().column. Without this, `SELECT token AS t` walks the
+    // owner's bearer token straight past a name-based mask. Falls back to the
+    // result name for computed columns, so an expression WRAPPING a secret can
+    // still leak — the verbatim audit is the backstop for that, and it is a
+    // deliberate act with the tech's name on it.
+    const meta = stmt.columns();
+    const columns = meta.map(c => c.name);
+    const maskedColumns = meta
+      .filter(c => MASK_COLUMN.test(c.column ?? c.name))
+      .map(c => c.name);
+    const rows = page.map(r => columns.map(c =>
+      maskedColumns.includes(c) && r[c] != null ? '•••masked•••' : r[c] ?? null));
+    return { ok: true, result: { columns, rows, rowCount: raw.length, truncated, maskedColumns } };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? 'Query failed' };
   }
 }

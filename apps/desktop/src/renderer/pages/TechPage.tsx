@@ -47,6 +47,24 @@ export default function TechPage({ onExit }: Props) {
   }>(null);
   const [resetTyped, setResetTyped] = useState('');
 
+  // Read-only DB console
+  const [querySql, setQuerySql] = useState('');
+  const [queryErr, setQueryErr] = useState('');
+  const [queryRes, setQueryRes] = useState<null | {
+    columns: string[]; rows: unknown[][]; rowCount: number;
+    truncated: boolean; maskedColumns: string[];
+  }>(null);
+  const runQuery = async () => {
+    setBusy('query'); setQueryErr(''); setQueryRes(null);
+    try {
+      const r = await posApi.tech.query(querySql);
+      if (r.ok === true) setQueryRes(r.result);
+      else setQueryErr((r as { ok: false; error: string }).error);
+    } catch (e: any) {
+      setQueryErr(e?.message ?? 'Query failed');
+    } finally { setBusy(''); }
+  };
+
   const previewReset = async () => {
     setBusy('Checking');
     try { setResetInfo(await posApi.config.resetPreview()); }
@@ -157,6 +175,61 @@ export default function TechPage({ onExit }: Props) {
           </div>
           {/* Mode switch (offline<->web) lands in step 5 — placeholder so the slot is visible. */}
           <p className="text-[11px] text-gray-400 mt-3">Mode switch (offline ↔ web) arrives with the sync bridge.</p>
+        </section>
+
+        {/* Read-only database console */}
+        <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-1">Database (read-only)</h2>
+          <p className="text-[11px] text-gray-400 mb-3">
+            SELECT only, one statement, 500 rows. Columns holding secrets (PINs, tokens, keys)
+            are masked. Every query is written to the tech audit verbatim.
+          </p>
+          <textarea
+            value={querySql}
+            onChange={e => setQuerySql(e.target.value)}
+            placeholder="SELECT id, status, sync_status FROM shifts ORDER BY opened_at DESC LIMIT 20"
+            spellCheck={false}
+            className="w-full bg-[#0a0f1c] border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-200 h-20 resize-y"
+          />
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={runQuery} disabled={!!busy || !querySql.trim()}
+              className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
+              Run query
+            </button>
+          </div>
+          {queryErr && <p className="text-xs text-red-400 mt-2">{queryErr}</p>}
+          {queryRes && (
+            <div className="mt-3">
+              <p className="text-[11px] text-gray-400 mb-1">
+                {queryRes.rowCount} row{queryRes.rowCount === 1 ? '' : 's'}
+                {queryRes.truncated ? ' (showing first 500)' : ''}
+                {queryRes.maskedColumns.length > 0 && (
+                  <span className="text-amber-400"> · masked: {queryRes.maskedColumns.join(', ')}</span>
+                )}
+              </p>
+              <div className="overflow-auto max-h-72 border border-gray-800 rounded-lg">
+                <table className="text-[11px] font-mono w-full">
+                  <thead className="bg-[#0a0f1c] sticky top-0">
+                    <tr>{queryRes.columns.map(c => (
+                      <th key={c} className="text-left text-gray-400 px-2 py-1 whitespace-nowrap">{c}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {queryRes.rows.map((r, i) => (
+                      <tr key={i} className="odd:bg-[#0d1424] even:bg-[#0a0f1c]">
+                        {r.map((v, j) => (
+                          <td key={j} className="px-2 py-1 text-gray-200 whitespace-nowrap">
+                            {v === null ? <span className="text-gray-500">null</span> : String(v)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Reset this device */}

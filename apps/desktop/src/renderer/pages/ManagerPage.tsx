@@ -15,6 +15,7 @@ import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
 import PrintersTab from './PrintersTab';
+import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
 import ReportRangeBar from '../components/ReportRangeBar';
@@ -990,7 +991,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   }, []);
 
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
@@ -1000,6 +1001,9 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // Manager-only: this is the escape route for the trading-day gate. Without
     // it a till stays frozen the first morning nobody closed the day.
     ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
+    // Phase 4. Registered for every manager; the tab itself explains when this
+    // till is not the branch server, which beats an option that silently is not there.
+    ...(isManagerRole ? [{ key: 'branchclose' as TabKey, label: 'Close Branch', icon: I.shift }] : []),
     ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
     // Editing, not just viewing. Without these the owner has to phone us to add
     // a product or fix a price, which for fast food is a daily event.
@@ -1035,6 +1039,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'orders':  return <OrdersTab  currency={currency} />;
       case 'shift':   return <ShiftTab   currency={currency} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
+      case 'branchclose': return <BranchCloseTab currency={currency} />;
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;

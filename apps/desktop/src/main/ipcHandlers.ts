@@ -24,10 +24,11 @@ import { exportDailySalesReport } from './dailySalesReport';
 
 /** Range selection sent from the manager report screens. */
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
-import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift } from './dayService';
+import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
+import { branchCloseOverview, createCloseInstruction, executeCloseDay } from './branchClose';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
-import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit } from './techService';
+import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken } from './nodeClient';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 
@@ -602,7 +603,20 @@ export function registerIpcHandlers() {
 
   ipcMain.on('app:version', (event) => { event.returnValue = app.getVersion(); });
 
+  // Gated + audited (audit: clearDeviceConfig was ungated). Clearing config is
+  // how a till sheds its branch binding and re-registers as a new device —
+  // with device-branch binding and per-seat licensing live, an anonymous
+  // one-click version of that is a control bypass. The reveal-code + signed
+  // token is the same bar as every other tech action, and the audit row means
+  // the new device appearing in the fleet has a name attached to its birth.
   ipcMain.handle('config:clear', async () => {
+    if (!getActiveSession()) {
+      throw new Error('Clearing the device configuration requires an active tech session.');
+    }
+    logTechAction('device.config_clear', {
+      terminal: getDeviceConfig()?.terminal_code ?? null,
+      device_id: getDeviceConfig()?.device_id ?? null,
+    });
     clearDeviceConfig();
     return true;
   });
@@ -650,6 +664,11 @@ export function registerIpcHandlers() {
    * out until the day's totals failed to add up.
    */
   ipcMain.handle('device:reset', async (_e, { force }: { force?: boolean } = {}) => {
+    // Same bar as config:clear, for a bigger action: this deletes the database.
+    // TechPage already sits behind a session — this closes every other route.
+    if (!getActiveSession()) {
+      throw new Error('Resetting this device requires an active tech session.');
+    }
     const db = getLocalDb();
     const ownDevice = getDeviceConfig()?.device_id ?? null;
     const unsynced = (db.prepare(
@@ -664,10 +683,29 @@ export function registerIpcHandlers() {
       );
     }
 
+    // Logged BEFORE the file is dropped — afterwards there is no queue to log
+    // into. The flush happens on the next session from any till at this branch.
+    logTechAction('device.reset', {
+      terminal: getDeviceConfig()?.terminal_code ?? null,
+      device_id: ownDevice, unsynced: Number(unsynced), forced: !!force,
+    });
+    // The entry above lives in the database about to be deleted. Flush it now,
+    // best-effort with a hard 3s cap — a reset must not hang on a dead network,
+    // and if the flush loses the race the wipe is still visible server-side as
+    // this device vanishing from the fleet and a new one registering.
+    const rawToken = getRawTechToken();
+    if (rawToken) {
+      await Promise.race([
+        flushTechAudit(rawToken).catch(() => {}),
+        new Promise(res => setTimeout(res, 3_000)),
+      ]);
+    }
+
     // Drop the file rather than the tables: a reset should leave nothing behind,
     // including schema drift from an older build.
     const dbPath = getDbPath();
     try { db.close(); } catch { /* already closed */ }
+    closeTechReadonlyDb();   // the readonly console handle also pins the file
     closeLocalDb?.();
     try { fs.rmSync(dbPath, { force: true }); } catch { /* fall through */ }
     for (const suffix of ['-wal', '-shm']) {
@@ -748,6 +786,38 @@ export function registerIpcHandlers() {
     }
   });
   ipcMain.handle('day:current', async () => getOpenDay());
+
+  // ── Central day close (Phase 4) — node-side manager screen ────────────────
+  ipcMain.handle('branchClose:overview', async () => {
+    try { return branchCloseOverview(); }
+    catch (err: any) { return { error: err?.message ?? 'Could not read the branch state' }; }
+  });
+  ipcMain.handle('branchClose:closeTill', async (_e, { device_id, counted_cash, notes }:
+    { device_id: string; counted_cash: number; notes?: string }) => {
+    try {
+      if (!isManager()) return { ok: false, error: 'Only a manager can close the branch.' };
+      const cfg = getDeviceConfig();
+      const staff = getLocalDb().prepare(`SELECT staff_id, staff_name FROM staff_session WHERE id=1`).get() as any;
+      const payload = {
+        business_date: businessDateNow(),
+        counted_cash: Number(counted_cash),
+        notes,
+        closed_by_staff_id: staff?.staff_id ?? null,
+        closed_by_name: staff?.staff_name ?? null,
+      };
+      if (device_id === cfg?.device_id) {
+        // The node is a normal till; its own day closes directly — no
+        // instruction, no poll, and any refusal surfaces immediately.
+        const r = executeCloseDay(payload);
+        return r.ok ? { ok: true, self: true, summary: r.summary ?? null, already_closed: r.already_closed ?? false }
+                    : { ok: false, error: r.error };
+      }
+      const { id } = createCloseInstruction(device_id, payload, staff?.staff_id ?? null);
+      return { ok: true, instruction_id: id };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Could not start the close' };
+    }
+  });
   ipcMain.handle('day:summary', async () => getDayCloseSummary());
   ipcMain.handle('day:isManager', async () => isManager());
   ipcMain.handle('day:conflicts', async () => getConflictedShifts());
@@ -1219,6 +1289,15 @@ export function registerIpcHandlers() {
   ipcMain.handle('tech:logAction', async (_event, { action, detail }: { action: string; detail?: any }) => {
     logTechAction(action, detail);
     return { ok: true };
+  });
+
+  // Read-only DB console. Gated in MAIN on an active tech session — the
+  // renderer's gating is a courtesy; this check is the door. The query is
+  // audited verbatim BEFORE it runs, so a query that errors is still on record.
+  ipcMain.handle('tech:query', async (_event, { sql }: { sql: string }) => {
+    if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
+    logTechAction('db_query', { sql: String(sql ?? '').slice(0, 2000) });
+    return runTechQuery(sql);
   });
 
   // Local, offline-safe diagnostics for the tech screen.

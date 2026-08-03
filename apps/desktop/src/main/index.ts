@@ -6,6 +6,8 @@ import { registerIpcHandlers } from './ipcHandlers';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
 import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
+import { pollNodeInstructions, ackNodeInstruction } from './nodeClient';
+import { ownDayState, executeCloseDay } from './branchClose';
 
 const isDev = !app.isPackaged;
 
@@ -207,6 +209,45 @@ app.whenReady().then(() => {
   setInterval(() => {
     syncAll().catch(console.error);
   }, 10 * 60_000);
+
+  // Central day close (Phase 4) — the peer side. Every 15s: tell the node how
+  // this till is doing, collect any instruction, execute it, ack the outcome.
+  // 15s because a manager is standing at the node screen watching this happen;
+  // the 60s sync tick would make a working feature read as a hung one. Runs on
+  // every till WITH a node configured that is not the node itself; self-guards
+  // cost one cheap LAN request.
+  //
+  // Unacked outcomes are retried from `pendingAcks` on the next tick — an
+  // instruction the node never hears back about is re-offered forever, so
+  // losing the ack quietly would make the peer close once and be asked again.
+  // (Re-asking is safe — the executor acks 'already closed' — but the manager
+  // would watch a spinner that never resolves.)
+  const pendingAcks = new Map<number, { ok: boolean; error?: string; summary?: unknown }>();
+  setInterval(async () => {
+    const cfg = getDeviceConfig();
+    if (!cfg?.node_url || cfg.device_role === 'node') return;
+    try {
+      for (const [id, ack] of [...pendingAcks]) {
+        if (await ackNodeInstruction(id, ack)) pendingAcks.delete(id);
+      }
+      const instructions = await pollNodeInstructions(ownDayState());
+      if (!instructions) return;
+      for (const ins of instructions) {
+        if (pendingAcks.has(ins.id)) continue;          // executed, ack in flight
+        if (ins.kind !== 'close_day') {
+          // Named, not ignored: an unknown kind means the node is on a newer
+          // build — the manager must find out rather than watch it spin.
+          const ack = { ok: false, error: `this till does not understand '${ins.kind}' — it is on an older build` };
+          if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+          continue;
+        }
+        const ack = executeCloseDay(ins.payload);
+        if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+      }
+    } catch (err) {
+      console.error('[branchClose] peer loop:', err);
+    }
+  }, 15_000);
 });
 
 app.on('window-all-closed', () => {
