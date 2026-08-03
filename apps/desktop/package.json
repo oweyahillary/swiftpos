@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.4.5",
+  "version": "0.4.8",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -81,10 +81,12 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
+      "perMachine": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SwiftPOS"
+      "shortcutName": "SwiftPOS",
+      "include": "build/installer.nsh",
+      "allowElevation": true
     },
     "portable": {
       "artifactName": "SwiftPOS-${version}-portable.exe"

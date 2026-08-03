@@ -53,6 +53,8 @@ export default function DayCloseTab({ currency }: Props) {
   const [msg, setMsg] = useState('');
   const [result, setResult] = useState<Summary | null>(null);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [retryBusy, setRetryBusy] = useState<string | null>(null);
+  const [retryMsg, setRetryMsg] = useState<Record<string, string>>({});
 
   const [loadError, setLoadError] = useState('');
 
@@ -86,6 +88,28 @@ export default function DayCloseTab({ currency }: Props) {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const retryConflict = async (shiftId: string) => {
+    setRetryBusy(shiftId);
+    setRetryMsg(m => ({ ...m, [shiftId]: '' }));
+    try {
+      const r = await posApi.day.retryConflict(shiftId);
+      if (!r.ok) {
+        setRetryMsg(m => ({ ...m, [shiftId]: r.error ?? 'Could not retry.' }));
+        return;
+      }
+      // The re-arm triggered a push in main. Give it a moment, then reload: if
+      // the cause has cleared, the card row disappears; if not, the row comes
+      // back as 'conflict' carrying the server's fresh reason — which is the
+      // honest outcome, not a failure of the button.
+      await new Promise(res => setTimeout(res, 2500));
+      await load();
+      setRetryMsg(m => ({ ...m, [shiftId]:
+        'Re-offered to the server. If this row is still here, read the reason above — the cause has not cleared.' }));
+    } finally {
+      setRetryBusy(null);
+    }
+  };
 
   const money = (v: number) =>
     `${currency} ${v.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -174,12 +198,25 @@ export default function DayCloseTab({ currency }: Props) {
             {conflicts.length === 1 ? 'A shift could not sync' : `${conflicts.length} shifts could not sync`}
           </p>
           {conflicts.map(c => (
-            <div key={c.id} className="text-xs text-red-300/80">
-              <span className="text-red-200">{c.cashier_name}</span>
-              {c.business_date && <span className="text-red-400/60"> · {c.business_date}</span>}
-              <p className="text-red-400/70">
-                This cashier has an open drawer on another till. Close that one and this will sync.
-              </p>
+            <div key={c.id} className="text-xs text-red-300/80 flex items-start gap-3">
+              <div className="flex-1">
+                <span className="text-red-200">{c.cashier_name}</span>
+                {c.business_date && <span className="text-red-400/60"> · {c.business_date}</span>}
+                <p className="text-red-400/70">
+                  {/* The server's actual refusal, written to notes by the sync
+                      engine. The old hardcoded sentence asserted one cause for
+                      every conflict and promised a sync that nothing retried. */}
+                  {c.notes ?? 'The server refused this shift. Fix the cause it named, then retry.'}
+                </p>
+                {retryMsg[c.id] && <p className="text-red-200/90 mt-0.5">{retryMsg[c.id]}</p>}
+              </div>
+              <button
+                onClick={() => retryConflict(c.id)}
+                disabled={retryBusy === c.id}
+                className="text-xs px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-500 text-white transition-colors whitespace-nowrap disabled:opacity-50"
+              >
+                {retryBusy === c.id ? 'Retrying…' : 'Retry sync'}
+              </button>
             </div>
           ))}
         </div>

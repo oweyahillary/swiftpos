@@ -24,7 +24,7 @@ import { exportDailySalesReport } from './dailySalesReport';
 
 /** Range selection sent from the manager report screens. */
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
-import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts } from './dayService';
+import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift } from './dayService';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit } from './techService';
@@ -140,6 +140,12 @@ export function registerIpcHandlers() {
         id: session.business_id,
         name: session.business_name,
         currency: session.currency,
+        // From device_config, where login and every sync persist it. This was
+        // omitted, so a restart rebuilt the session without a type, modeFlags
+        // defaulted to 'retail', and the manager screen silently dropped Item
+        // Mix and the restaurant overview — which read as "the update removed
+        // a feature" when it was any restart at all.
+        type: getDeviceConfig()?.business_type ?? null,
       },
     };
   });
@@ -612,13 +618,18 @@ export function registerIpcHandlers() {
   ipcMain.handle('device:resetPreview', async () => {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
+    const ownDevice = cfg?.device_id ?? null;
     const unsynced = (db.prepare(
-      `SELECT COUNT(*) n FROM orders WHERE sync_status IS NULL OR sync_status != 'synced'`,
-    ).get() as any)?.n ?? 0;
+      // own: this warns what THIS wipe destroys. Counting peers' rows would
+      // overstate the loss and scare someone out of a legitimate reset.
+      `SELECT COUNT(*) n FROM orders WHERE (sync_status IS NULL OR sync_status != 'synced')
+         AND COALESCE(device_id,'') = COALESCE(?,'')`,
+    ).get(ownDevice) as any)?.n ?? 0;
     const value = (db.prepare(
-      `SELECT COALESCE(SUM(total),0) v FROM orders WHERE sync_status IS NULL OR sync_status != 'synced'`,
-    ).get() as any)?.v ?? 0;
-    const openShift = (db.prepare(`SELECT COUNT(*) n FROM shifts WHERE status='open'`).get() as any)?.n ?? 0;
+      `SELECT COALESCE(SUM(total),0) v FROM orders WHERE (sync_status IS NULL OR sync_status != 'synced')
+         AND COALESCE(device_id,'') = COALESCE(?,'')`,
+    ).get(ownDevice) as any)?.v ?? 0;
+    const openShift = (db.prepare(`SELECT COUNT(*) n FROM shifts WHERE status='open' AND COALESCE(device_id,'') = COALESCE(?,'')`).get(ownDevice) as any)?.n ?? 0;
 
     return {
       terminalCode: cfg?.terminal_code ?? null,
@@ -640,9 +651,11 @@ export function registerIpcHandlers() {
    */
   ipcMain.handle('device:reset', async (_e, { force }: { force?: boolean } = {}) => {
     const db = getLocalDb();
+    const ownDevice = getDeviceConfig()?.device_id ?? null;
     const unsynced = (db.prepare(
-      `SELECT COUNT(*) n FROM orders WHERE sync_status IS NULL OR sync_status != 'synced'`,
-    ).get() as any)?.n ?? 0;
+      `SELECT COUNT(*) n FROM orders WHERE (sync_status IS NULL OR sync_status != 'synced')
+         AND COALESCE(device_id,'') = COALESCE(?,'')`,
+    ).get(ownDevice) as any)?.n ?? 0;
 
     if (Number(unsynced) > 0 && !force) {
       throw new Error(
@@ -718,11 +731,37 @@ export function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('day:gate', async () => checkDayGate());
+  // Fail CLOSED. If this check throws, the renderer's .catch leaves dayGate
+  // null, needsShift computes false, and the till trades with no drawer until
+  // the raw driver error surfaces inside the payment modal — which is exactly
+  // what a missing bind in getOpenShift did in production. A gate that cannot
+  // run must block and say why, using the same hard-block UI as an unclosed day.
+  ipcMain.handle('day:gate', async () => {
+    try { return checkDayGate(); }
+    catch (err: any) {
+      return {
+        canTrade: false,
+        needsManager: true,
+        reason: `This till cannot verify its trading day (${err?.message ?? 'internal error'}). ` +
+                'Restart the app; if this persists, contact support.',
+      };
+    }
+  });
   ipcMain.handle('day:current', async () => getOpenDay());
   ipcMain.handle('day:summary', async () => getDayCloseSummary());
   ipcMain.handle('day:isManager', async () => isManager());
   ipcMain.handle('day:conflicts', async () => getConflictedShifts());
+  ipcMain.handle('day:retryConflict', async (_e, { shiftId }: { shiftId: string }) => {
+    try {
+      const r = retryConflictedShift(String(shiftId));
+      // Offer it now rather than on the next timer tick: the manager is standing
+      // at the screen and the whole point of the button is to watch it clear.
+      syncPush().catch(() => { /* the re-arm alone is the guarantee */ });
+      return { ok: true, rearmed: r.rearmed };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Could not retry this shift' };
+    }
+  });
   ipcMain.handle('day:close', async (_e, { countedCash, notes }: { countedCash: number; notes?: string }) => {
     try { return { ok: true, summary: closeDay(Number(countedCash), notes) }; }
     catch (err: any) { return { ok: false, error: err?.message ?? 'Could not close the day' }; }
@@ -1002,7 +1041,9 @@ export function registerIpcHandlers() {
     const db = getLocalDb();
     const session  = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
     const staff    = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
-    const shift    = db.prepare(`SELECT id FROM shifts WHERE status='open' ORDER BY created_at DESC LIMIT 1`).get() as any;
+    const shift    = db.prepare(`SELECT id FROM shifts WHERE status='open'
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+     ORDER BY created_at DESC LIMIT 1`).get(getDeviceConfig()?.device_id ?? null) as any;
 
     if (!session?.business_id) throw new Error('No active session');
     if (!staff?.branch_id)     throw new Error('No staff session');
@@ -1013,13 +1054,17 @@ export function registerIpcHandlers() {
     db.prepare(`
       INSERT INTO expenses
         (id, business_id, branch_id, expense_category_id, description, amount,
-         paid_by, expense_date, shift_id, created_at, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+         paid_by, expense_date, shift_id, created_at, device_id, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       id, session.business_id, staff.branch_id,
       expense_category_id ?? null, description, amount,
       paid_by ?? staff.staff_id ?? null,
       now.slice(0, 10), shift?.id ?? null, now,
+      // See the note in shiftService.recordFloat: a NULL-attributed row matches
+      // nothing under COALESCE(device_id,'') = COALESCE(own,''), so it is never
+      // collected by the push and the expense silently never leaves the till.
+      getDeviceConfig()?.device_id ?? null,
     );
     return { id };
   });
@@ -1027,7 +1072,9 @@ export function registerIpcHandlers() {
   // Recent expenses for the current shift (for display in ShiftPanel)
   ipcMain.handle('expense:list', async () => {
     const db = getLocalDb();
-    const shift = db.prepare(`SELECT id FROM shifts WHERE status='open' ORDER BY created_at DESC LIMIT 1`).get() as any;
+    const shift = db.prepare(`SELECT id FROM shifts WHERE status='open'
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+     ORDER BY created_at DESC LIMIT 1`).get(getDeviceConfig()?.device_id ?? null) as any;
     if (!shift) return [];
     return db.prepare(`
       SELECT id, description, amount, expense_category_id, paid_by, created_at, sync_status
@@ -1179,7 +1226,11 @@ export function registerIpcHandlers() {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     const sync = getSyncStatus();
-    const lastOrder = (db.prepare(`SELECT created_at FROM orders ORDER BY created_at DESC LIMIT 1`).get() as any)?.created_at ?? null;
+    // branch-wide: tech diagnostics. A tech looking at a node wants the latest
+    // activity anywhere at the branch, not just this machine's.
+    const lastOrder = (db.prepare(
+      `SELECT created_at FROM orders ORDER BY created_at DESC LIMIT 1`,
+    ).get() as any)?.created_at ?? null;
     return {
       device: {
         device_id: cfg?.device_id ?? null, device_name: cfg?.device_name ?? null,

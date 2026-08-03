@@ -166,10 +166,17 @@ export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?
 
   const id = uuid();
   const now = new Date().toISOString();
+  // device_id is what makes this row THIS terminal's. Without it the row is
+  // NULL-attributed, and "mine" is COALESCE(device_id,'') = COALESCE(own,'') —
+  // so on any till that has been assigned a device_id, a NULL-attributed float
+  // matches nothing and is never collected by the push. Drawer movements would
+  // simply stop reaching the server, and the shift's expected cash would be
+  // wrong by exactly the floats nobody could see.
   db.prepare(`
-    INSERT INTO float_transactions (id, shift_id, branch_id, cashier_id, type, amount, reason, created_at, sync_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-  `).run(id, shift.id, shift.branch_id, shift.cashier_id, type, Number(amount), reason ?? null, now);
+    INSERT INTO float_transactions (id, shift_id, branch_id, cashier_id, type, amount, reason, created_at, device_id, sync_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+  `).run(id, shift.id, shift.branch_id, shift.cashier_id, type, Number(amount), reason ?? null, now,
+         getDeviceConfig()?.device_id ?? null);
 
   return db.prepare(`SELECT * FROM float_transactions WHERE id=?`).get(id);
 }

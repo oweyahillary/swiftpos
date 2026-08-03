@@ -246,14 +246,63 @@ export function getConflictedShifts(): ConflictedShift[] {
     SELECT s.id, s.business_date, s.notes,
            COALESCE(st.name, 'Unknown cashier') AS cashier_name
       FROM shifts s
+      -- own: drives THIS till's Close Day screen. A branch-wide version is a
+      -- manager view and belongs in managerReports, not here.
       -- users, NOT staff: there is no local staff table, only staff_session (one
       -- row for whoever is signed in). Cashier names live in users, pulled down
       -- from the server. Joining staff threw "no such table", which rejected
       -- day:conflicts and blanked the entire Close Day screen.
       LEFT JOIN users st ON st.id = s.cashier_id
      WHERE s.sync_status = 'conflict'
+       AND COALESCE(s.device_id,'') = COALESCE(?,'')
      ORDER BY s.opened_at DESC
-  `).all() as ConflictedShift[];
+  `).all(deviceIdentity().device_id ?? null) as ConflictedShift[];
+}
+
+/**
+ * Re-arm a conflicted shift for sync — the shift itself, its trading day, and
+ * its float/expense rows, as one family.
+ *
+ * The sync engine deliberately never retries 'conflict' rows: an automatic
+ * retry of an identical payload is the C7 loop. But some refusals have an
+ * EXTERNAL cause that clears later — the live one: a cashier's open drawer on
+ * another till (migration 42), refused on the 30th, drawer since closed. With
+ * no re-offer path the shift is parked forever, and the conflict card's promise
+ * that "this will sync" was a promise nothing kept.
+ *
+ * Manual-by-a-manager is what makes this safe where automatic was not: each
+ * press is one attempt, and if the cause still holds, the server refuses again
+ * and the row simply returns to 'conflict' with the fresh reason — no loop.
+ */
+export function retryConflictedShift(shiftId: string): { rearmed: number } {
+  const db = getLocalDb();
+  const { device_id } = deviceIdentity();
+
+  // own: only this till's parked rows are its to re-offer. A keyed id is not
+  // enough by itself — on a node, re-arming a PEER's conflicted shift would
+  // make this till push somebody else's drawer from the wrong device.
+  const shift = db.prepare(`
+    SELECT id, business_day_id FROM shifts
+     WHERE id = ? AND sync_status = 'conflict'
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).get(shiftId, device_id) as { id: string; business_day_id: string | null } | undefined;
+  if (!shift) throw new Error('No conflicted shift with that id on this till');
+
+  let rearmed = 0;
+  db.transaction(() => {
+    rearmed += db.prepare(`UPDATE shifts SET sync_status='pending' WHERE id = ?`).run(shift.id).changes;
+    // The family travels together: a refused shift usually took its floats and
+    // expenses down with it, and its day can be parked on the same cause.
+    rearmed += db.prepare(`UPDATE float_transactions SET sync_status='pending'
+                            WHERE shift_id = ? AND sync_status='conflict'`).run(shift.id).changes;
+    rearmed += db.prepare(`UPDATE expenses SET sync_status='pending'
+                            WHERE shift_id = ? AND sync_status='conflict'`).run(shift.id).changes;
+    if (shift.business_day_id) {
+      rearmed += db.prepare(`UPDATE business_days SET sync_status='pending'
+                              WHERE id = ? AND sync_status='conflict'`).run(shift.business_day_id).changes;
+    }
+  })();
+  return { rearmed };
 }
 
 export interface DayCloseSummary {

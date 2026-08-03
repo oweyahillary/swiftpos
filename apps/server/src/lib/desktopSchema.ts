@@ -20,8 +20,21 @@
  * together, or the check means nothing.
  */
 
-/** Schema 43 = business_days + shift attribution + orders.covers on the till. */
-export const REQUIRED_DESKTOP_SCHEMA = 43;
+/**
+ * Schema 45 = branch replication: per-device `seq` on the five replicated
+ * tables, node_queue, peer_cursors, outbox_cursors — plus orders.pump_id.
+ *
+ * Moved 43 → 45 in one step. 44 (device_id on expenses and float_transactions)
+ * was written but no till was ever built from it, so it never existed in the
+ * field and there is nothing to be compatible with.
+ *
+ * This one has to move with the till release rather than after it. A till on 44
+ * acting as the branch NODE would ingest peer rows with no seq, and every one of
+ * them would be invisible to the cursor that decides what still needs
+ * replicating — so the peer would re-offer its whole history every pass and the
+ * node would refuse it every pass.
+ */
+export const REQUIRED_DESKTOP_SCHEMA = 45;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

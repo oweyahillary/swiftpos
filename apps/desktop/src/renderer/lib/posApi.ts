@@ -195,6 +195,8 @@ declare global {
         isManager: () => Promise<boolean>;
         conflicts: () => Promise<{ id: string; cashier_name: string;
                                    business_date: string | null; notes: string | null }[]>;
+        retryConflict: (shiftId: string) =>
+          Promise<{ ok: boolean; rearmed?: number; error?: string }>;
         close: (countedCash: number, notes?: string) =>
           Promise<{ ok: boolean; error?: string; summary?: unknown }>;
       };

@@ -1,3 +1,8 @@
+// ── branch-wide: every query in this file is the MANAGER'S CONSOLIDATED VIEW.
+// On a till it sees only that till's rows because that is all it holds; on a
+// node it sees the branch, which is the entire purpose of the node. Scoping
+// these to one terminal would defeat the feature. Contrast dailySalesReport,
+// which takes an explicit scope because it is PRINTED and handed to an owner.
 /**
  * managerReports.ts — local SQLite report queries for the desktop manager screens.
  *

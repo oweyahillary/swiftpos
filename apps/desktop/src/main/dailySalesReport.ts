@@ -80,7 +80,28 @@ interface Totals {
   dineInBills: number;
 }
 
-function readTotals(from: string, to: string): Totals {
+
+// ── Report scope ─────────────────────────────────────────────────────────────
+// One report, two scopes, ONE query path. Two separate report functions is where
+// this goes wrong: somebody prints the branch view on Monday and a till view on
+// Tuesday, the numbers do not tie, and nobody can say whether that is a bug or a
+// scoping difference. The same reasoning as taxSplit() in the parking design —
+// two implementations of one figure drift, and the drift is silent.
+//
+// deviceId === null  → every terminal at this branch (only meaningful on a node,
+//                      which is the only machine holding peers' rows)
+// deviceId === '<id>' → that terminal alone
+//
+// COALESCE on both sides because rows written before device_id existed carry
+// NULL, and on a till that has never been assigned one both sides are ''.
+// dayService.getOpenDay() already uses exactly this shape.
+function scopeClause(deviceId: string | null, col = 'device_id'): string {
+  return deviceId === null ? '' : ` AND COALESCE(${col},'') = COALESCE(?,'')`;
+}
+function scopeArgs(deviceId: string | null): string[] {
+  return deviceId === null ? [] : [deviceId];
+}
+function readTotals(from: string, to: string, deviceId: string | null): Totals {
   const db = getLocalDb();
   const r = db.prepare(`
     SELECT COUNT(*) AS bills,
@@ -89,7 +110,8 @@ function readTotals(from: string, to: string): Totals {
            COALESCE(SUM(ctl_amount), 0)   AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
-  `).get(from, to) as { bills: number; gross: number; vat: number; ctl: number };
+           ${scopeClause(deviceId)}
+  `).get(from, to, ...scopeArgs(deviceId)) as { bills: number; gross: number; vat: number; ctl: number };
 
   const gross = Number(r.gross);
   const vat = Number(r.vat);
@@ -103,7 +125,8 @@ function readTotals(from: string, to: string): Totals {
       FROM orders
      WHERE status = 'completed' AND order_type = 'dine_in'
        AND created_at >= ? AND created_at <= ?
-  `).get(from, to) as { covers: number; bills: number };
+           ${scopeClause(deviceId)}
+  `).get(from, to, ...scopeArgs(deviceId)) as { covers: number; bills: number };
 
   // Round-off is the difference between the exact gross and what was actually
   // charged to the nearest whole unit — the same figure the receipt prints, and
@@ -123,7 +146,7 @@ function readTotals(from: string, to: string): Totals {
 }
 
 /** Net-of-tax sales on DINE-IN bills only — the numerator for APC. */
-function dineInNet(from: string, to: string): number {
+function dineInNet(from: string, to: string, deviceId: string | null): number {
   const db = getLocalDb();
   const r = db.prepare(`
     SELECT COALESCE(SUM(total), 0) AS gross,
@@ -132,23 +155,25 @@ function dineInNet(from: string, to: string): number {
       FROM orders
      WHERE status = 'completed' AND order_type = 'dine_in'
        AND created_at >= ? AND created_at <= ?
-  `).get(from, to) as { gross: number; vat: number; ctl: number };
+           ${scopeClause(deviceId)}
+  `).get(from, to, ...scopeArgs(deviceId)) as { gross: number; vat: number; ctl: number };
   return Number(r.gross) - Number(r.vat) - Number(r.ctl);
 }
 
-function readByMode(from: string, to: string): Map<string, number> {
+function readByMode(from: string, to: string, deviceId: string | null): Map<string, number> {
   const db = getLocalDb();
   const rows = db.prepare(`
     SELECT p.method AS method, COALESCE(SUM(p.amount), 0) AS amt
       FROM payments p
       JOIN orders o ON o.id = p.order_id
      WHERE o.status = 'completed' AND o.created_at >= ? AND o.created_at <= ?
+           ${scopeClause(deviceId, 'o.device_id')}
      GROUP BY p.method
-  `).all(from, to) as { method: string; amt: number }[];
+  `).all(from, to, ...scopeArgs(deviceId)) as { method: string; amt: number }[];
   return new Map(rows.map(r => [String(r.method), Number(r.amt)]));
 }
 
-function readHourly(from: string, to: string) {
+function readHourly(from: string, to: string, deviceId: string | null) {
   const db = getLocalDb();
   return db.prepare(`
     SELECT strftime('%H', created_at, 'localtime') AS hour,
@@ -158,8 +183,9 @@ function readHourly(from: string, to: string) {
            COALESCE(SUM(ctl_amount), 0) AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
+           ${scopeClause(deviceId)}
      GROUP BY hour ORDER BY hour
-  `).all(from, to) as { hour: string; bills: number; gross: number; vat: number; ctl: number }[];
+  `).all(from, to, ...scopeArgs(deviceId)) as { hour: string; bills: number; gross: number; vat: number; ctl: number }[];
 }
 
 function taxRates(): { vatRate: number; ctlRate: number } {
@@ -173,6 +199,64 @@ export interface DailyReportRequest {
   preset?: RangePreset;
   from?: string;
   to?: string;
+  /**
+   * Which terminals the report covers.
+   *
+   *   'own'    — this terminal only. All a plain till can produce, because it
+   *              holds nobody else's rows.
+   *   'branch' — every terminal, with a per-till breakdown. Only meaningful on a
+   *              node, which is the only machine that has ingested peers' rows.
+   *
+   * Defaults to 'branch' on a node and 'own' elsewhere. Not offered as a user
+   * toggle on a plain till: it genuinely cannot produce a branch figure, and a
+   * greyed-out option teaches people the feature is broken.
+   */
+  scope?: 'own' | 'branch';
+}
+
+/** A terminal's contribution to the branch total. */
+export interface TerminalLine {
+  deviceId: string | null;
+  terminalCode: string | null;
+  gross: number;
+  bills: number;
+  /** Last order seen from this terminal, so staleness can be stated. */
+  lastSeen: string | null;
+}
+
+/**
+ * Terminals that have reported, with their totals.
+ *
+ * A branch report is only as complete as the peers that have reached this node,
+ * and a stale one looks exactly like a correct one. So the breakdown carries
+ * `lastSeen` per terminal and the report states it, rather than printing a
+ * confident branch total that silently omits a till nobody has heard from since
+ * lunchtime.
+ */
+function readByTerminal(from: string, to: string): TerminalLine[] {
+  const db = getLocalDb();
+  // branch-wide: this IS the per-terminal breakdown — grouping by device is the
+  // entire purpose, so scoping it to one device would return one row.
+  const rows = db.prepare(`
+    SELECT device_id                      AS deviceId,
+           COALESCE(SUM(total), 0)        AS gross,
+           COUNT(*)                       AS bills,
+           MAX(created_at)                AS lastSeen
+      -- branch-wide: grouping BY device is the entire purpose of this query;
+      -- scoping it to one terminal would return a single row.
+      FROM orders
+     WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
+     GROUP BY device_id
+     ORDER BY device_id
+  `).all(from, to) as any[];
+
+  return rows.map(r => ({
+    deviceId:     r.deviceId ?? null,
+    terminalCode: null,          // filled by the caller, which holds device_config
+    gross:        Number(r.gross),
+    bills:        Number(r.bills),
+    lastSeen:     r.lastSeen ?? null,
+  }));
 }
 
 export async function exportDailySalesReport(
@@ -186,9 +270,28 @@ export async function exportDailySalesReport(
       { business_name: string; currency: string } | undefined;
     const cfg = getDeviceConfig();
 
-    const t = readTotals(range.from, range.to);
-    const byMode = readByMode(range.from, range.to);
-    const hourly = readHourly(range.from, range.to);
+    // A plain till has only its own rows, so 'branch' would be a lie there.
+    const isNode = cfg?.device_role === 'node';
+    const wantBranch = (req.scope ?? (isNode ? 'branch' : 'own')) === 'branch';
+    const deviceId: string | null = wantBranch ? null : (cfg?.device_id ?? null);
+
+    const t = readTotals(range.from, range.to, deviceId);
+    const byMode = readByMode(range.from, range.to, deviceId);
+    const hourly = readHourly(range.from, range.to, deviceId);
+    const byTerminal = wantBranch ? readByTerminal(range.from, range.to) : [];
+
+    // The per-till figures must sum to the branch total. If they do not, say so
+    // on the report rather than printing a total that does not foot — a report
+    // that silently fails to add up is worse than one that admits it cannot.
+    const terminalSum = byTerminal.reduce((a, x) => a + x.gross, 0);
+    const footsOk = !wantBranch || Math.abs(terminalSum - t.grossSales) < 0.01;
+
+    // Every report states its scope. 'Daily Sales Report' with no scope line, at
+    // a branch where one till aggregates, is how somebody reconciles the wrong
+    // figure and does not find out for a month.
+    const terminalScope = wantBranch
+      ? `All terminals${byTerminal.length ? ` — ${byTerminal.length} reporting` : ''}`
+      : `Terminal ${cfg?.terminal_code ?? 'unknown'}`;
     const { vatRate, ctlRate } = taxRates();
 
     const wb = new ExcelJS.Workbook();
@@ -219,11 +322,49 @@ export async function exportDailySalesReport(
     // ── Header ───────────────────────────────────────────────────────────────
     put([session?.business_name ?? 'SwiftPOS'], { bold: true });
     put([cfg?.terminal_code ?? 'NA']);
+    // WHICH TERMINALS. Distinct from scope.scopeLabel below, which describes
+    // where the DATA came from (this till / synced from the cloud). Both matter
+    // and neither substitutes for the other: a report can be branch-wide and
+    // stale, or single-till and current.
+    put([`Terminals: ${terminalScope}`], { bold: true });
     put([`Daily_Sales_Report_Detail(${range.label})`]);
     put([`Generated On: ${new Date().toLocaleString('en-KE')}`]);
     // Provenance, in the file. Not decoration — see the note at the top.
     put([`Covers: ${scope.scopeLabel}`]);
     blank();
+
+    // ── Per-terminal breakdown ───────────────────────────────────────────────
+    // Branch total first, tills beneath it as evidence. One document, not two:
+    // separate branch and till reports are how somebody ends up with numbers
+    // that do not tie and no way to tell whether that is a bug or a scope
+    // difference.
+    if (wantBranch && byTerminal.length) {
+      section('By Terminal');
+      put(['Terminal', 'Bills', 'Gross', 'Last order'], { bold: true });
+      for (const line of byTerminal) {
+        put([
+          line.terminalCode ?? line.deviceId ?? 'Unattributed',
+          line.bills,
+          line.gross,
+          line.lastSeen ? new Date(line.lastSeen).toLocaleString('en-KE') : '—',
+        ]);
+      }
+      put(['TOTAL', byTerminal.reduce((a, x) => a + x.bills, 0), terminalSum, ''], { bold: true });
+
+      if (!footsOk) {
+        // Do not print a total that does not foot without saying so.
+        put([`DISCREPANCY: terminal figures sum to ${terminalSum.toFixed(2)} against a branch total of ${t.grossSales.toFixed(2)}. Do not rely on this report until it is explained.`], { bold: true });
+      }
+
+      // A branch report is only as complete as the peers that have reached this
+      // node. A stale one looks identical to a correct one, so name it.
+      const stale = byTerminal.filter(x =>
+        x.lastSeen && (Date.now() - new Date(x.lastSeen).getTime()) > 2 * 60 * 60 * 1000);
+      for (const x of stale) {
+        put([`${x.terminalCode ?? x.deviceId}: nothing since ${new Date(x.lastSeen!).toLocaleString('en-KE')} — figures may be incomplete.`]);
+      }
+      blank();
+    }
 
     // ── Daily Sales Report ───────────────────────────────────────────────────
     section('Daily Sales Report');
@@ -236,7 +377,7 @@ export async function exportDailySalesReport(
     // APC = net sales per DINER, not per bill. It is deliberately computed from
     // dine-in net sales only, because covers exist only there — dividing the whole
     // day's takings by dine-in heads would inflate it by every takeaway sale.
-    const dineIn = dineInNet(range.from, range.to);
+    const dineIn = dineInNet(range.from, range.to, deviceId);
     const apc = t.covers && t.covers > 0 ? money2(dineIn / t.covers) : null;
 
     put([

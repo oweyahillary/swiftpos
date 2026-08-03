@@ -61,12 +61,43 @@ export default function InstallPage({ onComplete }: Props) {
   // ── Step 3: bind branch + role ──
   const [branchId, setBranchId] = useState('');
   const [role, setRole] = useState<DeviceRole>('till');
-  const [nodeUrl, setNodeUrl] = useState('');
-  // On a 'node' this is minted here and shown to the technician. On a 'till' it
   // is typed in from the branch server's screen.
   const [nodeSecret, setNodeSecret] = useState('');
   // Prefixes every bill number. Must differ on each till at a branch.
   const [terminalCode, setTerminalCode] = useState('T1');
+
+  // ── Branch server address: IP typed, port implied ──────────────────────────
+  // The port is a constant (nodeServer.ts NODE_PORT = 4100), so asking every
+  // installer to type it only creates a chance to type it wrong — and the
+  // placeholder here used to read :4000, which is the API port and precisely
+  // the "specific, costly mistake" the step 1 comment warns about. A till
+  // pointed at the API port gets a 401 from the node relay and appears broken
+  // for reasons nothing on screen explains.
+  //
+  // So: the IP is the only thing typed. The port is shown, fixed, and only
+  // becomes editable when someone says the branch server is on a different one
+  // — which happens only when 4100 was taken and the node walked to 4101+.
+  const NODE_DEFAULT_PORT = 4100;
+  const [nodeIp, setNodeIp] = useState('');
+  const [nodePort, setNodePort] = useState(String(NODE_DEFAULT_PORT));
+  const [customPort, setCustomPort] = useState(false);
+
+  // Derived, never stored as free text. Keeping node_url in device_config as a
+  // full URL means nodeClient.ts and every existing consumer are untouched —
+  // only what the human types changes.
+  const nodeIpTrim = nodeIp.trim();
+  const nodePortNum = Number(nodePort);
+  const nodeIpValid = /^(\d{1,3}\.){3}\d{1,3}$/.test(nodeIpTrim)
+    && nodeIpTrim.split('.').every(o => Number(o) <= 255);
+  const nodePortValid = Number.isInteger(nodePortNum) && nodePortNum > 0 && nodePortNum < 65536;
+  const composedNodeUrl = nodeIpTrim && nodeIpValid && nodePortValid
+    ? `http://${nodeIpTrim}:${nodePortNum}` : null;
+  // A branch server is on the shop LAN by definition. A public or loopback
+  // address here is always a mistake, and catching it now is cheaper than a
+  // till that silently never reaches its node.
+  const nodeIpSuspect = nodeIpValid && !/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(nodeIpTrim);
+  // On a 'node' this is minted here and shown to the technician. On a 'till' it
+
   // Set by the server at activation (see ipcHandlers desktop-login) and
   // refreshed on every catalogue pull. Read here only so the value already
   // on the device is not overwritten when the rest of the config is saved.
@@ -152,15 +183,15 @@ export default function InstallPage({ onComplete }: Props) {
   // Step 3: write the final config, binding this install to a branch + role.
   const complete = async () => {
     if (!branchId) { setError('Select the branch this device belongs to'); return; }
-    if (role === 'till' && nodeUrl.trim() && !/^https?:\/\//i.test(nodeUrl.trim())) {
-      setError('Aggregation node address must start with http:// or https://'); return;
+    if (role === 'till' && nodeIpTrim && !composedNodeUrl) {
+      setError('Enter the branch server as an IP address, for example 192.168.1.100'); return;
     }
     // A till pointed at a branch server without the access code would be refused
     // on every push and silently stop aggregating, so block it at install time.
     if (!/^[A-Z0-9]{1,4}$/.test(terminalCode.trim().toUpperCase())) {
       setError('Terminal code must be 1–4 letters or digits, e.g. T1'); return;
     }
-    if (role === 'till' && nodeUrl.trim() && !nodeSecret.trim()) {
+    if (role === 'till' && nodeIpTrim && !nodeSecret.trim()) {
       setError('Enter the branch server access code — it is shown on that machine\u2019s setup screen'); return;
     }
     setSaving(true); setError('');
@@ -170,7 +201,7 @@ export default function InstallPage({ onComplete }: Props) {
         server_url: cleanUrl,
         branch_id: branchId,
         device_role: role,
-        node_url: role === 'till' ? (nodeUrl.trim().replace(/\/+$/, '') || null) : null,
+        node_url: role === 'till' ? composedNodeUrl : null,
         node_secret: nodeSecret.trim().toUpperCase() || null,
         terminal_code: terminalCode.trim().toUpperCase(),
         // Only send it if activation somehow did not — never blank an
@@ -356,14 +387,57 @@ export default function InstallPage({ onComplete }: Props) {
                   <label className="block text-sm text-gray-400 mb-1.5">
                     Branch server address <span className="text-gray-400">(optional)</span>
                   </label>
-                  <input type="text" value={nodeUrl} onChange={e => setNodeUrl(e.target.value)}
-                    placeholder="http://192.168.1.100:4000" className={`${inputCls} font-mono text-sm`} />
+                  <div className="flex gap-2 items-start">
+                    <input type="text" value={nodeIp} inputMode="decimal"
+                      onChange={e => setNodeIp(e.target.value)}
+                      placeholder="192.168.1.100"
+                      className={`${inputCls} font-mono text-sm flex-1`} />
+                    <div className="flex items-center gap-1.5 pt-2.5 text-gray-400 font-mono text-sm">
+                      <span>:</span>
+                      {customPort ? (
+                        <input type="text" value={nodePort} inputMode="numeric" maxLength={5}
+                          onChange={e => setNodePort(e.target.value.replace(/\D/g, ''))}
+                          className={`${inputCls} font-mono text-sm w-20 py-2`} />
+                      ) : (
+                        <span className="px-2 py-2 rounded-lg bg-gray-800 text-gray-500 select-none">
+                          {NODE_DEFAULT_PORT}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 mt-2 text-xs text-gray-400 cursor-pointer">
+                    <input type="checkbox" checked={customPort}
+                      onChange={e => {
+                        setCustomPort(e.target.checked);
+                        if (!e.target.checked) setNodePort(String(NODE_DEFAULT_PORT));
+                      }}
+                      className="accent-green-500" />
+                    The branch server is on a different port
+                  </label>
                   <p className="text-xs text-gray-400 mt-1.5">
-                    The branch server till this one pushes to for combined manager reports. Leave blank for a single-till branch.
+                    The branch server till this one pushes to for combined manager reports. Enter its
+                    IP address only &mdash; the port is fixed. Leave blank for a single-till branch.
                   </p>
+                  {nodeIpTrim !== '' && !nodeIpValid && (
+                    <p className="text-xs text-amber-300 mt-1.5">
+                      That is not a valid IP address. It should look like 192.168.1.100.
+                    </p>
+                  )}
+                  {nodeIpSuspect && (
+                    <p className="text-xs text-amber-300 mt-1.5">
+                      {nodeIpTrim.startsWith('127.') || nodeIpTrim === '0.0.0.0'
+                        ? 'That address points at this machine, not another till.'
+                        : 'That does not look like a local network address. The branch server is on the shop LAN — usually 192.168.x.x or 10.x.x.x.'}
+                    </p>
+                  )}
+                  {composedNodeUrl && !nodeIpSuspect && (
+                    <p className="text-xs text-gray-500 mt-1.5 font-mono">
+                      Will connect to {composedNodeUrl}
+                    </p>
+                  )}
                 </div>
               )}
-              {role === 'till' && nodeUrl.trim() !== '' && (
+              {role === 'till' && nodeIpTrim !== '' && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-1.5">Branch access code</label>
                   <input type="text" value={nodeSecret}

@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     summary:   () => ipcRenderer.invoke('day:summary'),
     isManager: () => ipcRenderer.invoke('day:isManager'),
     conflicts: () => ipcRenderer.invoke('day:conflicts'),
+    retryConflict: (shiftId: string) => ipcRenderer.invoke('day:retryConflict', { shiftId }),
     close:     (countedCash: number, notes?: string) =>
       ipcRenderer.invoke('day:close', { countedCash, notes }),
   },

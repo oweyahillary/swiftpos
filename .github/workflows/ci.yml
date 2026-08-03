@@ -174,3 +174,66 @@ jobs:
             echo "parity guard did not fire — it would pass on a broken parse"
             exit 1
           fi
+
+  desktop-scope:
+    name: Desktop row scope
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22, not 20, for node:sqlite — the rejection-routing test needs a real
+          # SQLite and better-sqlite3's native binding cannot be built in every
+          # environment. The two lint guards below run on either.
+          node-version: 22
+
+      # The executable tests below prefer better-sqlite3 — the driver the till
+      # actually runs — and fall back to node:sqlite only if it is missing. CI
+      # installs it so the assertions are proved against the real engine rather
+      # than a compatible one. --no-save keeps it out of the manifest; it is a
+      # test dependency of the checks, not of the product.
+      - name: Install the app's SQLite driver for the tests
+        run: npm i --no-save better-sqlite3
+
+      # Both guards below exist because a till acting as the branch node ingests
+      # its peers' rows into the SAME tables that drive its own cash control.
+      # Neither failure is visible to tsc, and both appear on exactly one till
+      # per branch — which is to say a client finds them, not us.
+
+      # Every query on a replicated table must either scope to this terminal or
+      # carry `-- branch-wide: <why>`. getOpenShift() is the reason: unscoped, it
+      # returns the newest open drawer anywhere at the branch, and the sell gate
+      # reads it.
+      - name: Own-row scope declared
+        run: node scripts/check-own-rows.mjs
+
+      # Scoping a query means adding a `?`. Adding a `?` without an argument
+      # type-checks perfectly and then throws "Too few parameter values were
+      # provided" at runtime. Eleven such statements reached the repo on the
+      # first pass of the scoping work, and every one on the cash-push path.
+      - name: SQL placeholders are bound
+        run: node scripts/check-sql-binds.mjs
+
+      # A scoped SELECT and an unattributed INSERT are each individually correct
+      # and only wrong together, which is the shape no single-statement check
+      # catches. Schema 44 scoped every read of expenses and float_transactions on
+      # device_id and left both INSERT sites not setting it — so from that upgrade
+      # on, expenses and drawer floats silently stopped reaching the server.
+      - name: Replicated rows are attributed
+        run: node scripts/check-row-attribution.mjs
+
+      # The rejection block, executed. The server names the table a refused row
+      # belongs to; applying every rejection to `shifts` matched zero rows for a
+      # business_day, raised nothing, and the row was then marked synced — a
+      # refused trading day recorded as delivered and never retried. No lint or
+      # type-check can see that. This runs it.
+      - name: Sync rejection routing
+        run: node --no-warnings scripts/test-sync-rejection-routing.mjs
+
+      # The ingest rules, executed. Every one of them is a case where continuing
+      # would produce a plausible and incorrect number rather than an error — a
+      # peer's shift attributed to the node, a cursor that skips a row, a counter
+      # derived from another terminal's sequence. None is visible to a type-check.
+      - name: Branch replication ingest
+        run: node --no-warnings scripts/test-node-ingest.mjs

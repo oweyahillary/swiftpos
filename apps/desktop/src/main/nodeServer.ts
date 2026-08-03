@@ -20,8 +20,16 @@ import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
+import { applyPeerRows, isReplicatedTable, listPeers } from './nodeIngest';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
+
+// Tried in order when the one before is already in use. Kept short and
+// contiguous deliberately: a human has to be able to read the number off one
+// screen and type it into another, and a wide random range makes that worse.
+const PORT_FALLBACKS = [NODE_PORT, NODE_PORT + 1, NODE_PORT + 2, NODE_PORT + 3];
+let portAttempt = 0;
+let boundPort: number | null = null;
 
 let server: http.Server | null = null;
 
@@ -68,66 +76,16 @@ function json(res: http.ServerResponse, status: number, body: any) {
   res.end(payload);
 }
 
-// ── Upsert a received order into the node's local tables (order-level + items) ──
-// Order-level is enough for combined sales/per-till/per-cashier totals; items are
-// stored too so top-products works on the aggregate. Idempotent on order id.
-function ingestOrder(body: any): { duplicate: boolean } {
-  const db = getLocalDb();
-  const orderId = body._orderId ?? body.idempotency_key ?? body._localOrderId;
-  if (!orderId) throw new Error('order id missing');
-
-  const existing = db.prepare(`SELECT id FROM orders WHERE id=?`).get(orderId) as any;
-  if (existing) return { duplicate: true };  // already have it — no-op (dedupe)
-
-  const createdAt = body._createdAt ?? new Date().toISOString();
-  // Fall back to the node's OWN business, not its branch. The previous fallback
-  // was `cfg?.branch_id`, which wrote a branch id into the business_id column
-  // whenever a peer omitted business_id — wrong tenant on the row, and it then
-  // propagated to Supabase on forward.
-  const sessionRow = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
-
-  db.transaction(() => {
-    db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).run(
-      orderId, body.business_id ?? sessionRow?.business_id ?? null, body.branch_id, body.order_number,
-      body.order_type ?? 'retail',
-      // Both were dropped here while the verbatim cloud payload kept them, so
-      // Supabase was right and the node's own branch report was not.
-      body.order_type === 'delivery' ? (body.delivery_person ?? null) : null,
-      body.subtotal ?? 0, body.vat_amount ?? 0, body.ctl_amount ?? 0,
-      body.discount_amount ?? 0, body.tip_amount ?? 0, body.total ?? 0,
-      body.cashier_id ?? null, body.shift_id ?? null,
-      body.customer_id ?? null, body.customer_name ?? null, body.customer_phone ?? null,
-      createdAt, body.device_id ?? null,
-    );
-
-    for (const item of body.items ?? []) {
-      // Items arrive in the same shape createLocalOrder produced for the cloud.
-      const pid   = item.product?.id ?? item.product_id ?? null;
-      const pname = item.product?.name ?? item.product_name ?? '';
-      const cat   = item.product?.categories?.name ?? item.category_name ?? null;
-      const price = item.unitPrice ?? item.unit_price ?? 0;
-      const qty   = item.quantity ?? 0;
-      const line  = item.lineTotal ?? item.subtotal ?? 0;
-      db.prepare(`
-        INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'fired')
-      `).run(crypto.randomUUID(), orderId, pid, pname, cat, price, qty, line, item.course ?? null);
-    }
-
-    // Re-enqueue the ORIGINAL cloud payload so this node forwards it upward with
-    // the same id/idempotency key. body.payload is the verbatim till→cloud body.
-    const cloudPayload = body.payload ?? JSON.stringify(body);
-    db.prepare(`
-      INSERT OR IGNORE INTO sync_queue (order_id, payload, created_at, status)
-      VALUES (?, ?, ?, 'pending')
-    `).run(orderId, cloudPayload, createdAt);
-  })();
-
-  return { duplicate: false };
-}
+// Order ingest now goes through /node/sync like every other replicated table,
+// so the bespoke ingestOrder path that used to live here is gone. It carried its
+// own column list, its own dedupe and its own attribution rules, all of which
+// had to agree with the ones in nodeIngest and had no way of proving they did.
+//
+// The bill-number conflict it handled (a reinstalled till restarting its counter
+// and re-minting numbers this node already holds) surfaces through the ordinary
+// rejection path now — applyPeerRows reports the insert error against the row,
+// the peer escalates it to 'failed' after five attempts, and the reason reaches
+// a person instead of a count that never clears.
 
 export function startNodeServer(): void {
   if (server) return;                              // already running
@@ -151,67 +109,73 @@ export function startNodeServer(): void {
         return json(res, 401, { error: 'unauthorised — bad or missing X-Node-Secret' });
       }
 
-      // Cloud-delivery confirmation.
-      //
-      // A peer till marks its orders 'node_ack' when THIS node accepts them, but
-      // the node still has to forward them to Supabase. Until that happens the
-      // cloud has no record of those sales — and a till that closed its shift on
-      // node acceptance alone would have the server compute expected cash short
-      // and report a variance that never existed.
-      //
-      // The till sends the ids it is waiting on; we answer with the subset whose
-      // queue row is 'synced' — i.e. the cloud has accepted them. An id with no
-      // queue row at all also counts as delivered: the only way to reach this
-      // call is for the node to have accepted the order, and ingestOrder always
-      // enqueues, so an absent row means the queue was pruned after a successful
-      // push rather than that the order was lost.
-      if (url === '/node/confirm' && req.method === 'POST') {
-        const body = await readBody(req);
-        const ids: string[] = Array.isArray(body?.order_ids) ? body.order_ids.map(String) : [];
-        if (ids.length === 0) return json(res, 200, { delivered: [] });
-
-        const db = getLocalDb();
-        const placeholders = ids.map(() => '?').join(',');
-        const stillQueued = db.prepare(
-          `SELECT order_id FROM sync_queue WHERE order_id IN (${placeholders}) AND status != 'synced'`
-        ).all(...ids) as Array<{ order_id: string }>;
-
-        const waiting = new Set(stillQueued.map(r => r.order_id));
-        return json(res, 200, { delivered: ids.filter(id => !waiting.has(id)) });
-      }
-
       // Health — tills probe this to decide reachability.
       if (req.method === 'GET' && url === '/node/health') {
         const c = getDeviceConfig();
         return json(res, 200, { ok: true, branch_id: c?.branch_id ?? null, device_id: c?.device_id ?? null, role: 'node' });
       }
 
-      // Receive a peer till's order.
-      if (req.method === 'POST' && url === '/node/orders') {
+      // Receive a peer till's cash records: shifts, floats, expenses, trading
+      // days — and orders, once the till stops routing them through the cloud
+      // branch below.
+      //
+      // This is the endpoint that makes a branch cash reconciliation possible.
+      // Until now only orders crossed the LAN, so a manager could see the
+      // branch's sales and none of the drawers behind them.
+      //
+      // Every row keeps the PEER's device_id and the PEER's seq. Stamping this
+      // node's own would make peer drawers indistinguishable from its own in
+      // getOpenShift, which the sell gate reads. applyPeerRows refuses rather
+      // than guesses; see nodeIngest.ts.
+      if (req.method === 'POST' && url === '/node/sync') {
         const body = await readBody(req);
         const c = getDeviceConfig();
+        const peerDeviceId = String(body?.device_id ?? '');
+
         if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
           return json(res, 403, { error: 'branch mismatch' });
         }
-        try {
-          const { duplicate } = ingestOrder(body);
-          return json(res, duplicate ? 200 : 201, { ok: true, duplicate });
-        } catch (err: any) {
-          // orders.order_number is UNIQUE locally. A till that was wiped and
-          // reinstalled restarts its bill counter at 1, so it re-mints numbers
-          // this node already holds from before the wipe. Left as a generic 500
-          // the till just retried forever, showing only a pending count that
-          // never cleared and no way to find out why.
-          if (String(err?.message ?? '').includes('UNIQUE') && /order_number/i.test(String(err?.message))) {
-            return json(res, 409, {
-              error: `bill number ${body.order_number} already exists on this branch server — `
-                   + 'that till was probably reinstalled and restarted its counter. '
-                   + 'Give it a different terminal code and re-run setup on that till only.',
-              conflict: 'order_number',
-            });
+
+        const results: Record<string, any> = {};
+        for (const [table, rows] of Object.entries(body?.tables ?? {})) {
+          if (!isReplicatedTable(table)) {
+            // Named rather than ignored. A peer on a newer build sending a table
+            // this node does not replicate must find out, or it will mark those
+            // rows delivered and never offer them again.
+            results[table] = { applied: 0, duplicate: 0, cursor: 0,
+                               rejected: [{ id: '*', table, reason: 'this branch server does not replicate that table' }] };
+            continue;
           }
-          throw err;
+          if (!Array.isArray(rows)) continue;
+          results[table] = applyPeerRows(table, peerDeviceId, rows);
         }
+        return json(res, 200, { ok: true, results });
+      }
+
+      // What this node already holds from a given device, per table. A peer that
+      // was reinstalled, or one whose outbox cursor was lost, can resume from
+      // here instead of re-offering its whole history.
+      if (req.method === 'GET' && url === '/node/cursors') {
+        const device = new URL(req.url ?? '', 'http://node').searchParams.get('device');
+        const all = listPeers();
+        return json(res, 200, {
+          cursors: device ? all.filter(p => p.device_id === device) : all,
+        });
+      }
+
+      // Node-served time.
+      //
+      // Peers compare this against their own clock and warn above two minutes'
+      // drift. The failure it heads off is not cosmetic: business_date is taken
+      // from each till's own clock, so two tills that disagree by a few minutes
+      // either side of midnight put the same evening's takings into two
+      // different trading days, and no report will ever reconcile them.
+      //
+      // Advisory only — the node does not set anyone's clock, and a till whose
+      // time is wrong keeps selling. A POS that stops trading because of NTP is
+      // worse than one that reports a date its manager can correct.
+      if (req.method === 'GET' && url === '/node/time') {
+        return json(res, 200, { now: new Date().toISOString() });
       }
 
       // Combined branch report — any till's manager view reads this.
@@ -242,12 +206,55 @@ export function startNodeServer(): void {
     }
   });
 
-  server.on('error', (e) => { console.error('[node] server error', e); server = null; });
-  server.listen(NODE_PORT, () => console.log(`[node] aggregation node listening on :${NODE_PORT}`));
+  // ── Port conflict ────────────────────────────────────────────────────────
+  // This used to null the server and log to a console nobody reads on a shop
+  // floor PC. If 4100 was already taken — another SwiftPOS instance, a portable
+  // build left running, any unrelated service — the branch server silently did
+  // not start, and tills 2 and 3 then failed with 'node unreachable' every 60
+  // seconds with nothing on any screen explaining why.
+  //
+  // Now it walks up to the next few ports and REMEMBERS which one it got, so the
+  // setup screen can show the address the other tills actually need to enter.
+  // A branch server on a non-default port is unusual but recoverable; a branch
+  // server that is not running at all is neither.
+  server.on('error', (e: NodeJS.ErrnoException) => {
+    if (e.code === 'EADDRINUSE' && portAttempt < PORT_FALLBACKS.length - 1) {
+      portAttempt++;
+      const next = PORT_FALLBACKS[portAttempt];
+      console.warn(`[node] port ${PORT_FALLBACKS[portAttempt - 1]} in use, trying ${next}`);
+      setTimeout(() => server?.listen(next), 150);
+      return;
+    }
+    console.error('[node] server error', e);
+    boundPort = null;
+    server = null;
+  });
+
+  server.listen(PORT_FALLBACKS[portAttempt], () => {
+    boundPort = PORT_FALLBACKS[portAttempt];
+    if (boundPort !== NODE_PORT) {
+      console.warn(`[node] listening on :${boundPort} — NOT the default ${NODE_PORT}. ` +
+                   `Other tills must use this port in their branch server address.`);
+    } else {
+      console.log(`[node] aggregation node listening on :${boundPort}`);
+    }
+  });
+}
+
+/**
+ * The port the node server actually bound to, or null if it is not running.
+ *
+ * The setup screen shows this rather than the constant, because the number the
+ * other tills need is the one that succeeded, not the one that was asked for.
+ */
+export function getNodePort(): number | null {
+  return boundPort;
 }
 
 export function stopNodeServer(): void {
   if (server) { server.close(); server = null; }
+  boundPort = null;
+  portAttempt = 0;
 }
 
 // ── Broadcast tech token store (singleton row on the node) ──────────────────

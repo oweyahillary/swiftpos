@@ -11,7 +11,11 @@
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { getDeviceConfig, saveDeviceConfig, getServerUrl } from './deviceConfig';
-import { hasNode, pushOrderToNode, confirmNodeDelivery } from './nodeClient';
+import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
+import {
+  fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
+  nodeQueueDepth,
+} from './nodeIngest';
 import { v4 as uuid } from 'uuid';
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
@@ -40,6 +44,15 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
   shifts: 'push', float_transactions: 'push', expenses: 'push',
   business_days: 'push',
 };
+
+/**
+ * The tables /api/sync/push can reject a row from. The server names one of these
+ * in every `rejected[].table`; the client refuses to act on anything else rather
+ * than guessing, because guessing "shifts" is exactly how a refused trading day
+ * came to be marked synced and lost. Keep in step with the server's `rejected`
+ * union in apps/server/src/routes/sync.ts.
+ */
+type RejectableTable = 'shifts' | 'business_days' | 'float_transactions' | 'expenses';
 
 let _serverUrl   = '';
 let _accessToken  = '';   // owner/device token — used for catalogue pull
@@ -195,8 +208,8 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
-    await confirmCloudDelivery(errors);  // peer tills: node_ack -> synced
     await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
+    await pushToNode(errors);            // branch LAN replica — independent destination
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -220,8 +233,8 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
-    await confirmCloudDelivery(errors);  // peer tills: node_ack -> synced
     await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
+    await pushToNode(errors);            // branch LAN replica — independent destination
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -235,6 +248,15 @@ export function getSyncStatus(): {
   /** Why the failed ones failed. A count alone gives the cashier nothing to act on. */
   failedReason?: string;
   failedSince?: string;
+  /**
+   * Rows this till still owes the BRANCH NODE, kept separate from pendingCount.
+   *
+   * The cashier's badge answers one question — is my sale safe on the server —
+   * and the answer is about the cloud. The node is a LAN replica; a node that is
+   * off does not put a sale at risk and must not colour that badge red, or the
+   * indicator stops meaning anything and gets ignored on the day it matters.
+   */
+  nodeBacklog?: { pending: number; failed: number };
 } {
   const db = getLocalDb();
   const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`).get() as { count: number };
@@ -255,23 +277,26 @@ export function getSyncStatus(): {
     : undefined;
   // Offline-origin records (shifts/floats/expenses) waiting to push count too, so
   // the till's "N pending" reflects everything not yet on the server.
+  // own: the badge a cashier reads. Another terminal's backlog is not theirs to
+  // clear, and on a node an unscoped count would read three times the truth and
+  // turn the indicator into noise. Named parameter, bound once — four positional
+  // placeholders in one statement is how the wrong value ends up in the wrong
+  // subquery.
+  const ownDevice = getDeviceConfig()?.device_id ?? null;
   const localPending = db.prepare(`
     SELECT
-      (SELECT COUNT(*) FROM shifts             WHERE sync_status='pending') +
-      (SELECT COUNT(*) FROM float_transactions WHERE sync_status='pending') +
-      (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending') +
-      -- Handed to the branch node but not yet confirmed onto the cloud. The
-      -- sync_queue row is already 'synced' at that point, so without this the
-      -- header would read "Synced" while the cloud still had none of the sales —
-      -- exactly when a manager should NOT be closing the shift.
-      (SELECT COUNT(*) FROM orders              WHERE sync_status='node_ack') AS count
-  `).get() as { count: number };
+      (SELECT COUNT(*) FROM shifts             WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM float_transactions WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM business_days      WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS count
+  `).get({ dev: ownDevice }) as { count: number };
   return {
     online: isOnline(),
     pendingCount: pending.count + localPending.count,
     failedCount: failed.count,
     failedReason: failureRow?.last_error ?? undefined,
     failedSince: failureRow?.since ?? undefined,
+    nodeBacklog: hasNode() ? nodeQueueDepth() : undefined,
   };
 }
 
@@ -687,6 +712,11 @@ async function pullCatalogue(): Promise<boolean> {
 // (see reconcileClosedShifts, called after pushPendingOrders).
 async function pushLocalRecords(errors: string[]): Promise<number> {
   const db = getLocalDb();
+  // Bound into every collection query below. A till pushes its own records;
+  // on a node, pushing a peer's would double-push it — the peer pushes it too,
+  // and the server sees one shift arriving from two devices.
+  const ownDevice = getDeviceConfig()?.device_id ?? null;
+
   const shifts = db.prepare(`
     SELECT id, business_id, branch_id, cashier_id, opened_at, closed_at, status,
            opening_float, closing_float, expected_cash, cash_variance, notes, created_at,
@@ -696,20 +726,24 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
            -- shift a terminal originated, and the dashboard's Open Drawers screen
            -- showed "Till: unknown" for all of them.
            business_day_id, business_date, device_id, terminal_code, drawer_label, opened_by
-    FROM shifts WHERE sync_status='pending'
+    -- own: a till pushes ITS OWN records. On a node, pushing a peer's would
+    -- double-push — the peer pushes it too and the server sees one shift
+    -- arriving from two devices.
+    FROM shifts WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
     -- 'conflict' rows are excluded: the server refused them for a reason no
     -- retry clears, and re-sending every pass would loop forever while burying
     -- the real error in the sync log.
-  `).all() as any[];
+  `).all(ownDevice) as any[];
   const floats = db.prepare(`
     SELECT id, shift_id, branch_id, cashier_id, type, amount, reason, created_at
     FROM float_transactions WHERE sync_status='pending'
-  `).all() as any[];
+      AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(ownDevice) as any[];
   const expenses = db.prepare(`
     SELECT id, business_id, branch_id, expense_category_id, description, amount,
            paid_by, expense_date, shift_id, created_at
-    FROM expenses WHERE sync_status='pending'
-  `).all() as any[];
+    FROM expenses WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(ownDevice) as any[];
   // Trading days. Pushed like shifts: the till originates them and the cloud is
   // the reporting surface, so a day closed on the terminal has to arrive or the
   // dashboard never sees a reconciled day at all.
@@ -717,8 +751,8 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     SELECT id, business_id, branch_id, device_id, terminal_code, business_date,
            opened_at, opened_by, closed_at, closed_by, status,
            counted_cash, expected_cash, cash_variance, notes
-    FROM business_days WHERE sync_status='pending'
-  `).all() as any[];
+    FROM business_days WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(ownDevice) as any[];
 
   if (!shifts.length && !floats.length && !expenses.length && !business_days.length) return 0;
 
@@ -753,100 +787,121 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       errors.push(String(body.schema.message ?? 'This till is running an older build — update it.'));
     }
 
+    // A rejection names the table it belongs to. This push carries four of them
+    // and the server rejects rows in two of them today, so "rejected" has never
+    // meant "a shift" — it only looked that way because shifts were the first
+    // case written. Applying every rejection to `shifts` was silent: the UPDATE
+    // matched zero rows for a business_day id, changed nothing, reported nothing,
+    // and the row was then marked synced by the loop below. A refused trading day
+    // was recorded as delivered and never retried again.
     const rejected: { id: string; code: string; table?: string; error: string }[] =
       Array.isArray(body?.rejected) ? body.rejected : [];
-    const rejectedIds = new Set(rejected.map(r => r.id));
 
-    // Which table a rejected id belongs to.
-    //
-    // This block used to run `UPDATE shifts ... WHERE id=?` for EVERY rejection
-    // regardless. A duplicate_open_day rejection carries a business_days id, so
-    // that statement matched zero rows: the day was never marked, stayed
-    // sync_status='pending', and was re-pushed on every pass forever, while the
-    // cashier read "N shifts could not sync — a cashier has an open drawer on
-    // another till", which describes a different problem entirely.
-    //
-    // The server now names the table on each rejection. The code map is the
-    // fallback for a till talking to a server that predates that field, so this
-    // build is safe to install before the server is redeployed.
-    const TABLE_BY_CODE: Record<string, string> = {
-      duplicate_open_shift: 'shifts',
-      missing_business_day: 'shifts',
+    // Fallback for a server that predates the `table` field. Codes are stable and
+    // the set is small, so this is exact rather than a guess — but an unknown code
+    // from a NEWER server is deliberately NOT defaulted to shifts. Defaulting is
+    // what produced the bug above. Unknown goes to `null`, which parks the row
+    // (see below) instead of writing a conflict to the wrong table.
+    const TABLE_BY_CODE: Record<string, RejectableTable> = {
       duplicate_open_day:   'business_days',
+      missing_business_day: 'shifts',
+      duplicate_open_shift: 'shifts',
     };
-    const REJECTABLE = new Set(['shifts', 'business_days', 'float_transactions', 'expenses']);
-    // Only shifts and business_days carry a notes column. Preparing an UPDATE
-    // that names `notes` on float_transactions or expenses throws at prepare
-    // time, inside the `if (rejected.length)` branch — so the first rejection of
-    // any kind would take the whole shift sync down with it. The server refuses
-    // floats and expenses with a non-200 today and never lists them here, but
-    // this must not become a landmine the day that changes.
-    const HAS_NOTES = new Set(['shifts', 'business_days']);
-    const tableFor = (r: { code: string; table?: string }): string | null => {
+    const tableOf = (r: { code: string; table?: string }): RejectableTable | null => {
       const t = r.table ?? TABLE_BY_CODE[r.code];
-      // Never interpolate a server-supplied string into SQL, and never guess:
-      // an unrecognised table is reported to the user rather than written to.
-      return t && REJECTABLE.has(t) ? t : null;
+      return t === 'shifts' || t === 'business_days' ||
+             t === 'float_transactions' || t === 'expenses' ? t : null;
     };
+
+    // Rejected ids per table. Keyed by table because two rows in different
+    // tables can carry the same id in principle, and because every mark-synced
+    // loop below has to consult its OWN table's set — not one shared set.
+    const rejectedByTable: Record<RejectableTable, Set<string>> = {
+      shifts: new Set(), business_days: new Set(),
+      float_transactions: new Set(), expenses: new Set(),
+    };
+    const unrouted: typeof rejected = [];
 
     if (rejected.length) {
-      // A function per table rather than a bare statement, so the two shapes —
-      // with and without a notes column — present the same call signature and the
-      // loop below does not have to care which it got.
-      const markers: Record<string, (note: string, id: string) => void> = {};
-      for (const t of REJECTABLE) {
-        if (HAS_NOTES.has(t)) {
-          const stmt = db.prepare(
-            `UPDATE ${t} SET sync_status='conflict', notes =
-               TRIM(COALESCE(notes,'') || char(10) || ?) WHERE id=?`);
-          markers[t] = (note, id) => { stmt.run(note, id); };
-        } else {
-          const stmt = db.prepare(`UPDATE ${t} SET sync_status='conflict' WHERE id=?`);
-          markers[t] = (_note, id) => { stmt.run(id); };
-        }
-      }
-      const unroutable: typeof rejected = [];
+      // Only `shifts` and `business_days` have a `notes` column locally. Writing
+      // the reason into float_transactions or expenses throws "no such column",
+      // which would abort this transaction and kill the whole cash push on the
+      // first rejection of any kind. So the reason is recorded where there is
+      // somewhere to record it, and the status is set everywhere.
+      const markWithNote = (t: 'shifts' | 'business_days') => db.prepare(
+        `UPDATE ${t} SET sync_status='conflict',
+         notes = TRIM(COALESCE(notes,'') || char(10) || ?) WHERE id=?`);
+      const stmt = {
+        shifts:             markWithNote('shifts'),
+        business_days:      markWithNote('business_days'),
+        float_transactions: db.prepare(`UPDATE float_transactions SET sync_status='conflict' WHERE id=?`),
+        expenses:           db.prepare(`UPDATE expenses SET sync_status='conflict' WHERE id=?`),
+      };
+
       db.transaction(() => {
         for (const r of rejected) {
-          const t = tableFor(r);
-          if (!t) { unroutable.push(r); continue; }
-          markers[t](`Sync rejected: ${r.error}`, r.id);
+          const t = tableOf(r);
+          if (!t) {
+            // Table unknown, so which set to put it in is unknown too. Put it in
+            // ALL of them: the sets are only ever read to answer "was this row
+            // refused?", and the answer is yes regardless of which table it came
+            // from. Ids are UUIDs, so this cannot suppress an unrelated row.
+            // Without this the row falls through to the commit loop and is marked
+            // synced — the exact failure the routing above exists to stop, just
+            // one branch further along.
+            unrouted.push(r);
+            for (const s of Object.values(rejectedByTable)) s.add(r.id);
+            continue;
+          }
+          rejectedByTable[t].add(r.id);
+          if (t === 'shifts' || t === 'business_days') {
+            stmt[t].run(`Sync rejected: ${r.error}`, r.id);
+          } else {
+            stmt[t].run(r.id);
+          }
         }
       })();
 
-      // Report what the server actually said. The old message asserted a cause,
-      // so a trading-day rejection was announced as a drawer conflict and the
-      // person reading it went looking in the wrong place.
-      for (const r of rejected) errors.push(`Could not sync: ${r.error}`);
-      for (const r of unroutable) {
-        errors.push(
-          `A record was refused but this build does not know where it belongs ` +
-          `(code: ${r.code}). Update the till.`,
-        );
-      }
+      // The server's own words. The previous hardcoded "a cashier has an open
+      // drawer on another till" was wrong for every rejection that was not that
+      // one — including the trading-day case, where it named the wrong problem
+      // to whoever had to fix it.
+      errors.push(
+        rejected.length === 1
+          ? `A record could not sync: ${rejected[0].error}`
+          : `${rejected.length} records could not sync: ${rejected[0].error}`,
+      );
+    }
+
+    // A rejection this build cannot place. It is NOT marked synced — that is the
+    // whole failure this block exists to prevent — so the row stays pending and
+    // is re-offered next pass. It will loop until someone updates the till, which
+    // is visible and recoverable; silently dropping it is neither.
+    if (unrouted.length) {
+      errors.push(
+        `${unrouted.length} record(s) were refused by the server for a reason this ` +
+        `build does not recognise — update this till. First reason: ${unrouted[0].error}`,
+      );
     }
 
     // Server has the open-shift fields now. Only a still-open shift is fully
     // done here — a closed one waits for reconcileClosedShifts to confirm the
     // server-computed close before it's marked synced.
-    //
-    // Every one of these excludes rejectedIds. It previously applied only to
-    // shifts, so a refused business_day was marked 'synced' in the very same
-    // transaction that failed to mark it 'conflict' — recorded as delivered,
-    // never retried, gone. A row the server refused is not synced by any
-    // definition; the exclusion belongs on all four.
     const openShiftIds = shifts
-      .filter(s => s.status !== 'closed' && !rejectedIds.has(s.id))
+      .filter(s => s.status !== 'closed' && !rejectedByTable.shifts.has(s.id))
       .map(s => s.id);
     const markShift = db.prepare(`UPDATE shifts SET sync_status='synced' WHERE id=?`);
     const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced' WHERE id=?`);
     const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced' WHERE id=?`);
     const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced' WHERE id=?`);
+    // Every loop excludes its own table's rejections. Anything absent from
+    // `rejected` is still treated as accepted — that design constraint is
+    // unchanged and is why the routing above has to be right.
     db.transaction(() => {
       for (const id of openShiftIds) markShift.run(id);
-      for (const f of floats)        if (!rejectedIds.has(f.id)) markFloat.run(f.id);
-      for (const e of expenses)      if (!rejectedIds.has(e.id)) markExp.run(e.id);
-      for (const d of business_days) if (!rejectedIds.has(d.id)) markDay.run(d.id);
+      for (const f of floats)        if (!rejectedByTable.float_transactions.has(f.id)) markFloat.run(f.id);
+      for (const e of expenses)      if (!rejectedByTable.expenses.has(e.id))           markExp.run(e.id);
+      for (const d of business_days) if (!rejectedByTable.business_days.has(d.id))      markDay.run(d.id);
     })();
     return shifts.length + floats.length + expenses.length + business_days.length;
   } catch (err: any) {
@@ -906,38 +961,23 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   let pushed = 0;
   let triedStaffRefresh = false;  // refresh once per sync pass
 
-  // If this till has a branch node, the node is its uplink — push there, not to
-  // the cloud (one path: till → node → cloud). The node forwards to the cloud.
-  const viaNode = hasNode();
+  // Every till pushes its OWN orders to the cloud, including tills that have a
+  // branch node.
+  //
+  // This used to route through the node instead (till → node → cloud), on the
+  // reasoning that a single path made duplicates impossible. That defence is
+  // redundant now: order ids are client-generated UUIDs, the push carries
+  // X-Idempotency-Key, the server upserts by id, and migration 50 made
+  // idempotency_key NOT NULL. Two paths converge on the same row.
+  //
+  // What the single path cost was worse than what it bought. It made the node a
+  // single point of failure for every peer's sales, which is the opposite of the
+  // reason a branch server exists — and it forced 'node_ack', a third state in a
+  // column that can only hold one destination's opinion. The node is now a
+  // replica, reached separately by pushToNode(); see nodeIngest.ts.
 
   for (const row of pending) {
     try {
-      if (viaNode) {
-        const ok = await pushOrderToNode({ orderId: row.order_id, createdAt: row.created_at, payload: row.payload });
-        if (ok) {
-          db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
-          // 'node_ack', NOT 'synced'. The node has the order; the CLOUD may not
-          // yet. Marking it synced here is what made a peer till close its shift
-          // against a server that had not received the sales, computing expected
-          // cash as short and reporting a phantom variance every evening.
-          // confirmCloudDelivery() promotes these to 'synced' once the node says
-          // it has actually forwarded them.
-          db.prepare(`UPDATE orders SET sync_status='node_ack' WHERE id=?`).run(row.order_id);
-          pushed++;
-        } else {
-          // Node unreachable — stay pending and retry next pass. The till keeps
-          // selling regardless; nothing is lost, and a branch server that is off
-          // for ten minutes must not burn through the retry budget.
-          //
-          // Note this branch is now genuinely "unreachable" only: pushOrderToNode
-          // throws on a node that answered and refused, so a real rejection lands
-          // in the catch below and escalates to 'failed' like any other error.
-          db.prepare(`UPDATE sync_queue SET attempts=attempts+1, last_error='node unreachable' WHERE id=?`).run(row.id);
-          errors.push(`Order ${row.order_id}: node unreachable`);
-        }
-        continue;
-      }
-
       const doPost = () => fetch(`${_serverUrl}/api/orders`, {
         method: 'POST',
         headers: {
@@ -1005,39 +1045,111 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 // till's own number be trusted outright. Runs after pushPendingOrders so
 // "have all this shift's orders synced?" is a real answer, not a guess.
 /**
- * Promote 'node_ack' orders to 'synced' once the node confirms the cloud has them.
+ * Replicate this till's own rows to the branch node.
  *
- * On a peer till the uplink is till → node → cloud, so node acceptance is only
- * the first hop. Shift close is computed by the SERVER from the payments it
- * holds, which means closing a shift whose orders are still sitting on the node
- * makes the server read cash sales as short and report a variance that does not
- * exist. That is finding C6 reappearing one hop further out.
+ * A SEPARATE DESTINATION from the cloud, with separate state. That separation is
+ * the point of this function existing rather than being a branch inside the
+ * cloud push. One `sync_status` column cannot hold two destinations' opinions,
+ * and the attempt to make it — marking a node-acked order 'synced' — is what made
+ * a peer till close its shift against a server that did not have the sales and
+ * report a cash variance that did not exist. `node_ack` was the workaround for
+ * that; node_queue is the fix, and node_ack is gone.
  *
- * Silence is not consent: an unreachable node returns null and nothing is
- * promoted, so the shift simply stays open until the answer is known. A shift
- * that closes late is an inconvenience; a shift that closes on a guess produces
- * a cash figure someone will act on.
+ * Consequences of the separation, all deliberate:
+ *   • The cloud never waits on the node. A branch server switched off does not
+ *     delay a single sale reaching Supabase.
+ *   • The node never waits on the cloud. An internet outage does not stop the
+ *     branch report being complete on the LAN — which is the outage during which
+ *     a manager most wants it.
+ *   • Shift close depends on cloud state alone, which is the only state the
+ *     server can compute a close from anyway (C6).
+ *
+ * Errors here are reported but never fatal: a till whose node is unreachable
+ * keeps selling and keeps syncing to the cloud.
  */
-async function confirmCloudDelivery(errors: string[]): Promise<number> {
+async function pushToNode(errors: string[]): Promise<number> {
   if (!hasNode()) return 0;
-  const db = getLocalDb();
 
-  const waiting = db.prepare(
-    `SELECT id FROM orders WHERE sync_status='node_ack' ORDER BY created_at LIMIT 200`
-  ).all() as Array<{ id: string }>;
-  if (waiting.length === 0) return 0;
-
-  const ids = waiting.map(r => r.id);
-  const delivered = await confirmNodeDelivery(ids);
-  if (delivered === null) {
-    // Don't push this into errors — a node that is briefly busy is normal and
-    // the till would otherwise show a sync error after every ordinary sale.
+  try {
+    fillNodeOutbox();
+  } catch (err: any) {
+    errors.push(`Branch replication: ${err.message}`);
     return 0;
   }
 
-  if (delivered.length === 0) return 0;
-  const mark = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
-  db.transaction(() => { for (const id of delivered) mark.run(id); })();
+  const batch = takeNodeQueueBatch(200);
+  if (!batch.length) return 0;
+
+  // Group by table, remembering which queue row each payload came from so the
+  // node's per-row verdict can be applied to the right one.
+  const tables: Record<string, any[]> = {};
+  const queueIdByRow = new Map<string, number>();
+  for (const q of batch) {
+    (tables[q.table_name] ??= []).push(JSON.parse(q.payload));
+    queueIdByRow.set(`${q.table_name}:${q.row_id}`, q.id);
+  }
+
+  let results: Record<string, any> | null;
+  try {
+    results = await pushRowsToNode(tables);
+  } catch (err: any) {
+    // The node ANSWERED and refused. Escalate, so the reason reaches a human
+    // rather than becoming a count that never clears.
+    markNodeQueueFailed(batch.map(q => q.id), err.message ?? 'node refused', true);
+    errors.push(`Branch replication: ${err.message}`);
+    return 0;
+  }
+
+  if (results === null) {
+    // The node did not answer. Retry indefinitely without escalating — a branch
+    // server rebooting, or a shop with the node switched off overnight, must not
+    // exhaust an attempt budget and mark a day's cash records 'failed'.
+    markNodeQueueFailed(batch.map(q => q.id), 'branch server unreachable', false);
+    return 0;
+  }
+
+  const delivered: number[] = [];
+  const refused: Array<{ id: number; reason: string }> = [];
+
+  for (const [table, res] of Object.entries(results)) {
+    const rejectedIds = new Map<string, string>(
+      (res?.rejected ?? []).map((r: any) => [String(r.id), String(r.reason)]),
+    );
+    for (const row of tables[table] ?? []) {
+      const qid = queueIdByRow.get(`${table}:${row.id}`);
+      if (qid === undefined) continue;
+      const reason = rejectedIds.get(String(row.id));
+      // A row rejected on its merits (wrong branch, no seq, a peer clash) will be
+      // rejected identically every pass. Escalating it is what puts the node's own
+      // words in front of somebody, instead of a queue depth that only grows.
+      if (reason) refused.push({ id: qid, reason });
+      else delivered.push(qid);
+    }
+  }
+
+  markNodeQueueDelivered(delivered);
+  for (const r of refused) markNodeQueueFailed([r.id], r.reason, true);
+  if (refused.length) {
+    errors.push(
+      refused.length === 1
+        ? `The branch server refused a record: ${refused[0].reason}`
+        : `The branch server refused ${refused.length} records: ${refused[0].reason}`,
+    );
+  }
+
+  // Clock drift. Advisory — the till keeps trading either way. business_date
+  // comes from each terminal's own clock, so two tills disagreeing across
+  // midnight split one evening's takings over two trading days, and no report
+  // will ever reconcile them.
+  const drift = await measureNodeDrift();
+  if (drift !== null && Math.abs(drift) > 120_000) {
+    const mins = Math.round(Math.abs(drift) / 60_000);
+    errors.push(
+      `This till's clock is ${mins} minute(s) ${drift > 0 ? 'ahead of' : 'behind'} the branch server. ` +
+      'Correct it before the next day close — trading days are dated from each till\'s own clock.',
+    );
+  }
+
   return delivered.length;
 }
 
@@ -1055,9 +1167,12 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
   const closed = db.prepare(`
     SELECT id, status, closing_float, notes
       FROM shifts
+     -- own: reconciling a closed shift means asking the server to compute the
+     -- close for a drawer THIS till owns. A peer reconciles its own.
      WHERE status IN ('closed', 'closed_unreconciled')
        AND sync_status = 'pending'
-  `).all() as { id: string; status: string; closing_float: number | null; notes: string | null }[];
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null }[];
   if (!closed.length) return 0;
 
   let reconciled = 0;
@@ -1123,8 +1238,13 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
 export function getOpenShift(): any | null {
   const db = getLocalDb();
   return db.prepare(
-    `SELECT * FROM shifts WHERE status='open' ORDER BY opened_at DESC LIMIT 1`
-  ).get() ?? null;
+    // own: THE SELL GATE READS THIS. On a node, unscoped it returns the newest
+    // open drawer anywhere at the branch — a shift belonging to a cashier at
+    // another terminal — and the till would sell against it.
+    `SELECT * FROM shifts WHERE status='open'
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+     ORDER BY opened_at DESC LIMIT 1`
+  ).get(getDeviceConfig()?.device_id ?? null) ?? null;
 }
 
 // ── Write a new order locally + deduct stock (delta merge) ──

@@ -507,7 +507,11 @@ function initSchema(db: Database.Database) {
   db.exec(`
     UPDATE shifts
        SET business_date = substr(opened_at, 1, 10)
+     -- own: the comment above is the reason — opened_at was written by THIS
+     -- machine in local time. That stops being true for ingested peer rows, so
+     -- rewriting theirs would apply this till's timezone to another's clock.
      WHERE business_date IS NULL AND opened_at IS NOT NULL
+       AND COALESCE(device_id,'') = COALESCE((SELECT device_id FROM device_config WHERE id=1),'')
   `);
 
   db.prepare(`
@@ -557,6 +561,179 @@ function initSchema(db: Database.Database) {
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
     ['is_kitchen', 'INTEGER DEFAULT 0'],
   ]);
+
+  // ── Branch replication: which terminal created this row? ──────────────────
+  // orders, shifts and business_days already carry device_id. expenses and
+  // float_transactions did not, which is the only reason a separate ownership
+  // marker looked necessary — it is not. device_id already means exactly the
+  // right thing, dayService.getOpenDay() already scopes on it correctly, and
+  // Postgres carries it on the same rows, so parity improves rather than
+  // diverging.
+  //
+  // This matters because a till acting as the branch node ingests its peers'
+  // cash records into these same tables, so a manager can see the whole branch
+  // in one place. Without a scope predicate, getOpenShift() —
+  //     SELECT * FROM shifts WHERE status='open' ORDER BY opened_at DESC LIMIT 1
+  // — stops meaning "my open drawer" and starts meaning "the newest open drawer
+  // anywhere at this branch". The sell gate is built on that query.
+  //
+  // "Mine" is COALESCE(device_id,'') = COALESCE(?,''), not device_id = ?: rows
+  // written before the column existed carry NULL, and on a till that has never
+  // been given a device_id both sides are '' and it still matches. Peer rows
+  // always carry theirs, so they never do.
+  //
+  // scripts/check-own-rows.mjs fails CI on any query that neither scopes nor
+  // declares itself branch-wide. There are 35 such sites; remembering them is
+  // not a strategy.
+  migrateColumns(db, 'expenses',           [['device_id', 'TEXT']]);
+  migrateColumns(db, 'float_transactions', [['device_id', 'TEXT']]);
+
+  // ── Branch replication, v45: sequence, outbox, cursors ────────────────────
+  //
+  // `seq` is a per-device monotonic counter, assigned by the device that CREATES
+  // the row and never rewritten by anyone who ingests it. Together with
+  // device_id it is a total order per terminal: "everything device X has made up
+  // to N". That is the whole addressing scheme Phase 2's pull replication needs
+  // (`GET /node/since?device=X&after=N`), and it costs one integer now against
+  // another visit to three terminals later.
+  //
+  // NOT globally unique and deliberately not a timestamp. Two tills will both
+  // hold seq 41 for different rows, and (device_id, seq) is what identifies one.
+  // A clock can go backwards — it is one right-click on Windows — and a counter
+  // that goes backwards silently un-replicates rows a peer has already seen.
+  migrateColumns(db, 'orders',             [['seq', 'INTEGER']]);
+  migrateColumns(db, 'shifts',             [['seq', 'INTEGER']]);
+  migrateColumns(db, 'expenses',           [['seq', 'INTEGER']]);
+  migrateColumns(db, 'float_transactions', [['seq', 'INTEGER']]);
+  migrateColumns(db, 'business_days',      [['seq', 'INTEGER']]);
+
+  // orders.pump_id exists in Postgres and never existed here, so every offline
+  // fuel sale lost its pump attribution — which is why fuel reports read zero.
+  // Riding along with this bump rather than triggering a second till rebuild.
+  migrateColumns(db, 'orders', [['pump_id', 'TEXT']]);
+
+  // Retire 'node_ack'.
+  //
+  // It meant "the branch node has this order but the cloud may not", and it
+  // existed because one sync_status column was being asked to describe two
+  // destinations. The node is now a separate destination with its own queue, so
+  // sync_status describes the cloud and nothing else.
+  //
+  // Back to 'pending', not 'synced': the cloud genuinely may not have these. A
+  // till upgrading from a build that used node_ack has orders whose only proof
+  // of delivery was a node that is no longer an uplink, and the push is
+  // idempotent on the order id — so re-offering costs one request per order and
+  // assuming delivery costs a day's sales.
+  // branch-wide: a one-time schema migration over whatever this database holds,
+  // run before device_config is necessarily readable. Scoping it would leave any
+  // row it missed stranded in a status no code path will ever select again —
+  // which for an order means a sale that never reaches the cloud and never
+  // appears in any queue a person can see.
+  db.exec(`UPDATE orders SET sync_status='pending' WHERE sync_status='node_ack'`);
+
+  // Attribute the rows written between v44 and v45.
+  //
+  // v44 added device_id to these two tables and scoped every collection query on
+  // it, but their INSERT sites were not updated to populate it. A NULL-attributed
+  // row does not match COALESCE(device_id,'') = COALESCE(own,'') on any till that
+  // has a device_id — so from the moment a till ran v44, its expenses and its
+  // drawer floats stopped being collected by the push entirely. Silent, and on
+  // the cash path: expected cash would be wrong by exactly the floats nobody
+  // could see.
+  //
+  // branch-wide: every NULL-attributed row in these tables predates the node, so
+  // there is no peer row here to mis-claim — no build that could ingest one has
+  // ever shipped. Scoping this would be scoping on the column it exists to fill.
+  db.exec(`
+    UPDATE expenses SET device_id = (SELECT device_id FROM device_config WHERE id=1)
+     WHERE device_id IS NULL;
+    -- branch-wide: same one-time attribution backfill as the statement above.
+    UPDATE float_transactions SET device_id = (SELECT device_id FROM device_config WHERE id=1)
+     WHERE device_id IS NULL;
+  `);
+
+  db.exec(`
+    -- The till's outbox TO the branch node. Deliberately a separate table from
+    -- sync_queue, not a column on it.
+    --
+    -- The node and the cloud are two independent destinations. One sync_status
+    -- column cannot hold two opinions, and the attempt to make it — marking a
+    -- node-acked order 'synced' — is what made a peer till close its shift
+    -- against a server that did not have the sales and report a cash variance
+    -- that did not exist. Separate state per destination is the fix; 'node_ack'
+    -- was the workaround.
+    --
+    -- One queue for all five replicated types. table_name says which, row_id is
+    -- the row's own UUID, so a retry always resolves to the same record and
+    -- ingest can stay idempotent on id.
+    CREATE TABLE IF NOT EXISTS node_queue (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name  TEXT NOT NULL,
+      row_id      TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      attempts    INTEGER DEFAULT 0,
+      last_error  TEXT,
+      created_at  TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending',
+      UNIQUE (table_name, row_id)
+    );
+    CREATE INDEX IF NOT EXISTS node_queue_pending_idx
+      ON node_queue (status, created_at);
+
+    -- Per-device high-water marks. On a node: the last seq ingested from each
+    -- peer, which is what makes ingest resumable rather than re-offering a
+    -- peer's whole history after any outage. In Phase 2 this becomes the pull
+    -- cursor unchanged — the same number means the same thing in both models,
+    -- which is why it goes in now.
+    CREATE TABLE IF NOT EXISTS peer_cursors (
+      device_id   TEXT NOT NULL,
+      table_name  TEXT NOT NULL,
+      last_seq    INTEGER NOT NULL DEFAULT 0,
+      updated_at  TEXT NOT NULL,
+      PRIMARY KEY (device_id, table_name)
+    );
+
+    -- The local counter behind seq. A single row per table rather than
+    -- MAX(seq)+1 over the data: on a node those tables hold peers' rows too, and
+    -- MAX over the mixed set would hand this device a number derived from
+    -- somebody else's counter.
+    CREATE TABLE IF NOT EXISTS device_seq (
+      table_name  TEXT PRIMARY KEY,
+      next_seq    INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- The outbound mirror of peer_cursors: how far this till has offered its own
+    -- rows to the node. Without it, node_queue would have to be kept forever —
+    -- pruning a delivered row would make the next scan re-enqueue it, and a
+    -- till that has traded for a year would rescan a year of orders every pass.
+    --
+    -- Separate from peer_cursors rather than keyed by this device's own id in
+    -- that table. The two answer different questions ("what have I taken FROM X"
+    -- versus "what have I given TO the node"), and one table answering both is
+    -- how somebody eventually reads the wrong one.
+    CREATE TABLE IF NOT EXISTS outbox_cursors (
+      table_name  TEXT PRIMARY KEY,
+      last_seq    INTEGER NOT NULL DEFAULT 0,
+      updated_at  TEXT NOT NULL
+    );
+  `);
+
+  // Partial indexes on the two hot "mine" predicates. On the node these tables
+  // hold several terminals' rows, so status alone stops being selective.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS shifts_own_open_idx
+      ON shifts (device_id, status, opened_at);
+    CREATE INDEX IF NOT EXISTS business_days_own_idx
+      ON business_days (device_id, status, business_date);
+    -- (device_id, seq) is the replication address; every "what has X made since
+    -- N" question reads exactly this shape.
+    CREATE INDEX IF NOT EXISTS orders_replication_idx
+      ON orders (device_id, seq);
+    CREATE INDEX IF NOT EXISTS shifts_replication_idx
+      ON shifts (device_id, seq);
+    CREATE INDEX IF NOT EXISTS business_days_replication_idx
+      ON business_days (device_id, seq);
+  `);
 
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
@@ -614,7 +791,23 @@ function initSchema(db: Database.Database) {
  * so there is no migration 43; the number moves because a till on 42 cannot send
  * covers and its reports will read APC as unavailable.
  */
-export const LOCAL_SCHEMA_VERSION = 43;
+// 44: device_id on expenses and float_transactions, so all five replicated
+// tables can be scoped to the terminal that created them. Additive and
+// nullable, but REQUIRED_DESKTOP_SCHEMA moves with it: a 43 till acting as the
+// branch NODE would ingest peer rows it cannot tell apart from its own.
+//
+// 45: branch replication. `seq` on the five replicated tables (per-device
+// monotonic, assigned at creation, never rewritten on ingest), node_queue as
+// the till's outbox to the branch node, peer_cursors as the per-peer high-water
+// mark, device_seq as the counter behind seq. Plus orders.pump_id, which
+// Postgres has always had and this schema never did — riding along rather than
+// causing a second rebuild.
+//
+// 44 and 45 will in practice ship in the same installer, since no till was ever
+// built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
+// node on 44 would ingest peer rows with no seq, and every one of them would be
+// invisible to the cursor that decides what still needs replicating.
+export const LOCAL_SCHEMA_VERSION = 45;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
