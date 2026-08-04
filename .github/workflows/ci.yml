@@ -237,3 +237,18 @@ jobs:
       # derived from another terminal's sequence. None is visible to a type-check.
       - name: Branch replication ingest
         run: node --no-warnings scripts/test-node-ingest.mjs
+
+      # Phase 4: instruction lifecycle for the central day close — re-offered
+      # until acked, replace-not-stack, idempotent executor, authority model.
+      - name: Central day close
+        run: node --no-warnings scripts/test-branch-close.mjs
+
+      # Tech DB console + wipe gates + pump attribution: readonly enforcement,
+      # source-column secret masking, session gating, audit-before-run.
+      - name: Tech console and wipe gates
+        run: node --no-warnings scripts/test-tech-db-console.mjs
+
+      # Phase 2a: distribution — requester exclusion, origin fidelity,
+      # per-origin cursor resume, bounded catch-up.
+      - name: Branch distribution
+        run: node --no-warnings scripts/test-node-distribution.mjs

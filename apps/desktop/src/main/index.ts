@@ -6,8 +6,9 @@ import { registerIpcHandlers } from './ipcHandlers';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
 import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
-import { pollNodeInstructions, ackNodeInstruction } from './nodeClient';
+import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay } from './branchClose';
+import { applyDistribution, distributionCursors } from './nodeIngest';
 
 const isDev = !app.isPackaged;
 
@@ -248,6 +249,29 @@ app.whenReady().then(() => {
       console.error('[branchClose] peer loop:', err);
     }
   }, 15_000);
+
+  // Phase 2a — distribution pull. Every 30s a peer asks the node for every
+  // OTHER device's new rows and runs them through applyPeerRows under each
+  // origin's identity — so the whole branch lives on every till, and the same
+  // refusals that guard the node's ingest guard this direction. 30s, not 15:
+  // replication is not a person watching a screen, and the instruction poll
+  // above already carries the time-critical traffic. Drains has_more in the
+  // same tick (bounded) so a till that was off for a day catches up in
+  // minutes, not hours.
+  setInterval(async () => {
+    const cfg = getDeviceConfig();
+    if (!cfg?.node_url || cfg.device_role === 'node') return;
+    try {
+      for (let round = 0; round < 10; round++) {
+        const res = await pullNodeDistribution(distributionCursors());
+        if (!res || !res.batches.length) return;
+        applyDistribution(res.batches);
+        if (!res.has_more) return;
+      }
+    } catch (err) {
+      console.error('[distribution] pull:', err);
+    }
+  }, 30_000);
 });
 
 app.on('window-all-closed', () => {

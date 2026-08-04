@@ -574,3 +574,107 @@ export function nodeQueueDepth(): { pending: number; failed: number } {
   ).get() as { pending: number; failed: number };
   return { pending: Number(r?.pending ?? 0), failed: Number(r?.failed ?? 0) };
 }
+
+// ── Phase 2a — distribution: every till holds the branch ─────────────────────
+//
+// The replicated STAR (see PHASE2-3-DESIGN.md): tills push their own rows to
+// the node (above), and PULL every other device's rows back down here. The
+// node is distribution, not authority — each row keeps its origin device_id
+// and origin seq end to end, and the receiving till runs it through the SAME
+// applyPeerRows as the node's own ingest, so every Phase 1 refusal (re-stamped
+// rows, rows claiming the receiver's identity, wrong branch, missing seq)
+// protects this direction without one line of new ingest code.
+
+export interface DistributionCursors { [deviceId: string]: { [table: string]: number } }
+export interface DistributionBatch { device_id: string; table: ReplicatedTable; rows: any[] }
+
+/**
+ * What the node knows that the requester doesn't. Origins are this node's own
+ * device plus every device that has ever pushed to it; the requester's own
+ * rows are excluded at the source — a till must never be offered its own rows
+ * back, both as waste and because applyPeerRows would (correctly) refuse a
+ * sender presenting the receiver's identity.
+ */
+export function collectDistribution(
+  requesterDeviceId: string,
+  cursors: DistributionCursors,
+  limit = 500,
+): { batches: DistributionBatch[]; has_more: boolean } {
+  const db = getLocalDb();
+  const own = getDeviceConfig()?.device_id ?? '';
+
+  const origins = new Set<string>();
+  if (own) origins.add(own);
+  for (const p of listPeers()) origins.add(p.device_id);
+  origins.delete(requesterDeviceId);
+
+  const batches: DistributionBatch[] = [];
+  let budget = Math.max(1, Math.min(limit, 2000));
+  let has_more = false;
+
+  for (const origin of origins) {
+    for (const table of REPLICATED_TABLES) {
+      if (budget <= 0) { has_more = true; return { batches, has_more }; }
+      const after = Number(cursors?.[origin]?.[table] ?? 0);
+      const cols = COLUMNS[table].join(', ');
+      const rows = db.prepare(
+        // branch-wide: distribution serves OTHER devices' rows by design — that
+        // is the entire point of the endpoint. Scoped to one origin per query
+        // and resumable by that origin's own seq.
+        `SELECT ${cols} FROM ${table}
+          WHERE COALESCE(device_id,'') = COALESCE(?,'') AND seq > ?
+          ORDER BY seq LIMIT ?`,
+      ).all(origin, after, budget + 1) as any[];
+      if (!rows.length) continue;
+      if (rows.length > budget) { has_more = true; rows.length = budget; }
+      budget -= rows.length;
+
+      if (table === 'orders') {
+        const readItems = db.prepare(
+          `SELECT ${ORDER_ITEM_COLUMNS.join(', ')} FROM order_items WHERE order_id = ?`);
+        const readPays = db.prepare(
+          `SELECT ${PAYMENT_COLUMNS.join(', ')} FROM payments WHERE order_id = ?`);
+        for (const r of rows) {
+          // branch-wide: children keyed to the order above, which is already
+          // origin-scoped. Same rule as the push direction.
+          r._items = readItems.all(String(r.id));
+          r._payments = readPays.all(String(r.id));
+        }
+      }
+      batches.push({ device_id: origin, table, rows });
+    }
+  }
+  return { batches, has_more };
+}
+
+/**
+ * Peer side: apply a distribution response. Each batch goes through
+ * applyPeerRows under its ORIGIN's identity, and the per-origin cursor
+ * advances only to what actually applied — a mid-batch failure leaves the
+ * remainder for the next pull, exactly like the push direction.
+ */
+export function applyDistribution(
+  batches: Array<{ device_id: string; table: string; rows: any[] }>,
+): { applied: number; duplicate: number; rejected: number } {
+  const totals = { applied: 0, duplicate: 0, rejected: 0 };
+  for (const b of batches) {
+    if (!isReplicatedTable(b.table)) continue;   // a newer node's table this build doesn't know
+    const r = applyPeerRows(b.table, b.device_id, b.rows ?? []);
+    totals.applied += r.applied;
+    totals.duplicate += r.duplicate;
+    totals.rejected += r.rejected.length;
+    if (r.cursor > getCursor(b.device_id, b.table)) {
+      advanceCursor(b.device_id, b.table, r.cursor);
+    }
+  }
+  return totals;
+}
+
+/** The cursor map this till sends when pulling: everything it has heard of. */
+export function distributionCursors(): DistributionCursors {
+  const out: DistributionCursors = {};
+  for (const p of listPeers()) {
+    (out[p.device_id] ??= {})[p.table_name] = p.last_seq;
+  }
+  return out;
+}

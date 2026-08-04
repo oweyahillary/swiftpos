@@ -720,6 +720,15 @@ function initSchema(db: Database.Database) {
     -- go stale after close (append-only; updates are not re-offered until
     -- Phase 2 events) — so the close screen must never read cash state from
     -- replicas. Staleness is shown, not hidden: the screen prints last_seen.
+    -- Phase 2a: the distribution queries walk (device_id, seq) per replicated
+    -- table — a peer catching up after a day off must not table-scan the
+    -- node's orders on every pull.
+    CREATE INDEX IF NOT EXISTS idx_orders_device_seq          ON orders (device_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_shifts_device_seq          ON shifts (device_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_float_tx_device_seq        ON float_transactions (device_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_expenses_device_seq        ON expenses (device_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_business_days_device_seq   ON business_days (device_id, seq);
+
     CREATE TABLE IF NOT EXISTS node_peer_state (
       device_id   TEXT PRIMARY KEY,
       state       TEXT NOT NULL,             -- JSON: business_date, day open?, open drawers…
@@ -840,7 +849,7 @@ function initSchema(db: Database.Database) {
 // built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
 // node on 44 would ingest peer rows with no seq, and every one of them would be
 // invisible to the cursor that decides what still needs replicating.
-export const LOCAL_SCHEMA_VERSION = 46;
+export const LOCAL_SCHEMA_VERSION = 47;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

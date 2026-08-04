@@ -20,7 +20,7 @@ import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
-import { applyPeerRows, isReplicatedTable, listPeers } from './nodeIngest';
+import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution } from './nodeIngest';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
@@ -193,6 +193,21 @@ export function startNodeServer(): void {
           summary: body?.summary ?? undefined,
         });
         return json(res, 200, { ok: true });
+      }
+
+      // Phase 2a — distribution. A peer pulls every OTHER device's rows so the
+      // whole branch lives on every till. Origin device_id and seq are served
+      // as held; the requester's own rows are excluded at the source.
+      if (req.method === 'POST' && url === '/node/since') {
+        const body = await readBody(req);
+        const deviceId = String(body?.device_id ?? '');
+        if (!deviceId) return json(res, 400, { error: 'device_id is required' });
+        const c = getDeviceConfig();
+        if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
+          return json(res, 403, { error: 'branch mismatch' });
+        }
+        const out = collectDistribution(deviceId, body?.cursors ?? {}, Number(body?.limit) || 500);
+        return json(res, 200, out);
       }
 
       // Node-served time.

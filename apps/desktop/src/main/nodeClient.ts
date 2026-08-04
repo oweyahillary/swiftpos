@@ -232,3 +232,38 @@ export async function ackNodeInstruction(
     clearTimeout(t);
   }
 }
+
+// ── Phase 2a — distribution pull ─────────────────────────────────────────────
+
+/** Pull every other device's new rows from the node. Null = unreachable; try
+ *  next tick, nothing to repair. */
+export async function pullNodeDistribution(
+  cursors: Record<string, Record<string, number>>,
+  limit = 500,
+  timeoutMs = 8000,
+): Promise<{ batches: Array<{ device_id: string; table: string; rows: any[] }>; has_more: boolean } | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  const cfg = getDeviceConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/since`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        device_id: cfg?.device_id ?? null,
+        branch_id: cfg?.branch_id ?? null,
+        cursors, limit,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    return Array.isArray(data?.batches) ? { batches: data.batches, has_more: !!data.has_more } : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}

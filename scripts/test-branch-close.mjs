@@ -86,7 +86,13 @@ console.log('\n0. Harness matches branchClose.ts');
      && !/collectInstructions[\s\S]{0,600}status\s*=\s*'delivered'/.test(SRC_BC));
   ok('ack updates only pending rows', SRC_BC.includes(`WHERE id = ? AND status = 'pending'`));
   ok('local schema creates both tables', SRC_DB.includes('node_instructions') && SRC_DB.includes('node_peer_state'));
-  ok('LOCAL_SCHEMA_VERSION is 46', /LOCAL_SCHEMA_VERSION = 46/.test(SRC_DB));
+  {
+    const local = Number((SRC_DB.match(/LOCAL_SCHEMA_VERSION = (\d+)/) || [])[1]);
+    const required = Number((fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/desktopSchema.ts'), 'utf8')
+      .match(/REQUIRED_DESKTOP_SCHEMA = (\d+)/) || [])[1]);
+    ok('schema is at least v46 (this feature\'s floor)', local >= 46, String(local));
+    ok('local and required schema move together', local === required, `${local} vs ${required}`);
+  }
 }
 
 // ── 1. Re-offered until acked ────────────────────────────────────────────────
