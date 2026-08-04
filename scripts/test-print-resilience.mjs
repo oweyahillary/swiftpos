@@ -101,10 +101,54 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
   // (its components already say what to make); the packer's ticket stays names.
   ok('flat products carry their description as ITEMIZED prep lines',
      TL.includes('components.length === 0 ? parseDescriptionLines') && TL.includes('noteLines?: string[]'));
-  ok('the kitchen ticket renders one indented line per item (component style)',
-     /for \(const nl of line\.noteLines[\s\S]{0,200}padding-left:10px/.test(KT));
-  ok('the dispatcher ticket does NOT',
-     !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8').includes('noteLines'));
+  ok('the kitchen ticket renders one indented line per FILTERED item (component style)',
+     /for \(const nl of kitchenPrepLines\(line\.noteLines\)[\s\S]{0,200}padding-left:10px/.test(KT));
+  {
+    const DP = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8');
+    ok('the dispatcher ticket itemizes the SAME lines — UNFILTERED (owner rule: drinks/sauces print here)',
+       /noteLines[\s\S]{0,220}for \(const nl of line\.noteLines\)/.test(DP)
+       && !DP.includes('kitchenPrepLines'));
+  }
+  ok('the KITCHEN ticket renders through the owner filter', KT.includes('kitchenPrepLines(line.noteLines)'));
+  {
+    // OWNER RULE, behaviorally: extract KITCHEN_NOTE_EXCLUDE + kitchenPrepLines
+    // verbatim and run them against the real 12PCS Family Meal description.
+    const rx = TL.match(/KITCHEN_NOTE_EXCLUDE =\s*(\/[^;]+\/i);/)[1];
+    const EX = eval(rx);
+    const kitchen = (lines) => lines.filter(l => !EX.test(l));
+    const meal = ['12pc tender', '4 sauces', 'large fries', '1L soft drink'];
+    const k = kitchen(meal);
+    ok('OWNER RULE: sauces and soft drinks never reach the kitchen',
+       k.join(',') === '12pc tender,large fries', JSON.stringify(k));
+    const combo = ['5pc chicken', 'cole slaw', 'popcorn', 'medium fries', 'soft drink'];
+    ok('5PC combo: kitchen sees four prep lines, drink dropped',
+       kitchen(combo).length === 4 && !kitchen(combo).includes('soft drink'));
+    ok('juice/soda/water/dips also excluded',
+       kitchen(['mango juice', 'soda', 'water', '2 dips', 'rice']).join(',') === 'rice');
+  }
+  {
+    const RB = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/components/ReceiptView.tsx'), 'utf8');
+    const PP = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/pages/POSPage.tsx'), 'utf8');
+    ok('all three field-approved formats carry the DO-NOT-MODIFY lock',
+       [KT, RB, fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8')]
+         .every(src => src.includes('FIELD-APPROVED FORMAT (owner, 04 Aug 2026)')));
+    // OWNER REVERSAL (04 Aug, mid-session): the MODAL is the reference and is
+    // untouched; the PAPER matches it — the receipt prints at the modal's
+    // content width and is zoomed onto the roll. Receipt only: KOT and
+    // dispatcher are field-approved at their own scale and must not zoom.
+    ok('the success modal is UNTOUCHED — no width wrapper', !PP.includes('TRUE PAPER WIDTH'));
+    {
+      const PR = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printReceipt.ts'), 'utf8');
+      ok('the receipt prints at the modal\'s width, zoomed onto the roll',
+         PR.includes('MODAL_CONTENT_PX = 400') && /zoom:\$\{zoom\.toFixed\(4\)\}/.test(PR));
+      ok('zoom applies to the CUSTOMER RECEIPT ONLY',
+         /printReceipt[\s\S]{0,700}zoom/.test(PR)
+         && !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printKOT.ts'), 'utf8').includes('zoom')
+         && !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8').includes('zoom'));
+    }
+    ok('ReceiptView stays inline-styled — zero Tailwind classes',
+       !/className=/.test(RB));
+  }
   {
     // BEHAVIORAL: run the actual parser (extracted verbatim from the module).
     const fn = TL.slice(TL.indexOf('export function parseDescriptionLines'), TL.indexOf('\n}', TL.indexOf('export function parseDescriptionLines')) + 2)
@@ -118,6 +162,8 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
     const k = parse('5pc chicken + cole slaw + popcorn + medium fries + soft drink');
     ok("the Kudo menu's '+' descriptions itemize", k.length === 5 && k[1] === 'cole slaw' && k[4] === 'soft drink', JSON.stringify(k));
     const b = parse('Chicken\nFries\n- Coleslaw');
+    const bp = parse('Chicken\n+ Fries\n+ Coleslaw');
+    ok("newline lists with leading '+' strip the marker", bp.length === 3 && bp[1] === 'Fries', JSON.stringify(bp));
     ok('newlines win over commas; bullets stripped', b.length === 3 && b[2] === 'Coleslaw', JSON.stringify(b));
     ok('empty/whitespace description renders nothing', parse('   ') === undefined && parse(null) === undefined);
     const c = parse(Array.from({ length: 20 }, (_, i) => `item ${i}`).join(', '));

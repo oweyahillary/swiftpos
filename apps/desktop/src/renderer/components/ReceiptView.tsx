@@ -52,6 +52,11 @@ const METHOD_LABEL: Record<string, string> = {
   cash: 'CASH', mpesa: 'M-PESA', card: 'CARD', credit: 'ON ACCOUNT',
 };
 
+// ⚠ FIELD-APPROVED FORMAT (owner, 04 Aug 2026) — DO NOT MODIFY without
+// explicit owner sign-off. This component IS the printed customer receipt:
+// its innerHTML is what the thermal printer receives, and the success modal
+// shows it at true paper width. Every style must stay INLINE — a Tailwind
+// class here renders on screen and silently vanishes on paper.
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
   { businessName, orderNumber, cart, subtotal, discountAmount, tipAmount, total,
     vatAmount, vatRate, ctlAmount = 0, ctlRate = 0, currency, payments,

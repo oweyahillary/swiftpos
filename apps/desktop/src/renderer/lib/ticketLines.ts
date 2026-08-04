@@ -206,11 +206,24 @@ export function parseDescriptionLines(description?: string | null): string[] | u
   // "5pc chicken + cole slaw + medium fries" — exactly the list a kitchen
   // ticket itemizes.
   const parts = (raw.includes('\n') ? raw.split(/\r?\n/) : raw.split(/[,;•·+]+/))
-    .map(p => p.trim().replace(/^[-–—*]\s*/, ''))
+    .map(p => p.trim().replace(/^[-–—*+]\s*/, ''))
     .filter(Boolean)
     .slice(0, 8)
     .map(p => p.slice(0, 60));
   return parts.length ? parts : undefined;
+}
+
+/**
+ * ⚠ OWNER RULE — FIELD-APPROVED 04 Aug 2026. DO NOT MODIFY without explicit
+ * owner sign-off: sauces and soft drinks NEVER appear on the KITCHEN ticket;
+ * they always appear on the dispatcher/packing ticket. This list is that rule.
+ */
+export const KITCHEN_NOTE_EXCLUDE =
+  /\b(sauces?|dips?|soft\s*drinks?|sodas?|drinks?|juices?|water|coke|fanta|sprite|krest|stoney|minute\s*maid)\b/i;
+
+/** The prep lines the KITCHEN sees: everything except the owner-excluded terms. */
+export function kitchenPrepLines(noteLines?: string[]): string[] {
+  return (noteLines ?? []).filter(l => !KITCHEN_NOTE_EXCLUDE.test(l));
 }
 
 /** Sum of top-level quantities — the "Total Qty" footer. */
