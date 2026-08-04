@@ -132,7 +132,22 @@ contextBridge.exposeInMainWorld('swiftpos', {
     deleteModifierGroup: (id: string) => ipcRenderer.invoke('manage:deleteModifierGroup', id),
     listVariantGroups:  (productId: string)         => ipcRenderer.invoke('manage:listVariantGroups', productId),
     createVariantGroup: (payload: any)              => ipcRenderer.invoke('manage:createVariantGroup', payload),
+    updateVariantGroup: (id: string, patch: any)    => ipcRenderer.invoke('manage:updateVariantGroup', { id, patch }),
     deleteVariantGroup: (id: string)                => ipcRenderer.invoke('manage:deleteVariantGroup', id),
+    createVariantOption:(payload: any)              => ipcRenderer.invoke('manage:createVariantOption', payload),
+    updateVariantOption:(id: string, patch: any)    => ipcRenderer.invoke('manage:updateVariantOption', { id, patch }),
+    deleteVariantOption:(id: string)                => ipcRenderer.invoke('manage:deleteVariantOption', id),
+    // Stations — this entire block was MISSING while the UI, the types, the
+    // handlers, the local mirrors, the pull sync, the server routes, and the
+    // Postgres migration all existed. The screen crashed on its first call
+    // ("$.manage.createStation is not a function") and the kitchen could not
+    // be routed at all. check-ipc-parity.mjs now fails CI on this class.
+    listStations:         ()                             => ipcRenderer.invoke('manage:listStations'),
+    unassignedCategories: ()                             => ipcRenderer.invoke('manage:unassignedCategories'),
+    createStation:        (payload: any)                 => ipcRenderer.invoke('manage:createStation', payload),
+    updateStation:        (id: string, patch: any)       => ipcRenderer.invoke('manage:updateStation', { id, patch }),
+    setStationCategories: (id: string, categoryIds: string[]) => ipcRenderer.invoke('manage:setStationCategories', { id, categoryIds }),
+    deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),
     listRoles:      ()                                   => ipcRenderer.invoke('manage:listRoles'),
     createStaff:    (payload: any)                       => ipcRenderer.invoke('manage:createStaff', payload),

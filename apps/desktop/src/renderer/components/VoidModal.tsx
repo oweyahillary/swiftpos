@@ -112,7 +112,7 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
   return (
     <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto">
 
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-800">

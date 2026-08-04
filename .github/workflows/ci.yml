@@ -273,3 +273,9 @@ jobs:
       # Every layer now owns its own hang ceiling; Re-detect stays pressable.
       - name: Print resilience
         run: node --no-warnings scripts/test-print-resilience.mjs
+
+      # Field bug: the stations feature existed at every layer EXCEPT the
+      # preload bridge — the screen crashed on first use and the kitchen could
+      # not be routed. tsc cannot see a bridge gap; this can, both directions.
+      - name: IPC bridge parity
+        run: node scripts/check-ipc-parity.mjs
