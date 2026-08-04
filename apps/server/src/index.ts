@@ -64,22 +64,38 @@ app.use(express.json({ limit: '1mb' })); // explicit limit — prevents oversize
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 // Auth: tight — brute-force protection on login + verify-pin
+// Keying by raw IP treated an entire BRANCH as one attacker: every till and
+// the office dashboard NAT through one address, so two tills shared 20 PIN
+// attempts per 15 minutes and the pad showed "Too many requests" during
+// normal service. Key by the device (header set by the till) or the session
+// token when present; the shared IP is only the key for anonymous traffic —
+// which is exactly the traffic brute-force limits exist for.
+const limiterKey = (req: import('express').Request): string => {
+  const device = req.header('x-device-id');
+  if (device) return `d:${device}`;
+  const auth = req.header('authorization');
+  if (auth) return `t:${auth.slice(-24)}`;
+  return ipKeyGenerator(req.ip ?? '');
+};
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 30,
   message: { error: 'Too many attempts — please try again in 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''), // handles IPv4-mapped IPv6 correctly
+  keyGenerator: limiterKey,
 });
 
-// General API: generous — safety net against runaway clients / scrapers
+// General API: generous — safety net against runaway clients / scrapers.
+// Per device/session, so one busy till never starves its neighbour.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 300,
+  max: 600,
   message: { error: 'Too many requests — please slow down' },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: limiterKey,
 });
 
 app.use('/api/auth',       authLimiter);

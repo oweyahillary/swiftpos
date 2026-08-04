@@ -114,6 +114,9 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
     const parse = new Function(`${fn}; return parseDescriptionLines;`)();
     const a = parse('3pc chicken, 2 fries, 1 soda 500ml');
     ok('comma prose itemizes into three lines', Array.isArray(a) && a.length === 3 && a[1] === '2 fries', JSON.stringify(a));
+    // The REAL menu (kudo_kudo_menu_clean.csv) — '+'-separated components.
+    const k = parse('5pc chicken + cole slaw + popcorn + medium fries + soft drink');
+    ok("the Kudo menu's '+' descriptions itemize", k.length === 5 && k[1] === 'cole slaw' && k[4] === 'soft drink', JSON.stringify(k));
     const b = parse('Chicken\nFries\n- Coleslaw');
     ok('newlines win over commas; bullets stripped', b.length === 3 && b[2] === 'Coleslaw', JSON.stringify(b));
     ok('empty/whitespace description renders nothing', parse('   ') === undefined && parse(null) === undefined);
@@ -129,6 +132,28 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
      /stationKinds\.has\('dispatch'\) \? \(/.test(PB));
   ok('stations unreachable = legacy cards shown (the safe default)',
      PB.includes('the safe default'));
+}
+
+console.log('\n6. The cloud is an improvement, never a requirement');
+{
+  const IH = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+  const SI = fs.readFileSync(path.join(ROOT, 'apps/server/src/index.ts'), 'utf8');
+  const HK2 = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/hooks/usePaperGeometry.ts'), 'utf8');
+  ok('PIN-screen branches come from the LOCAL table first',
+     /auth:listBranches[\s\S]{0,900}SELECT id, name FROM branches/.test(IH));
+  ok('a cold/rate-limited server falls back to the local answer, not an error',
+     /catch \{ \/\* cold server, rate limit, no link/.test(IH));
+  ok('station reads fall back to the local mirrors',
+     /manage:listStations[\s\S]{0,200}catch \{ return localStations\(\)/.test(IH));
+  ok('category reads fall back to the local table',
+     /manage:listCategories[\s\S]{0,300}SELECT \* FROM categories WHERE status/.test(IH));
+  ok('rate limiter keys per DEVICE, not the branch NAT IP',
+     SI.includes("req.header('x-device-id')") && SI.includes('keyGenerator: limiterKey'));
+  ok('the till sends its device id on every cloud call',
+     (IH.match(/'x-device-id'/g) || []).length >= 1
+     && (fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/syncEngine.ts'), 'utf8').match(/'x-device-id'/g) || []).length === 2);
+  ok('a persisted width detection is honoured — no re-probe on every mount',
+     HK2.includes('detectedWidthMm) > 0) { setTried(true); return; }'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

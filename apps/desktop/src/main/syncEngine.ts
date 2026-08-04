@@ -76,6 +76,7 @@ export function configureStaffSession(staffToken: string, staffRefresh = '') {
 function authHeaders() {
   return {
     'Content-Type': 'application/json',
+    'x-device-id': getDeviceConfig()?.device_id ?? '',
     Authorization: `Bearer ${_accessToken}`,
   };
 }
@@ -152,6 +153,7 @@ function pushAuthHeaders() {
   const token = _staffToken || _accessToken;
   return {
     'Content-Type': 'application/json',
+    'x-device-id': getDeviceConfig()?.device_id ?? '',
     Authorization: `Bearer ${token}`,
     // Which local schema this build carries. Tills are updated by installing an
     // .exe by hand, so one is always behind; sending this lets the server say so

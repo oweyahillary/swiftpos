@@ -93,8 +93,16 @@ export function usePaperGeometry(
 
   useEffect(() => { setTried(false); setGeo(null); }, [device]);
   useEffect(() => {
-    if (settings.paperMode === 'auto' && !tried && device) void detect();
-  }, [settings.paperMode, tried, device, detect]);
+    // A PERSISTED detection is the answer — do not probe again on every mount
+    // and settings save. The probe spawns PowerShell against the driver; doing
+    // that repeatedly is what showed "Reading the printer…" over and over on
+    // the settings screen. Re-detect (the button) and a printer CHANGE still
+    // probe for real; a till that already measured its paper does not.
+    if (settings.paperMode === 'auto' && !tried && device) {
+      if (Number(settings.detectedWidthMm) > 0) { setTried(true); return; }
+      void detect();
+    }
+  }, [settings.paperMode, tried, device, detect, settings.detectedWidthMm]);
 
   // A manual millimetre override always wins — it exists precisely for the case
   // where everything above is wrong and someone has measured the paper.
@@ -106,6 +114,17 @@ export function usePaperGeometry(
       paper, widthMm: settings.printWidthMm, offsetMm: geo?.offsetMm ?? null,
       source: 'manual', probing,
       detail: `Manual override: ${settings.printWidthMm}mm`,
+      redetect: detect,
+    };
+  }
+
+  // Persisted detection from an earlier probe — same trust as a live one.
+  if (settings.paperMode === 'auto' && !geo && Number(settings.detectedWidthMm) > 0) {
+    const paper = settings.paperWidth as PaperWidth;
+    return {
+      paper, widthMm: Number(settings.detectedWidthMm), offsetMm: null,
+      source: 'driver', probing,
+      detail: `Driver reported ${Number(settings.detectedWidthMm).toFixed(1)}mm printable (saved) — Re-detect to measure again`,
       redetect: detect,
     };
   }

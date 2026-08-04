@@ -185,6 +185,9 @@ export function registerIpcHandlers() {
       ...init,
       headers: {
         ...(init.headers ?? {}),
+        // Rate limiting keys on this: per-DEVICE buckets instead of the
+        // branch's one shared NAT IP, so two tills never starve each other.
+        'x-device-id': getDeviceConfig()?.device_id ?? '',
         Authorization: `Bearer ${t}`,
         'X-App-Version': app.getVersion(),
       },
@@ -205,15 +208,34 @@ export function registerIpcHandlers() {
   }
 
   ipcMain.handle('auth:listBranches', async () => {
+    // LOCAL-FIRST — this was a server round trip, and every cold start, 429,
+    // or dead link blanked the PIN screen with "No branches available" while
+    // the bound branch and the branches table sat on this disk the whole
+    // time. A till that cannot show its own branch until a cloud answers is
+    // not offline-first; it is online-with-extra-steps. The server refresh
+    // improves the answer (licence state, renames); it never gates it.
+    const db = getLocalDb();
+    const local = (db.prepare(`SELECT id, name FROM branches ORDER BY name`).all() as any[])
+      .map(b => ({ id: b.id, name: b.name, desktop_licensed: true }));
+
+    try {
+      const res  = await Promise.race([
+        ownerFetch('/api/branches'),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('slow')), 4_000)),
+      ]);
+      const data = await (res as Response).json();
+      if ((res as Response).ok && Array.isArray(data)) {
+        return data.map((b: any) => ({ id: b.id, name: b.name, desktop_licensed: !!b.desktop_licensed }));
+      }
+    } catch { /* cold server, rate limit, no link — the local answer stands */ }
+
+    if (local.length) return local;
+    // Truly first run, nothing synced yet: only now is the server the answer.
     const res  = await ownerFetch('/api/branches');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to load branches');
-
-    // Return only what the picker needs, incl. licence state.
     return (Array.isArray(data) ? data : []).map((b: any) => ({
-      id: b.id,
-      name: b.name,
-      desktop_licensed: !!b.desktop_licensed,
+      id: b.id, name: b.name, desktop_licensed: !!b.desktop_licensed,
     }));
   });
 
@@ -920,7 +942,13 @@ export function registerIpcHandlers() {
     return out;
   });
 
-  ipcMain.handle('manage:listCategories', async () => manageFetch('/api/categories', 'GET'));
+  ipcMain.handle('manage:listCategories', async () => {
+    try { return await manageFetch('/api/categories', 'GET'); }
+    catch {
+      const db = getLocalDb();
+      return db.prepare(`SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order`).all();
+    }
+  });
   // ── Print stations ────────────────────────────────────────────────────────
   // Server-backed like categories, so one configuration reaches all three tills
   // rather than each terminal holding its own idea of where an order prints.
@@ -947,9 +975,33 @@ export function registerIpcHandlers() {
     return stations;
   };
 
-  ipcMain.handle('manage:listStations', async () => manageFetch('/api/stations', 'GET'));
-  ipcMain.handle('manage:unassignedCategories', async () =>
-    manageFetch('/api/stations/unassigned', 'GET'));
+  // Reads fall back to the LOCAL MIRRORS (pull-synced print_stations /
+  // category_stations / categories) when the server is cold, rate-limited, or
+  // away — the routing screen must render from the replica, not blank out
+  // with "Request failed (503)" mid-setup. Writes still require the server:
+  // stations are business-level, shared by every till.
+  const localStations = () => {
+    const db = getLocalDb();
+    const sts = db.prepare(`SELECT id, name, kind, sort_order, active FROM print_stations WHERE active = 1 ORDER BY sort_order, name`).all() as any[];
+    const links = db.prepare(`SELECT category_id, station_id FROM category_stations`).all() as any[];
+    return sts.map(st => ({ ...st, active: !!st.active,
+      category_ids: links.filter(l => l.station_id === st.id).map(l => l.category_id) }));
+  };
+  ipcMain.handle('manage:listStations', async () => {
+    try { return await manageFetch('/api/stations', 'GET'); }
+    catch { return localStations(); }
+  });
+  ipcMain.handle('manage:unassignedCategories', async () => {
+    try { return await manageFetch('/api/stations/unassigned', 'GET'); }
+    catch {
+      const db = getLocalDb();
+      return (db.prepare(`
+        SELECT c.id, c.name FROM categories c
+         WHERE c.status = 'active'
+           AND c.id NOT IN (SELECT category_id FROM category_stations)
+         ORDER BY c.name`).all() as any[]);
+    }
+  });
   ipcMain.handle('manage:createStation', async (_e, payload: any) => {
     const out = await manageFetch('/api/stations', 'POST', payload);
     await refreshStationsLocal();
