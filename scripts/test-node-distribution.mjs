@@ -141,17 +141,23 @@ console.log('\n3. The budget bounds a pull and has_more is honest');
 console.log('\n4. The pull loop is actually wired, on the peer, bounded');
 {
   ok('peers pull every 30s', /30_000\)/.test(SRC_IX) && SRC_IX.includes('pullNodeDistribution(distributionCursors())'));
-  ok('the node itself does not pull', /\[distribution\][\s\S]{0,900}/.test(SRC_IX)
-     ? /device_role === 'node'\) return;[\s\S]{0,600}pullNodeDistribution/.test(SRC_IX) : false);
+  // Same invariant as the instruction poll: SERVING roles (node or office)
+  // never pull from themselves.
+  ok('serving roles do not pull from themselves',
+     /isNodeRole\(cfg\.device_role\)\) return;[\s\S]{0,600}pullNodeDistribution/.test(SRC_IX));
   ok('has_more drains in bounded rounds', /round < 10/.test(SRC_IX));
   ok('node serves /node/since behind the pre-routing auth', SRC_NS.includes("url === '/node/since'"));
   ok('branch mismatch refused on the endpoint',
      /\/node\/since[\s\S]{0,600}branch mismatch/.test(SRC_NS));
   ok('client sends its cursors and identity', /node\/since[\s\S]{0,400}cursors, limit/.test(SRC_NC));
   ok('v47 indexes exist for the walk', SRC_DB.includes('idx_orders_device_seq'));
-  ok('schema versions moved together',
-     /LOCAL_SCHEMA_VERSION = 47/.test(SRC_DB)
-     && /REQUIRED_DESKTOP_SCHEMA = 47/.test(fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/desktopSchema.ts'), 'utf8')));
+  {
+    const local = Number((SRC_DB.match(/LOCAL_SCHEMA_VERSION = (\d+)/) || [])[1]);
+    const req = Number((fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/desktopSchema.ts'), 'utf8')
+      .match(/REQUIRED_DESKTOP_SCHEMA = (\d+)/) || [])[1]);
+    ok('schema at least v47 (this feature\'s floor) and both sides equal',
+       local >= 47 && local === req, `${local}/${req}`);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed${driver.startsWith('better') ? " — against the app's own driver" : ''}`);

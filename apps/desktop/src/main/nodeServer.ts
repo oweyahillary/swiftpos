@@ -16,11 +16,12 @@
 // branch_id so a stray device from another branch can't inject orders.
 
 import http from 'http';
+import { isNodeRole } from './deviceConfig';
 import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
-import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution } from './nodeIngest';
+import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents } from './nodeIngest';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
@@ -91,7 +92,7 @@ function json(res: http.ServerResponse, status: number, body: any) {
 export function startNodeServer(): void {
   if (server) return;                              // already running
   const cfg = getDeviceConfig();
-  if (cfg?.device_role !== 'node') return;          // only the branch server runs this
+  if (!isNodeRole(cfg?.device_role)) return;        // node OR office — both serve the branch
 
   // Mint on first start if absent — covers installs upgraded from a build that
   // predates the node_secret column, which would otherwise come up unauthenticated.
@@ -150,6 +151,11 @@ export function startNodeServer(): void {
           if (!Array.isArray(rows)) continue;
           results[table] = applyPeerRows(table, peerDeviceId, rows);
         }
+        // Phase 2b: newly-ingested events mutate their replicas now, and any
+        // event that arrived BEFORE its target row gets another chance —
+        // repetition after every ingest is the whole answer to cross-table
+        // ordering. Idempotent, so a round with nothing to do costs one SELECT.
+        applyPendingEvents();
         return json(res, 200, { ok: true, results });
       }
 

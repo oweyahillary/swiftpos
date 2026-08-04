@@ -10,9 +10,10 @@
 // sync_status='pending'; the push-up to the server is a separate concern (it
 // needs FK-ordered sync + an idempotent server id) and is NOT wired here.
 
+import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, canSell } from './deviceConfig';
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 
@@ -103,6 +104,12 @@ export function getStaleShift(): StaleShift | null {
 }
 
 export function openShift(opening_float = 0, drawerLabel?: string | null): any {
+  // Phase 3: an office machine has no drawer to open. Refused in MAIN, not
+  // just hidden in the renderer — a hidden button is a suggestion, this is
+  // the rule.
+  if (!canSell(getDeviceConfig()?.device_role)) {
+    throw new Error('This machine is a branch office/server — it has no cash drawer and cannot open a shift.');
+  }
   const db = getLocalDb();
 
   // The trading-day gate first: a till whose previous day was never closed may
@@ -303,6 +310,14 @@ export function closeShift(closing_float: number, notes?: string): ZReport {
     WHERE id=?
   `).run(now, Number(closing_float), expectedCash, variance, notes ?? null,
          sessionInfo().staff?.staff_id ?? null, shift.id);
+  // Phase 2b: the close is a fact other tills need — without it, every replica
+  // of this drawer stays 'open' forever (the staleness the Close Branch screen
+  // currently papers over with live polling).
+  emitEvent('shift_closed', shift.id, {
+    status: 'closed', closed_at: now, closing_float: Number(closing_float),
+    expected_cash: expectedCash, cash_variance: variance, notes: notes ?? null,
+    close_method: 'counted', closed_by: sessionInfo().staff?.staff_id ?? null,
+  });
 
   return computeZReport(shift.id);
 }
@@ -351,6 +366,15 @@ export function forceCloseShift(reason: string, closedByStaffId?: string | null)
     closedByStaffId ?? sessionInfo().staff?.staff_id ?? null,
     shift.id,
   );
+  // Phase 2b: a forced close replicates as what it is — closed_unreconciled,
+  // no closing float — so a replica never dresses it up as a counted drawer.
+  emitEvent('shift_closed', shift.id, {
+    status: 'closed_unreconciled', closed_at: now,
+    closing_float: null, cash_variance: null, expected_cash: pre.totals.expectedCash,
+    notes: `FORCED CLOSE after ${hours}h without a drawer count — ${reason.trim()}`,
+    close_method: 'forced',
+    closed_by: closedByStaffId ?? sessionInfo().staff?.staff_id ?? null,
+  });
 
   return computeZReport(shift.id);
 }

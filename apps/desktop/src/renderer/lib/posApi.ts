@@ -33,7 +33,7 @@ export interface Pump {
   price_per_litre: number | null;
 }
 
-export type DeviceRole = 'till' | 'node';
+export type DeviceRole = 'till' | 'node' | 'office';
 
 export interface TechSession {
   techId: string; techName: string; branchId: string;
@@ -252,6 +252,11 @@ declare global {
         logAction:    (action: string, detail?: any) => Promise<{ ok: boolean }>;
         status:       () => Promise<TechStatus>;
         adoptFromNode:() => Promise<{ ok: true; session: TechSession } | { ok: false }>;
+        promoteToNode: () => Promise<{ ok: boolean; role?: string; secret?: string; note?: string; error?: string }>;
+        setNodeUrl: (url: string) => Promise<{ ok: boolean; role?: string; error?: string }>;
+        backupNow: () => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
+        maintenance: () => Promise<{ last_backup_at: string | null; last_backup_status: string | null;
+                                     backup_dir: string; last_prune_at: string | null; retention_days: number }>;
         query: (sql: string) => Promise<
           | { ok: true; result: { columns: string[]; rows: unknown[][]; rowCount: number;
                                   truncated: boolean; maskedColumns: string[] } }

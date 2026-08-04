@@ -729,6 +729,39 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_expenses_device_seq        ON expenses (device_id, seq);
     CREATE INDEX IF NOT EXISTS idx_business_days_device_seq   ON business_days (device_id, seq);
 
+    -- Phase 2b: mutations as events. A close or a void is a FACT that
+    -- happened on one device, so it replicates like every other fact — an
+    -- append-only row — instead of an UPDATE that replicas never see. applied
+    -- is local bookkeeping (0 = target not yet mutated here, 1 = done,
+    -- -1 = refused: the event named a row its origin does not own) and is
+    -- deliberately NOT replicated, same as sync_status.
+    CREATE TABLE IF NOT EXISTS events (
+      id           TEXT PRIMARY KEY,
+      business_id  TEXT,
+      branch_id    TEXT,
+      device_id    TEXT,
+      seq          INTEGER,
+      kind         TEXT NOT NULL,        -- shift_closed | day_closed | order_voided
+      target_table TEXT NOT NULL,
+      target_id    TEXT NOT NULL,
+      payload      TEXT NOT NULL,        -- JSON column:value, applied through a per-kind whitelist
+      created_at   TEXT NOT NULL,
+      applied      INTEGER NOT NULL DEFAULT 0,
+      sync_status  TEXT DEFAULT 'pending'
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_device_seq ON events (device_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_events_unapplied  ON events (applied);
+
+    -- Phase 2c: maintenance bookkeeping — prune timestamps, snapshot results,
+    -- and the two knobs (retention days, snapshot count). A key/value table
+    -- instead of device_config columns: device_config's save path lists its
+    -- columns explicitly and every addition churns it.
+    CREATE TABLE IF NOT EXISTS maintenance_state (
+      key        TEXT PRIMARY KEY,
+      value      TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS node_peer_state (
       device_id   TEXT PRIMARY KEY,
       state       TEXT NOT NULL,             -- JSON: business_date, day open?, open drawers…
@@ -849,7 +882,7 @@ function initSchema(db: Database.Database) {
 // built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
 // node on 44 would ingest peer rows with no seq, and every one of them would be
 // invisible to the cursor that decides what still needs replicating.
-export const LOCAL_SCHEMA_VERSION = 47;
+export const LOCAL_SCHEMA_VERSION = 49;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

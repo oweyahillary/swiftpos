@@ -252,3 +252,19 @@ jobs:
       # per-origin cursor resume, bounded catch-up.
       - name: Branch distribution
         run: node --no-warnings scripts/test-node-distribution.mjs
+
+      # Phase 2b: mutations as events — whitelist boundary (no event can write
+      # device_id/seq/id/sync_status into a replica), idempotent origin-only
+      # applier, out-of-order tolerance.
+      - name: Mutation events
+        run: node --no-warnings scripts/test-events.mjs
+
+      # Phase 2c: replica pruning boundaries (own rows immortal, unapplied
+      # events owed, node keeps everything) and real restorable snapshots.
+      - name: Replica maintenance
+        run: node --no-warnings scripts/test-maintenance.mjs
+
+      # Phase 3: the office role (serves the branch, cannot sell — refused in
+      # main) and the promotion lever (gated, audited, probe-before-save).
+      - name: Office role and promotion
+        run: node --no-warnings scripts/test-office-role.mjs

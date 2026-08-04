@@ -90,7 +90,7 @@ export default function BranchCloseTab({ currency }: Props) {
     }
   };
 
-  if (role !== null && role !== 'node') {
+  if (role !== null && role !== 'node' && role !== 'office') {
     return (
       <div className="p-6 text-sm text-gray-400">
         <p className="text-gray-300 font-medium">Close Branch lives on the branch server.</p>

@@ -98,6 +98,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     status:       ()              => ipcRenderer.invoke('tech:status'),
     adoptFromNode:()              => ipcRenderer.invoke('tech:adoptFromNode'),
     query:        (sql: string)   => ipcRenderer.invoke('tech:query', { sql }),
+    backupNow:    ()              => ipcRenderer.invoke('tech:backupNow'),
+    maintenance:  ()              => ipcRenderer.invoke('tech:maintenance'),
+    promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),
+    setNodeUrl:   (url: string)   => ipcRenderer.invoke('tech:setNodeUrl', { url }),
   },
 
   shift: {

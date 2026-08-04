@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, net, shell } from 'electron';
+import { isNodeRole } from './deviceConfig';
 import path from 'path';
 import fs from 'fs';
 import { getLocalDb } from './localDb';
@@ -9,6 +10,7 @@ import { startNodeServer } from './nodeServer';
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
+import { pruneIfDue, snapshotIfDue } from './maintenance';
 
 const isDev = !app.isPackaged;
 
@@ -176,7 +178,7 @@ app.whenReady().then(() => {
     // peer tills can push orders and read combined branch reports.
     try {
       const cfg = getDeviceConfig();
-      if (cfg?.device_role === 'node') startNodeServer();
+      if (isNodeRole(cfg?.device_role)) startNodeServer();
     } catch (e) { console.error('[startup] node server start failed:', e); }
 
     // Re-hydrate sync engine from persisted session if one exists
@@ -226,7 +228,7 @@ app.whenReady().then(() => {
   const pendingAcks = new Map<number, { ok: boolean; error?: string; summary?: unknown }>();
   setInterval(async () => {
     const cfg = getDeviceConfig();
-    if (!cfg?.node_url || cfg.device_role === 'node') return;
+    if (!cfg?.node_url || isNodeRole(cfg.device_role)) return;
     try {
       for (const [id, ack] of [...pendingAcks]) {
         if (await ackNodeInstruction(id, ack)) pendingAcks.delete(id);
@@ -260,7 +262,7 @@ app.whenReady().then(() => {
   // minutes, not hours.
   setInterval(async () => {
     const cfg = getDeviceConfig();
-    if (!cfg?.node_url || cfg.device_role === 'node') return;
+    if (!cfg?.node_url || isNodeRole(cfg.device_role)) return;
     try {
       for (let round = 0; round < 10; round++) {
         const res = await pullNodeDistribution(distributionCursors());
@@ -272,6 +274,21 @@ app.whenReady().then(() => {
       console.error('[distribution] pull:', err);
     }
   }, 30_000);
+
+  // Phase 2c — maintenance. Hourly check, at-most-daily execution (the
+  // functions gate themselves): peers prune expired replicas, the node takes
+  // its nightly snapshot. Neither belongs on a tight timer, and both must
+  // survive the app never being open at a specific hour — "due since
+  // yesterday" runs on the next boot.
+  setInterval(() => {
+    try { pruneIfDue(); } catch (err) { console.error('[maintenance] prune:', err); }
+    snapshotIfDue().catch(err => console.error('[maintenance] snapshot:', err));
+  }, 3_600_000);
+  // And once shortly after boot, for the till that is only on during service.
+  setTimeout(() => {
+    try { pruneIfDue(); } catch (err) { console.error('[maintenance] prune:', err); }
+    snapshotIfDue().catch(err => console.error('[maintenance] snapshot:', err));
+  }, 90_000);
 });
 
 app.on('window-all-closed', () => {

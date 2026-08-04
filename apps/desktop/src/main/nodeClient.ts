@@ -11,13 +11,13 @@
 // Everything here is best-effort and non-blocking: if the node is unreachable a
 // till keeps selling and its orders stay queued locally until the node returns.
 
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, isNodeRole } from './deviceConfig';
 
 function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
   // Only a plain till with a configured node has an uplink target. The node
   // itself (role 'node') pushes to the cloud directly, not to itself.
-  if (!cfg || cfg.device_role === 'node') return null;
+  if (!cfg || isNodeRole(cfg.device_role)) return null;
   return cfg.node_url ? cfg.node_url.replace(/\/+$/, '') : null;
 }
 
@@ -263,6 +263,28 @@ export async function pullNodeDistribution(
     return Array.isArray(data?.batches) ? { batches: data.batches, has_more: !!data.has_more } : null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── Phase 3 — promotion support ──────────────────────────────────────────────
+
+/** Probe a CANDIDATE node address (not the configured one) with this till's
+ *  branch secret. Used by the repoint flow: test before save, because writing
+ *  a wrong address is a till that silently stops replicating. */
+export async function probeNode(url: string, timeoutMs = 4000): Promise<{ ok: boolean; error?: string }> {
+  const base = String(url ?? '').replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return { ok: false, error: 'Address must start with http://' };
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/health`, { signal: ctrl.signal, headers: nodeHeaders() });
+    if (res.status === 401) return { ok: false, error: 'That machine refused this till\'s branch access code' };
+    if (!res.ok) return { ok: false, error: `The machine answered ${res.status} — is it the branch server?` };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'No branch server answered at that address' };
   } finally {
     clearTimeout(t);
   }

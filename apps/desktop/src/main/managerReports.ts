@@ -36,6 +36,7 @@
  * that is not mistaken for a quiet month.
  */
 
+import { isNodeRole } from './deviceConfig';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 
@@ -129,7 +130,8 @@ export interface ReportScope {
 export function getReportScope(): ReportScope {
   const db = getLocalDb();
   const cfg = getDeviceConfig();
-  const role = (cfg?.device_role ?? 'till') as 'till' | 'node';
+  // 'office' reports branch-wide like a node — it ingests the same rows.
+  const role = isNodeRole(cfg?.device_role) ? 'node' as const : 'till' as const;
   const code = cfg?.terminal_code ?? null;
 
   const earliest = (db.prepare(

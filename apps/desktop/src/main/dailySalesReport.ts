@@ -39,6 +39,7 @@
  *                which is what a manager would want that column for.
  */
 
+import { isNodeRole } from './deviceConfig';
 import ExcelJS from 'exceljs';
 import { dialog, BrowserWindow } from 'electron';
 import { getLocalDb } from './localDb';
@@ -271,7 +272,7 @@ export async function exportDailySalesReport(
     const cfg = getDeviceConfig();
 
     // A plain till has only its own rows, so 'branch' would be a lie there.
-    const isNode = cfg?.device_role === 'node';
+    const isNode = isNodeRole(cfg?.device_role);
     const wantBranch = (req.scope ?? (isNode ? 'branch' : 'own')) === 'branch';
     const deviceId: string | null = wantBranch ? null : (cfg?.device_id ?? null);
 

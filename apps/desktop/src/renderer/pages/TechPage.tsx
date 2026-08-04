@@ -54,6 +54,38 @@ export default function TechPage({ onExit }: Props) {
     columns: string[]; rows: unknown[][]; rowCount: number;
     truncated: boolean; maskedColumns: string[];
   }>(null);
+  const [maint, setMaint] = useState<null | { last_backup_at: string | null; last_backup_status: string | null;
+    backup_dir: string; last_prune_at: string | null; retention_days: number }>(null);
+  const [backupMsg, setBackupMsg] = useState('');
+  useEffect(() => { posApi.tech.maintenance().then(setMaint).catch(() => {}); }, []);
+  const [nodeAddr, setNodeAddr] = useState('');
+  const [roleMsg, setRoleMsg] = useState('');
+  const promote = async () => {
+    setBusy('promote'); setRoleMsg('');
+    try {
+      const r = await posApi.tech.promoteToNode();
+      setRoleMsg(r.ok ? `Promoted. Branch access code: ${r.secret} — ${r.note}` : (r.error ?? 'failed'));
+      load();
+    } finally { setBusy(''); }
+  };
+  const repoint = async () => {
+    setBusy('repoint'); setRoleMsg('');
+    try {
+      const r = await posApi.tech.setNodeUrl(nodeAddr.trim());
+      setRoleMsg(r.ok ? `Saved — this machine is now a ${r.role} pointing at ${nodeAddr.trim()}.` : (r.error ?? 'failed'));
+      load();
+    } finally { setBusy(''); }
+  };
+
+  const runBackup = async () => {
+    setBusy('backup'); setBackupMsg('');
+    try {
+      const r = await posApi.tech.backupNow();
+      setBackupMsg(r.ok ? `Done — ${r.path}` : (r.error ?? 'failed'));
+      posApi.tech.maintenance().then(setMaint).catch(() => {});
+    } finally { setBusy(''); }
+  };
+
   const runQuery = async () => {
     setBusy('query'); setQueryErr(''); setQueryRes(null);
     try {
@@ -175,6 +207,61 @@ export default function TechPage({ onExit }: Props) {
           </div>
           {/* Mode switch (offline<->web) lands in step 5 — placeholder so the slot is visible. */}
           <p className="text-[11px] text-gray-400 mt-3">Mode switch (offline ↔ web) arrives with the sync bridge.</p>
+        </section>
+
+        {/* Branch role (Phase 3) */}
+        <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-1">Branch role</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            This machine: <span className="text-gray-200 font-medium">{dev?.device_role ?? '—'}</span>
+          </p>
+          {dev?.device_role === 'till' && (
+            <>
+              <button onClick={promote} disabled={busy === 'promote'}
+                className="w-full bg-amber-700/80 hover:bg-amber-600 disabled:opacity-40 text-white rounded-lg py-2 text-sm">
+                {busy === 'promote' ? 'Promoting…' : 'Promote to branch server'}
+              </button>
+              <p className="text-[11px] text-gray-500 mt-1.5">
+                Use when the branch server has failed. This till already holds the branch data;
+                afterwards, point each remaining till here (below, on those tills).
+              </p>
+            </>
+          )}
+          <div className="mt-3">
+            <label className="block text-[11px] text-gray-400 mb-1">Branch server address (this till points at)</label>
+            <div className="flex gap-2">
+              <input value={nodeAddr} onChange={e => setNodeAddr(e.target.value)}
+                placeholder="http://192.168.1.20:4100" spellCheck={false}
+                className="flex-1 bg-[#0a0f1c] border border-gray-700 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200" />
+              <button onClick={repoint} disabled={busy === 'repoint' || !nodeAddr.trim()}
+                className="bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg px-3 text-xs whitespace-nowrap">
+                {busy === 'repoint' ? 'Testing…' : 'Test & save'}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1">Tested before saving — a wrong address written blind is a till that silently stops replicating. On a former server this also steps it down to a till.</p>
+          </div>
+          {roleMsg && <p className={`text-xs mt-2 ${/fail|refused|No branch/i.test(roleMsg) ? 'text-red-400' : 'text-green-400'}`}>{roleMsg}</p>}
+        </section>
+
+        {/* Backups & retention (Phase 2c) */}
+        <section className="bg-[#0d1424] border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-1">Backups &amp; retention</h2>
+          {maint ? (
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>Last backup: <span className={/FAILED/.test(maint.last_backup_status ?? '') ? 'text-red-400' : 'text-gray-200'}>
+                {maint.last_backup_at ? new Date(maint.last_backup_at).toLocaleString() : 'never'}</span>
+                {maint.last_backup_status && <span> — {maint.last_backup_status}</span>}</p>
+              <p>Backup folder: <span className="text-gray-300 font-mono">{maint.backup_dir}</span></p>
+              <p>Replica retention: <span className="text-gray-300">{maint.retention_days} days</span>
+                {maint.last_prune_at && <span> · last prune {new Date(maint.last_prune_at).toLocaleDateString()}</span>}</p>
+            </div>
+          ) : <p className="text-xs text-gray-500">Loading…</p>}
+          <button
+            onClick={runBackup} disabled={busy === 'backup'}
+            className="mt-3 w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
+            {busy === 'backup' ? 'Backing up…' : 'Back up now'}
+          </button>
+          {backupMsg && <p className={`text-xs mt-2 ${/FAILED|failed/.test(backupMsg) ? 'text-red-400' : 'text-green-400'}`}>{backupMsg}</p>}
         </section>
 
         {/* Read-only database console */}

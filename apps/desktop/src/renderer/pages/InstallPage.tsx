@@ -358,6 +358,7 @@ export default function InstallPage({ onComplete }: Props) {
                 <div className="flex gap-3">
                   {roleBtn('till', 'Till', 'A point of sale terminal')}
                   {roleBtn('node', 'Branch server', 'Other tills sync to this one')}
+                  {roleBtn('office', 'Office', 'Branch server that cannot sell — reports and day close only')}
                 </div>
               </div>
               <div>

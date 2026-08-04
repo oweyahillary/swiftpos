@@ -10,7 +10,7 @@
 
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
-import { getDeviceConfig, saveDeviceConfig, getServerUrl } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell } from './deviceConfig';
 import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
@@ -1250,6 +1250,11 @@ export function getOpenShift(): any | null {
 // ── Write a new order locally + deduct stock (delta merge) ──
 
 export function createLocalOrder(orderPayload: any): string {
+  // Phase 3: an office machine cannot sell. Same rule as openShift, same
+  // layer — main is the door.
+  if (!canSell(getDeviceConfig()?.device_role)) {
+    throw new Error('This machine is a branch office/server — it cannot ring sales.');
+  }
   const db = getLocalDb();
   const session = db.prepare(`SELECT * FROM session WHERE id=1`).get() as any;
   if (!session) throw new Error('No session — not logged in');

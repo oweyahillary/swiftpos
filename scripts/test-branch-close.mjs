@@ -165,7 +165,10 @@ console.log('\n5. closeDay keeps its manager gate; the instruction is its own au
 console.log('\n6. The peer side is actually wired');
 {
   ok('peers poll every 15s, not on the 60s sync tick', /15_000\)/.test(SRC_IX) && /pollNodeInstructions/.test(SRC_IX));
-  ok('the node itself does not poll', /device_role === 'node'\) return/.test(SRC_IX));
+  // 'Does not poll' means every SERVING role is excluded — after Phase 3 that
+  // is isNodeRole (node or office), not the literal 'node'. Pin the behaviour.
+  ok('serving roles do not poll themselves',
+     /isNodeRole\(cfg\.device_role\)\) return;[\s\S]{0,900}pollNodeInstructions/.test(SRC_IX));
   ok('an unacked outcome is retried, not dropped', /pendingAcks/.test(SRC_IX));
   ok('unknown instruction kinds are named, not ignored', SRC_IX.includes('older build'));
   ok('node serves the poll and ack endpoints',

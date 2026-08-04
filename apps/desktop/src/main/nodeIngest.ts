@@ -24,12 +24,13 @@
 // So this module refuses rather than guesses. Every rejection below is a case
 // where continuing would produce a plausible, wrong number.
 
+import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 
 /** The tables that replicate across the branch LAN. */
 export const REPLICATED_TABLES = [
-  'orders', 'shifts', 'float_transactions', 'expenses', 'business_days',
+  'orders', 'shifts', 'float_transactions', 'expenses', 'business_days', 'events',
 ] as const;
 export type ReplicatedTable = typeof REPLICATED_TABLES[number];
 
@@ -72,6 +73,12 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
     'id', 'business_id', 'branch_id', 'device_id', 'terminal_code', 'business_date',
     'opened_at', 'opened_by', 'closed_at', 'closed_by', 'status', 'counted_cash',
     'expected_cash', 'cash_variance', 'notes', 'created_at', 'seq',
+  ],
+  // Phase 2b. `applied` is deliberately absent for the same reason sync_status
+  // is: it describes THIS device's progress applying the event, not the event.
+  events: [
+    'id', 'business_id', 'branch_id', 'device_id', 'seq',
+    'kind', 'target_table', 'target_id', 'payload', 'created_at',
   ],
 };
 
@@ -667,6 +674,8 @@ export function applyDistribution(
       advanceCursor(b.device_id, b.table, r.cursor);
     }
   }
+  // Same rule as the node's ingest: every pull round ends with an event sweep.
+  applyPendingEvents();
   return totals;
 }
 
@@ -675,6 +684,124 @@ export function distributionCursors(): DistributionCursors {
   const out: DistributionCursors = {};
   for (const p of listPeers()) {
     (out[p.device_id] ??= {})[p.table_name] = p.last_seq;
+  }
+  return out;
+}
+
+// ── Phase 2b — mutations as events ───────────────────────────────────────────
+//
+// The append-only design's one dishonesty: a shift closes, a day closes, an
+// order is voided — and every replica keeps the OLD row forever, because
+// "ignore duplicates" is the rule that makes replication safe. Events resolve
+// it without touching that rule: the mutation itself becomes an append-only
+// fact, rides the existing outbox → push → ingest → distribution untouched
+// (it is just the sixth replicated table), and a per-kind APPLIER mutates the
+// replica when — and only when — the event's origin owns the target row.
+
+const EVENT_WHITELIST: Record<string, { table: ReplicatedTable; columns: string[] }> = {
+  // The whitelist is the security boundary: payload keys outside it are
+  // silently dropped, so an event can never smuggle a device_id, seq, id, or
+  // sync_status into a replica — the columns that make replication safe are
+  // exactly the ones no event may name.
+  shift_closed: {
+    table: 'shifts',
+    columns: ['status', 'closed_at', 'closing_float', 'expected_cash',
+              'cash_variance', 'notes', 'close_method', 'closed_by'],
+  },
+  day_closed: {
+    table: 'business_days',
+    columns: ['status', 'closed_at', 'closed_by', 'counted_cash',
+              'expected_cash', 'cash_variance', 'notes'],
+  },
+  order_voided: {
+    table: 'orders',
+    columns: ['status', 'void_reason', 'voided_at', 'voided_by'],
+  },
+};
+
+/**
+ * Record a mutation that just happened to one of THIS device's rows.
+ * `applied` starts at 1: the local row was mutated by the caller in the same
+ * transaction — the event exists for everyone else.
+ */
+export function emitEvent(
+  kind: keyof typeof EVENT_WHITELIST,
+  targetId: string,
+  payload: Record<string, unknown>,
+): void {
+  const spec = EVENT_WHITELIST[kind];
+  if (!spec) throw new Error(`unknown event kind: ${kind}`);
+  const db = getLocalDb();
+  const cfg = getDeviceConfig();
+  // business_id lives on the owner session, not device config — same source
+  // the order-create path uses.
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id?: string } | undefined;
+  const clean: Record<string, unknown> = {};
+  for (const c of spec.columns) if (c in payload) clean[c] = payload[c];
+  db.prepare(`
+    INSERT INTO events (id, business_id, branch_id, device_id, seq,
+                        kind, target_table, target_id, payload, created_at, applied)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `).run(
+    crypto.randomUUID(),
+    sess?.business_id ?? null, cfg?.branch_id ?? null, cfg?.device_id ?? null,
+    nextSeq('events'),
+    kind, spec.table, targetId, JSON.stringify(clean), new Date().toISOString(),
+  );
+}
+
+/**
+ * Apply every event not yet applied on this device. Idempotent and safe to
+ * call after every ingest/pull round; that repetition is the whole answer to
+ * cross-table ordering — an event that arrives before its target row simply
+ * stays applied=0 until a later sweep finds the row.
+ *
+ * Origin-only, enforced at application: the UPDATE matches the target id AND
+ * the event's own device_id, so an event can only ever mutate a row its
+ * origin owns. If the target exists under a DIFFERENT owner, the event is
+ * marked refused (-1) — a forged or misattributed mutation is recorded as
+ * such, not retried forever and not applied.
+ */
+export function applyPendingEvents(): { applied: number; waiting: number; refused: number } {
+  const db = getLocalDb();
+  const out = { applied: 0, waiting: 0, refused: 0 };
+  const pending = db.prepare(
+    // branch-wide: the sweep exists to apply OTHER devices' events to their
+    // own rows on this replica — that is its entire purpose.
+    `SELECT id, device_id, kind, target_table, target_id, payload FROM events WHERE applied = 0`,
+  ).all() as Array<{ id: string; device_id: string | null; kind: string; target_table: string; target_id: string; payload: string }>;
+
+  const markApplied = db.prepare(`UPDATE events SET applied = 1 WHERE id = ?`);
+  const markRefused = db.prepare(`UPDATE events SET applied = -1 WHERE id = ?`);
+
+  for (const ev of pending) {
+    const spec = EVENT_WHITELIST[ev.kind];
+    // An event kind (or a retargeted table) this build does not know is left
+    // waiting, not guessed at: a newer till emitted it, and this till will
+    // understand it after its own upgrade.
+    if (!spec || spec.table !== ev.target_table) { out.waiting++; continue; }
+
+    let payload: Record<string, unknown>;
+    try { payload = JSON.parse(ev.payload) ?? {}; } catch { markRefused.run(ev.id); out.refused++; continue; }
+    const cols = spec.columns.filter(c => c in payload);
+    if (!cols.length) { markApplied.run(ev.id); out.applied++; continue; }  // nothing to do IS done
+
+    const r = db.prepare(
+      // branch-wide: mutates the ORIGIN's replica row by design; the device_id
+      // equality IS the origin-only rule.
+      `UPDATE ${spec.table} SET ${cols.map(c => `${c} = ?`).join(', ')}
+        WHERE id = ? AND COALESCE(device_id,'') = COALESCE(?,'')`,
+    ).run(...cols.map(c => payload[c] ?? null), ev.target_id, ev.device_id);
+
+    if (r.changes > 0) { markApplied.run(ev.id); out.applied++; continue; }
+
+    const holder = db.prepare(
+      // branch-wide: existence probe to tell "not here yet" from "owned by
+      // someone else" — the first waits, the second is refused.
+      `SELECT device_id FROM ${spec.table} WHERE id = ?`,
+    ).get(ev.target_id) as { device_id: string | null } | undefined;
+    if (!holder) { out.waiting++; continue; }
+    markRefused.run(ev.id); out.refused++;
   }
   return out;
 }

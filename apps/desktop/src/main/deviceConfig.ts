@@ -23,7 +23,23 @@ export type DeployMode = 'cloud' | 'local';
 // A terminal is either a plain 'till' or the branch's 'node' (aggregation node):
 // the one machine other tills push their orders to for branch-wide manager totals.
 // A node is usually also a till. Every terminal sells fully standalone regardless.
-export type DeviceRole = 'till' | 'node';
+export type DeviceRole = 'till' | 'node' | 'office';
+
+/**
+ * Phase 3: the roles that RUN the branch server. 'node' is a till that also
+ * serves; 'office' is a server that cannot sell — no drawer, no shift, no
+ * cash, safe unattended, and it will not consume an activation seat (the
+ * server counts only role='till' — wired with activation codes). Every
+ * behavioural question is one of two: "does this machine serve the branch?"
+ * (isNodeRole) or "may this machine sell?" (canSell). Comparing against the
+ * literal 'node' anywhere else is how office machines fall through cracks.
+ */
+export function isNodeRole(role: string | null | undefined): boolean {
+  return role === 'node' || role === 'office';
+}
+export function canSell(role: string | null | undefined): boolean {
+  return role !== 'office';
+}
 
 export interface DeviceConfig {
   deploy_mode: DeployMode;

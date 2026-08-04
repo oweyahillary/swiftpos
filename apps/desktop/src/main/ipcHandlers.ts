@@ -12,6 +12,7 @@
 //   sync:status       → return { online, pendingCount }
 
 import { app, ipcMain, net } from 'electron';
+import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
@@ -26,10 +27,12 @@ import { exportDailySalesReport } from './dailySalesReport';
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay } from './branchClose';
+import { takeSnapshot, maintenanceStatus } from './maintenance';
+import { emitEvent } from './nodeIngest';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
-import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken } from './nodeClient';
+import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode } from './nodeClient';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
@@ -559,7 +562,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('config:save', async (_event, patch: any) => {
     const saved = saveDeviceConfig(patch ?? {});
     try {
-      if (saved.device_role === 'node') startNodeServer();
+      if (isNodeRole(saved.device_role)) startNodeServer();
       else stopNodeServer();
     } catch (e) {
       console.error('[config:save] node server transition failed:', e);
@@ -1191,8 +1194,13 @@ export function registerIpcHandlers() {
       throw new Error(detail ? `${data.error ?? 'Void failed'} — ${detail}` : (data.error ?? 'Void failed'));
     }
 
-    // Mark local order voided so order history reflects it immediately
-    db.prepare(`UPDATE orders SET status='voided' WHERE id=?`).run(orderId);
+    // Mark local order voided so order history reflects it immediately.
+    // voided_at is written too — the column existed and nothing ever set it.
+    const voidedAt = new Date().toISOString();
+    db.prepare(`UPDATE orders SET status='voided', voided_at=? WHERE id=?`).run(voidedAt, orderId);
+    // Phase 2b: without the event, every replica of this order stays
+    // 'completed' and the branch revenue on other tills counts a voided sale.
+    emitEvent('order_voided', String(orderId), { status: 'voided', voided_at: voidedAt });
     return { ok: true };
   });
 
@@ -1294,6 +1302,46 @@ export function registerIpcHandlers() {
   // Read-only DB console. Gated in MAIN on an active tech session — the
   // renderer's gating is a courtesy; this check is the door. The query is
   // audited verbatim BEFORE it runs, so a query that errors is still on record.
+  // Manual snapshot from the tech panel — same job as the nightly one, on
+  // demand, session-gated like every tech action.
+  // Phase 3 — the promotion lever. "Failover is a role flag" was a claim
+  // until this existed. Promotion is safe because the promoted till already
+  // holds the branch (2a distribution) and already carries the branch secret
+  // it was authenticating with as a peer — the listener is the only thing
+  // that was not running.
+  ipcMain.handle('tech:promoteToNode', async () => {
+    if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
+    const before = getDeviceConfig()?.device_role ?? 'till';
+    logTechAction('role.promote', { from: before, to: 'node' });
+    saveDeviceConfig({ device_role: 'node', node_url: null });
+    startNodeServer();
+    const secret = ensureNodeSecret();
+    return { ok: true, role: 'node', secret,
+             note: 'Now repoint each remaining till at this machine (Tech → branch server address).' };
+  });
+
+  // Repoint this till at a (new) branch server. Probe BEFORE save — a wrong
+  // address written blind is a till that silently stops replicating. Also the
+  // demotion path: a former node repointed at the new one becomes a till again.
+  ipcMain.handle('tech:setNodeUrl', async (_e, { url }: { url: string }) => {
+    if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
+    const probe = await probeNode(String(url ?? ''));
+    if (!probe.ok) return { ok: false, error: probe.error };
+    const was = getDeviceConfig()?.device_role ?? 'till';
+    logTechAction('role.repoint', { from: was, node_url: url });
+    if (was === 'node') stopNodeServer();   // stepping down: stop serving first
+    saveDeviceConfig({ node_url: String(url), device_role: was === 'node' ? 'till' : was });
+    return { ok: true, role: was === 'node' ? 'till' : was };
+  });
+
+  ipcMain.handle('tech:backupNow', async () => {
+    if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
+    logTechAction('backup.manual', {});
+    return await takeSnapshot();
+  });
+
+  ipcMain.handle('tech:maintenance', async () => maintenanceStatus());
+
   ipcMain.handle('tech:query', async (_event, { sql }: { sql: string }) => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     logTechAction('db_query', { sql: String(sql ?? '').slice(0, 2000) });

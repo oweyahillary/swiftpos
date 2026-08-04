@@ -28,6 +28,7 @@
 //   than none: an open day is visibly wrong, a fake close is invisibly wrong and
 //   its zero variance is the number somebody will later rely on.
 
+import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
 import { getDeviceConfig } from './deviceConfig';
@@ -419,6 +420,14 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
      WHERE id=?
   `).run(now, closedByStaffId, countedCash, summary.expectedCash, variance,
          notes ?? null, notes ?? null, notes ?? null, day.id);
+  // Phase 2b: the day close is a fact for the branch. Replicas of this trading
+  // day stop reading 'open' forever, and the Close Branch screen's per-till
+  // day state stops depending solely on the live poll.
+  emitEvent('day_closed', day.id, {
+    status: 'closed', closed_at: now, closed_by: closedByStaffId,
+    counted_cash: countedCash, expected_cash: summary.expectedCash,
+    cash_variance: variance, notes: notes ?? null,
+  });
 
   return {
     ...summary,
