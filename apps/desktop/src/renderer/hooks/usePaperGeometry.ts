@@ -26,7 +26,7 @@
  *   receipt that is the amount column.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import type { PrinterSettings } from './usePrinterSettings';
 import { printableMm, type PaperWidth } from '../lib/thermal';
@@ -60,11 +60,24 @@ export function usePaperGeometry(
 
   const device = settings.receiptPrinterName;
 
+  // Generation counter: pressing Re-detect while a probe is HUNG must start a
+  // fresh attempt and let the stale one settle into the void — otherwise one
+  // wedged probe owns the screen until the app restarts.
+  const genRef = useRef(0);
+
   const detect = useCallback(async () => {
     if (!device) { setGeo(null); setTried(true); return; }
+    const gen = ++genRef.current;
     setProbing(true);
     try {
-      const g = await posApi.print.geometry(device);
+      // Belt over main's braces: main already races its own hang vectors, but
+      // the renderer must not trust that — a settings screen frozen on one
+      // stuck IPC is the bug this fixes, so the ceiling lives HERE too.
+      const g = await Promise.race([
+        posApi.print.geometry(device),
+        new Promise<null>(res => setTimeout(() => res(null), 12_000)),
+      ]);
+      if (gen !== genRef.current) return;   // a newer attempt owns the state now
       setGeo(g);
       // Persist it so the PRINT path can use it. The hook only runs on settings
       // screens; receipts are printed from places that cannot call a hook.
@@ -72,10 +85,9 @@ export function usePaperGeometry(
         save({ detectedWidthMm: g.printableMm, paperWidth: classify(g.paperMm) });
       }
     } catch {
-      setGeo(null);          // probe failure is not an error state, just no data
+      if (gen === genRef.current) setGeo(null);   // probe failure is not an error state, just no data
     } finally {
-      setProbing(false);
-      setTried(true);
+      if (gen === genRef.current) { setProbing(false); setTried(true); }
     }
   }, [device]);
 

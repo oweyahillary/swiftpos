@@ -76,7 +76,9 @@ export default function PaperWidthControl({ settings, save, onWidthTest, disable
       <div className="flex items-center gap-3 pt-1">
         <button
           onClick={geo.redetect}
-          disabled={disabled || geo.probing || !settings.receiptPrinterName}
+          // NOT disabled while probing: Re-detect during a hung probe is the
+          // escape hatch (the hook's generation counter discards the stale one).
+          disabled={disabled || !settings.receiptPrinterName}
           className="text-xs text-gray-300 hover:text-white disabled:text-gray-600 transition-colors"
         >
           ↻ Re-detect

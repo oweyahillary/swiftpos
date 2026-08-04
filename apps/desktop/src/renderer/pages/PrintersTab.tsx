@@ -51,6 +51,40 @@ const kitchenSample = SAMPLE_LINES
 
 type Status = { kind: 'idle' | 'busy' | 'ok' | 'warn' | 'err'; msg?: string };
 
+// Module scope, deliberately. This was defined INSIDE the component body — a
+// brand-new component TYPE on every render, so React unmounted and remounted
+// the <select> each time the parent re-rendered. Status-dot probes and the
+// width detection re-render constantly, so an OPEN dropdown snapped shut the
+// instant it opened: on the till this read as "I cannot select another
+// printer" / "it is stuck on Microsoft Print to PDF" while the printer list
+// was fine all along. A component's identity must be stable across renders.
+function PrinterPicker({ label, value, onChange, hint, allowNone, printers }: {
+  label: string; value: string; onChange: (v: string) => void; hint: string; allowNone: string;
+  printers: Array<{ name: string; displayName: string; isDefault: boolean }>;
+}) {
+  return (
+    <div>
+      <label className="block text-sm text-gray-300 mb-1">{label}</label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
+      >
+        <option value="">{allowNone}</option>
+        {printers.map(p => (
+          <option key={p.name} value={p.name}>
+            {p.displayName || p.name}{p.isDefault ? '  (Windows default)' : ''}
+          </option>
+        ))}
+        {/* A saved printer stays selectable even if Windows does not list it
+            right now (unplugged) — same rule as the POS modal. */}
+        {value && !printers.some(p => p.name === value) && <option value={value}>{value} (saved)</option>}
+      </select>
+      <p className="text-xs text-gray-300 mt-1">{hint}</p>
+    </div>
+  );
+}
+
 export default function PrintersTab({ currency = 'KES' }: { currency?: string }) {
   // Prints the nested-bar width test. This lives here as well as in the POS
   // modal because the Printers tab is where anyone actually sets a printer up,
@@ -209,26 +243,6 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
     return <p className={`text-xs mt-2 ${colour}`}>{s.msg}</p>;
   };
 
-  const PrinterPicker = ({ label, value, onChange, hint, allowNone }: {
-    label: string; value: string; onChange: (v: string) => void; hint: string; allowNone: string;
-  }) => (
-    <div>
-      <label className="block text-sm text-gray-300 mb-1">{label}</label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-      >
-        <option value="">{allowNone}</option>
-        {printers.map(p => (
-          <option key={p.name} value={p.name}>
-            {p.displayName || p.name}{p.isDefault ? '  (Windows default)' : ''}
-          </option>
-        ))}
-      </select>
-      <p className="text-xs text-gray-300 mt-1">{hint}</p>
-    </div>
-  );
 
   const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
@@ -289,7 +303,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
       </Card>
 
       <Card title="Customer receipt">
-        <PrinterPicker
+        <PrinterPicker printers={printers}
           label="Printer"
           value={settings.receiptPrinterName}
           onChange={v => save({ receiptPrinterName: v })}
@@ -335,7 +349,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
           />
           Print a kitchen ticket when “Send to kitchen” is pressed
         </label>
-        <PrinterPicker
+        <PrinterPicker printers={printers}
           label="Printer"
           value={settings.kitchenPrinterName}
           onChange={v => save({ kitchenPrinterName: v })}
@@ -351,7 +365,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
       </Card>
 
       <Card title="Dispatcher / packing ticket">
-        <PrinterPicker
+        <PrinterPicker printers={printers}
           label="Printer"
           value={settings.dispatcherPrinterName}
           onChange={v => save({ dispatcherPrinterName: v })}

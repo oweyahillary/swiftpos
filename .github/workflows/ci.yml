@@ -268,3 +268,8 @@ jobs:
       # main) and the promotion lever (gated, audited, probe-before-save).
       - name: Office role and promotion
         run: node --no-warnings scripts/test-office-role.mjs
+
+      # Field bug: a wedged spooler froze the printer settings screen forever.
+      # Every layer now owns its own hang ceiling; Re-detect stays pressable.
+      - name: Print resilience
+        run: node --no-warnings scripts/test-print-resilience.mjs

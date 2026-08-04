@@ -50,6 +50,20 @@ const _geometryCache = new Map<string, PrinterGeometry | null>();
 const HUNDREDTHS_INCH_TO_MM = 25.4 / 100;
 
 export function probeGeometry(deviceName: string): Promise<PrinterGeometry | null> {
+  // Two timeouts, deliberately. execFile's own 8s kill handles a slow child —
+  // but a PowerShell blocked inside a hung printer DRIVER can be unkillable
+  // (kernel-side wait), in which case the kill fails, the callback never
+  // fires, and the promise never settles: the settings screen then reads
+  // "Reading the printer…" forever, which is precisely what happened on an
+  // XP-80 with a wedged spooler. The outer race settles null at 10s no matter
+  // what the child does; the caller falls back to the head-spec table.
+  return Promise.race([
+    probeGeometryInner(deviceName),
+    new Promise<PrinterGeometry | null>(res => setTimeout(() => res(null), 10_000)),
+  ]);
+}
+
+function probeGeometryInner(deviceName: string): Promise<PrinterGeometry | null> {
   if (process.platform !== 'win32' || !deviceName) return Promise.resolve(null);
   if (_geometryCache.has(deviceName)) return Promise.resolve(_geometryCache.get(deviceName)!);
 
@@ -138,7 +152,15 @@ export async function listPrinters(): Promise<PrinterInfo[]> {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win) return [];
   try {
-    const printers = await win.webContents.getPrintersAsync();
+    // getPrintersAsync has NO timeout of its own and blocks indefinitely on a
+    // wedged Windows print spooler — which is exactly the state a dropped-
+    // offline XP-80 leaves the machine in. Racing it means a wedged spooler
+    // degrades to "no printers found, retry" instead of freezing the settings
+    // screen; the cashier restarts the spooler and presses refresh.
+    const printers = await Promise.race([
+      win.webContents.getPrintersAsync(),
+      new Promise<never[]>(res => setTimeout(() => res([]), 6_000)),
+    ]);
     return printers.map(p => ({
       name: p.name,
       displayName: p.displayName || p.name,
