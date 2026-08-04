@@ -925,27 +925,49 @@ export function registerIpcHandlers() {
   // Server-backed like categories, so one configuration reaches all three tills
   // rather than each terminal holding its own idea of where an order prints.
   // refreshCatalogue() after every write pulls the change straight back down.
+  // Station writes used to refreshCatalogue() — the ENTIRE catalogue re-pulled
+  // per tick-box click, so routing a 10-category kitchen meant ten multi-second
+  // waits in a row. Routing edits touch exactly two tables; rewrite exactly
+  // those, from the same response the panel is already shown.
+  const refreshStationsLocal = async () => {
+    const stations = await manageFetch('/api/stations', 'GET') as Array<{
+      id: string; name: string; kind: string; sort_order: number; active: boolean; category_ids: string[] }>;
+    const db = getLocalDb();
+    db.transaction(() => {
+      db.prepare(`DELETE FROM category_stations`).run();
+      db.prepare(`DELETE FROM print_stations`).run();
+      const now = new Date().toISOString();
+      const insSt = db.prepare(`INSERT INTO print_stations (id, name, kind, sort_order, active, synced_at) VALUES (?, ?, ?, ?, ?, ?)`);
+      const insLk = db.prepare(`INSERT OR IGNORE INTO category_stations (category_id, station_id) VALUES (?, ?)`);
+      for (const st of stations ?? []) {
+        insSt.run(st.id, st.name, st.kind, st.sort_order ?? 0, st.active ? 1 : 0, now);
+        for (const cid of st.category_ids ?? []) insLk.run(cid, st.id);
+      }
+    })();
+    return stations;
+  };
+
   ipcMain.handle('manage:listStations', async () => manageFetch('/api/stations', 'GET'));
   ipcMain.handle('manage:unassignedCategories', async () =>
     manageFetch('/api/stations/unassigned', 'GET'));
   ipcMain.handle('manage:createStation', async (_e, payload: any) => {
     const out = await manageFetch('/api/stations', 'POST', payload);
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
   ipcMain.handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/stations/${id}`, 'PATCH', patch);
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
   ipcMain.handle('manage:deleteStation', async (_e, id: string) => {
     const out = await manageFetch(`/api/stations/${id}`, 'DELETE');
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
   ipcMain.handle('manage:setStationCategories', async (_e, { id, categoryIds }: { id: string; categoryIds: string[] }) => {
     const out = await manageFetch(`/api/stations/${id}/categories`, 'PUT', { category_ids: categoryIds });
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
 

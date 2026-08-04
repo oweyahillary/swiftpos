@@ -103,6 +103,12 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
 
   const { settings, save, reset } = usePrinterSettings();
   const [printers, setPrinters] = useState<Array<{ name: string; displayName: string; isDefault: boolean }>>([]);
+  // Which station kinds are configured. When a Kitchen station exists, the
+  // legacy "Kitchen ticket" card below is REPLACED by a pointer — two screens
+  // both claiming to own the kitchen printer is how one gets set and the
+  // other silently wins. The legacy values are kept as silent fallbacks for a
+  // station with no printer bound (the print path already falls back to them).
+  const [stationKinds, setStationKinds] = useState<Set<string>>(new Set());
   const [loading, setLoading]   = useState(true);
   const [loadErr, setLoadErr]   = useState('');
   const [status, setStatus]     = useState<Record<string, Status>>({});
@@ -140,7 +146,12 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
     }
   };
 
-  useEffect(() => { loadPrinters(); }, []);
+  useEffect(() => {
+    loadPrinters();
+    posApi.manage.listStations()
+      .then(sts => setStationKinds(new Set((sts ?? []).filter((x: any) => x.active !== false).map((x: any) => String(x.kind)))))
+      .catch(() => { /* stations unreachable = show legacy cards, the safe default */ });
+  }, []);
   useEffect(() => {
     [settings.receiptPrinterName, settings.kitchenPrinterName, settings.dispatcherPrinterName]
       .filter(Boolean).forEach(probe);
@@ -339,6 +350,14 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         <StatusLine k="receipt" />
       </Card>
 
+      {stationKinds.has('kitchen') ? (
+        <Card title="Kitchen ticket">
+          <p className="text-sm text-gray-300">
+            Handled by <span className="text-gray-100 font-medium">Stations and routing</span> above — the
+            Kitchen station decides what prints and which printer serves it on this till.
+          </p>
+        </Card>
+      ) : (
       <Card title="Kitchen ticket">
         <label className="flex items-center gap-2 text-sm text-gray-300">
           <input
@@ -364,6 +383,16 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         <StatusLine k="kitchen" />
       </Card>
 
+      )}
+
+      {stationKinds.has('dispatch') ? (
+        <Card title="Dispatcher / packing ticket">
+          <p className="text-sm text-gray-300">
+            Handled by <span className="text-gray-100 font-medium">Stations and routing</span> above — the
+            Packing station prints the whole order on the printer bound to it on this till.
+          </p>
+        </Card>
+      ) : (
       <Card title="Dispatcher / packing ticket">
         <PrinterPicker printers={printers}
           label="Printer"
@@ -380,6 +409,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
             "Dispatcher ticket preview", "dispatcher")} />
         <StatusLine k="dispatcher" />
       </Card>
+      )}
 
       <div className="flex items-center justify-between pt-2">
         <p className="text-xs text-gray-300">

@@ -73,5 +73,63 @@ console.log('\n4. Interactive pickers survive re-renders');
   ok('a saved-but-unplugged printer stays selectable', PT.includes('(saved)'));
 }
 
+console.log('\n5. Routing edits are instant; tickets say what to make; one owner per setting');
+{
+  const IH = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
+  const TL = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/ticketLines.ts'), 'utf8');
+  const KT = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printKOT.ts'), 'utf8');
+  const PB = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/pages/PrintersTab.tsx'), 'utf8');
+
+  // Ticking ten categories used to mean ten full-catalogue re-pulls in a row.
+  {
+    // Scope each check to the HANDLER BODY (up to the next ipcMain.handle) —
+    // a fixed character window ran into the NEXT handler, whose full-catalogue
+    // refresh is legitimate for a category write.
+    const body = (channel) => {
+      const i = IH.indexOf(`ipcMain.handle('${channel}'`);
+      const j = IH.indexOf('ipcMain.handle(', i + 1);
+      return IH.slice(i, j === -1 ? undefined : j);
+    };
+    const stationWrites = ['manage:createStation', 'manage:updateStation', 'manage:deleteStation', 'manage:setStationCategories'];
+    ok('station writes refresh ONLY the two station tables',
+       stationWrites.every(c => body(c).includes('refreshStationsLocal()') && !body(c).includes('refreshCatalogue()')));
+  }
+  ok('the light refresh rewrites both tables transactionally',
+     /refreshStationsLocal[\s\S]{0,900}DELETE FROM category_stations[\s\S]{0,80}DELETE FROM print_stations[\s\S]{0,700}\)\(\)/.test(IH));
+
+  // A flat product's description reaches the KITCHEN ticket; a combo's does not
+  // (its components already say what to make); the packer's ticket stays names.
+  ok('flat products carry their description as ITEMIZED prep lines',
+     TL.includes('components.length === 0 ? parseDescriptionLines') && TL.includes('noteLines?: string[]'));
+  ok('the kitchen ticket renders one indented line per item (component style)',
+     /for \(const nl of line\.noteLines[\s\S]{0,200}padding-left:10px/.test(KT));
+  ok('the dispatcher ticket does NOT',
+     !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8').includes('noteLines'));
+  {
+    // BEHAVIORAL: run the actual parser (extracted verbatim from the module).
+    const fn = TL.slice(TL.indexOf('export function parseDescriptionLines'), TL.indexOf('\n}', TL.indexOf('export function parseDescriptionLines')) + 2)
+      .replace('export function', 'function')
+      // Strip the TS annotations so the verbatim body runs under plain Node.
+      .replace('(description?: string | null): string[] | undefined', '(description)');
+    const parse = new Function(`${fn}; return parseDescriptionLines;`)();
+    const a = parse('3pc chicken, 2 fries, 1 soda 500ml');
+    ok('comma prose itemizes into three lines', Array.isArray(a) && a.length === 3 && a[1] === '2 fries', JSON.stringify(a));
+    const b = parse('Chicken\nFries\n- Coleslaw');
+    ok('newlines win over commas; bullets stripped', b.length === 3 && b[2] === 'Coleslaw', JSON.stringify(b));
+    ok('empty/whitespace description renders nothing', parse('   ') === undefined && parse(null) === undefined);
+    const c = parse(Array.from({ length: 20 }, (_, i) => `item ${i}`).join(', '));
+    ok('paragraph descriptions are capped, not ticket-eating', c.length === 8);
+  }
+
+  // One owner per setting: with a station of the kind configured, the legacy
+  // card becomes a pointer, and the legacy value survives as a silent fallback.
+  ok('legacy kitchen card yields to a configured Kitchen station',
+     /stationKinds\.has\('kitchen'\) \? \(/.test(PB));
+  ok('legacy dispatcher card yields to a configured Packing station',
+     /stationKinds\.has\('dispatch'\) \? \(/.test(PB));
+  ok('stations unreachable = legacy cards shown (the safe default)',
+     PB.includes('the safe default'));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

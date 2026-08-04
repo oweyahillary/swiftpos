@@ -95,6 +95,13 @@ export function buildKOTHtml(items: TicketLine[], ctx: KOTContext, paperWidth: 5
     if (line.qualifier) {
       html += `<p style="font-size:11px;padding-left:10px;color:#333;">- ${esc(line.qualifier)}</p>`;
     }
+    // Prep detail from the product description, ITEMIZED — one line per item,
+    // same indented style as combo components below. Flat products only
+    // (a combo's ticket already lists exactly what to make). Kitchen ticket
+    // only; the packer's ticket stays item names.
+    for (const nl of line.noteLines ?? []) {
+      html += `<p style="font-size:12px;padding-left:10px;">- ${esc(nl)}</p>`;
+    }
     // Already filtered to cooked components by kitchenOnly().
     for (const c of line.components) {
       html += `<p style="font-size:12px;padding-left:10px;">${c.quantity}: ${esc(c.name)}</p>`;
