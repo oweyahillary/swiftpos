@@ -621,7 +621,7 @@ router.post('/', async (req, res) => {
       idempotency_key: idempotencyKey || crypto.randomUUID(),
       cashier_id: req.userId ?? null,
       device_id: req.body?.device_id ?? null,
-      pump_id: req.body?.pump_id ? String(req.body.pump_id) : null,
+      pump_id:         req.body?.pump_id ? String(req.body.pump_id) : null,
       // Offline sales carry their original timestamp so they book on the day they
       // actually happened, not at sync time (finding #7). Accept either field
       // name; a live sale sends neither and the RPC defaults to now().
@@ -671,7 +671,11 @@ router.post('/', async (req, res) => {
     }
 
     const createdRow = Array.isArray(created) ? created[0] : created;
-    const order = { id: createdRow.order_id, order_number: createdRow.order_number } as { id: string; order_number: string };
+    const order = {
+      id: createdRow.order_id,
+      order_number: createdRow.order_number,
+      pump_id: req.body?.pump_id ? String(req.body.pump_id) : null,
+    } as { id: string; order_number: string; pump_id: string | null };
 
     // orderItems is re-read for the post-commit steps that need item ids (stock,
     // recipe deduction). One extra read, off the critical write path.
@@ -908,15 +912,14 @@ router.post('/', async (req, res) => {
       const fuelProductIds = Object.keys(litresByProduct);
       if (fuelProductIds.length > 0) {
         // Strategy 1: if the order has a pump_id, check if that pump has a tank_id.
-        // pump_id comes from the request body — the RPC return type is just
-        // { id, order_number }, so read the original payload value here.
-        const orderPumpId = req.body?.pump_id ? String(req.body.pump_id) : null;
+        // The order object carries pump_id (set from the request body when it was
+        // built above), so the tank deduction reads it directly.
         let specificTankId: string | null = null;
-        if (orderPumpId) {
+        if (order.pump_id) {
           const { data: pump } = await supabase
             .from('pumps')
             .select('tank_id, fuel_product_id')
-            .eq('id', orderPumpId)
+            .eq('id', order.pump_id)
             .eq('business_id', req.businessId)
             .single();
           if (pump?.tank_id) {

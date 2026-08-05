@@ -129,3 +129,51 @@ CREATE INDEX IF NOT EXISTS idx_category_stations_cat ON public.category_stations
 -- ordered for the till UI. Nothing here references a specific menu.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_slot_option_product
   ON public.slot_options(slot_id, option_product_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Row-Level Security for the composition tables
+--
+-- Follows the convention in migration 29: a single owner_all policy (FOR ALL)
+-- scoped to business_id IN (SELECT id FROM businesses WHERE owner_id = auth.uid()).
+-- Tables with a business_id column are scoped directly; the rest are scoped
+-- through their parent, exactly as combo_items is in migration 29. Staff/PIN
+-- logins never create a Supabase session, so they get nothing here and continue
+-- to reach these tables through the Express API (service_role) as intended.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- 1. Direct business_id.
+ALTER TABLE public.component_slots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_all ON public.component_slots;
+CREATE POLICY owner_all ON public.component_slots FOR ALL USING (
+  business_id IN (SELECT id FROM public.businesses WHERE owner_id = auth.uid()));
+
+ALTER TABLE public.attribute_groups ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_all ON public.attribute_groups;
+CREATE POLICY owner_all ON public.attribute_groups FOR ALL USING (
+  business_id IN (SELECT id FROM public.businesses WHERE owner_id = auth.uid()));
+
+-- 2. Scoped through a parent.
+ALTER TABLE public.slot_options ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_all ON public.slot_options;
+CREATE POLICY owner_all ON public.slot_options FOR ALL USING (
+  slot_id IN (SELECT id FROM public.component_slots WHERE business_id IN (
+    SELECT id FROM public.businesses WHERE owner_id = auth.uid())));
+
+ALTER TABLE public.attribute_options ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_all ON public.attribute_options;
+CREATE POLICY owner_all ON public.attribute_options FOR ALL USING (
+  group_id IN (SELECT id FROM public.attribute_groups WHERE business_id IN (
+    SELECT id FROM public.businesses WHERE owner_id = auth.uid())));
+
+ALTER TABLE public.product_attributes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_all ON public.product_attributes;
+CREATE POLICY owner_all ON public.product_attributes FOR ALL USING (
+  product_id IN (SELECT id FROM public.products WHERE business_id IN (
+    SELECT id FROM public.businesses WHERE owner_id = auth.uid())));
+
+ALTER TABLE public.order_item_units ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_all ON public.order_item_units;
+CREATE POLICY owner_all ON public.order_item_units FOR ALL USING (
+  order_item_id IN (SELECT id FROM public.order_items WHERE order_id IN (
+    SELECT id FROM public.orders WHERE business_id IN (
+      SELECT id FROM public.businesses WHERE owner_id = auth.uid()))));
