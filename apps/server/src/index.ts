@@ -84,7 +84,7 @@ app.use(express.json({ limit: '1mb' })); // explicit limit — prevents oversize
 // costly than editing a header, and IP-keyed limiting is the standard control.
 // (Finding #12: keying auth attempts on the client-supplied device header meant
 // the PIN brute-force limit never actually fired.)
-const apiLimiterKey = (req: import('express').Request): string => {
+const limiterKey = (req: import('express').Request): string => {
   const device = req.header('x-device-id');
   if (device) return `d:${device}`;
   const auth = req.header('authorization');
@@ -120,7 +120,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests — please slow down' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: apiLimiterKey,
+  keyGenerator: limiterKey,
 });
 
 app.use('/api/auth',       authLimiter);
