@@ -1393,7 +1393,7 @@ export function createLocalOrder(orderPayload: any): string {
     db.prepare(`
       INSERT INTO sync_queue (order_id, payload, created_at, status)
       VALUES (?, ?, ?, 'pending')
-    `).run(orderId, JSON.stringify({ ...orderPayload, payments: legs, shift_id: shiftId, device_id: deviceId, _localOrderId: orderId, idempotency_key: orderId }), now);
+    `).run(orderId, JSON.stringify({ ...orderPayload, payments: legs, shift_id: shiftId, device_id: deviceId, _localOrderId: orderId, idempotency_key: orderId, created_at: now }), now);
   })();
 
   return orderId;

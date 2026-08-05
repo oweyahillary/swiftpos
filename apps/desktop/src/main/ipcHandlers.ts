@@ -373,6 +373,10 @@ export function registerIpcHandlers() {
     const branch = bound
       ? { id: bound }
       : db.prepare(`SELECT id FROM branches WHERE is_main=1 LIMIT 1`).get() as any;
+    // The receipt's header line 2 ("Juja — Till 1") wants the branch by NAME.
+    const branchName = branch?.id
+      ? ((db.prepare(`SELECT name FROM branches WHERE id = ?`).get(branch.id) as any)?.name ?? null)
+      : null;
 
     const shaped = products.map((p: any) => ({
       ...p,
@@ -384,6 +388,7 @@ export function registerIpcHandlers() {
 
     return {
       products: shaped,
+      branchName,
       categories,
       branchId: branch?.id ?? null,
       // Real business rate, refreshed by every catalogue pull. Null until the

@@ -128,11 +128,18 @@ async function fetchOrders(businessId: string, branchId: string | null, start: s
 // line, a grand-total block, tender breakdown, then tax breakdown. They already
 // know how to read it, and a report that gets read is worth more than a better
 // one that does not.
-router.get('/daily', branchScope, async (req: any, res) => {
+router.get('/daily', async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
-    const orders = await fetchOrders(req.businessId, req.branchId ?? null, start, end);
+    // branchScope() is a HELPER that returns the branch to filter by (or null
+    // for an owner viewing all branches). It was previously passed as router
+    // middleware — but it never calls next(), so every request to this endpoint
+    // hung forever. Resolving it here, the way reports-export.ts does, both
+    // unblocks the route AND applies the correct branch: req.branchId alone was
+    // undefined for owners, so an owner's selected branch was silently ignored.
+    const scopedBranch = branchScope(req);
+    const orders = await fetchOrders(req.businessId, scopedBranch, start, end);
 
     const completed = orders.filter((o: any) => o.status === 'completed');
     const voided    = orders.filter((o: any) => o.status === 'voided');
@@ -228,11 +235,13 @@ router.get('/daily', branchScope, async (req: any, res) => {
 //
 // Where the peaks are. For a counter operation this is the report that changes
 // a rota, and it is the one thing the old system's daily report did not answer.
-router.get('/hourly', branchScope, async (req: any, res) => {
+router.get('/hourly', async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
-    const orders = (await fetchOrders(req.businessId, req.branchId ?? null, start, end))
+    // See /daily above — branchScope is a helper, not middleware.
+    const scopedBranch = branchScope(req);
+    const orders = (await fetchOrders(req.businessId, scopedBranch, start, end))
       .filter((o: any) => o.status === 'completed');
 
     const hours: Array<{ bills: number; gross: number; items: number }> =
@@ -292,11 +301,13 @@ router.get('/hourly', branchScope, async (req: any, res) => {
 // anywhere. A discount is not suspicious; a pattern of discounts on one PIN at
 // one hour is. The report exists so that pattern can be seen without anyone
 // having to go looking for it.
-router.get('/audit', branchScope, async (req: any, res) => {
+router.get('/audit', async (req: any, res) => {
   try {
     const { from, to, format = 'xlsx' } = req.query;
     const { start, end } = getDateRange(from as string, to as string);
-    const orders = await fetchOrders(req.businessId, req.branchId ?? null, start, end);
+    // See /daily above — branchScope is a helper, not middleware.
+    const scopedBranch = branchScope(req);
+    const orders = await fetchOrders(req.businessId, scopedBranch, start, end);
 
     const staffIds = [...new Set(orders.map((o: any) => o.cashier_id).filter(Boolean))];
     const { data: staff } = staffIds.length

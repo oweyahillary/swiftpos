@@ -71,9 +71,29 @@ export interface POSInitResponse {
   businessName: string;
   currency: string;
   loyaltyEnabled: boolean;
+  /** Discount ceiling as a percent, advertised by the server so this client
+   *  clamps to the SAME number the server enforces on write. Without it the web
+   *  POS charged an uncapped discount the server then capped, so the customer
+   *  paid less than the order stored. Optional for older servers; falls back to
+   *  the shared default below. */
+  maxDiscountPct?: number;
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };
+
+/** Fallback ceiling when the server does not advertise one (older server, or a
+ *  failed init). Matches the server's default in lib/discountPolicy.ts. If you
+ *  change one, change both. */
+export const DEFAULT_MAX_DISCOUNT_PCT = 10;
+
+/** Clamp a discount to the ceiling, mirroring the server's capDiscount(). The
+ *  web POS must charge what the server will store, or payment legs will not
+ *  reconcile to the recomputed total and the sale is rejected. */
+export function capDiscountPct(requested: number, subtotal: number, maxPct: number): number {
+  const asked = Math.max(0, Number(requested) || 0);
+  const ceiling = subtotal * (Math.max(0, maxPct) / 100);
+  return Math.round(Math.min(asked, ceiling, subtotal) * 100) / 100;
+}
 
 // ── Floor plan constants ────────────────────────────────────────────────────
 export const FLOOR_W = 800;

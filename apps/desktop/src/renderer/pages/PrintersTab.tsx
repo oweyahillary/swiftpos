@@ -350,6 +350,24 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         <StatusLine k="receipt" />
       </Card>
 
+      <Card title="Kitchen exclusions">
+        <p className="text-sm text-gray-300 mb-1">
+          Items that must <span className="font-medium text-gray-100">never print on the kitchen ticket</span> —
+          one term per line. Sauces and soft drinks are already excluded by the built-in rule;
+          add anything else here (e.g. <span className="font-mono">coleslaw</span>).
+        </p>
+        <textarea
+          value={settings.kitchenExcludeTerms}
+          onChange={e => save({ kitchenExcludeTerms: e.target.value })}
+          placeholder={"coleslaw\nnapkins"}
+          spellCheck={false}
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono h-20 resize-y"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          Applies on top of the built-in rule, this till. The dispatcher ticket always prints everything.
+        </p>
+      </Card>
+
       {stationKinds.has('kitchen') ? (
         <Card title="Kitchen ticket">
           <p className="text-sm text-gray-300">

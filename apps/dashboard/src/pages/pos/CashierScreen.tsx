@@ -168,6 +168,7 @@ export default function CashierScreen() {
     branchPrinters,
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
+    maxDiscountPct,
     loading,
     error:         posDataError,
     reload:        reloadPOSData,
@@ -1960,6 +1961,7 @@ export default function CashierScreen() {
           tableNumber={activeKey && openOrders[activeKey]?.tableName ? openOrders[activeKey].tableName : undefined}
           loyaltyState={loyaltyState}
           discountState={discountState}
+          maxDiscountPct={maxDiscountPct}
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           onClose={() => setShowPayment(false)}

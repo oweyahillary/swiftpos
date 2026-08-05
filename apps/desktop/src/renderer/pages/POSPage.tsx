@@ -59,6 +59,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Combo definitions and kitchen routing, refreshed by each catalogue pull.
   const [comboItems, setComboItems] = useState<ComboMap>({});
   const [kitchenCategoryIds, setKitchenCategoryIds] = useState<string[]>([]);
+  const [branchName, setBranchName] = useState<string | null>(null);
   // Station routing, pulled with the catalogue. Empty stations means unconfigured,
   // and every path below falls back to the old kitchen/dispatcher behaviour.
   const [routing, setRouting] = useState<StationRouting>(ROUTING_UNCONFIGURED);
@@ -170,7 +171,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const currency = business.currency ?? 'KES';
 
   useEffect(() => {
-    posApi.pos.init().then(({ products, categories, branchId, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }) => {
+    posApi.pos.init().then(({ products, categories, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
       setProducts(products);
       setCategories(categories);
       setBranchId(branchId);
@@ -179,6 +180,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       if (typeof mdp === 'number') setMaxDiscountPct(mdp);
       if (ci) setComboItems(ci as ComboMap);
       if (Array.isArray(kitchenCategories)) setKitchenCategoryIds(kitchenCategories);
+      setBranchName((bn as string) ?? null);
       if (stationRouting && Array.isArray(stationRouting.stations)) setRouting(stationRouting);
       if (typeof rh === 'string') setReceiptHeader(rh);
       if (typeof rf === 'string') setReceiptFooter(rf);
@@ -748,6 +750,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <ReceiptView
               ref={receiptRef}
               businessName={business.name}
+              branchName={branchName ?? undefined}
               orderNumber={completedOrder.orderNumber}
               cart={cart}
               subtotal={subtotal}

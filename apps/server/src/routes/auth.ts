@@ -972,9 +972,15 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     return;
   }
 
-  let matchedUser: any = null;
-  let needsUpgrade     = false;
-
+  // Match the PIN against active staff. CRITICAL for attribution (finding #11):
+  // if two cashiers share a PIN, the old code took the FIRST match and every
+  // sale one of them rang was booked to the other. We now scan ALL staff and
+  // refuse if more than one matches, rather than silently mis-attributing.
+  // Uniqueness is also enforced at set-pin time (below), so a collision here
+  // means legacy data that predates that guard — and it must be corrected, not
+  // guessed past.
+  const matches: any[] = [];
+  let needsUpgrade = false;
   for (const staff of staffList ?? []) {
     if (!(staff as any).pin_hash) continue;
     const { valid, needsUpgrade: upgrade } = await verifyPin(
@@ -982,8 +988,23 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
       (staff as any).pin_hash,
       req.businessId,
     );
-    if (valid) { matchedUser = staff; needsUpgrade = upgrade; break; }
+    if (valid) {
+      matches.push(staff);
+      if (upgrade) needsUpgrade = true;
+    }
   }
+
+  if (matches.length > 1) {
+    // Ambiguous — two staff share this PIN. Refuse rather than attribute a shift
+    // and every subsequent sale to the wrong person.
+    res.status(409).json({
+      error: 'This PIN is shared by more than one staff member. Ask a manager to reset the affected PINs before signing in.',
+      code: 'PIN_NOT_UNIQUE',
+    });
+    return;
+  }
+
+  const matchedUser: any = matches[0] ?? null;
 
   if (!matchedUser) {
     res.status(401).json({ error: 'Invalid PIN' });
@@ -1101,6 +1122,31 @@ router.post('/set-pin', requireAuth, async (req, res) => {
   if (tErr || !target) {
     res.status(404).json({ error: 'Staff member not found' });
     return;
+  }
+
+  // Enforce PIN uniqueness across the business (finding #11). Two staff sharing a
+  // PIN makes sales attribution ambiguous — a login can no longer tell who is
+  // ringing. bcrypt hashes are salted, so a plain unique index cannot catch this;
+  // we compare the new PIN against every OTHER active user's hash. N bcrypt
+  // compares on a rare admin action (setting a PIN) is an acceptable cost to keep
+  // attribution unambiguous on the hot path (login).
+  const { data: others } = await supabase
+    .from('users')
+    .select('id, pin_hash')
+    .eq('business_id', req.businessId)
+    .eq('status', 'active')
+    .not('pin_hash', 'is', null)
+    .neq('id', targetId);
+
+  for (const other of others ?? []) {
+    if (!(other as any).pin_hash) continue;
+    if (await bcrypt.compare(String(pin), String((other as any).pin_hash))) {
+      res.status(409).json({
+        error: 'That PIN is already in use by another staff member. Please choose a different one.',
+        code: 'PIN_NOT_UNIQUE',
+      });
+      return;
+    }
   }
 
   const newHash = await hashPinBcrypt(String(pin));

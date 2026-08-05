@@ -1,0 +1,16 @@
+PASS  two separate sessions, one per terminal
+PASS  A's sale on T2 attaches to T2's session, not A's T1 session
+PASS  the sale still records A as the cashier (attribution tag kept)
+PASS  but its drawer is T2's
+PASS  T1 expected == T1 physical (no phantom shortage)
+PASS  T2 expected == T2 physical (no phantom surplus)
+PASS  T1 drawer = 1000 float + 300 = 1300
+PASS  T2 drawer = 1000 float + 500 + 700 = 2200
+PASS  OLD model would have put A's T2 sale on the T1 drawer
+PASS  OLD model: T1 reads a 700 phantom shortage
+PASS  opener can close their own drawer
+PASS  a cashier ON that terminal can close its drawer (shared session)
+PASS  a manager can close any drawer from anywhere
+PASS  a stranger on another terminal CANNOT close a drawer they never touched
+
+All checks passed. Sessions are per-terminal; both drawers reconcile.

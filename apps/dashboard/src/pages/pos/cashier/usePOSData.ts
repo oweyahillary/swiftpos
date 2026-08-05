@@ -22,6 +22,7 @@ import {
   type Category,
   type VariantGroup,
   type POSInitResponse,
+  DEFAULT_MAX_DISCOUNT_PCT,
 } from './types';
 
 export interface POSData {
@@ -35,6 +36,7 @@ export interface POSData {
   businessMode:      BusinessMode;
   currency:          string;
   loyaltyEnabled:    boolean;
+  maxDiscountPct:    number;
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -53,6 +55,7 @@ export function usePOSData(): POSData {
   const [businessMode,      setBusinessMode]      = useState<BusinessMode>('retail');
   const [currency,          setCurrency]          = useState('KES');
   const [loyaltyEnabled,    setLoyaltyEnabled]    = useState(false);
+  const [maxDiscountPct,    setMaxDiscountPct]    = useState(DEFAULT_MAX_DISCOUNT_PCT);
   const [orderMode,         setOrderMode]         = useState<'pay_first' | 'order_first'>('pay_first');
   const [loading,           setLoading]           = useState(true);
   const [error,             setError]             = useState<string | null>(null);
@@ -74,6 +77,9 @@ export function usePOSData(): POSData {
       setVariantsByProduct(init.variantsByProduct ?? {});
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
+      // Clamp the web POS to the server's discount ceiling. Falls back to the
+      // shared default if an older server does not advertise it.
+      setMaxDiscountPct(init.maxDiscountPct ?? DEFAULT_MAX_DISCOUNT_PCT);
 
       const mode = deriveMode(init.businessType ?? 'retail');
       setBusinessMode(mode);
@@ -136,7 +142,7 @@ export function usePOSData(): POSData {
   return {
     products, categories, variantsByProduct,
     tables, pumps, setPumps, branchPrinters,
-    businessMode, currency, loyaltyEnabled, orderMode,
+    businessMode, currency, loyaltyEnabled, maxDiscountPct, orderMode,
     loading, error,
     reload: () => setTick(t => t + 1),
   };

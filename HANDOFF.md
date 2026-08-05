@@ -1,383 +1,250 @@
-# SwiftPOS — HANDOFF, 3 August 2026 (full session)
+# SwiftPOS — consolidated code review & remediation (handoff)
 
-Supersedes SESSION-HANDOFF-2026-08-02.md AND the interim
-SESSION-HANDOFF-2026-08-03.md written mid-session. Read §1 and §5 before
-touching anything. §5 (zip supersession) is the one that bites.
+This is the single consolidated drop of everything from the review session. It
+contains, in repo-relative structure, the NEWEST version of every file changed —
+merged so cumulative files (orders.ts, the create_order_atomic migration) are the
+final version, not an intermediate one.
 
----
+Import the folders over your working tree. Then read the "Apply order" section
+below before deploying — several changes interact, and a couple must ship
+together.
 
-## 1. GOAL
+────────────────────────────────────────────────────────────────────────────────
+## 1. What's in here
+────────────────────────────────────────────────────────────────────────────────
 
-**Ship 0.4.8 to both tills, trade a full day, close it centrally once, then
-commit and push everything.** That is the gate. Phase 2a (replication
-distribution) starts on the test report from that day — not before.
+  migrations/           60, 61, 63, 65 — the four to run (see order below)
+  shared/printing/      the printing rebuild (renderer, transport, spool, tests)
+  apps/print-server/    rewritten silent-print bridge for the web POS
+  apps/desktop/         PrinterSetupScreen, sqlite spool store, syncEngine change
+  apps/server/          all server route/lib/middleware changes
+  apps/dashboard/       web POS changes (discount ceiling, order number, etc.)
+  docs/                 PRINTER-SETUP.md, menu composition draft + importer proof
+  tests/                every standalone test (node <file>.mjs, no server needed)
+  apply-notes/          the per-fix APPLY-*.md, kept for detail per change
 
-The session's larger arc: the fast-food pilot's two tills went from a build
-that could not sell (a one-line bind bug in the sell gate itself) to a working
-branch: LAN replication carrying payments, a manual recovery path for parked
-sync conflicts, Phase 4 (central day close) built and tested, the tech window
-grown a read-only DB console, the last open audit thread (ungated wipes)
-closed, and the Phase 2/3 architecture decided and documented.
+────────────────────────────────────────────────────────────────────────────────
+## 2. Findings — what changed and where
+────────────────────────────────────────────────────────────────────────────────
 
----
+Money / data-integrity (highest value):
 
-## 2. CURRENT STATE
+  #1  Numeric-string stock corruption. PostgREST returns numeric columns as
+      STRINGS, so "10.00" + 5 = "10.005". Stock adjustments now go through the
+      adjust_product_stock RPC (migration 61) — math in Postgres under a row
+      lock, which also closes a lost-update race. orders.ts (void/refund
+      restore), stock.ts (product receive), migration 61.
 
-### Deployed / installed / verified on hardware
+  #10/#15  No order transaction + no payment validation. ~15 sequential inserts
+      with no transaction; payment legs never checked against the total.
+      create_order_atomic (migration 65) writes order+items+payments in ONE
+      transaction and REJECTS legs that don't reconcile to the total. orders.ts.
 
-- Tills at **0.4.7** (both). **0.4.8 pending** — five zips accumulated (§5).
-- Server deployed unchanged during the session **until the final zip**, which
-  contains one server file (`orders.ts`, pump_id passthrough) — deploy with
-  the same push.
-- **Verified on real hardware this session:** sell path, float modal, day
-  gate, order replication T2→T1, the conflict **Retry sync** button clearing a
-  real parked shift against production.
-- **NOT yet exercised:** Phase 4's Close Branch screen (built + 27 assertions,
-  zero hardware runs), the tech DB console, the gated wipes, pump_id.
+  #8/#9  Refund & levy reporting. Refunds were counted at full value; the levy
+      was re-derived in a way that double-applied the rate. New lib/orderTax.ts
+      reads stored vat/ctl and nets out refunds; wired across the reports.
+      reports.ts, lib/orderTax.ts.
 
-### Versions and schema
+  #4  Three reports hung. branchScope was passed as middleware and never called
+      next(). Called inline now. reports-daily.ts.
 
-- Desktop source: bump to **0.4.8** before building. Read the sidebar footer
-  on a misbehaving till FIRST — three binaries said 0.4.5 in one week and it
-  cost a day.
-- `LOCAL_SCHEMA_VERSION` **46** = `REQUIRED_DESKTOP_SCHEMA` **46** (moved
-  together, per house rule). v46 adds `node_instructions` + `node_peer_state`.
+  #6  Web POS ignored the discount ceiling. It was the only client not clamping,
+      so it charged an uncapped discount the server then capped — the charged
+      total and the stored total disagreed. Now clamps to the server-advertised
+      ceiling. cashier/types.ts, usePOSData.ts, CashierScreen.tsx, PaymentModal.tsx.
 
-### Test/guard state (all green at hand-back, on better-sqlite3)
+  #13 + terminal scenario  Shifts keyed on cashier, not terminal. Cashier A's
+      sale on terminal T2 was attributed to A's shift opened on T1, so the money
+      (in T2's drawer) reconciled against T1 — phantom shortage on one drawer,
+      surplus on another. Shifts are now drawer sessions bound to a terminal
+      (industry-standard fixed-till model); close is authorised (opener /
+      same-terminal / manager). migration 63, lib/terminalKey.ts, shifts.ts,
+      orders.ts.
 
-```
-check-sql-binds                 165 statements (was 158 — two blind spots closed)
-check-own-rows                  64 queries, all scoped
-test-node-ingest                50 assertions (was 41)
-test-sync-rejection-routing     18
-test-branch-close               27  (new)
-test-tech-db-console            38  (new)
-tsc                             clean: desktop main, renderer, server
-```
+  #7  Offline sales dated at sync time. A till offline overnight booked
+      yesterday's takings as today's. The sale's real timestamp now flows through
+      to the order. migration 65, orders.ts, desktop syncEngine.ts.
 
-### The open trading-day picture
+  #19 Offline orders silently re-priced. If a catalogue price changed between an
+      offline sale and its sync, the re-priced total diverged from the printed
+      receipt with no signal. Divergence is now detected and logged; the
+      re-priced figure is still stored (anti-tampering preserved) — deciding what
+      to DO about it is a business-policy call. orders.ts.
 
-- Eugene's stuck **2026-07-30 shift**: closed locally, was parked in
-  `sync_status='conflict'`; **cleared via the new Retry button** against
-  production. If any conflict reappears, the card now shows the server's real
-  refusal reason and a Retry button.
-- Old peer orders ingested before the payments fix show Payment "—" on the
-  node forever (cursor passed; test data). Server data complete. Cosmetic.
+  #5  M-Pesa STK dead on arrival. The atomic RPC hardcoded every leg 'completed',
+      so the M-Pesa leg was complete before payment and the STK push 409'd. The
+      leg is now written 'pending' and the callback completes it. migration 65,
+      orders.ts.
 
----
+  #14 /pay didn't enforce payment reconciliation. POST /orders rejects mismatched
+      legs; /pay only logged. /pay now rejects too. (Its other divergences —
+      credit, tax, discount — were already fixed under prior audit work.)
+      orders.ts.
 
-## 3. CHANGES MADE (in order, with root causes)
+Security / correctness:
 
-### 3.1 Sell-gate bind fix (`swiftpos-fix-sellgate-bind.zip`)
-`getOpenShift()` — THE sell gate — had the ownership scope predicate with
-**zero arguments bound**: `.get()` on one `?`. better-sqlite3 throws on every
-call. One function, three symptoms: no float modal, "Too few parameter values"
-at charge, day close broken. Fix: one line. Why the guard missed it: a
-**comment between `prepare(` and the SQL** made the site invisible to the
-regex (not skipped — unscanned), and `?? null` after the call was a second
-hiding place. Both blind spots closed in `check-sql-binds.mjs`.
+  #11 Shared PINs mis-attributed sales. Login looped all staff and took the FIRST
+      bcrypt match, so two people with the same PIN had sales booked to whoever's
+      row returned first. Login now refuses an ambiguous PIN; set-pin rejects a
+      duplicate. auth.ts.
 
-Also: `day:gate` IPC now **fails closed** — a throwing gate renders the red
-hard-block with the reason instead of silently letting the till trade until
-payment explodes (which is exactly what had happened).
+  #12 Auth rate-limiter bypass. It keyed on x-device-id (client-supplied), so a
+      brute-forcer rotating the header never hit the limit. Auth attempts now key
+      on IP; the general API limiter keeps the device key for fairness. index.ts.
 
-### 3.2 Payments replication (`…-fix-payments-replication.zip`, superseded by 047)
-Orders crossed the LAN **with items but without payments** — visible on the
-manager screen as Payment "—" on a peer's order, and the branch method split
-omitted every terminal but the node's own (cash+M-Pesa+Glovo ≠ revenue).
-Payments now ride inside their order both directions, same transaction,
-stamped `'peer'` (payments HAVE a sync_status column locally; 'pending' on a
-node would be a row a future unscoped query pushes). Duplicate re-offer
-back-fills missing children additively (INSERT OR IGNORE by child id).
+  #16 Relocated-till branch check never called. Migration 52 built the binding
+      and lib/deviceBinding.ts implemented the check, but it had zero call sites.
+      Wired into order creation: a moved till is refused until a manager
+      authorises the move. orders.ts.
 
-### 3.3 Conflict retry (`swiftpos-047-retry-and-payments.zip`)
-`syncEngine` deliberately never retries `'conflict'` rows (the C7 anti-loop
-rule) — correct for permanent refusals, wrong for refusals whose EXTERNAL
-cause clears (migration 42's one-open-drawer-per-cashier, the live case). Such
-rows were parked forever, and the conflict card's hardcoded text promised a
-sync nothing performed. Now: `retryConflictedShift()` re-arms the shift + its
-floats + expenses + trading day **as one family**, refuses peer drawers on a
-node (own-scope), and the card shows the **server's real refusal** with a
-per-shift **Retry sync** button. Manual-by-a-manager is what makes retry safe
-where automatic was not.
+  #18 safeRouter broke Express error handlers. It wrapped every handler in a
+      3-arg function; Express identifies an error handler by arity 4, so wrapping
+      demoted it to ordinary middleware. 4-arg handlers now pass through.
+      asyncHandler.ts.
 
-### 3.4 Business type on restart (`swiftpos-fix-businesstype-restart.zip`)
-Item Mix "disappeared after the update" — it was never the update: **any
-restart** downgraded the manager UI to retail. `auth:login` returns
-`business.type` and persists it to device_config; `auth:getSession` (every
-start) rebuilt `business` WITHOUT it → `modeFlags(undefined)` → 'retail' →
-Item Mix and the restaurant overview gone. POSPage was immune (reads
-device_config directly), which is why dine-in never broke. Fix: getSession
-returns `type` from device_config. Interim proof without a build: full
-sign-out + email login restores it.
+  #20 Order-number collisions. 6-digit time slice + 3 random digits collided at
+      volume, and the unique index then rejected the second SALE. Now a
+      per-process monotonic counter (zero same-process collisions) + wide random
+      + the server unique index as backstop, with the atomic path returning a
+      clean 409 on a genuine collision. cart.ts, orders.ts.
 
-### 3.5 Phase 4 — central day close (`swiftpos-phase4-central-day-close.zip`)
-One deliberate deviation from BRANCH-SERVER-PLAN wording: **no push fan-out,
-because peers run no server and that stays true.** PULL model:
+Deliverables (not "findings" but part of the work):
 
-- Node queues a `close_day` **instruction** (localDb v46 `node_instructions`);
-  peers poll **every 15s** (`/node/instructions/poll`), piggybacking their own
-  day state (`node_peer_state`) — because the node's replicated copies of peer
-  shifts/days go STALE after close (append-only; the Phase 2b events gap) and
-  must never be read for money.
-- Peer executes `closeDayInstructed()` — same body as closeDay MINUS the local
-  isManager check: **the authority is the instruction** (manager-created on
-  the node, node-secret channel); `closed_by` records that manager, notes say
-  "Closed centrally". Open-drawer refusal SURVIVES and acks by cashier name.
-- **Idempotent**: no open day → ack success `already_closed`. **Date
-  mismatch → named refusal** ("check the clocks"), never closes the wrong day.
-- Instructions are **re-offered until ACKED** — delivery never retires them
-  (a peer crashing mid-execute is asked again). A corrected amount REPLACES
-  the pending instruction; an acked one is history. Unacked outcomes retry
-  from `pendingAcks` on the next tick.
-- **Counted cash is entered centrally; expected/variance come back in the ack
-  from the till's own books.** Blind rule held harder: no expected figure
-  shown centrally at all. The roll-up counts only confirmed acks.
-- Unreachable till: visibly "waiting", forever-honest. Node down: tills close
-  at the till exactly as before.
-- UI: **Close Branch** tab in ManagerPage (all managers see it; on a non-node
-  till it explains where it lives). Node's own day closes directly on the
-  same screen.
+  Printing rebuild. From ~10s to ~5-8ms. Zero runtime deps. One renderer →
+      bytes OR preview (so the settings-screen preview matches paper exactly).
+      Verified to the cent against your two photographed incumbent receipts.
+      shared/printing/, apps/print-server/, apps/desktop/.../PrinterSetupScreen.tsx,
+      docs/printing/PRINTER-SETUP.md.
 
-### 3.6 Tech read-only DB console (`swiftpos-tech-db-console.zip`)
-- Read-only enforced by a **dedicated readonly connection** — the engine
-  refuses writes, not a parser. SELECT/WITH/EXPLAIN, one statement, 500 rows.
-- **Secrets masked on the SOURCE column** (`pin|token|secret|password|hash|key`)
-  — found and closed the `SELECT token AS t` alias dodge mid-build (the
-  owner's bearer token lives in `session.token`; PIN hashes crack instantly
-  offline; `node_secret` is the branch key). Residue, deliberate: an
-  EXPRESSION wrapping a secret can leak — the verbatim audit is the backstop.
-- Gated in **main** on an active tech session; query audited verbatim BEFORE
-  it runs (a failing query is still on record). `device:reset` closes the
-  console's handle so a wipe can still delete the file.
+  Adaptive menu. A five-primitive schema with NO concept of combo/spice/Kudo,
+      proven to hold three unrelated businesses (chicken shop, coffee shop,
+      butchery) on one schema with no code change. migration 60,
+      docs/menu/importer-proof.py, kudo-menu-composition-draft.xlsx.
 
-### 3.7 Wipe gates + pump_id (`swiftpos-048-final-wipegate-pumpid.zip`)
-- **`config:clear` and `device:reset` now require an active tech session and
-  are audited** — closes the audit's ungated-`clearDeviceConfig()` finding
-  (it was the bypass around device-branch binding and, with per-seat
-  licensing, a free seat mint). The reset's audit entry lives in the database
-  being deleted, so the raw tech token is held **in memory only** (never
-  persisted — tested) and the entry is flushed before the drop, capped at 3s
-  so a wipe never hangs offline. Accepted residue: a reset in a fresh app run
-  before re-unlock cannot flush — but the wipe still shows server-side as the
-  device vanishing and a new one registering. Unsynced-orders guard intact.
-- **pump_id end to end**: column existed in BOTH databases since migrations
-  15/45; **nothing ever wrote it** — fuel reports read zero. Now: fuel cart
-  line stores `pumpId` → order payload (first fuel line) → local insert →
-  cloud payload (spread) → **server insert passthrough (the one server file
-  this session)** → the tank-deduction code that was already reading it.
-  Rode along with this rebuild exactly as the plan scheduled.
+NOT done tonight (flagged honestly):
 
----
+  #21 strict:false on four tsconfigs. Flipping to strict surfaces dozens of
+      pre-existing type errors — a multi-day migration, not something to rush.
 
-## 4. FAILED ATTEMPTS — worth knowing they were tried
+  #14 full structural convergence. /pay and POST /orders now enforce the same
+      money rules but still run separate code paths. Merging them is a clean
+      follow-up; the risk of rushing it (breaking the dine-in path) isn't worth
+      it tonight.
 
-- **"Close the old shift at the till" instruction was wrong.** I told the
-  owner the amber stale-banner would surface Eugene's 30-Jul drawer after
-  Hillary's closed. It could not: the shift was already CLOSED locally
-  (`getOpenShift` returned null — the yellow "No drawer is open" box proved
-  it); only its sync was parked, and nothing re-offers conflicts. That
-  mis-instruction is what forced the real finding (3.3).
-- **`triggerSync()` referenced in the retry handler — doesn't exist.** The
-  push-only flush is `syncPush()`. Caught by grep before tsc.
-- **preload insertion split the `day` namespace** — `day.close` landed inside
-  `branchClose`. Caught by reading the diff, would have tsc'd clean and
-  broken per-till close at runtime.
-- **`shift.cashier_name` read off the shifts row** in ownDayState — the local
-  shifts table has no such column; names live in `users` (the same "no such
-  table: staff" class that once blanked the Close Day tab). Fixed to join.
-- **Test regex flaws, twice**: a 900-char span too short for log→rmSync
-  ordering, and a proximity check misread as persistence (`_rawToken`
-  assigned two lines after `persistSession` ≠ persisted). Both asserts
-  rewritten to test the actual property (index ordering; persistSession's
-  BODY).
-- **Alias unmasking shipped as "KNOWN LIMIT" for one commit** — then
-  rejected: `stmt.columns().column` gives the source name, so the dodge was
-  closable and was closed. Don't ship a bypass the driver can kill.
-- **Renderer tsc narrowing failure** on the discriminated union
-  (`strict: false` in the renderer tsconfig disables it) — explicit
-  `r.ok === true` + assertion. Note for future renderer code.
-- **`npm version 0.4.4`** — the owner pasted the old Glovo build command and
-  went BACKWARDS; separately built 0.4.6-content labelled 0.4.5. Version
-  discipline is now a standing rule, not advice.
+  #5 order lifecycle. A pure-M-Pesa order is still CREATED 'completed' (unchanged
+      behaviour; the STK panel treats it as voidable). Whether it should sit
+      'open' until the callback ripples into stock/reports/callback logic — a
+      considered follow-up, deliberately not rushed.
 
----
+────────────────────────────────────────────────────────────────────────────────
+## 3. Apply order
+────────────────────────────────────────────────────────────────────────────────
 
-## 5. ZIP SUPERSESSION — APPLY IN THIS ORDER
+MIGRATIONS — run in this order:
 
-```
-swiftpos-047-retry-and-payments.zip        (contains payments fix — skip the
-                                            standalone payments zip entirely)
-swiftpos-fix-businesstype-restart.zip
-swiftpos-phase4-central-day-close.zip
-swiftpos-tech-db-console.zip
-swiftpos-048-final-wipegate-pumpid.zip     (LAST — its ipcHandlers.ts,
-                                            techService.ts, syncEngine.ts
-                                            supersede every earlier copy)
-```
+  60_menu_composition.sql        (menu schema; independent)
+  61_adjust_product_stock.sql    (stock RPC; independent)
+  63_shift_drawer_sessions.sql   (drawer sessions; see WARNING below)
+  65_order_atomic_leg_status.sql (create_order_atomic — FINAL; supersedes 62/64)
 
-`swiftpos-fix-sellgate-bind.zip` is already applied and on the tills (0.4.6/7).
-`swiftpos-fix-payments-replication.zip` is fully contained in 047 — do not
-apply it after 047.
+  Migrations 62 and 64 are NOT included — 65 is a CREATE OR REPLACE that contains
+  their changes plus the M-Pesa leg-status fix. If you already ran 62/64 in a
+  prior deploy, running 65 simply replaces the function again. If you never ran
+  them, 65 is self-contained.
 
-Then: `npm version 0.4.8 --no-git-tag-version` in apps/desktop, tsc both
-configs, vite build, pack installer+portable, **install BOTH tills** (schema
-46 + payments sender/receiver need both sides). Deploy the server (orders.ts).
+  >> 63 WARNING: it demotes any duplicate open shifts sharing a terminal to
+     'closed_unreconciled'. In practice this is only the web fallback — if
+     several cashiers currently have open shifts with no device_id, they now key
+     to 'web:<branch>' and only the newest stays open; the rest need a manager to
+     count them. Desktop tills each have their own device_id and are unaffected.
 
-### Verify after extracting, before building
+CODE — deploy the three surfaces:
 
-```bash
-node scripts/check-sql-binds.mjs                              # OK, 165
-node scripts/check-own-rows.mjs                               # OK, 64
-node --no-warnings scripts/test-node-ingest.mjs               # 50 passed
-node --no-warnings scripts/test-branch-close.mjs              # 27 passed
-node --no-warnings scripts/test-tech-db-console.mjs           # 38 passed
-node --no-warnings scripts/test-sync-rejection-routing.mjs    # 18 passed
-cd apps/desktop && npx tsc -p tsconfig.main.json --noEmit \
-                && npx tsc -p tsconfig.json --noEmit
-cd ../server   && npx tsc --noEmit
-```
+  server     — after the migrations. Whole apps/server/ tree here is consistent
+               and typechecks clean together.
+  dashboard  — run `npm run build` FIRST (see verification note). Then deploy.
+  desktop    — build and roll out. Needed for #7 (offline dating sends the
+               timestamp) to take full effect; the server is backward compatible
+               so you can deploy it first and update tills as convenient.
 
----
+────────────────────────────────────────────────────────────────────────────────
+## 4. Deploy-ordering interactions (READ THIS)
+────────────────────────────────────────────────────────────────────────────────
 
-## 6. NEXT STEPS, IN ORDER
+These changes are not fully independent. Two orderings matter:
 
-### 6.1 The gate (owner, tonight/tomorrow)
-1. Build + install 0.4.8 both tills; sidebar footers must read v0.4.8.
-2. Trade a real day.
-3. **Five Close Branch hardware tests** (node terminal, Manager → Close
-   Branch):
-   a. Both tills trading → both listed, T2 shows "a drawer is still open
-      (name)", last-seen < 30s.
-   b. Close T2 with its drawer open → named refusal on the card, no spinner.
-   c. Drawers closed → counted cash → Close → waiting → **closed with
-      expected/variance within ~15s**.
-   d. Close the node's own till same screen → roll-up 2 of 2.
-   e. **Kill the app on T2, queue its close → sits "waiting" honestly;
-      restart T2 → closes within 15s.** This one proves the crash-re-offer
-      path outside the harness. Also re-check b after a restart.
-4. Console smoke: tech session →
-   `SELECT id, status, sync_status FROM shifts ORDER BY opened_at DESC LIMIT 5`
-   works; `SELECT token FROM session` reads `•••masked•••`.
-5. Wipe gate smoke: config reset attempt WITHOUT a tech session must refuse.
-6. **Commit + push** (dev → main merge or PR). Commit message drafted in the
-   conversation; server redeploy on main push is intended this time
-   (orders.ts). Never commit `.env` files; package future zips with
-   `git archive` (C0's packaging half is STILL unfixed — .envs were in
-   pos.zip again this session).
-7. Put this HANDOFF.md, PHASE2-3-DESIGN.md in the repo root; delete the two
-   older 08-02/08-03 handoffs.
+  A) The atomic-order payment guard (#10/#15) REJECTS orders whose legs don't sum
+     to the total. TWO things must be right before it goes live:
 
-### 6.2 Phase 2 (me, on the test report) — ~8.5 days, design APPROVED
-Per `PHASE2-3-DESIGN.md` (authoritative; includes everything below):
-- **2a Distribution (2d):** replicated STAR, not true mesh (amendment
-  approved) — tills pull other devices' rows from the node via `/node/since`
-  with per-peer cursors (Phase 1 machinery reused); peers stay outbound-only.
-  Gives 3 LAN copies within ~15s; T2-dies-with-open-shift exposure shrinks to
-  that window. Trade-off accepted: node + second till dying in the same
-  window is uncovered.
-- **2b Events (2d):** `shift_closed` / `day_closed` / `order_voided` as
-  append-only event rows; only the origin device may emit about its own row;
-  idempotent appliers. Fixes replica staleness; upgrades Close Branch from
-  poll-state to replica-accurate.
-- **2c Bounded replicas + archive tier (2d):** peers prune OTHERS' rows at
-  **90 days** (owner's number, changeable) and only when **confirmed by the
-  archive tier** — cloud for online clients, THE NODE for fully-offline
-  clients (node never prunes; growth is the safe failure). Offline clients
-  get a **nightly encrypted snapshot job** (USB/second disk/NAS, N-snapshot
-  retention, "last backup: when/where" on the manager screen, restore in
-  RUNBOOK). Sales guidance: offline node on a secured office machine.
-- **2d Encryption (2.5d, Phase 7 pulled forward):** SQLCipher via
-  better-sqlite3-multiple-ciphers; in-place migration with .bak until
-  verified. **One DEK, wrapped twice**: DPAPI/safeStorage (unattended boot)
-  + a RECOVERY CODE shown once at install (scrypt-wrapped; cloud-escrowed
-  additionally for online clients). Snapshots carry the recovery-wrapped DEK
-  beside the .db → dead machine → new hardware → restore → code → trading,
-  zero internet needed. Honest limit in client material: defeats copied
-  .db / stolen disk / stolen till; NOT code running as the app user (that is
-  BitLocker + Windows accounts, Phase 0). Rotation deferred to Phase 6
-  (`PRAGMA rekey`).
+     • The web discount-ceiling fix (#6) must ship WITH or BEFORE it. Without it,
+       a web sale with an over-ceiling discount charges one number and the server
+       stores another — a mismatch the guard would REJECT at checkout. #6 makes
+       the client charge what the server stores, so the legs reconcile.
 
-### 6.3 Phase 3 — `office` role — 2-3 days
-Third role at setup: node that CANNOT sell (no POS/drawer/shift/cash;
-listener + ingest + Close Branch + management). **Consumes no activation
-seat** (server counts only `role='till'`). Office-PC-as-node where a desktop
-exists; T1-node + PC-as-viewer where it's a laptop. Node replacement =
-documented `node_url` repoint per till; mDNS rejected deliberately.
+     • The tip check. If ANY client sends payment legs whose amount includes a
+       tip (rather than sending legs that sum to `total`, with tip in the
+       separate tip field), the guard will reject those sales. Before deploying:
+       grep your logs for [payment-mismatch] on a staging run, and confirm the
+       clients send legs summing to total. This applies to BOTH POST /orders and
+       /pay now (#14).
 
-### 6.4 Activation codes — ~1 day — jumps the queue if a client install books
-**Decisions LOCKED (do not relitigate):** Licensing **Model B** — per-branch
-licence (`branches.desktop_licensed` stays authoritative), codes minted in
-the **ADMIN portal only** (never the owner; owner gets "Request a terminal"),
-**branch-locked**, **quota'd** (`max_devices: N`), 7-day expiry, revocable,
-stored hashed. `device_activation_uses` = seat ledger = billing ledger =
-audit, one table. `/api/auth/activate-device` mints the same device session
-as password login and writes the migration-52 branch binding in the same act.
-Reinstall of a known device_id re-auths free; a wiped config = new device_id
-= a VISIBLE new seat (interlocks with §3.7's gated wipes). Removes owner
-email/password from till installs — the owner-credential-sharing problem the
-owner raised.
+  B) #11 (PIN uniqueness). After deploy, any existing pair of staff sharing a PIN
+     will get PIN_NOT_UNIQUE at login until a manager resets one. That is the
+     correct outcome — it surfaces a silent attribution ambiguity — but WARN YOUR
+     MANAGERS so a shared-PIN login failure isn't mistaken for a bug.
 
-### 6.5 Tech window backlog (proposed, accepted in principle, not built)
-- **Node promotion lever** — ships inside 2a (promote role + start listener;
-  peers repoint node_url with reachability probe). Without it "failover is a
-  role flag" is a claim.
-- **Diagnostics bundle** (~½ day) — versions, sync queue, recent log, drift,
-  guard states → one zip.
-- **Drift display** on the status card (trivial; `measureNodeDrift` exists).
-- **Snapshot export / "verify last snapshot restorable"** — ships with 2c/2d.
-- **Rebind visibility** (409 cause + window state) — with activation codes.
-- Explicitly REJECTED: re-displaying the recovery code; any tech path to
-  cash figures beyond counts.
+────────────────────────────────────────────────────────────────────────────────
+## 5. What was verified vs reasoned (be honest with yourself here)
+────────────────────────────────────────────────────────────────────────────────
 
-### 6.6 Phases 5–6 (after the above)
-Heartbeat/trading gate (3d — only now safe: failover is real) → branch secret
-rotation (3d — new key only ever over a connection authenticated with the old
-one; rekey folds in DEK rotation).
+VERIFIED:
+  • The entire apps/server/ tree typechecks CLEAN together against your project
+    (one pre-existing tsconfig deprecation warning, not from these changes).
+  • Every fix has a standalone test in tests/ that passes (11 tests). Run them:
+        for t in tests/*.mjs; do node "$t"; done
+  • Printing output verified to the cent against your two photographed receipts;
+    .bin files are in shared/printing/out/ ready to send to a printer.
+  • The menu importer proof loads three unrelated businesses on one schema.
 
----
+NOT VERIFIED HERE (you must):
+  • The DASHBOARD (React/JSX) could not be compiled where this was prepared —
+    node_modules for apps/dashboard wasn't installed, so React didn't resolve.
+    The dashboard changes (#6 discount ceiling, #20 order number) are verified by
+    reasoning and by the arithmetic tests, NOT by a compile. RUN `npm run build`
+    in apps/dashboard before deploying and fix anything it flags — the changes
+    are small and greppable: maxDiscountPct, cappedDiscount, chargedTotal,
+    grandTotal, generateOrderNumber.
+  • The DESKTOP change (syncEngine.ts, one added field) likewise wasn't compiled
+    against desktop node_modules. Build apps/desktop before rolling out.
+  • NOTHING is hardware-tested. The printing is byte-verified but has not driven a
+    physical printer. Send a .bin to your printer: nc <printer-ip> 9100 <
+    shared/printing/out/receipt-80.bin
 
-## 7. SKIPPED / DEFERRED, DELIBERATELY
+────────────────────────────────────────────────────────────────────────────────
+## 6. Two things only YOU can do (non-code, repeatedly flagged)
+────────────────────────────────────────────────────────────────────────────────
 
-- **True mesh (any-till-serves-any)** — replaced by the star (approved).
-- **mDNS node discovery** — support burden dressed as a feature.
-- **PIN-derived DB keys** — a POS that needs a human to boot is not a POS.
-- **Automatic conflict retry** — manual-by-manager IS the design (C7 lesson).
-- **Write access in the DB console** — every needed write becomes an audited
-  feature (the Retry button is the pattern).
-- **Central entry of the CASHIER count** — blind count stays at the till;
-  Phase 4 centralises the manager's second count only.
-- **Third install in one day** (business-type fix solo) — batched into 0.4.8.
-- **Expression-wrapped secret leakage in the console** — audit is the
-  backstop, deliberate residue.
-- **`schema_migrations` bump for local v46** — local SQLite versioning is
-  `LOCAL_SCHEMA_VERSION` + migrateColumns, not the Postgres migration table;
-  no numbered SQL migration was needed this session (v46 tables are
-  desktop-local).
+  1. ROTATE ALL SECRETS in apps/server/.env. This is the single most important
+     item in the entire review. The service_role key in there bypasses RLS
+     entirely, so every row-level protection is moot while it is exposed. Rotate
+     the Supabase service_role key, any M-Pesa credentials, and the JWT secret.
+     No code change substitutes for this.
 
-## 8. UNRESOLVED, NOT BLOCKING (carried, some aging)
+  2. HARDWARE-TEST THE PRINTING. The bytes are verified against your receipts,
+     but a real printer is the last unchecked link. Send each .bin in
+     shared/printing/out/ to the corresponding printer and confirm the paper
+     matches the SAMPLE-OUTPUT.txt / the settings-screen preview.
 
-- **C0 packaging** — .env files were in pos.zip AGAIN. Rotate
-  `SUPABASE_SERVICE_ROLE_KEY`; package with `git archive`.
-- Render Shell SMTP test — never run; decides if email works from Render.
-- `swiftpos.co.ke` (~KES 999) — blocks Resend/DNS-01.
-- `schema-index.json` still built from migrations; run `--from-db` against
-  Supabase once.
-- Branch protection on `main` — bypassed repeatedly; honour or remove.
-- Dashboard nav link for `/dashboard/open-drawers` — route exists, no
-  sidebar entry (owner navigated by URL); one line, next dashboard batch.
-- Old "—" payment rows on the node (pre-fix ingests) — cosmetic, ages out.
-- eTIMS A-vs-B certification decision; tourism-levy rename; H1 payment-legs
-  observation window; H3/H4 void-refund paths; M18/M19 — all pre-dating this
-  session, unchanged.
+Also, once deployed and confirmed: git rm the two dead qzTray.ts files
+(apps/dashboard/src/lib/qzTray.ts, apps/desktop/src/renderer/lib/qzTray.ts) —
+they're replaced by the new print bridge.
 
-## 9. HOW THIS SESSION WORKED
+────────────────────────────────────────────────────────────────────────────────
+## 7. Per-fix detail
+────────────────────────────────────────────────────────────────────────────────
 
-Every real finding came from **running it, not reading it** — the tradition
-holds: the sell-gate bug was found by reproducing the till's exact error on
-the real driver; the guard's blind spot by making the guard fail BEFORE
-fixing the bug; the payments gap was on the owner's screenshot before it was
-in the code; the alias dodge died because the test that documented it as a
-limit was an embarrassment to read. Where a change touches cash or printing,
-execute it against real data before trusting it — and when a till misbehaves,
-**read the version string first**.
+Each change has a full APPLY-*.md in apply-notes/ with the specific mechanism,
+the exact deploy caution for that fix, and its test. Start with:
+  apply-notes/APPLY-shift-drawer-sessions.md      (the terminal scenario)
+  apply-notes/APPLY-atomic-order-fix.md           (the payment guard + tips)
+  apply-notes/APPLY-web-discount-ceiling-fix.md   (pairs with the above)

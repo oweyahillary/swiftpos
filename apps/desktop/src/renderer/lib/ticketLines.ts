@@ -221,9 +221,19 @@ export function parseDescriptionLines(description?: string | null): string[] | u
 export const KITCHEN_NOTE_EXCLUDE =
   /\b(sauces?|dips?|soft\s*drinks?|sodas?|drinks?|juices?|water|coke|fanta|sprite|krest|stoney|minute\s*maid)\b/i;
 
-/** The prep lines the KITCHEN sees: everything except the owner-excluded terms. */
-export function kitchenPrepLines(noteLines?: string[]): string[] {
-  return (noteLines ?? []).filter(l => !KITCHEN_NOTE_EXCLUDE.test(l));
+/**
+ * The prep lines the KITCHEN sees: everything except the owner-excluded terms.
+ * `extraTerms` is the owner's own list (Printers → Kitchen exclusions, one
+ * term per line) — matched case-insensitively as substrings, ON TOP of the
+ * built-in rule, never instead of it. This is how "some more items" get
+ * excluded next month without a code change.
+ */
+export function kitchenPrepLines(noteLines?: string[], extraTerms?: string): string[] {
+  const extras = String(extraTerms ?? '')
+    .split(/\r?\n/).map(t => t.trim().toLowerCase()).filter(Boolean);
+  return (noteLines ?? []).filter(l =>
+    !KITCHEN_NOTE_EXCLUDE.test(l)
+    && !extras.some(t => l.toLowerCase().includes(t)));
 }
 
 /** Sum of top-level quantities — the "Total Qty" footer. */

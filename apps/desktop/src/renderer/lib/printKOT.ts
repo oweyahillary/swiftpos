@@ -51,7 +51,7 @@ const esc = (v: unknown) =>
 const rule = (style: string) => `<p style="border-top:${style};margin:4px 0;"></p>`;
 
 
-export function buildKOTHtml(items: TicketLine[], ctx: KOTContext, paperWidth: 58 | 80): string {
+export function buildKOTHtml(items: TicketLine[], ctx: KOTContext, paperWidth: 58 | 80, kitchenExcludeTerms?: string): string {
   const now     = new Date();
   const timeStr = now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const dateStr = now.toLocaleDateString('en-KE', { day: '2-digit', month: 'short' });
@@ -101,7 +101,7 @@ export function buildKOTHtml(items: TicketLine[], ctx: KOTContext, paperWidth: 5
     // ITEMIZED, one line per item, filtered by the OWNER RULE: sauces and
     // soft drinks never print in the kitchen (kitchenPrepLines); the
     // dispatcher ticket carries them instead.
-    for (const nl of kitchenPrepLines(line.noteLines)) {
+    for (const nl of kitchenPrepLines(line.noteLines, kitchenExcludeTerms)) {
       html += `<p style="font-size:12px;padding-left:10px;">- ${esc(nl)}</p>`;
     }
     // Already filtered to cooked components by kitchenOnly().
@@ -157,7 +157,7 @@ export async function printKOT(
     return { printed: false, reason: 'No kitchen printer set — choose one under 🖨 printer settings' };
   }
 
-  const html = buildKOTHtml(items, ctx, settings.paperWidth);
+  const html = buildKOTHtml(items, ctx, settings.paperWidth, settings.kitchenExcludeTerms);
   const title = `KOT ${ctx.orderNumber}`;
   const doc = buildThermalDocument(html, settings, title, 1);
 

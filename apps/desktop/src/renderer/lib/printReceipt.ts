@@ -19,7 +19,6 @@ import {
   buildTicketDocument,
   buildCalibrationTicket as buildCalibration,
   detectPaperWidth as detectWidth,
-  printableMm,
   type PaperWidth,
 } from './thermal';
 
@@ -125,26 +124,18 @@ export async function printDocument(
 }
 
 /**
- * ⚠ OWNER RULE (04 Aug 2026): the customer receipt on paper must look EXACTLY
- * like the success-modal preview — same wraps, same proportions, no separate
- * paper layout. The modal is the reference. So the print renders at the
- * MODAL'S content width and is zoomed onto the roll: identical layout,
- * physically scaled. Applies to the CUSTOMER RECEIPT ONLY — the kitchen and
- * dispatcher tickets are field-approved at their own scale and do not zoom.
+ * ⚠ OWNER RULE (04 Aug 2026, corrected same day): the receipt prints at its
+ * NORMAL thermal size — the owner never asked for a font change and the zoom
+ * experiment is reverted. What the owner locked is the ARRANGEMENT
+ * (ReceiptView) and the footer stack; the print pipeline stays exactly as the
+ * field-approved papers were made.
  */
-const MODAL_CONTENT_PX = 400;   // max-w-md (448) minus px-6 padding (2×24)
-
 export async function printReceipt(
   receiptHtml: string,
   settings: PrinterSettings,
   title: string,
 ): Promise<PrintResult> {
-  const printable = Number(settings.printWidthMm) || Number(settings.detectedWidthMm)
-    || printableMm(settings.paperWidth as PaperWidth);
-  const zoom = (printable * 96 / 25.4) / MODAL_CONTENT_PX;
-  const framed =
-    `<div style="width:${MODAL_CONTENT_PX}px;zoom:${zoom.toFixed(4)};">${receiptHtml}</div>`;
-  const doc = buildThermalDocument(framed, settings, title, settings.copies);
+  const doc = buildThermalDocument(receiptHtml, settings, title, settings.copies);
   return printDocument(
     doc,
     settings.paperWidth as PaperWidth,

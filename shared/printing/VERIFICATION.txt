@@ -1,0 +1,40 @@
+PASS  kitchen-80     486 bytes  22 commands  17 lines  widest 48/48
+PASS  dispatch-80    549 bytes  20 commands  21 lines  widest 48/48
+PASS  receipt-80    1851 bytes  21 commands  47 lines  widest 48/48
+PASS  kitchen-58     435 bytes  22 commands  20 lines  widest 32/32
+PASS  receipt-58    1363 bytes  21 commands  47 lines  widest 32/32
+
+Raw streams written to /home/claude/printing/out
+Byte stream valid.
+PASS  bytes arrive intact  1851 of 1851 bytes
+PASS  delivered under 100ms  7ms
+PASS  closed port rejects
+PASS  closed port is retryable  127.0.0.1:19999 — connect ECONNREFUSED 127.0.0.1:19999
+PASS  bad host is permanent  no-such-printer.invalid:9100 — getaddrinfo ENOTFOUND no-such-printer.invalid
+PASS  parse network target
+PASS  parse default port
+PASS  parse share path
+PASS  parse device path
+
+Transport verified.
+PASS  50 jobs enqueued without waiting on the printer  1ms
+PASS  both jobs printed  10.0.0.5:9100, 10.0.0.6:9100
+PASS  nothing left queued
+PASS  never two jobs on one printer at once  peak 1
+PASS  first attempt failed and requeued
+PASS  not retried before its backoff elapses  1 attempts
+PASS  succeeded on the third attempt
+PASS  permanent failure tried exactly once  1 attempts
+PASS  permanent failure surfaces as failed
+PASS  stops once the job is older than maxAgeMs  5 attempts over 2000ms window
+PASS  ends failed, not queued forever
+PASS  nothing printed while offline
+PASS  all three printed once it came back  10, 20, 30
+PASS  printed in the order they were rung  10,20,30
+PASS  job was left mid-print
+PASS  stuck job recovered
+PASS  recovered flag set for the duplicate banner
+PASS  failed as expected
+PASS  manual retry prints it
+
+Spool verified.

@@ -48,6 +48,9 @@ export interface PrinterSettings {
    * settings, so nothing stops printing the moment stations are introduced.
    */
   stationPrinters:    Record<string, string>;
+  /** Owner's kitchen exclusions, one term per line — items that must never
+   *  print on the kitchen ticket, on top of the built-in sauces/drinks rule. */
+  kitchenExcludeTerms: string;
   /**
    * Last width the DRIVER reported, in mm. Cached here — rather than kept in
    * React state — because printing happens from POSPage, ManagerPage and the
@@ -77,6 +80,7 @@ export const PRINTER_DEFAULTS: PrinterSettings = {
   printWidthMm:       0,
   paperMode:          'auto',
   stationPrinters:    {},
+  kitchenExcludeTerms: '',
   detectedWidthMm:    0,
 };
 

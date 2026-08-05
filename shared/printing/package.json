@@ -1,0 +1,15 @@
+{
+  "name": "@swiftpos/printing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "sample": "tsc && node dist/test/sample.js"
+  },
+  "dependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
+import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -16,18 +17,28 @@ router.use(requireAuth);
 // Used by the POS on boot to resume a session.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/current', async (req, res) => {
+  // A shift is the terminal's open drawer session, NOT the logged-in cashier's.
+  // Whoever is on this terminal shares its session. Resolving by cashier_id (the
+  // old behaviour) meant a cashier who opened a drawer on T1 and then logged into
+  // T2 pulled their T1 shift onto T2, so T2's sales and cash landed on T1's
+  // drawer. Resolve by terminal so the session follows the register.
+  const tkey = terminalKeyFromRequest(req);
   const { data, error } = await supabase
     .from('shifts')
     .select('*')
     .eq('business_id', req.businessId)
-    .eq('cashier_id', req.userId)
     .eq('status', 'open')
-    .order('opened_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order('opened_at', { ascending: false });
 
   if (error) { sendError(res, error); return; }
-  res.json(data ?? null);
+
+  // The terminal key is computed the same way as the SQL function, so filter in
+  // JS against the resolved key rather than trying to reproduce COALESCE in a
+  // PostgREST query. At most one row matches (the unique index guarantees it).
+  const match = (data ?? []).find(
+    s => terminalKey(s.device_id ?? '', s.terminal_code ?? '', s.branch_id ?? '') === tkey,
+  );
+  res.json(match ?? null);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,13 +63,14 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
   // and the route opened a third. It failed open at exactly the point the thing
   // it guards against had already happened twice.
   //
-  // Ordered so the message names the oldest offender, which is the drawer a
-  // manager needs to go and deal with.
+  // One open session per TERMINAL, not per cashier. If this terminal already
+  // has an open drawer, it must be closed (counted) before a new one opens —
+  // whoever is next on the terminal resumes the same session by selling into it.
+  const tkey = terminalKeyFromRequest(req);
   const { data: openShifts, error: guardError } = await supabase
     .from('shifts')
     .select('id, branch_id, device_id, terminal_code, opened_at')
     .eq('business_id', req.businessId)
-    .eq('cashier_id', req.userId)
     .eq('status', 'open')
     .order('opened_at', { ascending: true });
 
@@ -66,24 +78,38 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
   // shift is open is not the same as knowing none is.
   if (guardError) { sendError(res, guardError); return; }
 
-  if (openShifts && openShifts.length > 0) {
-    const oldest = openShifts[0];
+  const onThisTerminal = (openShifts ?? []).filter(
+    s => terminalKey(s.device_id ?? '', s.terminal_code ?? '', s.branch_id ?? '') === tkey,
+  );
+
+  if (onThisTerminal.length > 0) {
+    const oldest = onThisTerminal[0];
     res.status(409).json({
-      error: 'You already have an open shift. It must be closed before you can start another.',
+      error: 'This terminal already has an open drawer session. Close it before opening a new one.',
       shiftId: oldest.id,
       terminal: oldest.terminal_code ?? oldest.device_id ?? null,
       openedAt: oldest.opened_at,
-      openShiftCount: openShifts.length,
+      openShiftCount: onThisTerminal.length,
     });
     return;
   }
+
+  const deviceId     = (req.headers['x-device-id'] as string | undefined)?.trim()
+                       || (req.body?.device_id as string | undefined)?.trim() || null;
+  const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || null;
 
   const { data, error } = await supabase
     .from('shifts')
     .insert({
       business_id: req.businessId,
       branch_id,
+      // cashier_id records WHO opened the drawer. Attribution of individual sales
+      // is on each order (orders.cashier_id); the session is the drawer's, and
+      // may be shared by several cashiers over its life.
       cashier_id: req.userId,
+      opened_by:  req.userId,
+      device_id:     deviceId,
+      terminal_code: terminalCode,
       opening_float: Number(opening_float),
       status: 'open',
     })
@@ -92,12 +118,12 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
 
   if (error) {
     // The guard above is a read-then-write, so two concurrent requests can both
-    // pass it. shifts_one_open_per_cashier (migration 41) is what actually
+    // pass it. shifts_one_open_per_terminal (migration 63) is what actually
     // decides, and it surfaces here as 23505. Same condition as the 409 above,
     // not a server fault — so it must not be reported as one.
     if ((error as { code?: string }).code === '23505') {
       res.status(409).json({
-        error: 'You already have an open shift. It must be closed before you can start another.',
+        error: 'This terminal already has an open drawer session. Close it before opening a new one.',
       });
       return;
     }
@@ -146,6 +172,28 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
 
   if (shiftErr || !shift) {
     res.status(404).json({ error: 'Open shift not found' });
+    return;
+  }
+
+  // ── Authorisation (finding #13) ──────────────────────────────────────────
+  // Previously ANY authenticated user in the business could close ANY drawer,
+  // from any terminal, with any cash count — a fraud vector and a data-integrity
+  // hole (a stranger's count lands on a drawer they never touched). A drawer may
+  // be closed by:
+  //   * the cashier who opened it (opened_by / cashier_id), or
+  //   * a cashier physically on that same terminal (they share the session), or
+  //   * a manager (permission 'shifts.manage' — the same gate force-close uses).
+  const sameTerminal =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '')
+      === terminalKeyFromRequest(req);
+  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const keys = req.permissionKeys ?? [];
+  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
+
+  if (!openedByRequester && !sameTerminal && !isManager) {
+    res.status(403).json({
+      error: 'You can only close a drawer you opened or are working on. Ask a manager to close another terminal\'s drawer.',
+    });
     return;
   }
 
@@ -211,6 +259,8 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     .update({
       status: 'closed',
       closed_at: new Date().toISOString(),
+      closed_by: req.userId,
+      close_method: 'counted',
       closing_float: Number(closing_float),
       expected_cash: expectedCash,
       cash_variance: cashVariance,

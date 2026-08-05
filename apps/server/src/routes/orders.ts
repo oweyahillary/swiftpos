@@ -9,6 +9,8 @@ import { fireWebhook } from '../lib/webhooks';
 import { requireAuth } from '../middleware/auth';
 import { branchScope, requirePermission, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
+import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
@@ -406,6 +408,24 @@ router.post('/', async (req, res) => {
     return;
   }
 
+  // Finding #16: the branch on this payload is the TILL's claim about itself
+  // (it lives in the machine's local config and travels with it). A terminal
+  // physically moved to another branch keeps booking to its old one until
+  // someone notices. checkDeviceBranch validates the claim against the
+  // server-side binding (migration 52). It fails OPEN for an unbound or unknown
+  // device — existing tills bind on first sight and keep trading — and only
+  // refuses a CHANGE, so a moved till is caught. Refusing leaves the order on
+  // the till to re-push once the branch is corrected; nothing is lost.
+  {
+    const deviceId = (req.headers['x-device-id'] as string | undefined)?.trim()
+                     || (req.body?.device_id as string | undefined)?.trim() || null;
+    const binding = await checkDeviceBranch(req.businessId, deviceId, branch_id);
+    if (!binding.ok) {
+      res.status(409).json({ error: binding.error, code: binding.code });
+      return;
+    }
+  }
+
   try {
     // Item 7: ensure any attached customer belongs to THIS business — prevents
     // reading/redeeming another tenant's loyalty balance via a known UUID.
@@ -441,6 +461,27 @@ router.post('/', async (req, res) => {
       vat: authVat,
       ctl: authCtl,
     } = recomputed;
+
+    // ── Finding #19: offline re-pricing divergence ──────────────────────────
+    // The server ALWAYS re-prices against the current catalogue for anti-tampering
+    // — correct for a live web sale. But an OFFLINE desktop order was already
+    // priced against the catalogue at sale time, PRINTED, and PAID. If a price
+    // changed between that sale and this sync, the re-priced total silently
+    // diverges from the receipt the customer holds. We cannot blindly trust the
+    // client (that defeats anti-tampering) nor blindly overwrite (that contradicts
+    // the receipt), so we DETECT and log the divergence for reconciliation. The
+    // stored total remains the authoritative re-priced figure — but now the
+    // discrepancy is visible instead of silent, and can be reviewed.
+    const clientTotal = Number(total);
+    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - authTotal) > 0.01) {
+      const isOffline = !!(req.body?.created_at || req.body?.client_created_at);
+      console.warn(
+        `[reprice-divergence]${isOffline ? ' OFFLINE' : ''} order ${order_number}: ` +
+        `client total ${clientTotal.toFixed(2)} vs re-priced ${authTotal.toFixed(2)} ` +
+        `(diff ${(clientTotal - authTotal).toFixed(2)}). Stored the re-priced figure; ` +
+        `review if this was an offline sale whose catalogue price changed before sync.`,
+      );
+    }
 
     // ── L5: a client-supplied discount_id must belong to this business ───────
     // Prevents referencing (and incrementing usage on) another tenant's discount.
@@ -484,151 +525,160 @@ router.post('/', async (req, res) => {
     }
 
     // 2. Create order
-    // If the client didn't supply a shift, attach the cashier's current open shift.
-    // Otherwise the order's cash lands in the Z-report payment breakdown but not in
-    // the per-shift cash reconciliation (which filters by shift_id) — the exact-gap bug.
+    // Attach the order to THIS TERMINAL's open drawer session, not the cashier's.
+    // A shift is the terminal's session (see migration 63): whoever is on this
+    // terminal sells into its drawer. Resolving by cashier_id (the old behaviour)
+    // meant a cashier who had opened a drawer on another terminal pulled that
+    // shift onto this sale, so the money and the sale landed on different drawers.
+    // The client's supplied shift_id wins when present (it already reflects the
+    // terminal's session from /shifts/current); otherwise resolve by terminal.
     let resolvedShiftId: string | null = shift_id ?? null;
-    if (!resolvedShiftId && req.userId) {
-      const { data: openShift } = await supabase
+    if (!resolvedShiftId) {
+      const tkey = terminalKeyFromRequest(req);
+      const { data: openShifts } = await supabase
         .from('shifts')
-        .select('id')
+        .select('id, device_id, terminal_code, branch_id')
         .eq('business_id', req.businessId)
-        .eq('cashier_id', req.userId)
         .eq('status', 'open')
-        .order('opened_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (openShift) resolvedShiftId = (openShift as { id: string }).id;
+        .order('opened_at', { ascending: false });
+      const match = (openShifts ?? []).find(
+        s => terminalKey(s.device_id ?? '', s.terminal_code ?? '', s.branch_id ?? '') === tkey,
+      );
+      if (match) resolvedShiftId = (match as { id: string }).id;
     }
 
-    const { data: order, error: oErr } = await supabase
-      .from('orders')
-      .insert({
-        business_id: req.businessId,
-        branch_id,
-        customer_id: customer_id ?? null,
-        customer_name: customer_name ?? null,
-        customer_phone: customer_phone ?? null,
-        order_number,
-        order_type,
-        // Only meaningful on a delivery; stored null otherwise so a stale field
-        // left on the client can't attach a rider to a counter sale.
-        delivery_person: order_type === 'delivery'
-          ? (String(delivery_person ?? '').trim().slice(0, 120) || null)
-          : null,
-        status: 'completed',
-        subtotal: authSubtotal,
-        vat_amount: authVat,
-        ctl_amount: authCtl,
-        discount_amount: authDiscount,
-        discount_id: discount_id ?? null,
-        loyalty_points_used: points_redeemed,
-        total: authTotal,
-        tip_amount: Math.max(0, Number(tip_amount) || 0),
-        shift_id: resolvedShiftId,
-        // Set seated_at for dine-in so the turnover report (which requires it) sees
-        // pay-first orders — previously only the order-first /open path set this.
-        seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
-        // Never null (audit H14). The unique index is
-        // (business_id, idempotency_key) WHERE idempotency_key IS NOT NULL, and
-        // NULLs are distinct in Postgres, so a null key is protected by nothing.
-        // Every replayed order would insert a duplicate and double the branch's
-        // reported revenue. Falling back to the row's own id gives each order a
-        // stable, unique key without the client having to supply one.
-        idempotency_key: idempotencyKey || crypto.randomUUID(),
-        cashier_id:      req.userId ?? null,
-        device_id:       req.body?.device_id ?? null,
-        // Pump attribution for fuel sales. The tank-deduction block below
-        // already reads order.pump_id (strategy 1) — it was reading a column
-        // nothing ever wrote, which is why per-pump fuel reports read zero.
-        pump_id:         req.body?.pump_id ? String(req.body.pump_id) : null,
-        // 'synced', not 'pending' (audit H14). This row was created BY the cloud
-        // and already lives in it — there is nothing left for it to sync to.
-        // Writing 'pending' and never advancing it meant the tech panel reported
-        // 100% of orders permanently pending and zero synced on every install,
-        // and, worse, the LOCAL->CLOUD switch selects on sync_status='pending'
-        // and so replayed the branch's ENTIRE order history on every switch.
-        sync_status: 'synced',
-      })
-      .select()
-      .single();
+    // ── Atomic core write ──────────────────────────────────────────────────
+    // Order + items + variants + modifiers + payments go in ONE transaction via
+    // create_order_atomic (migration 62). Previously these were ~5 sequential
+    // PostgREST inserts with no transaction: a failure after the order row but
+    // before payments left a completed order with no tender. The RPC also
+    // validates that the legs reconcile to the total (finding #15) and aborts if
+    // they do not, rather than logging a mismatch after the fact.
+    //
+    // Stock, loyalty, discount counters and the KDS ticket stay BELOW as
+    // post-commit effects — they are consequences of the sale, not part of its
+    // identity, and they now run only after a durable, complete order exists, so
+    // a failure in any of them can no longer orphan the order.
+    const itemsPayload = items.map((item: OrderItemInput, idx: number) => ({
+      item: {
+        product_id: item.product?.id ?? null,
+        product_name: item.product?.name ?? (item as any).product_name ?? 'Item',
+        category_name: Array.isArray(item.product?.categories)
+          ? (item.product.categories[0]?.name ?? null)
+          : ((item.product as any)?.categories?.name ?? (item as any).category_name ?? null),
+        unit_price: authLines[idx].unitPrice,
+        quantity: item.quantity,
+        subtotal: authLines[idx].lineTotal,
+        notes: item.notes ?? null,
+      },
+      variants: (item.selectedVariants ?? []).map((v: { groupName: string; optionName: string; priceAdjustment?: number }) => ({
+        variant_group_name: v.groupName,
+        variant_option_name: v.optionName,
+        price_adjustment: v.priceAdjustment ?? 0,
+      })),
+      modifiers: (item.selectedModifiers ?? []).map((m: { groupName: string; optionName: string; price?: number }) => ({
+        modifier_group_name: m.groupName,
+        modifier_option_name: m.optionName,
+        price: m.price ?? 0,
+      })),
+    }));
 
-    if (oErr) throw oErr;
-
-    // 3. Order items
-    const { data: orderItems, error: iErr } = await supabase
-      .from('order_items')
-      .insert(
-        items.map((item: OrderItemInput, idx: number) => ({
-          order_id: order.id,
-          product_id: item.product?.id ?? null,
-          product_name: item.product?.name ?? (item as any).product_name ?? 'Item',
-          category_name: Array.isArray(item.product?.categories)
-            ? (item.product.categories[0]?.name ?? null)
-            : ((item.product as any)?.categories?.name ?? (item as any).category_name ?? null),
-          unit_price: authLines[idx].unitPrice,
-          quantity: item.quantity,
-          subtotal: authLines[idx].lineTotal,
-          notes: item.notes ?? null,
-        }))
-      )
-      .select();
-
-    if (iErr) throw iErr;
-
-    // 4. Variants + modifiers
-    // Columns are variant_group_name / variant_option_name and
-    // modifier_group_name / modifier_option_name — confirmed against the schema.
-    const variantRows: Array<{ order_item_id: string; variant_group_name: string; variant_option_name: string; price_adjustment?: number }> = [];
-    const modifierRows: Array<{ order_item_id: string; modifier_group_name: string; modifier_option_name: string; price?: number }> = [];
-
-    items.forEach((item: OrderItemInput, idx: number) => {
-      const orderItemId = orderItems[idx].id;
-      (item.selectedVariants ?? []).forEach((v: { groupName: string; optionName: string; priceAdjustment?: number; id?: string }) => {
-        variantRows.push({
-          order_item_id: orderItemId,
-          variant_group_name: v.groupName,
-          variant_option_name: v.optionName,
-          price_adjustment: v.priceAdjustment,
-        });
-      });
-      (item.selectedModifiers ?? []).forEach((m: { groupName: string; optionName: string; price?: number; id?: string }) => {
-        modifierRows.push({
-          order_item_id: orderItemId,
-          modifier_group_name: m.groupName,
-          modifier_option_name: m.optionName,
-          price: m.price,
-        });
-      });
-    });
-
-    if (variantRows.length > 0) {
-      const { error: vErr } = await supabase.from('order_item_variants').insert(variantRows);
-      if (vErr) throw vErr;
-    }
-    if (modifierRows.length > 0) {
-      const { error: mErr } = await supabase.from('order_item_modifiers').insert(modifierRows);
-      if (mErr) throw mErr;
-    }
-
-    // 5. Payment(s) — supports single or split
-    const paymentRows = paymentLegs.map((leg: PaymentLegInput) => ({
-      order_id:        order.id,
-      business_id:     req.businessId,
-      branch_id,
+    const paymentsPayload = paymentLegs.map((leg: PaymentLegInput) => ({
       method:          leg.method,
       amount:          leg.amount,
       amount_tendered: leg.amount_tendered ?? leg.amount,
       change_given:    leg.change_given ?? 0,
       reference:       leg.reference ?? null,
-      status:          'completed',
-      sync_status:     'pending',
+      // An M-Pesa leg awaits the STK callback, so it is written 'pending' and the
+      // callback flips it to 'completed' on payment (finding #5). Its amount is
+      // still counted toward the reconciliation total — the money is promised —
+      // but it is not marked collected until M-Pesa confirms. All other methods
+      // are immediate and default to 'completed'.
+      status:          leg.method === 'mpesa' ? 'pending' : 'completed',
     }));
 
-    const { error: pErr } = await supabase.from('payments').insert(paymentRows);
-    if (pErr) throw pErr;
+    const orderPayload = {
+      business_id: req.businessId,
+      branch_id,
+      customer_id: customer_id ?? null,
+      customer_name: customer_name ?? null,
+      customer_phone: customer_phone ?? null,
+      order_number,
+      order_type,
+      delivery_person: order_type === 'delivery'
+        ? (String(delivery_person ?? '').trim().slice(0, 120) || null)
+        : null,
+      subtotal: authSubtotal,
+      vat_amount: authVat,
+      ctl_amount: authCtl,
+      discount_amount: authDiscount,
+      discount_id: discount_id ?? null,
+      loyalty_points_used: points_redeemed,
+      total: authTotal,
+      tip_amount: Math.max(0, Number(tip_amount) || 0),
+      shift_id: resolvedShiftId,
+      seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
+      idempotency_key: idempotencyKey || crypto.randomUUID(),
+      cashier_id: req.userId ?? null,
+      device_id: req.body?.device_id ?? null,
+      pump_id: req.body?.pump_id ? String(req.body.pump_id) : null,
+      // Offline sales carry their original timestamp so they book on the day they
+      // actually happened, not at sync time (finding #7). Accept either field
+      // name; a live sale sends neither and the RPC defaults to now().
+      created_at: (req.body?.created_at || req.body?.client_created_at || null),
+    };
 
-    checkPaymentIntegrity(order.order_number, order.id, Number(authTotal), paymentRows);
+    const { data: created, error: createErr } = await supabase.rpc('create_order_atomic', {
+      p_order:    orderPayload,
+      p_items:    itemsPayload,
+      p_payments: paymentsPayload,
+    });
+
+    if (createErr) {
+      if (createErr.code === '23505') {
+        // Two different unique constraints can raise 23505 here:
+        //   (business_id, idempotency_key) — a concurrent retry of the SAME
+        //     order. The row already exists; return it as a duplicate (200).
+        //   (business_id, branch_id, order_number) — a DIFFERENT order that
+        //     happened to draw the same number (finding #20). No row matches our
+        //     idempotency key, so surface a 409 the client can retry with a fresh
+        //     number, rather than a 500. The widened generator makes this rare;
+        //     this handles the rare case correctly instead of failing the sale.
+        const { data: dup } = await supabase
+          .from('orders')
+          .select('id, order_number')
+          .eq('business_id', req.businessId)
+          .eq('idempotency_key', orderPayload.idempotency_key)
+          .maybeSingle();
+        if (dup) {
+          res.status(200).json({ orderId: dup.id, orderNumber: dup.order_number, duplicate: true });
+          return;
+        }
+        // Not our order → an order-number collision.
+        res.status(409).json({
+          error: 'Order number already exists — please retry.',
+          code: 'ORDER_NUMBER_CONFLICT',
+        });
+        return;
+      }
+      // A check_violation is the payment-reconciliation guard firing. Surface it
+      // as a 400 — the client sent legs that do not add up to the total.
+      if (createErr.code === '23514' || /payment legs sum/.test(createErr.message)) {
+        res.status(400).json({ error: createErr.message });
+        return;
+      }
+      throw createErr;
+    }
+
+    const createdRow = Array.isArray(created) ? created[0] : created;
+    const order = { id: createdRow.order_id, order_number: createdRow.order_number } as { id: string; order_number: string };
+
+    // orderItems is re-read for the post-commit steps that need item ids (stock,
+    // recipe deduction). One extra read, off the critical write path.
+    const { data: orderItems } = await supabase
+      .from('order_items')
+      .select('id, product_id, quantity')
+      .eq('order_id', order.id);
 
     // 6. Stock deduction
     // 6a. Product-level stock (for minimart / retail products with track_stock=true)
@@ -857,13 +907,16 @@ router.post('/', async (req, res) => {
       }
       const fuelProductIds = Object.keys(litresByProduct);
       if (fuelProductIds.length > 0) {
-        // Strategy 1: if the order has a pump_id, check if that pump has a tank_id
+        // Strategy 1: if the order has a pump_id, check if that pump has a tank_id.
+        // pump_id comes from the request body — the RPC return type is just
+        // { id, order_number }, so read the original payload value here.
+        const orderPumpId = req.body?.pump_id ? String(req.body.pump_id) : null;
         let specificTankId: string | null = null;
-        if (order.pump_id) {
+        if (orderPumpId) {
           const { data: pump } = await supabase
             .from('pumps')
             .select('tank_id, fuel_product_id')
-            .eq('id', order.pump_id)
+            .eq('id', orderPumpId)
             .eq('business_id', req.businessId)
             .single();
           if (pump?.tank_id) {
@@ -1097,6 +1150,11 @@ router.post('/', async (req, res) => {
       }
 
       // 8c. Update total_spent on customer (inline — no RPC dependency)
+      // total_spent is numeric(12,2), which PostgREST returns as a STRING. The
+      // old code did `"1500.00" + 890`, which concatenates to "1500.00890"
+      // rather than adding — so total_spent effectively never grew and every
+      // RFM / CRM segment built on it was reading a dead column. Both operands
+      // are coerced with Number() before the addition.
       const { data: cSpent } = await supabase
         .from('customers')
         .select('total_spent')
@@ -1104,7 +1162,7 @@ router.post('/', async (req, res) => {
         .single();
       await supabase
         .from('customers')
-        .update({ total_spent: (cSpent?.total_spent ?? 0) + authTotal })
+        .update({ total_spent: Number(cSpent?.total_spent ?? 0) + Number(authTotal) })
         .eq('id', customer_id)
         .eq('business_id', req.businessId);
     }
@@ -1382,15 +1440,18 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
 
       for (const item of order.order_items ?? []) {
         if (!trackedIds.has(item.product_id)) continue;
-        const { data: stock } = await supabase
-          .from('stock_levels').select('quantity')
-          .eq('product_id', item.product_id).eq('branch_id', order.branch_id).maybeSingle();
-
-        const newQty = (stock?.quantity ?? 0) + Number(item.quantity);
-        await supabase.from('stock_levels').upsert(
-          { product_id: item.product_id, branch_id: order.branch_id, quantity: newQty, updated_at: new Date().toISOString() },
-          { onConflict: 'product_id,branch_id' },
-        );
+        // Atomic restore. The old line wrapped item.quantity in Number() but
+        // NOT stock.quantity, so "10.00" + Number(2) was still the string
+        // "10.002". The RPC removes the JS addition entirely.
+        const { data: restored, error: restoreErr } = await supabase.rpc('adjust_product_stock', {
+          p_product_id:  item.product_id,
+          p_branch_id:   order.branch_id,
+          p_qty_delta:   Number(item.quantity),
+          p_piece_delta: 0,
+        });
+        if (restoreErr) throw restoreErr;
+        const restoredRow = Array.isArray(restored) ? restored[0] : restored;
+        const newQty = Number(restoredRow?.quantity ?? 0);
         await supabase.from('stock_movements').insert({
           product_id: item.product_id,
           branch_id: order.branch_id,
@@ -1562,22 +1623,20 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
     for (const item of order.order_items ?? []) {
       if (!trackedIds.has(item.product_id)) continue;
 
-      const { data: stock } = await supabase
-        .from('stock_levels')
-        .select('quantity')
-        .eq('product_id', item.product_id)
-        .eq('branch_id', order.branch_id)
-        .single();
-
-      const currentQty = stock?.quantity ?? 0;
-      const newQty = currentQty + item.quantity;
-
-      await supabase
-        .from('stock_levels')
-        .upsert(
-          { product_id: item.product_id, branch_id: order.branch_id, quantity: newQty, updated_at: new Date().toISOString() },
-          { onConflict: 'product_id,branch_id' }
-        );
+      // Atomic restore. The old code read quantity (a STRING) and added
+      // item.quantity, producing "10.002.00" — an invalid numeric that made the
+      // upsert fail silently, so a void NEVER put stock back. Deduction used
+      // subtraction and coerced fine, which is why the shelf went down on a sale
+      // and never came back up on a void.
+      const { data: restored, error: restoreErr } = await supabase.rpc('adjust_product_stock', {
+        p_product_id:  item.product_id,
+        p_branch_id:   order.branch_id,
+        p_qty_delta:   Number(item.quantity),
+        p_piece_delta: 0,
+      });
+      if (restoreErr) throw restoreErr;
+      const restoredRow = Array.isArray(restored) ? restored[0] : restored;
+      const newQty = Number(restoredRow?.quantity ?? 0);
 
       await supabase
         .from('stock_movements')
@@ -1871,6 +1930,25 @@ router.post('/:id/pay', async (req, res) => {
     const payTotal    = round2(paySubtotal - payDiscount);
     const { vat: payVat, ctl: payCtl } = await taxSplit(req.businessId, payTotal);
 
+    // Validate the legs reconcile to the recomputed total BEFORE writing them.
+    // POST /orders enforces this inside create_order_atomic and REJECTS a
+    // mismatch; /pay only logged it (checkPaymentIntegrity), so the two order
+    // paths disagreed on whether a wrong-amount order could be completed
+    // (finding #14). They now agree: a mismatch here is a 400, nothing is
+    // written, and the order stays open to be paid correctly. A one-cent
+    // tolerance absorbs rounding. NOTE: if any client sends legs that include a
+    // tip in the leg amount, fix it to send legs summing to total (tip is a
+    // separate field) BEFORE deploying — see the deploy note for the atomic
+    // order fix; the same caution applies here.
+    const legSum = paymentLegs.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+    if (Math.abs(legSum - payTotal) > 0.01) {
+      res.status(400).json({
+        error: `Payment legs sum to ${legSum.toFixed(2)} but the order total is ${payTotal.toFixed(2)}.`,
+        code: 'PAYMENT_MISMATCH',
+      });
+      return;
+    }
+
     // 2. Insert payment legs
     const paymentRows = paymentLegs.map((leg: PaymentLegInput) => ({
       order_id:        order.id,
@@ -1889,9 +1967,6 @@ router.post('/:id/pay', async (req, res) => {
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
     if (pErr) { sendError(res, pErr); return; }
 
-    // Against payTotal, not order.total: the stale figure is the pre-discount one,
-    // so comparing to it would report a false [payment-mismatch] on every
-    // discounted order — the very number H2 exists to correct.
     checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
 
     // 3. Mark order completed.

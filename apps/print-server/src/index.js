@@ -1,329 +1,184 @@
 /**
- * SwiftPOS Print Server
- * 
- * A lightweight local HTTP server that receives print jobs from the SwiftPOS
- * browser dashboard and sends them to Windows/Mac/Linux printers.
- * 
- * Runs on http://localhost:3001
- * 
- * Endpoints:
- *   GET  /health           — health check, returns printer list
- *   GET  /printers         — list all available printers
- *   POST /print            — print a job
- *   POST /print/test       — print a test page
- * 
- * The browser dashboard auto-detects this server on startup.
- * If running → silent one-click printing.
- * If not running → falls back to window.print() browser dialog.
+ * SwiftPOS Print Bridge
+ *
+ * A local HTTP endpoint so the WEB POS can print silently. The desktop app does
+ * not need this — it talks to printers directly from its main process.
+ *
+ * ── WHAT CHANGED FROM THE PREVIOUS PRINT SERVER ──────────────────────────────
+ *
+ * SIZE. The old server depended on node-html-to-image, which pulls in Puppeteer,
+ * which bundles a headless Chromium — and the pkg config bundled
+ * .local-chromium/**\/* into the executable. Roughly 300MB of browser whose only
+ * job was rasterising receipt HTML. The POS now sends ESC/POS bytes, so that
+ * entire tree is gone, along with express, cors and pdf-to-printer.
+ *
+ * This file has ZERO dependencies. Run it with an installed Node and it is a few
+ * KB; build a single-file executable and it is only the Node runtime.
+ *
+ * SECURITY. Three holes are closed:
+ *
+ *   1. CORS was `origin.includes('localhost')`, a SUBSTRING test — so
+ *      http://localhost.attacker.com passed. A page the cashier opened could
+ *      post here. Origins are now matched exactly against a fixed list.
+ *
+ *   2. There was no authentication at all. A token is now required, generated
+ *      on first run and pasted into the till's printer settings once.
+ *
+ *   3. The printer name from the request body was interpolated into a shell
+ *      command, and the single-quote escaping did not work — backslash is
+ *      literal inside single quotes in sh, so a name containing a quote broke
+ *      out and ran arbitrary commands. NOTHING here spawns a process. Bytes go
+ *      to a socket or a file handle, and the printer name is never parsed by
+ *      anything.
+ *
+ * The body carries base64 ESC/POS produced by shared/printing. This process
+ * does not know what a receipt is and never renders one.
  */
 
-const express  = require('express');
-const cors     = require('cors');
-const { exec } = require('child_process');
-const os       = require('os');
-const fs       = require('fs');
-const path     = require('path');
-const http     = require('http');
+'use strict';
 
-const app  = express();
-const PORT = 3001;
-const VERSION = '1.0.0';
+const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
 
-// ─── CORS — only allow localhost origins ──────────────────────────────────────
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (same-machine curl, Electron, etc.)
-    // and any localhost / 127.0.0.1 origin
-    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-}));
+const { sendToPrinter, parseTarget, PrinterError } =
+  require('../../../shared/printing/dist/src/transport.js');
 
-app.use(express.json({ limit: '10mb' }));
+const PORT = Number(process.env.PRINT_BRIDGE_PORT || 3001);
+const VERSION = '2.0.0';
+const MAX_BODY = 512 * 1024;
 
-// ─── Detect platform ──────────────────────────────────────────────────────────
-const isWindows = os.platform() === 'win32';
-const isMac     = os.platform() === 'darwin';
-const isLinux   = os.platform() === 'linux';
+// Exact origins only. A substring test is what let localhost.attacker.com in.
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:3000',
+  ...(process.env.PRINT_BRIDGE_ORIGINS || '').split(',').filter(Boolean),
+]);
 
-// ─── Get list of installed printers ──────────────────────────────────────────
-function getPrinters() {
-  return new Promise((resolve) => {
-    if (isWindows) {
-      exec(
-        'wmic printer get Name /format:csv',
-        { timeout: 5000 },
-        (err, stdout) => {
-          if (err) { resolve([]); return; }
-          const lines  = stdout.split('\n').filter(l => l.trim() && !l.includes('Name'));
-          const names  = lines.map(l => l.split(',').pop()?.trim()).filter(Boolean);
-          resolve(names);
-        }
-      );
-    } else if (isMac || isLinux) {
-      exec('lpstat -a 2>/dev/null | awk \'{print $1}\'', { timeout: 5000 }, (err, stdout) => {
-        if (err) { resolve([]); return; }
-        const names = stdout.split('\n').map(l => l.trim()).filter(Boolean);
-        resolve(names);
-      });
-    } else {
-      resolve([]);
-    }
-  });
+// ─── Token ───────────────────────────────────────────────────────────────────
+// Written next to the executable on first run and printed to the console so the
+// installer can paste it into the till once. Losing it means deleting the file
+// and restarting, not reinstalling.
+const TOKEN_FILE = path.join(os.homedir(), '.swiftpos-print-bridge-token');
+
+function loadToken() {
+  try {
+    const t = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+    if (t.length >= 32) return t;
+  } catch { /* first run */ }
+  const t = crypto.randomBytes(24).toString('base64url');
+  fs.writeFileSync(TOKEN_FILE, t, { mode: 0o600 });
+  return t;
 }
 
-// ─── Build ESC/POS raw bytes from plain text ──────────────────────────────────
-// Used for direct raw printing (faster, no Windows GDI overhead)
-function buildEscPos(text, opts = {}) {
-  const { paperWidth = 80, autoCut = true } = opts;
+const TOKEN = loadToken();
 
-  const ESC = '\x1b';
-  const GS  = '\x1d';
+/** Constant-time compare, so a wrong token cannot be discovered a byte at a
+ *  time by measuring how long the rejection takes. */
+function tokenOk(given) {
+  if (typeof given !== 'string') return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(TOKEN);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
 
-  const INIT          = `${ESC}@`;
-  const ALIGN_LEFT    = `${ESC}a\x00`;
-  const ALIGN_CENTER  = `${ESC}a\x01`;
-  const BOLD_ON       = `${ESC}E\x01`;
-  const BOLD_OFF      = `${ESC}E\x00`;
-  const DBL_HEIGHT_ON = `${ESC}!\x10`;
-  const DBL_HEIGHT_OFF= `${ESC}!\x00`;
-  const CUT           = `${GS}V\x00`;
-
-  const lineWidth = paperWidth === 58 ? 32 : 48;
-  const lines     = text.split('\n');
-
-  let out = INIT;
-
-  for (const line of lines) {
-    const trimmed = line.trimEnd();
-    if (!trimmed) { out += '\n'; continue; }
-
-    const isHeading = trimmed.length <= 24 && trimmed === trimmed.toUpperCase() && /[A-Z]/.test(trimmed);
-    const isDivider = /^[-=─]{3,}$/.test(trimmed);
-    const isTotal   = /^TOTAL/i.test(trimmed);
-
-    if (isHeading && !isDivider) {
-      out += ALIGN_CENTER + BOLD_ON + DBL_HEIGHT_ON + trimmed + '\n' + DBL_HEIGHT_OFF + BOLD_OFF + ALIGN_LEFT;
-    } else if (isDivider) {
-      out += ALIGN_LEFT + '-'.repeat(lineWidth) + '\n';
-    } else if (isTotal) {
-      out += BOLD_ON + trimmed + '\n' + BOLD_OFF;
-    } else {
-      out += ALIGN_LEFT + trimmed + '\n';
-    }
+// ─── HTTP ────────────────────────────────────────────────────────────────────
+function send(res, status, body, origin) {
+  const payload = JSON.stringify(body);
+  const headers = {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(payload),
+    'Cache-Control': 'no-store',
+  };
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Vary'] = 'Origin';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Print-Token';
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
   }
-
-  out += '\n\n\n';
-  if (autoCut) out += CUT;
-
-  return out;
+  res.writeHead(status, headers);
+  res.end(payload);
 }
 
-// ─── Print via Windows: write temp file + print command ──────────────────────
-function printOnWindows(printerName, content, opts) {
+function readBody(req) {
   return new Promise((resolve, reject) => {
-    const tmpFile = path.join(os.tmpdir(), `swiftpos_print_${Date.now()}.txt`);
-    const escaped  = printerName.replace(/"/g, '\\"');
-
-    // Write content to temp file
-    fs.writeFileSync(tmpFile, content, 'binary');
-
-    // Use powershell to send to printer
-    const cmd = `powershell -Command "Get-Content '${tmpFile}' -Encoding Byte | Out-Printer -Name '${escaped}'"`;
-
-    exec(cmd, { timeout: 15000 }, (err, stdout, stderr) => {
-      // Clean up temp file
-      try { fs.unlinkSync(tmpFile); } catch { /* silent */ }
-
-      if (err) {
-        reject(new Error(`Print failed: ${stderr || err.message}`));
-      } else {
-        resolve({ ok: true });
-      }
+    let size = 0;
+    const chunks = [];
+    req.on('data', c => {
+      size += c.length;
+      if (size > MAX_BODY) { reject(new Error('body too large')); req.destroy(); return; }
+      chunks.push(c);
     });
-  });
-}
-
-// ─── Print via CUPS (Mac / Linux) ─────────────────────────────────────────────
-function printOnCups(printerName, content, opts) {
-  return new Promise((resolve, reject) => {
-    const tmpFile = path.join(os.tmpdir(), `swiftpos_print_${Date.now()}.txt`);
-    const escaped  = printerName.replace(/"/g, '\\"').replace(/'/g, "\\'");
-    const copies   = opts.copies || 1;
-
-    fs.writeFileSync(tmpFile, content, 'binary');
-
-    const cmd = `lp -d '${escaped}' -n ${copies} '${tmpFile}'`;
-
-    exec(cmd, { timeout: 15000 }, (err, stdout, stderr) => {
-      try { fs.unlinkSync(tmpFile); } catch { /* silent */ }
-      if (err) {
-        reject(new Error(`Print failed: ${stderr || err.message}`));
-      } else {
-        resolve({ ok: true });
-      }
+    req.on('end', () => {
+      try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
+      catch { reject(new Error('body is not valid JSON')); }
     });
+    req.on('error', reject);
   });
 }
 
-// ─── Strip HTML to plain text ─────────────────────────────────────────────────
-function stripHtml(html) {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/td>/gi, '\t')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\t/g, '  ')
-    .split('\n')
-    .map(l => l.trim())
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n');
-}
+const server = http.createServer(async (req, res) => {
+  const origin = req.headers.origin;
 
-// ─── Core print function ──────────────────────────────────────────────────────
-async function doPrint(printerName, htmlContent, opts = {}) {
-  const { paperWidth = 80, copies = 1, autoCut = true } = opts;
-
-  // Convert HTML to plain text → ESC/POS
-  const plainText = stripHtml(htmlContent);
-  const escPos    = buildEscPos(plainText, { paperWidth, autoCut });
-
-  // Repeat for copies
-  let content = escPos;
-  if (copies === 2) {
-    const cutBetween = autoCut ? '' : '\n' + '-'.repeat(paperWidth === 58 ? 32 : 48) + '\n';
-    content = escPos + cutBetween + escPos;
+  // An origin that is present but not allowed is refused outright. Absent
+  // origin (curl, the desktop app, a health check) still needs the token.
+  if (origin && !ALLOWED_ORIGINS.has(origin)) {
+    return send(res, 403, { error: 'origin not allowed' });
   }
 
-  if (isWindows) {
-    return printOnWindows(printerName, content, opts);
-  } else {
-    return printOnCups(printerName, content, opts);
+  if (req.method === 'OPTIONS') return send(res, 204, {}, origin);
+
+  const url = new URL(req.url, 'http://localhost');
+
+  if (req.method === 'GET' && url.pathname === '/health') {
+    return send(res, 200, { ok: true, version: VERSION, requiresToken: true }, origin);
   }
-}
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
+  if (!tokenOk(req.headers['x-print-token'])) {
+    return send(res, 401, { error: 'missing or invalid X-Print-Token' }, origin);
+  }
 
-// Health check — browser pings this to detect the server
-app.get('/health', async (req, res) => {
-  const printers = await getPrinters();
-  res.json({
-    ok:       true,
-    version:  VERSION,
-    platform: os.platform(),
-    printers,
-  });
+  if (req.method === 'POST' && url.pathname === '/print') {
+    let body;
+    try { body = await readBody(req); }
+    catch (e) { return send(res, 400, { error: e.message }, origin); }
+
+    const { target, data } = body;
+    if (typeof target !== 'string' || typeof data !== 'string') {
+      return send(res, 400, { error: 'target and data (base64 ESC/POS) are required' }, origin);
+    }
+
+    let bytes;
+    try { bytes = Buffer.from(data, 'base64'); }
+    catch { return send(res, 400, { error: 'data is not valid base64' }, origin); }
+    if (!bytes.length) return send(res, 400, { error: 'data is empty' }, origin);
+
+    const started = Date.now();
+    try {
+      await sendToPrinter(parseTarget(target), bytes);
+      return send(res, 200, { ok: true, bytes: bytes.length, ms: Date.now() - started }, origin);
+    } catch (e) {
+      const retryable = e instanceof PrinterError ? e.retryable : true;
+      return send(res, retryable ? 503 : 400, { error: e.message, retryable }, origin);
+    }
+  }
+
+  return send(res, 404, { error: 'not found' }, origin);
 });
-
-// List printers
-app.get('/printers', async (req, res) => {
-  try {
-    const printers = await getPrinters();
-    res.json({ printers });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Print job
-// Body: { printer, content, paperWidth, copies, autoCut }
-app.post('/print', async (req, res) => {
-  const { printer, content, paperWidth = 80, copies = 1, autoCut = true } = req.body;
-
-  if (!printer) {
-    res.status(400).json({ error: 'printer name is required' });
-    return;
-  }
-  if (!content) {
-    res.status(400).json({ error: 'content is required' });
-    return;
-  }
-
-  try {
-    await doPrint(printer, content, { paperWidth, copies, autoCut });
-    console.log(`[${new Date().toISOString()}] Printed to: ${printer}`);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(`[${new Date().toISOString()}] Print error:`, err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Test print — sends a test page to confirm the printer works
-app.post('/print/test', async (req, res) => {
-  const { printer, paperWidth = 80 } = req.body;
-
-  if (!printer) {
-    res.status(400).json({ error: 'printer name is required' });
-    return;
-  }
-
-  const lineWidth = paperWidth === 58 ? 32 : 48;
-  const testContent = `
-<div>
-  <div style="text-align:center">
-    <p><strong>SWIFTPOS TEST PAGE</strong></p>
-    <p>Print server v${VERSION}</p>
-  </div>
-  <p>---</p>
-  <p>Printer: ${printer}</p>
-  <p>Paper: ${paperWidth}mm</p>
-  <p>Platform: ${os.platform()}</p>
-  <p>Time: ${new Date().toLocaleString()}</p>
-  <p>---</p>
-  <div style="text-align:center">
-    <p>If you can read this, printing is working correctly.</p>
-  </div>
-</div>`;
-
-  try {
-    await doPrint(printer, testContent, { paperWidth, copies: 1, autoCut: true });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── Start ────────────────────────────────────────────────────────────────────
-const server = http.createServer(app);
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log('');
-  console.log('  ╔════════════════════════════════════════╗');
-  console.log('  ║       SwiftPOS Print Server            ║');
-  console.log(`  ║       Version ${VERSION}                    ║`);
-  console.log('  ╚════════════════════════════════════════╝');
-  console.log('');
-  console.log(`  Listening on: http://localhost:${PORT}`);
-  console.log(`  Platform:     ${os.platform()}`);
-  console.log('');
-  console.log('  Keep this window open while using SwiftPOS.');
-  console.log('  The dashboard will detect it automatically.');
-  console.log('');
+  console.log(`SwiftPOS Print Bridge ${VERSION} on http://127.0.0.1:${PORT}`);
+  console.log(`Bound to loopback only. Not reachable from the network.`);
+  console.log(``);
+  console.log(`Pair token (paste into the till's printer settings):`);
+  console.log(`   ${TOKEN}`);
+  console.log(``);
+  console.log(`Stored at ${TOKEN_FILE}. Delete it and restart to rotate.`);
 });
-
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`\n  ERROR: Port ${PORT} is already in use.`);
-    console.error('  Another instance of SwiftPOS Print Server may already be running.\n');
-  } else {
-    console.error('\n  ERROR:', err.message, '\n');
-  }
-  process.exit(1);
-});
-
-// Graceful shutdown
-process.on('SIGINT',  () => { console.log('\n  Shutting down...'); process.exit(0); });
-process.on('SIGTERM', () => { console.log('\n  Shutting down...'); process.exit(0); });

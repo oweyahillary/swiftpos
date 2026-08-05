@@ -102,14 +102,16 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
   ok('flat products carry their description as ITEMIZED prep lines',
      TL.includes('components.length === 0 ? parseDescriptionLines') && TL.includes('noteLines?: string[]'));
   ok('the kitchen ticket renders one indented line per FILTERED item (component style)',
-     /for \(const nl of kitchenPrepLines\(line\.noteLines\)[\s\S]{0,200}padding-left:10px/.test(KT));
+     /for \(const nl of kitchenPrepLines\(line\.noteLines, kitchenExcludeTerms\)[\s\S]{0,200}padding-left:10px/.test(KT));
   {
     const DP = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8');
     ok('the dispatcher ticket itemizes the SAME lines — UNFILTERED (owner rule: drinks/sauces print here)',
        /noteLines[\s\S]{0,220}for \(const nl of line\.noteLines\)/.test(DP)
        && !DP.includes('kitchenPrepLines'));
   }
-  ok('the KITCHEN ticket renders through the owner filter', KT.includes('kitchenPrepLines(line.noteLines)'));
+  ok('the KITCHEN ticket renders through the owner filter, terms threaded from settings',
+     KT.includes('kitchenPrepLines(line.noteLines, kitchenExcludeTerms)')
+     && KT.includes('settings.paperWidth, settings.kitchenExcludeTerms'));
   {
     // OWNER RULE, behaviorally: extract KITCHEN_NOTE_EXCLUDE + kitchenPrepLines
     // verbatim and run them against the real 12PCS Family Meal description.
@@ -132,19 +134,51 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
     ok('all three field-approved formats carry the DO-NOT-MODIFY lock',
        [KT, RB, fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8')]
          .every(src => src.includes('FIELD-APPROVED FORMAT (owner, 04 Aug 2026)')));
-    // OWNER REVERSAL (04 Aug, mid-session): the MODAL is the reference and is
-    // untouched; the PAPER matches it — the receipt prints at the modal's
-    // content width and is zoomed onto the roll. Receipt only: KOT and
-    // dispatcher are field-approved at their own scale and must not zoom.
-    ok('the success modal is UNTOUCHED — no width wrapper', !PP.includes('TRUE PAPER WIDTH'));
+    // FINAL OWNER RULING (04 Aug): the font/scale experiment is REVERTED —
+    // the owner never asked for it. What is locked is the ARRANGEMENT.
+    ok('no zoom anywhere in the print pipeline',
+       ['lib/printReceipt.ts', 'lib/printKOT.ts', 'lib/printDispatcher.ts']
+         .every(f => !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer', f), 'utf8').includes('zoom:')));
+    ok('the success modal is untouched', !PP.includes('TRUE PAPER WIDTH'));
     {
-      const PR = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printReceipt.ts'), 'utf8');
-      ok('the receipt prints at the modal\'s width, zoomed onto the roll',
-         PR.includes('MODAL_CONTENT_PX = 400') && /zoom:\$\{zoom\.toFixed\(4\)\}/.test(PR));
-      ok('zoom applies to the CUSTOMER RECEIPT ONLY',
-         /printReceipt[\s\S]{0,700}zoom/.test(PR)
-         && !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printKOT.ts'), 'utf8').includes('zoom')
-         && !fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/lib/printDispatcher.ts'), 'utf8').includes('zoom'));
+      // The approved footer stack, IN ORDER: payments → owner box (verbatim,
+      // rule only when non-empty) → fixed closing block (thank-you · TAX
+      // RECEIPT · Powered by SwiftPOS) → final rule.
+      // Anchored search: each element must appear AFTER the previous one —
+      // the lock comment above the stack names the same strings, so a naive
+      // indexOf finds prose, not elements.
+      const iPay = RB.indexOf('Payment Detail:');
+      const iBox = RB.indexOf('lines(footerText).length > 0 && (', iPay);
+      const iFix = RB.indexOf("footerMessage || 'Thank you for your business!'", iBox);
+      const iTax = RB.indexOf('TAX RECEIPT UPON REQUEST', iFix);
+      const iPow = RB.indexOf('Powered by SwiftPOS', iTax);
+      ok('footer stack order: payments → owner box → fixed block → Powered last',
+         iPay > -1 && iPay < iBox && iBox < iFix && iFix < iTax && iTax < iPow);
+      ok('empty owner box leaves NO orphan rule (rule lives inside the conditional)',
+         /lines\(footerText\)\.length > 0 && \([\s\S]{0,700}\{rule\(\)\}\s*<\/>/.test(RB));
+      ok('header line 2 reads "Branch — Till", never the TILL concatenation',
+         RB.includes('`${branchName} — ${tillNumber}`') && !/TILL \{tillNumber\}/.test(RB));
+      ok('the branch name flows from the local branches table through pos:init',
+         fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8')
+           .includes('SELECT name FROM branches WHERE id = ?'));
+    }
+    {
+      // Owner-extensible kitchen exclusions: mechanism, behaviorally.
+      const fn = TL.slice(TL.indexOf('export function kitchenPrepLines'), TL.indexOf('\n}', TL.indexOf('export function kitchenPrepLines')) + 2)
+        .replace('export function', 'function')
+        .replace('(noteLines?: string[], extraTerms?: string): string[]', '(noteLines, extraTerms)');
+      const rx = TL.match(/KITCHEN_NOTE_EXCLUDE =\s*(\/[^;]+\/i);/)[1];
+      const kitchen = new Function(`const KITCHEN_NOTE_EXCLUDE = ${rx}; ${fn}; return kitchenPrepLines;`)();
+      const meal = ['5pc chicken', 'cole slaw', 'popcorn', 'medium fries', 'soft drink'];
+      ok('built-in rule alone: drink out, food in', kitchen(meal).length === 4);
+      ok("owner adds 'coleslaw\\npopcorn': both drop, no code change",
+         kitchen(meal, 'cole slaw\npopcorn').join(',') === '5pc chicken,medium fries');
+      ok('owner terms are case-insensitive substrings', kitchen(['Popcorn Chicken'], 'popcorn').length === 0);
+      ok('blank lines in the owner box are ignored', kitchen(meal, '\n  \n').length === 4);
+      const PB2 = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/pages/PrintersTab.tsx'), 'utf8');
+      ok('the owner edits the list on the Printers tab',
+         PB2.includes('Kitchen exclusions') && PB2.includes('kitchenExcludeTerms'));
+      ok('KOT threads the owner terms through', KT.includes('settings.kitchenExcludeTerms'));
     }
     ok('ReceiptView stays inline-styled — zero Tailwind classes',
        !/className=/.test(RB));

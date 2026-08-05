@@ -55,12 +55,23 @@ export function safeRouter(): Router {
       // are unpacked so each function is individually wrapped.
       const wrapped = args.map(arg => {
         if (typeof arg === 'function') {
+          // Express identifies an ERROR handler by arity: fn.length === 4
+          // (err, req, res, next). Wrapping it in a 3-arg arrow would drop it to
+          // arity 3, so Express would treat it as ordinary middleware and never
+          // route errors to it (finding #18). Pass 4-arg functions through
+          // untouched — an error handler is synchronous-signalling by contract,
+          // and asyncHandler's catch(next) is exactly what an error handler must
+          // NOT do (it would re-enter the error pipeline). Only wrap 0–3 arg
+          // handlers, which are the async route handlers this wrapper is for.
+          if ((arg as Function).length >= 4) return arg;
           return asyncHandler(arg as AsyncHandler);
         }
         if (Array.isArray(arg)) {
-          return arg.map(fn =>
-            typeof fn === 'function' ? asyncHandler(fn as AsyncHandler) : fn
-          );
+          return arg.map(fn => {
+            if (typeof fn !== 'function') return fn;
+            if ((fn as Function).length >= 4) return fn;
+            return asyncHandler(fn as AsyncHandler);
+          });
         }
         return arg;
       });

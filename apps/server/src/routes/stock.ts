@@ -87,26 +87,24 @@ async function applyProductStockIn(
     const isByPiece = meta?.sold_by === 'piece';
     const piecesPerUnit = meta?.pieces_per_unit ?? 1;
 
-    const { data: current } = await supabase.from('stock_levels')
-      .select('quantity, qty_pieces, low_stock_threshold')
-      .eq('product_id', item.product_id).eq('branch_id', branchId).maybeSingle();
+    // Atomic per-branch increment. Previously this read quantity (a STRING from
+    // PostgREST), added item.quantity to it, and wrote the result — so "10.00"
+    // + 5 became "10.005" and receiving stock did almost nothing. The RPC does
+    // the arithmetic in Postgres under a row lock, closing both the string bug
+    // and the read-modify-write race.
+    const pieceDelta = isByPiece ? item.quantity * piecesPerUnit : 0;
+    const { data: adjusted, error: adjErr } = await supabase.rpc('adjust_product_stock', {
+      p_product_id:  item.product_id,
+      p_branch_id:   branchId,
+      p_qty_delta:   item.quantity,
+      p_piece_delta: pieceDelta,
+    });
+    if (adjErr) throw adjErr;
 
-    const newQty       = (current?.quantity ?? 0) + item.quantity;
-    // For piece-based products qty_pieces is the live counter; units received are unpacked into pieces
-    const newQtyPieces = isByPiece
-      ? (current?.qty_pieces ?? 0) + item.quantity * piecesPerUnit
-      : (current?.qty_pieces ?? 0);
-
-    await supabase.from('stock_levels').upsert(
-      {
-        product_id: item.product_id, branch_id: branchId,
-        quantity: newQty,
-        qty_pieces: newQtyPieces,
-        low_stock_threshold: current?.low_stock_threshold ?? 5,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'product_id,branch_id' },
-    );
+    // rpc returns a one-row set: [{ quantity, qty_pieces }]
+    const row = Array.isArray(adjusted) ? adjusted[0] : adjusted;
+    const newQty       = Number(row?.quantity ?? 0);
+    const newQtyPieces = Number(row?.qty_pieces ?? 0);
 
     const noteWithPieces = isByPiece
       ? `${referenceNote} (+${item.quantity * piecesPerUnit} pieces)`

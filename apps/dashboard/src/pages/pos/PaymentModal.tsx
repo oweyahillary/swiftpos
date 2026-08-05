@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { generateOrderNumber } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
+import { capDiscountPct } from './cashier/types';
 import type { Business, OrderType } from '../../types';
 import type { LoyaltyState } from './LoyaltyPanel';
 import type { DiscountState } from './DiscountPanel';
@@ -45,6 +46,11 @@ interface Props {
   onSuccess: (orderNumber: string) => void;
   onPaid?: () => void;
   shiftId?: string | null;
+  /** Discount ceiling (percent) advertised by the server. The web POS clamps to
+   *  this so it charges what the server will store; without it an over-ceiling
+   *  discount made the charged total and the stored total disagree, and now
+   *  (with the atomic-order payment guard) would fail the sale outright. */
+  maxDiscountPct?: number;
   /** If set, the order already exists in DB (order-first model) — use /pay instead of POST /orders */
   existingOrderId?: string;
 }
@@ -56,7 +62,8 @@ function fmt(n: number) {
 export default function PaymentModal({
   cart, total, subtotal, vatAmount, currency, business, branchId, branchName,
   orderType = 'retail', tableNumber,
-  loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId, existingOrderId,
+  loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
+  maxDiscountPct = 10, existingOrderId,
 }: Props) {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
@@ -131,19 +138,40 @@ export default function PaymentModal({
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
+  const rawLoyaltyDiscount = loyaltyState?.discountAmount ?? 0;
+  const rawPromoDiscount   = discountState?.discount_amount ?? 0;
+  const rawDiscount        = rawLoyaltyDiscount + rawPromoDiscount;
+
+  // Clamp the combined discount to the server's ceiling BEFORE charging. The
+  // server recomputes the order with the same cap and stores the capped total;
+  // if this client charged the uncapped total, the payment legs would not
+  // reconcile to what the server stored — previously a silent mismatch, now
+  // (with the atomic-order guard) a rejected sale. capDiscountPct mirrors the
+  // server's capDiscount exactly.
+  const cappedDiscount = capDiscountPct(rawDiscount, subtotal, maxDiscountPct);
+  const discountWasCapped = cappedDiscount < rawDiscount - 0.005;
+
+  // Split the capped amount back across loyalty and promo proportionally, so the
+  // stored discount_amount and the receipt line items stay consistent. Loyalty
+  // is honoured first (points were already reserved), promo takes the remainder.
+  const loyaltyDiscount = Math.min(rawLoyaltyDiscount, cappedDiscount);
+  const promoDiscount   = Math.max(0, cappedDiscount - loyaltyDiscount);
+
+  // The total actually charged: subtotal minus the capped discount. `total` came
+  // in reflecting the uncapped discount, so recompute rather than trust it.
+  const chargedTotal  = Math.round((subtotal - cappedDiscount) * 100) / 100;
+
   // Tip is added on top of the order total — this is what the customer pays.
-  const grandTotal    = total + tipAmount;
+  const grandTotal    = chargedTotal + tipAmount;
   // A blank cash field means "pay exact". Without this the Confirm button stays
   // disabled with no feedback even though the field shows the total as a
   // placeholder — cashiers only type a value when the customer hands over more.
   const tenderedNum   = (method === 'cash' && tendered.trim() === '') ? grandTotal : (parseFloat(tendered) || 0);
   const change        = method === 'cash' ? Math.max(0, tenderedNum - grandTotal) : 0;
   const cashValid     = method !== 'cash' || tenderedNum >= grandTotal;
-  const loyaltyDiscount  = loyaltyState?.discountAmount ?? 0;
-  const promoDiscount    = discountState?.discount_amount ?? 0;
   const pointsRedeemed   = loyaltyState?.pointsToRedeem ?? 0;
   const multiplier       = loyaltyState?.tier.multiplier ?? 1;
-  const estimatedPoints  = Math.floor(Math.floor(total / 10) * multiplier);
+  const estimatedPoints  = Math.floor(Math.floor(chargedTotal / 10) * multiplier);
 
   // Fetch the attached customer's credit account when 'credit' is selected.
   const customerId = loyaltyState?.customer.id ?? null;
@@ -171,7 +199,7 @@ export default function PaymentModal({
   }, [method, customerId]);
 
   // Credit is valid only when a customer is attached and available credit covers the total.
-  const creditValid = method !== 'credit' || (!!customerId && !!creditInfo && creditInfo.available_credit >= total);
+  const creditValid = method !== 'credit' || (!!customerId && !!creditInfo && creditInfo.available_credit >= grandTotal);
 
   // Quick-tender presets: Exact, the nearest common notes above the total, and
   // a round-up to the next 100. These just fill the tendered field — the manual
@@ -197,9 +225,9 @@ export default function PaymentModal({
       table_number:    tableNumber ?? null,
       subtotal,
       vat_amount:      vatAmount,
-      discount_amount: loyaltyDiscount + promoDiscount,
+      discount_amount: cappedDiscount,
       discount_id:     discountState?.discount.id ?? null,
-      total,
+      total:           chargedTotal,
       tip_amount:      tipAmount,
       customer_id:     loyaltyState?.customer.id ?? null,
       customer_name:   loyaltyState?.customer.name ?? null,
@@ -409,7 +437,7 @@ export default function PaymentModal({
               etims={completedOrder.etims}
               tip={tipAmount}
               cart={cart}
-              total={total}
+              total={chargedTotal}
               subtotal={subtotal}
               vatAmount={vatAmount}
               currency={currency}
@@ -478,7 +506,7 @@ export default function PaymentModal({
             <span className="text-gray-500 text-sm">{mpesaPending.orderNumber}</span>
           </div>
           <MpesaStkPanel
-            total={total}
+            total={grandTotal}
             currency={currency}
             orderId={mpesaPending.orderId}
             onSuccess={handleMpesaSuccess}
@@ -505,9 +533,14 @@ export default function PaymentModal({
           {/* Total due */}
           <div className="text-center py-2">
             <p className="text-gray-400 text-sm">Total due</p>
-            <p className="text-white text-3xl font-bold mt-1">{currency} {fmt(total)}</p>
+            <p className="text-white text-3xl font-bold mt-1">{currency} {fmt(grandTotal)}</p>
             {loyaltyDiscount > 0 && <p className="text-green-400 text-xs mt-1">⭐ Includes {currency} {fmt(loyaltyDiscount)} loyalty discount</p>}
             {promoDiscount  > 0 && <p className="text-yellow-400 text-xs mt-0.5">🏷️ Includes {currency} {fmt(promoDiscount)} promo discount</p>}
+            {discountWasCapped && (
+              <p className="text-orange-400 text-xs mt-0.5">
+                ⚠️ Discount capped at {maxDiscountPct}% — {currency} {fmt(rawDiscount - cappedDiscount)} above the limit was not applied.
+              </p>
+            )}
             {loyaltyState && estimatedPoints > 0 && <p className="text-yellow-500 text-xs mt-0.5">Customer earns ~{estimatedPoints} pts</p>}
           </div>
 
@@ -525,7 +558,7 @@ export default function PaymentModal({
           {/* ── SPLIT PAYMENT ── */}
           {splitMode && (
             <SplitPaymentPanel
-              total={total}
+              total={grandTotal}
               currency={currency}
               onConfirm={handleSplitCharge}
               onCancel={() => setSplitMode(false)}
@@ -614,11 +647,11 @@ export default function PaymentModal({
                     <input
                       type="number" value={tendered}
                       onChange={e => setTendered(e.target.value)}
-                      placeholder={fmt(total)} min={total} autoFocus
+                      placeholder={fmt(grandTotal)} min={grandTotal} autoFocus
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors text-lg font-semibold"
                     />
                   </div>
-                  {tenderedNum >= total && (
+                  {tenderedNum >= grandTotal && (
                     <div className="bg-gray-800 rounded-lg px-4 py-3 flex justify-between">
                       <span className="text-gray-400 text-sm">Change</span>
                       <span className="text-white font-semibold">{currency} {fmt(change)}</span>
@@ -631,7 +664,7 @@ export default function PaymentModal({
               {method === 'mpesa' && (
                 <div className="bg-gray-800 rounded-xl p-4 text-center space-y-3">
                   <div className="text-3xl">📱</div>
-                  <p className="text-white font-semibold">M-Pesa — {currency} {fmt(total)}</p>
+                  <p className="text-white font-semibold">M-Pesa — {currency} {fmt(grandTotal)}</p>
                   <p className="text-gray-400 text-sm">
                     Click below to send an STK push to the customer's phone,
                     or enter a reference code manually after they pay.
@@ -643,7 +676,7 @@ export default function PaymentModal({
               {method === 'card' && (
                 <div className="bg-gray-800 rounded-xl p-4 text-center space-y-2">
                   <div className="text-3xl">💳</div>
-                  <p className="text-white font-semibold">Card — {currency} {fmt(total)}</p>
+                  <p className="text-white font-semibold">Card — {currency} {fmt(grandTotal)}</p>
                   <p className="text-gray-400 text-sm">Process the card on your terminal, then confirm below.</p>
                 </div>
               )}
@@ -673,13 +706,13 @@ export default function PaymentModal({
                       </div>
                       <div className="flex justify-between text-sm border-t border-gray-700 pt-2">
                         <span className="text-gray-400">Available credit</span>
-                        <span className={creditInfo.available_credit >= total ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                        <span className={creditInfo.available_credit >= grandTotal ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
                           {currency} {fmt(creditInfo.available_credit)}
                         </span>
                       </div>
                       {creditInfo.available_credit < total && (
                         <p className="text-red-400 text-xs text-center pt-1">
-                          This sale ({currency} {fmt(total)}) exceeds available credit.
+                          This sale ({currency} {fmt(grandTotal)}) exceeds available credit.
                         </p>
                       )}
                       {creditInfo.credit_limit === 0 && (

@@ -1,0 +1,8 @@
+PASS  kitchen-80     494 bytes  22 commands  17 lines  widest 48/48
+PASS  dispatch-80    557 bytes  20 commands  21 lines  widest 48/48
+PASS  receipt-80    1859 bytes  21 commands  47 lines  widest 48/48
+PASS  kitchen-58     443 bytes  22 commands  20 lines  widest 32/32
+PASS  receipt-58    1371 bytes  21 commands  47 lines  widest 32/32
+
+Raw streams written to /home/claude/printing/out
+Byte stream valid.
