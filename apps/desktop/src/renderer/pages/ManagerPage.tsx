@@ -14,7 +14,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
-import PrintersTab from './PrintersTab';
+import PrinterSetupScreen from '../screens/PrinterSetupScreen';
+
+// A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
+// A PRINTER is a machine and belongs to ONE terminal — which is why the
+// assignment lives in the till's local database, not on the server. See the
+// header of main/print/printWorker.ts.
+const ESCPOS_STATIONS = [
+  { id: 'kitchen',  name: 'Kitchen',  kind: 'kitchen'  as const },
+  { id: 'dispatch', name: 'Dispatch', kind: 'dispatch' as const },
+  { id: 'receipt',  name: 'Till',     kind: 'receipt'  as const },
+];
 import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
@@ -1048,7 +1058,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
       case 'receipt': return <ReceiptTextTab />;
-      case 'printers': return <PrintersTab currency={currency} />;
+      // PrinterSetupScreen supersedes PrintersTab: one screen, live preview
+      // rendered from the same Document the printer receives, and a test print
+      // that reports the real result. PrintersTab stays reachable until the
+      // thermal path is proven on site. PrintersTab.tsx remains in the tree,
+      // unrouted, until then.
+      case 'printers': return <PrinterSetupScreen stations={ESCPOS_STATIONS} />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }

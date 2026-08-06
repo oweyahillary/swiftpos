@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
+import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
 import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
@@ -173,6 +174,14 @@ app.whenReady().then(() => {
 
     // Register all IPC handlers
     registerIpcHandlers();
+
+    // ESC/POS print subsystem: spool, transport, station->printer assignments.
+    // AFTER registerIpcHandlers so a channel collision surfaces here rather than
+    // silently shadowing a legacy handler. Wrapped because a till with no
+    // thermal printer configured must still open and sell.
+    try {
+      initPrinting(getLocalDb(), () => BrowserWindow.getAllWindows()[0] ?? null);
+    } catch (e) { console.error('[startup] print subsystem init failed:', e); }
 
     // If this device is the branch aggregation node, start its LAN listener so
     // peer tills can push orders and read combined branch reports.

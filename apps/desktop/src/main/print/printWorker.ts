@@ -22,8 +22,8 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import {
   renderTicket, toEscPos, toPreview, Spool,
   type PrintContext, type StationConfig,
-} from '../../../shared/printing/src';
-import { sendToPrinter, parseTarget, PrinterError } from '../../../shared/printing/src/transport';
+  sendToPrinter, parseTarget, PrinterError,
+} from '@swiftpos/printing';
 import { SqliteJobStore } from './spoolStore.sqlite';
 
 const ASSIGNMENTS_SCHEMA = `
@@ -51,9 +51,9 @@ export function initPrinting(database: Database.Database, win: () => BrowserWind
   const store = new SqliteJobStore(db);
   spool = new Spool(store, {
     send: (target, bytes) => sendToPrinter(parseTarget(target), bytes),
-    isRetryable: e => (e instanceof PrinterError ? e.retryable : true),
+    isRetryable: (e: unknown) => (e instanceof PrinterError ? e.retryable : true),
     // Pushed to the renderer so the queue badge updates without polling.
-    onChange: () => win()?.webContents.send('print:changed'),
+    onChange: () => win()?.webContents.send('escpos:changed'),
   });
 
   const recovered = spool.recoverStuck();
@@ -126,9 +126,9 @@ export function queueTickets(
 }
 
 function registerIpc(): void {
-  ipcMain.handle('print:assignments', () => assignments());
+  ipcMain.handle('escpos:assignments', () => assignments());
 
-  ipcMain.handle('print:assign', (_e, a: Assignment) => {
+  ipcMain.handle('escpos:assign', (_e, a: Assignment) => {
     db!.prepare(`
       INSERT INTO station_printers (station_id, target, paper_width_mm, updated_at)
       VALUES (?, ?, ?, ?)
@@ -140,20 +140,20 @@ function registerIpc(): void {
     return { ok: true };
   });
 
-  ipcMain.handle('print:unassign', (_e, stationId: string) => {
+  ipcMain.handle('escpos:unassign', (_e, stationId: string) => {
     db!.prepare(`DELETE FROM station_printers WHERE station_id=?`).run(stationId);
     return { ok: true };
   });
 
-  ipcMain.handle('print:status', () => spool!.status());
-  ipcMain.handle('print:retry', (_e, id: string) => { spool!.retry(id); return { ok: true }; });
+  ipcMain.handle('escpos:status', () => spool!.status());
+  ipcMain.handle('escpos:retry', (_e, id: string) => { spool!.retry(id); return { ok: true }; });
 
   /**
    * Preview comes from the SAME Document the printer receives, so what the
    * settings screen shows is what the paper says. There is no second layout
    * engine here to disagree with the first.
    */
-  ipcMain.handle('print:preview', (_e, ctx: PrintContext) =>
+  ipcMain.handle('escpos:preview', (_e, ctx: PrintContext) =>
     toPreview(renderTicket(ctx), { showMargins: true }));
 
   /**
@@ -161,7 +161,7 @@ function registerIpc(): void {
    * is the whole point of pressing it: the installer is standing at the printer
    * and needs to know now, not in a queue.
    */
-  ipcMain.handle('print:test', async (_e, ctx: PrintContext, target: string) => {
+  ipcMain.handle('escpos:test', async (_e, ctx: PrintContext, target: string) => {
     const started = Date.now();
     try {
       const doc = renderTicket(ctx);

@@ -45,14 +45,11 @@ interface TestResult {
   retryable?: boolean;
 }
 
-declare global {
-  interface Window {
-    api: {
-      invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
-      on(channel: string, cb: () => void): () => void;
-    };
-  }
-}
+// The escpos bridge is declared on Window in renderer/lib/posApi.ts alongside
+// the rest of window.swiftpos. This screen previously typed a `window.api`
+// bridge that the preload never exposed — the screen would have thrown on its
+// first render. See scripts/check-ipc-parity.mjs for why that class of gap
+// keeps happening.
 
 export default function PrinterSetupScreen({ stations }: { stations: Station[] }) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -66,23 +63,22 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
   const assignment = assignments.find(a => a.stationId === selected) ?? null;
 
   const refresh = useCallback(async () => {
-    setAssignments(await window.api.invoke<Assignment[]>('print:assignments'));
-    const status = await window.api.invoke<{ counts: QueueCounts }>('print:status');
+    setAssignments((await window.swiftpos.escpos.assignments()) as Assignment[]);
+    const status = (await window.swiftpos.escpos.status()) as { counts: QueueCounts };
     setCounts(status.counts);
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => window.api.on('print:changed', () => { void refresh(); }), [refresh]);
+  useEffect(() => window.swiftpos.escpos.onChanged(() => { void refresh(); }), [refresh]);
 
   // Re-render the preview whenever the station or the paper width changes, so
   // the effect of switching to 58mm is visible before anything is printed.
   useEffect(() => {
     if (!station) return;
-    void window.api
-      .invoke<string>('print:preview', {
+    void (window.swiftpos.escpos.preview({
         stationId: station.id,
         paperWidthMm: assignment?.paperWidthMm ?? 80,
-      })
+      }) as Promise<string>)
       .then(setPreview)
       .catch(() => setPreview('Preview unavailable.'));
   }, [station, assignment?.paperWidthMm]);
@@ -90,9 +86,9 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
   async function save(target: string, paperWidthMm: PaperWidth) {
     if (!station) return;
     if (!target.trim()) {
-      await window.api.invoke('print:unassign', station.id);
+      await window.swiftpos.escpos.unassign(station.id);
     } else {
-      await window.api.invoke('print:assign', {
+      await window.swiftpos.escpos.assign({
         stationId: station.id, target: target.trim(), paperWidthMm,
       });
     }
@@ -105,7 +101,7 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
     setTesting(true);
     setResult(null);
     try {
-      setResult(await window.api.invoke<TestResult>('print:test',
+      setResult(await window.swiftpos.escpos.test(
         { stationId: station.id, paperWidthMm: assignment.paperWidthMm },
         assignment.target));
     } finally {

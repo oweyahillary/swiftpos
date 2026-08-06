@@ -5,11 +5,15 @@
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "sample": "tsc && node dist/test/sample.js"
+    "build": "tsc -b",
+    "sample": "tsc -b && tsc -p tsconfig.test.json && node test-dist/sample.js"
   },
   "dependencies": {
     "@types/node": "^26.1.2",
     "typescript": "^7.0.2"
-  }
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ]
 }

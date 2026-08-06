@@ -15,7 +15,7 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { JobStore, PrintJob } from '../../../shared/printing/src/spool';
+import type { JobStore, PrintJob } from '@swiftpos/printing';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS print_jobs (

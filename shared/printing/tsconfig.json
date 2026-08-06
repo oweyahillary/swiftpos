@@ -8,7 +8,15 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "rootDir": "src"
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

@@ -1,15 +1,15 @@
 {
   "name": "desktop",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "concurrently \"tsc -p tsconfig.main.json --watch\" \"vite\" \"wait-on http://localhost:5174 dist/main/index.js && electron .\"",
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.main.json && vite build && electron-builder",
+    "build": "tsc -p tsconfig.json && tsc -b tsconfig.main.json && vite build && electron-builder",
     "build:renderer": "vite build",
     "lint": "echo 'lint desktop'",
     "type-check": "tsc --noEmit",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build:main": "tsc -b tsconfig.main.json",
     "postinstall": "electron-builder install-app-deps",
     "pack:dir": "electron-builder --dir --config.directories.output=build-out",
     "pack:installer": "electron-builder --win nsis --config.directories.output=release",
@@ -19,7 +19,8 @@
   "dependencies": {
     "better-sqlite3": "^11.10.0",
     "exceljs": "^4.4.0",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "@swiftpos/printing": "file:../../shared/printing"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",

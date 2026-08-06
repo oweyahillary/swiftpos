@@ -175,6 +175,27 @@ contextBridge.exposeInMainWorld('swiftpos', {
     clearBranchPrice: (product_id: string)                        => ipcRenderer.invoke('manager:clearBranchPrice', { product_id }),
   },
 
+  // ── ESC/POS printing (the thermal spool subsystem) ────────────────────────
+  // Namespaced escpos:* rather than print:*, because print:* belongs to the
+  // legacy HTML print path in ipcHandlers.ts and print:preview exists in both.
+  // Two ipcMain.handle calls on one channel throw at startup.
+  escpos: {
+    assignments: ()                  => ipcRenderer.invoke('escpos:assignments'),
+    assign:      (a: unknown)        => ipcRenderer.invoke('escpos:assign', a),
+    unassign:    (stationId: string) => ipcRenderer.invoke('escpos:unassign', stationId),
+    status:      ()                  => ipcRenderer.invoke('escpos:status'),
+    retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),
+    preview:     (ctx: unknown)      => ipcRenderer.invoke('escpos:preview', ctx),
+    test:        (ctx: unknown, target: string) => ipcRenderer.invoke('escpos:test', ctx, target),
+    // Push, not poll: the spool tells the screen when the queue moves.
+    // Returns its own unsubscribe so a React effect can clean up.
+    onChanged:   (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('escpos:changed', h);
+      return () => { ipcRenderer.removeListener('escpos:changed', h); };
+    },
+  },
+
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
     create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) =>

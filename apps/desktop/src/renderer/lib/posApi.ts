@@ -142,6 +142,16 @@ export interface PrinterInfo {
 declare global {
   interface Window {
     swiftpos: {
+      escpos: {
+        assignments: () => Promise<unknown>;
+        assign:      (a: unknown) => Promise<unknown>;
+        unassign:    (stationId: string) => Promise<unknown>;
+        status:      () => Promise<unknown>;
+        retry:       (id: string) => Promise<unknown>;
+        preview:     (ctx: unknown) => Promise<unknown>;
+        test:        (ctx: unknown, target: string) => Promise<any>;
+        onChanged:   (cb: () => void) => () => void;
+      };
       version: string;
       platform: string;
       auth: {
