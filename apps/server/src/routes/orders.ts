@@ -1849,6 +1849,7 @@ router.post('/:id/pay', async (req, res) => {
     points_redeemed = 0,
     discount_amount = 0,
     discount_id = null,
+    tip_amount = 0,
   } = req.body;
 
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -1943,10 +1944,19 @@ router.post('/:id/pay', async (req, res) => {
     // tip in the leg amount, fix it to send legs summing to total (tip is a
     // separate field) BEFORE deploying — see the deploy note for the atomic
     // order fix; the same caution applies here.
+    // A tip is money on top of the bill: it belongs in the legs (it is what the
+    // customer handed over) but NOT in orders.total (which is what the business
+    // recognises, and the base the VAT split is taken from). Reconcile against
+    // total + tip. This matches create_order_atomic as of migration 66 — the two
+    // order paths must agree on what "paid in full" means, or a sale that is
+    // accepted at the counter is refused on the dine-in path and vice versa.
+    const payTip = Math.max(0, Number(tip_amount) || 0);
+    const amountDue = round2(payTotal + payTip);
     const legSum = paymentLegs.reduce((s, l) => s + (Number(l.amount) || 0), 0);
-    if (Math.abs(legSum - payTotal) > 0.01) {
+    if (Math.abs(legSum - amountDue) > 0.01) {
       res.status(400).json({
-        error: `Payment legs sum to ${legSum.toFixed(2)} but the order total is ${payTotal.toFixed(2)}.`,
+        error: `Payment legs sum to ${legSum.toFixed(2)} but the amount due is ${amountDue.toFixed(2)} `
+             + `(total ${payTotal.toFixed(2)} + tip ${payTip.toFixed(2)}).`,
         code: 'PAYMENT_MISMATCH',
       });
       return;
@@ -1980,6 +1990,10 @@ router.post('/:id/pay', async (req, res) => {
       vat_amount:      payVat,
       ctl_amount:      payCtl,
       discount_id,
+      // The dine-in path never stored the tip at all — a tip taken at the table
+      // was money in the drawer that the books had no record of, which reads as
+      // an unexplained cash surplus at close.
+      tip_amount:      payTip,
       sync_status:     'pending',
     };
     // Only touch customer_id if this request actually supplied one — don't

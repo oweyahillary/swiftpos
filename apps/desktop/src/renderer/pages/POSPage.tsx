@@ -668,6 +668,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
         subtotal,
         discount_amount: payment.discountAmount,
+        // The BILL, excluding tip. The tip rides in tip_amount and shows up in
+        // the payment legs, which reconcile to total + tip (migration 66).
         tip_amount: payment.tipAmount,
         vat_amount: payment.vatAmount,
         ctl_amount: payment.ctlAmount,
@@ -756,7 +758,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               subtotal={subtotal}
               discountAmount={completedOrder.payment.discountAmount}
               tipAmount={completedOrder.payment.tipAmount}
-              total={completedOrder.payment.total}
+              total={completedOrder.payment.amountDue}
               vatAmount={completedOrder.payment.vatAmount}
               vatRate={vatRate}
               ctlAmount={completedOrder.payment.ctlAmount}
