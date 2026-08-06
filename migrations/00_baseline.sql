@@ -202,11 +202,11 @@ $$;
 -- Name: increment_loyalty_points(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.increment_loyalty_points(p_customer_id uuid, p_delta integer) RETURNS void
+CREATE FUNCTION public.increment_loyalty_points(p_customer_id uuid, p_points integer) RETURNS void
     LANGUAGE sql
     AS $$
   UPDATE public.customers
-  SET loyalty_points = loyalty_points + p_delta,
+  SET loyalty_points = loyalty_points + p_points,
       visit_count    = visit_count + 1
   WHERE id = p_customer_id;
 $$;
