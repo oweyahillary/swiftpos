@@ -760,7 +760,29 @@ router.post('/pos-login', async (req, res) => {
 
   const authError = { error: 'Invalid email or PIN' };
 
-  const { data: user, error: userErr } = await supabase
+  // ── Resolving WHICH user this is ────────────────────────────────────────
+  //
+  // This used to be a single global .ilike(...).single(). Two things were wrong
+  // with that, and both failed CLOSED with the same misleading message, so
+  // neither was ever going to be reported as anything but "the PIN is broken".
+  //
+  // 1. TENANT COLLISION. users is UNIQUE (business_id, email) — see
+  //    00_baseline.sql — so the SAME email is allowed to exist in two
+  //    businesses. When it does, .single() returns PGRST116, userErr is truthy,
+  //    and the cashier is told "Invalid email or PIN" forever. Resetting the PIN
+  //    does not help, because the PIN was never the problem.
+  //
+  // 2. ilike IS A PATTERN MATCH. % and _ are LIKE metacharacters, and _ is a
+  //    LEGAL EMAIL CHARACTER. So john_doe@x.com would also match johnXdoe@x.com.
+  //    A login field should never accept wildcards at all.
+  //
+  // The fix: use ilike only as a coarse, index-friendly, case-insensitive
+  // filter, then require an EXACT case-insensitive match in JS (which no
+  // wildcard can satisfy), and disambiguate across tenants using the branch the
+  // till is logging in to.
+  const needle = String(email).trim().toLowerCase();
+
+  const { data: candidates, error: userErr } = await supabase
     .from('users')
     .select(`
       id, name, email, status, pin_hash, business_id,
@@ -772,10 +794,43 @@ router.post('/pos-login', async (req, res) => {
       user_permissions ( granted, permissions ( key ) )
     `)
     .eq('status', 'active')
-    .ilike('email', email.trim())
-    .single();
+    .ilike('email', needle)
+    .limit(20);
 
-  if (userErr || !user) { res.status(401).json(authError); return; }
+  if (userErr) { res.status(401).json(authError); return; }
+
+  // Exact match, not a pattern match. This is what neutralises % and _.
+  let matches = (candidates ?? []).filter(
+    (u: any) => String(u.email ?? '').trim().toLowerCase() === needle,
+  );
+
+  // Same email in more than one business: the branch being logged in to says
+  // which tenant is meant. The branch is validated against the user's own
+  // accessible branches further down, so this narrows without granting anything.
+  if (matches.length > 1 && branch_id) {
+    const { data: branchRow } = await supabase
+      .from('branches')
+      .select('business_id')
+      .eq('id', branch_id)
+      .maybeSingle();
+    if (branchRow?.business_id) {
+      matches = matches.filter((u: any) => u.business_id === branchRow.business_id);
+    }
+  }
+
+  if (matches.length > 1) {
+    // Say what is actually wrong. Silently failing here is what turns a
+    // five-minute fix into a day of support calls about a working PIN.
+    res.status(409).json({
+      error: 'This email is registered with more than one business. '
+           + 'Select a branch on this device, or contact SwiftPOS support.',
+      code:  'AMBIGUOUS_ACCOUNT',
+    });
+    return;
+  }
+
+  const user = matches[0];
+  if (!user) { res.status(401).json(authError); return; }
   if (!(user as any).pin_hash) { res.status(401).json(authError); return; }
 
   const { valid, needsUpgrade } = await verifyPin(

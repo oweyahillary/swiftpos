@@ -302,13 +302,23 @@ async function awardLoyaltyPoints(
 ) {
   // Atomic increment — avoids race condition when concurrent orders for the same customer
   // are placed simultaneously (read-then-write can miscalculate points under concurrency).
+  // p_points, NOT p_delta. PostgREST resolves an RPC by its NAMED ARGUMENT SET,
+  // so calling (p_customer_id, p_delta) matched no function at all and returned
+  // PGRST202 every single time. The fallback below tests for 'function' in the
+  // message, PGRST202 reads "Could not find the function ... in the schema
+  // cache", so it matched — and every award silently took the racy
+  // read-modify-write path this RPC exists to replace. The atomic path had
+  // never once executed. Signature: migrations/53_increment_loyalty_points.sql.
   const { error } = await supabase.rpc('increment_loyalty_points', {
     p_customer_id: customerId,
-    p_delta:       pointsToEarn,
+    p_points:      pointsToEarn,
   });
 
-  // Fallback to read-then-write if the RPC doesn't exist yet (pre-migration environments)
-  if (error?.message?.includes('function') || error?.message?.includes('does not exist')) {
+  // Fallback for pre-migration environments only. Narrowed to PGRST202 (the
+  // function genuinely is not there) so it can no longer swallow a real error
+  // — a permissions failure or a bad argument used to land here and look like
+  // a successful award.
+  if (error && (error.code === 'PGRST202' || /Could not find the function/i.test(error.message ?? ''))) {
     const { data: customer } = await supabase
       .from('customers')
       .select('loyalty_points, visit_count')
@@ -2049,10 +2059,26 @@ router.post('/:id/pay', async (req, res) => {
     // 5. Loyalty
     if (customer_id) {
       if (points_redeemed > 0) {
-        await supabase
-          .from('customers')
-          .update({ loyalty_points: supabase.rpc('decrement', { x: points_redeemed }) })
-          .eq('id', customer_id);
+        // This was:
+        //   .update({ loyalty_points: supabase.rpc('decrement', { x: n }) })
+        // supabase.rpc() returns a lazy query BUILDER, not a value. It was never
+        // awaited, so no request was ever sent; the builder object was serialised
+        // into the update body as JSON, and the result was not destructured, so
+        // the failure was silent. There is also no 'decrement' function in any
+        // migration. Net effect: dine-in customers redeemed their points and
+        // kept them.
+        //
+        // adjust_loyalty_points (migration 67) is deliberately NOT
+        // increment_loyalty_points with a negative number — that one also does
+        // visit_count + 1, which would count a redemption as another visit and
+        // double-count any order that both redeems and earns.
+        const { error: redeemErr } = await supabase.rpc('adjust_loyalty_points', {
+          p_customer_id: customer_id,
+          p_points:      -Math.abs(Number(points_redeemed) || 0),
+        });
+        if (redeemErr) {
+          console.error('[orders/pay] loyalty redemption failed:', redeemErr.message);
+        }
       }
       // payTotal, not order.total: order.total is the pre-discount figure this
       // handler has just superseded, so awarding on it would earn the customer
