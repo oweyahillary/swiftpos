@@ -20,3 +20,9 @@ migrations/*.xlsx
 
 # Local working files — never committed
 no-commit/
+shared/printing/test/*.js
+shared/printing/test/*.d.ts
+shared/printing/test/*.d.ts.map
+/tsconfig.main.json
+/cleanup.sh
+*.zip
