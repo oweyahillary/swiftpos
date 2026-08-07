@@ -17,7 +17,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
-import { chunkIn } from './reports';
+import { chunkIn } from '../lib/pgQuery';
 
 const router = safeRouter();
 router.use(requireAuth);

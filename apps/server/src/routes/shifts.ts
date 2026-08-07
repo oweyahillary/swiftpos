@@ -4,6 +4,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
+import { chunkIn, fetchAllIds } from '../lib/pgQuery';
 import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
@@ -200,16 +201,15 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   // Sum all completed CASH payments for orders belonging to this shift.
   // Use orders → payments direction (more reliable than the !inner embed
   // syntax which is PostgREST-version sensitive and fails on some Supabase tiers).
-  const { data: shiftOrders, error: ordErr } = await supabase
-    .from('orders')
-    .select('id')
-    .eq('shift_id', id)
-    .eq('status', 'completed');
-
-  if (ordErr) { sendError(res, ordErr); return; }
+  // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
+  // expected cash computed from a TRUNCATED order list reports a large phantom
+  // surplus at close with no error. See lib/pgQuery.ts.
+  let orderIds: string[];
+  try {
+    orderIds = await fetchAllIds('orders', q => q.eq('shift_id', id).eq('status', 'completed'));
+  } catch (e) { sendError(res, e as Error); return; }
 
   let cashSales = 0;
-  const orderIds = (shiftOrders ?? []).map((o: any) => o.id);
   if (orderIds.length > 0) {
     // Completed AND refunded rows.
     //
@@ -221,14 +221,17 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     //
     // A void needs no such handling: the order itself leaves the set above, so
     // both its legs disappear together.
-    const { data: cashPayments, error: payErr } = await supabase
-      .from('payments')
-      .select('amount, status')
-      .in('order_id', orderIds)
-      .eq('method', 'cash')
-      .in('status', ['completed', 'refunded']);
-    if (payErr) { sendError(res, payErr); return; }
-    cashSales = (cashPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+    // chunkIn, not a bare .in(): PostgREST puts the id list in the URL, and a
+    // shift with more than ~220 orders overflows the 8KB request line every
+    // proxy in the path allows. See lib/pgQuery.ts.
+    let cashPayments: Array<{ amount: string | number; status: string }>;
+    try {
+      cashPayments = await chunkIn<{ amount: string | number; status: string }>(
+        'payments', 'order_id', orderIds,
+        q => q.select('amount, status').eq('method', 'cash').in('status', ['completed', 'refunded']),
+      );
+    } catch (e) { sendError(res, e as Error); return; }
+    cashSales = cashPayments.reduce((sum, p) => sum + Number(p.amount), 0);
   }
 
   // Sum float_out movements (cash removed from drawer)
@@ -312,17 +315,19 @@ async function shiftExpenses(shiftId: string): Promise<number> {
  * report. Audit finding M8.
  */
 async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {
-  const { data: shiftOrders } = await supabase
-    .from('orders').select('id').eq('shift_id', shiftId).eq('status', 'completed');
-  const orderIds = (shiftOrders ?? []).map((o: { id: string }) => o.id);
+  // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
+  // expected cash computed from a TRUNCATED order list reports a large phantom
+  // surplus at close with no error anywhere. See lib/pgQuery.ts.
+  const orderIds = await fetchAllIds('orders', q =>
+    q.eq('shift_id', shiftId).eq('status', 'completed'));
 
   let cashSales = 0;
   if (orderIds.length > 0) {
-    const { data: cashPayments } = await supabase
-      .from('payments').select('amount, status')
-      .in('order_id', orderIds).eq('method', 'cash')
-      .in('status', ['completed', 'refunded']);
-    cashSales = (cashPayments ?? []).reduce((s, p: { amount: number }) => s + Number(p.amount), 0);
+    const cashPayments = await chunkIn<{ amount: number; status: string }>(
+      'payments', 'order_id', orderIds,
+      q => q.select('amount, status').eq('method', 'cash').in('status', ['completed', 'refunded']),
+    );
+    cashSales = cashPayments.reduce((s, p: { amount: number }) => s + Number(p.amount), 0);
   }
 
   const { data: floatTxns } = await supabase
@@ -386,21 +391,27 @@ router.post('/:id/force-close', requirePermission('settings.manage'), async (req
 
   // Same expected-cash formula as /:id/close, including refunds as negative
   // cash rows — see the comment there for why omitting them overstates expected.
-  const { data: shiftOrders, error: ordErr } = await supabase
-    .from('orders').select('id').eq('shift_id', id).eq('status', 'completed');
-  if (ordErr) { sendError(res, ordErr); return; }
+  // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
+  // expected cash computed from a TRUNCATED order list reports a large phantom
+  // surplus at close with no error. See lib/pgQuery.ts.
+  let orderIds: string[];
+  try {
+    orderIds = await fetchAllIds('orders', q => q.eq('shift_id', id).eq('status', 'completed'));
+  } catch (e) { sendError(res, e as Error); return; }
 
   let cashSales = 0;
-  const orderIds = (shiftOrders ?? []).map((o: { id: string }) => o.id);
   if (orderIds.length > 0) {
-    const { data: cashPayments, error: payErr } = await supabase
-      .from('payments')
-      .select('amount, status')
-      .in('order_id', orderIds)
-      .eq('method', 'cash')
-      .in('status', ['completed', 'refunded']);
-    if (payErr) { sendError(res, payErr); return; }
-    cashSales = (cashPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+    // chunkIn, not a bare .in(): PostgREST puts the id list in the URL, and a
+    // shift with more than ~220 orders overflows the 8KB request line every
+    // proxy in the path allows. See lib/pgQuery.ts.
+    let cashPayments: Array<{ amount: string | number; status: string }>;
+    try {
+      cashPayments = await chunkIn<{ amount: string | number; status: string }>(
+        'payments', 'order_id', orderIds,
+        q => q.select('amount, status').eq('method', 'cash').in('status', ['completed', 'refunded']),
+      );
+    } catch (e) { sendError(res, e as Error); return; }
+    cashSales = cashPayments.reduce((sum, p) => sum + Number(p.amount), 0);
   }
 
   const { data: floatTxns } = await supabase

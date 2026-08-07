@@ -4,6 +4,7 @@ import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes
 import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { branchScope, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { chunkIn } from '../lib/pgQuery';
 import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
 
 const router = safeRouter();
@@ -36,29 +37,11 @@ function embedOne<T>(v: T | T[] | null | undefined): T | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-export async function chunkIn<T>(
-  table: string,
-  column: string,
-  ids: string[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // chunkIn already calls .select('*') before handing the builder over, so what
-  // refine receives is a filter builder, not a query builder. The old signature
-  // claimed the latter and made every `q => q.select(...)` caller fail to typecheck.
-  refine: (q: any) => any,
-  chunkSize = 500,
-): Promise<T[]> {
-  if (ids.length === 0) return [];
-  const results: T[] = [];
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize);
-    const q = supabase.from(table).select('*');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (refine(q) as any).in(column, chunk);
-    if (error) throw new Error(`chunkIn(${table}.${column}): ${error.message}`);
-    if (data) results.push(...data);
-  }
-  return results;
-}
+// chunkIn moved to lib/pgQuery.ts so shifts.ts and reports-export.ts can use it
+// too. It was already called 8 times in THIS file — the problem was that the
+// other two routes never got it, and that its default chunk size was 500, which
+// is 18.6KB of URL: over the 8KB limit it existed to stay under. Every call
+// here relied on the id lists happening to stay small.
 
 // East Africa Time. Filter dates are the business's local calendar day; we
 // convert to the UTC instants stored in created_at so a day-filter captures the
@@ -471,10 +454,8 @@ router.get('/eod', async (req, res) => {
       const sid = p.orders?.shift_id;
       if (sid) cashByShift[sid] = (cashByShift[sid] ?? 0) + Number(p.amount);
     });
-    const { data: floats } = await supabase
-      .from('float_transactions')
-      .select('shift_id, type, amount')
-      .in('shift_id', shiftIds);
+    const floats = await chunkIn<{ shift_id: string; type: string; amount: string }>(
+      'float_transactions', 'shift_id', shiftIds, q => q.select('shift_id, type, amount'));
     (floats ?? [] as Array<{ shift_id: string; type: string; amount: string }>).forEach(f => {
       if (!floatByShift[f.shift_id]) floatByShift[f.shift_id] = { in: 0, out: 0 };
       if (f.type === 'float_in')  floatByShift[f.shift_id].in  += Number(f.amount);
@@ -582,12 +563,8 @@ router.get('/shifts', async (req, res) => {
   // used below). It is not a column on `orders`, so this query failed — and
   // because the error is not destructured, `orders` came back null and every
   // shift silently reported zero revenue rather than erroring.
-  const { data: orders, error: ordersErr } = await supabase
-    .from('orders')
-    .select('shift_id, total')
-    .in('shift_id', shiftIds)
-    .eq('status', 'completed');
-  if (ordersErr) console.error('[reports/shifts] order totals failed:', ordersErr.message);
+  const orders = await chunkIn<{ shift_id: string | null; total: string }>(
+    'orders', 'shift_id', shiftIds, q => q.select('shift_id, total').eq('status', 'completed'));
 
   const orderMap: Record<string, { count: number; revenue: number }> = {};
   (orders ?? []).forEach(o => {
@@ -598,10 +575,8 @@ router.get('/shifts', async (req, res) => {
   });
 
   // ── Enrich with float transactions per shift ──────────────────────────────
-  const { data: floatTxns } = await supabase
-    .from('float_transactions')
-    .select('shift_id, type, amount')
-    .in('shift_id', shiftIds);
+  const floatTxns = await chunkIn<{ shift_id: string; type: string; amount: string }>(
+    'float_transactions', 'shift_id', shiftIds, q => q.select('shift_id, type, amount'));
 
   const floatMap: Record<string, { float_in: number; float_out: number }> = {};
   (floatTxns ?? []).forEach(f => {
@@ -1426,11 +1401,9 @@ router.get('/splh', requirePermission('reports.financial'), async (req, res) => 
 
   // 2. Revenue per shift from orders
   const shiftIds = shifts.map(s => s.id);
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('shift_id, total, refunded_amount, refunded_at')
-    .in('shift_id', shiftIds)
-    .eq('status', 'completed');
+  const orders = await chunkIn<{ shift_id: string | null; total: string; refunded_amount: string; refunded_at: string | null }>(
+    'orders', 'shift_id', shiftIds,
+    q => q.select('shift_id, total, refunded_amount, refunded_at').eq('status', 'completed'));
 
   const revenueByShift: Record<string, number> = {};
   for (const o of orders ?? []) {
@@ -1702,10 +1675,10 @@ router.get('/pump-monitor', async (req, res) => {
 
   const soldByProduct: Record<string, { litres: number; revenue: number; transactions: number }> = {};
   if ((todayOrders ?? []).length) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('product_id, quantity, subtotal')
-      .in('order_id', (todayOrders ?? [] as Array<{ id: string; total: string; pump_id?: string | null }>).map(o => o.id));
+    const items = await chunkIn<{ product_id: string | null; quantity: string; subtotal: string }>(
+      'order_items', 'order_id',
+      (todayOrders ?? [] as Array<{ id: string }>).map(o => o.id),
+      q => q.select('product_id, quantity, subtotal'));
     for (const i of items ?? []) {
       if (!i.product_id) continue;
       if (!soldByProduct[i.product_id]) soldByProduct[i.product_id] = { litres: 0, revenue: 0, transactions: 0 };
@@ -1808,10 +1781,8 @@ router.get('/wet-stock', async (req, res) => {
 
   const consumedByProduct: Record<string, number> = {};
   if (fuelOrderIds.length) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('product_id, quantity')
-      .in('order_id', fuelOrderIds);
+    const items = await chunkIn<{ product_id: string | null; quantity: string }>(
+      'order_items', 'order_id', fuelOrderIds, q => q.select('product_id, quantity'));
     for (const i of items ?? []) {
       if (!i.product_id) continue;
       consumedByProduct[i.product_id] = (consumedByProduct[i.product_id] ?? 0) + Number(i.quantity);

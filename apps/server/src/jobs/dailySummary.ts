@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
+import { chunkIn } from '../lib/pgQuery';
 import { sendEmail } from '../lib/mailer';
 import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
 
@@ -118,24 +119,39 @@ async function sendSummaryForBusiness(
   const totalOrders  = orders?.length ?? 0;
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
   const totalVat     = (orders ?? []).reduce((s, o) => s + Number(o.vat_amount), 0);
-  const voidedCount  = orders?.filter(o => o.status === 'voided').length ?? 0;
+  // voidedCount was: orders?.filter(o => o.status === 'voided').length
+  // but the query above filters .eq('status','completed'), so nothing in
+  // `orders` can ever be 'voided'. It has reported 0 since the day it was
+  // written — and a void count is one of the few numbers an owner actually
+  // reads this email for. Counted with its own query instead.
+  const { count: voidedCount } = await supabase
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', biz.id)
+    .eq('status', 'voided')
+    .gte('created_at', dateFrom)
+    .lt('created_at', dateTo);
 
   // ── 2. Top 5 products by revenue ─────────────────────────
   const orderIds = (orders ?? []).map(o => o.id);
   let topProducts: { name: string; revenue: number; qty: number }[] = [];
 
   if (orderIds.length) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('product_name, quantity, subtotal')
-      .in('order_id', orderIds);
+    const items = await chunkIn<{ product_name: string; quantity: string; subtotal: string }>(
+      'order_items', 'order_id', orderIds, q => q.select('product_name, quantity, subtotal'));
 
     const productTotals = new Map<string, { revenue: number; qty: number }>();
     for (const item of items ?? []) {
       const existing = productTotals.get(item.product_name) ?? { revenue: 0, qty: 0 };
       productTotals.set(item.product_name, {
         revenue: existing.revenue + Number(item.subtotal),
-        qty: existing.qty + item.quantity,
+        // Number(), like subtotal beside it. order_items.quantity is
+        // numeric(12,2), and PostgREST returns numeric as a JSON STRING — so
+        // this was 0 + "2.00" = "02.00", then "02.00" + "1.00" = "02.001.00".
+        // The owner's Top-5 Products email has shown a growing concatenated
+        // string ever since. Same class as the total_spent bug already fixed in
+        // orders.ts; this one was missed because nothing typed the row.
+        qty: existing.qty + Number(item.quantity),
       });
     }
     topProducts = [...productTotals.entries()]

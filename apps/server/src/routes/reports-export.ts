@@ -22,6 +22,7 @@
 
 import { Router }    from 'express';
 import { sendError } from '../lib/sendError';
+import { chunkIn } from '../lib/pgQuery';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth, requireWebSurface } from '../middleware/auth';
@@ -238,12 +239,13 @@ router.get('/products', async (req, res) => {
     return;
   }
 
-  const { data: items, error } = await supabase
-    .from('order_items')
-    .select('product_id, product_name, category_name, quantity, unit_price, subtotal')
-    .in('order_id', ids);
-
-  if (error) { sendError(res, error); return; }
+  // A product-sales export over a busy month passes thousands of order ids;
+  // a bare .in() would put every one of them in the URL.
+  let items: Array<Record<string, unknown>>;
+  try {
+    items = await chunkIn<Record<string, unknown>>('order_items', 'order_id', ids,
+      q => q.select('product_id, product_name, category_name, quantity, unit_price, subtotal'));
+  } catch (e) { sendError(res, e as Error); return; }
 
   const productMap: Record<string, { name: string; category: string; qty: number; revenue: number; orders: number }> = {};
   (items ?? []).forEach((item: any) => {
@@ -307,10 +309,10 @@ router.get('/pnl', async (req, res) => {
   const { data: orders } = await ordersQ;
 
   // COGS — join order_items → products(cost_price)
-  let itemsQ = supabase.from('order_items')
-    .select('quantity, unit_price, subtotal, products(cost_price)')
-    .in('order_id', (orders ?? []).map((o: any) => o.id ?? '').filter(Boolean));
-  const { data: items } = await itemsQ;
+  const items = await chunkIn<Record<string, unknown>>(
+    'order_items', 'order_id',
+    (orders ?? []).map((o: any) => o.id ?? '').filter(Boolean),
+    q => q.select('quantity, unit_price, subtotal, products(cost_price)'));
 
   // Expenses
   // expenses has expense_category_id (FK -> expense_categories) and
