@@ -13,6 +13,7 @@ import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
+import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
 
@@ -694,415 +695,27 @@ router.post('/', async (req, res) => {
       .select('id, product_id, quantity')
       .eq('order_id', order.id);
 
-    // 6. Stock deduction
-    // 6a. Product-level stock (for minimart / retail products with track_stock=true)
-    //     Handles both sold_by='each' (unit deduction) and sold_by='piece' (piece deduction)
-    const productIds = items.map((i: OrderItemInput) => i.product?.id).filter((id): id is string => !!id);
-    const { data: trackedProducts } = await supabase
-      .from('products')
-      .select('id, track_stock, sold_by')
-      .in('id', productIds)
-      .eq('track_stock', true);
+    // 6. Stock deduction — shared with the dine-in path.
+    // This was 410 lines inline. /pay had a four-line imitation that updated
+    // stock_levels.quantity only: no track_stock check, no sold_by='piece', no
+    // stock_movements row, and no recipe, variant, packaging or fuel deduction.
+    // Restaurants use /pay, so the recipe system was bypassed on the one path
+    // that needed it. Both paths now call the same function.
+    await applyStockEffects({
+      businessId:  req.businessId,
+      branchId:    branch_id,
+      userId:      req.userId,
+      orderId:     order.id,
+      orderNumber: order_number,
+      orderType:   order_type,
+      pumpId:      order.pump_id ?? null,
+      lines: items.map((i: OrderItemInput) => ({
+        productId: i.product?.id ?? null,
+        quantity:  Number(i.quantity) || 0,
+        variants:  i.selectedVariants ?? [],
+      })),
+    });
 
-    const trackedMap = new Map(
-      ((trackedProducts ?? []) as Array<{ id: string; track_stock: boolean; sold_by?: string | null; pieces_per_unit?: number | null }>)
-        .map(p => [p.id, p] as const),
-    );
-
-    // ── Variant stock impact (Track C: 25_variant_stock_and_packaging.sql) ─────
-    // A selected variant option can carry a stock consequence:
-    //   • stock_factor      — scales the PARENT product's deduction (Large = 1.5)
-    //   • linked_product_id — deducts a DIFFERENT product's stock (bottled drink SKU)
-    //   • deduct_qty        — units of the linked product per unit sold
-    // Fetch every option (with these columns) for the products in this order and
-    // index it both by option id and by product|group|option, mirroring how
-    // recomputeOrderTotals resolves selected variants.
-    type StockLink = { kind: 'product' | 'ingredient'; id: string; qty: number };
-    const vFactorById  = new Map<string, number>();
-    const vLinkById    = new Map<string, StockLink>();
-    const vFactorByKey = new Map<string, number>();
-    const vLinkByKey   = new Map<string, StockLink>();
-    const vImpactKey = (pid: string, group: string, option: string) =>
-      `${pid}|${(group ?? '').toLowerCase()}|${(option ?? '').toLowerCase()}`;
-    {
-      const { data: vgroups } = await supabase
-        .from('variant_groups')
-        .select('name, product_id, variant_options ( id, name, stock_factor, linked_product_id, linked_ingredient_id, deduct_qty )')
-        .in('product_id', productIds.length ? productIds : ['00000000-0000-0000-0000-000000000000']);
-      for (const g of (vgroups ?? []) as Array<{ name: string; product_id: string; variant_options: Array<{ id: string; name: string; stock_factor: string | number; linked_product_id: string | null; linked_ingredient_id: string | null; deduct_qty: string | number }> }>) {
-        for (const o of (g.variant_options ?? [])) {
-          const factor = Number(o.stock_factor ?? 1) || 1;
-          const qty    = Number(o.deduct_qty ?? 1) || 1;
-          const link: StockLink | null = o.linked_product_id
-            ? { kind: 'product', id: String(o.linked_product_id), qty }
-            : o.linked_ingredient_id
-              ? { kind: 'ingredient', id: String(o.linked_ingredient_id), qty }
-              : null;
-          const key = vImpactKey(g.product_id, g.name, o.name);
-          if (o.id) { vFactorById.set(String(o.id), factor); if (link) vLinkById.set(String(o.id), link); }
-          vFactorByKey.set(key, factor);
-          if (link) vLinkByKey.set(key, link);
-        }
-      }
-    }
-
-    // Effective multiplier + linked deductions for one order line. The factor
-    // is the product of every selected option's stock_factor (default 1 → no-op).
-    const lineStockImpact = (item: OrderItemInput): { factor: number; links: StockLink[] } => {
-      let factor = 1;
-      const links: StockLink[] = [];
-      const pid = item.product?.id ?? '';
-      for (const v of (item.selectedVariants ?? []) as Array<{ groupName?: string; optionName?: string; optionId?: string; id?: string }>) {
-        const oid = String(v.optionId ?? v.id ?? '');
-        const key = vImpactKey(pid, v.groupName ?? '', v.optionName ?? '');
-        const f = (oid && vFactorById.has(oid)) ? vFactorById.get(oid)! : vFactorByKey.get(key);
-        if (f !== undefined) factor *= f;
-        const link = (oid && vLinkById.has(oid)) ? vLinkById.get(oid)! : vLinkByKey.get(key);
-        if (link) links.push(link);
-      }
-      return { factor, links };
-    };
-
-    for (const item of items) {
-      if (!item.product?.id) continue; // skip non-catalogue items (custom/fuel/parking)
-      const prod = trackedMap.get(item.product.id);
-      if (!prod) continue;
-
-      // Scale mode: Large fries (factor 1.5) deducts 1.5× the finished-good units.
-      const deductUnits = item.quantity * lineStockImpact(item).factor;
-
-      if (prod.sold_by === 'piece') {
-        // ── Piece-level deduction ─────────────────────────────────────────────
-        // Each unit sold deducts 1 from qty_pieces. Never block the sale.
-        const { data: stock } = await supabase
-          .from('stock_levels')
-          .select('qty_pieces')
-          .eq('product_id', item.product.id)
-          .eq('branch_id', branch_id)
-          .single();
-
-        const currentPieces = stock?.qty_pieces ?? 0;
-        const newPieces = Math.max(0, currentPieces - deductUnits);
-
-        await supabase
-          .from('stock_levels')
-          .upsert(
-            { product_id: item.product.id, branch_id, qty_pieces: newPieces, updated_at: new Date().toISOString() },
-            { onConflict: 'product_id,branch_id' }
-          );
-
-        await supabase
-          .from('stock_movements')
-          .insert({
-            product_id: item.product.id,
-            branch_id,
-            movement_type: 'sale',
-            quantity_change: -deductUnits,
-            quantity_after: newPieces,
-            notes: `Order ${order_number} (pieces)`,
-          });
-      } else {
-        // ── Unit-level deduction (each / weight / volume) ─────────────────────
-        const { data: stock } = await supabase
-          .from('stock_levels')
-          .select('quantity')
-          .eq('product_id', item.product.id)
-          .eq('branch_id', branch_id)
-          .single();
-
-        const currentQty = stock?.quantity ?? 0;
-        const newQty = Math.max(0, currentQty - deductUnits);
-
-        await supabase
-          .from('stock_levels')
-          .upsert(
-            { product_id: item.product.id, branch_id, quantity: newQty, updated_at: new Date().toISOString() },
-            { onConflict: 'product_id,branch_id' }
-          );
-
-        await supabase
-          .from('stock_movements')
-          .insert({
-            product_id: item.product.id,
-            branch_id,
-            movement_type: 'sale',
-            quantity_change: -deductUnits,
-            quantity_after: newQty,
-            notes: `Order ${order_number}`,
-          });
-      }
-    }
-
-    // 6a-linked. Distinct-SKU / ingredient variant deductions (Track C).
-    // A selected option with linked_product_id deducts THAT product's stock
-    // (e.g. bottled Coke 1L); one with linked_ingredient_id deducts an ingredient
-    // (e.g. Large chips → extra frozen fries). Aggregated across lines, from the
-    // order's branch. Best-effort — never blocks a sale.
-    try {
-      const linkedProductDeductions:    Record<string, number> = {};
-      const linkedIngredientDeductions: Record<string, number> = {};
-      for (const item of items) {
-        for (const l of lineStockImpact(item).links) {
-          const bucket = l.kind === 'ingredient' ? linkedIngredientDeductions : linkedProductDeductions;
-          bucket[l.id] = (bucket[l.id] ?? 0) + l.qty * item.quantity;
-        }
-      }
-
-      // Product-linked SKUs → deduct product stock (stock_levels).
-      for (const [linkedPid, qty] of Object.entries(linkedProductDeductions)) {
-        const { data: stock } = await supabase
-          .from('stock_levels')
-          .select('quantity')
-          .eq('product_id', linkedPid)
-          .eq('branch_id', branch_id)
-          .single();
-        const currentQty = stock?.quantity ?? 0;
-        const newQty = Math.max(0, currentQty - qty);
-        await supabase
-          .from('stock_levels')
-          .upsert(
-            { product_id: linkedPid, branch_id, quantity: newQty, updated_at: new Date().toISOString() },
-            { onConflict: 'product_id,branch_id' }
-          );
-        await supabase
-          .from('stock_movements')
-          .insert({
-            product_id: linkedPid,
-            branch_id,
-            movement_type: 'sale',
-            quantity_change: -qty,
-            quantity_after: newQty,
-            notes: `Order ${order_number} (variant SKU)`,
-          });
-      }
-
-      // Ingredient-linked options → deduct ingredient stock via the same atomic
-      // RPC recipes use, with movement audit + low-stock alert.
-      const linkedIngredientIds = Object.keys(linkedIngredientDeductions);
-      for (const [ingredientId, qty] of Object.entries(linkedIngredientDeductions)) {
-        const { data: newStock, error: iErr } = await supabase.rpc('adjust_ingredient_stock', {
-          p_ingredient_id: ingredientId,
-          p_branch_id:     branch_id,
-          p_business_id:   req.businessId,
-          p_delta:         -qty,
-        });
-        if (iErr) { console.error('Linked-ingredient deduction error (non-fatal):', iErr.message); continue; }
-        await supabase
-          .from('ingredient_stock_movements')
-          .insert({
-            business_id:     req.businessId,
-            ingredient_id:   ingredientId,
-            branch_id,
-            movement_type:   'sale',
-            quantity_change: -qty,
-            quantity_after:  newStock,
-            notes:           `Order ${order_number} (variant ingredient)`,
-            created_by:      req.userId,
-          });
-      }
-      if (linkedIngredientIds.length > 0) {
-        checkLowIngredients(req.businessId, branch_id, linkedIngredientIds).catch(() => {});
-      }
-    } catch (err) {
-      console.error('[orders] linked variant deduction failed (non-blocking):', err);
-    }
-
-    // 6a-bis. Fuel wet-stock deduction.
-    // Deducts litres from the correct tank using the following priority:
-    //   1. pump_id on the order → pump.tank_id → deduct from that specific tank
-    //      (exact when a station has multiple tanks of the same grade)
-    //   2. Fallback: match tanks by fuel_product_id (original behaviour — works
-    //      when only one tank per grade, i.e. most single-site stations)
-    try {
-      const litresByProduct: Record<string, number> = {};
-      for (const item of items) {
-        const pid = item.product?.id;
-        if (pid) litresByProduct[pid] = (litresByProduct[pid] ?? 0) + Number(item.quantity);
-      }
-      const fuelProductIds = Object.keys(litresByProduct);
-      if (fuelProductIds.length > 0) {
-        // Strategy 1: if the order has a pump_id, check if that pump has a tank_id.
-        // The order object carries pump_id (set from the request body when it was
-        // built above), so the tank deduction reads it directly.
-        let specificTankId: string | null = null;
-        if (order.pump_id) {
-          const { data: pump } = await supabase
-            .from('pumps')
-            .select('tank_id, fuel_product_id')
-            .eq('id', order.pump_id)
-            .eq('business_id', req.businessId)
-            .single();
-          if (pump?.tank_id) {
-            specificTankId = pump.tank_id;
-          }
-        }
-
-        let tanksToDeduct: Array<{ id: string; fuel_product_id: string; current_level: string }> = [];
-
-        if (specificTankId) {
-          // Exact match — deduct from the pump's assigned tank only
-          const { data: specificTank } = await supabase
-            .from('fuel_tanks')
-            .select('id, fuel_product_id, current_level')
-            .eq('id', specificTankId)
-            .eq('business_id', req.businessId)
-            .single();
-          if (specificTank) tanksToDeduct = [specificTank];
-        } else {
-          // Fallback — match by fuel_product_id (works for single-tank-per-grade)
-          let tankQuery = supabase
-            .from('fuel_tanks')
-            .select('id, fuel_product_id, current_level')
-            .eq('business_id', req.businessId)
-            .in('fuel_product_id', fuelProductIds);
-          if (branch_id && /^[0-9a-fA-F-]{36}$/.test(branch_id)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tankQuery = (tankQuery as any).or(`branch_id.eq.${branch_id},branch_id.is.null`);
-          }
-          const { data: tanks } = await tankQuery;
-          tanksToDeduct = tanks ?? [];
-        }
-
-        for (const tank of tanksToDeduct) {
-          const litres = litresByProduct[tank.fuel_product_id] ?? 0;
-          if (litres > 0) {
-            const newLevel = Math.max(0, Number(tank.current_level) - litres);
-            await supabase.from('fuel_tanks').update({ current_level: newLevel }).eq('id', tank.id);
-            supabase.from('stock_movements').insert({
-              // No business_id column — tenancy is via branch_id -> branches.
-              product_id:      tank.fuel_product_id,
-              branch_id:       branch_id ?? null,
-              movement_type:   'sale',
-              quantity_change: -litres,
-              quantity_after:   newLevel,
-              notes:           `Fuel sale — order ${order_number}`,
-              reference_type:  'order',
-              reference_id:    order.id,
-              created_by:      req.userId ?? null,
-            }).then(() => {}, e => console.error('[fuel-sale] movement log failed:', e));
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[orders] fuel tank deduction failed (non-blocking):', err);
-    }
-
-    // 6b. Ingredient deduction via recipes
-    // For each item sold, look up its recipe and deduct ingredient quantities.
-    // This is best-effort — we never block a sale due to stock issues.
-    try {
-      // Fetch all recipes for the products in this order in one query
-      const { data: recipeRows } = await supabase
-        .from('recipes')
-        .select('product_id, ingredient_id, quantity_per_serving')
-        .eq('business_id', req.businessId)
-        .in('product_id', productIds);
-
-      if (recipeRows && recipeRows.length > 0) {
-        // Aggregate total deduction per ingredient across all items in the order
-        const deductions: Record<string, number> = {};
-
-        for (const item of items) {
-          // Scale recipe consumption by the variant factor (Large deducts more).
-          const factor = lineStockImpact(item).factor;
-          const recipe = recipeRows.filter((r: { product_id: string; ingredient_id: string; quantity_per_serving: string }) => item.product?.id && r.product_id === item.product.id);
-          for (const line of recipe) {
-            const totalQty = line.quantity_per_serving * item.quantity * factor;
-            deductions[line.ingredient_id] = (deductions[line.ingredient_id] ?? 0) + totalQty;
-          }
-        }
-
-        // Apply deductions per-branch via the atomic RPC (concurrency-safe:
-        // the read+write happen in one statement, so simultaneous sales of the
-        // same item can't clobber each other's stock).
-        const ingredientIds = Object.keys(deductions);
-        if (ingredientIds.length > 0) {
-          for (const [ingredientId, deductQty] of Object.entries(deductions)) {
-            const { data: newQty, error: decErr } = await supabase.rpc('adjust_ingredient_stock', {
-              p_ingredient_id: ingredientId,
-              p_branch_id:     branch_id,
-              p_business_id:   req.businessId,
-              p_delta:         -deductQty, // negative = deduct; allowed to go negative (never block a sale)
-            });
-            if (decErr) { console.error('Ingredient deduction error (non-fatal):', decErr.message); continue; }
-
-            await supabase
-              .from('ingredient_stock_movements')
-              .insert({
-                business_id:     req.businessId,
-                ingredient_id:   ingredientId,
-                branch_id,
-                movement_type:   'sale',
-                quantity_change: -deductQty,
-                quantity_after:  newQty,
-                notes:           `Order ${order_number}`,
-                created_by:      req.userId,
-              });
-          }
-
-          // Fire low-ingredient alerts (non-blocking)
-          checkLowIngredients(req.businessId, branch_id, ingredientIds).catch(() => {});
-        }
-      }
-    } catch (recipeErr) {
-      // Never let recipe deduction fail an order
-      console.error('Recipe deduction error (non-fatal):', recipeErr?.message);
-    }
-
-    // 6c. Takeaway packaging deduction (Track C).
-    // On a takeaway order, each line's product consumes its configured packaging
-    // (product_packaging → packaging ingredient). Deducted per-branch via the
-    // same atomic RPC as recipes. Dine-in never consumes takeaway packaging, and
-    // the cost is captured once at purchase — this is consumption, not an expense.
-    if (order_type === 'takeaway') {
-      try {
-        const { data: pkgRows } = await supabase
-          .from('product_packaging')
-          .select('product_id, ingredient_id, quantity')
-          .eq('business_id', req.businessId)
-          .in('product_id', productIds);
-
-        if (pkgRows && pkgRows.length > 0) {
-          const pkgDeductions: Record<string, number> = {};
-          for (const item of items) {
-            const rows = pkgRows.filter((r: { product_id: string }) => item.product?.id && r.product_id === item.product.id);
-            for (const r of rows as Array<{ ingredient_id: string; quantity: string | number }>) {
-              pkgDeductions[r.ingredient_id] = (pkgDeductions[r.ingredient_id] ?? 0) + Number(r.quantity) * item.quantity;
-            }
-          }
-
-          const pkgIds = Object.keys(pkgDeductions);
-          for (const [ingredientId, deductQty] of Object.entries(pkgDeductions)) {
-            const { data: newQty, error: pErr } = await supabase.rpc('adjust_ingredient_stock', {
-              p_ingredient_id: ingredientId,
-              p_branch_id:     branch_id,
-              p_business_id:   req.businessId,
-              p_delta:         -deductQty,
-            });
-            if (pErr) { console.error('Packaging deduction error (non-fatal):', pErr.message); continue; }
-
-            await supabase
-              .from('ingredient_stock_movements')
-              .insert({
-                business_id:     req.businessId,
-                ingredient_id:   ingredientId,
-                branch_id,
-                movement_type:   'sale',
-                quantity_change: -deductQty,
-                quantity_after:  newQty,
-                notes:           `Order ${order_number} (packaging)`,
-                created_by:      req.userId,
-              });
-          }
-
-          if (pkgIds.length > 0) {
-            checkLowIngredients(req.businessId, branch_id, pkgIds).catch(() => {});
-          }
-        }
-      } catch (pkgErr: any) {
-        console.error('Packaging deduction error (non-fatal):', pkgErr?.message);
-      }
-    }
 
     // 7. Kitchen ticket
     const { error: ktErr } = await supabase
@@ -1110,11 +723,8 @@ router.post('/', async (req, res) => {
       .insert({ order_id: order.id, branch_id, status: 'new' });
     if (ktErr) console.error('Failed to create kitchen ticket:', ktErr.message);
 
-    // 7b. Trigger low-stock check for products sold (non-blocking)
-    const trackedProductIds = items
-      .filter((i: OrderItemInput) => trackedMap.has(i.product?.id ?? ''))
-      .map((i: OrderItemInput) => i.product?.id ?? '');
-    checkLowStock(req.businessId, branch_id, trackedProductIds).catch(() => {});
+    // 7b. Low-stock alerts now fire inside applyStockEffects, so the dine-in
+    //     path gets them too — it never did before.
 
     // 8. Loyalty — deduct redeemed points, then award earned points
     if (customer_id) {
@@ -1875,7 +1485,12 @@ router.post('/:id/pay', async (req, res) => {
     // 1. Load the open order
     const { data: order, error: oErr } = await supabase
       .from('orders')
-      .select('*, order_items ( product_id, quantity, subtotal, product_name, category_name, unit_price, notes )')
+      // order_item_variants comes along because variant options carry stock
+      // consequences — stock_factor scales the parent deduction, and
+      // linked_product_id / linked_ingredient_id deduct something else entirely.
+      // They are stored by NAME here, which applyStockEffects resolves via its
+      // product|group|option key path.
+      .select('*, order_items ( id, product_id, quantity, subtotal, product_name, category_name, unit_price, notes, order_item_variants ( variant_group_name, variant_option_name ) )')
       .eq('id', orderId)
       .eq('business_id', req.businessId)
       .single();
@@ -2038,23 +1653,39 @@ router.post('/:id/pay', async (req, res) => {
       if (creditErr) console.error('[credit] charge failed for order', order.id, creditErr.message);
     }
 
-    // 4. Deduct stock for each item
-    for (const item of order.order_items ?? []) {
-      if (!item.product_id) continue;
-      const { data: sl } = await supabase
-        .from('stock_levels')
-        .select('id, quantity')
-        .eq('product_id', item.product_id)
-        .eq('branch_id', order.branch_id)
-        .single();
-
-      if (sl) {
-        await supabase
-          .from('stock_levels')
-          .update({ quantity: Math.max(0, sl.quantity - item.quantity) })
-          .eq('id', sl.id);
-      }
-    }
+    // 4. Stock — the SAME effects POST /orders applies.
+    //
+    // What was here before: a loop that read stock_levels and wrote back
+    // quantity - item.quantity. That is all. It ignored track_stock, so it
+    // decremented products explicitly marked as untracked. It ignored
+    // sold_by='piece', so piece-sold products lost whole units instead of
+    // pieces. It wrote no stock_movements row, so none of it was auditable.
+    // And it did no recipe, variant-linked, packaging or fuel deduction at all.
+    //
+    // Restaurants are the businesses that use this path, and restaurants are
+    // the businesses with recipes — so the recipe system was bypassed on the
+    // one path built for it. Every dine-in service overstated ingredient stock
+    // silently.
+    await applyStockEffects({
+      businessId:  req.businessId,
+      branchId:    order.branch_id,
+      userId:      req.userId,
+      orderId:     order.id,
+      orderNumber: order.order_number,
+      orderType:   order.order_type,
+      pumpId:      order.pump_id ?? null,
+      lines: (order.order_items ?? []).map((it: any) => ({
+        productId: it.product_id ?? null,
+        quantity:  Number(it.quantity) || 0,
+        // Rebuilt from the DB, so names only — no optionId. lineStockImpact
+        // falls back to the product|group|option key, which is why that lookup
+        // is keyed both ways.
+        variants: (it.order_item_variants ?? []).map((v: any) => ({
+          groupName:  v.variant_group_name,
+          optionName: v.variant_option_name,
+        })),
+      })),
+    });
 
     // 5. Loyalty
     if (customer_id) {
