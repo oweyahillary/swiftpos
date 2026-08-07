@@ -9,7 +9,7 @@
     "build:renderer": "vite build",
     "lint": "echo 'lint desktop'",
     "type-check": "tsc --noEmit",
-    "build:main": "tsc -b tsconfig.main.json",
+    "build:main": "tsc -b tsconfig.main.json --force",
     "postinstall": "electron-builder install-app-deps",
     "pack:dir": "electron-builder --dir --config.directories.output=build-out",
     "pack:installer": "electron-builder --win nsis --config.directories.output=release",
@@ -26,10 +26,10 @@
     "release:major": "npm run build:all && npm run version:major && npm run dist"
   },
   "dependencies": {
+    "@swiftpos/printing": "file:../../shared/printing",
     "better-sqlite3": "^11.10.0",
     "exceljs": "^4.4.0",
-    "uuid": "^14.0.0",
-    "@swiftpos/printing": "file:../../shared/printing"
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",
@@ -43,12 +43,12 @@
     "electron-builder": "^25.1.8",
     "electron-rebuild": "^3.2.9",
     "postcss": "^8.5.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
-    "wait-on": "^8.0.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "wait-on": "^8.0.3"
   },
   "build": {
     "appId": "com.swiftpos.desktop",
