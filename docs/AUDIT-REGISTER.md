@@ -7,7 +7,7 @@ closed, and what was checked and found correct. Update in place; do not fork.
 |---|---|
 | Opened | 2026-08-07 |
 | Last updated | **2026-08-08, desktop audit + Beryl sync investigation** |
-| Tree | `dev` @ `a80c224` + this session, desktop **v0.5.24**, `LOCAL_SCHEMA_VERSION` 51 |
+| Tree | `dev` @ `5ad57f7`, tag **v0.5.25**, desktop **v0.5.25**, `LOCAL_SCHEMA_VERSION` 51 |
 | Open | **A: 1 P0 · 4 P1 · 3 P2 · 5 P3 — D: 2 P0 · 2 P1 · 5 P2 · 2 P3** |
 | Closed this session | **31 (printing) + 1 (migration 46)** |
 
@@ -19,8 +19,15 @@ restructure. They are neither open nor closed; they are missing. Recover from
 `git show 415e044:docs/AUDIT-REGISTER.md` before the next session re-audits them.
 
 `HANDOFF-2026-08-08.md` stated desktop v0.5.24 while `apps/desktop/package.json`
-said 0.5.23. **Resolved 08-08 (eve): bumped to 0.5.24 for real.** The tree, the
-register and the handoff now agree.
+said 0.5.23. Bumped to 0.5.24 — then `release:patch` bumped again during the
+build, so **the shipped artifact is `SwiftPOS-0.5.25-x64.exe` and the tag is
+`v0.5.25`**. `v0.5.24` was deleted: no installer exists for it, and a tag
+pointing at a version you cannot produce is worse than no tag.
+
+**Rule learned: the tag follows the build, never precedes it.** `release:patch`
+runs `npm version patch`, so the version is decided BY the build. With no
+auto-update the tag is the only record of which source produced the `.exe` on a
+given till.
 
 **Working rules** live in `HANDOFF-2026-08-08-evening.md` §0 — standing, not
 per-session. Rule 14 is the one this file depends on: nothing ships without an ID

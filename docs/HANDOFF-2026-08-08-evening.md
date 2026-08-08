@@ -54,9 +54,12 @@ Read it first. Everything below is one session's application of it.
 14. **Nothing ships without a register ID.** Findings get a number and an entry,
     in the same zip as the code. Half the register's value is stopping the next
     session re-auditing closed ground — and it has already lost items once.
-15. **Bump the desktop version on any desktop change.** With no auto-update, the
-    version string is the only way to know what a till is running. Batch related
-    fixes into one bump rather than four.
+15. **Bump the desktop version on any desktop change, and TAG AFTER THE BUILD.**
+    With no auto-update the version string is the only way to know what a till is
+    running. Batch related fixes into one bump rather than four — and note that
+    `release:patch` runs `npm version patch`, so the version is decided BY the
+    build. Tagging first produced a `v0.5.24` for which no installer exists.
+    Build, read the artifact filename, then tag.
 16. **Some verification is only possible on the target.** Every handover ends
     with an explicit list of what the other side must check. Nothing is marked
     closed on bench evidence alone.
@@ -117,9 +120,10 @@ driver and ABI. That is the first hardware-equivalent green in the project.
 
 - **Nothing is deployed.** Everything below is bench- and Windows-verified, but
   no till and no server has run any of it.
-- **Version bumped to 0.5.24.** This also settles the 0.5.23/0.5.24
-  disagreement between the previous handoff and the register — tree, register and
-  handoff now agree.
+- **Shipped as 0.5.25.** Bumped to 0.5.24 to settle the old 0.5.23/0.5.24
+  disagreement, then `release:patch` bumped again during the build. The artifact
+  is `SwiftPOS-0.5.25-x64.exe`, tagged `v0.5.25` at `5ad57f7`; `v0.5.24` was
+  deleted because no installer exists for it. See rule 15.
 - **Two manual tests outstanding** — §6.
 - No trading period has run on thermal. Unchanged from this morning.
 
