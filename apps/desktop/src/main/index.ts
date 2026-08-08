@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, net, shell } from 'electron';
 import { isNodeRole } from './deviceConfig';
 import path from 'path';
 import fs from 'fs';
+import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
@@ -192,9 +193,13 @@ app.whenReady().then(() => {
 
     // Re-hydrate sync engine from persisted session if one exists
     const db = getLocalDb();
-    const session = db.prepare(`SELECT token, refresh_token FROM session WHERE id=1`).get() as any;
-    if (session?.token) {
-      configureSyncEngine(getServerUrl(), session.token, session.refresh_token ?? '');
+    // D5: wrap anything still sitting in plaintext, once, at startup - so an
+    // upgraded till stops holding a usable credential in the clear within
+    // seconds rather than waiting for the next refresh.
+    migratePlaintextTokens();
+    const session = readSessionTokens();
+    if (session.token) {
+      configureSyncEngine(getServerUrl(), session.token, session.refreshToken);
       // Sync on startup if online
       if (net.isOnline()) {
         syncAll().catch(console.error);

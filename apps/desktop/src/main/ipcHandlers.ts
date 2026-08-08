@@ -18,6 +18,9 @@ import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
+import { logLine } from './logFile';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
+import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
@@ -104,6 +107,10 @@ export function registerIpcHandlers() {
       new Date().toISOString(),
     );
 
+    // D5: the row exists now; re-write the credentials through the store so they
+    // are wrapped at rest instead of sitting in the clear in swiftpos.db.
+    writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
+
     // The business type is decided when the business is created, and the server
     // returns it here. Persist it rather than asking the technician — the
     // install wizard used to offer a picker, which meant a till could be set to
@@ -129,6 +136,9 @@ export function registerIpcHandlers() {
     clearCatalogue(db);
     db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
     db.prepare(`DELETE FROM session WHERE id=1`).run();
+    // Signing the terminal out must also remove the offline way in, or a
+    // decommissioned till keeps working credentials for another fortnight.
+    clearPinCache();
     configureStaffSession('', '');
     configureSyncEngine(getServerUrl(), '');
     return true;
@@ -139,8 +149,10 @@ export function registerIpcHandlers() {
     const session = db.prepare(`SELECT * FROM session WHERE id=1`).get() as any;
     if (!session) return null;
 
-    // Re-hydrate sync engine in case app was restarted
-    configureSyncEngine(getServerUrl(), session.token, session.refresh_token ?? '');
+    // Re-hydrate sync engine in case app was restarted. Credentials are wrapped
+    // at rest (D5), so they come from the store rather than off the row.
+    const sessTok = readSessionTokens();
+    configureSyncEngine(getServerUrl(), sessTok.token, sessTok.refreshToken);
 
     return {
       user: { id: session.user_id, email: null },
@@ -156,6 +168,123 @@ export function registerIpcHandlers() {
         type: getDeviceConfig()?.business_type ?? null,
       },
     };
+  });
+
+  // ── Held orders (restaurant tabs) ───────────────────────
+  //
+  // Moved out of the renderer's localStorage on 2026-08-08. These are open
+  // tables: food is cooking against them and no bill exists yet, so losing one
+  // silently is the worst failure this app has. See localDb.ts held_orders.
+  //
+  // Every handler is synchronous SQLite behind an async channel — better-sqlite3
+  // writes land or throw, so a crash cannot leave a half-written tab.
+
+  type HeldRow = {
+    id: string; order_number: string; label: string; order_type: string;
+    table_number: string; delivery_person: string | null; cart: string; held_at: string;
+  };
+
+  // A tab whose cart JSON will not parse is returned with an EMPTY cart rather
+  // than dropped. The cashier can then see "Table 4" exists, recall it and
+  // rebuild it from the KOT — which beats the table vanishing and the food
+  // going out unbilled. One bad row must never take the others with it.
+  const toHeld = (r: HeldRow) => {
+    let cart: unknown[] = [];
+    let corrupt = false;
+    try {
+      const parsed = JSON.parse(r.cart);
+      if (Array.isArray(parsed)) cart = parsed; else corrupt = true;
+    } catch { corrupt = true; }
+    if (corrupt) logLine('held', `unreadable cart on tab ${r.id} (${r.label}) — returned empty`);
+    return {
+      id: r.id,
+      orderNumber: r.order_number,
+      label: r.label,
+      orderType: r.order_type,
+      tableNumber: r.table_number,
+      deliveryPerson: r.delivery_person ?? undefined,
+      cart,
+      heldAt: r.held_at,
+      corrupt: corrupt || undefined,
+    };
+  };
+
+  const listHeld = () => {
+    const db = getLocalDb();
+    const rows = db.prepare(`SELECT * FROM held_orders ORDER BY held_at ASC`).all() as HeldRow[];
+    return rows.map(toHeld);
+  };
+
+  ipcMain.handle('held:list', async () => listHeld());
+
+  ipcMain.handle('held:hold', async (_event, order: any) => {
+    const db = getLocalDb();
+    const held = {
+      id: `held_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      heldAt: new Date().toISOString(),
+      ...order,
+    };
+    db.prepare(`
+      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      held.id, held.orderNumber, held.label, held.orderType,
+      held.tableNumber ?? '', held.deliveryPerson ?? null,
+      JSON.stringify(held.cart ?? []), held.heldAt,
+    );
+    return { ...held, cart: held.cart ?? [] };
+  });
+
+  // Recall hands the tab back AND removes it, in one transaction. Read-then-
+  // delete as two statements can hand the same tab to two recalls if the second
+  // lands between them — two carts, one order number, one of them unbilled.
+  ipcMain.handle('held:recall', async (_event, { id }: { id: string }) => {
+    const db = getLocalDb();
+    const take = db.transaction((tabId: string) => {
+      const row = db.prepare(`SELECT * FROM held_orders WHERE id = ?`).get(tabId) as HeldRow | undefined;
+      if (!row) return null;
+      db.prepare(`DELETE FROM held_orders WHERE id = ?`).run(tabId);
+      return toHeld(row);
+    });
+    return take(id);
+  });
+
+  ipcMain.handle('held:delete', async (_event, { id }: { id: string }) => {
+    getLocalDb().prepare(`DELETE FROM held_orders WHERE id = ?`).run(id);
+    return true;
+  });
+
+  /**
+   * One-time import of tabs still sitting in the old localStorage blob.
+   *
+   * Without this, installing the fix on a till with open tables destroys them —
+   * the change would cause exactly the loss it exists to prevent. Runs once on
+   * renderer start, is idempotent (INSERT OR IGNORE on the existing ids), and
+   * reports what it took so the renderer knows whether to clear the old key.
+   */
+  ipcMain.handle('held:import', async (_event, { orders }: { orders: any[] }) => {
+    if (!Array.isArray(orders) || orders.length === 0) return { imported: 0 };
+    const db = getLocalDb();
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO held_orders
+        (id, order_number, label, order_type, table_number, delivery_person, cart, held_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    let imported = 0;
+    const run = db.transaction((rows: any[]) => {
+      for (const o of rows) {
+        if (!o?.id || !o?.orderNumber) continue;   // skip anything unusable, keep the rest
+        const r = insert.run(
+          String(o.id), String(o.orderNumber), String(o.label ?? ''), String(o.orderType ?? 'dine_in'),
+          String(o.tableNumber ?? ''), o.deliveryPerson ? String(o.deliveryPerson) : null,
+          JSON.stringify(Array.isArray(o.cart) ? o.cart : []), String(o.heldAt ?? new Date().toISOString()),
+        );
+        if (r.changes) imported++;
+      }
+    });
+    run(orders);
+    if (imported) logLine('held', `imported ${imported} tab(s) from legacy localStorage`);
+    return { imported };
   });
 
   // ── Staff PIN login (layered on the owner session) ──────
@@ -180,7 +309,7 @@ export function registerIpcHandlers() {
   async function ownerFetch(path: string, init: RequestInit = {}): Promise<Response> {
     const db = getLocalDb();
     const readToken = () =>
-      (db.prepare(`SELECT token FROM session WHERE id=1`).get() as any)?.token as string | undefined;
+      readSessionTokens().token || undefined;
 
     let token = readToken();
     if (!token) throw new Error('Not signed in');
@@ -249,7 +378,19 @@ export function registerIpcHandlers() {
 
     // Same expiry problem as listBranches: the PIN pad is the first thing
     // touched each morning, so this is exactly where a stale owner token bites.
-    const res = await ownerFetch('/api/auth/verify-pin', {
+    //
+    // OFFLINE FALLBACK — the rule that matters:
+    //
+    //   Fall back only when the server could not be REACHED.
+    //   Never when the server ANSWERED and said no.
+    //
+    // A 401, a 409 PIN_NOT_UNIQUE, a disabled account — those are decisions,
+    // and honouring the cache over them would mean a sacked cashier signs in by
+    // unplugging the network cable. Only a transport failure (fetch throws)
+    // reaches the cache. Everything else is the server's answer and stands.
+    let res: Awaited<ReturnType<typeof ownerFetch>>;
+    try {
+      res = await ownerFetch('/api/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // The running build, reported on the one call every till makes every day.
@@ -261,9 +402,50 @@ export function registerIpcHandlers() {
         app_version: app.getVersion(),
         device_id: getDeviceConfig()?.device_id ?? undefined,
       }),
-    });
+      });
+    } catch (netErr: any) {
+      logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the offline cache`);
+      const verdict = verifyPinOffline(String(pin), branch_id);
+      if (!verdict.ok) throw new Error(verdict.message);
+
+      const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
+      // No server JWT offline, and none is needed: orders push under the OWNER
+      // token (syncEngine authHeaders) and cashier_id comes from this row. The
+      // sale queues, attributes correctly, and syncs when the line returns.
+      db.prepare(`
+        INSERT INTO staff_session
+          (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
+        VALUES (1, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
+          branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
+          token=NULL, refresh_token=NULL, logged_in_at=excluded.logged_in_at
+      `).run(
+        verdict.staff.staffId, verdict.staff.name, verdict.staff.roleName, branch_id,
+        branchRowOff?.name ?? null, JSON.stringify(verdict.staff.permissions ?? {}),
+        new Date().toISOString(),
+      );
+      configureStaffSession('', '');
+      return {
+        staff: { id: verdict.staff.staffId, name: verdict.staff.name, role: verdict.staff.roleName },
+        permissions: verdict.staff.permissions,
+        branch: { id: branch_id, name: branchRowOff?.name ?? null },
+        business: { name: session?.business_name ?? null, currency: session?.currency ?? null },
+        offline: true,
+      };
+    }
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
+
+    // Online sign-in succeeded, so the server has just confirmed this PIN and
+    // that it is unique across the business. Only now is it safe to cache.
+    cacheStaffCredential(
+      { staffId: data.staff?.id, name: data.staff?.name ?? 'Staff',
+        roleName: data.staff?.role ?? null, permissions: data.permissions ?? {} },
+      data.offlineAuth?.pinHash,
+      branch_id,
+    );
 
     // Resolve branch name for display (from the local branches table if present).
     const branchRow = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
@@ -287,6 +469,9 @@ export function registerIpcHandlers() {
       data.refreshToken ?? null,
       new Date().toISOString(),
     );
+
+    // D5 - wrap at rest, same as the owner session.
+    writeStaffTokens({ token: data.accessToken ?? data.token ?? '', refreshToken: data.refreshToken ?? '' });
 
     // Make the staff token the active credential for order pushes.
     configureStaffSession(data.accessToken ?? data.token, data.refreshToken ?? '');
@@ -1073,7 +1258,7 @@ export function registerIpcHandlers() {
   // The till does not get to decide who may edit the menu.
   async function manageFetch(path: string, method: string, body?: any) {
     const db = getLocalDb();
-    const row = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
+    const row = { token: readStaffTokens().token };
     if (!row?.token) throw new Error('Not signed in');
 
     let res: Response;
@@ -1343,8 +1528,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('expense:categories', async () => {
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) return [];
-    const staffRow = (getLocalDb() as any).prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
-    const ownerRow = (getLocalDb() as any).prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const staffRow = { token: readStaffTokens().token };
+    const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) return [];
     try {
@@ -1411,8 +1596,8 @@ export function registerIpcHandlers() {
     // Get server URL + best available auth token
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
-    const staffRow = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
-    const ownerRow = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const staffRow = { token: readStaffTokens().token };
+    const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) throw new Error('Not signed in');
 
@@ -1461,8 +1646,8 @@ export function registerIpcHandlers() {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
-    const staffRow = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
-    const ownerRow = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const staffRow = { token: readStaffTokens().token };
+    const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) throw new Error('Not signed in');
 

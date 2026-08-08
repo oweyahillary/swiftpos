@@ -66,6 +66,57 @@ function initSchema(db: Database.Database) {
       updated_at    TEXT NOT NULL
     );
 
+    -- ── Offline sign-in cache ────────────────────────────────────────────────
+    --
+    -- One row per staff member who has signed in ON THIS TERMINAL while online,
+    -- so a line fault does not stop the floor starting a shift. See pinCache.ts
+    -- for what is deliberately NOT here: no override_pin_hash, no legacy hash
+    -- format, and nothing at all when safeStorage cannot wrap it.
+    --
+    -- pin_hash_enc is safeStorage-wrapped (DPAPI on Windows), base64. It is
+    -- machine+user bound, so a copied .db is useless on another machine.
+    CREATE TABLE IF NOT EXISTS staff_pin_cache (
+      staff_id     TEXT PRIMARY KEY,
+      name         TEXT NOT NULL,
+      role_name    TEXT,
+      branch_id    TEXT NOT NULL,
+      permissions  TEXT NOT NULL DEFAULT '{}',
+      pin_hash_enc TEXT NOT NULL,
+      cached_at    TEXT NOT NULL
+    );
+
+    -- ── Held orders (restaurant tabs) ────────────────────────────────────────
+    --
+    -- These are OPEN TABLES. Until 2026-08-08 they lived in the renderer's
+    -- localStorage as a single JSON blob, read through a swallowing catch that
+    -- returned an empty list. A truncated write — a power cut mid-persist, which
+    -- a restaurant till on unprotected mains meets eventually — made the parse
+    -- throw and the app report ZERO open tables. The food is already cooked and
+    -- the KOTs are on the pass; there is no bill for any of it, and no error.
+    --
+    -- One row per tab, so a corrupt row costs one table rather than all of them,
+    -- and better-sqlite3's synchronous writes land or don't — no half-written
+    -- blob. Still deliberately LOCAL-ONLY and out of sync_queue: a held order
+    -- has no payment, so it is not yet an order. It joins the queue when charged.
+    --
+    -- The cart column stays JSON: it carries per-line kotSent flags and nested
+    -- variant and modifier selections; normalising it would buy nothing — nothing
+    -- queries inside a held cart.
+    --
+    -- NOT cleared by clearCatalogue(). Logging out mid-service must not bin the
+    -- floor's open tables; the same reasoning that keeps orders and sync_queue.
+    CREATE TABLE IF NOT EXISTS held_orders (
+      id              TEXT PRIMARY KEY,
+      order_number    TEXT NOT NULL,
+      label           TEXT NOT NULL,
+      order_type      TEXT NOT NULL,
+      table_number    TEXT NOT NULL DEFAULT '',
+      delivery_person TEXT,
+      cart            TEXT NOT NULL,
+      held_at         TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_held_orders_held_at ON held_orders(held_at);
+
     -- ── Active staff (PIN login) — singleton, layered on top of owner session ─
     CREATE TABLE IF NOT EXISTS staff_session (
       id            INTEGER PRIMARY KEY CHECK (id = 1),
@@ -461,6 +512,20 @@ function initSchema(db: Database.Database) {
   // bring older local DBs up to date. Each guarded so it's safe to run every boot.
   migrateColumns(db, 'session', [
     ['refresh_token', 'TEXT'],
+  ]);
+
+  // Register D5 - credentials wrapped at rest (safeStorage/DPAPI). The plaintext
+  // columns above are KEPT and still read as a fallback: an install that predates
+  // this, or a machine where wrapping is unavailable, must keep working. See
+  // main/tokenStore.ts for why plaintext is never cleared until the wrapped value
+  // has been read back in the same write.
+  migrateColumns(db, 'session', [
+    ['token_enc',         'TEXT'],
+    ['refresh_token_enc', 'TEXT'],
+  ]);
+  migrateColumns(db, 'staff_session', [
+    ['token_enc',         'TEXT'],
+    ['refresh_token_enc', 'TEXT'],
   ]);
 
   // How a shift was closed. 'counted' means a human counted the drawer;

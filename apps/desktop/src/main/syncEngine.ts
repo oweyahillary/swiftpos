@@ -10,6 +10,8 @@
 
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
+import { logLine, describeResponse, getLogPath } from './logFile';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell } from './deviceConfig';
 import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
 import {
@@ -90,34 +92,86 @@ function authHeaders() {
 // expired token" and an empty branch list, and only worked on the SECOND launch
 // because the background sync had refreshed and persisted a new one in the
 // meantime. Anything holding the owner token must be able to refresh and retry.
+/**
+ * SINGLE-FLIGHT. Three call sites reach this — ownerFetch (the PIN pad), the
+ * sync loop, and the order push — and they overlap at boot.
+ *
+ * Refresh tokens ROTATE: auth.ts revokes the consumed one before issuing the
+ * replacement. So two concurrent refreshes present the same token, one wins,
+ * and the loser is handed a 401 for a token that was valid when it read it.
+ * That is not an auth failure, it is a race — but it surfaces as "signed out
+ * again", and offline it is worse, because there is no way to sign back in.
+ *
+ * While a refresh is in flight every other caller awaits the same promise.
+ */
+let _refreshInFlight: Promise<boolean> | null = null;
+
 export async function refreshAccessToken(): Promise<boolean> {
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = doRefreshAccessToken().finally(() => { _refreshInFlight = null; });
+  return _refreshInFlight;
+}
+
+// Reads the persisted refresh token. Also the recovery path on a 401: the
+// in-memory copy can lag what is on disk, and presenting a stale token to a
+// rotating endpoint is an unnecessary logout.
+function persistedRefresh(): string {
+  return readSessionTokens().refreshToken;
+}
+
+async function doRefreshAccessToken(): Promise<boolean> {
   // The in-memory token is empty until configureSyncEngine() has run, which
   // happens on auth:getSession. Don't depend on that ordering — a handler can
   // fire before it. Fall back to whatever is persisted.
-  let refresh = _refreshToken;
-  if (!refresh) {
-    try {
-      const row = getLocalDb().prepare(`SELECT refresh_token FROM session WHERE id=1`).get() as any;
-      refresh = row?.refresh_token ?? '';
-    } catch { /* no db yet */ }
-  }
+  let refresh = _refreshToken || persistedRefresh();
   if (!refresh) return false;
-  try {
+
+  const attempt = async (token: string) => {
     const res = await fetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: refresh }),
+      body: JSON.stringify({ refreshToken: token }),
     });
-    if (!res.ok) return false;
+    return res;
+  };
+
+  try {
+    let res = await attempt(refresh);
+
+    // One retry, and only when disk holds a DIFFERENT token from the one just
+    // rejected — that means something rotated it while we were holding a stale
+    // copy, so the rejection is bookkeeping rather than a revoked session.
+    // Retrying the SAME token would just re-ask a question already answered.
+    if (res.status === 401) {
+      const onDisk = persistedRefresh();
+      if (onDisk && onDisk !== refresh) {
+        logLine('auth', 'refresh rejected on a stale token; retrying with the persisted one');
+        refresh = onDisk;
+        res = await attempt(refresh);
+      }
+    }
+
+    if (!res.ok) {
+      // Rotation means a revoked token can never be recovered: the owner must
+      // sign in again, and with no internet they cannot. Recording it is the
+      // difference between "it logged me out again" and knowing which refresh
+      // was rejected and when.
+      noteInboundFailure('auth', `owner token refresh failed: ${await describeResponse(res)}`);
+      return false;
+    }
     const { accessToken, refreshToken } = await res.json();
     _accessToken  = accessToken;
     _refreshToken = refreshToken;
-    // Persist updated tokens to SQLite so they survive app restarts
-    const db = getLocalDb();
-    db.prepare(`UPDATE session SET token = ?, refresh_token = ? WHERE id = 1`)
-      .run(accessToken, refreshToken);
+    // Persist immediately. The server has ALREADY revoked the old token by the
+    // time this response arrives, so every instruction between here and the
+    // write is a window in which a crash strands the till holding a dead token.
+    // Client code cannot close that window — only a server-side grace period
+    // can (register D13, part 3). Keep this write first and unconditional.
+    writeSessionTokens({ token: accessToken, refreshToken });
+    clearInboundFailure('auth');
     return true;
-  } catch {
+  } catch (err: any) {
+    noteInboundFailure('auth', `owner token refresh error: ${err?.message ?? err}`);
     return false;
   }
 }
@@ -167,23 +221,52 @@ function pushAuthHeaders() {
 
 // Refresh the active STAFF token (each shift independent) and persist to
 // staff_session. Returns false if there's no staff refresh token or it failed.
+//
+// Same single-flight reasoning as the owner path, and four call sites here
+// rather than three — the push loop, the node push, order create and the shift
+// path all reach it, and a busy till runs them together.
+let _staffRefreshInFlight: Promise<boolean> | null = null;
+
 async function refreshStaffToken(): Promise<boolean> {
-  if (!_staffRefresh) return false;
+  if (_staffRefreshInFlight) return _staffRefreshInFlight;
+  _staffRefreshInFlight = doRefreshStaffToken().finally(() => { _staffRefreshInFlight = null; });
+  return _staffRefreshInFlight;
+}
+
+function persistedStaffRefresh(): string {
+  return readStaffTokens().refreshToken;
+}
+
+async function doRefreshStaffToken(): Promise<boolean> {
+  let refresh = _staffRefresh || persistedStaffRefresh();
+  if (!refresh) return false;
+  const attempt = (token: string) => fetch(`${_serverUrl}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: token }),
+  });
   try {
-    const res = await fetch(`${_serverUrl}/api/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: _staffRefresh }),
-    });
-    if (!res.ok) return false;
+    let res = await attempt(refresh);
+    if (res.status === 401) {
+      const onDisk = persistedStaffRefresh();
+      if (onDisk && onDisk !== refresh) {
+        logLine('auth', 'staff refresh rejected on a stale token; retrying with the persisted one');
+        refresh = onDisk;
+        res = await attempt(refresh);
+      }
+    }
+    if (!res.ok) {
+      noteInboundFailure('auth', `staff token refresh failed: ${await describeResponse(res)}`);
+      return false;
+    }
     const { accessToken, refreshToken } = await res.json();
     _staffToken   = accessToken;
     _staffRefresh = refreshToken ?? _staffRefresh;
-    const db = getLocalDb();
-    db.prepare(`UPDATE staff_session SET token = ?, refresh_token = ? WHERE id = 1`)
-      .run(_staffToken, _staffRefresh);
+    writeStaffTokens({ token: _staffToken, refreshToken: _staffRefresh });
+    clearInboundFailure('auth');
     return true;
-  } catch {
+  } catch (err: any) {
+    noteInboundFailure('auth', `staff token refresh error: ${err?.message ?? err}`);
     return false;
   }
 }
@@ -251,6 +334,18 @@ export function getSyncStatus(): {
   failedReason?: string;
   failedSince?: string;
   /**
+   * The INBOUND half: why the catalogue pull or a token refresh is failing.
+   *
+   * failedReason covers rows this till is trying to push. It says nothing when
+   * the till cannot pull — an unlicensed branch, a rejected token — and that
+   * half used to be entirely silent. A till can have zero failed rows and still
+   * be completely cut off.
+   */
+  pullError?: string;
+  pullErrorSince?: string;
+  /** Where the durable log is, so a tech can be pointed at it over the phone. */
+  logPath?: string;
+  /**
    * Rows this till still owes the BRANCH NODE, kept separate from pendingCount.
    *
    * The cashier's badge answers one question — is my sale safe on the server —
@@ -298,6 +393,9 @@ export function getSyncStatus(): {
     failedCount: failed.count,
     failedReason: failureRow?.last_error ?? undefined,
     failedSince: failureRow?.since ?? undefined,
+    pullError: currentInboundFailure()?.message ?? undefined,
+    pullErrorSince: currentInboundFailure()?.since ?? undefined,
+    logPath: getLogPath(),
     nodeBacklog: hasNode() ? nodeQueueDepth() : undefined,
   };
 }
@@ -317,6 +415,59 @@ export async function retryFailedOrders(): Promise<{ requeued: number; pushed: n
 
 // ── Pull catalogue + stock from Express ─────────────────────
 
+// ── Last inbound failure ─────────────────────────────────────────────────────
+//
+// Push failures already carry their reason: sync_queue.last_error is written
+// per row and getSyncStatus() surfaces the commonest one as failedReason. The
+// INBOUND half — catalogue pull and token refresh — had no equivalent. It
+// returned false and said nothing, which is how a dead catalogue pull went
+// undiagnosed while "9 failed" sat readable in the same header.
+//
+// Deliberately in memory, not SQLite. This is current state, not history: the
+// sync loop re-runs within seconds of a restart and repopulates it, so
+// persisting it would buy nothing and cost a LOCAL_SCHEMA_VERSION bump — which
+// on a fleet with no auto-update means visiting every till. The durable record
+// lives in swiftpos.log instead.
+//
+// ONE SLOT PER SCOPE, not one slot overall. The first cut of this used a single
+// field and a test caught it immediately: syncAll() drives a catalogue pull AND
+// a token refresh, both fail together, and whichever finished last overwrote the
+// other. The status field reported "owner token refresh failed" while the actual
+// cause was BRANCH_NOT_LICENSED on the pull — a confident wrong message, which
+// is the thing this whole change exists to stop.
+const _inbound = new Map<string, { message: string; since: string }>();
+
+// Order matters when both are set. A dead token explains a dead catalogue pull;
+// a dead catalogue pull does not explain a dead token. Report the cause, not the
+// symptom.
+const SCOPE_PRIORITY = ['auth', 'sync'];
+
+function noteInboundFailure(scope: string, message: string): void {
+  const prev = _inbound.get(scope);
+  // First failure wins the timestamp: "since" should say how long this has been
+  // broken, not when it last retried.
+  if (!prev || prev.message !== message) {
+    _inbound.set(scope, { message, since: new Date().toISOString() });
+  }
+  logLine(scope, message);
+}
+
+function clearInboundFailure(scope: string): void {
+  const prev = _inbound.get(scope);
+  if (prev) {
+    logLine(scope, `recovered after: ${prev.message}`);
+    _inbound.delete(scope);
+  }
+}
+
+function currentInboundFailure(): { message: string; since: string } | null {
+  for (const scope of SCOPE_PRIORITY) {
+    const hit = _inbound.get(scope);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 async function pullCatalogue(): Promise<boolean> {
   // Price for the branch this till is actually bound to (per-branch pricing).
   // Sent as ?branch_id so /api/pos/init returns branch_price per product.
@@ -324,10 +475,26 @@ async function pullCatalogue(): Promise<boolean> {
   const initUrl = boundBranchForPricing
     ? `${_serverUrl}/api/pos/init?branch_id=${encodeURIComponent(boundBranchForPricing)}`
     : `${_serverUrl}/api/pos/init`;
-  const res = await fetch(initUrl, { headers: authHeaders() });
-  if (!res.ok) return false;
+  // The status and body used to be discarded here. /api/pos/init fails closed
+  // on several conditions that look identical from the till — an unlicensed
+  // branch (403 BRANCH_NOT_LICENSED), no branch flagged is_main, an expired
+  // token — and all of them presented as "sync isn't working" with nothing to
+  // go on. The server's `ref` travels in the body; it keys the full detail in
+  // the server log.
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetch(initUrl, { headers: authHeaders() });
+  } catch (err: any) {
+    noteInboundFailure('sync', `catalogue pull unreachable: ${err?.message ?? err}`);
+    return false;
+  }
+  if (!res.ok) {
+    noteInboundFailure('sync', `catalogue pull failed: ${await describeResponse(res)}`);
+    return false;
+  }
 
   const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions } = await res.json();
+  clearInboundFailure('sync');
   const db = getLocalDb();
   const now = new Date().toISOString();
 

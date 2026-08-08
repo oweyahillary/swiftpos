@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.23",
+  "version": "0.5.24",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -24,15 +24,26 @@
     "release:patch": "npm run version:patch && npm run build:all && npm run dist",
     "release:minor": "npm run version:minor && npm run build:all && npm run dist",
     "release:major": "npm run version:major && npm run build:all && npm run dist",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test:held": "node test/heldOrders.test.mjs",
+    "test:held:electron": "node test/run-under-electron.mjs test/heldOrders.test.mjs",
+    "test:log": "node test/logFile.test.mjs",
+    "test:sync": "node test/syncEngine-failures.test.mjs",
+    "test:desktop": "npx tsc -b tsconfig.main.json --force && npm run test:log && npm run test:sync && npm run test:held:electron && npm run test:pin:electron && npm run test:token:electron",
+    "test:pin": "node test/pinCache.test.mjs",
+    "test:pin:electron": "node test/run-under-electron.mjs test/pinCache.test.mjs",
+    "test:token": "node test/tokenStore.test.mjs",
+    "test:token:electron": "node test/run-under-electron.mjs test/tokenStore.test.mjs"
   },
   "dependencies": {
     "@swiftpos/printing": "file:../../shared/printing",
+    "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.10.0",
     "exceljs": "^4.4.0",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.8",
     "@types/react": "^18.3.22",
     "@types/react-dom": "^18.3.5",

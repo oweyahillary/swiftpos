@@ -4,7 +4,7 @@ import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generat
 import type { CartItem } from '../lib/cart';
 import { modeFlags } from '../lib/posMode';
 import type { ModeFlags } from '../lib/posMode';
-import { listHeldOrders, holdOrder, recallHeldOrder, deleteHeldOrder } from '../lib/heldOrders';
+import { listHeldOrders, holdOrder, recallHeldOrder, deleteHeldOrder, importLegacyHeldOrders } from '../lib/heldOrders';
 import type { HeldOrder } from '../lib/heldOrders';
 import TablesView from '../components/TablesView';
 import PumpsView from '../components/PumpsView';
@@ -225,7 +225,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       }
     }).catch(() => { /* keep retail defaults */ });
 
-    setHeldOrders(listHeldOrders());
+    // Legacy tabs first: held orders moved from localStorage to SQLite (D2),
+    // and a till upgraded mid-service must not lose its open tables. Idempotent,
+    // so this is a no-op on every launch after the first.
+    void importLegacyHeldOrders().then(() => listHeldOrders()).then(setHeldOrders);
 
     // Load current shift (if any) for the top-bar pill.
     posApi.shift.current().then(setShift).catch(() => setShift(null));
@@ -572,15 +575,15 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     }
   };
 
-  const handleHold = () => {
+  const handleHold = async () => {
     if (cart.length === 0) return;
-    autoHold();
+    await autoHold();
     if (flags.isRestaurant) setView('tables');
   };
 
   // Parks the current cart as a tab (label from table/takeaway context) and
   // resets the order surface. Shared by Hold, back-to-tables, and table switch.
-  const autoHold = () => {
+  const autoHold = async () => {
     if (cart.length === 0) return;
     const num = ensureOrderNumber();
     const label = orderType === 'dine_in'
@@ -588,8 +591,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       : orderType === 'delivery'
         ? `Delivery ${deliveryPerson.trim() || num.slice(-4)}`
         : `Takeaway ${num.slice(-4)}`;
-    holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined });
-    setHeldOrders(listHeldOrders());
+    await holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined });
+    setHeldOrders(await listHeldOrders());
     clearCart();
     setOrderType(flags.defaultOrderType);
   };
@@ -599,17 +602,17 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Free table → fresh dine-in order bound to it. Occupied → recall its tab.
   // Any in-progress cart is auto-held first, so switching tables mid-order
   // behaves like parking one tab and opening another — nothing is lost.
-  const handleTableTap = (table: DiningTable, tab: HeldOrder | null) => {
-    autoHold();
+  const handleTableTap = async (table: DiningTable, tab: HeldOrder | null) => {
+    await autoHold();
     if (tab) {
-      const held = recallHeldOrder(tab.id);
+      const held = await recallHeldOrder(tab.id);
       if (held) {
         setCart(held.cart);
         setOrderType(held.orderType);
         setDeliveryPerson(held.deliveryPerson ?? '');
         setTableNumber(held.tableNumber);
         setOrderNumber(held.orderNumber);
-        setHeldOrders(listHeldOrders());
+        setHeldOrders(await listHeldOrders());
       }
     } else {
       setOrderType('dine_in');
@@ -619,8 +622,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setView('products');
   };
 
-  const handleTakeaway = () => {
-    autoHold();
+  const handleTakeaway = async () => {
+    await autoHold();
     setOrderType('takeaway');
     setTableNumber('');
     setOrderNumber(null);
@@ -652,8 +655,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Sync press. (PIN login and the 10-min cycle also pull automatically.)
   const tablesRescueSyncRef = useRef(false);
 
-  const handleBackToTables = () => {
-    autoHold();          // never lose an in-progress order
+  const handleBackToTables = async () => {
+    await autoHold();    // never lose an in-progress order
     // Cheap local read — picks up tables that a background sync pulled in
     // since the app booted, without requiring a manual Sync press.
     posApi.pos.getTables().then(tbls => {
@@ -668,23 +671,23 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setView('tables');
   };
 
-  const handleRecall = (id: string) => {
+  const handleRecall = async (id: string) => {
     if (cart.length > 0) return; // guarded in the modal too
-    const held = recallHeldOrder(id);
+    const held = await recallHeldOrder(id);
     if (!held) return;
     setCart(held.cart);
     setOrderType(held.orderType);
     setDeliveryPerson(held.deliveryPerson ?? '');
     setTableNumber(held.tableNumber);
     setOrderNumber(held.orderNumber);
-    setHeldOrders(listHeldOrders());
+    setHeldOrders(await listHeldOrders());
     setShowHeld(false);
     setView('products');
   };
 
-  const handleDeleteHeld = (id: string) => {
-    deleteHeldOrder(id);
-    setHeldOrders(listHeldOrders());
+  const handleDeleteHeld = async (id: string) => {
+    await deleteHeldOrder(id);
+    setHeldOrders(await listHeldOrders());
   };
 
   // Was hardcoded to 16, which computed the wrong tax for any business on a

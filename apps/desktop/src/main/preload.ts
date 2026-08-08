@@ -105,6 +105,18 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setNodeUrl:   (url: string)   => ipcRenderer.invoke('tech:setNodeUrl', { url }),
   },
 
+  // Held orders (restaurant tabs). Backed by SQLite in the main process since
+  // 2026-08-08 — previously renderer localStorage, where a truncated write
+  // silently reported zero open tables.
+  held: {
+    list:   ()                => ipcRenderer.invoke('held:list'),
+    hold:   (order: unknown)  => ipcRenderer.invoke('held:hold', order),
+    recall: (id: string)      => ipcRenderer.invoke('held:recall', { id }),
+    remove: (id: string)      => ipcRenderer.invoke('held:delete', { id }),
+    // One-time migration of the legacy localStorage blob. Idempotent.
+    importLegacy: (orders: unknown[]) => ipcRenderer.invoke('held:import', { orders }),
+  },
+
   shift: {
     current: ()                                                          => ipcRenderer.invoke('shift:current'),
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),

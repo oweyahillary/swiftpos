@@ -1224,6 +1224,26 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     staff:       { id: matchedUser.id, name: matchedUser.name, role: role?.name },
     permissions: effectivePerms,
     branchId:    branch_id,
+    // Offline sign-in (register D-offline). A desktop terminal caches this so a
+    // line fault does not stop the floor starting a shift — everything else on
+    // a till already works offline; the door was the exception.
+    //
+    // Deliberate constraints:
+    //   * DESKTOP ONLY. A browser has nowhere safe to put it and never needs to.
+    //   * The user's OWN hash only, and only the one that just authenticated —
+    //     the terminal never receives the roster.
+    //   * bcrypt only. `needsUpgrade` above rewrites legacy hashes on sign-in,
+    //     so a legacy user is upgraded here and cacheable from the next time.
+    //   * NEVER override_pin_hash. That PIN authorises voids, discounts past the
+    //     floor and refunds, and is the one credential worth stealing off a
+    //     till, because the thief already has the till.
+    //
+    // The till wraps it with safeStorage (DPAPI), scopes it to this terminal and
+    // expires it. See apps/desktop/src/main/pinCache.ts.
+    offlineAuth: req.surface === 'desktop' && typeof matchedUser.pin_hash === 'string'
+      && matchedUser.pin_hash.startsWith('$2')
+      ? { pinHash: matchedUser.pin_hash }
+      : undefined,
   });
 });
 
