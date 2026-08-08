@@ -437,6 +437,63 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     if (unsent.length === 0) return;
     const num = await ensureOrderNumberAsync();
     setKitchenMsg('');
+
+    // ── Only ONE printing system may run ────────────────────────────────────
+    // When thermal printing is switched on for this terminal, main queues the
+    // kitchen and dispatch tickets through the ESC/POS spool as part of
+    // order:create. If this HTML path also ran, the kitchen would get the same
+    // ticket twice and cook it twice — a worse failure than either system on
+    // its own, and one that only shows up during a real service.
+    //
+    // The old path is NOT deleted. It is the fallback, and it stays until a
+    // real service has gone through the thermal one on this hardware. Untick
+    // the box on the Printers screen and this runs again exactly as before.
+    try {
+      // canPrint, not enabled(). With thermal on but no kitchen station bound
+      // on this terminal, skipping the HTML path would send NOTHING to the
+      // kitchen while telling the cashier it had gone.
+      if (await window.swiftpos.escpos.canPrint('kitchen')) {
+        // Queue the kitchen and dispatch tickets NOW.
+        //
+        // This used to do nothing but mark the lines sent, because main queued
+        // every ticket at order:create — which happens at PAYMENT. The kitchen
+        // therefore learned about an order only after the customer had settled
+        // the bill, so nothing was cooking while they paid. The whole point of
+        // a kitchen ticket is that it goes first.
+        //
+        // Only the UNSENT lines are sent, so a second course added later does
+        // not reprint the first.
+        await window.swiftpos.escpos.printProduction({
+          order_number: num,
+          order_type:   flags.isRestaurant ? orderType : 'retail',
+          table_number: orderType === 'dine_in' ? tableNumber : undefined,
+          items: unsent.map(item => ({
+            product: {
+              id: item.product.id,
+              name: item.product.name,
+              category_id: item.product.category_id ?? item.product.categories?.id ?? null,
+              categories: item.product.categories ?? null,
+              description: item.product.description ?? null,
+            },
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            lineTotal: item.lineTotal,
+            selectedVariants: item.selectedVariants,
+            selectedModifiers: item.selectedModifiers,
+            comboComponents: comboItems[item.product.id] ?? undefined,
+          })),
+        });
+
+        setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
+        setKotCount(n => n + 1);
+        setKitchenMsg(
+          `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
+        return;
+      }
+    } catch {
+      // Cannot tell — assume off and print the way that has always worked.
+    }
+
     try {
       const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds, routing);
       const problems: string[] = [];
@@ -664,6 +721,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       await posApi.order.create({
         branch_id: branchId,
         order_number: num,
+        // Production tickets already queued by Send to kitchen, so order:create
+        // prints the RECEIPT only. Without this the kitchen gets a second copy
+        // of everything at payment.
+        kot_sent: cart.some(i => i.kotSent),
         order_type: flags.isPetrol ? 'fuel_sale' : flags.isRestaurant ? orderType : 'retail',
         delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
         subtotal,
@@ -681,12 +742,29 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         // this rebuild as planned).
         pump_id: cart.find(i => i.isFuel && i.pumpId)?.pumpId ?? null,
         items: cart.map(item => ({
-          product: { id: item.product.id, name: item.product.name, categories: item.product.categories ?? null },
+          product: {
+            id: item.product.id,
+            name: item.product.name,
+            // category_id is the field a desktop product actually carries;
+            // `categories` is the nested shape the WEB catalogue returns and is
+            // undefined here. Sending only the latter meant every line arrived
+            // at the ticket router with no category, so nothing could be routed
+            // to the kitchen and the kitchen ticket printed "0 items to cook".
+            category_id: item.product.category_id ?? item.product.categories?.id ?? null,
+            categories: item.product.categories ?? null,
+            // Last-resort composition for a menu that was typed as flat products
+            // with a line of prose — see escposBridge.describeFromText.
+            description: item.product.description ?? null,
+          },
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           lineTotal: item.lineTotal,
           selectedVariants: item.selectedVariants,
           selectedModifiers: item.selectedModifiers,
+          // What a combo is actually made of. Without these a combo reaches the
+          // kitchen as one opaque line and the cooks cannot see the 3PC Chicken
+          // inside it.
+          comboComponents: comboItems[item.product.id] ?? undefined,
         })),
         payments: payment.legs,
       });
@@ -707,6 +785,29 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     const content = receiptRef.current;
     if (!content) return;
     setPrintMsg('');
+
+    // With thermal on, the receipt was already queued to the till station when
+    // the order was created — see main/escposBridge.ts. Printing the HTML copy
+    // as well would hand the customer two receipts, and the second one laid out
+    // by a different renderer.
+    try {
+      // canPrint('receipt'), NOT enabled(). The first real install had thermal
+      // switched on with only Kitchen and dispatcher configured — no receipt
+      // station at all. Gating on the flag alone made this report "Receipt sent
+      // to the printer" and print nothing, which is the worst possible failure
+      // here: a cashier who believes the receipt printed hands over goods.
+      if (await window.swiftpos.escpos.canPrint('receipt')) {
+        // A REAL second copy, marked "Duplicate Print" on the paper.
+        //
+        // This used to return a success message and print nothing, which made
+        // the button worse than useless: a cashier pressing it for a customer
+        // who wanted their receipt got told it had gone, and it had not.
+        const r = await window.swiftpos.escpos.reprintReceipt();
+        if (!r.ok) setPrintMsg(r.error ?? 'Could not reprint the receipt.');
+        return;
+      }
+    } catch { /* fall through to the path that has always worked */ }
+
     // Native silent print, falling back to the OS default printer and finally
     // to an on-screen preview. It CANNOT be allowed to fail quietly: a cashier
     // who believes the receipt printed will hand over goods without one.
@@ -777,6 +878,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               footerMessage={printerSettings.footerMessage}
             />
           </div>
+          {/* Only ever set when something FAILED. A successful print says
+              nothing — the paper is the confirmation. */}
           {printMsg && (
             <div className="px-6 pb-1">
               <p className="text-amber-400 text-xs leading-snug">⚠ {printMsg}</p>

@@ -1964,6 +1964,7 @@ export default function CashierScreen() {
           maxDiscountPct={maxDiscountPct}
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
+          pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
           onClose={() => setShowPayment(false)}
           onPaid={() => {
             // Free the table immediately on payment (independent of the receipt's

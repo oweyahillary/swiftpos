@@ -165,6 +165,40 @@ jobs:
       - name: RLS coverage (migrations)
         run: node scripts/check-rls-coverage.mjs
 
+      # THE DRIFT GATE ITSELF. This job has been called "Schema drift" since it
+      # was written and did not run check-schema-drift.mjs — the script was
+      # referenced nowhere outside its own header. A green tick reading "Schema
+      # drift" therefore meant the drift gate had NOT run, which is a worse
+      # failure than an absent job: it answers the question before anyone asks
+      # it. Cast safety, function-signature drift, duplicate declarations and
+      # index freshness are all checked here and nowhere else.
+      #
+      # refresh-schema-index.mjs stays OUT of CI deliberately. The gate must
+      # compare against the COMMITTED snapshots, so a PR that changes the schema
+      # without refreshing them fails. Refreshing here would make it pass by
+      # rewriting the thing it is measuring against.
+      - name: Schema drift
+        run: node scripts/check-schema-drift.mjs
+
+      # A table written under one name and read under another. The live schema
+      # carries both `stock` and `stock_levels`; every sale wrote stock_levels
+      # while the low-stock alert read `stock`, so the alert queried a table
+      # nothing had written since the two diverged and returned silently. Every
+      # gate above stayed green throughout — both tables exist with valid
+      # columns, so the query was legal. Nothing compared WHO WRITES a table
+      # against WHO READS it. This does.
+      - name: Table read/write parity
+        run: node scripts/check-table-usage.mjs
+
+      # The Electron till and the web POS post to the same routes from two
+      # separate codebases, and nothing compared their payloads. pump_id was
+      # wired end-to-end on the till and never added to the web builder, so
+      # every web fuel sale wrote NULL, the exact-tank deduction never fired and
+      # fuel reports read zero — the symptom the till fix was written to close.
+      # Fails when the server reads a field exactly one client sends.
+      - name: Client payload parity (desktop vs web)
+        run: node scripts/check-client-parity.mjs
+
       # The parser is regex-based, so its own failure mode is finding nothing and
       # reporting perfect parity. It exits 2 below its parse floor; this asserts
       # that guard is alive rather than trusting it.

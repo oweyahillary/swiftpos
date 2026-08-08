@@ -104,17 +104,36 @@ function scopeArgs(deviceId: string | null): string[] {
 }
 function readTotals(from: string, to: string, deviceId: string | null): Totals {
   const db = getLocalDb();
+  // Refunds are netted off (audit BUG-19).
+  //
+  // A refund does NOT change orders.status — it stays 'completed' on purpose
+  // (server: routes/orders.ts, migration 37), because the server's shift close
+  // needs the order to stay in scope so the negative payment leg it wrote is
+  // still found. That is correct there and it is precisely what broke this.
+  //
+  // orders.total is never reduced by a refund; the money handed back lives in
+  // the separate refunded_amount column, which this report did not read. So a
+  // refunded bill was counted at FULL value here while the server counted it
+  // net. Two numbers for one day's trade, and the one that gets printed and
+  // handed to the owner was the wrong one — overstated by the whole bill, not
+  // by the refund.
+  //
+  // COALESCE because refunded_amount is REAL DEFAULT 0 locally but NULL on rows
+  // that predate migration 37 reaching this terminal.
   const r = db.prepare(`
     SELECT COUNT(*) AS bills,
-           COALESCE(SUM(total), 0)        AS gross,
-           COALESCE(SUM(vat_amount), 0)   AS vat,
-           COALESCE(SUM(ctl_amount), 0)   AS ctl
+           COALESCE(SUM(total), 0)                        AS gross_before_refunds,
+           COALESCE(SUM(COALESCE(refunded_amount, 0)), 0) AS refunded,
+           COALESCE(SUM(vat_amount), 0)                   AS vat,
+           COALESCE(SUM(ctl_amount), 0)                   AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
            ${scopeClause(deviceId)}
-  `).get(from, to, ...scopeArgs(deviceId)) as { bills: number; gross: number; vat: number; ctl: number };
+  `).get(from, to, ...scopeArgs(deviceId)) as
+    { bills: number; gross_before_refunds: number; refunded: number; vat: number; ctl: number };
 
-  const gross = Number(r.gross);
+  const refunded = Number(r.refunded);
+  const gross = Number(r.gross_before_refunds) - refunded;
   const vat = Number(r.vat);
   const ctl = Number(r.ctl);
 

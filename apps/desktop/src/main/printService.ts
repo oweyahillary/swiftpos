@@ -148,6 +148,58 @@ export interface SilentPrintOptions {
 }
 
 // OS printer list — needs a webContents, so we borrow the main window's.
+/**
+ * Windows sharing state per printer, keyed by printer name.
+ *
+ * WHY THIS EXISTS
+ * Raw ESC/POS bytes reach a USB printer on Windows by writing to its UNC share:
+ * \\localhost\<ShareName>. There is no other route without a native module —
+ * a USB printer has no IP, and its port (USB001) is not a path anything can
+ * open.
+ *
+ * The catch is that Windows does NOT share a printer by default, and when it
+ * does, the SHARE name is a separate field from the printer name. The printer
+ * list Electron gives us has only the printer name, so building
+ * \\localhost\<printer name> from it is a guess — and on a printer that has
+ * never been shared it is a guess that fails with
+ * "UNKNOWN: unknown error, open '\\localhost\XP-80'", which reads like a
+ * hardware fault and is not one.
+ *
+ * Get-Printer is the only thing that knows. Windows-only by construction;
+ * every other platform returns an empty map and the caller falls back to the
+ * printer name, which is correct for CUPS.
+ */
+export async function printerShares(): Promise<Record<string, { shared: boolean; shareName: string | null }>> {
+  if (process.platform !== 'win32') return {};
+  try {
+    const { execFile } = await import('node:child_process');
+    const out = await new Promise<string>((resolve, reject) => {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command',
+         'Get-Printer | Select-Object Name,Shared,ShareName | ConvertTo-Json -Compress'],
+        // Same reasoning as the getPrintersAsync race below: a wedged spooler
+        // must degrade to "unknown", never to a frozen settings screen.
+        { timeout: 6_000, windowsHide: true },
+        (err, stdout) => (err ? reject(err) : resolve(stdout)),
+      );
+    });
+
+    const parsed = JSON.parse(out || '[]');
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const map: Record<string, { shared: boolean; shareName: string | null }> = {};
+    for (const r of rows) {
+      if (!r?.Name) continue;
+      map[r.Name] = { shared: !!r.Shared, shareName: r.ShareName ?? null };
+    }
+    return map;
+  } catch {
+    // No PowerShell, blocked by policy, or a wedged spooler. Unknown sharing
+    // state is not an error — the manual field still accepts a typed target.
+    return {};
+  }
+}
+
 export async function listPrinters(): Promise<PrinterInfo[]> {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win) return [];
@@ -305,8 +357,27 @@ function printOnce(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: str
       resolve(result);
     };
 
+    // The measuring window MUST be the width of the paper.
+    //
+    // It had no width, so Electron defaulted it to 800px. The HTML was laid out
+    // at 800px, its height measured there, and that height handed to
+    // webContents.print() as the page length — while the actual print reflowed
+    // the same content into ~302px (80mm). Narrower column, far more wrapping,
+    // far taller page. The paper then ran out at whatever the 800px measurement
+    // had predicted, and everything past it was simply not printed.
+    //
+    // A receipt survived this because its rows are short and wrap little. The
+    // shift report did not: it stopped dead after Gross sales, losing the whole
+    // cash reconciliation — the half of the report anybody counting a drawer
+    // actually needs.
+    //
+    // useContentSize so the number means the page, not the window frame.
+    const paperPx = Math.max(1, Math.round((opts.paperWidthMm / 25.4) * 96));
     const win = new BrowserWindow({
       show: false,
+      width: paperPx,
+      height: 2000,
+      useContentSize: true,
       webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true },
     });
 
@@ -319,11 +390,18 @@ function printOnce(opts: SilentPrintOptions): Promise<{ ok: boolean; error?: str
       let heightMicrons = FALLBACK_HEIGHT_MICRONS;
       try {
         const px: number = await win.webContents.executeJavaScript(
-          `Math.ceil(Math.max(
-             document.body.scrollHeight,
-             document.documentElement.scrollHeight,
-             document.body.getBoundingClientRect().height
-           ))`,
+          `(async () => {
+             // Fonts change line counts, and a line count is the whole
+             // measurement. Measuring before they load reports a height the
+             // printed page will overrun.
+             if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+             return Math.ceil(Math.max(
+               document.body.scrollHeight,
+               document.documentElement.scrollHeight,
+               document.body.getBoundingClientRect().height
+             ));
+           })()`,
           true,
         );
         if (Number.isFinite(px) && px > 0) {

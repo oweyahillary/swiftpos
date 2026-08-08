@@ -1602,12 +1602,28 @@ router.post('/:id/pay', async (req, res) => {
       mpesa_checkout_id: leg.mpesa_checkout_id ?? null,
     }));
 
-    const { error: pErr } = await supabase.from('payments').insert(paymentRows);
-    if (pErr) { sendError(res, pErr); return; }
-
-    checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
-
-    // 3. Mark order completed.
+    // ── 2. CLAIM THE ORDER BEFORE WRITING ANYTHING (audit B1) ────────────────
+    //
+    // The status check above is a READ. Between that read and the write below
+    // there was nothing stopping a second request doing the same thing: a
+    // double-tapped Charge button, or the till retrying after a timeout on a
+    // request that had actually succeeded. Both requests passed the check, both
+    // inserted payment legs, both ran applyStockEffects, both awarded loyalty.
+    // Net effect: the drawer over-reports, stock under-reports, and the customer
+    // earns points twice — none of it visible until close.
+    //
+    // POST /orders has been safe from this since migration 54: an idempotency
+    // key with a partial unique index behind it. /pay has never had either.
+    //
+    // The fix is to make the STATUS TRANSITION the lock. `.eq('status','open')`
+    // means exactly one request can move the row out of 'open'; PostgREST
+    // applies that as a WHERE on the UPDATE, so the loser matches no rows and
+    // changes nothing. `.select()` is what makes the outcome legible — without
+    // it supabase-js returns no rows and a lost claim is indistinguishable from
+    // a won one.
+    //
+    // The claim happens FIRST, before the payment legs, because the legs are the
+    // thing we must not write twice. Losing the claim now costs nothing.
     const orderUpdate: Record<string, unknown> = {
       status:          'completed',
       discount_amount: payDiscount,
@@ -1619,18 +1635,69 @@ router.post('/:id/pay', async (req, res) => {
       // was money in the drawer that the books had no record of, which reads as
       // an unexplained cash surplus at close.
       tip_amount:      payTip,
+      // Points redeemed on this order. The counter path has always written this
+      // (it is read back by GET /orders); the dine-in path never did, so every
+      // table order reported zero points redeemed however many were taken.
+      loyalty_points_used: Math.max(0, Number(points_redeemed) || 0),
       sync_status:     'pending',
     };
     // Only touch customer_id if this request actually supplied one — don't
     // clobber whatever was set when the order was opened.
     if (customer_id) orderUpdate.customer_id = customer_id;
 
-    const { error: uErr } = await supabase
+    const { data: claimed, error: uErr } = await supabase
       .from('orders')
       .update(orderUpdate)
-      .eq('id', order.id);
+      .eq('id', order.id)
+      .eq('status', 'open')      // ← the lock
+      .select('id, order_number, total, tip_amount');
 
     if (uErr) { sendError(res, uErr); return; }
+
+    if (!claimed || claimed.length === 0) {
+      // We lost the claim. Somebody else paid this order between our read and
+      // our write.
+      //
+      // DELIBERATELY NOT AN ERROR. The order is paid and the drawer is shut.
+      // Telling the cashier "that failed" when the money is in the till is the
+      // worse outcome by a distance — they re-charge, and now there are two
+      // sales. So we return exactly what the winning request returned and the
+      // cashier never learns there was a race.
+      //
+      // The one thing we do NOT do is stay silent about a genuine discrepancy.
+      // If the winner settled a different amount, this was not a duplicate of
+      // our request — it was a different payment — and that belongs in front of
+      // whoever reconciles the day, not in front of the cashier mid-service.
+      const { data: settled } = await supabase
+        .from('orders')
+        .select('id, order_number, status, total, tip_amount')
+        .eq('id', order.id)
+        .single();
+
+      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0));
+      if (settled && Math.abs(settledDue - amountDue) > 0.01) {
+        await supabase.from('payment_exceptions').insert({
+          business_id:     req.businessId,
+          order_id:        order.id,
+          expected_amount: amountDue,
+          received_amount: settledDue,
+          reason:
+            'Concurrent /pay on the same order settled a different amount. The first '
+            + 'request won and its figures stand. This request was not applied.',
+        }).then(() => {}, e => console.error('[pay] exception log failed:', e));
+        console.warn(`[pay] concurrent settle mismatch on ${order.order_number}: `
+                   + `this request ${amountDue}, settled ${settledDue}`);
+      }
+
+      res.json({ orderId: order.id, orderNumber: order.order_number, duplicate: true });
+      return;
+    }
+
+    // ── 2b. We own the order. Now it is safe to write the money. ─────────────
+    const { error: pErr } = await supabase.from('payments').insert(paymentRows);
+    if (pErr) { sendError(res, pErr); return; }
+
+    checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
 
     // 3b. Credit sale — record the debt (audit C5). Same RPC and same
     // log-and-continue pattern as POST /orders' equivalent block: the order
@@ -1687,40 +1754,102 @@ router.post('/:id/pay', async (req, res) => {
       })),
     });
 
-    // 5. Loyalty
+    // ── 5. Loyalty — THE SAME loyalty POST /orders applies (audit B2) ────────
+    //
+    // BUG-07 fixed redemption here and left the award side alone, so the two
+    // order paths drifted into disagreeing about almost everything:
+    //
+    //   earn formula      counter: floor(total/10) x earnRate   here: floor(total/100)
+    //   tier multiplier   counter: applied                      here: ignored
+    //   ledger row        counter: written                      here: none
+    //   total_spent       counter: updated                      here: never
+    //
+    // With the default earn rate of 1 that is a TEN-FOLD difference: a KES 1,000
+    // bill earned 100 points at the counter and 10 at the table. Same customer,
+    // same spend, different answer depending on where they sat. And because no
+    // loyalty_transactions row was written, the balance could not be reconciled
+    // against the ledger to notice.
+    //
+    // total_spent matters beyond loyalty: it is what every RFM and CRM segment
+    // is built on. Its string-concatenation bug was fixed on the counter path
+    // and the column stayed dead here — for restaurants, which are the
+    // businesses that use this path at all.
     if (customer_id) {
-      if (points_redeemed > 0) {
-        // This was:
-        //   .update({ loyalty_points: supabase.rpc('decrement', { x: n }) })
-        // supabase.rpc() returns a lazy query BUILDER, not a value. It was never
-        // awaited, so no request was ever sent; the builder object was serialised
-        // into the update body as JSON, and the result was not destructured, so
-        // the failure was silent. There is also no 'decrement' function in any
-        // migration. Net effect: dine-in customers redeemed their points and
-        // kept them.
-        //
-        // adjust_loyalty_points (migration 67) is deliberately NOT
-        // increment_loyalty_points with a negative number — that one also does
-        // visit_count + 1, which would count a redemption as another visit and
-        // double-count any order that both redeems and earns.
+      // 5a. Deduct redeemed points.
+      //
+      // adjust_loyalty_points (migration 67) is deliberately NOT
+      // increment_loyalty_points with a negative number — that one also does
+      // visit_count + 1, which would count a redemption as another visit and
+      // double-count any order that both redeems and earns.
+      //
+      // (What this replaced: .update({ loyalty_points: supabase.rpc('decrement') }).
+      // supabase.rpc() returns a lazy query BUILDER, never awaited, serialised
+      // into the update body as JSON, result not destructured. No such function
+      // exists in any migration. Customers redeemed their points and kept them.)
+      const redeemPts = Math.max(0, Number(points_redeemed) || 0);
+      if (redeemPts > 0) {
         const { error: redeemErr } = await supabase.rpc('adjust_loyalty_points', {
           p_customer_id: customer_id,
-          p_points:      -Math.abs(Number(points_redeemed) || 0),
+          p_points:      -redeemPts,
         });
         if (redeemErr) {
           console.error('[orders/pay] loyalty redemption failed:', redeemErr.message);
+        } else {
+          // The ledger row the counter path has always written. Without it the
+          // points balance is a number with no history behind it.
+          await supabase
+            .from('loyalty_transactions')
+            .insert({
+              customer_id,
+              business_id: req.businessId,
+              order_id:    order.id,
+              type:        'redeem',
+              points:      -redeemPts,
+              notes:       `Redeemed on order ${order.order_number}`,
+            });
         }
       }
-      // payTotal, not order.total: order.total is the pre-discount figure this
-      // handler has just superseded, so awarding on it would earn the customer
-      // points for money nobody paid.
-      const pointsEarned = Math.floor(payTotal / 100);
-      if (pointsEarned > 0) {
-        await supabase.rpc('increment_loyalty_points', {
-          p_customer_id: customer_id,
-          p_points:      pointsEarned,
-        });
+
+      // 5b. Earn on the net total, at the business's configured rate, with the
+      //     customer's tier multiplier. Identical arithmetic to POST /orders —
+      //     if that formula ever changes it must change in one place, which is
+      //     why both paths now read it from the same helpers.
+      //
+      //     payTotal, not order.total: order.total is the pre-discount figure
+      //     this handler has just superseded, so awarding on it would earn the
+      //     customer points for money nobody paid.
+      const earnRate = await getLoyaltyEarnRate(req.businessId);
+      const { data: customerForTier } = await supabase
+        .from('customers')
+        .select('loyalty_points')
+        .eq('id', customer_id)
+        .single();
+
+      const { multiplier } = getTier(Number(customerForTier?.loyalty_points ?? 0));
+      const basePoints   = Math.floor(payTotal / 10) * earnRate;
+      const pointsToEarn = Math.floor(basePoints * multiplier);
+
+      // awardLoyaltyPoints, not a bare rpc(): it carries the PGRST202 fallback
+      // AND writes the loyalty_transactions row. Calling the RPC directly is
+      // what left dine-in awards out of the ledger.
+      if (pointsToEarn > 0) {
+        await awardLoyaltyPoints(customer_id, req.businessId, order.id, pointsToEarn, order.order_number);
       }
+
+      // 5c. total_spent. numeric(12,2) arrives from PostgREST as a STRING, so
+      //     both operands are coerced before the addition — "1500.00" + 890
+      //     concatenates to "1500.00890" rather than adding, which is how this
+      //     column died on the counter path before it was fixed there.
+      const { data: cSpent } = await supabase
+        .from('customers')
+        .select('total_spent')
+        .eq('id', customer_id)
+        .single();
+      await supabase
+        .from('customers')
+        .update({ total_spent: Number(cSpent?.total_spent ?? 0) + Number(payTotal) })
+        .eq('id', customer_id)
+        .eq('business_id', req.businessId);
     }
 
     // 6. Increment discount usage

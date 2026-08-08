@@ -147,6 +147,12 @@ declare global {
         assign:      (a: unknown) => Promise<unknown>;
         unassign:    (stationId: string) => Promise<unknown>;
         status:      () => Promise<unknown>;
+        enabled:     () => Promise<boolean>;
+        setEnabled:  (on: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
+        canPrint:    (kind: 'kitchen' | 'dispatch' | 'receipt') => Promise<boolean>;
+        printProduction: (payload: unknown) => Promise<{ ok: boolean }>;
+        reprintReceipt: () => Promise<{ ok: boolean; error?: string }>;
+        printShiftReport: (data: unknown) => Promise<{ ok: boolean; error?: string; internal?: boolean }>;
         retry:       (id: string) => Promise<unknown>;
         preview:     (ctx: unknown) => Promise<unknown>;
         test:        (ctx: unknown, target: string) => Promise<any>;
@@ -237,6 +243,7 @@ declare global {
       };
       print: {
         list: () => Promise<PrinterInfo[]>;
+        shares: () => Promise<Record<string, { shared: boolean; shareName: string | null }>>;
         preview: (opts: { html: string; paperWidthMm: 58 | 80; title?: string }) => Promise<{ ok: boolean }>;
         probe: (deviceName: string) => Promise<{ ok: boolean; state: string }>;
         geometry: (deviceName: string) => Promise<

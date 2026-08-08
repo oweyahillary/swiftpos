@@ -209,6 +209,15 @@ async function request<T>(
     };
     err.code   = json.code;
     err.status = res.status;
+    // Carry the rest of the error body across too. Only `code` and `status`
+    // survived before, so a 409 that NAMES the choices the caller has to make
+    // (MULTIPLE_BUSINESSES lists the businesses) arrived at the UI stripped of
+    // the one thing that made it actionable. Everything except the fields
+    // already mapped above is copied verbatim.
+    for (const [k, v] of Object.entries(json)) {
+      if (k === 'error' || k === 'code' || k === 'status') continue;
+      (err as unknown as Record<string, unknown>)[k] = v;
+    }
     throw err;
   }
 

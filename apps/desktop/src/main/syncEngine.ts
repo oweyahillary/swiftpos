@@ -327,7 +327,7 @@ async function pullCatalogue(): Promise<boolean> {
   const res = await fetch(initUrl, { headers: authHeaders() });
   if (!res.ok) return false;
 
-  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter } = await res.json();
+  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions } = await res.json();
   const db = getLocalDb();
   const now = new Date().toISOString();
 
@@ -354,6 +354,11 @@ async function pullCatalogue(): Promise<boolean> {
   // Cached so an offline till still prints the owner's current header/footer.
   if (typeof receiptHeader === 'string') saveDeviceConfig({ receipt_header: receiptHeader });
   if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });
+  // Cached for the same reason: a till that loses the internet mid-service must
+  // keep excluding drinks from the kitchen ticket, not start printing them.
+  if (Array.isArray(kitchenExclusions)) {
+    saveDeviceConfig({ kitchen_exclusions: JSON.stringify(kitchenExclusions) });
+  }
 
   // The branch this till actually operates on. The device is BOUND to a
   // branch (written at first PIN login / install); /api/pos/init's branchId
@@ -1393,7 +1398,14 @@ export function createLocalOrder(orderPayload: any): string {
     db.prepare(`
       INSERT INTO sync_queue (order_id, payload, created_at, status)
       VALUES (?, ?, ?, 'pending')
-    `).run(orderId, JSON.stringify({ ...orderPayload, payments: legs, shift_id: shiftId, device_id: deviceId, _localOrderId: orderId, idempotency_key: orderId, created_at: now }), now);
+    `).run(orderId, JSON.stringify({
+      // kot_sent is a RENDERER-TO-MAIN hint about whether the kitchen tickets
+      // have already been queued. It is not part of an order and the server has
+      // no column for it, so it is dropped here rather than shipped and ignored.
+      ...(() => { const { kot_sent: _kotSent, ...rest } = orderPayload; return rest; })(),
+      payments: legs, shift_id: shiftId, device_id: deviceId,
+      _localOrderId: orderId, idempotency_key: orderId, created_at: now,
+    }), now);
   })();
 
   return orderId;

@@ -76,24 +76,50 @@ export async function chunkIn<T>(
  *
  * Pages until a short page comes back, so it stops after one round trip on a
  * quiet shift and keeps going on a busy one.
+ *
+ * TWO THINGS THAT LOOK LIKE DETAIL AND ARE NOT
+ *
+ * 1. THE ORDER BY IS LOAD-BEARING (audit C1). PostgreSQL guarantees NO row
+ *    order without one, and it is free to return a different order on each of
+ *    the queries that make up a page walk. Rows then appear on two pages, or on
+ *    none. Every caller of this function is cash reconciliation, so a duplicated
+ *    id double-counts a payment and a dropped one loses it — which is the
+ *    phantom variance this function was written to prevent, arriving past 1000
+ *    orders instead of at the row cap. Ordering on the id makes the walk
+ *    deterministic; it is unique, indexed, and never NULL.
+ *
+ * 2. THE PAGE SIZE MUST BE BELOW THE ROW CAP (audit C2). The loop stops when a
+ *    page comes back shorter than requested. If Supabase's db-max-rows is set
+ *    LOWER than pageSize, the very first response is short, the loop exits, and
+ *    the list is silently truncated — the exact bug this exists to prevent, by
+ *    another road. 500 sits under every default worth worrying about (PostgREST
+ *    ships unlimited; Supabase's dashboard default is 1000). The cost is one
+ *    extra round trip per 500 rows; the cost of guessing high is a wrong number
+ *    at close of business with nothing to say it is wrong.
  */
 export async function fetchAllIds(
   table: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   refine: (q: any) => any,
   idColumn = 'id',
-  pageSize = 1000,
+  pageSize = 500,
 ): Promise<string[]> {
   const ids: string[] = [];
+  const seen = new Set<string>();
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await refine(
       supabase.from(table).select(idColumn),
-    ).range(from, from + pageSize - 1);
+    )
+      .order(idColumn, { ascending: true })
+      .range(from, from + pageSize - 1);
     if (error) throw new Error(`fetchAllIds(${table}.${idColumn}): ${error.message}`);
     const page = (data ?? []) as Array<Record<string, unknown>>;
     for (const r of page) {
       const v = r[idColumn];
-      if (typeof v === 'string') ids.push(v);
+      // Belt and braces on top of the ORDER BY: if a page boundary ever does
+      // repeat a row, count it once. Silent double-counting is the failure mode
+      // that costs money here.
+      if (typeof v === 'string' && !seen.has(v)) { seen.add(v); ids.push(v); }
     }
     if (page.length < pageSize) return ids;   // short page = last page
   }

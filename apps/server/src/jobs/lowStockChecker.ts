@@ -18,16 +18,37 @@ export async function checkLowStock(
 
   try {
     // 1. Fetch current stock levels + thresholds for affected products
+    //
+    // stock_levels, NOT stock (audit B6). The live schema carries BOTH tables
+    // with near-identical columns. Every sale writes stock_levels — that is
+    // where adjust_product_stock and applyStockEffects put the figures. This
+    // job read `stock`, which nothing has written since the two diverged, so it
+    // found stale rows or none at all and returned at the guard below without
+    // a sound. Low-stock alerts have been dead, and every gate stayed green:
+    // both tables exist in schema-index.json, so `.from('stock')` is a
+    // perfectly legal query and the schema audit had no opinion about it.
+    //
+    // scripts/check-table-usage.mjs now fails on this shape.
     const { data: levels, error: lErr } = await supabase
-      .from('stock')
+      .from('stock_levels')
       .select('product_id, quantity, low_stock_threshold')
       .eq('branch_id', branchId)
       .in('product_id', productIds);
 
-    if (lErr || !levels?.length) return;
+    // A query ERROR and an empty shelf are not the same event. Collapsing them
+    // into one silent return is half of why this went unnoticed for so long.
+    if (lErr) { console.error('[lowStock] level read failed:', lErr.message); return; }
+    if (!levels?.length) return;
 
-    // 2. Filter to only those below threshold
-    const lowItems = levels.filter(l => l.quantity < l.low_stock_threshold);
+    // 2. Filter to only those below threshold.
+    //
+    // Number() on both sides (audit C7). quantity and low_stock_threshold are
+    // both `numeric`, which PostgREST returns as a STRING, and "9" < "10" is
+    // FALSE — string comparison is lexicographic. So the alert fired on some
+    // pairs and not others depending entirely on how the digits sorted, which
+    // reads exactly like a flaky feature rather than a bug.
+    const lowItems = levels.filter(
+      l => Number(l.quantity) < Number(l.low_stock_threshold));
     if (!lowItems.length) return;
 
     // 3. Fetch product names for the low items

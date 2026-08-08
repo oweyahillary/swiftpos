@@ -75,3 +75,8 @@ export function receiptPreset(id: string, name: string, paperWidthMm: 58 | 80 = 
 export * from './transport';
 export * from './spool';
 export * from './spoolStore.memory';
+export { business as sampleBusiness, order as sampleOrder } from './sampleTicket';
+export { KITCHEN as SAMPLE_KITCHEN, DISPATCH as SAMPLE_DISPATCH } from './sampleTicket';
+export { renderShiftReport } from './shiftReport';
+export type { ShiftReportData, ShiftReportMethodLine } from './shiftReport';
+export { hasPrintableContent } from './render';

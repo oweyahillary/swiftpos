@@ -39,6 +39,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { getWebAccess } from '../lib/webAccess';
+import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
@@ -142,7 +143,20 @@ async function storeRefreshToken(
   refreshToken: string,
   payload: TokenPayload,
   ip?: string,
-  userAgent?: string,
+  /**
+   * What identifies the DEVICE this session belongs to (audit BUG-22).
+   *
+   * Named userAgent before, and the owner login paths passed exactly that — the
+   * User-Agent string. Every till in a fleet runs the same Electron build, so
+   * every row held an identical value and device_hint distinguished nothing.
+   * Worse, the PIN paths revoke with .eq('device_hint', devKey) using the
+   * DEVICE ID, so an owner session could never be matched by a revoke and stale
+   * rows accumulated silently.
+   *
+   * Callers pass device_id when the client sends one and fall back to the
+   * User-Agent only when it genuinely has nothing better.
+   */
+  deviceHint?: string,
 ): Promise<void> {
   const jtiPayload = jwt.decode(refreshToken) as { jti: string };
   const jti = hashToken(jtiPayload.jti);
@@ -152,7 +166,7 @@ async function storeRefreshToken(
     user_id:     payload.userId,
     business_id: payload.businessId,
     session_id:  payload.sessionId,
-    device_hint: userAgent?.slice(0, 200) ?? null,
+    device_hint: deviceHint?.slice(0, 200) ?? null,
     ip_address:  ip ?? null,
     expires_at:  new Date(Date.now() + REFRESH_EXPIRES_MS).toISOString(),
   });
@@ -463,7 +477,7 @@ async function checkDeviceRegistration(
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, business_id } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: 'email and password are required' });
@@ -476,16 +490,33 @@ router.post('/login', async (req, res) => {
     return;
   }
 
-  const { data: business, error: bErr } = await supabase
-    .from('businesses')
-    .select('id, name, currency, type, status')
-    .eq('owner_id', data.user.id)
-    .single();
+  // BUG-18: was .single(), which raises PGRST116 on more than one row. An owner
+  // with two businesses got "No business found for this account" — the opposite
+  // of what happened — and could not log in to either. Same class as BUG-05.
+  //
+  // Login is the one place that CAN ask, so it asks. business_id in the body
+  // picks one; without it, a second business produces a 409 naming both rather
+  // than a silent guess about which shop's till you are opening.
+  const owned = await resolveOwnerBusinesses(
+    data.user.id, 'id, name, currency, type, status', business_id ?? null);
 
-  if (bErr || !business) {
+  if (owned.kind === 'error') {
+    res.status(503).json({ error: 'Could not sign you in right now — please try again' });
+    return;
+  }
+  if (owned.kind === 'none') {
     res.status(403).json({ error: 'No business found for this account' });
     return;
   }
+  if (owned.kind === 'many') {
+    res.status(409).json({
+      error: 'This account owns more than one business. Choose which one to open.',
+      code:  'MULTIPLE_BUSINESSES',
+      businesses: owned.businesses.map(b => ({ id: b.id, name: b.name })),
+    });
+    return;
+  }
+  const business = owned.business;
 
   if (business.status === 'suspended') {
     res.status(403).json({
@@ -551,7 +582,10 @@ router.post('/login', async (req, res) => {
   // Store refresh token server-side
   await storeRefreshToken(refreshToken, payload,
     req.ip ?? undefined,
-    req.headers['user-agent'] ?? undefined,
+    // device_id first: the User-Agent is identical across the whole fleet, so
+    // storing it made every row look like every other row (BUG-22).
+    (req.body?.device_id as string | undefined)
+      ?? req.headers['user-agent'] ?? undefined,
   );
 
   res.json({
@@ -567,7 +601,7 @@ router.post('/login', async (req, res) => {
 // ── POST /api/auth/desktop-login ──────────────────────────────────────────────
 
 router.post('/desktop-login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, business_id } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: 'email and password are required' });
@@ -580,16 +614,33 @@ router.post('/desktop-login', async (req, res) => {
     return;
   }
 
-  const { data: business, error: bErr } = await supabase
-    .from('businesses')
-    .select('id, name, currency, type, status')
-    .eq('owner_id', data.user.id)
-    .single();
+  // BUG-18: was .single(), which raises PGRST116 on more than one row. An owner
+  // with two businesses got "No business found for this account" — the opposite
+  // of what happened — and could not log in to either. Same class as BUG-05.
+  //
+  // Login is the one place that CAN ask, so it asks. business_id in the body
+  // picks one; without it, a second business produces a 409 naming both rather
+  // than a silent guess about which shop's till you are opening.
+  const owned = await resolveOwnerBusinesses(
+    data.user.id, 'id, name, currency, type, status', business_id ?? null);
 
-  if (bErr || !business) {
+  if (owned.kind === 'error') {
+    res.status(503).json({ error: 'Could not sign you in right now — please try again' });
+    return;
+  }
+  if (owned.kind === 'none') {
     res.status(403).json({ error: 'No business found for this account' });
     return;
   }
+  if (owned.kind === 'many') {
+    res.status(409).json({
+      error: 'This account owns more than one business. Choose which one to open.',
+      code:  'MULTIPLE_BUSINESSES',
+      businesses: owned.businesses.map(b => ({ id: b.id, name: b.name })),
+    });
+    return;
+  }
+  const business = owned.business;
 
   if (business.status === 'suspended') {
     res.status(403).json({
@@ -639,7 +690,10 @@ router.post('/desktop-login', async (req, res) => {
 
   await storeRefreshToken(refreshToken, payload,
     req.ip ?? undefined,
-    req.headers['user-agent'] ?? undefined,
+    // device_id first: the User-Agent is identical across the whole fleet, so
+    // storing it made every row look like every other row (BUG-22).
+    (req.body?.device_id as string | undefined)
+      ?? req.headers['user-agent'] ?? undefined,
   );
 
   res.json({
@@ -782,6 +836,19 @@ router.post('/pos-login', async (req, res) => {
   // till is logging in to.
   const needle = String(email).trim().toLowerCase();
 
+  // `_` and `%` are LIKE WILDCARDS, and `_` is a perfectly legal character in
+  // an email address (audit C4). Passing the address straight into .ilike()
+  // meant `john_doe@x.com` also matched `johnXdoe@x.com` — and with `.limit(20)`
+  // on top, an address containing `_` at a business with enough similar
+  // addresses could push the REAL row outside the window and produce "Invalid
+  // email or PIN" for a correct email and a correct PIN. That is the exact
+  // symptom BUG-05 was supposed to have killed, arriving by another route.
+  //
+  // PostgREST's ilike takes `*` as its wildcard and passes `%` and `_` through
+  // to LIKE, so both must be neutralised. Escaping makes the coarse filter mean
+  // what it says; the exact comparison below is still what decides.
+  const likeSafe = needle.replace(/[\\%_]/g, ch => `\\${ch}`);
+
   const { data: candidates, error: userErr } = await supabase
     .from('users')
     .select(`
@@ -794,8 +861,13 @@ router.post('/pos-login', async (req, res) => {
       user_permissions ( granted, permissions ( key ) )
     `)
     .eq('status', 'active')
-    .ilike('email', needle)
-    .limit(20);
+    .ilike('email', likeSafe)
+    // 20 was a truncation risk with an unescaped pattern. Escaped, this can
+    // only ever match genuine case variants of one address, which is bounded by
+    // the number of tenants an address appears in — but the cap stays, raised,
+    // because a cap that can silently hide the row you need is worth being
+    // generous about.
+    .limit(200);
 
   if (userErr) { res.status(401).json(authError); return; }
 

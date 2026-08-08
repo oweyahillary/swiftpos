@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
+    shares: () => ipcRenderer.invoke('print:shares'),
     preview: (opts: any) => ipcRenderer.invoke('print:preview', opts),
     probe: (deviceName: string) => ipcRenderer.invoke('print:probe', deviceName),
     geometry: (deviceName: string) => ipcRenderer.invoke('print:geometry', deviceName),
@@ -184,6 +185,19 @@ contextBridge.exposeInMainWorld('swiftpos', {
     assign:      (a: unknown)        => ipcRenderer.invoke('escpos:assign', a),
     unassign:    (stationId: string) => ipcRenderer.invoke('escpos:unassign', stationId),
     status:      ()                  => ipcRenderer.invoke('escpos:status'),
+    // Per-terminal thermal switch. Off by default; see main/escposBridge.ts.
+    enabled:     ()                  => ipcRenderer.invoke('escpos:enabled'),
+    setEnabled:  (on: boolean)       => ipcRenderer.invoke('escpos:setEnabled', on),
+    // "Will a ticket of this kind actually come out here?" — not merely "is the
+    // switch on". A terminal can have thermal enabled and no receipt station.
+    canPrint:    (kind: 'kitchen' | 'dispatch' | 'receipt') =>
+                   ipcRenderer.invoke('escpos:canPrint', kind),
+    // Kitchen + dispatch tickets, at the moment the order is SENT — not when
+    // it is paid. See main/escposBridge.ts.
+    printProduction: (payload: unknown) =>
+                   ipcRenderer.invoke('escpos:printProduction', payload),
+    reprintReceipt: () => ipcRenderer.invoke('escpos:reprintReceipt'),
+    printShiftReport: (data: unknown) => ipcRenderer.invoke('escpos:printShiftReport', data),
     retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),
     preview:     (ctx: unknown)      => ipcRenderer.invoke('escpos:preview', ctx),
     test:        (ctx: unknown, target: string) => ipcRenderer.invoke('escpos:test', ctx, target),

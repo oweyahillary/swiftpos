@@ -833,6 +833,15 @@ function initSchema(db: Database.Database) {
     // locally so an offline till still prints the right address and footer.
     ['receipt_header', 'TEXT'],
     ['receipt_footer', 'TEXT'],
+    // Thermal (ESC/POS) printing on THIS terminal. Per-machine, not per-business:
+    // till 1 can be proving the new path while till 3 still runs the old HTML
+    // one. Defaults OFF — the subsystem is verified by unit test and has never
+    // touched a printer, and a till that prints nothing during service is worse
+    // than one that prints slowly. See main/escposBridge.ts.
+    ['escpos_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+    // JSON array of names that must never reach a kitchen ticket. Owner-stated,
+    // pulled with the catalogue, cached so an offline till still honours it.
+    ['kitchen_exclusions', 'TEXT'],
   ]);
   migrateColumns(db, 'order_items', [
     ['course', 'TEXT'],
@@ -882,7 +891,7 @@ function initSchema(db: Database.Database) {
 // built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
 // node on 44 would ingest peer rows with no seq, and every one of them would be
 // invisible to the cursor that decides what still needs replicating.
-export const LOCAL_SCHEMA_VERSION = 49;
+export const LOCAL_SCHEMA_VERSION = 51;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

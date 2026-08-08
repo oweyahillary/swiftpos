@@ -117,6 +117,28 @@ export function subRow(cols: number, text: string, amt?: string, indent = 2): st
   return [...wrapped, ''.padEnd(avail, ' ') + amt.padStart(amtW, ' ')];
 }
 
+/**
+ * Wrap text that a HUMAN laid out, keeping the line breaks they typed.
+ *
+ * wrap() splits on /\s+/, so a newline is just another space to it. That is
+ * right for a product name and wrong for anything an owner composed: a receipt
+ * footer typed as
+ *
+ *     Thank you for your business!
+ *     TAX RECEIPT UPON REQUEST
+ *
+ * came out as one run-on line, because the break between them was eaten before
+ * anything could honour it. The author's breaks are meaning, not whitespace.
+ *
+ * Each authored line is still wrapped to the paper, so a long one folds rather
+ * than being cut off.
+ */
+export function wrapAuthored(text: string, width: number): string[] {
+  return text
+    .split(/\r?\n/)
+    .flatMap(line => (line.trim() ? wrap(line.trim(), width) : ['']));
+}
+
 export function wrap(text: string, width: number): string[] {
   const t = sanitize(text);
   if (width <= 0) return [t];

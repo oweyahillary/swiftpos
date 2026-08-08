@@ -70,16 +70,29 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
       // 6a. Product-level stock (for minimart / retail products with track_stock=true)
       //     Handles both sold_by='each' (unit deduction) and sold_by='piece' (piece deduction)
       const productIds = lines.map(l => l.productId).filter((id): id is string => !!id);
+      // is_fuel is selected because a fuel product's stock lives in fuel_tanks,
+      // not stock_levels — see the deduction loop below (BUG-20).
       const { data: trackedProducts } = await supabase
         .from('products')
-        .select('id, track_stock, sold_by')
+        .select('id, track_stock, sold_by, is_fuel')
         .in('id', productIds)
         .eq('track_stock', true);
 
       const trackedMap = new Map(
-        ((trackedProducts ?? []) as Array<{ id: string; track_stock: boolean; sold_by?: string | null; pieces_per_unit?: number | null }>)
+        ((trackedProducts ?? []) as Array<{ id: string; track_stock: boolean; sold_by?: string | null; is_fuel?: boolean | null; pieces_per_unit?: number | null }>)
           .map(p => [p.id, p] as const),
       );
+
+      // Every fuel product in this order, tracked or not. 6a-bis needs this to
+      // know which lines are litres out of a tank rather than units off a shelf;
+      // before, it treated EVERY line as a possible fuel line and relied on the
+      // fuel_tanks lookup returning nothing for the rest.
+      const { data: fuelProducts } = await supabase
+        .from('products')
+        .select('id')
+        .in('id', productIds.length ? productIds : ['00000000-0000-0000-0000-000000000000'])
+        .eq('is_fuel', true);
+      const fuelIds = new Set((fuelProducts ?? []).map((p: { id: string }) => p.id));
 
       // ── Variant stock impact (Track C: 25_variant_stock_and_packaging.sql) ─────
       // A selected variant option can carry a stock consequence:
@@ -136,73 +149,72 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
       };
 
       for (const item of lines) {
-        if (!item.productId) continue; // skip non-catalogue lines (custom/fuel/parking)
+        if (!item.productId) continue; // skip non-catalogue lines (custom/parking)
         const prod = trackedMap.get(item.productId);
         if (!prod) continue;
+
+        // ── Fuel is deducted from the TANK, not from stock_levels (BUG-20) ──
+        // A fuel product with track_stock=true was being hit twice: once here,
+        // and again in 6a-bis, which deducts litres from fuel_tanks. Two
+        // deductions for one sale, so the shelf figure ran down at double rate
+        // and disagreed with the dipstick.
+        //
+        // The tank is authoritative — it is the physical container, it is
+        // measured in litres, and a station can have more than one tank per
+        // grade. stock_levels is kept in step by MIRRORING the tank total after
+        // the tank deduction (see the end of 6a-bis), never by a second
+        // subtraction of its own.
+        if (prod.is_fuel) continue;
 
         // Scale mode: Large fries (factor 1.5) deducts 1.5× the finished-good units.
         const deductUnits = item.quantity * lineStockImpact(item).factor;
 
-        if (prod.sold_by === 'piece') {
-          // ── Piece-level deduction ─────────────────────────────────────────────
-          // Each unit sold deducts 1 from qty_pieces. Never block the sale.
-          const { data: stock } = await supabase
-            .from('stock_levels')
-            .select('qty_pieces')
-            .eq('product_id', item.productId)
-            .eq('branch_id', branch_id)
-            .single();
+        // Atomic, via the RPC that already existed for exactly this (migration
+        // 61) and that this path never called. What was here before read
+        // stock_levels, subtracted in JavaScript and wrote the result back —
+        // the same read-modify-write migration 61 was written to remove from
+        // the restock, transfer and void paths. Two tills selling the same
+        // product at once both read the same figure and the second write
+        // silently discarded the first sale's deduction.
+        //
+        // GREATEST(...,0) is deliberately NOT applied. The old code clamped at
+        // zero, which quietly hid oversell: the shelf read 0 whether you were
+        // level or twelve units short. Stock is allowed to go negative here —
+        // a negative figure is a real fact about the shop that somebody needs
+        // to see, and clamping is how it stayed invisible.
+        //
+        // qty_pieces is an INTEGER column and a variant stock_factor is
+        // numeric, so a factor of 1.5 produces a fractional piece count.
+        // Rounding here rather than letting Postgres round on assignment keeps
+        // the value we write and the value in stock_movements identical (C8).
+        const isPiece    = prod.sold_by === 'piece';
+        const qtyDelta   = isPiece ? 0 : -deductUnits;
+        const pieceDelta = isPiece ? -Math.round(deductUnits) : 0;
 
-          const currentPieces = stock?.qty_pieces ?? 0;
-          const newPieces = Math.max(0, currentPieces - deductUnits);
+        const { data: adjusted, error: adjErr } = await supabase.rpc('adjust_product_stock', {
+          p_product_id:  item.productId,
+          p_branch_id:   branch_id,
+          p_qty_delta:   qtyDelta,
+          p_piece_delta: pieceDelta,
+        });
+        if (adjErr) { console.error('[stockEffects] product deduction failed (non-fatal):', adjErr.message); continue; }
 
-          await supabase
-            .from('stock_levels')
-            .upsert(
-              { product_id: item.productId, branch_id, qty_pieces: newPieces, updated_at: new Date().toISOString() },
-              { onConflict: 'product_id,branch_id' }
-            );
+        const row      = Array.isArray(adjusted) ? adjusted[0] : adjusted;
+        const after    = isPiece ? Number(row?.qty_pieces ?? 0) : Number(row?.quantity ?? 0);
 
-          await supabase
-            .from('stock_movements')
-            .insert({
-              product_id: item.productId,
-              branch_id,
-              movement_type: 'sale',
-              quantity_change: -deductUnits,
-              quantity_after: newPieces,
-              notes: `Order ${order_number} (pieces)`,
-            });
-        } else {
-          // ── Unit-level deduction (each / weight / volume) ─────────────────────
-          const { data: stock } = await supabase
-            .from('stock_levels')
-            .select('quantity')
-            .eq('product_id', item.productId)
-            .eq('branch_id', branch_id)
-            .single();
-
-          const currentQty = stock?.quantity ?? 0;
-          const newQty = Math.max(0, currentQty - deductUnits);
-
-          await supabase
-            .from('stock_levels')
-            .upsert(
-              { product_id: item.productId, branch_id, quantity: newQty, updated_at: new Date().toISOString() },
-              { onConflict: 'product_id,branch_id' }
-            );
-
-          await supabase
-            .from('stock_movements')
-            .insert({
-              product_id: item.productId,
-              branch_id,
-              movement_type: 'sale',
-              quantity_change: -deductUnits,
-              quantity_after: newQty,
-              notes: `Order ${order_number}`,
-            });
-        }
+        await supabase
+          .from('stock_movements')
+          .insert({
+            product_id: item.productId,
+            branch_id,
+            movement_type: 'sale',
+            quantity_change: isPiece ? pieceDelta : qtyDelta,
+            quantity_after: after,
+            notes: isPiece ? `Order ${order_number} (pieces)` : `Order ${order_number}`,
+            reference_type: 'order',
+            reference_id:   order_id,
+            created_by:     userId ?? null,
+          });
       }
 
       // 6a-linked. Distinct-SKU / ingredient variant deductions (Track C).
@@ -221,21 +233,19 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
         }
 
         // Product-linked SKUs → deduct product stock (stock_levels).
+        // Atomic, same RPC and same reasoning as the main deduction above: a
+        // bottled-drink SKU is exactly the kind of shared item two tills sell
+        // at the same moment.
         for (const [linkedPid, qty] of Object.entries(linkedProductDeductions)) {
-          const { data: stock } = await supabase
-            .from('stock_levels')
-            .select('quantity')
-            .eq('product_id', linkedPid)
-            .eq('branch_id', branch_id)
-            .single();
-          const currentQty = stock?.quantity ?? 0;
-          const newQty = Math.max(0, currentQty - qty);
-          await supabase
-            .from('stock_levels')
-            .upsert(
-              { product_id: linkedPid, branch_id, quantity: newQty, updated_at: new Date().toISOString() },
-              { onConflict: 'product_id,branch_id' }
-            );
+          const { data: adjusted, error: linkErr } = await supabase.rpc('adjust_product_stock', {
+            p_product_id:  linkedPid,
+            p_branch_id:   branch_id,
+            p_qty_delta:   -qty,
+            p_piece_delta: 0,
+          });
+          if (linkErr) { console.error('[stockEffects] linked SKU deduction failed (non-fatal):', linkErr.message); continue; }
+          const newQty = Number((Array.isArray(adjusted) ? adjusted[0] : adjusted)?.quantity ?? 0);
+
           await supabase
             .from('stock_movements')
             .insert({
@@ -245,6 +255,9 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
               quantity_change: -qty,
               quantity_after: newQty,
               notes: `Order ${order_number} (variant SKU)`,
+              reference_type: 'order',
+              reference_id:   order_id,
+              created_by:     userId ?? null,
             });
         }
 
@@ -286,10 +299,16 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
       //   2. Fallback: match tanks by fuel_product_id (original behaviour — works
       //      when only one tank per grade, i.e. most single-site stations)
       try {
+        // Only FUEL lines. This used to build the map from every line in the
+        // order and lean on the fuel_tanks lookup to filter — which worked, but
+        // meant a non-fuel product could reach the tank code at all. Scoping it
+        // here is what makes "deducted once, from the tank" checkable.
         const litresByProduct: Record<string, number> = {};
         for (const item of lines) {
           const pid = item.productId;
-          if (pid) litresByProduct[pid] = (litresByProduct[pid] ?? 0) + Number(item.quantity);
+          if (pid && fuelIds.has(pid)) {
+            litresByProduct[pid] = (litresByProduct[pid] ?? 0) + Number(item.quantity);
+          }
         }
         const fuelProductIds = Object.keys(litresByProduct);
         if (fuelProductIds.length > 0) {
@@ -335,11 +354,27 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
             tanksToDeduct = tanks ?? [];
           }
 
+          const touchedFuelProducts = new Set<string>();
+
           for (const tank of tanksToDeduct) {
             const litres = litresByProduct[tank.fuel_product_id] ?? 0;
             if (litres > 0) {
-              const newLevel = Math.max(0, Number(tank.current_level) - litres);
-              await supabase.from('fuel_tanks').update({ current_level: newLevel }).eq('id', tank.id);
+              // Atomic. Two pumps drawing the same tank at once both read the
+              // same level under the old read-compute-write and the second
+              // write discarded the first sale's litres — the same lost-update
+              // the ingredient path has been protected from since migration 23
+              // and the product path since 61. Tanks were the last one left.
+              const { data: lvl, error: tankErr } = await supabase.rpc('adjust_fuel_tank_level', {
+                p_tank_id: tank.id,
+                p_delta:   -litres,
+              });
+              if (tankErr) {
+                console.error('[fuel-sale] tank deduction failed (non-fatal):', tankErr.message);
+                continue;
+              }
+              const newLevel = Number(Array.isArray(lvl) ? lvl[0]?.current_level : lvl) || 0;
+              touchedFuelProducts.add(tank.fuel_product_id);
+
               supabase.from('stock_movements').insert({
                 // No business_id column — tenancy is via branch_id -> branches.
                 product_id:      tank.fuel_product_id,
@@ -353,6 +388,33 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
                 created_by:      userId ?? null,
               }).then(() => {}, e => console.error('[fuel-sale] movement log failed:', e));
             }
+          }
+
+          // ── Mirror the tank total into stock_levels ──────────────────────
+          // Fuel is deducted once, from the tank. But stock_levels is what the
+          // inventory screens, the low-stock alert and every product-level
+          // report read, so leaving it untouched would make fuel invisible
+          // there. Rather than a second deduction (which is what BUG-20 was),
+          // the level is SET to the sum of that product's tanks at this branch.
+          //
+          // A set, not a delta: it cannot drift, it self-heals if a tank is
+          // dipped or refilled outside the sale path, and it is correct with
+          // several tanks of one grade, where a delta would not be.
+          for (const pid of touchedFuelProducts) {
+            const { data: tankRows } = await supabase
+              .from('fuel_tanks')
+              .select('current_level')
+              .eq('business_id', businessId)
+              .eq('fuel_product_id', pid);
+            const totalLitres = (tankRows ?? [])
+              .reduce((s: number, t: { current_level: string | number }) => s + Number(t.current_level), 0);
+
+            await supabase
+              .from('stock_levels')
+              .upsert(
+                { product_id: pid, branch_id, quantity: totalLitres, updated_at: new Date().toISOString() },
+                { onConflict: 'product_id,branch_id' },
+              );
           }
         }
       } catch (err) {

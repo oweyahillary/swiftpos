@@ -20,7 +20,22 @@ import PrinterSetupScreen from '../screens/PrinterSetupScreen';
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
 // assignment lives in the till's local database, not on the server. See the
 // header of main/print/printWorker.ts.
-const ESCPOS_STATIONS = [
+/**
+ * Fallback stations, used ONLY until a business has configured its own.
+ *
+ * This list used to be the whole story — hardcoded, so a client adding a
+ * "Barista" station tomorrow needed a code change, a rebuild and a reinstall on
+ * every till. The database has had the right model since migration 44
+ * (`print_stations` per business, `category_stations` mapping menu categories
+ * to them) and the till already pulls both down and serves them as
+ * `stationRouting` with the catalogue — nothing read it.
+ *
+ * Kept as a fallback rather than deleted, for the same reason ipcHandlers keeps
+ * the is_kitchen fallback: a till that upgrades before anyone has configured
+ * stations must keep printing exactly as it did yesterday. The first symptom of
+ * getting that wrong is a kitchen receiving nothing during service.
+ */
+const FALLBACK_STATIONS = [
   { id: 'kitchen',  name: 'Kitchen',  kind: 'kitchen'  as const },
   { id: 'dispatch', name: 'Dispatch', kind: 'dispatch' as const },
   { id: 'receipt',  name: 'Till',     kind: 'receipt'  as const },
@@ -32,7 +47,7 @@ import ReportRangeBar from '../components/ReportRangeBar';
 import type { ReportRangeArg } from '../lib/posApi';
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
-import { printReceipt } from '../lib/printReceipt';
+import { printShiftReport } from '../lib/printShiftReport';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
@@ -642,7 +657,6 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
   const [report,  setReport]  = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
-  const { settings: printerSettings } = usePrinterSettings();
 
   useEffect(() => {
     let live = true;
@@ -650,9 +664,15 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
     return () => { live = false; };
   }, []);
 
+  const [printMsg, setPrintMsg] = useState('');
+
   const handlePrint = async () => {
-    if (!printRef.current) return;
-    await printReceipt(printRef.current.innerHTML, printerSettings, `${businessName} — Shift Report`);
+    if (!report) return;
+    setPrintMsg('');
+    // ESC/POS, like every other document. The HTML route printed roughly a third
+    // of this report and stopped — see lib/printShiftReport.ts.
+    const r = await printShiftReport(report);
+    if (!r.ok) setPrintMsg(r.error ?? 'Could not print the shift report.');
   };
 
   if (loading) return <Spinner />;
@@ -677,6 +697,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
       </div>
       <div className="bg-white rounded-xl p-4 max-w-sm">
         <ZReportView ref={printRef} report={report} />
+      {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
       </div>
     </div>
   );
@@ -970,6 +991,40 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   const flags        = modeFlags(business.type);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  /**
+   * The business's own print stations, pulled down with the catalogue.
+   * Empty until loaded, and empty on a business that has configured none —
+   * both fall back to FALLBACK_STATIONS so printing never stops.
+   */
+  const [escposStations, setEscposStations] = useState<typeof FALLBACK_STATIONS>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const init = await posApi.pos.init();
+        const live = (init.stationRouting?.stations ?? [])
+          .map(s => ({ id: s.id, name: s.name, kind: s.kind }));
+
+        // EVERY till needs somewhere to print the customer receipt.
+        //
+        // Kitchen and dispatch stations are per-venue — a retail shop has
+        // neither. A receipt station is not optional: if the business has not
+        // defined one, the till still has to be able to bind its own printer,
+        // or the installer is sent to the dashboard mid-setup for something
+        // that is purely a property of the machine in front of them. On a
+        // fully-offline branch the dashboard may not even be reachable.
+        //
+        // The id here matches the fallback escpos:canPrint checks when a
+        // business has no receipt station of its own, so binding a printer to
+        // it is what makes the receipt actually print.
+        if (!live.some(s => s.kind === 'receipt')) {
+          live.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' });
+        }
+
+        if (live.length) setEscposStations(live);
+      } catch { /* fallback list stands */ }
+    })();
+  }, []);
+
   // Server enforces these too — hiding a tab is a courtesy, not the control.
   const perms = (staff as any)?.permissions ?? {};
   const has = (key: string) => perms['*'] === true || perms[key] === true;
@@ -1063,7 +1118,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       // that reports the real result. PrintersTab stays reachable until the
       // thermal path is proven on site. PrintersTab.tsx remains in the tree,
       // unrouted, until then.
-      case 'printers': return <PrinterSetupScreen stations={ESCPOS_STATIONS} />;
+      case 'printers': return <PrinterSetupScreen stations={escposStations.length ? escposStations : FALLBACK_STATIONS} />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }

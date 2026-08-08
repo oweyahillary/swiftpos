@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { printShiftReport } from '../lib/printShiftReport';
 import { posApi } from '../lib/posApi';
 import type { ZReport } from '../lib/posApi';
 import ZReportView from '../components/ZReportView';
@@ -136,13 +137,17 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
     finally { setBusy(false); }
   };
 
-  const handlePrint = () => {
-    const content = printRef.current;
-    if (!content) return;
-    const win = window.open('', '_blank', 'width=400,height=700');
-    if (!win) return;
-    win.document.write(`<html><head><title>Z-Report</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;padding:16px}</style></head><body>${content.innerHTML}</body></html>`);
-    win.document.close(); win.focus(); win.print(); win.close();
+  const [printMsg, setPrintMsg] = useState('');
+
+  const handlePrint = async () => {
+    const r = finalReport ?? report;
+    if (!r) return;
+    setPrintMsg('');
+    // Was window.open(...).print() — the browser's own dialog, which prompts,
+    // spools through the driver and rasterises. Slow on a thermal roll and it
+    // wrapped unpredictably. Same ESC/POS renderer as every other ticket now.
+    const res = await printShiftReport(r);
+    if (!res.ok) setPrintMsg(res.error ?? 'Could not print the Z-report.');
   };
 
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
@@ -191,9 +196,12 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
                 <ZReportRows report={finalReport} money={money} />
               </div>
               <div className="flex gap-3">
-                <button onClick={handlePrint} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
+                <button onClick={() => void handlePrint()} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
                 <button onClick={onClose} className="flex-1 bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
               </div>
+              {/* A print that silently does nothing is the worst outcome here —
+                  the drawer is counted and the paper trail is what is left. */}
+              {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
             </>
           )}
 

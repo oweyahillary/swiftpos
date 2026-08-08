@@ -73,6 +73,8 @@ export interface DeviceConfig {
   // Free-text blocks printed above and below the receipt body. Multi-line.
   receipt_header: string | null;
   receipt_footer: string | null;
+  /** JSON array of names that must never reach a kitchen ticket. */
+  kitchen_exclusions: string | null;
   configured: boolean;
 }
 
@@ -101,6 +103,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     max_discount_pct: row.max_discount_pct ?? null,
     receipt_header: row.receipt_header ?? null,
     receipt_footer: row.receipt_footer ?? null,
+    kitchen_exclusions: row.kitchen_exclusions ?? null,
     configured: row.configured === 1,
   };
 }
@@ -145,6 +148,7 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     max_discount_pct: patch.max_discount_pct !== undefined ? patch.max_discount_pct : (current?.max_discount_pct ?? null),
     receipt_header: patch.receipt_header !== undefined ? patch.receipt_header : (current?.receipt_header ?? null),
     receipt_footer: patch.receipt_footer !== undefined ? patch.receipt_footer : (current?.receipt_footer ?? null),
+    kitchen_exclusions: patch.kitchen_exclusions !== undefined ? patch.kitchen_exclusions : (current?.kitchen_exclusions ?? null),
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };

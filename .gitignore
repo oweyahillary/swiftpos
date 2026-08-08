@@ -26,3 +26,6 @@ shared/printing/test/*.d.ts.map
 /tsconfig.main.json
 /cleanup.sh
 *.zip
+
+shared/printing/test-dist/
+shared/printing/dist/

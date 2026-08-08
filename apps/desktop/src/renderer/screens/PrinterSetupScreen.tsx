@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { posApi } from '../lib/posApi';
 
 type PaperWidth = 58 | 80;
 
@@ -43,6 +44,8 @@ interface TestResult {
   bytes?: number;
   error?: string;
   retryable?: boolean;
+  /** True when the fault was in SwiftPOS, not in the printer or the address. */
+  internal?: boolean;
 }
 
 // The escpos bridge is declared on Window in renderer/lib/posApi.ts alongside
@@ -58,6 +61,28 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
   const [preview, setPreview] = useState<string>('');
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
+  /** Printers installed on THIS machine, for the picker. Windows names only. */
+  const [localPrinters, setLocalPrinters] = useState<{ name: string; displayName?: string; isDefault?: boolean }[]>([]);
+  /** Whether this terminal prints through ESC/POS at all. Off by default. */
+  const [thermalOn, setThermalOn] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try { setThermalOn(await window.swiftpos.escpos.enabled()); } catch { /* stays off */ }
+    })();
+  }, []);
+
+  /** Windows sharing state, keyed by printer name. Empty off Windows. */
+  const [shares, setShares] = useState<Record<string, { shared: boolean; shareName: string | null }>>({});
+
+  useEffect(() => {
+    // Best effort. A machine with no installed printers is normal for a
+    // network-only site, and the free-text field still works.
+    void (async () => {
+      try { setLocalPrinters(await posApi.print.list()); } catch { /* picker stays hidden */ }
+      try { setShares(await posApi.print.shares()); } catch { /* sharing state unknown */ }
+    })();
+  }, []);
 
   const station = stations.find(s => s.id === selected) ?? null;
   const assignment = assignments.find(a => a.stationId === selected) ?? null;
@@ -115,8 +140,36 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
     <div className="flex h-full bg-gray-950 text-gray-100">
       {/* Stations */}
       <aside className="w-72 border-r border-gray-800 flex flex-col">
-        <header className="px-4 py-3 border-b border-gray-800">
+        <header className="px-4 py-3 border-b border-gray-800 space-y-3">
           <h2 className="text-sm text-gray-400">Stations on this terminal</h2>
+
+          {/*
+            The switch that decides whether any of this screen affects a sale.
+
+            Without it, an installer could assign a printer, press Test, watch it
+            succeed — and still see no receipt at the counter, because the test
+            talks to the printer directly while sales went out through the older
+            path. That gap is exactly what this label exists to close.
+          */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={thermalOn}
+              onChange={async e => {
+                const r = await window.swiftpos.escpos.setEnabled(e.target.checked);
+                setThermalOn(r.enabled);
+              }}
+              className="mt-0.5 accent-green-500"
+            />
+            <span className="text-xs leading-relaxed">
+              <span className="block text-gray-200">Print receipts through these printers</span>
+              <span className="block text-gray-500">
+                {thermalOn
+                  ? 'On. Sales on this terminal print here.'
+                  : 'Off. Sales still print the old way; nothing on this screen affects them yet.'}
+              </span>
+            </span>
+          </label>
         </header>
 
         <ul className="flex-1 overflow-y-auto">
@@ -179,18 +232,65 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
 
               <label className="block space-y-1.5">
                 <span className="text-sm text-gray-400">Printer</span>
+
+                {/*
+                  Detected printers, so USB does not have to be typed.
+
+                  A network printer is easy — the IP is on its self-test page.
+                  A USB printer is not: it has to be shared in Windows first and
+                  then entered as \\localhost\<exact share name>, and getting the
+                  name slightly wrong fails at the test button with a parse
+                  error that says nothing about the real cause.
+
+                  print:list already enumerates Windows printers (it is what the
+                  old HTML print path used). Reusing it here turns the common
+                  case into one click, and the free-text field below still takes
+                  an IP or a device node for everything else.
+                */}
+                {/*
+                  Every installed printer, by the name Windows shows in Devices
+                  and Printers — no sharing, no UNC paths, no typing.
+
+                  This is deliberately NOT the Word-style print dialog. That
+                  dialog prints through the DRIVER: it lays the job out,
+                  rasterises it and spools it as an image, which is precisely
+                  what turns a 42-column ticket into a mangled one. `printer:`
+                  goes to the spooler's RAW datatype instead, so our ESC/POS
+                  arrives byte for byte.
+                */}
+                {localPrinters.length > 0 && (
+                  <select
+                    value={assignment?.target?.startsWith('printer:') ? assignment.target : ''}
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      void save(e.target.value, assignment?.paperWidthMm ?? 80);
+                    }}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2
+                               text-sm focus:outline-none focus:border-gray-500"
+                  >
+                    <option value="">Pick a printer on this machine…</option>
+                    {localPrinters.map(p => (
+                      <option key={p.name} value={`printer:${p.name}`}>
+                        {p.displayName || p.name}{p.isDefault ? '  (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
                 <input
                   value={assignment?.target ?? ''}
                   onChange={e => void save(e.target.value, assignment?.paperWidthMm ?? 80)}
-                  placeholder="192.168.1.50"
+                  placeholder="or a network printer's IP, e.g. 192.168.1.50"
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2
                              font-mono text-sm focus:outline-none focus:border-gray-500"
                 />
                 <span className="block text-xs text-gray-500 leading-relaxed">
-                  Network printer: its IP address. Windows shared printer:
-                  <span className="font-mono"> \\localhost\Name</span>. USB on Linux:
-                  <span className="font-mono"> /dev/usb/lp0</span>. Leave blank so this station
-                  does not print here.
+                  Pick from the list above for anything plugged into this machine —
+                  it needs no sharing. This field is for everything else: a network
+                  printer&rsquo;s IP address, a shared printer as
+                  <span className="font-mono"> \\localhost\Name</span>, or Linux
+                  <span className="font-mono"> /dev/usb/lp0</span>. Leave blank so this
+                  station does not print here.
                 </span>
               </label>
 
@@ -242,9 +342,17 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
                       <>
                         {result.error}
                         <span className="block text-xs opacity-70 mt-1">
-                          {result.retryable
-                            ? 'Looks like the printer is off or unreachable. Check power and cable.'
-                            : 'The address itself looks wrong. Check the spelling.'}
+                          {/*
+                            Never guess. This used to say "the printer is off or
+                            unreachable" for ANY failure, including a crash in
+                            SwiftPOS itself — which sent an installer to check a
+                            power cable on a printer that was working fine.
+                          */}
+                          {result.internal
+                            ? 'This is a fault in SwiftPOS, not your printer or the address. Report it with this message.'
+                            : result.retryable
+                              ? 'Looks like the printer is off or unreachable. Check power and cable.'
+                              : 'The address itself looks wrong. Check the spelling.'}
                         </span>
                       </>
                     )}

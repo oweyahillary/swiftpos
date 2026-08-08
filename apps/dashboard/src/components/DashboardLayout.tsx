@@ -89,6 +89,7 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/dashboard/branches', label: 'Branches',         icon: '🏪' },
       { to: '/dashboard/printers', label: 'Printers',         icon: '🖨️' },
+      { to: '/dashboard/stations', label: 'Print stations',   icon: '🍳' },
       // Fleet health. Under Settings because it is estate management, not cash.
       { to: '/dashboard/terminals', label: 'Terminals',        icon: '🖥️' },
       { to: '/dashboard/turnover', label: 'Table Turnover',   icon: '⏱️', verticals: FOOD_VERTICALS },
@@ -178,6 +179,7 @@ export default function DashboardLayout() {
     items: [
       { to: '/dashboard/branches', label: 'Branches',         icon: '🏪' },
       { to: '/dashboard/printers', label: 'Printers',         icon: '🖨️' },
+      { to: '/dashboard/stations', label: 'Print stations',   icon: '🍳' },
       { to: '/dashboard/turnover', label: 'Table Turnover',   icon: '⏱️', verticals: FOOD_VERTICALS },
       { to: '/dashboard/settings/etims', label: 'KRA eTIMS',        icon: '🧾' },
       { to: '/dashboard/settings', label: 'Staff Management', icon: '👥', end: true },

@@ -23,7 +23,7 @@
 import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
-import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, itemColumns } from './layout';
+import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns } from './layout';
 
 const TYPE_CAPS: Record<OrderType, string> = {
   takeaway: 'TAKEAWAY',
@@ -319,16 +319,45 @@ function renderReceipt(ctx: PrintContext): Document {
   }
 
   if (business.thankYouMessage) {
-    d.lines(wrap(business.thankYouMessage, cols).map(l => center(cols, l)));
+    d.lines(wrapAuthored(business.thankYouMessage, cols).map(l => center(cols, l)));
   }
   if (business.deliveryMessage) {
-    d.lines(wrap(business.deliveryMessage, cols).map(l => center(cols, l)));
+    d.lines(wrapAuthored(business.deliveryMessage, cols).map(l => center(cols, l)));
   }
   if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
 
   if (business.footerCredit) d.line(center(cols, business.footerCredit));
 
   return d.build();
+}
+
+/**
+ * Would this station's ticket contain anything worth printing?
+ *
+ * A production ticket for an order with nothing routed to it renders as a
+ * header, a rule, and "0 items to cook". That is not an empty ticket, it is a
+ * WRONG one: a kitchen handed a slip saying zero has to stop, read it, work out
+ * that it means nothing, and bin it — during service. An order of two sodas
+ * should produce no kitchen ticket at all.
+ *
+ * Receipts are exempt. A receipt with no lines still carries the total, the
+ * payment and the tax, and the customer is owed it.
+ *
+ * Mirrors the "earns its place" rule inside renderProduction exactly. If that
+ * rule ever changes, this has to change with it — which is why they sit in the
+ * same file, one directly above the other.
+ */
+export function hasPrintableContent(ctx: PrintContext): boolean {
+  const { order, station } = ctx;
+  if (station.kind === 'receipt') return true;
+  if (station.includeUnits === 'none') return order.lines.length > 0;
+
+  return order.lines.some(line => {
+    const units = visibleUnits(line, ctx);
+    return line.units.length > 0
+      ? units.length > 0
+      : station.includeUnits === 'all' || line.stationIds.includes(station.id);
+  });
 }
 
 export function renderTicket(ctx: PrintContext): Document {

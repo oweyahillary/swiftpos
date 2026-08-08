@@ -1792,18 +1792,28 @@ router.get('/wet-stock', async (req, res) => {
   // Build per-tank report
   const tankReport = (tanks ?? [] as Array<{ id: string; name: string; capacity: number | string; current_level: number | string; fuel_product_id: string | null; products?: { name: string; base_price: string } | null }>).map(tank => {
     const pid = tank.fuel_product_id;
-    const pct = tank.capacity_litres > 0
-      ? Math.round((tank.current_level / tank.capacity_litres) * 100) : 0;
+    // Number() on every side (audit C7). capacity_litres, current_level and
+    // reorder_level are all `numeric`, which PostgREST returns as STRINGS.
+    //
+    // Division coerced, so level_pct was right. The COMPARISON did not, and
+    // "800" <= "1000" is FALSE — string comparison is lexicographic. A tank at
+    // 800 L against a 1,000 L reorder level reported NOT low, so the reorder
+    // alert failed in the direction of running the site dry. The correct
+    // percentage sat in the column beside it, which is why nobody caught it.
+    const level    = Number(tank.current_level);
+    const capacity = Number(tank.capacity_litres);
+    const reorder  = Number(tank.reorder_level);
+    const pct = capacity > 0 ? Math.round((level / capacity) * 100) : 0;
     return {
       id:              tank.id,
       name:            tank.name,
       product_name:    tank.products?.name ?? 'Unknown',
       price_per_litre: tank.products?.base_price ?? 0,
-      capacity_litres: tank.capacity_litres,
-      current_level:   tank.current_level,
-      reorder_level:   tank.reorder_level,
+      capacity_litres: capacity,
+      current_level:   level,
+      reorder_level:   reorder,
       level_pct:       pct,
-      is_low:          tank.current_level <= tank.reorder_level,
+      is_low:          level <= reorder,
       delivered_litres: deliveriesByProduct[pid]?.litres ?? 0,
       delivery_count:   deliveriesByProduct[pid]?.count  ?? 0,
       consumed_litres:  consumedByProduct[pid] ?? 0,

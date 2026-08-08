@@ -53,6 +53,17 @@ interface Props {
   maxDiscountPct?: number;
   /** If set, the order already exists in DB (order-first model) — use /pay instead of POST /orders */
   existingOrderId?: string;
+  /**
+   * Pump this sale was dispensed from, for a petrol station (audit B5).
+   *
+   * The DESKTOP till has sent pump_id end to end since the 3-Aug build; the web
+   * POS never did, so every web fuel sale wrote pump_id = NULL. Two consequences,
+   * both silent: the exact-tank deduction in stockEffects.ts falls back to
+   * matching by fuel_product_id (wrong at any station with more than one tank
+   * per grade), and every fuel report keyed on pump_id reads zero — the exact
+   * symptom the desktop fix was written to close, still live on the other client.
+   */
+  pumpId?: string | null;
 }
 
 function fmt(n: number) {
@@ -64,6 +75,7 @@ export default function PaymentModal({
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId,
+  pumpId,
 }: Props) {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
@@ -234,6 +246,10 @@ export default function PaymentModal({
       customer_phone:  loyaltyState?.customer.phone ?? null,
       points_redeemed: pointsRedeemed,
       shift_id:        shiftId ?? null,
+      // Petrol attribution (audit B5). The server reads req.body.pump_id and
+      // hands it to applyStockEffects, which uses it to resolve the pump's
+      // assigned tank. Absent, it guesses by grade.
+      pump_id:         pumpId ?? null,
       items: cart.map(item => ({
         product:           { id: item.product.id, name: item.product.name, categories: item.product.categories ?? null },
         unitPrice:          item.unitPrice,

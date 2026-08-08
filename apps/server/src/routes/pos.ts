@@ -56,7 +56,9 @@ router.get('/init', async (req, res) => {
       .from('business_settings')
       .select('key, value')
       .eq('business_id', req.businessId)
-      .in('key', ['receipt_header', 'receipt_footer']),
+      // kitchen_exclusions rides along with the receipt text because it is the
+      // same shape of thing: owner-authored, per business, cached on every till.
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions']),
     supabase
       .from('branches')
       .select('id, desktop_licensed')
@@ -189,6 +191,21 @@ router.get('/init', async (req, res) => {
     comboItems,
     receiptHeader: receiptText.receipt_header ?? '',
     receiptFooter: receiptText.receipt_footer ?? '',
+    // Things that must never reach a kitchen ticket — drinks, sauces, packaged
+    // sides. Stated by the owner rather than inferred: a keyword guess is wrong
+    // occasionally and silently, and the cook is the one who finds out.
+    //
+    // Per BUSINESS, not per terminal: "cole slaw is not cooked" is a fact about
+    // the menu, and a second till must not disagree with the first.
+    kitchenExclusions: (() => {
+      const raw = receiptTextRows?.find((r: any) => r.key === 'kitchen_exclusions')?.value;
+      if (Array.isArray(raw)) return raw.map(String);
+      if (typeof raw === 'string') {
+        try { const p = JSON.parse(raw); if (Array.isArray(p)) return p.map(String); } catch { /* not json */ }
+        return raw.split(/[\r\n,]+/).map(t => t.trim()).filter(Boolean);
+      }
+      return [] as string[];
+    })(),
     categories: categories ?? [],
     branchId: branch?.id ?? null,
     pricingBranchId,

@@ -13,6 +13,10 @@
 
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
+import { printSale, escposEnabled, setEscposEnabled } from './escposBridge';
+import { printerShares } from './printService';
+import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
+import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
@@ -507,11 +511,168 @@ export function registerIpcHandlers() {
 
   // ── Orders ──────────────────────────────────────────────
 
+  /**
+   * Queue thermal tickets for an order payload.
+   *
+   * Shared by order:create (the receipt, at payment) and escpos:printProduction
+   * (the kitchen and dispatch tickets, when the order is SENT). Splitting the
+   * two moments is the point: queuing all three together meant the kitchen only
+   * saw an order after the customer had paid for it, so nothing was cooking
+   * while they settled the bill.
+   *
+   * NEVER THROWS. It runs after the money is taken and the order is committed;
+   * a printer problem must not turn a completed sale into an error on screen.
+   */
+  function queueThermal(
+    payload: any,
+    kinds: Array<'kitchen' | 'dispatch' | 'receipt'>,
+    reprint?: { at: Date; count: number },
+  ): void {
+    try {
+      if (!escposEnabled()) return;
+
+      const db = getLocalDb();
+      const cfg = getDeviceConfig();
+      const stations = db.prepare(
+        `SELECT id, name, kind FROM print_stations WHERE active = 1 ORDER BY sort_order, name`
+      ).all() as Array<{ id: string; name: string; kind: 'kitchen' | 'dispatch' | 'receipt' }>;
+
+      // A business with no stations configured is not an error — it is one that
+      // has not set them up. Falling back to the three built-ins keeps a
+      // freshly-upgraded till printing.
+      const effective = stations.length ? [...stations] : [
+        { id: 'kitchen',  name: 'Kitchen',  kind: 'kitchen'  as const },
+        { id: 'dispatch', name: 'Dispatch', kind: 'dispatch' as const },
+        { id: 'receipt',  name: 'Till',     kind: 'receipt'  as const },
+      ];
+
+      // The receipt station is added when the business has not defined one.
+      // Kitchen and dispatch are genuinely optional — a retail shop has neither
+      // — but somewhere to print the bill is not.
+      if (!effective.some(st => st.kind === 'receipt')) {
+        effective.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' as const });
+      }
+
+      // Which stations have a printer bound on THIS terminal. Drives the Kots
+      // count, so it reflects paper that will exist rather than stations that
+      // merely exist.
+      const assignedIds = new Set(assignments().map(a => a.stationId));
+
+      const staff = db.prepare(
+        `SELECT staff_name, branch_name FROM staff_session WHERE id = 1`
+      ).get() as { staff_name?: string; branch_name?: string } | undefined;
+
+      // business_name and currency live on `session`, branch_name on
+      // `staff_session`. NOT on device_config — that holds the machine's own
+      // settings, not the tenant's identity. Getting this wrong prints a receipt
+      // with a blank shop name at the top.
+      const sess = db.prepare(
+        `SELECT business_name, currency FROM session WHERE id = 1`
+      ).get() as { business_name?: string; currency?: string } | undefined;
+
+      printSale(
+        {
+          billNumber:     String(payload.order_number ?? ''),
+          orderType:      String(payload.order_type ?? 'retail'),
+          cashierName:    staff?.staff_name ?? '',
+          soldAt:         new Date(),
+          tableNumber:    payload.table_number ?? undefined,
+          deliveryPerson: payload.delivery_person ?? undefined,
+          cart:           payload.items ?? [],
+          payments:       payload.payments ?? [],
+          changeGiven:    Number(payload.change_given ?? 0),
+          total:          Number(payload.total ?? 0),
+          // "How many kitchen tickets did this order produce" — the number the
+          // expeditor counts against what arrives at the pass. Counted from
+          // stations that will ACTUALLY print here; a station with no printer
+          // on this terminal produces no ticket. Receipts are not KOTs.
+          kotCount:       effective.filter(
+            st => st.kind !== 'receipt' && assignedIds.has(st.id)).length,
+          reprint,
+        },
+        {
+          name:            sess?.business_name ?? '',
+          branchName:      staff?.branch_name ?? undefined,
+          currencyCode:    sess?.currency ?? 'KES',
+          // Cached from /api/pos/init on every catalogue pull, so an offline
+          // till still prints the business's real rates rather than a hardcoded
+          // 16 — which printed the wrong tax for anyone on a different rate.
+          vatRate:         Number((cfg as any)?.vat_rate ?? 16),
+          ctlRate:         Number((cfg as any)?.ctl_rate ?? 0),
+          thankYouMessage: (cfg as any)?.receipt_footer || undefined,
+          footerCredit:    'Powered by SwiftPOS',
+        },
+        // The presets shared/printing exports, NOT a hand-rolled config here.
+        // They are what the verified sample output was rendered from, so a
+        // ticket printed on the counter is laid out identically to the one in
+        // SAMPLE-OUTPUT.
+        //
+        // Paper width comes from the terminal's assignment (what is physically
+        // loaded), applied inside queueTickets — an 80mm layout on a 58mm roll
+        // wraps its whole right-hand column.
+        effective.map(s =>
+          s.kind === 'kitchen'  ? kitchenPreset(s.id, s.name)
+        : s.kind === 'dispatch' ? dispatchPreset(s.id, s.name)
+        :                         receiptPreset(s.id, s.name)),
+        kinds,
+      );
+    } catch (e) {
+      console.error('[escpos] queueing tickets failed (non-blocking):', e);
+    }
+  }
+
+  /**
+   * Kitchen and dispatch tickets, at the moment the order is sent.
+   *
+   * Called from Send to kitchen, before any money is taken. The renderer sets
+   * kot_sent on the payload it later passes to order:create so the same tickets
+   * are not produced twice.
+   */
+  ipcMain.handle('escpos:printProduction', (_e, payload: any) => {
+    queueThermal(payload, ['kitchen', 'dispatch']);
+    return { ok: true };
+  });
+
+  /**
+   * The last order this terminal rang, kept so the receipt can be reprinted.
+   *
+   * In memory only, and only the payload needed to render a receipt. A restart
+   * clears it, which is correct — reprinting yesterday's last sale from a
+   * screen that says "Payment successful" would be worse than not offering it.
+   */
+  let lastOrderPayload: any = null;
+  let reprintCount = 0;
+
+  ipcMain.handle('escpos:reprintReceipt', () => {
+    if (!lastOrderPayload) return { ok: false, error: 'nothing to reprint' };
+    reprintCount += 1;
+    // Marked as a duplicate on the paper itself. An unmarked second copy of a
+    // receipt is the thing an auditor cannot tell from a second sale.
+    queueThermal(lastOrderPayload, ['receipt'], { at: new Date(), count: reprintCount });
+    return { ok: true };
+  });
+
   ipcMain.handle('order:create', async (_event, orderPayload: any) => {
     const orderId = createLocalOrder(orderPayload);
+    lastOrderPayload = orderPayload;
+    reprintCount = 0;
     // Push-only flush — the old syncAll here re-pulled the entire catalogue
     // (N+1 variant/modifier fetches) on every single sale.
     syncPush().catch(console.error);
+
+    // AFTER the order is committed and AFTER the sync flush is scheduled, and
+    // never awaited. The spool owns delivery; the sale does not wait on a
+    // printer and cannot fail because of one.
+    //
+    // A restaurant order that already went to the kitchen gets ONLY the receipt
+    // here — its production tickets were queued when it was sent, which is the
+    // whole reason the split exists. A counter sale has no send step, so it
+    // gets everything at once, which is correct there.
+    queueThermal(
+      orderPayload,
+      orderPayload?.kot_sent ? ['receipt'] : ['kitchen', 'dispatch', 'receipt'],
+    );
+
     return { orderId };
   });
 
@@ -520,6 +681,15 @@ export function registerIpcHandlers() {
   ipcMain.handle('print:list', async () => {
     return await listPrinters();
   });
+
+  /**
+   * Which printers are SHARED, and under what name.
+   *
+   * The Printers screen needs this to build a working \\localhost\<share>
+   * target. Without it the picker guessed the printer's own name, which is a
+   * different field and is absent entirely on a printer nobody has shared.
+   */
+  ipcMain.handle('print:shares', async () => await printerShares());
 
   // Ping a printer without printing. Cashiers use this constantly; it must not
   // consume paper.

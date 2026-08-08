@@ -25,15 +25,26 @@ export default function LoginPage() {
   const [error, setError]       = useState('');
   const [errorCode, setErrorCode] = useState('');
   const [loading, setLoading]   = useState(false);
+  /**
+   * Set when the server answers 409 MULTIPLE_BUSINESSES (audit BUG-18).
+   *
+   * An owner of two businesses used to be told "No business found for this
+   * account" and could not log in to EITHER — `.single()` raised PGRST116 on
+   * two rows and the handler's error message was written for the zero-row case.
+   * The server now names both and lets the owner choose; this is that choice.
+   */
+  const [businessChoices, setBusinessChoices] =
+    useState<{ id: string; name?: string }[] | null>(null);
 
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
     'focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/30 transition-all text-sm';
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (e: React.FormEvent | null, chosenBusinessId?: string) => {
+    e?.preventDefault();
     setError('');
     setErrorCode('');
+    setBusinessChoices(null);
     setLoading(true);
 
     // ── Clear any stale SwiftPOS / POS / cashier tokens BEFORE authenticating ──
@@ -60,11 +71,20 @@ export default function LoginPage() {
       try {
         loginResponse = await api.post<{ mustChangePassword?: boolean }>(
           '/api/auth/login',
-          { email, password },
+          // business_id is only present on the second attempt, after the owner
+          // has picked one from the 409 below.
+          { email, password, ...(chosenBusinessId ? { business_id: chosenBusinessId } : {}) },
         );
       } catch (serverErr: any) {
         // api.ts preserves the `code` field from the server JSON response
         const code = serverErr?.code;
+        if (code === 'MULTIPLE_BUSINESSES') {
+          // Not an error the owner can do anything about by retrying — it is a
+          // question. Show the list and re-submit with their answer.
+          setBusinessChoices(serverErr?.businesses ?? []);
+          setLoading(false);
+          return;
+        }
         if (code && ACCESS_ERROR_CODES[code]) {
           setErrorCode(code);
         } else {
@@ -172,6 +192,41 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-8 shadow-2xl">
+          {businessChoices ? (
+            /* Owner of more than one business (audit BUG-18). Credentials are
+               already verified at this point — the server refused only because
+               it did not know WHICH business to open, and guessing would drop
+               someone into the wrong shop's dashboard. */
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-white font-semibold text-lg">Choose a business</h2>
+                <p className="text-[#64748b] text-sm mt-1">
+                  This account owns more than one. Pick the one you want to open.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {businessChoices.map(b => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => { void handleLogin(null, b.id); }}
+                    className="w-full text-left bg-[#0f172a] border border-[#1e293b] hover:border-[#22c55e]
+                               rounded-xl px-4 py-3 text-white transition-colors disabled:opacity-50"
+                  >
+                    {b.name ?? b.id}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => { setBusinessChoices(null); setError(''); }}
+                className="text-[#64748b] text-sm hover:text-white transition-colors"
+              >
+                ← Back to sign in
+              </button>
+            </div>
+          ) : (
           <form onSubmit={handleLogin} className="space-y-5">
 
             <div>
@@ -231,6 +286,7 @@ export default function LoginPage() {
             </button>
 
           </form>
+          )}
         </div>
 
         <p className="text-center text-[#1e293b] text-xs mt-6">

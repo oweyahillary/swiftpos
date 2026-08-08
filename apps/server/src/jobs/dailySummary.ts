@@ -200,14 +200,34 @@ async function sendSummaryForBusiness(
   let lowStockItems: { name: string; quantity: number; threshold: number }[] = [];
 
   if (branchIds.length) {
-    const { data: levels } = await supabase
-      .from('stock')
+    // stock_levels, not stock (audit B6) — see lib/lowStockChecker.ts for the
+    // full reasoning. `stock` is the table nothing writes.
+    //
+    // The .lt() that used to be here was three bugs in one line:
+    //
+    //     .lt('quantity', supabase.rpc ? 'low_stock_threshold' : 999)
+    //
+    //   1. `supabase.rpc` is a FUNCTION, so always truthy. The ternary always
+    //      took the first branch and the 999 was unreachable.
+    //   2. It therefore compared a numeric column to the literal STRING
+    //      'low_stock_threshold'. PostgREST cannot cast that and rejects the
+    //      request — PostgREST has no column-to-column comparison.
+    //   3. `const { data: levels }` never destructured `error`, so that
+    //      rejection was swallowed and `levels` was simply undefined.
+    //
+    // The manual filter below was always doing the real work, so the .lt() was
+    // dead weight that broke the query it sat in. Removed; the filter stays.
+    const { data: levels, error: lvlErr } = await supabase
+      .from('stock_levels')
       .select('product_id, quantity, low_stock_threshold')
-      .in('branch_id', branchIds)
-      .lt('quantity', supabase.rpc ? 'low_stock_threshold' : 999); // filter below
+      .in('branch_id', branchIds);
 
-    // Manual filter since Supabase doesn't support column comparison in .lt()
-    const lowLevels = (levels ?? []).filter(l => l.quantity < l.low_stock_threshold);
+    if (lvlErr) console.error('[dailySummary] stock level read failed:', lvlErr.message);
+
+    // Number() on both sides (audit C7): numeric arrives as a string and
+    // "9" < "10" is false.
+    const lowLevels = (levels ?? []).filter(
+      l => Number(l.quantity) < Number(l.low_stock_threshold));
 
     if (lowLevels.length) {
       const { data: products } = await supabase
@@ -218,8 +238,11 @@ async function sendSummaryForBusiness(
       const productMap = new Map((products ?? []).map(p => [p.id, p.name]));
       lowStockItems = lowLevels.map(l => ({
         name: productMap.get(l.product_id) ?? 'Unknown',
-        quantity: l.quantity,
-        threshold: l.low_stock_threshold,
+        // Typed `number` on lowStockItems, so coerce here or the template
+        // renders "8.00" beside a threshold of "10.00" and any arithmetic
+        // downstream concatenates.
+        quantity: Number(l.quantity),
+        threshold: Number(l.low_stock_threshold),
       }));
     }
   }
