@@ -5,8 +5,16 @@
  */
 import { PGlite } from '@electric-sql/pglite';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const MIGRATION = '/home/claude/out4/migrations/47_rls_stations_and_variant_group_products.sql';
+// Resolved from this file, NOT hardcoded. This line used to read
+//   '/home/claude/out4/migrations/47_...sql'
+// — a path from the sandbox it was written in, so this script has never run
+// anywhere else since the day it was committed. Nobody noticed because no
+// migration test was in CI (register A32).
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MIGRATION = path.resolve(HERE, '../migrations/47_rls_stations_and_variant_group_products.sql');
 
 let pass = 0, fail = 0;
 const ok = (name, cond, detail = '') => {

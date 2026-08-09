@@ -4,7 +4,7 @@ import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generat
 import type { CartItem } from '../lib/cart';
 import { modeFlags } from '../lib/posMode';
 import type { ModeFlags } from '../lib/posMode';
-import { listHeldOrders, holdOrder, recallHeldOrder, deleteHeldOrder } from '../lib/heldOrders';
+import { listHeldOrders, holdOrder, recallHeldOrder, deleteHeldOrder, importLegacyHeldOrders } from '../lib/heldOrders';
 import type { HeldOrder } from '../lib/heldOrders';
 import TablesView from '../components/TablesView';
 import PumpsView from '../components/PumpsView';
@@ -59,6 +59,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Combo definitions and kitchen routing, refreshed by each catalogue pull.
   const [comboItems, setComboItems] = useState<ComboMap>({});
   const [kitchenCategoryIds, setKitchenCategoryIds] = useState<string[]>([]);
+  const [branchName, setBranchName] = useState<string | null>(null);
   // Station routing, pulled with the catalogue. Empty stations means unconfigured,
   // and every path below falls back to the old kitchen/dispatcher behaviour.
   const [routing, setRouting] = useState<StationRouting>(ROUTING_UNCONFIGURED);
@@ -170,7 +171,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const currency = business.currency ?? 'KES';
 
   useEffect(() => {
-    posApi.pos.init().then(({ products, categories, branchId, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }) => {
+    posApi.pos.init().then(({ products, categories, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
       setProducts(products);
       setCategories(categories);
       setBranchId(branchId);
@@ -179,6 +180,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       if (typeof mdp === 'number') setMaxDiscountPct(mdp);
       if (ci) setComboItems(ci as ComboMap);
       if (Array.isArray(kitchenCategories)) setKitchenCategoryIds(kitchenCategories);
+      setBranchName((bn as string) ?? null);
       if (stationRouting && Array.isArray(stationRouting.stations)) setRouting(stationRouting);
       if (typeof rh === 'string') setReceiptHeader(rh);
       if (typeof rf === 'string') setReceiptFooter(rf);
@@ -223,7 +225,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       }
     }).catch(() => { /* keep retail defaults */ });
 
-    setHeldOrders(listHeldOrders());
+    // Legacy tabs first: held orders moved from localStorage to SQLite (D2),
+    // and a till upgraded mid-service must not lose its open tables. Idempotent,
+    // so this is a no-op on every launch after the first.
+    void importLegacyHeldOrders().then(() => listHeldOrders()).then(setHeldOrders);
 
     // Load current shift (if any) for the top-bar pill.
     posApi.shift.current().then(setShift).catch(() => setShift(null));
@@ -435,6 +440,63 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     if (unsent.length === 0) return;
     const num = await ensureOrderNumberAsync();
     setKitchenMsg('');
+
+    // ── Only ONE printing system may run ────────────────────────────────────
+    // When thermal printing is switched on for this terminal, main queues the
+    // kitchen and dispatch tickets through the ESC/POS spool as part of
+    // order:create. If this HTML path also ran, the kitchen would get the same
+    // ticket twice and cook it twice — a worse failure than either system on
+    // its own, and one that only shows up during a real service.
+    //
+    // The old path is NOT deleted. It is the fallback, and it stays until a
+    // real service has gone through the thermal one on this hardware. Untick
+    // the box on the Printers screen and this runs again exactly as before.
+    try {
+      // canPrint, not enabled(). With thermal on but no kitchen station bound
+      // on this terminal, skipping the HTML path would send NOTHING to the
+      // kitchen while telling the cashier it had gone.
+      if (await window.swiftpos.escpos.canPrint('kitchen')) {
+        // Queue the kitchen and dispatch tickets NOW.
+        //
+        // This used to do nothing but mark the lines sent, because main queued
+        // every ticket at order:create — which happens at PAYMENT. The kitchen
+        // therefore learned about an order only after the customer had settled
+        // the bill, so nothing was cooking while they paid. The whole point of
+        // a kitchen ticket is that it goes first.
+        //
+        // Only the UNSENT lines are sent, so a second course added later does
+        // not reprint the first.
+        await window.swiftpos.escpos.printProduction({
+          order_number: num,
+          order_type:   flags.isRestaurant ? orderType : 'retail',
+          table_number: orderType === 'dine_in' ? tableNumber : undefined,
+          items: unsent.map(item => ({
+            product: {
+              id: item.product.id,
+              name: item.product.name,
+              category_id: item.product.category_id ?? item.product.categories?.id ?? null,
+              categories: item.product.categories ?? null,
+              description: item.product.description ?? null,
+            },
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            lineTotal: item.lineTotal,
+            selectedVariants: item.selectedVariants,
+            selectedModifiers: item.selectedModifiers,
+            comboComponents: comboItems[item.product.id] ?? undefined,
+          })),
+        });
+
+        setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
+        setKotCount(n => n + 1);
+        setKitchenMsg(
+          `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
+        return;
+      }
+    } catch {
+      // Cannot tell — assume off and print the way that has always worked.
+    }
+
     try {
       const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds, routing);
       const problems: string[] = [];
@@ -513,15 +575,15 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     }
   };
 
-  const handleHold = () => {
+  const handleHold = async () => {
     if (cart.length === 0) return;
-    autoHold();
+    await autoHold();
     if (flags.isRestaurant) setView('tables');
   };
 
   // Parks the current cart as a tab (label from table/takeaway context) and
   // resets the order surface. Shared by Hold, back-to-tables, and table switch.
-  const autoHold = () => {
+  const autoHold = async () => {
     if (cart.length === 0) return;
     const num = ensureOrderNumber();
     const label = orderType === 'dine_in'
@@ -529,8 +591,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       : orderType === 'delivery'
         ? `Delivery ${deliveryPerson.trim() || num.slice(-4)}`
         : `Takeaway ${num.slice(-4)}`;
-    holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined });
-    setHeldOrders(listHeldOrders());
+    await holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined });
+    setHeldOrders(await listHeldOrders());
     clearCart();
     setOrderType(flags.defaultOrderType);
   };
@@ -540,17 +602,17 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Free table → fresh dine-in order bound to it. Occupied → recall its tab.
   // Any in-progress cart is auto-held first, so switching tables mid-order
   // behaves like parking one tab and opening another — nothing is lost.
-  const handleTableTap = (table: DiningTable, tab: HeldOrder | null) => {
-    autoHold();
+  const handleTableTap = async (table: DiningTable, tab: HeldOrder | null) => {
+    await autoHold();
     if (tab) {
-      const held = recallHeldOrder(tab.id);
+      const held = await recallHeldOrder(tab.id);
       if (held) {
         setCart(held.cart);
         setOrderType(held.orderType);
         setDeliveryPerson(held.deliveryPerson ?? '');
         setTableNumber(held.tableNumber);
         setOrderNumber(held.orderNumber);
-        setHeldOrders(listHeldOrders());
+        setHeldOrders(await listHeldOrders());
       }
     } else {
       setOrderType('dine_in');
@@ -560,8 +622,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setView('products');
   };
 
-  const handleTakeaway = () => {
-    autoHold();
+  const handleTakeaway = async () => {
+    await autoHold();
     setOrderType('takeaway');
     setTableNumber('');
     setOrderNumber(null);
@@ -593,8 +655,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Sync press. (PIN login and the 10-min cycle also pull automatically.)
   const tablesRescueSyncRef = useRef(false);
 
-  const handleBackToTables = () => {
-    autoHold();          // never lose an in-progress order
+  const handleBackToTables = async () => {
+    await autoHold();    // never lose an in-progress order
     // Cheap local read — picks up tables that a background sync pulled in
     // since the app booted, without requiring a manual Sync press.
     posApi.pos.getTables().then(tbls => {
@@ -609,23 +671,23 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setView('tables');
   };
 
-  const handleRecall = (id: string) => {
+  const handleRecall = async (id: string) => {
     if (cart.length > 0) return; // guarded in the modal too
-    const held = recallHeldOrder(id);
+    const held = await recallHeldOrder(id);
     if (!held) return;
     setCart(held.cart);
     setOrderType(held.orderType);
     setDeliveryPerson(held.deliveryPerson ?? '');
     setTableNumber(held.tableNumber);
     setOrderNumber(held.orderNumber);
-    setHeldOrders(listHeldOrders());
+    setHeldOrders(await listHeldOrders());
     setShowHeld(false);
     setView('products');
   };
 
-  const handleDeleteHeld = (id: string) => {
-    deleteHeldOrder(id);
-    setHeldOrders(listHeldOrders());
+  const handleDeleteHeld = async (id: string) => {
+    await deleteHeldOrder(id);
+    setHeldOrders(await listHeldOrders());
   };
 
   // Was hardcoded to 16, which computed the wrong tax for any business on a
@@ -662,10 +724,16 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       await posApi.order.create({
         branch_id: branchId,
         order_number: num,
+        // Production tickets already queued by Send to kitchen, so order:create
+        // prints the RECEIPT only. Without this the kitchen gets a second copy
+        // of everything at payment.
+        kot_sent: cart.some(i => i.kotSent),
         order_type: flags.isPetrol ? 'fuel_sale' : flags.isRestaurant ? orderType : 'retail',
         delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
         subtotal,
         discount_amount: payment.discountAmount,
+        // The BILL, excluding tip. The tip rides in tip_amount and shows up in
+        // the payment legs, which reconcile to total + tip (migration 66).
         tip_amount: payment.tipAmount,
         vat_amount: payment.vatAmount,
         ctl_amount: payment.ctlAmount,
@@ -677,12 +745,29 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         // this rebuild as planned).
         pump_id: cart.find(i => i.isFuel && i.pumpId)?.pumpId ?? null,
         items: cart.map(item => ({
-          product: { id: item.product.id, name: item.product.name, categories: item.product.categories ?? null },
+          product: {
+            id: item.product.id,
+            name: item.product.name,
+            // category_id is the field a desktop product actually carries;
+            // `categories` is the nested shape the WEB catalogue returns and is
+            // undefined here. Sending only the latter meant every line arrived
+            // at the ticket router with no category, so nothing could be routed
+            // to the kitchen and the kitchen ticket printed "0 items to cook".
+            category_id: item.product.category_id ?? item.product.categories?.id ?? null,
+            categories: item.product.categories ?? null,
+            // Last-resort composition for a menu that was typed as flat products
+            // with a line of prose — see escposBridge.describeFromText.
+            description: item.product.description ?? null,
+          },
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           lineTotal: item.lineTotal,
           selectedVariants: item.selectedVariants,
           selectedModifiers: item.selectedModifiers,
+          // What a combo is actually made of. Without these a combo reaches the
+          // kitchen as one opaque line and the cooks cannot see the 3PC Chicken
+          // inside it.
+          comboComponents: comboItems[item.product.id] ?? undefined,
         })),
         payments: payment.legs,
       });
@@ -703,6 +788,29 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     const content = receiptRef.current;
     if (!content) return;
     setPrintMsg('');
+
+    // With thermal on, the receipt was already queued to the till station when
+    // the order was created — see main/escposBridge.ts. Printing the HTML copy
+    // as well would hand the customer two receipts, and the second one laid out
+    // by a different renderer.
+    try {
+      // canPrint('receipt'), NOT enabled(). The first real install had thermal
+      // switched on with only Kitchen and dispatcher configured — no receipt
+      // station at all. Gating on the flag alone made this report "Receipt sent
+      // to the printer" and print nothing, which is the worst possible failure
+      // here: a cashier who believes the receipt printed hands over goods.
+      if (await window.swiftpos.escpos.canPrint('receipt')) {
+        // A REAL second copy, marked "Duplicate Print" on the paper.
+        //
+        // This used to return a success message and print nothing, which made
+        // the button worse than useless: a cashier pressing it for a customer
+        // who wanted their receipt got told it had gone, and it had not.
+        const r = await window.swiftpos.escpos.reprintReceipt();
+        if (!r.ok) setPrintMsg(r.error ?? 'Could not reprint the receipt.');
+        return;
+      }
+    } catch { /* fall through to the path that has always worked */ }
+
     // Native silent print, falling back to the OS default printer and finally
     // to an on-screen preview. It CANNOT be allowed to fail quietly: a cashier
     // who believes the receipt printed will hand over goods without one.
@@ -748,12 +856,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <ReceiptView
               ref={receiptRef}
               businessName={business.name}
+              branchName={branchName ?? undefined}
               orderNumber={completedOrder.orderNumber}
               cart={cart}
               subtotal={subtotal}
               discountAmount={completedOrder.payment.discountAmount}
               tipAmount={completedOrder.payment.tipAmount}
-              total={completedOrder.payment.total}
+              total={completedOrder.payment.amountDue}
               vatAmount={completedOrder.payment.vatAmount}
               vatRate={vatRate}
               ctlAmount={completedOrder.payment.ctlAmount}
@@ -772,6 +881,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               footerMessage={printerSettings.footerMessage}
             />
           </div>
+          {/* Only ever set when something FAILED. A successful print says
+              nothing — the paper is the confirmation. */}
           {printMsg && (
             <div className="px-6 pb-1">
               <p className="text-amber-400 text-xs leading-snug">⚠ {printMsg}</p>

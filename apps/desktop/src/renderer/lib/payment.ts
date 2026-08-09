@@ -70,8 +70,22 @@ export function computeTotals(subtotal: number, opts: {
   const net = discountedSubtotal / (1 + (vatRate + ctlRate) / 100);
   const vatAmount = round2(net * (vatRate / 100));
   const ctlAmount = round2(net * (ctlRate / 100));
-  const total = round2(discountedSubtotal + tipAmount);
-  return { discountAmount, tipAmount, vatAmount, ctlAmount, total, discountCapped, maxDiscountPct };
+  // TWO DIFFERENT NUMBERS, AND THEY MUST NOT BE CONFLATED.
+  //
+  //   total     — the BILL. subtotal - discount. What the business recognises
+  //               as the sale, what the VAT split is taken from, and what goes
+  //               in orders.total. A tip is NOT part of it.
+  //   amountDue — what the customer actually hands over: bill + tip. Payment
+  //               legs sum to THIS.
+  //
+  // `total` used to include the tip. Three things went wrong at once:
+  // locally subtotal - discount no longer equalled total so the till's own
+  // books did not foot; the Z-report counted tips as sales revenue; and the
+  // server (which computes total WITHOUT the tip) rejected the sync push, so a
+  // paid and printed sale was retried five times and then parked as 'failed'.
+  const total     = discountedSubtotal;
+  const amountDue = round2(discountedSubtotal + tipAmount);
+  return { discountAmount, tipAmount, vatAmount, ctlAmount, total, amountDue, discountCapped, maxDiscountPct };
 }
 
 // Resolves draft legs against the total due. A blank amount means "the

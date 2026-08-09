@@ -46,6 +46,20 @@
     "created_by": "\"uuid\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "attribute_groups": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "min_select": "\"integer\" NOT NULL",
+    "max_select": "\"integer\" NOT NULL"
+  },
+  "attribute_options": {
+    "id": "\"uuid\" NOT NULL",
+    "group_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "price_delta_cents": "\"integer\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL"
+  },
   "audit_log": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -108,7 +122,7 @@
     "tech_reveal_code": "\"text\""
   },
   "business_days": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",
     "device_id": "\"text\"",
@@ -131,8 +145,7 @@
     "business_id": "\"uuid\" NOT NULL",
     "key": "\"text\" NOT NULL",
     "value": "\"jsonb\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "businesses": {
     "id": "\"uuid\" NOT NULL",
@@ -189,6 +202,16 @@
     "product_id": "\"uuid\" NOT NULL",
     "quantity": "\"integer\" NOT NULL",
     "sort_order": "\"integer\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "component_slots": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "product_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
+    "min_select": "\"integer\" NOT NULL",
+    "max_select": "\"integer\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "customer_credit_transactions": {
@@ -324,9 +347,7 @@
     "current_level": "\"numeric\" NOT NULL",
     "reorder_level": "\"numeric\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL",
-    "product_id": "\"uuid\" NOT NULL",
-    "tank_name": "\"character varying\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "goods_received_notes": {
     "id": "\"uuid\" NOT NULL",
@@ -495,6 +516,19 @@
     "modifier_option_name": "\"character varying\" NOT NULL",
     "price": "\"numeric\" NOT NULL"
   },
+  "order_item_units": {
+    "id": "\"uuid\" NOT NULL",
+    "order_item_id": "\"uuid\" NOT NULL",
+    "product_id": "\"uuid\"",
+    "name_snapshot": "\"text\" NOT NULL",
+    "quantity": "\"integer\" NOT NULL",
+    "portions": "\"integer\" NOT NULL",
+    "price_delta_cents": "\"integer\" NOT NULL",
+    "chosen": "\"boolean\" NOT NULL",
+    "station_ids": "\"jsonb\" NOT NULL",
+    "attributes": "\"jsonb\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL"
+  },
   "order_item_variants": {
     "id": "\"uuid\" NOT NULL",
     "order_item_id": "\"uuid\" NOT NULL",
@@ -546,7 +580,7 @@
     "discount_id": "\"uuid\"",
     "covers": "\"integer\" NOT NULL",
     "shift_id": "\"uuid\"",
-    "idempotency_key": "\"text\"",
+    "idempotency_key": "\"text\" NOT NULL",
     "pump_id": "\"uuid\"",
     "aggregator_name": "\"text\"",
     "source": "\"text\"",
@@ -579,9 +613,6 @@
     "total_amount": "\"numeric\"",
     "status": "\"text\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "billed_amount": "\"numeric\"",
-    "cashier_id": "\"uuid\"",
-    "notes": "\"text\"",
     "tariff_id": "\"uuid\"",
     "tariff_snapshot": "\"jsonb\"",
     "price_lines": "\"jsonb\"",
@@ -594,7 +625,7 @@
     "clock_skew_seconds": "\"integer\""
   },
   "parking_tariffs": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\"",
     "name": "\"text\" NOT NULL",
@@ -663,7 +694,7 @@
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "print_stations": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\"",
     "name": "\"text\" NOT NULL",
@@ -689,6 +720,10 @@
     "receipt_template_id": "\"uuid\" NOT NULL",
     "print_trigger": "\"jsonb\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "product_attributes": {
+    "product_id": "\"uuid\" NOT NULL",
+    "group_id": "\"uuid\" NOT NULL"
   },
   "product_packaging": {
     "id": "\"uuid\" NOT NULL",
@@ -726,7 +761,9 @@
     "combo_price": "\"numeric\"",
     "tax_type": "\"text\"",
     "kra_item_class_code": "\"text\"",
-    "is_kitchen": "\"boolean\""
+    "is_kitchen": "\"boolean\"",
+    "menu_visible": "\"boolean\" NOT NULL",
+    "portions": "\"integer\" NOT NULL"
   },
   "promotions": {
     "id": "\"uuid\" NOT NULL",
@@ -857,8 +894,8 @@
   },
   "schema_migrations": {
     "version": "\"text\" NOT NULL",
-    "applied_at": "\"timestamp with time zone\"",
-    "applied_by": "\"text\"",
+    "applied_at": "\"timestamp with time zone\" NOT NULL",
+    "applied_by": "\"text\" NOT NULL",
     "notes": "\"text\""
   },
   "shifts": {
@@ -885,6 +922,15 @@
     "opened_by": "\"uuid\"",
     "closed_by": "\"uuid\"",
     "close_method": "\"text\""
+  },
+  "slot_options": {
+    "id": "\"uuid\" NOT NULL",
+    "slot_id": "\"uuid\" NOT NULL",
+    "option_product_id": "\"uuid\" NOT NULL",
+    "quantity": "\"integer\" NOT NULL",
+    "price_delta_cents": "\"integer\" NOT NULL",
+    "is_default": "\"boolean\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL"
   },
   "stock": {
     "id": "\"uuid\" NOT NULL",
@@ -1092,7 +1138,15 @@
     "branch_changed_at": "\"timestamp with time zone\"",
     "branch_change_count": "\"integer\" NOT NULL",
     "rebind_allowed_until": "\"timestamp with time zone\"",
-    "rebind_authorised_by": "\"uuid\""
+    "rebind_authorised_by": "\"uuid\"",
+    "device_role": "\"text\"",
+    "role_reported_at": "\"timestamp with time zone\"",
+    "role_confirmed_at": "\"timestamp with time zone\"",
+    "role_confirmed_by": "\"uuid\"",
+    "role_change_allowed_until": "\"timestamp with time zone\"",
+    "role_change_authorised_by": "\"uuid\"",
+    "role_conflict_at": "\"timestamp with time zone\"",
+    "role_conflict_with": "\"uuid\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",

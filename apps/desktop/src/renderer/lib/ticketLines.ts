@@ -35,6 +35,15 @@ export interface TicketLine {
   qualifier: string;
   /** Empty for a plain product; populated for a combo. */
   components: TicketComponent[];
+  /**
+   * Prep detail for the KITCHEN ticket, ITEMIZED: the product's description
+   * split into one line per item, rendered in the same indented style as
+   * combo components (which the sample test ticket demonstrates). Exists for
+   * flat products whose composition lives in prose — honest limit: prose
+   * cannot be filtered, so a drink named in it stays. Structured
+   * kitchen-vs-packing separation is what COMBOS are for.
+   */
+  noteLines?: string[];
   /** Whether the line itself (not its components) is cooked. */
   isKitchen: boolean;
   /** Stations this line prints at. Empty when routing is unconfigured. */
@@ -42,7 +51,7 @@ export interface TicketLine {
 }
 
 type CartLike = {
-  product: { id: string; name: string; category_id?: string | null };
+  product: { id: string; name: string; category_id?: string | null; description?: string | null; is_kitchen?: boolean | number | null };
   quantity: number;
   selectedVariants?: Array<{ optionName: string }>;
   selectedModifiers?: Array<{ optionName: string }>;
@@ -125,6 +134,9 @@ export function buildTicketLines(
       quantity: item.quantity,
       qualifier: qualifierOf(item),
       components,
+      // Only when the product has no structured components — a combo's ticket
+      // already lists exactly what to make, and prose under it would compete.
+      noteLines: components.length === 0 ? parseDescriptionLines(item.product.description) : undefined,
       isKitchen: routesToKitchen(item.product),
       stationIds: stationsForCategory(item.product.category_id),
     };
@@ -178,6 +190,50 @@ export function kitchenOnly(lines: TicketLine[]): TicketLine[] {
       return { ...l, components: l.components.filter(c => c.isKitchen) };
     })
     .filter(l => (l.components.length > 0) || (l.components.length === 0 && l.isKitchen));
+}
+
+/**
+ * Split a flat product's prose description into itemized prep lines.
+ * Separators, in order of trust: newlines, then commas/semicolons/bullets.
+ * "3pc chicken, 2 fries, 1 soda 500ml" → three lines, exactly as a combo's
+ * components print. Capped so a paragraph-length marketing description cannot
+ * eat half a ticket; empty result = undefined = nothing rendered.
+ */
+export function parseDescriptionLines(description?: string | null): string[] | undefined {
+  const raw = String(description ?? '').trim();
+  if (!raw) return undefined;
+  // '+' is a first-class separator: the Kudo menu writes components as
+  // "5pc chicken + cole slaw + medium fries" — exactly the list a kitchen
+  // ticket itemizes.
+  const parts = (raw.includes('\n') ? raw.split(/\r?\n/) : raw.split(/[,;•·+]+/))
+    .map(p => p.trim().replace(/^[-–—*+]\s*/, ''))
+    .filter(Boolean)
+    .slice(0, 8)
+    .map(p => p.slice(0, 60));
+  return parts.length ? parts : undefined;
+}
+
+/**
+ * ⚠ OWNER RULE — FIELD-APPROVED 04 Aug 2026. DO NOT MODIFY without explicit
+ * owner sign-off: sauces and soft drinks NEVER appear on the KITCHEN ticket;
+ * they always appear on the dispatcher/packing ticket. This list is that rule.
+ */
+export const KITCHEN_NOTE_EXCLUDE =
+  /\b(sauces?|dips?|soft\s*drinks?|sodas?|drinks?|juices?|water|coke|fanta|sprite|krest|stoney|minute\s*maid)\b/i;
+
+/**
+ * The prep lines the KITCHEN sees: everything except the owner-excluded terms.
+ * `extraTerms` is the owner's own list (Printers → Kitchen exclusions, one
+ * term per line) — matched case-insensitively as substrings, ON TOP of the
+ * built-in rule, never instead of it. This is how "some more items" get
+ * excluded next month without a code change.
+ */
+export function kitchenPrepLines(noteLines?: string[], extraTerms?: string): string[] {
+  const extras = String(extraTerms ?? '')
+    .split(/\r?\n/).map(t => t.trim().toLowerCase()).filter(Boolean);
+  return (noteLines ?? []).filter(l =>
+    !KITCHEN_NOTE_EXCLUDE.test(l)
+    && !extras.some(t => l.toLowerCase().includes(t)));
 }
 
 /** Sum of top-level quantities — the "Total Qty" footer. */

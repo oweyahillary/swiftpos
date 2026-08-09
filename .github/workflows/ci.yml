@@ -90,20 +90,30 @@ jobs:
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
+    # gitleaks-action lists the PR's commits through the API on a pull_request
+    # event, which needs pull-requests: read. The repository default token is
+    # contents/metadata/packages read only, so PR #2 (CI #44) died with
+    #   403 Resource not accessible by integration  .../pulls/2/commits
+    # having scanned NOTHING. Every earlier run was a push event, where the API
+    # is never touched — so this gate had been passing for a reason that did not
+    # hold on the one event type that gates a merge to main.
+    #
+    # Scoped to this job rather than the workflow: nothing else here calls the
+    # API, and a read-only default is worth keeping wherever it still works.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # gitleaks needs history to scan commits
 
-      # This repo previously leaked a hardcoded Ed25519 signing key to a public
-      # remote (see handoffs/handoff-14-07-2026.md §1). This job is the guardrail
-      # that makes a repeat fail loudly instead of quietly.
-      - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Belt and braces: fail if a real .env is ever committed.
+      # FIRST, deliberately. This needs no action, no API and no network, so an
+      # infrastructure failure cannot skip it. When gitleaks crashed on CI #44
+      # the job stopped and this never ran either — one outage silently took out
+      # BOTH secret gates at once. Cheap checks go ahead of fragile ones.
+      #
+      # Fail if a real .env is ever committed.
       - name: Assert no committed .env files
         run: |
           found=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|production)$' || true)
@@ -111,6 +121,15 @@ jobs:
             echo "::error::Real .env file(s) tracked in git:"; echo "$found"; exit 1
           fi
           echo "No tracked .env files."
+
+      # This repo previously leaked a hardcoded Ed25519 signing key to a public
+      # remote (see handoffs/handoff-14-07-2026.md §1), and a service-role key in
+      # a packaged zip on 2026-08-08 (register A1). This is the guardrail that
+      # makes a repeat fail loudly instead of quietly.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   schema:
     name: Schema drift
@@ -165,6 +184,40 @@ jobs:
       - name: RLS coverage (migrations)
         run: node scripts/check-rls-coverage.mjs
 
+      # THE DRIFT GATE ITSELF. This job has been called "Schema drift" since it
+      # was written and did not run check-schema-drift.mjs — the script was
+      # referenced nowhere outside its own header. A green tick reading "Schema
+      # drift" therefore meant the drift gate had NOT run, which is a worse
+      # failure than an absent job: it answers the question before anyone asks
+      # it. Cast safety, function-signature drift, duplicate declarations and
+      # index freshness are all checked here and nowhere else.
+      #
+      # refresh-schema-index.mjs stays OUT of CI deliberately. The gate must
+      # compare against the COMMITTED snapshots, so a PR that changes the schema
+      # without refreshing them fails. Refreshing here would make it pass by
+      # rewriting the thing it is measuring against.
+      - name: Schema drift
+        run: node scripts/check-schema-drift.mjs
+
+      # A table written under one name and read under another. The live schema
+      # carries both `stock` and `stock_levels`; every sale wrote stock_levels
+      # while the low-stock alert read `stock`, so the alert queried a table
+      # nothing had written since the two diverged and returned silently. Every
+      # gate above stayed green throughout — both tables exist with valid
+      # columns, so the query was legal. Nothing compared WHO WRITES a table
+      # against WHO READS it. This does.
+      - name: Table read/write parity
+        run: node scripts/check-table-usage.mjs
+
+      # The Electron till and the web POS post to the same routes from two
+      # separate codebases, and nothing compared their payloads. pump_id was
+      # wired end-to-end on the till and never added to the web builder, so
+      # every web fuel sale wrote NULL, the exact-tank deduction never fired and
+      # fuel reports read zero — the symptom the till fix was written to close.
+      # Fails when the server reads a field exactly one client sends.
+      - name: Client payload parity (desktop vs web)
+        run: node scripts/check-client-parity.mjs
+
       # The parser is regex-based, so its own failure mode is finding nothing and
       # reporting perfect parity. It exits 2 below its parse floor; this asserts
       # that guard is alive rather than trusting it.
@@ -174,6 +227,66 @@ jobs:
             echo "parity guard did not fire — it would pass on a broken parse"
             exit 1
           fi
+
+  server-suites:
+    # tests/*.test.mjs — 18 suites covering the money paths (atomic order, tip
+    # reconciliation, /pay claim-and-loyalty, stock effects parity, discount
+    # ceiling, offline dating) and the auth resolution bugs.
+    #
+    # NONE of these ran in CI until 2026-08-09. They were written one per
+    # incident, passed on the author's machine, and were then never executed
+    # again — so every one of them was decoration the moment its session ended.
+    # A test nothing runs is worth about as much as no test (rule 10).
+    #
+    # These are offline model/unit suites: no server, no database, no secrets.
+    # tests/suites/ and tests/runner.mjs are the INTEGRATION half and are
+    # deliberately excluded — they need a live API and owner credentials.
+    name: Server suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install server deps
+        working-directory: apps/server
+        run: npm ci
+
+      # order-error-classification imports apps/server/dist, so that it drives
+      # the SHIPPED classifier rather than a copy of it that can drift.
+      - name: Build server
+        working-directory: apps/server
+        run: npm run build
+
+      # EVERY migration test, against a real Postgres. PGlite is Postgres
+      # compiled to WASM — real parser, planner and DDL semantics, in-process.
+      #
+      # This repository has tested migrations this way since migration 41 and
+      # had six such scripts by 2026-08-10, none of which ran in CI. The cost
+      # was exactly what a test nothing invokes always costs:
+      #   * test-migration-47.mjs pointed at an absolute sandbox path and had
+      #     never run since the day it was committed — 19 dead assertions.
+      #   * Migration 74 shipped a CREATE OR REPLACE VIEW that Postgres refuses
+      #     (42P16) and reached the owner's database.
+      #
+      # The runner discovers scripts/test-migration*.mjs rather than listing
+      # them, so a new one is covered by existing.
+      - name: Migrations against real Postgres
+        run: |
+          npm install --no-audit --no-fund
+          npm run test:migrations
+
+      - name: Run offline suites
+        run: |
+          set -e
+          fail=0
+          for f in tests/*.test.mjs; do
+            echo "── $f"
+            node --no-warnings "$f" || fail=1
+          done
+          exit $fail
 
   desktop-scope:
     name: Desktop row scope
@@ -273,3 +386,63 @@ jobs:
       # Every layer now owns its own hang ceiling; Re-detect stays pressable.
       - name: Print resilience
         run: node --no-warnings scripts/test-print-resilience.mjs
+
+      # Field bug: the stations feature existed at every layer EXCEPT the
+      # preload bridge — the screen crashed on first use and the kitchen could
+      # not be routed. tsc cannot see a bridge gap; this can, both directions.
+      - name: IPC bridge parity
+        run: node scripts/check-ipc-parity.mjs
+
+      # ── Desktop suites that do NOT need Electron ────────────────────────────
+      # 92 desktop tests were added on 2026-08-08 and none of them ran here, so
+      # the newest and riskiest code on the till — offline sign-in, credentials
+      # at rest, held orders — was guarded only by a command someone had to
+      # remember to type on a Windows box.
+      #
+      # These three are plain node and run anywhere. The other three
+      # (heldOrders, pinCache, tokenStore) drive better-sqlite3, which
+      # postinstall builds against ELECTRON's ABI (NODE_MODULE_VERSION 133),
+      # so plain node cannot load them at all — ERR_DLOPEN_FAILED, by design.
+      # They stay a target-machine step via `npm run test:desktop`, and this
+      # comment exists so the next person does not "fix" that by adding them.
+      #
+      # THEY IMPORT dist/main, SO THE BUILD BELOW IS NOT OPTIONAL. CI #42 failed
+      # with "dist/main not built" because these steps were added without it;
+      # `npm run test:desktop` builds first locally, which is why it passed there
+      # and not here.
+      #
+      # --ignore-scripts and ELECTRON_SKIP_BINARY_DOWNLOAD keep this to a
+      # typecheck-sized install: the Electron binary is ~100MB and nothing in
+      # this job launches it. shared/printing is a project reference of
+      # tsconfig.main.json and declares "types": ["node"], so it needs its own
+      # node_modules or the build fails on a missing type definition.
+      - name: Install shared/printing (project reference)
+        working-directory: shared/printing
+        run: npm ci --ignore-scripts
+
+      - name: Install desktop deps (no Electron binary)
+        working-directory: apps/desktop
+        run: npm ci --ignore-scripts
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Build desktop main
+        working-directory: apps/desktop
+        run: npx tsc -b tsconfig.main.json --force
+
+      - name: Desktop durable logging
+        working-directory: apps/desktop
+        run: node --no-warnings test/logFile.test.mjs
+
+      - name: Desktop sync failure reporting
+        working-directory: apps/desktop
+        run: node --no-warnings test/syncEngine-failures.test.mjs
+
+      # Runs here on node:sqlite — a STAND-IN, and the suite says so in its own
+      # output rather than implying a hardware-equivalent green. It still catches
+      # a broken cursor reset, which is the point. The real ABI run is
+      # `npm run test:failover:electron` on a Windows till, wired into
+      # `test:desktop` so it cannot be forgotten the way it was on 2026-08-10.
+      - name: Desktop failover cursors (stand-in driver)
+        working-directory: apps/desktop
+        run: node --no-warnings test/failover-cursors.test.mjs

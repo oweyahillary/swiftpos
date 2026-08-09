@@ -23,7 +23,10 @@ export interface PaymentLeg {
 export interface PaymentResult {
   discountAmount: number;
   tipAmount: number;
+  /** The BILL — subtotal minus discount, excluding tip. Goes to orders.total. */
   total: number;
+  /** What the customer paid: total + tipAmount. The legs sum to this. */
+  amountDue: number;
   vatAmount: number;
   ctlAmount: number;
   legs: PaymentLeg[];
@@ -62,7 +65,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   const [localError, setLocalError] = useState('');
 
   const discountRaw = parseFloat(discountInput) || 0;
-  const { discountAmount, tipAmount, vatAmount, ctlAmount, total, discountCapped } = useMemo(
+  const { discountAmount, tipAmount, vatAmount, ctlAmount, total, amountDue, discountCapped } = useMemo(
     () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct }),
     [subtotal, discountRaw, discountMode, tipInput, vatRate, ctlRate, maxDiscountPct]
   );
@@ -75,8 +78,8 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   ]);
 
   const { view: legView, remaining, cashShort, balanced, allPositive } = useMemo(
-    () => buildLegView(legs, total),
-    [legs, total]
+    () => buildLegView(legs, amountDue),
+    [legs, amountDue]
   );
 
   const canConfirm = balanced && allPositive && !cashShort && !placing;
@@ -100,12 +103,13 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
 
   const handleConfirm = () => {
     setLocalError('');
-    if (!balanced) { setLocalError(`Payments must add up to ${currency} ${total.toLocaleString()}`); return; }
+    if (!balanced) { setLocalError(`Payments must add up to ${currency} ${amountDue.toLocaleString()}`); return; }
     if (cashShort) { setLocalError('Cash tendered is less than the cash amount due'); return; }
     onConfirm({
       discountAmount,
       tipAmount,
       total,
+      amountDue,
       vatAmount,
       ctlAmount,
       legs: legView.map(l => ({
@@ -155,7 +159,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
             </div>
           )}
           <div className="flex justify-between text-white font-bold text-xl pt-1 border-t border-gray-700">
-            <span>Total due</span><span>{fmt(total)}</span>
+            <span>Total due</span><span>{fmt(amountDue)}</span>
           </div>
         </div>
 
@@ -234,7 +238,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   <input
                     type="number" min="0" value={legs[i].amount}
                     onChange={e => setLeg(i, { amount: e.target.value })}
-                    placeholder={String(leg.resolvedAmount || total)}
+                    placeholder={String(leg.resolvedAmount || amountDue)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-green-500"
                   />
                 </div>
@@ -291,7 +295,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           disabled={!canConfirm}
           className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
         >
-          {placing ? 'Processing…' : `Charge ${fmt(total)}`}
+          {placing ? 'Processing…' : `Charge ${fmt(amountDue)}`}
         </button>
       </div>
     </div>

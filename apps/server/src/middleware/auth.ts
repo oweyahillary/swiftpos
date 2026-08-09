@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { supabase } from '../lib/supabase';
+import { resolveOwnerBusinesses, firstOrNull } from '../lib/ownerBusiness';
 import jwt from 'jsonwebtoken';
 
 declare global {
@@ -52,18 +53,45 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const token = authHeader.slice(7);
 
   // ── 1. Try SwiftPOS JWT ───────────────────────────────────────────────────
+  //
+  // The try wraps ONLY jwt.verify (audit BUG-16). It used to wrap everything
+  // down to and including next(), with `catch { fall through to Supabase }`.
+  // That conflated two entirely different situations:
+  //
+  //   "this is not a SwiftPOS token"  → correct to fall through
+  //   "the database did not answer"   → NOT correct to fall through
+  //
+  // The users lookup below is a network call. A transient blip threw, was
+  // swallowed, and execution continued into the Supabase branch — which then
+  // failed to verify a SwiftPOS token against the Supabase secret and returned
+  // 401 "Invalid or expired token". A cashier holding a perfectly valid token
+  // was logged out mid-service because Postgres hiccupped for 200ms.
+  //
+  // With the try narrowed, a DB failure now propagates to the Express error
+  // handler as a 5xx — which is the truth, is retryable, and does not destroy
+  // the session.
+  let swiftPayload: {
+    userId:              string;
+    businessId:          string;
+    branchId?:           string | null;
+    roleId?:             string;
+    permissionKeys?:     string[];
+    isOwner?:            boolean;
+    surface?:            string;
+    sessionId?:          string;
+    permissionsVersion?: number;
+  } | null = null;
+
   try {
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as {
-      userId:              string;
-      businessId:          string;
-      branchId?:           string | null;
-      roleId?:             string;
-      permissionKeys?:     string[];
-      isOwner?:            boolean;
-      surface?:            string;
-      sessionId?:          string;
-      permissionsVersion?: number;
-    };
+    swiftPayload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as typeof swiftPayload;
+  } catch {
+    // Not a SwiftPOS JWT — fall through to the Supabase check below. This is
+    // the ONLY condition that may fall through.
+    swiftPayload = null;
+  }
+
+  if (swiftPayload) {
+    const payload = swiftPayload;
 
     req.userId             = payload.userId;
     req.businessId         = payload.businessId;
@@ -81,11 +109,21 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // deactivated/fired staff member's access token kept working until it
     // expired; and (b) the token's permissions haven't been superseded.
     if (!req.isOwner) {
-      const { data: userRow } = await supabase
+      // Destructured, not ignored: a failure here must be a 5xx, not a silent
+      // fall-through that presents to the cashier as a bad PIN.
+      const { data: userRow, error: uErr } = await supabase
         .from('users')
         .select('permissions_version, status')
         .eq('id', req.userId)
         .maybeSingle();
+
+      if (uErr) {
+        res.status(503).json({
+          error: 'Could not verify your session right now — please try again',
+          code:  'AUTH_BACKEND_UNAVAILABLE',
+        });
+        return;
+      }
 
       const status = (userRow as any)?.status;
       if (status && status !== 'active') {
@@ -113,8 +151,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     next();
     return;
-  } catch {
-    // Not a SwiftPOS JWT — fall through to Supabase check
   }
 
   // ── 2. Try Supabase JWT (local verify — no network call) ─────────────────
@@ -134,13 +170,21 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const { data: business, error: bErr } = await supabase
-    .from('businesses')
-    .select('id')
-    .eq('owner_id', supabaseUserId)
-    .single();
+  // BUG-18: was .eq('owner_id').single(), which raised PGRST116 for an owner
+  // with two businesses and reported it as "no business found". Middleware
+  // cannot ask which one, so it takes the oldest — stable across requests — and
+  // the CHOICE is made at login (routes/auth.ts), where a question can be asked.
+  const ownedHere = await resolveOwnerBusinesses(supabaseUserId, 'id');
+  if (ownedHere.kind === 'error') {
+    res.status(503).json({
+      error: 'Could not verify your session right now — please try again',
+      code:  'AUTH_BACKEND_UNAVAILABLE',
+    });
+    return;
+  }
+  const business = firstOrNull(ownedHere);
 
-  if (bErr || !business) {
+  if (!business) {
     res.status(403).json({ error: 'No business found for this account' });
     return;
   }

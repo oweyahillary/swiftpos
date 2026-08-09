@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   },
   print: {
     list: () => ipcRenderer.invoke('print:list'),
+    shares: () => ipcRenderer.invoke('print:shares'),
     preview: (opts: any) => ipcRenderer.invoke('print:preview', opts),
     probe: (deviceName: string) => ipcRenderer.invoke('print:probe', deviceName),
     geometry: (deviceName: string) => ipcRenderer.invoke('print:geometry', deviceName),
@@ -104,6 +105,18 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setNodeUrl:   (url: string)   => ipcRenderer.invoke('tech:setNodeUrl', { url }),
   },
 
+  // Held orders (restaurant tabs). Backed by SQLite in the main process since
+  // 2026-08-08 — previously renderer localStorage, where a truncated write
+  // silently reported zero open tables.
+  held: {
+    list:   ()                => ipcRenderer.invoke('held:list'),
+    hold:   (order: unknown)  => ipcRenderer.invoke('held:hold', order),
+    recall: (id: string)      => ipcRenderer.invoke('held:recall', { id }),
+    remove: (id: string)      => ipcRenderer.invoke('held:delete', { id }),
+    // One-time migration of the legacy localStorage blob. Idempotent.
+    importLegacy: (orders: unknown[]) => ipcRenderer.invoke('held:import', { orders }),
+  },
+
   shift: {
     current: ()                                                          => ipcRenderer.invoke('shift:current'),
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
@@ -132,7 +145,22 @@ contextBridge.exposeInMainWorld('swiftpos', {
     deleteModifierGroup: (id: string) => ipcRenderer.invoke('manage:deleteModifierGroup', id),
     listVariantGroups:  (productId: string)         => ipcRenderer.invoke('manage:listVariantGroups', productId),
     createVariantGroup: (payload: any)              => ipcRenderer.invoke('manage:createVariantGroup', payload),
+    updateVariantGroup: (id: string, patch: any)    => ipcRenderer.invoke('manage:updateVariantGroup', { id, patch }),
     deleteVariantGroup: (id: string)                => ipcRenderer.invoke('manage:deleteVariantGroup', id),
+    createVariantOption:(payload: any)              => ipcRenderer.invoke('manage:createVariantOption', payload),
+    updateVariantOption:(id: string, patch: any)    => ipcRenderer.invoke('manage:updateVariantOption', { id, patch }),
+    deleteVariantOption:(id: string)                => ipcRenderer.invoke('manage:deleteVariantOption', id),
+    // Stations — this entire block was MISSING while the UI, the types, the
+    // handlers, the local mirrors, the pull sync, the server routes, and the
+    // Postgres migration all existed. The screen crashed on its first call
+    // ("$.manage.createStation is not a function") and the kitchen could not
+    // be routed at all. check-ipc-parity.mjs now fails CI on this class.
+    listStations:         ()                             => ipcRenderer.invoke('manage:listStations'),
+    unassignedCategories: ()                             => ipcRenderer.invoke('manage:unassignedCategories'),
+    createStation:        (payload: any)                 => ipcRenderer.invoke('manage:createStation', payload),
+    updateStation:        (id: string, patch: any)       => ipcRenderer.invoke('manage:updateStation', { id, patch }),
+    setStationCategories: (id: string, categoryIds: string[]) => ipcRenderer.invoke('manage:setStationCategories', { id, categoryIds }),
+    deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),
     listRoles:      ()                                   => ipcRenderer.invoke('manage:listRoles'),
     createStaff:    (payload: any)                       => ipcRenderer.invoke('manage:createStaff', payload),
@@ -158,6 +186,40 @@ contextBridge.exposeInMainWorld('swiftpos', {
     priceList:        ()                                          => ipcRenderer.invoke('manager:priceList'),
     setBranchPrice:   (product_id: string, price: number)         => ipcRenderer.invoke('manager:setBranchPrice', { product_id, price }),
     clearBranchPrice: (product_id: string)                        => ipcRenderer.invoke('manager:clearBranchPrice', { product_id }),
+  },
+
+  // ── ESC/POS printing (the thermal spool subsystem) ────────────────────────
+  // Namespaced escpos:* rather than print:*, because print:* belongs to the
+  // legacy HTML print path in ipcHandlers.ts and print:preview exists in both.
+  // Two ipcMain.handle calls on one channel throw at startup.
+  escpos: {
+    assignments: ()                  => ipcRenderer.invoke('escpos:assignments'),
+    assign:      (a: unknown)        => ipcRenderer.invoke('escpos:assign', a),
+    unassign:    (stationId: string) => ipcRenderer.invoke('escpos:unassign', stationId),
+    status:      ()                  => ipcRenderer.invoke('escpos:status'),
+    // Per-terminal thermal switch. Off by default; see main/escposBridge.ts.
+    enabled:     ()                  => ipcRenderer.invoke('escpos:enabled'),
+    setEnabled:  (on: boolean)       => ipcRenderer.invoke('escpos:setEnabled', on),
+    // "Will a ticket of this kind actually come out here?" — not merely "is the
+    // switch on". A terminal can have thermal enabled and no receipt station.
+    canPrint:    (kind: 'kitchen' | 'dispatch' | 'receipt') =>
+                   ipcRenderer.invoke('escpos:canPrint', kind),
+    // Kitchen + dispatch tickets, at the moment the order is SENT — not when
+    // it is paid. See main/escposBridge.ts.
+    printProduction: (payload: unknown) =>
+                   ipcRenderer.invoke('escpos:printProduction', payload),
+    reprintReceipt: () => ipcRenderer.invoke('escpos:reprintReceipt'),
+    printShiftReport: (data: unknown) => ipcRenderer.invoke('escpos:printShiftReport', data),
+    retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),
+    preview:     (ctx: unknown)      => ipcRenderer.invoke('escpos:preview', ctx),
+    test:        (ctx: unknown, target: string) => ipcRenderer.invoke('escpos:test', ctx, target),
+    // Push, not poll: the spool tells the screen when the queue moves.
+    // Returns its own unsubscribe so a React effect can clean up.
+    onChanged:   (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('escpos:changed', h);
+      return () => { ipcRenderer.removeListener('escpos:changed', h); };
+    },
   },
 
   expense: {

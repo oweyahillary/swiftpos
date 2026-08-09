@@ -6,7 +6,15 @@
     "rootDir": "src/main",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "composite": true
   },
-  "include": ["src/main/**/*"]
+  "include": [
+    "src/main/**/*"
+  ],
+  "references": [
+    {
+      "path": "../../shared/printing"
+    }
+  ]
 }

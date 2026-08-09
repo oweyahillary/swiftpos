@@ -180,8 +180,14 @@ router.post('/apply', async (req, res) => {
     return;
   }
 
-  // Check minimum order value
-  if (order_total < discount.min_order_value) {
+  // Check minimum order value.
+  //
+  // Number() on both sides (audit C7): min_order_value is `numeric` and arrives
+  // as a STRING, so this was a lexicographic comparison. "500" < "1000" is
+  // false — a KES 500 order cleared a KES 1,000 floor — while "90" < "1000" is
+  // true. The floor held or failed depending on how the digits sorted, which is
+  // the operator's money either way.
+  if (Number(order_total) < Number(discount.min_order_value)) {
     res.status(400).json({
       error: `Minimum order value for this discount is ${discount.min_order_value}`,
     });

@@ -2,8 +2,10 @@ import { app, BrowserWindow, Menu, net, shell } from 'electron';
 import { isNodeRole } from './deviceConfig';
 import path from 'path';
 import fs from 'fs';
+import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
+import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
 import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
@@ -174,6 +176,14 @@ app.whenReady().then(() => {
     // Register all IPC handlers
     registerIpcHandlers();
 
+    // ESC/POS print subsystem: spool, transport, station->printer assignments.
+    // AFTER registerIpcHandlers so a channel collision surfaces here rather than
+    // silently shadowing a legacy handler. Wrapped because a till with no
+    // thermal printer configured must still open and sell.
+    try {
+      initPrinting(getLocalDb(), () => BrowserWindow.getAllWindows()[0] ?? null);
+    } catch (e) { console.error('[startup] print subsystem init failed:', e); }
+
     // If this device is the branch aggregation node, start its LAN listener so
     // peer tills can push orders and read combined branch reports.
     try {
@@ -183,9 +193,13 @@ app.whenReady().then(() => {
 
     // Re-hydrate sync engine from persisted session if one exists
     const db = getLocalDb();
-    const session = db.prepare(`SELECT token, refresh_token FROM session WHERE id=1`).get() as any;
-    if (session?.token) {
-      configureSyncEngine(getServerUrl(), session.token, session.refresh_token ?? '');
+    // D5: wrap anything still sitting in plaintext, once, at startup - so an
+    // upgraded till stops holding a usable credential in the clear within
+    // seconds rather than waiting for the next refresh.
+    migratePlaintextTokens();
+    const session = readSessionTokens();
+    if (session.token) {
+      configureSyncEngine(getServerUrl(), session.token, session.refreshToken);
       // Sync on startup if online
       if (net.isOnline()) {
         syncAll().catch(console.error);

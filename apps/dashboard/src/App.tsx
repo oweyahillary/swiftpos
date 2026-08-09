@@ -47,6 +47,7 @@ const PurchaseOrdersPage      = lazy(() => import('./pages/stock/PurchaseOrdersP
 const StockTransfersPage      = lazy(() => import('./pages/stock/StockTransfersPage'));
 const IngredientsPage         = lazy(() => import('./pages/stock/IngredientsPage'));
 const PrintersPage            = lazy(() => import('./pages/settings/PrintersPage'));
+const StationsPage            = lazy(() => import('./pages/settings/StationsPage'));
 const ExpensesPage            = lazy(() => import('./pages/expenses/ExpensesPage'));
 const MinimartSettingsPage    = lazy(() => import('./pages/settings/MinimartSettingsPage'));
 const ParkingSettingsPage     = lazy(() => import('./pages/settings/ParkingSettingsPage'));
@@ -133,6 +134,7 @@ export default function App() {
                       <Route path="settings/petrol"           element={<PetrolSettingsPage />} />
                       <Route path="settings/etims"            element={<EtimsSettingsPage />} />
                       <Route path="printers"                  element={<PrintersPage />} />
+                      <Route path="stations"                  element={<StationsPage />} />
                       <Route path="stock/ingredients"         element={<IngredientsPage />} />
                       <Route path="stock/purchase-orders"     element={<PurchaseOrdersPage />} />
                       <Route path="stock/transfers"           element={<StockTransfersPage />} />

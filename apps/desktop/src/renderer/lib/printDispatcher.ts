@@ -91,6 +91,15 @@ export function buildDispatcherHtml(
       }
       html += `</div>`;
     }
+    // ⚠ FIELD-APPROVED FORMAT (owner, 04 Aug 2026) — DO NOT MODIFY without
+    // explicit owner sign-off. The packing ticket itemizes the SAME
+    // description lines as the kitchen — UNFILTERED: sauces and drinks print
+    // HERE by the owner rule, because the packer checks the whole bag.
+    if (line.noteLines?.length) {
+      html += `<div style="padding-left:44px;font-size:${base - 1}px;">`;
+      for (const nl of line.noteLines) html += `<div>- ${esc(nl)}</div>`;
+      html += `</div>`;
+    }
   }
 
   html += rule('1px solid #000');

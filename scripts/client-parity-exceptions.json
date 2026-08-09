@@ -1,0 +1,59 @@
+{
+  "_README": [
+    "Exceptions for check-client-parity.mjs. Every entry needs a reason.",
+    "",
+    "The gate fails on ASYMMETRY: the server reads a field that exactly one client",
+    "sends. The two clients are allowed to differ — they are different products —",
+    "so a difference that is REAL and INTENDED is recorded here rather than argued",
+    "about on every run.",
+    "",
+    "The bar for adding an entry: you have read both clients and can say why the",
+    "field cannot exist on one of them. 'It seems fine' is not a reason. pump_id",
+    "looked exactly like one of these and was a P0."
+  ],
+
+  "routes": [],
+
+  "fields": [
+    {
+      "route": "POST /api/orders",
+      "field": "delivery_person",
+      "reason": "The web POS has no delivery flow — zero references to 'delivery' anywhere in apps/dashboard/src/pages/pos. The rider name is a desktop-only concept (migrations/35_delivery_person.sql, entered on the till's order-type selector). Remove this exception the day the web POS grows delivery, or it will ship without the rider name attached."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "customer_id",
+      "reason": "Customer / loyalty capture is a WEB POS feature. The till has no customer lookup at all — no customer_id, customer_name, customer_phone, points_redeemed or discount_id anywhere in POSPage.tsx. This is a product gap on the till, not a wiring bug, and it is tracked as such rather than papered over here."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "customer_name",
+      "reason": "See customer_id. No customer capture on the till."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "customer_phone",
+      "reason": "See customer_id. No customer capture on the till."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "points_redeemed",
+      "reason": "Loyalty redemption needs a customer, and the till has no customer lookup. See customer_id."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "discount_id",
+      "reason": "The till applies a discount AMOUNT (discount_amount) but has no discount picker, so there is no catalogue discount id to send. The server treats discount_id as optional and nullable. Revisit if the till ever gains the discount list."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "device_id",
+      "reason": "The till is a physical terminal and stamps which one rang the sale (migrations/17_order_device_id.sql) — it is what per-till attribution, the Z-report scope and branch replication are all keyed on. A browser tab is not a terminal and has nothing truthful to put here. NULL is the correct value for a web sale, not a missing one."
+    },
+    {
+      "route": "POST /api/orders",
+      "field": "created_at",
+      "reason": "The till may be offline for hours and MUST send the moment the sale was actually rung, or a day's trade lands on the wrong business date when the queue drains. The web POS is online by definition, so the server's own now() is the honest timestamp and letting the browser's clock decide would be strictly worse."
+    }
+  ]
+}

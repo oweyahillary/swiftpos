@@ -22,6 +22,7 @@ import type { PaymentLeg } from './PaymentModal';
 
 interface Props {
   businessName: string;
+  branchName?: string;
   orderNumber: string;
   cart: CartItem[];
   subtotal: number;
@@ -52,8 +53,13 @@ const METHOD_LABEL: Record<string, string> = {
   cash: 'CASH', mpesa: 'M-PESA', card: 'CARD', credit: 'ON ACCOUNT',
 };
 
+// ⚠ FIELD-APPROVED FORMAT (owner, 04 Aug 2026) — DO NOT MODIFY without
+// explicit owner sign-off. This component IS the printed customer receipt:
+// its innerHTML is what the thermal printer receives, and the success modal
+// shows it at true paper width. Every style must stay INLINE — a Tailwind
+// class here renders on screen and silently vanishes on paper.
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
-  { businessName, orderNumber, cart, subtotal, discountAmount, tipAmount, total,
+  { businessName, branchName, orderNumber, cart, subtotal, discountAmount, tipAmount, total,
     vatAmount, vatRate, ctlAmount = 0, ctlRate = 0, currency, payments,
     orderType, tableNumber, footerMessage, headerText, footerText, tillNumber, cashierName, billNumber, kots, deliveryPerson },
   ref
@@ -140,7 +146,14 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
     }}>
       <div style={{ textAlign: 'center' }}>
         <p style={{ fontSize: '17px', fontWeight: 'bold', letterSpacing: '1px' }}>{businessName.toUpperCase()}</p>
-        {tillNumber && <p style={{ fontSize: '11px' }}>TILL {tillNumber}</p>}
+        {/* Line 2 of the locked sample: "Juja — Till 1". Branch and till read
+            as words, never the old "TILL terminal1" concatenation that printed
+            as a garble. */}
+        {(branchName || tillNumber) && (
+          <p style={{ fontSize: '11px' }}>
+            {branchName && tillNumber ? `${branchName} — ${tillNumber}` : (branchName || tillNumber)}
+          </p>
+        )}
         {lines(headerText).map((l, i) => (
           <p key={i} style={{ fontSize: '11px' }}>{l}</p>
         ))}
@@ -235,16 +248,27 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {totalChange > 0 && row('Change', moneyBig(totalChange))}
       {rule()}
 
+      {/* ⚠ OWNER-APPROVED ARRANGEMENT (04 Aug 2026) — the footer stack:
+            payments rule (printed above)
+            owner's footer box, VERBATIM line for line   ← paybill, delivery no.
+            rule — only when the box has content (no orphan separator)
+            fixed closing block: thank-you · TAX RECEIPT · Powered by SwiftPOS
+            final rule
+          The box is the owner's; the closing block is not editable from it. */}
+      {lines(footerText).length > 0 && (
+        <>
+          <div style={{ marginTop: '4px' }}>
+            {lines(footerText).map((l, i) => <p key={i}>{l}</p>)}
+          </div>
+          {rule()}
+        </>
+      )}
       <div style={{ textAlign: 'center', marginTop: '6px' }}>
-        {/* Business-level text wins: it is set once by the owner and reaches all
-            tills. footerMessage is the per-device fallback for a till that has
-            not synced yet. */}
-        {lines(footerText).length > 0
-          ? lines(footerText).map((l, i) => <p key={i}>{l}</p>)
-          : <p>{footerMessage || 'Thank you, visit again!'}</p>}
+        <p>{footerMessage || 'Thank you for your business!'}</p>
         {vatRate > 0 && <p style={{ fontSize: '11px' }}>TAX RECEIPT UPON REQUEST</p>}
         <p style={{ fontSize: '10px', marginTop: '4px' }}>Powered by SwiftPOS</p>
       </div>
+      {rule()}
     </div>
   );
 });

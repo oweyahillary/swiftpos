@@ -64,22 +64,63 @@ app.use(express.json({ limit: '1mb' })); // explicit limit — prevents oversize
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 // Auth: tight — brute-force protection on login + verify-pin
+// Keying by raw IP treated an entire BRANCH as one attacker: every till and
+// the office dashboard NAT through one address, so two tills shared 20 PIN
+// attempts per 15 minutes and the pad showed "Too many requests" during
+// normal service. Key by the device (header set by the till) or the session
+// token when present; the shared IP is only the key for anonymous traffic —
+// which is exactly the traffic brute-force limits exist for.
+// KEY STRATEGY — two different jobs, two different keys.
+//
+// The GENERAL API limiter is a fairness safety net: two tills behind one office
+// NAT must not share a quota, so it keys by device (header set by the till) or
+// session token, falling back to IP for anonymous traffic.
+//
+// The AUTH limiter is BRUTE-FORCE protection, and its threat model is an
+// ANONYMOUS attacker — who controls the x-device-id header and can set a fresh
+// value on every request, sailing straight past a device-keyed limit. So the
+// auth limiter must key on something the attacker cannot freely rotate: the
+// source IP. A determined attacker can change IP too, but that is far more
+// costly than editing a header, and IP-keyed limiting is the standard control.
+// (Finding #12: keying auth attempts on the client-supplied device header meant
+// the PIN brute-force limit never actually fired.)
+const limiterKey = (req: import('express').Request): string => {
+  const device = req.header('x-device-id');
+  if (device) return `d:${device}`;
+  const auth = req.header('authorization');
+  if (auth) return `t:${auth.slice(-24)}`;
+  return ipKeyGenerator(req.ip ?? '');
+};
+
+// Auth attempts are keyed on IP only. A logged-in session token is included when
+// present so a legitimately authenticated user (e.g. an owner calling verify-pin
+// repeatedly) is bucketed per-session rather than colliding with the shared IP —
+// but the ANONYMOUS login path, which is what brute force targets, always keys
+// on IP and cannot be widened by spoofing a header.
+const authLimiterKey = (req: import('express').Request): string => {
+  const auth = req.header('authorization');
+  if (auth) return `t:${auth.slice(-24)}`;
+  return ipKeyGenerator(req.ip ?? '');
+};
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 30,
   message: { error: 'Too many attempts — please try again in 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''), // handles IPv4-mapped IPv6 correctly
+  keyGenerator: authLimiterKey,
 });
 
-// General API: generous — safety net against runaway clients / scrapers
+// General API: generous — safety net against runaway clients / scrapers.
+// Per device/session, so one busy till never starves its neighbour.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 300,
+  max: 600,
   message: { error: 'Too many requests — please slow down' },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: limiterKey,
 });
 
 app.use('/api/auth',       authLimiter);

@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { supabase } from '../lib/supabase';
+import { chunkIn } from '../lib/pgQuery';
 import { sendEmail } from '../lib/mailer';
 import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
 
@@ -118,24 +119,39 @@ async function sendSummaryForBusiness(
   const totalOrders  = orders?.length ?? 0;
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
   const totalVat     = (orders ?? []).reduce((s, o) => s + Number(o.vat_amount), 0);
-  const voidedCount  = orders?.filter(o => o.status === 'voided').length ?? 0;
+  // voidedCount was: orders?.filter(o => o.status === 'voided').length
+  // but the query above filters .eq('status','completed'), so nothing in
+  // `orders` can ever be 'voided'. It has reported 0 since the day it was
+  // written — and a void count is one of the few numbers an owner actually
+  // reads this email for. Counted with its own query instead.
+  const { count: voidedCount } = await supabase
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', biz.id)
+    .eq('status', 'voided')
+    .gte('created_at', dateFrom)
+    .lt('created_at', dateTo);
 
   // ── 2. Top 5 products by revenue ─────────────────────────
   const orderIds = (orders ?? []).map(o => o.id);
   let topProducts: { name: string; revenue: number; qty: number }[] = [];
 
   if (orderIds.length) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('product_name, quantity, subtotal')
-      .in('order_id', orderIds);
+    const items = await chunkIn<{ product_name: string; quantity: string; subtotal: string }>(
+      'order_items', 'order_id', orderIds, q => q.select('product_name, quantity, subtotal'));
 
     const productTotals = new Map<string, { revenue: number; qty: number }>();
     for (const item of items ?? []) {
       const existing = productTotals.get(item.product_name) ?? { revenue: 0, qty: 0 };
       productTotals.set(item.product_name, {
         revenue: existing.revenue + Number(item.subtotal),
-        qty: existing.qty + item.quantity,
+        // Number(), like subtotal beside it. order_items.quantity is
+        // numeric(12,2), and PostgREST returns numeric as a JSON STRING — so
+        // this was 0 + "2.00" = "02.00", then "02.00" + "1.00" = "02.001.00".
+        // The owner's Top-5 Products email has shown a growing concatenated
+        // string ever since. Same class as the total_spent bug already fixed in
+        // orders.ts; this one was missed because nothing typed the row.
+        qty: existing.qty + Number(item.quantity),
       });
     }
     topProducts = [...productTotals.entries()]
@@ -184,14 +200,34 @@ async function sendSummaryForBusiness(
   let lowStockItems: { name: string; quantity: number; threshold: number }[] = [];
 
   if (branchIds.length) {
-    const { data: levels } = await supabase
-      .from('stock')
+    // stock_levels, not stock (audit B6) — see lib/lowStockChecker.ts for the
+    // full reasoning. `stock` is the table nothing writes.
+    //
+    // The .lt() that used to be here was three bugs in one line:
+    //
+    //     .lt('quantity', supabase.rpc ? 'low_stock_threshold' : 999)
+    //
+    //   1. `supabase.rpc` is a FUNCTION, so always truthy. The ternary always
+    //      took the first branch and the 999 was unreachable.
+    //   2. It therefore compared a numeric column to the literal STRING
+    //      'low_stock_threshold'. PostgREST cannot cast that and rejects the
+    //      request — PostgREST has no column-to-column comparison.
+    //   3. `const { data: levels }` never destructured `error`, so that
+    //      rejection was swallowed and `levels` was simply undefined.
+    //
+    // The manual filter below was always doing the real work, so the .lt() was
+    // dead weight that broke the query it sat in. Removed; the filter stays.
+    const { data: levels, error: lvlErr } = await supabase
+      .from('stock_levels')
       .select('product_id, quantity, low_stock_threshold')
-      .in('branch_id', branchIds)
-      .lt('quantity', supabase.rpc ? 'low_stock_threshold' : 999); // filter below
+      .in('branch_id', branchIds);
 
-    // Manual filter since Supabase doesn't support column comparison in .lt()
-    const lowLevels = (levels ?? []).filter(l => l.quantity < l.low_stock_threshold);
+    if (lvlErr) console.error('[dailySummary] stock level read failed:', lvlErr.message);
+
+    // Number() on both sides (audit C7): numeric arrives as a string and
+    // "9" < "10" is false.
+    const lowLevels = (levels ?? []).filter(
+      l => Number(l.quantity) < Number(l.low_stock_threshold));
 
     if (lowLevels.length) {
       const { data: products } = await supabase
@@ -202,8 +238,11 @@ async function sendSummaryForBusiness(
       const productMap = new Map((products ?? []).map(p => [p.id, p.name]));
       lowStockItems = lowLevels.map(l => ({
         name: productMap.get(l.product_id) ?? 'Unknown',
-        quantity: l.quantity,
-        threshold: l.low_stock_threshold,
+        // Typed `number` on lowStockItems, so coerce here or the template
+        // renders "8.00" beside a threshold of "10.00" and any arithmetic
+        // downstream concatenates.
+        quantity: Number(l.quantity),
+        threshold: Number(l.low_stock_threshold),
       }));
     }
   }

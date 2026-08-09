@@ -13,7 +13,14 @@
 
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
+import { printSale, escposEnabled, setEscposEnabled } from './escposBridge';
+import { printerShares } from './printService';
+import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
+import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
+import { logLine } from './logFile';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
+import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
@@ -28,7 +35,7 @@ type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: numb
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay } from './branchClose';
 import { takeSnapshot, maintenanceStatus } from './maintenance';
-import { emitEvent } from './nodeIngest';
+import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
@@ -100,6 +107,10 @@ export function registerIpcHandlers() {
       new Date().toISOString(),
     );
 
+    // D5: the row exists now; re-write the credentials through the store so they
+    // are wrapped at rest instead of sitting in the clear in swiftpos.db.
+    writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
+
     // The business type is decided when the business is created, and the server
     // returns it here. Persist it rather than asking the technician — the
     // install wizard used to offer a picker, which meant a till could be set to
@@ -125,6 +136,9 @@ export function registerIpcHandlers() {
     clearCatalogue(db);
     db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
     db.prepare(`DELETE FROM session WHERE id=1`).run();
+    // Signing the terminal out must also remove the offline way in, or a
+    // decommissioned till keeps working credentials for another fortnight.
+    clearPinCache();
     configureStaffSession('', '');
     configureSyncEngine(getServerUrl(), '');
     return true;
@@ -135,8 +149,10 @@ export function registerIpcHandlers() {
     const session = db.prepare(`SELECT * FROM session WHERE id=1`).get() as any;
     if (!session) return null;
 
-    // Re-hydrate sync engine in case app was restarted
-    configureSyncEngine(getServerUrl(), session.token, session.refresh_token ?? '');
+    // Re-hydrate sync engine in case app was restarted. Credentials are wrapped
+    // at rest (D5), so they come from the store rather than off the row.
+    const sessTok = readSessionTokens();
+    configureSyncEngine(getServerUrl(), sessTok.token, sessTok.refreshToken);
 
     return {
       user: { id: session.user_id, email: null },
@@ -152,6 +168,123 @@ export function registerIpcHandlers() {
         type: getDeviceConfig()?.business_type ?? null,
       },
     };
+  });
+
+  // ── Held orders (restaurant tabs) ───────────────────────
+  //
+  // Moved out of the renderer's localStorage on 2026-08-08. These are open
+  // tables: food is cooking against them and no bill exists yet, so losing one
+  // silently is the worst failure this app has. See localDb.ts held_orders.
+  //
+  // Every handler is synchronous SQLite behind an async channel — better-sqlite3
+  // writes land or throw, so a crash cannot leave a half-written tab.
+
+  type HeldRow = {
+    id: string; order_number: string; label: string; order_type: string;
+    table_number: string; delivery_person: string | null; cart: string; held_at: string;
+  };
+
+  // A tab whose cart JSON will not parse is returned with an EMPTY cart rather
+  // than dropped. The cashier can then see "Table 4" exists, recall it and
+  // rebuild it from the KOT — which beats the table vanishing and the food
+  // going out unbilled. One bad row must never take the others with it.
+  const toHeld = (r: HeldRow) => {
+    let cart: unknown[] = [];
+    let corrupt = false;
+    try {
+      const parsed = JSON.parse(r.cart);
+      if (Array.isArray(parsed)) cart = parsed; else corrupt = true;
+    } catch { corrupt = true; }
+    if (corrupt) logLine('held', `unreadable cart on tab ${r.id} (${r.label}) — returned empty`);
+    return {
+      id: r.id,
+      orderNumber: r.order_number,
+      label: r.label,
+      orderType: r.order_type,
+      tableNumber: r.table_number,
+      deliveryPerson: r.delivery_person ?? undefined,
+      cart,
+      heldAt: r.held_at,
+      corrupt: corrupt || undefined,
+    };
+  };
+
+  const listHeld = () => {
+    const db = getLocalDb();
+    const rows = db.prepare(`SELECT * FROM held_orders ORDER BY held_at ASC`).all() as HeldRow[];
+    return rows.map(toHeld);
+  };
+
+  ipcMain.handle('held:list', async () => listHeld());
+
+  ipcMain.handle('held:hold', async (_event, order: any) => {
+    const db = getLocalDb();
+    const held = {
+      id: `held_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      heldAt: new Date().toISOString(),
+      ...order,
+    };
+    db.prepare(`
+      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      held.id, held.orderNumber, held.label, held.orderType,
+      held.tableNumber ?? '', held.deliveryPerson ?? null,
+      JSON.stringify(held.cart ?? []), held.heldAt,
+    );
+    return { ...held, cart: held.cart ?? [] };
+  });
+
+  // Recall hands the tab back AND removes it, in one transaction. Read-then-
+  // delete as two statements can hand the same tab to two recalls if the second
+  // lands between them — two carts, one order number, one of them unbilled.
+  ipcMain.handle('held:recall', async (_event, { id }: { id: string }) => {
+    const db = getLocalDb();
+    const take = db.transaction((tabId: string) => {
+      const row = db.prepare(`SELECT * FROM held_orders WHERE id = ?`).get(tabId) as HeldRow | undefined;
+      if (!row) return null;
+      db.prepare(`DELETE FROM held_orders WHERE id = ?`).run(tabId);
+      return toHeld(row);
+    });
+    return take(id);
+  });
+
+  ipcMain.handle('held:delete', async (_event, { id }: { id: string }) => {
+    getLocalDb().prepare(`DELETE FROM held_orders WHERE id = ?`).run(id);
+    return true;
+  });
+
+  /**
+   * One-time import of tabs still sitting in the old localStorage blob.
+   *
+   * Without this, installing the fix on a till with open tables destroys them —
+   * the change would cause exactly the loss it exists to prevent. Runs once on
+   * renderer start, is idempotent (INSERT OR IGNORE on the existing ids), and
+   * reports what it took so the renderer knows whether to clear the old key.
+   */
+  ipcMain.handle('held:import', async (_event, { orders }: { orders: any[] }) => {
+    if (!Array.isArray(orders) || orders.length === 0) return { imported: 0 };
+    const db = getLocalDb();
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO held_orders
+        (id, order_number, label, order_type, table_number, delivery_person, cart, held_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    let imported = 0;
+    const run = db.transaction((rows: any[]) => {
+      for (const o of rows) {
+        if (!o?.id || !o?.orderNumber) continue;   // skip anything unusable, keep the rest
+        const r = insert.run(
+          String(o.id), String(o.orderNumber), String(o.label ?? ''), String(o.orderType ?? 'dine_in'),
+          String(o.tableNumber ?? ''), o.deliveryPerson ? String(o.deliveryPerson) : null,
+          JSON.stringify(Array.isArray(o.cart) ? o.cart : []), String(o.heldAt ?? new Date().toISOString()),
+        );
+        if (r.changes) imported++;
+      }
+    });
+    run(orders);
+    if (imported) logLine('held', `imported ${imported} tab(s) from legacy localStorage`);
+    return { imported };
   });
 
   // ── Staff PIN login (layered on the owner session) ──────
@@ -176,7 +309,7 @@ export function registerIpcHandlers() {
   async function ownerFetch(path: string, init: RequestInit = {}): Promise<Response> {
     const db = getLocalDb();
     const readToken = () =>
-      (db.prepare(`SELECT token FROM session WHERE id=1`).get() as any)?.token as string | undefined;
+      readSessionTokens().token || undefined;
 
     let token = readToken();
     if (!token) throw new Error('Not signed in');
@@ -185,6 +318,9 @@ export function registerIpcHandlers() {
       ...init,
       headers: {
         ...(init.headers ?? {}),
+        // Rate limiting keys on this: per-DEVICE buckets instead of the
+        // branch's one shared NAT IP, so two tills never starve each other.
+        'x-device-id': getDeviceConfig()?.device_id ?? '',
         Authorization: `Bearer ${t}`,
         'X-App-Version': app.getVersion(),
       },
@@ -205,15 +341,34 @@ export function registerIpcHandlers() {
   }
 
   ipcMain.handle('auth:listBranches', async () => {
+    // LOCAL-FIRST — this was a server round trip, and every cold start, 429,
+    // or dead link blanked the PIN screen with "No branches available" while
+    // the bound branch and the branches table sat on this disk the whole
+    // time. A till that cannot show its own branch until a cloud answers is
+    // not offline-first; it is online-with-extra-steps. The server refresh
+    // improves the answer (licence state, renames); it never gates it.
+    const db = getLocalDb();
+    const local = (db.prepare(`SELECT id, name FROM branches ORDER BY name`).all() as any[])
+      .map(b => ({ id: b.id, name: b.name, desktop_licensed: true }));
+
+    try {
+      const res  = await Promise.race([
+        ownerFetch('/api/branches'),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('slow')), 4_000)),
+      ]);
+      const data = await (res as Response).json();
+      if ((res as Response).ok && Array.isArray(data)) {
+        return data.map((b: any) => ({ id: b.id, name: b.name, desktop_licensed: !!b.desktop_licensed }));
+      }
+    } catch { /* cold server, rate limit, no link — the local answer stands */ }
+
+    if (local.length) return local;
+    // Truly first run, nothing synced yet: only now is the server the answer.
     const res  = await ownerFetch('/api/branches');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to load branches');
-
-    // Return only what the picker needs, incl. licence state.
     return (Array.isArray(data) ? data : []).map((b: any) => ({
-      id: b.id,
-      name: b.name,
-      desktop_licensed: !!b.desktop_licensed,
+      id: b.id, name: b.name, desktop_licensed: !!b.desktop_licensed,
     }));
   });
 
@@ -223,7 +378,19 @@ export function registerIpcHandlers() {
 
     // Same expiry problem as listBranches: the PIN pad is the first thing
     // touched each morning, so this is exactly where a stale owner token bites.
-    const res = await ownerFetch('/api/auth/verify-pin', {
+    //
+    // OFFLINE FALLBACK — the rule that matters:
+    //
+    //   Fall back only when the server could not be REACHED.
+    //   Never when the server ANSWERED and said no.
+    //
+    // A 401, a 409 PIN_NOT_UNIQUE, a disabled account — those are decisions,
+    // and honouring the cache over them would mean a sacked cashier signs in by
+    // unplugging the network cable. Only a transport failure (fetch throws)
+    // reaches the cache. Everything else is the server's answer and stands.
+    let res: Awaited<ReturnType<typeof ownerFetch>>;
+    try {
+      res = await ownerFetch('/api/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // The running build, reported on the one call every till makes every day.
@@ -235,9 +402,50 @@ export function registerIpcHandlers() {
         app_version: app.getVersion(),
         device_id: getDeviceConfig()?.device_id ?? undefined,
       }),
-    });
+      });
+    } catch (netErr: any) {
+      logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the offline cache`);
+      const verdict = verifyPinOffline(String(pin), branch_id);
+      if (!verdict.ok) throw new Error(verdict.message);
+
+      const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
+      // No server JWT offline, and none is needed: orders push under the OWNER
+      // token (syncEngine authHeaders) and cashier_id comes from this row. The
+      // sale queues, attributes correctly, and syncs when the line returns.
+      db.prepare(`
+        INSERT INTO staff_session
+          (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
+        VALUES (1, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
+          branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
+          token=NULL, refresh_token=NULL, logged_in_at=excluded.logged_in_at
+      `).run(
+        verdict.staff.staffId, verdict.staff.name, verdict.staff.roleName, branch_id,
+        branchRowOff?.name ?? null, JSON.stringify(verdict.staff.permissions ?? {}),
+        new Date().toISOString(),
+      );
+      configureStaffSession('', '');
+      return {
+        staff: { id: verdict.staff.staffId, name: verdict.staff.name, role: verdict.staff.roleName },
+        permissions: verdict.staff.permissions,
+        branch: { id: branch_id, name: branchRowOff?.name ?? null },
+        business: { name: session?.business_name ?? null, currency: session?.currency ?? null },
+        offline: true,
+      };
+    }
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
+
+    // Online sign-in succeeded, so the server has just confirmed this PIN and
+    // that it is unique across the business. Only now is it safe to cache.
+    cacheStaffCredential(
+      { staffId: data.staff?.id, name: data.staff?.name ?? 'Staff',
+        roleName: data.staff?.role ?? null, permissions: data.permissions ?? {} },
+      data.offlineAuth?.pinHash,
+      branch_id,
+    );
 
     // Resolve branch name for display (from the local branches table if present).
     const branchRow = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
@@ -261,6 +469,9 @@ export function registerIpcHandlers() {
       data.refreshToken ?? null,
       new Date().toISOString(),
     );
+
+    // D5 - wrap at rest, same as the owner session.
+    writeStaffTokens({ token: data.accessToken ?? data.token ?? '', refreshToken: data.refreshToken ?? '' });
 
     // Make the staff token the active credential for order pushes.
     configureStaffSession(data.accessToken ?? data.token, data.refreshToken ?? '');
@@ -351,6 +562,10 @@ export function registerIpcHandlers() {
     const branch = bound
       ? { id: bound }
       : db.prepare(`SELECT id FROM branches WHERE is_main=1 LIMIT 1`).get() as any;
+    // The receipt's header line 2 ("Juja — Till 1") wants the branch by NAME.
+    const branchName = branch?.id
+      ? ((db.prepare(`SELECT name FROM branches WHERE id = ?`).get(branch.id) as any)?.name ?? null)
+      : null;
 
     const shaped = products.map((p: any) => ({
       ...p,
@@ -362,6 +577,7 @@ export function registerIpcHandlers() {
 
     return {
       products: shaped,
+      branchName,
       categories,
       branchId: branch?.id ?? null,
       // Real business rate, refreshed by every catalogue pull. Null until the
@@ -480,11 +696,168 @@ export function registerIpcHandlers() {
 
   // ── Orders ──────────────────────────────────────────────
 
+  /**
+   * Queue thermal tickets for an order payload.
+   *
+   * Shared by order:create (the receipt, at payment) and escpos:printProduction
+   * (the kitchen and dispatch tickets, when the order is SENT). Splitting the
+   * two moments is the point: queuing all three together meant the kitchen only
+   * saw an order after the customer had paid for it, so nothing was cooking
+   * while they settled the bill.
+   *
+   * NEVER THROWS. It runs after the money is taken and the order is committed;
+   * a printer problem must not turn a completed sale into an error on screen.
+   */
+  function queueThermal(
+    payload: any,
+    kinds: Array<'kitchen' | 'dispatch' | 'receipt'>,
+    reprint?: { at: Date; count: number },
+  ): void {
+    try {
+      if (!escposEnabled()) return;
+
+      const db = getLocalDb();
+      const cfg = getDeviceConfig();
+      const stations = db.prepare(
+        `SELECT id, name, kind FROM print_stations WHERE active = 1 ORDER BY sort_order, name`
+      ).all() as Array<{ id: string; name: string; kind: 'kitchen' | 'dispatch' | 'receipt' }>;
+
+      // A business with no stations configured is not an error — it is one that
+      // has not set them up. Falling back to the three built-ins keeps a
+      // freshly-upgraded till printing.
+      const effective = stations.length ? [...stations] : [
+        { id: 'kitchen',  name: 'Kitchen',  kind: 'kitchen'  as const },
+        { id: 'dispatch', name: 'Dispatch', kind: 'dispatch' as const },
+        { id: 'receipt',  name: 'Till',     kind: 'receipt'  as const },
+      ];
+
+      // The receipt station is added when the business has not defined one.
+      // Kitchen and dispatch are genuinely optional — a retail shop has neither
+      // — but somewhere to print the bill is not.
+      if (!effective.some(st => st.kind === 'receipt')) {
+        effective.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' as const });
+      }
+
+      // Which stations have a printer bound on THIS terminal. Drives the Kots
+      // count, so it reflects paper that will exist rather than stations that
+      // merely exist.
+      const assignedIds = new Set(assignments().map(a => a.stationId));
+
+      const staff = db.prepare(
+        `SELECT staff_name, branch_name FROM staff_session WHERE id = 1`
+      ).get() as { staff_name?: string; branch_name?: string } | undefined;
+
+      // business_name and currency live on `session`, branch_name on
+      // `staff_session`. NOT on device_config — that holds the machine's own
+      // settings, not the tenant's identity. Getting this wrong prints a receipt
+      // with a blank shop name at the top.
+      const sess = db.prepare(
+        `SELECT business_name, currency FROM session WHERE id = 1`
+      ).get() as { business_name?: string; currency?: string } | undefined;
+
+      printSale(
+        {
+          billNumber:     String(payload.order_number ?? ''),
+          orderType:      String(payload.order_type ?? 'retail'),
+          cashierName:    staff?.staff_name ?? '',
+          soldAt:         new Date(),
+          tableNumber:    payload.table_number ?? undefined,
+          deliveryPerson: payload.delivery_person ?? undefined,
+          cart:           payload.items ?? [],
+          payments:       payload.payments ?? [],
+          changeGiven:    Number(payload.change_given ?? 0),
+          total:          Number(payload.total ?? 0),
+          // "How many kitchen tickets did this order produce" — the number the
+          // expeditor counts against what arrives at the pass. Counted from
+          // stations that will ACTUALLY print here; a station with no printer
+          // on this terminal produces no ticket. Receipts are not KOTs.
+          kotCount:       effective.filter(
+            st => st.kind !== 'receipt' && assignedIds.has(st.id)).length,
+          reprint,
+        },
+        {
+          name:            sess?.business_name ?? '',
+          branchName:      staff?.branch_name ?? undefined,
+          currencyCode:    sess?.currency ?? 'KES',
+          // Cached from /api/pos/init on every catalogue pull, so an offline
+          // till still prints the business's real rates rather than a hardcoded
+          // 16 — which printed the wrong tax for anyone on a different rate.
+          vatRate:         Number((cfg as any)?.vat_rate ?? 16),
+          ctlRate:         Number((cfg as any)?.ctl_rate ?? 0),
+          thankYouMessage: (cfg as any)?.receipt_footer || undefined,
+          footerCredit:    'Powered by SwiftPOS',
+        },
+        // The presets shared/printing exports, NOT a hand-rolled config here.
+        // They are what the verified sample output was rendered from, so a
+        // ticket printed on the counter is laid out identically to the one in
+        // SAMPLE-OUTPUT.
+        //
+        // Paper width comes from the terminal's assignment (what is physically
+        // loaded), applied inside queueTickets — an 80mm layout on a 58mm roll
+        // wraps its whole right-hand column.
+        effective.map(s =>
+          s.kind === 'kitchen'  ? kitchenPreset(s.id, s.name)
+        : s.kind === 'dispatch' ? dispatchPreset(s.id, s.name)
+        :                         receiptPreset(s.id, s.name)),
+        kinds,
+      );
+    } catch (e) {
+      console.error('[escpos] queueing tickets failed (non-blocking):', e);
+    }
+  }
+
+  /**
+   * Kitchen and dispatch tickets, at the moment the order is sent.
+   *
+   * Called from Send to kitchen, before any money is taken. The renderer sets
+   * kot_sent on the payload it later passes to order:create so the same tickets
+   * are not produced twice.
+   */
+  ipcMain.handle('escpos:printProduction', (_e, payload: any) => {
+    queueThermal(payload, ['kitchen', 'dispatch']);
+    return { ok: true };
+  });
+
+  /**
+   * The last order this terminal rang, kept so the receipt can be reprinted.
+   *
+   * In memory only, and only the payload needed to render a receipt. A restart
+   * clears it, which is correct — reprinting yesterday's last sale from a
+   * screen that says "Payment successful" would be worse than not offering it.
+   */
+  let lastOrderPayload: any = null;
+  let reprintCount = 0;
+
+  ipcMain.handle('escpos:reprintReceipt', () => {
+    if (!lastOrderPayload) return { ok: false, error: 'nothing to reprint' };
+    reprintCount += 1;
+    // Marked as a duplicate on the paper itself. An unmarked second copy of a
+    // receipt is the thing an auditor cannot tell from a second sale.
+    queueThermal(lastOrderPayload, ['receipt'], { at: new Date(), count: reprintCount });
+    return { ok: true };
+  });
+
   ipcMain.handle('order:create', async (_event, orderPayload: any) => {
     const orderId = createLocalOrder(orderPayload);
+    lastOrderPayload = orderPayload;
+    reprintCount = 0;
     // Push-only flush — the old syncAll here re-pulled the entire catalogue
     // (N+1 variant/modifier fetches) on every single sale.
     syncPush().catch(console.error);
+
+    // AFTER the order is committed and AFTER the sync flush is scheduled, and
+    // never awaited. The spool owns delivery; the sale does not wait on a
+    // printer and cannot fail because of one.
+    //
+    // A restaurant order that already went to the kitchen gets ONLY the receipt
+    // here — its production tickets were queued when it was sent, which is the
+    // whole reason the split exists. A counter sale has no send step, so it
+    // gets everything at once, which is correct there.
+    queueThermal(
+      orderPayload,
+      orderPayload?.kot_sent ? ['receipt'] : ['kitchen', 'dispatch', 'receipt'],
+    );
+
     return { orderId };
   });
 
@@ -493,6 +866,15 @@ export function registerIpcHandlers() {
   ipcMain.handle('print:list', async () => {
     return await listPrinters();
   });
+
+  /**
+   * Which printers are SHARED, and under what name.
+   *
+   * The Printers screen needs this to build a working \\localhost\<share>
+   * target. Without it the picker guessed the printer's own name, which is a
+   * different field and is absent entirely on a printer nobody has shared.
+   */
+  ipcMain.handle('print:shares', async () => await printerShares());
 
   // Ping a printer without printing. Cashiers use this constantly; it must not
   // consume paper.
@@ -876,7 +1258,7 @@ export function registerIpcHandlers() {
   // The till does not get to decide who may edit the menu.
   async function manageFetch(path: string, method: string, body?: any) {
     const db = getLocalDb();
-    const row = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
+    const row = { token: readStaffTokens().token };
     if (!row?.token) throw new Error('Not signed in');
 
     let res: Response;
@@ -920,32 +1302,84 @@ export function registerIpcHandlers() {
     return out;
   });
 
-  ipcMain.handle('manage:listCategories', async () => manageFetch('/api/categories', 'GET'));
+  ipcMain.handle('manage:listCategories', async () => {
+    try { return await manageFetch('/api/categories', 'GET'); }
+    catch {
+      const db = getLocalDb();
+      return db.prepare(`SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order`).all();
+    }
+  });
   // ── Print stations ────────────────────────────────────────────────────────
   // Server-backed like categories, so one configuration reaches all three tills
   // rather than each terminal holding its own idea of where an order prints.
   // refreshCatalogue() after every write pulls the change straight back down.
-  ipcMain.handle('manage:listStations', async () => manageFetch('/api/stations', 'GET'));
-  ipcMain.handle('manage:unassignedCategories', async () =>
-    manageFetch('/api/stations/unassigned', 'GET'));
+  // Station writes used to refreshCatalogue() — the ENTIRE catalogue re-pulled
+  // per tick-box click, so routing a 10-category kitchen meant ten multi-second
+  // waits in a row. Routing edits touch exactly two tables; rewrite exactly
+  // those, from the same response the panel is already shown.
+  const refreshStationsLocal = async () => {
+    const stations = await manageFetch('/api/stations', 'GET') as Array<{
+      id: string; name: string; kind: string; sort_order: number; active: boolean; category_ids: string[] }>;
+    const db = getLocalDb();
+    db.transaction(() => {
+      db.prepare(`DELETE FROM category_stations`).run();
+      db.prepare(`DELETE FROM print_stations`).run();
+      const now = new Date().toISOString();
+      const insSt = db.prepare(`INSERT INTO print_stations (id, name, kind, sort_order, active, synced_at) VALUES (?, ?, ?, ?, ?, ?)`);
+      const insLk = db.prepare(`INSERT OR IGNORE INTO category_stations (category_id, station_id) VALUES (?, ?)`);
+      for (const st of stations ?? []) {
+        insSt.run(st.id, st.name, st.kind, st.sort_order ?? 0, st.active ? 1 : 0, now);
+        for (const cid of st.category_ids ?? []) insLk.run(cid, st.id);
+      }
+    })();
+    return stations;
+  };
+
+  // Reads fall back to the LOCAL MIRRORS (pull-synced print_stations /
+  // category_stations / categories) when the server is cold, rate-limited, or
+  // away — the routing screen must render from the replica, not blank out
+  // with "Request failed (503)" mid-setup. Writes still require the server:
+  // stations are business-level, shared by every till.
+  const localStations = () => {
+    const db = getLocalDb();
+    const sts = db.prepare(`SELECT id, name, kind, sort_order, active FROM print_stations WHERE active = 1 ORDER BY sort_order, name`).all() as any[];
+    const links = db.prepare(`SELECT category_id, station_id FROM category_stations`).all() as any[];
+    return sts.map(st => ({ ...st, active: !!st.active,
+      category_ids: links.filter(l => l.station_id === st.id).map(l => l.category_id) }));
+  };
+  ipcMain.handle('manage:listStations', async () => {
+    try { return await manageFetch('/api/stations', 'GET'); }
+    catch { return localStations(); }
+  });
+  ipcMain.handle('manage:unassignedCategories', async () => {
+    try { return await manageFetch('/api/stations/unassigned', 'GET'); }
+    catch {
+      const db = getLocalDb();
+      return (db.prepare(`
+        SELECT c.id, c.name FROM categories c
+         WHERE c.status = 'active'
+           AND c.id NOT IN (SELECT category_id FROM category_stations)
+         ORDER BY c.name`).all() as any[]);
+    }
+  });
   ipcMain.handle('manage:createStation', async (_e, payload: any) => {
     const out = await manageFetch('/api/stations', 'POST', payload);
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
   ipcMain.handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/stations/${id}`, 'PATCH', patch);
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
   ipcMain.handle('manage:deleteStation', async (_e, id: string) => {
     const out = await manageFetch(`/api/stations/${id}`, 'DELETE');
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
   ipcMain.handle('manage:setStationCategories', async (_e, { id, categoryIds }: { id: string; categoryIds: string[] }) => {
     const out = await manageFetch(`/api/stations/${id}/categories`, 'PUT', { category_ids: categoryIds });
-    await refreshCatalogue();
+    await refreshStationsLocal();
     return out;
   });
 
@@ -1094,8 +1528,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('expense:categories', async () => {
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) return [];
-    const staffRow = (getLocalDb() as any).prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
-    const ownerRow = (getLocalDb() as any).prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const staffRow = { token: readStaffTokens().token };
+    const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) return [];
     try {
@@ -1162,8 +1596,8 @@ export function registerIpcHandlers() {
     // Get server URL + best available auth token
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
-    const staffRow = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
-    const ownerRow = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const staffRow = { token: readStaffTokens().token };
+    const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) throw new Error('Not signed in');
 
@@ -1212,8 +1646,8 @@ export function registerIpcHandlers() {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
-    const staffRow = db.prepare(`SELECT token FROM staff_session WHERE id=1`).get() as any;
-    const ownerRow = db.prepare(`SELECT token FROM session WHERE id=1`).get() as any;
+    const staffRow = { token: readStaffTokens().token };
+    const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) throw new Error('Not signed in');
 
@@ -1323,15 +1757,45 @@ export function registerIpcHandlers() {
   // Repoint this till at a (new) branch server. Probe BEFORE save — a wrong
   // address written blind is a till that silently stops replicating. Also the
   // demotion path: a former node repointed at the new one becomes a till again.
+  // Repoint this till at a (new) branch server. Probe BEFORE save — a wrong
+  // address written blind is a till that silently stops replicating. Also the
+  // demotion path: a former node repointed at the new one becomes a till again.
+  //
+  // A21 — WHY THE OUTBOX CURSORS ARE RESET WHEN THE ADDRESS CHANGES.
+  // `outbox_cursors` is keyed by table_name ALONE and carries no node identity,
+  // while `peer_cursors` on the node side is keyed (device_id, table_name).
+  // That asymmetry only shows on failover, and then it loses rows: a peer that
+  // offered orders to seq 500 to the OLD node, which distributed only to 430
+  // before dying, will never re-offer 431-500 to its replacement. Those sales
+  // sit on this till and on a dead machine's disk, absent from the new source of
+  // truth, the day close and the cloud, with nothing reporting a gap.
+  //
+  // Re-offering is free: ingest is INSERT OR IGNORE on stable client UUIDs with
+  // origin device_id and seq preserved end to end, so anything the new node
+  // already holds is recognised and ignored rather than duplicated.
+  //
+  // Only on an ACTUAL change — re-entering the same address must not trigger a
+  // full re-offer.
   ipcMain.handle('tech:setNodeUrl', async (_e, { url }: { url: string }) => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const probe = await probeNode(String(url ?? ''));
     if (!probe.ok) return { ok: false, error: probe.error };
     const was = getDeviceConfig()?.device_role ?? 'till';
     logTechAction('role.repoint', { from: was, node_url: url });
+    const previousUrl = getDeviceConfig()?.node_url ?? null;
+    const nextUrl     = String(url);
+    const nodeChanged = previousUrl !== nextUrl;
     if (was === 'node') stopNodeServer();   // stepping down: stop serving first
-    saveDeviceConfig({ node_url: String(url), device_role: was === 'node' ? 'till' : was });
-    return { ok: true, role: was === 'node' ? 'till' : was };
+    saveDeviceConfig({ node_url: nextUrl, device_role: was === 'node' ? 'till' : was });
+    if (nodeChanged) {
+      // A21 — see the note above. Audited as its own action rather than folded
+      // into role.repoint: re-offering the whole outbox is a distinct, visible
+      // event, and a tech reading the log should see it named.
+      resetOutboxCursors();
+      logTechAction('node.reoffer', { from: previousUrl, to: nextUrl });
+      logLine('node', `node changed ${previousUrl ?? '(none)'} -> ${nextUrl}; outbox cursors reset so every row is re-offered`);
+    }
+    return { ok: true, role: was === 'node' ? 'till' : was, reoffering: nodeChanged };
   });
 
   ipcMain.handle('tech:backupNow', async () => {

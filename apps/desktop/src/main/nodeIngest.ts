@@ -454,6 +454,49 @@ function advanceOutboxCursor(table: ReplicatedTable, seq: number): void {
 }
 
 /**
+ * Forget how far this till has offered its rows, so the NEXT outbox fill offers
+ * everything again. Register A21.
+ *
+ * WHY THIS HAS TO EXIST
+ * ---------------------
+ * `outbox_cursors` is keyed by `table_name` ALONE — there is no record of which
+ * node the rows were offered to. `peer_cursors` on the node side is correctly
+ * keyed `(device_id, table_name)`; this side is not. That asymmetry is
+ * invisible until the node is replaced, and then it loses rows:
+ *
+ *   1. Peer C has offered `orders` up to seq 500 to the old node.
+ *   2. The old node distributed only to seq 430 before it died.
+ *   3. Peer C is repointed at the promoted till. Its cursor still says 500.
+ *   4. Peer C never re-offers 431-500. Those sales are on peer C and on a dead
+ *      machine's disk, and absent from the new source of truth, the day close,
+ *      and the cloud — with nothing reporting a gap.
+ *
+ * "No data loss on failover" was very nearly true, which is the worst kind.
+ *
+ * WHY RESETTING IS SAFE
+ * ---------------------
+ * Re-offering is free. Ingest is `INSERT OR IGNORE` / upsert-by-id on stable
+ * client-generated UUIDs, and every row keeps its ORIGIN device_id and seq end
+ * to end — so a row the new node already holds is recognised and ignored rather
+ * than duplicated or re-stamped. This is the same property that lets a peer
+ * retry a push indefinitely.
+ *
+ * WHY NOT KEY THE TABLE BY NODE
+ * -----------------------------
+ * Cleaner, and it is the right answer if a branch ever runs two nodes at once.
+ * But it is a local-schema change to the mechanism that decides whether a field
+ * till works, and D6 already records six generations of that going undocumented.
+ * A reset costs one re-offer of rows that are ignored on arrival. Revisit if
+ * multi-node ever lands.
+ *
+ * Cost: the next fill walks each replicated table from seq 0. Bounded by local
+ * retention, and it happens only on an explicit, human-initiated repoint.
+ */
+export function resetOutboxCursors(): void {
+  getLocalDb().prepare(`DELETE FROM outbox_cursors`).run();
+}
+
+/**
  * Put this till's own new rows into the outbox.
  *
  * Scanned rather than enqueued at each creation site, deliberately. There are

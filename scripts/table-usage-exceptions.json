@@ -1,0 +1,45 @@
+{
+  "_README": [
+    "Exceptions for check-table-usage.mjs. Every entry needs a reason.",
+    "",
+    "The gate FAILS only on `twins` — a pair of near-identical tables where one is",
+    "written and the other read. readOnly / writeOnly are informational (shown with",
+    "--verbose) and listed here so the output stays readable and the intentional",
+    "cases are stated once instead of re-argued every run.",
+    "",
+    "KNOWN LIMITATION of the scanner: it matches `.from('t')` chains only. A table",
+    "read through a PostgREST nested embed — `products ( combo_items ( ... ) )` —",
+    "is invisible to it and will look write-only. That is why combo_items is here."
+  ],
+
+  "readOnly": [
+    { "table": "permissions",
+      "reason": "Reference data. Seeded by migration and by 59_backfill_default_role_permissions. The app never writes it." },
+    { "table": "plans",
+      "reason": "Reference data. Rows are created in the admin portal by hand / by migration, never by application code." },
+    { "table": "customer_credit_transactions",
+      "reason": "Written exclusively by the apply_credit_transaction RPC, which the scanner cannot see. Reading it in credit.ts is correct." },
+    { "table": "stock_adjustments",
+      "reason": "Written by the till via /api/sync/push, which resolves the table name dynamically. reports.ts:286 reads it. Confirm this stays true if the sync route is ever refactored." }
+  ],
+
+  "writeOnly": [
+    { "table": "tech_audit_log",
+      "reason": "Append-only audit. Read by the admin portal UI over PostgREST directly, not through apps/*/src." },
+    { "table": "ingredient_cost_history",
+      "reason": "Append-only audit trail for unit_cost changes. No reader yet by design." },
+    { "table": "clock_events",
+      "reason": "Written on clock in/out; the timesheet report aggregates it via an RPC rather than a .from() chain." },
+    { "table": "combo_items",
+      "reason": "SCANNER LIMITATION, not a finding. Read through the nested embed products(combo_items(...)) in combos.ts and the POS catalogue fetch." },
+    { "table": "grn_items",
+      "reason": "SCANNER LIMITATION. Read via the goods_received_notes(grn_items(...)) embed in stock.ts." },
+    { "table": "stock_transfer_items",
+      "reason": "SCANNER LIMITATION. Read via the stock_transfers(stock_transfer_items(...)) embed in stock.ts." },
+    { "table": "onboarding_progress",
+      "reason": "Written on each onboarding step; read by the dashboard through the /api/onboarding response rather than a direct .from()." }
+  ],
+
+  "twins": [
+  ]
+}

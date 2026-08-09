@@ -1,0 +1,27 @@
+
+=== Fried chicken shop ===
+  9 products (4 hidden components), 5 slots, 1 attribute groups
+  e.g. 3PC Combo @ 890.00:
+     Chicken (pick 1): *3PC Chicken
+     Slaw (pick 1): *Cole Slaw
+     Popcorn (pick 1): *Popcorn Chicken
+     Fries (pick 1): *Fries Medium, Fries Large +60.00
+     Drink (pick 1): *Soda 350ml, Soda 1.25L +50.00
+  loaded and validated OK
+
+=== Coffee shop ===
+  5 products (3 hidden components), 2 slots, 1 attribute groups
+  e.g. Latte @ 350.00:
+     Size (pick 1): *Espresso Shot, 2x Espresso Shot +80.00
+     Milk (pick 1): *Steamed Milk, Oat Milk +50.00
+  loaded and validated OK
+
+=== Butchery ===
+  4 products (0 hidden components), 0 slots, 0 attribute groups
+  (no composite products — a flat menu, which is fine)
+  loaded and validated OK
+
+=== Negative: a slot pointing at a missing product ===
+  correctly rejected: slot 'Syrup' offers unknown product 'Vanilla Syrup'
+
+All menus loaded on one schema, no changes.

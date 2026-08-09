@@ -34,11 +34,13 @@
  */
 
 import { Router }   from 'express';
+import { registerDesktopTerminal } from '../lib/deviceRegistry';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { getWebAccess } from '../lib/webAccess';
+import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
@@ -142,7 +144,20 @@ async function storeRefreshToken(
   refreshToken: string,
   payload: TokenPayload,
   ip?: string,
-  userAgent?: string,
+  /**
+   * What identifies the DEVICE this session belongs to (audit BUG-22).
+   *
+   * Named userAgent before, and the owner login paths passed exactly that — the
+   * User-Agent string. Every till in a fleet runs the same Electron build, so
+   * every row held an identical value and device_hint distinguished nothing.
+   * Worse, the PIN paths revoke with .eq('device_hint', devKey) using the
+   * DEVICE ID, so an owner session could never be matched by a revoke and stale
+   * rows accumulated silently.
+   *
+   * Callers pass device_id when the client sends one and fall back to the
+   * User-Agent only when it genuinely has nothing better.
+   */
+  deviceHint?: string,
 ): Promise<void> {
   const jtiPayload = jwt.decode(refreshToken) as { jti: string };
   const jti = hashToken(jtiPayload.jti);
@@ -152,7 +167,7 @@ async function storeRefreshToken(
     user_id:     payload.userId,
     business_id: payload.businessId,
     session_id:  payload.sessionId,
-    device_hint: userAgent?.slice(0, 200) ?? null,
+    device_hint: deviceHint?.slice(0, 200) ?? null,
     ip_address:  ip ?? null,
     expires_at:  new Date(Date.now() + REFRESH_EXPIRES_MS).toISOString(),
   });
@@ -236,6 +251,52 @@ async function revokeRefreshToken(refreshToken: string): Promise<void> {
  * Fetch the current permissions_version for a user.
  * Returns 1 as fallback if the column doesn't exist yet (pre-migration).
  */
+/**
+ * Resolve the public.users row for an owner, by email, within one business.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Two sites (/login and /desktop-login) did `.eq('email', data.user.email)` —
+ * a CASE-SENSITIVE match against a column that stores whatever was typed at
+ * signup, while Supabase Auth lowercases. A miss is not harmless: both callers
+ * fall back to `data.user.id`, which is an **auth.users** id, and mint a token
+ * carrying it as `userId`.
+ *
+ * `orders.cashier_id` is `REFERENCES public.users(id)`. So a token built from
+ * that fallback makes every order push fail 23503 for the entire life of the
+ * refresh chain — /refresh reuses `cleanPayload.userId` and never re-resolves.
+ * That is the shape of the eight orders lost on 2026-08-07.
+ *
+ * pos-login already solved this (BUG-05): a coarse escaped `ilike` to get
+ * candidates, then an exact case-insensitive compare in JS. `ilike` alone is a
+ * PATTERN match and `_` is a legal email character, so `john_doe@x` would match
+ * `johnXdoe@x`. Same approach here rather than a second, subtly different one.
+ */
+async function resolveOwnerUserRow(
+  businessId: string,
+  email: string | null | undefined,
+): Promise<{ id: string; must_change_password?: boolean } | null> {
+  const needle = String(email ?? '').trim().toLowerCase();
+  if (!needle) return null;
+
+  const likeSafe = needle.replace(/[\\%_]/g, ch => `\\${ch}`);
+
+  const { data: candidates, error } = await supabase
+    .from('users')
+    .select('id, email, must_change_password')
+    .eq('business_id', businessId)
+    .ilike('email', likeSafe)
+    .limit(200);
+
+  if (error) return null;
+
+  // Exact match, not a pattern match. This is what neutralises % and _.
+  const match = (candidates ?? []).find(
+    (u: any) => String(u.email ?? '').trim().toLowerCase() === needle,
+  );
+  return (match as any) ?? null;
+}
+
 async function getPermissionsVersion(userId: string): Promise<number> {
   const { data } = await supabase
     .from('users')
@@ -463,7 +524,7 @@ async function checkDeviceRegistration(
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, business_id } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: 'email and password are required' });
@@ -476,16 +537,33 @@ router.post('/login', async (req, res) => {
     return;
   }
 
-  const { data: business, error: bErr } = await supabase
-    .from('businesses')
-    .select('id, name, currency, type, status')
-    .eq('owner_id', data.user.id)
-    .single();
+  // BUG-18: was .single(), which raises PGRST116 on more than one row. An owner
+  // with two businesses got "No business found for this account" — the opposite
+  // of what happened — and could not log in to either. Same class as BUG-05.
+  //
+  // Login is the one place that CAN ask, so it asks. business_id in the body
+  // picks one; without it, a second business produces a 409 naming both rather
+  // than a silent guess about which shop's till you are opening.
+  const owned = await resolveOwnerBusinesses(
+    data.user.id, 'id, name, currency, type, status', business_id ?? null);
 
-  if (bErr || !business) {
+  if (owned.kind === 'error') {
+    res.status(503).json({ error: 'Could not sign you in right now — please try again' });
+    return;
+  }
+  if (owned.kind === 'none') {
     res.status(403).json({ error: 'No business found for this account' });
     return;
   }
+  if (owned.kind === 'many') {
+    res.status(409).json({
+      error: 'This account owns more than one business. Choose which one to open.',
+      code:  'MULTIPLE_BUSINESSES',
+      businesses: owned.businesses.map(b => ({ id: b.id, name: b.name })),
+    });
+    return;
+  }
+  const business = owned.business;
 
   if (business.status === 'suspended') {
     res.status(403).json({
@@ -510,12 +588,10 @@ router.post('/login', async (req, res) => {
     return;
   }
 
-  const { data: ownerUser } = await supabase
-    .from('users')
-    .select('id, must_change_password')
-    .eq('business_id', business.id)
-    .eq('email', data.user.email)
-    .maybeSingle();
+  // Case-insensitive, pattern-safe. A miss here used to fall through to
+  // data.user.id (an auth.users id) and poison every order push — see
+  // resolveOwnerUserRow.
+  const ownerUser = await resolveOwnerUserRow(business.id, data.user.email);
 
   let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
   if (mustChangePassword) {
@@ -535,8 +611,23 @@ router.post('/login', async (req, res) => {
   // Fetch permissions_version for owner
   const pv = ownerUser ? await getPermissionsVersion((ownerUser as any).id) : 1;
 
+  if (!ownerUser) {
+    console.error(
+      '[auth] no public.users row for this owner — issuing a token whose userId ' +
+      'is an auth.users id. Every order pushed under it will fail 23503 on ' +
+      'orders_cashier_id_fkey until a users row exists and the owner signs in again.',
+      { businessId: business.id, email: data.user.email },
+    );
+  }
+
   const sessionId = newSessionId();
   const payload: TokenPayload = {
+    // FALLBACK OF LAST RESORT. data.user.id is an auth.users id, and
+    // orders.cashier_id REFERENCES public.users(id) — so a token built from
+    // this branch makes every order push fail 23503 until the owner signs in
+    // again, because /refresh reuses userId and never re-resolves it.
+    // Login is NOT refused here: a release is in flight and an owner who works
+    // today must still work tomorrow. But it is no longer silent.
     userId:             ownerUser ? (ownerUser as any).id : data.user.id,
     businessId:         business.id,
     branchId:           null,
@@ -551,7 +642,10 @@ router.post('/login', async (req, res) => {
   // Store refresh token server-side
   await storeRefreshToken(refreshToken, payload,
     req.ip ?? undefined,
-    req.headers['user-agent'] ?? undefined,
+    // device_id first: the User-Agent is identical across the whole fleet, so
+    // storing it made every row look like every other row (BUG-22).
+    (req.body?.device_id as string | undefined)
+      ?? req.headers['user-agent'] ?? undefined,
   );
 
   res.json({
@@ -567,7 +661,7 @@ router.post('/login', async (req, res) => {
 // ── POST /api/auth/desktop-login ──────────────────────────────────────────────
 
 router.post('/desktop-login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, business_id } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: 'email and password are required' });
@@ -580,16 +674,33 @@ router.post('/desktop-login', async (req, res) => {
     return;
   }
 
-  const { data: business, error: bErr } = await supabase
-    .from('businesses')
-    .select('id, name, currency, type, status')
-    .eq('owner_id', data.user.id)
-    .single();
+  // BUG-18: was .single(), which raises PGRST116 on more than one row. An owner
+  // with two businesses got "No business found for this account" — the opposite
+  // of what happened — and could not log in to either. Same class as BUG-05.
+  //
+  // Login is the one place that CAN ask, so it asks. business_id in the body
+  // picks one; without it, a second business produces a 409 naming both rather
+  // than a silent guess about which shop's till you are opening.
+  const owned = await resolveOwnerBusinesses(
+    data.user.id, 'id, name, currency, type, status', business_id ?? null);
 
-  if (bErr || !business) {
+  if (owned.kind === 'error') {
+    res.status(503).json({ error: 'Could not sign you in right now — please try again' });
+    return;
+  }
+  if (owned.kind === 'none') {
     res.status(403).json({ error: 'No business found for this account' });
     return;
   }
+  if (owned.kind === 'many') {
+    res.status(409).json({
+      error: 'This account owns more than one business. Choose which one to open.',
+      code:  'MULTIPLE_BUSINESSES',
+      businesses: owned.businesses.map(b => ({ id: b.id, name: b.name })),
+    });
+    return;
+  }
+  const business = owned.business;
 
   if (business.status === 'suspended') {
     res.status(403).json({
@@ -599,12 +710,10 @@ router.post('/desktop-login', async (req, res) => {
     return;
   }
 
-  const { data: ownerUser } = await supabase
-    .from('users')
-    .select('id, must_change_password')
-    .eq('business_id', business.id)
-    .eq('email', data.user.email)
-    .maybeSingle();
+  // Case-insensitive, pattern-safe. A miss here used to fall through to
+  // data.user.id (an auth.users id) and poison every order push — see
+  // resolveOwnerUserRow.
+  const ownerUser = await resolveOwnerUserRow(business.id, data.user.email);
 
   let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
   if (mustChangePassword) {
@@ -623,8 +732,48 @@ router.post('/desktop-login', async (req, res) => {
 
   const pv = ownerUser ? await getPermissionsVersion((ownerUser as any).id) : 1;
 
+  // D14 — record this terminal. /desktop-login registered NOTHING before, and
+  // /pos-login only registered when the business had opted into
+  // `require_device_registration` (and never for an owner, who is exempt). So a
+  // till like Beryl's had no user_devices row at all, which silently disabled
+  // migration 52's branch binding and threw away every telemetry write.
+  //
+  // Unconditional and independent of that setting: a desktop till is a
+  // registered terminal by nature, whereas the setting is about approving
+  // BROWSER sign-ins. Registration is not authorisation — see deviceRegistry.ts.
+  //
+  // Awaited, but it returns null rather than throwing: a sign-in must never
+  // fail over a telemetry row.
+  if (ownerUser) {
+    await registerDesktopTerminal(business.id, (ownerUser as any).id, {
+      deviceId:     String(req.body?.device_id ?? ''),
+      appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
+      terminalCode: req.body?.terminal_code ?? null,
+      ipAddress:    req.ip ?? null,
+      // Migration 73 — what this terminal IS. An office machine serves the
+      // branch and cannot sell; it must not be recorded, labelled or (later)
+      // seat-counted as a till.
+      role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+    });
+  }
+
+  if (!ownerUser) {
+    console.error(
+      '[auth] no public.users row for this owner — issuing a token whose userId ' +
+      'is an auth.users id. Every order pushed under it will fail 23503 on ' +
+      'orders_cashier_id_fkey until a users row exists and the owner signs in again.',
+      { businessId: business.id, email: data.user.email },
+    );
+  }
+
   const sessionId = newSessionId();
   const payload: TokenPayload = {
+    // FALLBACK OF LAST RESORT. data.user.id is an auth.users id, and
+    // orders.cashier_id REFERENCES public.users(id) — so a token built from
+    // this branch makes every order push fail 23503 until the owner signs in
+    // again, because /refresh reuses userId and never re-resolves it.
+    // Login is NOT refused here: a release is in flight and an owner who works
+    // today must still work tomorrow. But it is no longer silent.
     userId:             ownerUser ? (ownerUser as any).id : data.user.id,
     businessId:         business.id,
     branchId:           null,
@@ -639,7 +788,10 @@ router.post('/desktop-login', async (req, res) => {
 
   await storeRefreshToken(refreshToken, payload,
     req.ip ?? undefined,
-    req.headers['user-agent'] ?? undefined,
+    // device_id first: the User-Agent is identical across the whole fleet, so
+    // storing it made every row look like every other row (BUG-22).
+    (req.body?.device_id as string | undefined)
+      ?? req.headers['user-agent'] ?? undefined,
   );
 
   res.json({
@@ -760,7 +912,42 @@ router.post('/pos-login', async (req, res) => {
 
   const authError = { error: 'Invalid email or PIN' };
 
-  const { data: user, error: userErr } = await supabase
+  // ── Resolving WHICH user this is ────────────────────────────────────────
+  //
+  // This used to be a single global .ilike(...).single(). Two things were wrong
+  // with that, and both failed CLOSED with the same misleading message, so
+  // neither was ever going to be reported as anything but "the PIN is broken".
+  //
+  // 1. TENANT COLLISION. users is UNIQUE (business_id, email) — see
+  //    00_baseline.sql — so the SAME email is allowed to exist in two
+  //    businesses. When it does, .single() returns PGRST116, userErr is truthy,
+  //    and the cashier is told "Invalid email or PIN" forever. Resetting the PIN
+  //    does not help, because the PIN was never the problem.
+  //
+  // 2. ilike IS A PATTERN MATCH. % and _ are LIKE metacharacters, and _ is a
+  //    LEGAL EMAIL CHARACTER. So john_doe@x.com would also match johnXdoe@x.com.
+  //    A login field should never accept wildcards at all.
+  //
+  // The fix: use ilike only as a coarse, index-friendly, case-insensitive
+  // filter, then require an EXACT case-insensitive match in JS (which no
+  // wildcard can satisfy), and disambiguate across tenants using the branch the
+  // till is logging in to.
+  const needle = String(email).trim().toLowerCase();
+
+  // `_` and `%` are LIKE WILDCARDS, and `_` is a perfectly legal character in
+  // an email address (audit C4). Passing the address straight into .ilike()
+  // meant `john_doe@x.com` also matched `johnXdoe@x.com` — and with `.limit(20)`
+  // on top, an address containing `_` at a business with enough similar
+  // addresses could push the REAL row outside the window and produce "Invalid
+  // email or PIN" for a correct email and a correct PIN. That is the exact
+  // symptom BUG-05 was supposed to have killed, arriving by another route.
+  //
+  // PostgREST's ilike takes `*` as its wildcard and passes `%` and `_` through
+  // to LIKE, so both must be neutralised. Escaping makes the coarse filter mean
+  // what it says; the exact comparison below is still what decides.
+  const likeSafe = needle.replace(/[\\%_]/g, ch => `\\${ch}`);
+
+  const { data: candidates, error: userErr } = await supabase
     .from('users')
     .select(`
       id, name, email, status, pin_hash, business_id,
@@ -772,10 +959,48 @@ router.post('/pos-login', async (req, res) => {
       user_permissions ( granted, permissions ( key ) )
     `)
     .eq('status', 'active')
-    .ilike('email', email.trim())
-    .single();
+    .ilike('email', likeSafe)
+    // 20 was a truncation risk with an unescaped pattern. Escaped, this can
+    // only ever match genuine case variants of one address, which is bounded by
+    // the number of tenants an address appears in — but the cap stays, raised,
+    // because a cap that can silently hide the row you need is worth being
+    // generous about.
+    .limit(200);
 
-  if (userErr || !user) { res.status(401).json(authError); return; }
+  if (userErr) { res.status(401).json(authError); return; }
+
+  // Exact match, not a pattern match. This is what neutralises % and _.
+  let matches = (candidates ?? []).filter(
+    (u: any) => String(u.email ?? '').trim().toLowerCase() === needle,
+  );
+
+  // Same email in more than one business: the branch being logged in to says
+  // which tenant is meant. The branch is validated against the user's own
+  // accessible branches further down, so this narrows without granting anything.
+  if (matches.length > 1 && branch_id) {
+    const { data: branchRow } = await supabase
+      .from('branches')
+      .select('business_id')
+      .eq('id', branch_id)
+      .maybeSingle();
+    if (branchRow?.business_id) {
+      matches = matches.filter((u: any) => u.business_id === branchRow.business_id);
+    }
+  }
+
+  if (matches.length > 1) {
+    // Say what is actually wrong. Silently failing here is what turns a
+    // five-minute fix into a day of support calls about a working PIN.
+    res.status(409).json({
+      error: 'This email is registered with more than one business. '
+           + 'Select a branch on this device, or contact SwiftPOS support.',
+      code:  'AMBIGUOUS_ACCOUNT',
+    });
+    return;
+  }
+
+  const user = matches[0];
+  if (!user) { res.status(401).json(authError); return; }
   if (!(user as any).pin_hash) { res.status(401).json(authError); return; }
 
   const { valid, needsUpgrade } = await verifyPin(
@@ -972,9 +1197,15 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     return;
   }
 
-  let matchedUser: any = null;
-  let needsUpgrade     = false;
-
+  // Match the PIN against active staff. CRITICAL for attribution (finding #11):
+  // if two cashiers share a PIN, the old code took the FIRST match and every
+  // sale one of them rang was booked to the other. We now scan ALL staff and
+  // refuse if more than one matches, rather than silently mis-attributing.
+  // Uniqueness is also enforced at set-pin time (below), so a collision here
+  // means legacy data that predates that guard — and it must be corrected, not
+  // guessed past.
+  const matches: any[] = [];
+  let needsUpgrade = false;
   for (const staff of staffList ?? []) {
     if (!(staff as any).pin_hash) continue;
     const { valid, needsUpgrade: upgrade } = await verifyPin(
@@ -982,8 +1213,23 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
       (staff as any).pin_hash,
       req.businessId,
     );
-    if (valid) { matchedUser = staff; needsUpgrade = upgrade; break; }
+    if (valid) {
+      matches.push(staff);
+      if (upgrade) needsUpgrade = true;
+    }
   }
+
+  if (matches.length > 1) {
+    // Ambiguous — two staff share this PIN. Refuse rather than attribute a shift
+    // and every subsequent sale to the wrong person.
+    res.status(409).json({
+      error: 'This PIN is shared by more than one staff member. Ask a manager to reset the affected PINs before signing in.',
+      code: 'PIN_NOT_UNIQUE',
+    });
+    return;
+  }
+
+  const matchedUser: any = matches[0] ?? null;
 
   if (!matchedUser) {
     res.status(401).json({ error: 'Invalid PIN' });
@@ -1049,6 +1295,21 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   }
 
   const sessionId = newSessionId();
+
+  // D14 — a cashier signing in on a till is the other moment a terminal
+  // announces itself. checkDeviceRegistration above still owns BROWSER approval
+  // and is untouched; this records the terminal regardless, and only for
+  // desktop. Between this and /desktop-login every till gets a row on its first
+  // sign-in without anybody enabling anything.
+  if (req.surface === 'desktop') {
+    await registerDesktopTerminal(req.businessId as string, matchedUser.id, {
+      deviceId:     String(req.body?.device_id ?? ''),
+      appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
+      terminalCode: req.body?.terminal_code ?? null,
+      ipAddress:    req.ip ?? null,
+      role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+    });
+  }
   const pv = matchedUser.permissions_version ?? 1;
 
   const tokenPayload: TokenPayload = {
@@ -1076,6 +1337,26 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     staff:       { id: matchedUser.id, name: matchedUser.name, role: role?.name },
     permissions: effectivePerms,
     branchId:    branch_id,
+    // Offline sign-in (register D-offline). A desktop terminal caches this so a
+    // line fault does not stop the floor starting a shift — everything else on
+    // a till already works offline; the door was the exception.
+    //
+    // Deliberate constraints:
+    //   * DESKTOP ONLY. A browser has nowhere safe to put it and never needs to.
+    //   * The user's OWN hash only, and only the one that just authenticated —
+    //     the terminal never receives the roster.
+    //   * bcrypt only. `needsUpgrade` above rewrites legacy hashes on sign-in,
+    //     so a legacy user is upgraded here and cacheable from the next time.
+    //   * NEVER override_pin_hash. That PIN authorises voids, discounts past the
+    //     floor and refunds, and is the one credential worth stealing off a
+    //     till, because the thief already has the till.
+    //
+    // The till wraps it with safeStorage (DPAPI), scopes it to this terminal and
+    // expires it. See apps/desktop/src/main/pinCache.ts.
+    offlineAuth: req.surface === 'desktop' && typeof matchedUser.pin_hash === 'string'
+      && matchedUser.pin_hash.startsWith('$2')
+      ? { pinHash: matchedUser.pin_hash }
+      : undefined,
   });
 });
 
@@ -1101,6 +1382,31 @@ router.post('/set-pin', requireAuth, async (req, res) => {
   if (tErr || !target) {
     res.status(404).json({ error: 'Staff member not found' });
     return;
+  }
+
+  // Enforce PIN uniqueness across the business (finding #11). Two staff sharing a
+  // PIN makes sales attribution ambiguous — a login can no longer tell who is
+  // ringing. bcrypt hashes are salted, so a plain unique index cannot catch this;
+  // we compare the new PIN against every OTHER active user's hash. N bcrypt
+  // compares on a rare admin action (setting a PIN) is an acceptable cost to keep
+  // attribution unambiguous on the hot path (login).
+  const { data: others } = await supabase
+    .from('users')
+    .select('id, pin_hash')
+    .eq('business_id', req.businessId)
+    .eq('status', 'active')
+    .not('pin_hash', 'is', null)
+    .neq('id', targetId);
+
+  for (const other of others ?? []) {
+    if (!(other as any).pin_hash) continue;
+    if (await bcrypt.compare(String(pin), String((other as any).pin_hash))) {
+      res.status(409).json({
+        error: 'That PIN is already in use by another staff member. Please choose a different one.',
+        code: 'PIN_NOT_UNIQUE',
+      });
+      return;
+    }
   }
 
   const newHash = await hashPinBcrypt(String(pin));

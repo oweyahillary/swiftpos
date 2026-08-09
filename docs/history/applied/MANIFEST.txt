@@ -1,0 +1,43 @@
+SwiftPOS — printing rebuild
+Supersedes the zips labelled v1 and v2. Nothing from either is missing.
+
+  shared/printing/          renderer, byte layer, transport and spool
+    src/                    11 modules, no runtime dependencies
+    test/                   4 suites
+    out/*.bin               ready-made ESC/POS streams for hardware testing
+    SAMPLE-OUTPUT.txt       six tickets rendered from one order
+    VERIFICATION.txt        byte-stream and transport test results
+    README.md               placement, wiring, and what is not built yet
+
+  apps/desktop/src/main/print/          spool store and IPC wiring
+  apps/desktop/src/renderer/screens/     the single printer setup screen
+
+  apps/print-server/        rewritten local bridge for the web POS
+                            zero dependencies, replaces the previous folder
+
+  docs/printing/            PRINTER-SETUP.md, for whoever installs a till
+  migrations/60_menu_composition.sql   the adaptive menu schema - no business-
+                            specific concepts, holds any menu as products + slots +
+                            options + attributes + category routing
+
+  docs/menu/                composition draft (zero blockers left), plus
+                            importer-proof.py and IMPORTER-PROOF.txt showing the
+                            same schema load a chicken shop, a coffee shop and a
+                            butchery with no code change
+
+UNPACK over the repo root. Paths are already repo-relative.
+
+BUILD
+  cd shared/printing && npm install && npx tsc
+  node dist/test/sample.js       renders every ticket, checks the tax maths
+  node dist/test/bytes.js        validates the ESC/POS stream, writes out/*.bin
+  node dist/test/transport.js    sends bytes over a real socket
+  node dist/test/spool.js        queue, backoff, offline catch-up, crash recovery
+
+DELETE (safe today, zero importers)
+  git rm apps/dashboard/src/lib/qzTray.ts
+  git rm apps/desktop/src/renderer/lib/qzTray.ts
+
+NOT hardware tested. No printer has printed any of this. The .bin files in
+shared/printing/out/ exist so that first test needs nothing but a cable —
+see docs/printing/PRINTER-SETUP.md section 3.

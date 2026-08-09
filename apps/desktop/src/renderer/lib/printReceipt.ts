@@ -123,6 +123,13 @@ export async function printDocument(
   return { ok: false, error: `${title} did not print. Check Settings → Printers.` };
 }
 
+/**
+ * ⚠ OWNER RULE (04 Aug 2026, corrected same day): the receipt prints at its
+ * NORMAL thermal size — the owner never asked for a font change and the zoom
+ * experiment is reverted. What the owner locked is the ARRANGEMENT
+ * (ReceiptView) and the footer stack; the print pipeline stays exactly as the
+ * field-approved papers were made.
+ */
 export async function printReceipt(
   receiptHtml: string,
   settings: PrinterSettings,

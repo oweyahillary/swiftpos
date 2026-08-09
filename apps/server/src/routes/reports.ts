@@ -4,6 +4,8 @@ import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes
 import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { branchScope, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { chunkIn } from '../lib/pgQuery';
+import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -35,29 +37,11 @@ function embedOne<T>(v: T | T[] | null | undefined): T | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-export async function chunkIn<T>(
-  table: string,
-  column: string,
-  ids: string[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // chunkIn already calls .select('*') before handing the builder over, so what
-  // refine receives is a filter builder, not a query builder. The old signature
-  // claimed the latter and made every `q => q.select(...)` caller fail to typecheck.
-  refine: (q: any) => any,
-  chunkSize = 500,
-): Promise<T[]> {
-  if (ids.length === 0) return [];
-  const results: T[] = [];
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize);
-    const q = supabase.from(table).select('*');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (refine(q) as any).in(column, chunk);
-    if (error) throw new Error(`chunkIn(${table}.${column}): ${error.message}`);
-    if (data) results.push(...data);
-  }
-  return results;
-}
+// chunkIn moved to lib/pgQuery.ts so shifts.ts and reports-export.ts can use it
+// too. It was already called 8 times in THIS file — the problem was that the
+// other two routes never got it, and that its default chunk size was 500, which
+// is 18.6KB of URL: over the 8KB limit it existed to stay under. Every call
+// here relied on the id lists happening to stay small.
 
 // East Africa Time. Filter dates are the business's local calendar day; we
 // convert to the UTC instants stored in created_at so a day-filter captures the
@@ -88,6 +72,7 @@ router.get('/sales', async (req, res) => {
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount,
       discount_amount, total, created_at, branch_id,
+      refunded_amount, refunded_at,
       branches ( name ),
       payments ( method, amount, status )
     `)
@@ -103,11 +88,14 @@ router.get('/sales', async (req, res) => {
   if (error) { res.status(500).json({ error: error.message }); return; }
 
   const o = orders ?? [];
-  const totalRevenue  = o.reduce((s, x) => s + Number(x.total), 0);
+  // Revenue and VAT are refund-adjusted: a fully refunded order contributes its
+  // gross to neither. Previously both counted at full value (see lib/orderTax.ts).
+  const salesAgg      = sumOrderTax(o as any);
+  const totalRevenue  = salesAgg.net;
   const totalOrders   = o.length;
   const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
   const totalDiscount = o.reduce((s, x) => s + Number(x.discount_amount ?? 0), 0);
-  const totalVat      = o.reduce((s, x) => s + Number(x.vat_amount ?? 0), 0);
+  const totalVat      = salesAgg.vat;
 
   // Payment method breakdown
   const methodTotals: Record<string, number> = {};
@@ -134,6 +122,11 @@ router.get('/sales', async (req, res) => {
     }
   });
 
+  // NOTE: the daily revenue series and the payment-method breakdown below stay
+  // at full `total` on purpose. They answer a cash-flow question — what the
+  // drawer took on each day, by method — not a recognised-revenue question. A
+  // refund is a separate cash event on its own day; netting it into the sale's
+  // day would misstate both. Only the revenue/VAT SUMMARY above is refund-adjusted.
   // Daily revenue series
   const dailyMap: Record<string, number> = {};
   o.forEach(order => {
@@ -213,7 +206,7 @@ router.get('/staff', async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('id, total, cashier_id, branch_id, branches ( name )')
+    .select('id, total, refunded_amount, refunded_at, cashier_id, branch_id, branches ( name )')
     .eq('business_id', req.businessId)
     .eq('status', 'completed')
     .gte('created_at', start)
@@ -242,7 +235,9 @@ router.get('/staff', async (req, res) => {
     const branch = embedOne<{ name: string }>((o as any).branches)?.name ?? '';
     if (!staffMap[key]) staffMap[key] = { name, branch, orders: 0, revenue: 0 };
     staffMap[key].orders++;
-    staffMap[key].revenue += Number(o.total);
+    // Net of refunds: a cashier's attributed sales should not include money
+    // handed back. Order count still counts the sale — it did happen.
+    staffMap[key].revenue += orderTax(o as any).net;
   });
 
   const staff = Object.entries(staffMap)
@@ -459,10 +454,8 @@ router.get('/eod', async (req, res) => {
       const sid = p.orders?.shift_id;
       if (sid) cashByShift[sid] = (cashByShift[sid] ?? 0) + Number(p.amount);
     });
-    const { data: floats } = await supabase
-      .from('float_transactions')
-      .select('shift_id, type, amount')
-      .in('shift_id', shiftIds);
+    const floats = await chunkIn<{ shift_id: string; type: string; amount: string }>(
+      'float_transactions', 'shift_id', shiftIds, q => q.select('shift_id, type, amount'));
     (floats ?? [] as Array<{ shift_id: string; type: string; amount: string }>).forEach(f => {
       if (!floatByShift[f.shift_id]) floatByShift[f.shift_id] = { in: 0, out: 0 };
       if (f.type === 'float_in')  floatByShift[f.shift_id].in  += Number(f.amount);
@@ -570,12 +563,8 @@ router.get('/shifts', async (req, res) => {
   // used below). It is not a column on `orders`, so this query failed — and
   // because the error is not destructured, `orders` came back null and every
   // shift silently reported zero revenue rather than erroring.
-  const { data: orders, error: ordersErr } = await supabase
-    .from('orders')
-    .select('shift_id, total')
-    .in('shift_id', shiftIds)
-    .eq('status', 'completed');
-  if (ordersErr) console.error('[reports/shifts] order totals failed:', ordersErr.message);
+  const orders = await chunkIn<{ shift_id: string | null; total: string }>(
+    'orders', 'shift_id', shiftIds, q => q.select('shift_id, total').eq('status', 'completed'));
 
   const orderMap: Record<string, { count: number; revenue: number }> = {};
   (orders ?? []).forEach(o => {
@@ -586,10 +575,8 @@ router.get('/shifts', async (req, res) => {
   });
 
   // ── Enrich with float transactions per shift ──────────────────────────────
-  const { data: floatTxns } = await supabase
-    .from('float_transactions')
-    .select('shift_id, type, amount')
-    .in('shift_id', shiftIds);
+  const floatTxns = await chunkIn<{ shift_id: string; type: string; amount: string }>(
+    'float_transactions', 'shift_id', shiftIds, q => q.select('shift_id, type, amount'));
 
   const floatMap: Record<string, { float_in: number; float_out: number }> = {};
   (floatTxns ?? []).forEach(f => {
@@ -654,7 +641,8 @@ router.get('/master', async (req, res) => {
     .from('orders')
     .select(`
       id, order_number, order_type, aggregator_name, status,
-      subtotal, vat_amount, discount_amount, total,
+      subtotal, vat_amount, ctl_amount, discount_amount, total,
+      refunded_amount, refunded_at,
       created_at, branch_id, cashier_id,
       branches ( name ),
       payments ( method, amount, status )
@@ -672,17 +660,17 @@ router.get('/master', async (req, res) => {
   const voided    = (allOrders ?? []).filter(o => o.status === 'voided');
 
   // ── 2. Sale summary ───────────────────────────────────────────────────────
-  // Bases are post-discount and VAT-inclusive: total = subtotal − discount,
-  // and vat_amount is the VAT embedded in total. Use `total` consistently so
-  // the figures reconcile (sum(subtotal) is pre-discount and must not be the base).
-  const grossInclVat  = completed.reduce((s, o) => s + Number(o.total), 0);
-  const totalVat      = completed.reduce((s, o) => s + Number(o.vat_amount ?? 0), 0);
+  // READ what the sale stored and REDUCE by any refund, rather than recompute.
+  // Previously a refunded order counted at full value and the levy was derived
+  // as net*ctlRate off (gross - vat), which double-applies the rate. See
+  // lib/orderTax.ts. gross keeps the full sale; net subtracts what was returned.
+  const saleAgg       = sumOrderTax(completed as any);
+  const grossInclVat  = saleAgg.net;      // retained after refunds
+  const totalVat      = saleAgg.vat;
   const totalDiscount = completed.reduce((s, o) => s + Number(o.discount_amount ?? 0), 0);
-  // CTL is charged on net-of-VAT sales; rate resolved from the business above.
-  const netBeforeTax = grossInclVat - totalVat;
-  const totalCtl     = ctlApplies ? netBeforeTax * CTL_RATE : 0;
-  const totalSale    = grossInclVat;
-  const netSales     = netBeforeTax - totalCtl;
+  const totalCtl      = saleAgg.ctl;
+  const totalSale     = grossInclVat;
+  const netSales      = saleAgg.netOfTax;
 
   // ── 3. Channel split ──────────────────────────────────────────────────────
   const channels: Record<string, number> = {
@@ -835,6 +823,12 @@ router.get('/hourly', async (req, res) => {
   // Daily series for sparkline
   const dailyMap: Record<string, { revenue: number; orders: number }> = {};
 
+  // NOTE: hourly/day-of-week/daily revenue here stay at gross `total` on
+  // purpose. This is a DEMAND-TIMING report — when orders land, to shape a rota
+  // — not a recognised-revenue one. An order rung at the 1pm peak was real
+  // custom at 1pm even if refunded next day; netting the refund into the 1pm bar
+  // would misrepresent the peak. Contrast /staff, /splh, /aggregator above,
+  // which net out refunds because they attribute EARNED revenue.
   for (const o of orders ?? []) {
     const dt  = new Date(o.created_at);
     const h   = dt.getHours();
@@ -975,7 +969,8 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
   let query = supabase
     .from('orders')
     .select(`
-      id, subtotal, vat_amount, total, branch_id,
+      id, subtotal, vat_amount, ctl_amount, total, branch_id,
+      refunded_amount, refunded_at,
       branches ( name ),
       order_items ( category_name, subtotal )
     `)
@@ -988,54 +983,54 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
-  // Authoritative figures are per-order and post-discount:
-  //   gross (VAT-incl) = total ; VAT = vat_amount (what was actually charged).
-  // Everything else is derived from these so the report reconciles end to end
-  // (and ties to what eTIMS transmitted).
-  const grossSales   = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
-  const vatTotal     = (orders ?? []).reduce((s, o) => s + Number(o.vat_amount ?? 0), 0);
-  const netBeforeTax = grossSales - vatTotal;
-  const ctlTotal     = netBeforeTax * CTL_RATE;
-  const netSales     = netBeforeTax - ctlTotal;
+  // Authoritative figures are READ from what the sale stored and REDUCED by any
+  // refund, not recomputed. Two bugs closed here (see lib/orderTax.ts):
+  //   - a refunded order previously counted at full value, overstating output
+  //     VAT by the refunded amount — the direction a tax authority notices;
+  //   - the levy was derived as (gross - vat) * ctlRate, which double-applies
+  //     the rate because gross - vat already includes the levy. ctl_amount holds
+  //     what was actually charged and transmitted to eTIMS.
+  const agg = sumOrderTax(orders ?? []);
+  const grossSales   = agg.net;          // gross retained after refunds
+  const vatTotal     = agg.vat;
+  const ctlTotal     = agg.ctl;
+  const netSales     = agg.netOfTax;
 
-  // By category — allocate each order's actual total & vat_amount across its
-  // items in proportion to item subtotal, so category totals SUM BACK to the
-  // order-level figures above (no second, divergent VAT calculation).
+  // By category — allocate each order's actual figures across its items in
+  // proportion to item subtotal, so category totals SUM BACK to the summary
+  // above. Reads stored vat_amount and ctl_amount and applies the kept fraction,
+  // rather than re-deriving the levy.
   const catTaxMap: Record<string, { category: string; grossSales: number; vatAmount: number; ctlAmount: number; netSales: number }> = {};
   for (const o of orders ?? []) {
     const items = (o.order_items ?? []) as Array<{ category_name: string | null; subtotal: string }>;
     const itemsTotal = items.reduce((s, it) => s + Number(it.subtotal), 0);
-    const oTotal = Number(o.total);
-    const oVat   = Number(o.vat_amount ?? 0);
+    const f = orderTax(o as any);
     for (const item of items) {
       const cat    = item.category_name ?? 'Uncategorised';
       const weight = itemsTotal > 0 ? Number(item.subtotal) / itemsTotal : 0;
-      const gross  = oTotal * weight;
-      const vat    = oVat * weight;
-      const net    = gross - vat;
-      const ctl    = net * CTL_RATE;
+      const gross  = f.net * weight;      // refund-adjusted gross
+      const vat    = f.vat * weight;
+      const ctl    = f.ctl * weight;
+      const net    = gross - vat - ctl;
       if (!catTaxMap[cat]) catTaxMap[cat] = { category: cat, grossSales: 0, vatAmount: 0, ctlAmount: 0, netSales: 0 };
       catTaxMap[cat].grossSales += gross;
       catTaxMap[cat].vatAmount  += vat;
       catTaxMap[cat].ctlAmount  += ctl;
-      catTaxMap[cat].netSales   += net - ctl;
+      catTaxMap[cat].netSales   += net;
     }
   }
 
-  // By branch — same post-discount basis.
+  // By branch — same read-and-adjust basis.
   const branchTaxMap: Record<string, { branchName: string; grossSales: number; vatAmount: number; ctlAmount: number; netSales: number }> = {};
   for (const o of orders ?? []) {
     const bid   = o.branch_id;
     const bname = embedOne<{ name: string }>((o as any).branches)?.name ?? bid;
     if (!branchTaxMap[bid]) branchTaxMap[bid] = { branchName: bname, grossSales: 0, vatAmount: 0, ctlAmount: 0, netSales: 0 };
-    const oGross = Number(o.total);
-    const oVat   = Number(o.vat_amount ?? 0);
-    const oNet   = oGross - oVat;
-    const oCtl   = oNet * CTL_RATE;
-    branchTaxMap[bid].grossSales += oGross;
-    branchTaxMap[bid].vatAmount  += oVat;
-    branchTaxMap[bid].ctlAmount  += oCtl;
-    branchTaxMap[bid].netSales   += oNet - oCtl;
+    const f = orderTax(o as any);
+    branchTaxMap[bid].grossSales += f.net;
+    branchTaxMap[bid].vatAmount  += f.vat;
+    branchTaxMap[bid].ctlAmount  += f.ctl;
+    branchTaxMap[bid].netSales   += f.netOfTax;
   }
 
   res.json({
@@ -1047,6 +1042,8 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
       ctlTotal,
       netSales,
       totalOrders: (orders ?? []).length,
+      refundedOrders: agg.refundedCount,
+      refundedAmount: agg.refunded,
     },
     byCategory: Object.values(catTaxMap).sort((a, b) => b.grossSales - a.grossSales),
     byBranch:   Object.values(branchTaxMap).sort((a, b) => b.grossSales - a.grossSales),
@@ -1303,7 +1300,7 @@ router.get('/aggregator', requirePermission('reports.financial'), async (req, re
   // 1. Fetch aggregator orders
   let ordersQ = supabase
     .from('orders')
-    .select('id, order_type, aggregator_name, total, subtotal, vat_amount, created_at, branch_id')
+    .select('id, order_type, aggregator_name, total, subtotal, vat_amount, refunded_amount, refunded_at, created_at, branch_id')
     .eq('business_id', req.businessId)
     .eq('status', 'completed')
     .eq('order_type', 'aggregator')
@@ -1346,7 +1343,11 @@ router.get('/aggregator', requirePermission('reports.financial'), async (req, re
         netRevenue: 0,
       };
     }
-    const gross = Number(o.total);
+    // Refund-adjusted: a refunded aggregator order should not count toward the
+    // platform's gross, and commission is on money actually retained. `keep` is
+    // the fraction not refunded.
+    const keep  = keptFraction(o as any);
+    const gross = Number(o.total) * keep;
     const comm  = gross * (platformMap[platform].commissionPct / 100);
     platformMap[platform].orders++;
     platformMap[platform].grossRevenue  += gross;
@@ -1400,15 +1401,15 @@ router.get('/splh', requirePermission('reports.financial'), async (req, res) => 
 
   // 2. Revenue per shift from orders
   const shiftIds = shifts.map(s => s.id);
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('shift_id, total')
-    .in('shift_id', shiftIds)
-    .eq('status', 'completed');
+  const orders = await chunkIn<{ shift_id: string | null; total: string; refunded_amount: string; refunded_at: string | null }>(
+    'orders', 'shift_id', shiftIds,
+    q => q.select('shift_id, total, refunded_amount, refunded_at').eq('status', 'completed'));
 
   const revenueByShift: Record<string, number> = {};
   for (const o of orders ?? []) {
-    revenueByShift[o.shift_id] = (revenueByShift[o.shift_id] ?? 0) + Number(o.total);
+    // Net of refunds — SPLH is sales per labour hour, and refunded money is not
+    // sales. Overstating revenue here flatters labour efficiency.
+    revenueByShift[o.shift_id] = (revenueByShift[o.shift_id] ?? 0) + orderTax(o as any).net;
   }
 
   // 3. Fetch cashier hourly rates + names
@@ -1674,10 +1675,10 @@ router.get('/pump-monitor', async (req, res) => {
 
   const soldByProduct: Record<string, { litres: number; revenue: number; transactions: number }> = {};
   if ((todayOrders ?? []).length) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('product_id, quantity, subtotal')
-      .in('order_id', (todayOrders ?? [] as Array<{ id: string; total: string; pump_id?: string | null }>).map(o => o.id));
+    const items = await chunkIn<{ product_id: string | null; quantity: string; subtotal: string }>(
+      'order_items', 'order_id',
+      (todayOrders ?? [] as Array<{ id: string }>).map(o => o.id),
+      q => q.select('product_id, quantity, subtotal'));
     for (const i of items ?? []) {
       if (!i.product_id) continue;
       if (!soldByProduct[i.product_id]) soldByProduct[i.product_id] = { litres: 0, revenue: 0, transactions: 0 };
@@ -1780,10 +1781,8 @@ router.get('/wet-stock', async (req, res) => {
 
   const consumedByProduct: Record<string, number> = {};
   if (fuelOrderIds.length) {
-    const { data: items } = await supabase
-      .from('order_items')
-      .select('product_id, quantity')
-      .in('order_id', fuelOrderIds);
+    const items = await chunkIn<{ product_id: string | null; quantity: string }>(
+      'order_items', 'order_id', fuelOrderIds, q => q.select('product_id, quantity'));
     for (const i of items ?? []) {
       if (!i.product_id) continue;
       consumedByProduct[i.product_id] = (consumedByProduct[i.product_id] ?? 0) + Number(i.quantity);
@@ -1793,18 +1792,28 @@ router.get('/wet-stock', async (req, res) => {
   // Build per-tank report
   const tankReport = (tanks ?? [] as Array<{ id: string; name: string; capacity: number | string; current_level: number | string; fuel_product_id: string | null; products?: { name: string; base_price: string } | null }>).map(tank => {
     const pid = tank.fuel_product_id;
-    const pct = tank.capacity_litres > 0
-      ? Math.round((tank.current_level / tank.capacity_litres) * 100) : 0;
+    // Number() on every side (audit C7). capacity_litres, current_level and
+    // reorder_level are all `numeric`, which PostgREST returns as STRINGS.
+    //
+    // Division coerced, so level_pct was right. The COMPARISON did not, and
+    // "800" <= "1000" is FALSE — string comparison is lexicographic. A tank at
+    // 800 L against a 1,000 L reorder level reported NOT low, so the reorder
+    // alert failed in the direction of running the site dry. The correct
+    // percentage sat in the column beside it, which is why nobody caught it.
+    const level    = Number(tank.current_level);
+    const capacity = Number(tank.capacity_litres);
+    const reorder  = Number(tank.reorder_level);
+    const pct = capacity > 0 ? Math.round((level / capacity) * 100) : 0;
     return {
       id:              tank.id,
       name:            tank.name,
       product_name:    tank.products?.name ?? 'Unknown',
       price_per_litre: tank.products?.base_price ?? 0,
-      capacity_litres: tank.capacity_litres,
-      current_level:   tank.current_level,
-      reorder_level:   tank.reorder_level,
+      capacity_litres: capacity,
+      current_level:   level,
+      reorder_level:   reorder,
       level_pct:       pct,
-      is_low:          tank.current_level <= tank.reorder_level,
+      is_low:          level <= reorder,
       delivered_litres: deliveriesByProduct[pid]?.litres ?? 0,
       delivery_count:   deliveriesByProduct[pid]?.count  ?? 0,
       consumed_litres:  consumedByProduct[pid] ?? 0,
