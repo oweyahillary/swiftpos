@@ -380,12 +380,37 @@ jobs:
       # at rest, held orders — was guarded only by a command someone had to
       # remember to type on a Windows box.
       #
-      # These two are plain node and run anywhere. The other three
+      # These three are plain node and run anywhere. The other three
       # (heldOrders, pinCache, tokenStore) drive better-sqlite3, which
       # postinstall builds against ELECTRON's ABI (NODE_MODULE_VERSION 133),
       # so plain node cannot load them at all — ERR_DLOPEN_FAILED, by design.
       # They stay a target-machine step via `npm run test:desktop`, and this
       # comment exists so the next person does not "fix" that by adding them.
+      #
+      # THEY IMPORT dist/main, SO THE BUILD BELOW IS NOT OPTIONAL. CI #42 failed
+      # with "dist/main not built" because these steps were added without it;
+      # `npm run test:desktop` builds first locally, which is why it passed there
+      # and not here.
+      #
+      # --ignore-scripts and ELECTRON_SKIP_BINARY_DOWNLOAD keep this to a
+      # typecheck-sized install: the Electron binary is ~100MB and nothing in
+      # this job launches it. shared/printing is a project reference of
+      # tsconfig.main.json and declares "types": ["node"], so it needs its own
+      # node_modules or the build fails on a missing type definition.
+      - name: Install shared/printing (project reference)
+        working-directory: shared/printing
+        run: npm ci --ignore-scripts
+
+      - name: Install desktop deps (no Electron binary)
+        working-directory: apps/desktop
+        run: npm ci --ignore-scripts
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Build desktop main
+        working-directory: apps/desktop
+        run: npx tsc -b tsconfig.main.json --force
+
       - name: Desktop durable logging
         working-directory: apps/desktop
         run: node --no-warnings test/logFile.test.mjs

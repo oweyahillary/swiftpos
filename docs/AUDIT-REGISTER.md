@@ -580,6 +580,45 @@ and the real cause is buried in the noise, which is precisely what the owner saw
 This could not be proved from Linux (`fileURLToPath` is platform-dependent), and
 it is the second time in one day that only the target could settle a claim.
 
+### A34 · P1 · CLOSED 08-10 · CI #42 red — desktop suites added without the build they need
+```
+Run node --no-warnings test/logFile.test.mjs
+dist/main not built. Run:  npx tsc -b tsconfig.main.json --force
+```
+
+`logFile`, `syncEngine-failures` and `failover-cursors` import from
+`apps/desktop/dist/main`. `npm run test:desktop` builds first — which is exactly
+why they pass on the target and failed on the runner. **I added the CI steps and
+not the build**, and could not have found it locally, because locally the build
+had already happened.
+
+The `desktop-scope` job installed only `better-sqlite3` at the repo root, which
+is all the `scripts/*.mjs` gates need. Three steps added:
+
+- `npm ci --ignore-scripts` in **shared/printing** — it is a project reference of
+  `tsconfig.main.json` and declares `"types": ["node"]`, so without its own
+  `node_modules` the build fails on a missing type definition. Non-obvious, and
+  it cost a cycle to find the first time.
+- `npm ci --ignore-scripts` in **apps/desktop** with
+  `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — the Electron binary is ~100MB and nothing
+  in this job launches it.
+- `npx tsc -b tsconfig.main.json --force`.
+
+**Verified against a genuinely clean checkout**, not the working tree: extracted
+`git archive HEAD` to a fresh directory with no `node_modules`, ran the three
+steps in order, then all three suites — 12, 29 and 12 passed. That is the closest
+reproduction of a runner available here.
+
+The other five jobs — typecheck, build, secret scan, schema drift and **server
+suites, including the 7 migration files** — were green on the same run. Only this
+one failed.
+
+**The general point:** CI is the first environment in this project that starts
+from nothing. Everything local benefits from state built up by hand, and A32
+(six migration tests never run) and A31 (a suite never wired in) were both
+invisible for the same reason. Expect more of this on the next few runs; each
+one is a real gap, not noise.
+
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 The unifying finding. `REPLICATED_TABLES` is `orders, shifts, float_transactions,
 expenses, business_days, events` — **all sales-side**. Everything a till READS
@@ -1009,6 +1048,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-07 | Live schema dump reviewed. Added B6, C7-C9, §0 dump caveat. BUG-19 upgraded and sized. |
 | 2026-08-08 | G1-G7 shipped. 31 items closed. Printing migrated to ESC/POS end to end (P-01…P-19). Two new gates. Register restructured: open items first, closed items retained as evidence. |
 | 2026-08-08 | Desktop audit (D1-D15) and Beryl sync investigation. Migration ledger reconciled against production (§M). Migration 46 applied. D12 and A1 packaging closed. Header counts and commit corrected. |
+| 2026-08-10 | CI #42: desktop-scope red — the three desktop suites import dist/main and the job never built it. Build + the two installs added, verified from a clean checkout. Other five jobs green, including all 7 migration files. |
 | 2026-08-10 | A32: six migration tests existed and none ran; test-migration-47 had never worked (hardcoded sandbox path, 19 dead assertions). Runner added, all 7 in CI. A33: Windows path bug in my harness. |
 | 2026-08-10 | Target run: 92 desktop tests green under real Electron ABI. A31 found — failover-cursors was never wired into test:desktop, A16 repeated in the batch that closed A16. A9 measured: 23/3-critical is desktop, server is 6/0. |
 | 2026-08-10 | Migration 74 failed on the owner's database (42P16). Fixed, plus a second idempotency bug only execution found. Migrations now run against real Postgres (PGlite) in CI — 17 tests. A30 closed. |

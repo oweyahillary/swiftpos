@@ -1017,3 +1017,58 @@ first. Worth recording, because the wrong conclusion was one step away.
 
 A33 (the Windows path bug) is fixed — proved on the owner's machine, as it could
 only be. Second time in one day that only the target could settle a claim.
+
+---
+
+# Batch 2026-08-10-**i** — A34 · CI #42 desktop-scope fix
+
+| File | Change |
+|---|---|
+| `.github/workflows/ci.yml` | +3 steps in `desktop-scope`: install shared/printing, install apps/desktop without the Electron binary, build `dist/main` |
+| `docs/AUDIT-REGISTER.md` | A34 |
+
+## The failure
+
+```
+dist/main not built. Run:  npx tsc -b tsconfig.main.json --force
+```
+
+Those three suites import compiled output. `npm run test:desktop` builds first,
+which is why they pass on the target. **I added the CI steps and not the build**
+— and could not have caught it locally, because locally the build had already
+happened.
+
+## Verified from a genuinely clean checkout
+
+Not the working tree. `git archive HEAD` extracted to an empty directory with no
+`node_modules`, then the three new steps in order:
+
+```
+shared/printing  npm ci --ignore-scripts                 exit 0
+apps/desktop     npm ci --ignore-scripts (no Electron)   exit 0
+apps/desktop     npx tsc -b tsconfig.main.json --force   exit 0  → dist/main built
+  logFile             12 passed
+  syncEngine-failures 29 passed
+  failover-cursors    12 passed  [node:sqlite stand-in, as declared]
+```
+
+**shared/printing is the non-obvious one:** it is a project reference of
+`tsconfig.main.json` and declares `"types": ["node"]`, so without its own
+`node_modules` the build fails on a missing type definition. It cost a cycle to
+find the first time too.
+
+`--ignore-scripts` + `ELECTRON_SKIP_BINARY_DOWNLOAD` keep this to a
+typecheck-sized install; nothing in the job launches Electron.
+
+## What else that run told us
+
+The other **five jobs were green**, including `server-suites` — so the 20 server
+suites and all **7 migration files ran on a runner for the first time and
+passed**. Only `desktop-scope` failed.
+
+## The pattern
+
+CI is the first environment in this project that starts from nothing. Everything
+local benefits from state assembled by hand — which is precisely why A31 (a suite
+never wired in) and A32 (six migration tests never run) stayed invisible.
+**Expect one or two more of these; each is a real gap, not noise.**
