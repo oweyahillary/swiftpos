@@ -8,9 +8,13 @@
     "dev:dashboard": "cd apps/dashboard && npm run dev",
     "install:all": "cd apps/server && npm install && cd ../dashboard && npm install",
     "package": "git archive --format=zip HEAD -o pos.zip",
-    "package:check": "node scripts/check-package.mjs"
+    "package:check": "node scripts/check-package.mjs",
+    "test:migrations": "node scripts/run-migration-tests.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4"
   }
 }

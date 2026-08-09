@@ -64,7 +64,51 @@ Read it first. Everything below is one session's application of it.
     with an explicit list of what the other side must check. Nothing is marked
     closed on bench evidence alone.
 
-### The environment note (rule 9, expanded)
+### Working with this codebase (added 2026-08-09, owner)
+
+**Rule numbers are stable and never reused.** These append rather than slot into
+the sections above, because 9, 10, 14 and 15 are cited by ID across the register
+and every manifest, and renumbering would silently break those references.
+
+17. **Assume it is already built, halfway.** Before writing a line, sweep for the
+    existing implementation and read it. This codebase's defining pattern is a
+    subsystem complete at every layer except one wire — ESC/POS was built,
+    tested and left unconnected; `adjust_product_stock` existed for a migration
+    before anything called it; `chunkIn` had nine call sites while a handoff
+    said zero. **Proposing something that already exists is worse than
+    proposing nothing**, because it gets built twice and the two copies drift.
+    Rule 5 says read the source instead of the docs; this says read it before
+    designing, not after.
+    - Say what already exists, then what is genuinely missing, then the delta.
+    - When a design turns out to duplicate existing machinery, **say so plainly
+      and withdraw it.** PHASE5 proposed a new `branch_staff` table when the
+      local `users` table was already there and already synced.
+
+18. **Zip only when code changed.** A batch that touches nothing but `.md` gets
+    the changed file and the manifest entry — no archive. Zips are for applying
+    code, and one that carries only prose trains the eye to skip them.
+
+19. **Nothing but `README.md` in the repo root.** Documents live in `docs/` —
+    manifests, handoffs, designs, notes, all of it. A cluttered root is how the
+    ~140 stray zips happened, and it is how a stale file gets read as current.
+
+20. **Be sure before you proceed, then build it clean and do not break it.**
+    Uncertainty is a reason to check or to ask, never a reason to ship something
+    approximate and see what happens. Concretely, in this repo:
+    - **A green from every existing gate is part of "not broken"**, not an
+      optional extra. Run them before claiming anything.
+    - **Never loosen a gate to accommodate your own change.** If an assertion
+      complains, the change moves, not the assertion. `test-office-role` checks
+      by source-text regex within a character window; comments pushed an audit
+      line outside it, and the right fix was restructuring the handler, not
+      widening the window.
+    - **If the right guard does not exist yet, do not ship the thing that needs
+      it.** Record it as a finding and name the blocker. `device_role` does not
+      exist server-side, so the endpoint that hands out PIN hashes was not built
+      (A25).
+    - Additive beats clever. One file restorable, one rollback line.
+
+
 
 The tills run **Windows, Node 20, Electron 35.7.5**. Three separate breakages in
 one session came from assuming otherwise:

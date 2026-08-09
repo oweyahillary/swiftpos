@@ -209,6 +209,66 @@ jobs:
             exit 1
           fi
 
+  server-suites:
+    # tests/*.test.mjs — 18 suites covering the money paths (atomic order, tip
+    # reconciliation, /pay claim-and-loyalty, stock effects parity, discount
+    # ceiling, offline dating) and the auth resolution bugs.
+    #
+    # NONE of these ran in CI until 2026-08-09. They were written one per
+    # incident, passed on the author's machine, and were then never executed
+    # again — so every one of them was decoration the moment its session ended.
+    # A test nothing runs is worth about as much as no test (rule 10).
+    #
+    # These are offline model/unit suites: no server, no database, no secrets.
+    # tests/suites/ and tests/runner.mjs are the INTEGRATION half and are
+    # deliberately excluded — they need a live API and owner credentials.
+    name: Server suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install server deps
+        working-directory: apps/server
+        run: npm ci
+
+      # order-error-classification imports apps/server/dist, so that it drives
+      # the SHIPPED classifier rather than a copy of it that can drift.
+      - name: Build server
+        working-directory: apps/server
+        run: npm run build
+
+      # EVERY migration test, against a real Postgres. PGlite is Postgres
+      # compiled to WASM — real parser, planner and DDL semantics, in-process.
+      #
+      # This repository has tested migrations this way since migration 41 and
+      # had six such scripts by 2026-08-10, none of which ran in CI. The cost
+      # was exactly what a test nothing invokes always costs:
+      #   * test-migration-47.mjs pointed at an absolute sandbox path and had
+      #     never run since the day it was committed — 19 dead assertions.
+      #   * Migration 74 shipped a CREATE OR REPLACE VIEW that Postgres refuses
+      #     (42P16) and reached the owner's database.
+      #
+      # The runner discovers scripts/test-migration*.mjs rather than listing
+      # them, so a new one is covered by existing.
+      - name: Migrations against real Postgres
+        run: |
+          npm install --no-audit --no-fund
+          npm run test:migrations
+
+      - name: Run offline suites
+        run: |
+          set -e
+          fail=0
+          for f in tests/*.test.mjs; do
+            echo "── $f"
+            node --no-warnings "$f" || fail=1
+          done
+          exit $fail
+
   desktop-scope:
     name: Desktop row scope
     runs-on: ubuntu-latest
@@ -313,3 +373,32 @@ jobs:
       # not be routed. tsc cannot see a bridge gap; this can, both directions.
       - name: IPC bridge parity
         run: node scripts/check-ipc-parity.mjs
+
+      # ── Desktop suites that do NOT need Electron ────────────────────────────
+      # 92 desktop tests were added on 2026-08-08 and none of them ran here, so
+      # the newest and riskiest code on the till — offline sign-in, credentials
+      # at rest, held orders — was guarded only by a command someone had to
+      # remember to type on a Windows box.
+      #
+      # These two are plain node and run anywhere. The other three
+      # (heldOrders, pinCache, tokenStore) drive better-sqlite3, which
+      # postinstall builds against ELECTRON's ABI (NODE_MODULE_VERSION 133),
+      # so plain node cannot load them at all — ERR_DLOPEN_FAILED, by design.
+      # They stay a target-machine step via `npm run test:desktop`, and this
+      # comment exists so the next person does not "fix" that by adding them.
+      - name: Desktop durable logging
+        working-directory: apps/desktop
+        run: node --no-warnings test/logFile.test.mjs
+
+      - name: Desktop sync failure reporting
+        working-directory: apps/desktop
+        run: node --no-warnings test/syncEngine-failures.test.mjs
+
+      # Runs here on node:sqlite — a STAND-IN, and the suite says so in its own
+      # output rather than implying a hardware-equivalent green. It still catches
+      # a broken cursor reset, which is the point. The real ABI run is
+      # `npm run test:failover:electron` on a Windows till, wired into
+      # `test:desktop` so it cannot be forgotten the way it was on 2026-08-10.
+      - name: Desktop failover cursors (stand-in driver)
+        working-directory: apps/desktop
+        run: node --no-warnings test/failover-cursors.test.mjs
