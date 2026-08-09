@@ -34,6 +34,7 @@
  */
 
 import { Router }   from 'express';
+import { registerDesktopTerminal } from '../lib/deviceRegistry';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
@@ -250,6 +251,52 @@ async function revokeRefreshToken(refreshToken: string): Promise<void> {
  * Fetch the current permissions_version for a user.
  * Returns 1 as fallback if the column doesn't exist yet (pre-migration).
  */
+/**
+ * Resolve the public.users row for an owner, by email, within one business.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Two sites (/login and /desktop-login) did `.eq('email', data.user.email)` —
+ * a CASE-SENSITIVE match against a column that stores whatever was typed at
+ * signup, while Supabase Auth lowercases. A miss is not harmless: both callers
+ * fall back to `data.user.id`, which is an **auth.users** id, and mint a token
+ * carrying it as `userId`.
+ *
+ * `orders.cashier_id` is `REFERENCES public.users(id)`. So a token built from
+ * that fallback makes every order push fail 23503 for the entire life of the
+ * refresh chain — /refresh reuses `cleanPayload.userId` and never re-resolves.
+ * That is the shape of the eight orders lost on 2026-08-07.
+ *
+ * pos-login already solved this (BUG-05): a coarse escaped `ilike` to get
+ * candidates, then an exact case-insensitive compare in JS. `ilike` alone is a
+ * PATTERN match and `_` is a legal email character, so `john_doe@x` would match
+ * `johnXdoe@x`. Same approach here rather than a second, subtly different one.
+ */
+async function resolveOwnerUserRow(
+  businessId: string,
+  email: string | null | undefined,
+): Promise<{ id: string; must_change_password?: boolean } | null> {
+  const needle = String(email ?? '').trim().toLowerCase();
+  if (!needle) return null;
+
+  const likeSafe = needle.replace(/[\\%_]/g, ch => `\\${ch}`);
+
+  const { data: candidates, error } = await supabase
+    .from('users')
+    .select('id, email, must_change_password')
+    .eq('business_id', businessId)
+    .ilike('email', likeSafe)
+    .limit(200);
+
+  if (error) return null;
+
+  // Exact match, not a pattern match. This is what neutralises % and _.
+  const match = (candidates ?? []).find(
+    (u: any) => String(u.email ?? '').trim().toLowerCase() === needle,
+  );
+  return (match as any) ?? null;
+}
+
 async function getPermissionsVersion(userId: string): Promise<number> {
   const { data } = await supabase
     .from('users')
@@ -541,12 +588,10 @@ router.post('/login', async (req, res) => {
     return;
   }
 
-  const { data: ownerUser } = await supabase
-    .from('users')
-    .select('id, must_change_password')
-    .eq('business_id', business.id)
-    .eq('email', data.user.email)
-    .maybeSingle();
+  // Case-insensitive, pattern-safe. A miss here used to fall through to
+  // data.user.id (an auth.users id) and poison every order push — see
+  // resolveOwnerUserRow.
+  const ownerUser = await resolveOwnerUserRow(business.id, data.user.email);
 
   let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
   if (mustChangePassword) {
@@ -566,8 +611,23 @@ router.post('/login', async (req, res) => {
   // Fetch permissions_version for owner
   const pv = ownerUser ? await getPermissionsVersion((ownerUser as any).id) : 1;
 
+  if (!ownerUser) {
+    console.error(
+      '[auth] no public.users row for this owner — issuing a token whose userId ' +
+      'is an auth.users id. Every order pushed under it will fail 23503 on ' +
+      'orders_cashier_id_fkey until a users row exists and the owner signs in again.',
+      { businessId: business.id, email: data.user.email },
+    );
+  }
+
   const sessionId = newSessionId();
   const payload: TokenPayload = {
+    // FALLBACK OF LAST RESORT. data.user.id is an auth.users id, and
+    // orders.cashier_id REFERENCES public.users(id) — so a token built from
+    // this branch makes every order push fail 23503 until the owner signs in
+    // again, because /refresh reuses userId and never re-resolves it.
+    // Login is NOT refused here: a release is in flight and an owner who works
+    // today must still work tomorrow. But it is no longer silent.
     userId:             ownerUser ? (ownerUser as any).id : data.user.id,
     businessId:         business.id,
     branchId:           null,
@@ -650,12 +710,10 @@ router.post('/desktop-login', async (req, res) => {
     return;
   }
 
-  const { data: ownerUser } = await supabase
-    .from('users')
-    .select('id, must_change_password')
-    .eq('business_id', business.id)
-    .eq('email', data.user.email)
-    .maybeSingle();
+  // Case-insensitive, pattern-safe. A miss here used to fall through to
+  // data.user.id (an auth.users id) and poison every order push — see
+  // resolveOwnerUserRow.
+  const ownerUser = await resolveOwnerUserRow(business.id, data.user.email);
 
   let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
   if (mustChangePassword) {
@@ -674,8 +732,48 @@ router.post('/desktop-login', async (req, res) => {
 
   const pv = ownerUser ? await getPermissionsVersion((ownerUser as any).id) : 1;
 
+  // D14 — record this terminal. /desktop-login registered NOTHING before, and
+  // /pos-login only registered when the business had opted into
+  // `require_device_registration` (and never for an owner, who is exempt). So a
+  // till like Beryl's had no user_devices row at all, which silently disabled
+  // migration 52's branch binding and threw away every telemetry write.
+  //
+  // Unconditional and independent of that setting: a desktop till is a
+  // registered terminal by nature, whereas the setting is about approving
+  // BROWSER sign-ins. Registration is not authorisation — see deviceRegistry.ts.
+  //
+  // Awaited, but it returns null rather than throwing: a sign-in must never
+  // fail over a telemetry row.
+  if (ownerUser) {
+    await registerDesktopTerminal(business.id, (ownerUser as any).id, {
+      deviceId:     String(req.body?.device_id ?? ''),
+      appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
+      terminalCode: req.body?.terminal_code ?? null,
+      ipAddress:    req.ip ?? null,
+      // Migration 73 — what this terminal IS. An office machine serves the
+      // branch and cannot sell; it must not be recorded, labelled or (later)
+      // seat-counted as a till.
+      role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+    });
+  }
+
+  if (!ownerUser) {
+    console.error(
+      '[auth] no public.users row for this owner — issuing a token whose userId ' +
+      'is an auth.users id. Every order pushed under it will fail 23503 on ' +
+      'orders_cashier_id_fkey until a users row exists and the owner signs in again.',
+      { businessId: business.id, email: data.user.email },
+    );
+  }
+
   const sessionId = newSessionId();
   const payload: TokenPayload = {
+    // FALLBACK OF LAST RESORT. data.user.id is an auth.users id, and
+    // orders.cashier_id REFERENCES public.users(id) — so a token built from
+    // this branch makes every order push fail 23503 until the owner signs in
+    // again, because /refresh reuses userId and never re-resolves it.
+    // Login is NOT refused here: a release is in flight and an owner who works
+    // today must still work tomorrow. But it is no longer silent.
     userId:             ownerUser ? (ownerUser as any).id : data.user.id,
     businessId:         business.id,
     branchId:           null,
@@ -1197,6 +1295,21 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   }
 
   const sessionId = newSessionId();
+
+  // D14 — a cashier signing in on a till is the other moment a terminal
+  // announces itself. checkDeviceRegistration above still owns BROWSER approval
+  // and is untouched; this records the terminal regardless, and only for
+  // desktop. Between this and /desktop-login every till gets a row on its first
+  // sign-in without anybody enabling anything.
+  if (req.surface === 'desktop') {
+    await registerDesktopTerminal(req.businessId as string, matchedUser.id, {
+      deviceId:     String(req.body?.device_id ?? ''),
+      appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
+      terminalCode: req.body?.terminal_code ?? null,
+      ipAddress:    req.ip ?? null,
+      role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+    });
+  }
   const pv = matchedUser.permissions_version ?? 1;
 
   const tokenPayload: TokenPayload = {

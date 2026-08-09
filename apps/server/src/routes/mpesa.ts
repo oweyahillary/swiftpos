@@ -47,6 +47,7 @@ import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { decryptSecret } from '../lib/crypto';
+import { sendError }   from '../lib/sendError';
 
 const router = safeRouter();
 
@@ -215,20 +216,44 @@ router.post('/stk-push', requireAuth, async (req, res) => {
   // amount unrelated to the bill. The amount now comes ONLY from the pending
   // mpesa payment row that order creation already wrote (orders.ts), which
   // was itself derived from the order total there — never from this request.
-  const { data: pendingLeg, error: legErr } = await supabase
+  // BUG-17. This was `.single()`, which raises PGRST116 the moment an order has
+  // MORE than one mpesa leg — and a refunded order has exactly that: the
+  // original leg plus the refund leg (migration 37 keeps orders.status
+  // 'completed' on refund, so both rows persist). The cashier was told "No
+  // M-Pesa payment leg found" for an order that plainly had one, and a retried
+  // STK push on a partially-refunded bill was impossible.
+  //
+  // Fetch all legs and choose deliberately: the pending one is what an STK push
+  // is for. Oldest-first so that where several are somehow pending, the original
+  // is retried rather than an arbitrary row.
+  const { data: legs, error: legErr } = await supabase
     .from('payments')
-    .select('id, amount, status')
+    .select('id, amount, status, created_at')
     .eq('order_id', order_id)
     .eq('business_id', req.businessId)
     .eq('method', 'mpesa')
-    .single();
+    .order('created_at', { ascending: true });
 
-  if (legErr || !pendingLeg) {
+  if (legErr) {
+    sendError(res, legErr, { message: 'Could not read the payment for that order' });
+    return;
+  }
+  if (!legs || legs.length === 0) {
     res.status(404).json({ error: 'No M-Pesa payment leg found for that order' });
     return;
   }
-  if ((pendingLeg as any).status === 'completed') {
-    res.status(409).json({ error: 'This M-Pesa payment has already been completed' });
+
+  const pendingLeg = (legs as any[]).find(l => l.status === 'pending');
+
+  // Nothing pending. Distinguish "already paid" from "nothing to pay" rather
+  // than reporting both as a 404, which is what the old shape did.
+  if (!pendingLeg) {
+    const completed = (legs as any[]).some(l => l.status === 'completed');
+    if (completed) {
+      res.status(409).json({ error: 'This M-Pesa payment has already been completed' });
+      return;
+    }
+    res.status(404).json({ error: 'No M-Pesa payment awaiting collection on that order' });
     return;
   }
 
@@ -365,15 +390,43 @@ router.post('/callback', async (req, res) => {
 
       // Look up the payment this checkout belongs to BEFORE trusting anything in
       // the callback. This gives us the expected amount and lets us de-duplicate.
-      const { data: payment } = await supabase
+      // This was `.single()` with the error DISCARDED — only `data` was
+      // destructured. So any failure (two rows sharing a checkout id, or a
+      // transient database error) produced `payment === undefined`, which then
+      // logged "unknown checkout" and returned. A real customer payment that
+      // M-Pesa had already collected was dropped, and the log said the checkout
+      // did not exist. Daraja does not retry indefinitely.
+      //
+      // maybeSingle + an explicit error branch, so a lookup failure is reported
+      // as a lookup failure and the callback is not silently swallowed.
+      const { data: payments, error: payErr } = await supabase
         .from('payments')
-        .select('id, order_id, amount, status, business_id')
+        .select('id, order_id, amount, status, business_id, created_at')
         .eq('mpesa_checkout_id', checkoutId)
-        .single();
+        .order('created_at', { ascending: true });
+
+      if (payErr) {
+        console.error(
+          `[mpesa] could not look up checkout ${checkoutId} — the payment was NOT recorded. ` +
+          `This needs manual reconciliation against the Daraja statement.`,
+          { message: payErr.message, details: (payErr as any).details, code: (payErr as any).code },
+        );
+        return;
+      }
+
+      const payment = (payments ?? [])[0] as any;
 
       if (!payment) {
         console.warn(`[mpesa] Success callback for unknown checkout ${checkoutId} — ignored`);
         return;
+      }
+
+      if ((payments ?? []).length > 1) {
+        // Should be impossible; say so loudly rather than picking silently.
+        console.error(
+          `[mpesa] ${payments!.length} payment rows share checkout ${checkoutId} — ` +
+          `applying the oldest (${payment.id}). Investigate before trusting the day's takings.`,
+        );
       }
 
       // Idempotency — Daraja retries callbacks, and a replayed callback must not

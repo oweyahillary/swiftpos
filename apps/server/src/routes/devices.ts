@@ -15,6 +15,8 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { isNodeRole } from '../lib/deviceRegistry';
+import { ROLE_HANDOVER_WINDOW_MINUTES } from '../lib/deviceRole';
 import { supabase }    from '../lib/supabase';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 
@@ -211,6 +213,72 @@ router.delete('/:id', requirePermission('settings.manage'), async (req, res) => 
 
   if (error) { sendError(res, error); return; }
   res.status(204).send();
+});
+
+// ── POST /api/devices/:id/authorise-handover ─────────────────────────────────
+// Open a window during which a DIFFERENT machine may take over as this branch's
+// server. Migration 74; mirrors the rebind window migration 52 gave branch
+// binding, and exists for the same reason: a legitimate, occasional act should
+// be possible without a developer and impossible without somebody accountable.
+//
+// Required for failover. When a branch server dies and a peer is promoted, the
+// promoted machine claims a serving role the dead one still holds — and is
+// refused, because refusing an unexpected claim is the whole point. Without this
+// route the branch would recover its data and never recover its ability to
+// obtain credentials.
+//
+// `:id` is the OUTGOING device — the one currently confirmed. Granting on the
+// incumbent rather than the newcomer is deliberate: the operator names the
+// machine being replaced, which is the one they can identify, and there may be
+// no row yet for a replacement that has never synced.
+router.post('/:id/authorise-handover', requirePermission('settings.manage'), async (req, res) => {
+  const { data: device, error: fetchErr } = await supabase
+    .from('user_devices')
+    .select('id, device_id, device_label, branch_id, device_role, role_confirmed_at')
+    .eq('id', req.params.id)
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+
+  if (fetchErr || !device) {
+    res.status(404).json({ error: 'Device not found' });
+    return;
+  }
+
+  if (!isNodeRole((device as any).device_role)) {
+    res.status(400).json({
+      error: 'That machine is not registered as a branch server, so there is nothing to hand over.',
+      code:  'not_serving',
+    });
+    return;
+  }
+
+  const until = new Date(Date.now() + ROLE_HANDOVER_WINDOW_MINUTES * 60_000).toISOString();
+
+  const { error } = await supabase
+    .from('user_devices')
+    .update({
+      role_change_allowed_until: until,
+      role_change_authorised_by: req.userId,
+    })
+    .eq('id', (device as any).id);
+
+  if (error) { sendError(res, error); return; }
+
+  console.log(
+    `[deviceRole] handover authorised for branch ${(device as any).branch_id}: ` +
+    `${(device as any).device_id} may be replaced until ${until} (by user ${req.userId})`,
+  );
+
+  res.json({
+    success: true,
+    // The operator needs to know this is time-boxed and what to do inside it,
+    // or they will authorise it and walk away.
+    expiresAt: until,
+    windowMinutes: ROLE_HANDOVER_WINDOW_MINUTES,
+    message:
+      `The replacement machine must sync within ${ROLE_HANDOVER_WINDOW_MINUTES} minutes to take over as ` +
+      `this branch's server. After that the window closes and the current machine keeps the role.`,
+  });
 });
 
 export default router;

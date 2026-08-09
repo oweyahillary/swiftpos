@@ -35,7 +35,7 @@ type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: numb
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay } from './branchClose';
 import { takeSnapshot, maintenanceStatus } from './maintenance';
-import { emitEvent } from './nodeIngest';
+import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
@@ -1757,15 +1757,45 @@ export function registerIpcHandlers() {
   // Repoint this till at a (new) branch server. Probe BEFORE save — a wrong
   // address written blind is a till that silently stops replicating. Also the
   // demotion path: a former node repointed at the new one becomes a till again.
+  // Repoint this till at a (new) branch server. Probe BEFORE save — a wrong
+  // address written blind is a till that silently stops replicating. Also the
+  // demotion path: a former node repointed at the new one becomes a till again.
+  //
+  // A21 — WHY THE OUTBOX CURSORS ARE RESET WHEN THE ADDRESS CHANGES.
+  // `outbox_cursors` is keyed by table_name ALONE and carries no node identity,
+  // while `peer_cursors` on the node side is keyed (device_id, table_name).
+  // That asymmetry only shows on failover, and then it loses rows: a peer that
+  // offered orders to seq 500 to the OLD node, which distributed only to 430
+  // before dying, will never re-offer 431-500 to its replacement. Those sales
+  // sit on this till and on a dead machine's disk, absent from the new source of
+  // truth, the day close and the cloud, with nothing reporting a gap.
+  //
+  // Re-offering is free: ingest is INSERT OR IGNORE on stable client UUIDs with
+  // origin device_id and seq preserved end to end, so anything the new node
+  // already holds is recognised and ignored rather than duplicated.
+  //
+  // Only on an ACTUAL change — re-entering the same address must not trigger a
+  // full re-offer.
   ipcMain.handle('tech:setNodeUrl', async (_e, { url }: { url: string }) => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const probe = await probeNode(String(url ?? ''));
     if (!probe.ok) return { ok: false, error: probe.error };
     const was = getDeviceConfig()?.device_role ?? 'till';
     logTechAction('role.repoint', { from: was, node_url: url });
+    const previousUrl = getDeviceConfig()?.node_url ?? null;
+    const nextUrl     = String(url);
+    const nodeChanged = previousUrl !== nextUrl;
     if (was === 'node') stopNodeServer();   // stepping down: stop serving first
-    saveDeviceConfig({ node_url: String(url), device_role: was === 'node' ? 'till' : was });
-    return { ok: true, role: was === 'node' ? 'till' : was };
+    saveDeviceConfig({ node_url: nextUrl, device_role: was === 'node' ? 'till' : was });
+    if (nodeChanged) {
+      // A21 — see the note above. Audited as its own action rather than folded
+      // into role.repoint: re-offering the whole outbox is a distinct, visible
+      // event, and a tech reading the log should see it named.
+      resetOutboxCursors();
+      logTechAction('node.reoffer', { from: previousUrl, to: nextUrl });
+      logLine('node', `node changed ${previousUrl ?? '(none)'} -> ${nextUrl}; outbox cursors reset so every row is re-offered`);
+    }
+    return { ok: true, role: was === 'node' ? 'till' : was, reoffering: nodeChanged };
   });
 
   ipcMain.handle('tech:backupNow', async () => {

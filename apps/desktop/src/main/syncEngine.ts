@@ -216,6 +216,18 @@ function pushAuthHeaders() {
     // Stable per-install identity, so the fleet view can attribute sync recency
     // to a specific terminal rather than to a User-Agent hash shared by all three.
     'X-Device-Id': getDeviceConfig()?.device_id ?? '',
+    // What this terminal IS — 'till', 'node' or 'office'. The server had no way
+    // to know: it saw a device id, a schema version and a build number, and every
+    // machine looked like a counter terminal. That blocks two things — activation
+    // seats (an office machine is explicitly not meant to consume one) and
+    // PHASE5's credential distribution, which must not hand the branch roster to
+    // anything that cannot be shown to serve the branch (register A25).
+    //
+    // A CLAIM, not a credential. The server records it so it can be seen and
+    // audited; it must not on its own authorise anything, exactly as branch_id
+    // was a claim until migration 52 gave the server something to check it
+    // against.
+    'X-Device-Role': getDeviceConfig()?.device_role ?? '',
   };
 }
 

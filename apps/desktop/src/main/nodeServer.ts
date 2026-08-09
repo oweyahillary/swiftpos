@@ -2,15 +2,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Runs ONLY on the device whose role is 'node' (the branch server). Other tills
 // on the LAN push their completed orders here so this machine holds the whole
-// branch's data and the manager can see combined totals. The node is also the
-// SOLE uplink to the cloud: peer tills never push to the cloud directly, so an
-// order reaches the cloud by exactly one path (till → node → cloud), which —
-// together with stable UUIDs and upsert-by-id — makes duplicates impossible.
+// branch's data and the manager can see combined totals.
+//
+// ── WHAT THIS NODE IS AND IS NOT (corrected 2026-08-09, register A18) ────────
+// This header used to state that the node was "the SOLE uplink to the cloud",
+// that "peer tills never push to the cloud directly", and that received peer
+// orders were "re-enqueued into this node's sync_queue so the existing cloud
+// push forwards them". NONE of that is true any more, and it had not been for
+// some time — see syncEngine.ts:1138-1151, which records the change and its
+// reason, and nodeIngest.ts:414-418.
+//
+// What is true now:
+//
+//   * A till pushes its own orders to TWO INDEPENDENT destinations — the cloud
+//     via `sync_queue`, and the node via `node_queue`. One status column cannot
+//     hold two destinations' opinions; the attempt to make it do so is what let
+//     a peer close its shift against a server that did not have the sales.
+//   * The node is a REPLICA, not a relay. `INSERT INTO sync_queue` exists in
+//     exactly one place — syncEngine.ts:1566, at order creation on the till
+//     that made the sale. **The node does not forward peer rows to the cloud.**
+//   * Duplicates are prevented by stable client-generated UUIDs and
+//     upsert-by-id / X-Idempotency-Key, NOT by there being a single path.
+//
+// CONSEQUENCE, and it is open as register A19: a peer till with no internet
+// reaches the node over LAN, so branch totals here are right — but its own
+// `sync_queue` never drains and nothing else drains it, so the CLOUD never sees
+// those sales. Read A17/A19 before designing anything that assumes a peer can
+// stay offline indefinitely; today it cannot, because auth is cloud-only too.
 //
 // A node is also a normal till; its own sales use the usual local path. Received
-// peer orders are upserted into the same local tables (so reports aggregate) and
-// re-enqueued into this node's sync_queue so the existing cloud push forwards
-// them with their ORIGINAL id/idempotency key (never re-minted).
+// peer orders are upserted into the same local tables so reports aggregate.
 //
 // Transport: Node's built-in http (no extra dependency). LAN-local; scoped by
 // branch_id so a stray device from another branch can't inject orders.

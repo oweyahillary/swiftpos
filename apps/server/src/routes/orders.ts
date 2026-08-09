@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { classifyOrderCreateError } from '../lib/orderErrors';
 import { sendError } from '../lib/sendError';
 import { capDiscount } from '../lib/discountPolicy';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -672,13 +673,30 @@ router.post('/', async (req, res) => {
         });
         return;
       }
-      // A check_violation is the payment-reconciliation guard firing. Surface it
-      // as a 400 — the client sent legs that do not add up to the total.
-      if (createErr.code === '23514' || /payment legs sum/.test(createErr.message)) {
-        res.status(400).json({ error: createErr.message });
-        return;
-      }
-      throw createErr;
+      // Everything below used to be `throw createErr`, which sendError turned
+      // into "Failed to create order (ref: …)" — the same sentence for a bad
+      // foreign key, a malformed uuid and a dead database. Eight of Beryl's
+      // sales died there on 2026-08-07. The mapping now lives in
+      // lib/orderErrors.ts so a test can drive it directly.
+      const verdict = classifyOrderCreateError(createErr);
+
+      console.error(
+        `[order-create] ${createErr.code ?? '(no code)'} — ${verdict.detail}`,
+        { businessId: req.businessId, branchId: branch_id, orderNumber: order_number,
+          cashierId: req.userId, shiftId: resolvedShiftId,
+          customerId: orderPayload.customer_id, discountId: orderPayload.discount_id,
+          pumpId: orderPayload.pump_id, createdAt: orderPayload.created_at },
+      );
+
+      // Unknown class: rethrow so sendError logs it with a ref, unchanged.
+      if (verdict.rethrow) throw createErr;
+
+      res.status(verdict.status).json({
+        error: verdict.message,
+        ...(verdict.code ? { code: verdict.code } : {}),
+        ...(process.env.NODE_ENV === 'production' ? {} : { detail: verdict.detail }),
+      });
+      return;
     }
 
     const createdRow = Array.isArray(created) ? created[0] : created;

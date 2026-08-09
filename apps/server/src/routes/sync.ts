@@ -3,6 +3,8 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
+import { normaliseDeviceRole, isNodeRole } from '../lib/deviceRegistry';
+import { confirmServingRole } from '../lib/deviceRole';
 
 import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 
@@ -70,9 +72,85 @@ router.post('/push', async (req, res) => {
         ...(clientSchema ? { schema_version: clientSchema } : {}),
       })
       .eq('device_id', deviceId)
-      .then(({ error }) => {
-        if (error) console.warn('[fleet] telemetry not recorded — is migration 43 applied?', error.message);
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[fleet] telemetry not recorded — is migration 43 applied?', error.message);
+          return;
+        }
+        // D14. This used to be silent, and it was the common case: an UPDATE
+        // that matches NO ROWS is not an error, so a till with no user_devices
+        // row threw its telemetry away and said nothing. The only message that
+        // ever appeared blamed migration 43 — which is applied — so the one
+        // clue pointed away from the cause, and every diagnosis needed somebody
+        // physically at the machine.
+        //
+        // Registration is now unconditional for desktop (lib/deviceRegistry.ts),
+        // so this should not fire. If it does, the till is syncing without ever
+        // having signed in through /desktop-login or /verify-pin, which is worth
+        // knowing on its own.
+        if (!data || data.length === 0) {
+          console.warn(
+            `[fleet] no user_devices row for device ${deviceId} — telemetry discarded. ` +
+            `Migration 43 is not the problem; the terminal has never registered.`,
+          );
+        }
       });
+
+    // Migration 73 — the reported role, refreshed here as well as at sign-in,
+    // because a machine is repurposed BETWEEN sign-ins: a till promoted to node
+    // keeps trading on the same staff session, and the server would otherwise
+    // carry a stale role until somebody signed out.
+    //
+    // A SEPARATE statement on purpose. Folding these columns into the update
+    // above would couple all fleet telemetry to migration 73: if 73 is not
+    // applied the whole statement fails, and `last_sync_at` and
+    // `schema_version` are lost along with the role. That is not hypothetical —
+    // migrations 68 and 72 are absent from this repository and only 20 of 66
+    // migrations record themselves in `schema_migrations` (register A4), so a
+    // migration being missing is the normal case here, not the exception.
+    //
+    // Only written when actually reported, so an older build sending no header
+    // does not blank a known role.
+    const reportedRole = normaliseDeviceRole(req.header('X-Device-Role'));
+    if (reportedRole) {
+      void supabase
+        .from('user_devices')
+        .update({ device_role: reportedRole, role_reported_at: new Date().toISOString() })
+        .eq('device_id', deviceId)
+        .then(({ error }) => {
+          if (error) {
+            console.warn(
+              `[fleet] device role not recorded for ${deviceId} — is migration 73 applied? ` +
+              `Sync telemetry is unaffected.`,
+              error.message,
+            );
+            return;
+          }
+
+          // Migration 74 — the claim is recorded; now decide whether to believe
+          // it. Only for SERVING roles: a plain till has nothing to confirm.
+          //
+          // Runs here rather than at sign-in because branch_id is bound on sync
+          // (migration 52 binds on first sighting), and a serving role is
+          // meaningless without a branch — the uniqueness guarantee is per
+          // branch. Confirming before binding would race that.
+          //
+          // Also fire-and-forget: confirmation withholds CREDENTIALS when it
+          // fails, never trade. A machine refused here keeps selling, keeps
+          // syncing and keeps serving its own tills over the LAN.
+          if (!isNodeRole(reportedRole)) return;
+          void confirmServingRole(req.businessId as string, deviceId, reportedRole)
+            .then((verdict) => {
+              if (!verdict.confirmed && verdict.code === 'conflict') {
+                console.warn(
+                  `[deviceRole] branch server conflict — ${deviceId} refused; held by ${verdict.heldBy}. ` +
+                  `If the previous machine is genuinely gone, authorise a handover.`,
+                );
+              }
+            });
+        });
+    }
   }
 
   const schemaStatus = clientSchema < REQUIRED_DESKTOP_SCHEMA

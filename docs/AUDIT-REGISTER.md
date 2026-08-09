@@ -6,7 +6,7 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-08, desktop audit + Beryl sync investigation** |
+| Last updated | **2026-08-09, Beryl root cause (A14) + CI gap (A16)** |
 | Tree | `dev` @ `5ad57f7`, tag **v0.5.25**, desktop **v0.5.25**, `LOCAL_SCHEMA_VERSION` 51 |
 | Open | **A: 1 P0 · 4 P1 · 3 P2 · 5 P3 — D: 2 P0 · 2 P1 · 5 P2 · 2 P3** |
 | Closed this session | **31 (printing) + 1 (migration 46)** |
@@ -32,6 +32,12 @@ given till.
 **Working rules** live in `HANDOFF-2026-08-08-evening.md` §0 — standing, not
 per-session. Rule 14 is the one this file depends on: nothing ships without an ID
 and an entry here, in the same change as the code.
+
+**Rules 17-20 added 2026-08-09** (owner): assume it is already built halfway and
+sweep before designing; zip only when code changed; nothing but `README.md` in
+the repo root; be sure before proceeding, and never loosen a gate to accommodate
+your own change. Rule numbers are stable and never reused — 17-20 append rather
+than slot in, because 9, 10, 14 and 15 are cited by ID throughout this file.
 
 **How to use this.** IDs are stable and never reused. Closed items keep their
 entry — half the value of this file is stopping the next session re-auditing
@@ -69,7 +75,7 @@ sample output         byte-identical to SAMPLE-OUTPUT.txt
 
 Agreed plan, in order:
 
-1. **Run a full service on 0.5.23** with thermal on. Nothing below matters more
+1. **Run a full service on 0.5.25** with thermal on. Nothing below matters more
    than one real trading period.
 2. **Final code review** — business logic, error reporting, UI logic.
 3. **Remove HTML printing.** Only after 1 and 2. See P-06 for exactly what goes.
@@ -85,8 +91,594 @@ Rotated once this session; **the packaging is still unfixed**, so it will recur.
 **Fix:** `git archive --format=zip HEAD -o pos.zip`. It honours the index, so
 ignored files physically cannot get in. Two minutes, and it is the fourth time.
 
-### A2 · P1 · OPEN · BUG-17 — mpesa `.single()`
-`routes/mpesa.ts:224, 372`. Untouched this session.
+### A17 · P0 · OPEN · A peer till cannot sell "offline forever" — it locks out on day 15
+**Stated design (owner, 08-09):** the main/server till is registered online once;
+client tills then rely on the server till and **can keep selling without
+internet indefinitely.** The code does not support that today, in three ways.
+
+1. **Authentication is cloud-only.** `ipcHandlers.ts auth:verifyPin` calls
+   `ownerFetch`, and `ownerFetch` uses `getServerUrl()` — which is
+   `device_config.server_url`, **the cloud**. `node_url` is a separate field
+   (`nodeClient.ts:21`) and **the node exposes no auth route at all**: its API
+   is `/node/{health,sync,since,report,cursors,instructions,time,tech-session}`.
+   There is no `/node/verify-pin`.
+2. **So the only offline door is `staff_pin_cache`, and it expires.**
+   `PIN_CACHE_TTL_DAYS = 14`, and `cached_at` is written from exactly one place —
+   `cacheStaffCredential`, called only after a **successful cloud** verify-pin
+   (`ipcHandlers.ts:443`). LAN contact with the node cannot refresh it. **On day
+   15 of no internet, every cashier on that till is refused and the shop cannot
+   open**, with the message "Saved sign-in expired after 14 days offline."
+3. **A cashier who has never signed in on that terminal while online can never
+   sign in at all** (D16 caches per-terminal, deliberately), and
+   `override_pin_hash` is never cached, so voids, discounts past the floor and
+   refunds are impossible for the whole offline period.
+
+The 14-day bound was a correct decision for a *cloud-attached* till — it bounds a
+stolen or retired terminal. It is the wrong bound for a till whose authority is
+meant to be the branch node.
+
+**This is a design gap, not a bug to patch.** Do NOT simply raise the TTL — that
+widens the stolen-till window without giving the node the role the design says
+it has.
+
+**DESIGN AGREED 08-09** — owner confirmed the node is the branch's source of
+truth and sole cloud uplink, and that it may stay offline indefinitely and may
+authorise. Specification in **`docs/PHASE5-NODE-AUTHORITY.md`**. Expiry is
+redefined there as "days since ANY authority was reached", so a peer that sees
+its node daily never expires and a node never expires at all.
+
+### A18 · P1 · OPEN · `nodeServer.ts` documents an architecture that no longer exists
+Its header states the node is *"the SOLE uplink to the cloud: peer tills never
+push to the cloud directly, so an order reaches the cloud by exactly one path
+(till → node → cloud)"*, and that received peer orders are *"re-enqueued into
+this node's sync_queue so the existing cloud push forwards them."*
+
+**Both statements are false in the current tree.** `syncEngine.ts:1138-1151`
+says the opposite explicitly — every till pushes its own orders to the cloud and
+"the node is now a replica, reached separately by `pushToNode()`" — and
+`nodeIngest.ts:414-418` records the reason (two destinations cannot share one
+status column). `INSERT INTO sync_queue` appears in exactly one place,
+`syncEngine.ts:1566`, at order creation on the till that made the sale.
+**Nothing re-enqueues peer rows for cloud push.**
+
+This is the file a new reader opens to learn the architecture. Header corrected
+08-09 to describe the tree as it stands. **The finding stays open until §3 of
+`docs/PHASE5-NODE-AUTHORITY.md` is implemented**, at which point the ORIGINAL
+header becomes true again and the corrected one must be corrected back. Noted
+here so that does not read as a regression.
+
+### A19 · P1 · OPEN · A permanently-offline peer's sales never reach the cloud
+Follows from A18. A peer till pushes to two independent destinations: the cloud
+(`sync_queue`) and the node (`node_queue`). Under the stated design the peer has
+no internet, so:
+
+- the node receives the sales over LAN, so **branch totals and manager reports
+  are correct locally** — this half works;
+- the peer's `sync_queue` never drains, and the node does not forward it, so
+  **the cloud never sees those sales.** The owner's web dashboard, cloud
+  reports, eTIMS fiscalisation and cloud-side loyalty are all short by every
+  peer sale, indefinitely, with no error anywhere.
+
+**RESOLVED 08-09 — the node forwards.** Owner confirmed the node is the only
+link to the cloud, and that cloud sync is for web access and backup rather than
+for branch operation. A peer with a `node_url` will push to the node only; the
+node enqueues peer rows into its own `sync_queue` preserving the original id and
+idempotency key. The two-queue separation stays — `syncEngine.ts:1138-1151` was
+right about the mechanism and wrong about the routing. See
+`docs/PHASE5-NODE-AUTHORITY.md` §3, including why a node outage delays cloud
+backup rather than losing sales, and why idempotency makes a mixed-version
+rollout safe.
+
+### A20 · P1 · OPEN · Failover cannot open the shop — the staff roster does not replicate
+Follows from the owner's failover requirement (08-09) plus PHASE5 §4a. Promotion
+already works well — `tech:promoteToNode` (`ipcHandlers.ts:1746`) is
+session-gated, audited, clears `node_url` and starts serving; `collectDistribution`
+fans every origin's rows to every peer; orders carry `_items` and `_payments` as
+children (`nodeIngest.ts:641-648`), so a promoted till holds COMPLETE orders.
+
+But `REPLICATED_TABLES` is `orders, shifts, float_transactions, expenses,
+business_days, events`. PHASE5's `branch_staff` is specified node-only, so a
+promoted till would hold every sale in the branch and **no way to authenticate
+anyone** — the shop stays shut at exactly the moment failover exists to prevent.
+
+**Decision required from the owner** — replicating the roster means a stolen
+peer yields the branch's PIN hashes. Recommendation, tradeoff table and the
+"a branch is one trust domain" argument in `PHASE5-NODE-AUTHORITY.md` §10.1.
+Includes a runbook item that does not exist today: **rotate PINs when a terminal
+goes missing.**
+
+### A21 · P1 · CLOSED 08-09 · `outbox_cursors` is not keyed by node — rows strand on repoint
+`localDb.ts:854` — `PRIMARY KEY (table_name)`. A peer records how far it has
+offered its own rows as one number per table, with **no record of which node it
+offered them to**. `peer_cursors` on the node side is correctly keyed
+`(device_id, table_name)`; the peer side is not.
+
+On failover: peer C has offered `orders` to seq 500; the dead node had only
+distributed to 430 before dying; peer C is repointed at the promoted till and
+**never re-offers 431-500**. Not lost — they are on peer C — but absent from the
+new source of truth, the day close, and (under PHASE5 §3) the cloud, with nothing
+reporting a gap.
+
+**Fix:** reset the outbox cursors in `tech:setNodeUrl` when the URL actually
+changes. Ingest is `INSERT OR IGNORE` / upsert-by-id, so re-offering everything
+is absorbed — the same property that makes PHASE5 §3's rollout safe. Two lines,
+no schema change. Keying the table `(node_id, table_name)` is cleaner but is a
+local-schema change, and D6 already records six undocumented generations of that.
+See §10.2.
+
+**CLOSED 08-09.** `resetOutboxCursors()` in `nodeIngest.ts`; called from
+`tech:setNodeUrl` **only when the URL actually changes** — re-entering the same
+address must not trigger a full re-offer. The repoint audit line now carries
+`node_changed`, and the reset is logged to `swiftpos.log`.
+
+Option 2 (keying the table `(node_id, table_name)`) was NOT taken: it is a
+local-schema change to the mechanism that decides whether a field till works, and
+D6 already records six generations of that going undocumented. Revisit only if a
+branch ever runs two nodes at once. The test asserts the current primary key, so
+it will fail loudly if that ever changes.
+
+12 tests in `apps/desktop/test/failover-cursors.test.mjs`, mutation-checked by
+removing the DELETE (9 passed / 3 failed, exit 1; restored, exit 0). Ran on
+`node:sqlite`, and **the suite prints that it did** — it is a stand-in, not the
+app driver. Run under Electron on the target for a hardware-equivalent green.
+
+### A25 · P1 · OPEN · The server cannot tell a node from any other till
+Found while attempting PHASE5 §4b. **`device_role` does not exist anywhere in
+`apps/server`** — grep returns nothing. So an endpoint that hands out the
+branch's PIN hashes could only be gated on `surface === 'desktop'`, which every
+till has, and on an owner token, which every till holds.
+
+**The credentials endpoint was therefore NOT built.** Shipping it against that
+guard would hand the branch roster to any till, and to anyone who lifted an owner
+token off one — the opposite of what PHASE5 §4b exists to do.
+
+This is the concrete form of the D4/D14 prerequisite named in PHASE5 §7. The
+server must be able to verify that a caller is the branch's node before any
+credential can cross that boundary. **D14 first (register the device), then D4
+(enrol it), then §4b.**
+
+### A22 · P2 · OPEN · Promotion has no split-brain check
+`promoteToNode` clears `node_url` and starts serving immediately with no check
+that the old node is gone. An old node that was merely unplugged, then
+reconnected, gives the branch two nodes and peers pointed at either. Nothing
+detects it. Low urgency while promotion is a human tech-session action, but a
+node that can reach another node on its own branch should say so loudly. §10.5.
+
+### A23 · P2 · OPEN · Distribution lag is the real RPO and is not measured
+Promotion cannot recover rows the dead node originated but never distributed —
+its own sales live only on its disk. So the recovery point is however far behind
+distribution was, and **nothing measures or displays that**. Wanted: a "last
+distributed" age on the tech screen. Also a runbook line that does not exist:
+**do not wipe or re-image a failed node until its `swiftpos.db` has been read.**
+§10.4.
+
+### D14 · P1 · CLOSED 08-10 · The till is not registered — cause found, and it was not the upsert
+**I called this a one-line upsert on `sync.ts:71`, then a device-enrolment
+design decision. Both were wrong**, and the rule 17 sweep found far more built
+than the register credited: `lib/deviceBinding.ts` (181 lines — rebind windows,
+relocation history, terminal-code conflict handling, fails-open-until-bound),
+`routes/devices.ts` (216 lines — fleet, approve, reject, delete, permission
+gated) **and it is mounted**, at `routes/index.ts:94`.
+
+**The cause is `auth.ts:432`:**
+
+```js
+const required = setting?.value === 'true' || setting?.value === true;
+if (!required) return { result: 'allowed' };
+```
+
+Registration sits behind an opt-in business setting Beryl never enabled — and
+`checkDeviceRegistration` returns earlier still for owners and elevated roles, so
+a desktop till signing in as the owner fell through **both** gates.
+`/desktop-login` registered nothing at all. Nothing was broken; registration was
+never reached.
+
+Three subsystems then degraded to silent no-ops while looking healthy:
+migration 52's branch binding (`checkDeviceBranch` waves an unknown device
+through, by design), fleet telemetry (an UPDATE matching no rows is not an
+error), and A25.
+
+**Fix — the two concerns were conflated and are now separated.**
+`require_device_registration` means *"cashiers must be approved before signing in
+from a new BROWSER"*. It is a real, optional policy and is **untouched**. But a
+desktop till is not a browser: it has a stable `device_id`, it is bound to a
+branch, it is the unit migration 52 exists to control. So `lib/deviceRegistry.ts`
+registers desktop terminals **unconditionally**, from `/desktop-login` and
+`/verify-pin`.
+
+New rows land `approved`, not `pending`: a pending row blocks the shop until
+somebody opens the dashboard, which is unacceptable at the remote thin-internet
+sites this product targets. Defensible because reaching that code already
+required a valid owner token or a verified PIN — more than a browser fingerprint
+proves. **An existing row's `status` is never touched**, so a rejected terminal
+is not silently re-approved by signing in again.
+
+**Registration is not authorisation.** No `branch_id` is set — `checkDeviceBranch`
+owns binding, and guessing here could bind a till to the wrong branch
+permanently. No `device_role` is set, so **A25 remains open by design**.
+
+### A26 · P1 · CLOSED 08-10 · Fleet telemetry failed silently and blamed the wrong thing
+`sync.ts` reported only an `error`. An UPDATE that matches **no rows is not an
+error**, so a till with no `user_devices` row discarded its telemetry in silence
+— the common case. The one message that could appear asked *"is migration 43
+applied?"*, and 43 **is** applied, so the single available clue pointed away from
+the cause. That is why diagnosing Beryl needed somebody physically at the machine.
+
+Now `.select('id')` makes the matched count visible and a zero-row match says the
+terminal has never registered, explicitly clearing migration 43. The mutation
+check is enforced by the compiler: remove the `.select('id')` and there is no
+`data` to count, so `tsc` fails.
+
+20 tests in `tests/device-registration.test.mjs`, mutation-checked both ways.
+
+### A27 · P1 · CLOSED 08-10 · The server could not tell what a terminal IS (and PHASE5 excluded office)
+Raised by the owner: *"does this involve the view-only node?"* It did, and the
+PHASE5 design was wrong.
+
+`deviceConfig.ts:26` — `DeviceRole = 'till' | 'node' | 'office'`. Office is a
+branch server that **cannot sell**: no drawer, no shift, no cash, safe
+unattended, not meant to consume an activation seat. The file supplies
+`isNodeRole()` and `canSell()` precisely so nobody tests the literal, and warns:
+*"comparing against the literal 'node' anywhere else is how office machines fall
+through cracks."*
+
+**PHASE5 §4b did exactly that** — it gated credential distribution on
+`device_role === 'node'`, which would have refused an office machine the branch
+roster. Backwards: an office box is the BETTER holder, because it is the machine
+that is safe unattended, which is the whole security argument of §10.1.
+Corrected in `PHASE5-NODE-AUTHORITY.md` §12; every server-side gate now uses
+`isNodeRole()`.
+
+Three things were missing and are now built:
+- **`user_devices` had no role column** (confirmed against the live dump).
+  Migration **73** adds `device_role` (CHECK till|node|office) and
+  `role_reported_at`, plus a `branch_serving_devices` view — the SQL form of
+  `isNodeRole()`, with `is_view_only` marking an office machine.
+- **The till never reported its role.** Sync sent `X-Schema-Version`,
+  `X-Device-Id` and app version, nothing more. Now `X-Device-Role` too.
+- **Registration ignored it.** `deviceRegistry.ts` stores and labels it — an
+  office machine no longer appears in the fleet view as a till.
+
+**Numbered 73, not 72:** migrations 68 and 72 are absent from this repo and 68 is
+known to exist in production (A4). Reusing 72 would collide with whatever is
+already applied there.
+
+Existing rows stay NULL — *has not reported* — rather than being defaulted to
+`till`. A guess that reads as a fact would make a branch server look like a
+counter terminal until somebody noticed.
+
+**A25 is NOT closed by this.** The server can now SEE a claimed role; it still
+cannot VERIFY one. A device asserting `office` is exactly as trustworthy as a
+device asserting its branch was before migration 52. Enrolment (D4) is what makes
+it checkable, and no credential may cross that boundary until it does.
+
+### A28 · P2 · CLOSED 08-10 · A missing migration would have lost the whole registration
+Writing `device_role` in the same statement as the rest coupled every terminal
+registration — and all fleet telemetry — to migration 73 being applied. If it
+were not, the INSERT would fail entirely and no row would be created; the
+telemetry UPDATE would fail and take `last_sync_at` and `schema_version` with it.
+
+**Not hypothetical here.** Only **20 of 66** migrations record themselves in
+`schema_migrations`, and 68 and 72 are absent from the repo entirely. A migration
+being missing is the normal state in this project, not an edge case.
+
+Now: the registry detects `42703` / `PGRST204` and retries without the role
+columns, so the terminal registers regardless; and sync writes the role as a
+**separate** statement, so telemetry is unaffected either way. Both paths log
+which migration is missing, and say plainly what still worked.
+
+### A4 · measured 08-10 — the migration ledger covers less than a third
+Concrete figure for the "under-reports" claim: **only 20 of 66 migration files
+contain an `INSERT INTO public.schema_migrations`**, so 46 are invisible to the
+ledger. The version format is also split — 17 named (`'52_device_branch_binding'`)
+against 1 bare (`'71'`) — so the table cannot be queried reliably by number
+either. `60_menu_composition` and `61_adjust_product_stock` are recent examples
+that record nothing.
+
+Consequence unchanged and now quantified: **the ledger cannot be trusted to
+decide what to run.** Still open.
+
+### A25 · P1 · CLOSED 08-10 · The server can now verify a claimed role
+Migration 73 let a terminal SAY what it is. **Migration 74** decides whether to
+believe it — the difference between a diagnostic and a security control.
+
+Same shape as migration 52, on purpose: trust on first use per branch, then
+closed, with a manager-granted window for legitimate change. A second trust
+mechanism would be a second thing to learn and a second thing to get wrong.
+
+**One deliberate difference: this fails CLOSED where 52 fails open.**
+`checkDeviceBranch` waves an unbound device through, because refusing would stop
+a shop trading over a diagnostic. Here an unconfirmed device is refused
+credentials, because the cost of a wrong answer is the branch's PIN hashes
+rather than a misattributed sale. Refusing costs a machine offline
+authentication until somebody confirms it; granting wrongly cannot be undone.
+
+- `lib/deviceRole.ts` — `confirmServingRole()` (TOFU + conflict recording +
+  handover) and `isConfirmedBranchServer()`, the read-only gate PHASE5 §4b must
+  call. The gate never confirms as a side effect: a read that quietly grants is
+  how a check stops being one.
+- The branch is read from the device's **own server-side row**, never from the
+  request. A caller-supplied branch would be a second claim propping up the
+  first, which is what this exists to stop.
+- `POST /api/devices/:id/authorise-handover` — one hour, matching
+  `REBIND_WINDOW_MINUTES`. Granted on the OUTGOING device, because that is the
+  machine an operator can identify and a replacement may have no row yet.
+- Unique index `user_devices_one_server_per_branch` is the guarantee, not the
+  intention. Handover clears the incumbent FIRST, so an interruption leaves the
+  branch with NO confirmed server rather than two.
+
+**Nothing here affects selling.** A refused machine still trades, still syncs,
+still serves its own tills over the LAN with the branch secret. The only thing
+withheld is the branch roster.
+
+**Partly closes A22** (split brain): two machines claiming to serve one branch is
+now detected and recorded — `role_conflict_at`, `role_conflict_with` — rather
+than being silent. The node still does not warn on startup, so A22 stays open.
+
+23 tests in `tests/device-role-confirmation.test.mjs`, mutation-checked.
+
+### A29 · P1 · CLOSED 08-10 · `build-schema-index.mjs --merge-migrations` adds phantom columns
+Found because migrations 73/74 tripped `schema-audit`, correctly: the new
+columns were not in `scripts/schema-index.json`. The sanctioned unstick path is
+`--merge-migrations`, and it **added six columns that do not exist in the live
+database**, verified against the owner's 08-09 dump:
+
+```
+category_stations.business_id        parking_sessions.billed_amount
+fuel_tanks.product_id                parking_sessions.cashier_id
+fuel_tanks.tank_name                 parking_sessions.notes
+```
+
+Each was created by an early migration and renamed by a later one — `fuel_tanks`
+has `fuel_product_id` and `name`, not `product_id` and `tank_name`. The tool
+documents *"never removes"* as a safety property, and for removals it is; but it
+also cannot know a column was renamed, so it resurrects dead names.
+
+**That WEAKENS the gate.** Code selecting `fuel_tanks.product_id` would now pass
+the audit and fail at runtime — the precise failure the index exists to catch,
+reintroduced by the tool meant to maintain it.
+
+The six were removed by hand against the live dump; only the eight columns from
+73/74 remain. Verified semantically, not by diff: 98 tables before and after,
+nothing lost, `total: 0`.
+
+**Fix not yet applied to the tool.** It should either skip columns dropped or
+renamed by a later migration, or print them as *unverified additions* for a human
+to confirm. Until then, **`--merge-migrations` output must be diffed against the
+live schema before it is committed**, and `--from-db` re-run when the database is
+reachable. Consider this a standing caveat on that script.
+
+### A30 · P1 · CLOSED 08-10 · Migration 74 failed on the owner's database — SQL nobody had run
+```
+ERROR: 42P16: cannot change name of view column "is_view_only" to "role_confirmed_at"
+```
+
+`CREATE OR REPLACE VIEW` may only **APPEND** columns: existing ones keep their
+names, types and positions. Migration 74 inserted four columns before migration
+73's trailing `is_view_only`, so position 16 changed name and Postgres refused.
+
+**This reached the owner because "the DDL is unexecuted" was written down as a
+caveat instead of being fixed.** Listing a risk is not managing it. Both
+migrations now `DROP VIEW IF EXISTS` then `CREATE VIEW` — not `CASCADE`, so a
+future dependency fails loudly rather than being quietly deleted.
+
+**A second bug, found only by executing:** re-running 73 after 74 failed with
+*"cannot drop columns from view"*, because replace cannot drop columns either.
+Every migration here is written to be re-runnable — only 20 of 66 record
+themselves (A4), so re-running to be sure is normal practice — and a view that
+can be created once breaks that. Neither bug was findable by reading.
+
+**Root fix — migrations now run against a real Postgres.**
+`apps/server/test/migration-73-74.test.mjs` executes them under PGlite (Postgres
+compiled to WASM: real parser, real planner, real DDL semantics, in-process, no
+server to install), and it is **in CI**. 17 tests covering: both apply; both are
+recorded; re-running both is idempotent; the CHECK accepts till/node/office and
+rejects anything else while allowing NULL; the unique index refuses a second
+confirmed server per branch, including an office machine; **clear-then-set is
+proved to be the only order the index permits**, which is the handover sequence
+`deviceRole.ts` reasons about; the view exposes both derived booleans and
+excludes plain tills.
+
+Documented consequence, tested rather than assumed: 73 owns the smaller view
+definition, so running it **alone** after 74 reverts the view. Re-running 74
+restores it. Run migrations in order.
+
+**The wider lesson is the reusable part.** Any migration can now be executed in
+CI before it reaches a database. The five earlier migrations in this batch's
+lineage were never run either; they should be brought under the same harness.
+
+### A31 · P1 · CLOSED 08-10 · A new desktop suite was written and never wired in
+`failover-cursors.test.mjs` (A21) was added to `apps/desktop/test/` and **not
+added to `npm run test:desktop`**. The owner's target run on 2026-08-10 executed
+92 tests across five suites under `better-sqlite3 under Electron 35.7.5 — REAL
+driver and ABI`, and the sixth was silently absent.
+
+This is A16 repeated **in the same batch that closed A16.** A file in a test
+directory is not a test; a test that nothing invokes is decoration (rule 10).
+
+Now `test:failover` and `test:failover:electron` exist, matching how every other
+suite is wired, and `test:desktop` runs the Electron variant. Also added to CI's
+`desktop-scope` job, where it runs on the `node:sqlite` stand-in — which the
+suite declares in its own output rather than implying a real green.
+
+**The general lesson:** the same mistake is available every time a suite is
+added. `check-ipc-parity` exists because a feature reached every layer except the
+bridge; the equivalent gate here would assert that every `apps/desktop/test/*.test.mjs`
+appears in a package script. Not built — recorded as the obvious next hardening.
+
+### A9 · RESOLVED 08-10 — `npm audit`, split by workspace
+The register carried "23 vulnerabilities, 3 critical — probably build-chain only"
+as an unverified guess. Measured on both sides:
+
+- **`apps/server`: 6 vulnerabilities, 0 critical, 3 high.** The guess was wrong
+  for the server in both directions, and `nodemailer` is a **direct runtime**
+  dependency, not build-chain.
+- **`apps/desktop`: 23 vulnerabilities, 2 moderate, 18 high, 3 critical** —
+  confirmed on the owner's machine 08-10. The 23/3 figure was the desktop
+  workspace all along.
+
+Desktop dependencies are build- and packaging-time (electron-builder and its
+tree) rather than reachable from a running till, so the practical exposure is
+lower than the number suggests — but that is an argument for triaging them, not
+for leaving the number unexamined. Triage still open; the measurement is not.
+
+### A32 · P1 · CLOSED 08-10 · Six migration tests existed, none ran, one had never worked
+Found while fixing a Windows path bug in my own harness. **This repository has
+tested migrations against PGlite since migration 41** — `scripts/test-migration-47,
+-48, -50, -51, -52` and `test-migrations-41-42` — same pattern, same
+`fileURLToPath`, same `--no-save` instruction.
+
+**None of them ran in CI**, and the consequences were exactly what a test nothing
+invokes always costs:
+
+- **`test-migration-47.mjs` pointed at `/home/claude/out4/migrations/…`** — an
+  absolute path from the sandbox it was written in. It has never run anywhere
+  else since the day it was committed. **19 assertions, none ever executed.**
+  Path fixed; 19/19 pass.
+- **Migration 74 shipped a `CREATE OR REPLACE VIEW` Postgres refuses (A30)** and
+  reached the owner's database. The practice to catch it existed; nothing made
+  it habitual.
+
+`scripts/run-migration-tests.mjs` now **discovers** `test-migration*.mjs` rather
+than listing them — a hand-kept list is one more thing to forget, which is the
+failure being fixed — runs each in its own process, and reports every failure
+rather than stopping at the first. `npm run test:migrations` at the root, in CI.
+**7 files, 110 assertions, all green — confirmed on the owner's Windows machine
+2026-08-10.**
+
+The runner reads both summary conventions in this directory (`N passed, N failed`
+and `test-migrations-41-42`'s `PASS`/`all green`), because a blank summary is
+indistinguishable from a file that asserted nothing — and after 47, "looks like
+it did nothing" is not a reassuring thing for a runner to show. Exit status, not
+the summary, decides pass or fail; verified by running a deliberately failing
+file through it (`1 of 8 migration test file(s) failed`, exit 1).
+
+`@electric-sql/pglite` is a root devDependency, so `npm install` provides it and
+the `--no-save` step in six file headers stops being load-bearing.
+
+**My own error, recorded because it is the same one:** I wrote a new harness at
+`apps/server/test/` without checking whether the practice already existed — a
+rule 17 miss in the batch that added rule 17 — and claimed migrations "now" run
+against real Postgres when they had since migration 41. Moved to `scripts/` and
+renamed to match.
+
+### A33 · P2 · CLOSED 08-10 · `new URL(import.meta.url).pathname` breaks on Windows
+My migration harness resolved paths with `new URL(import.meta.url).pathname`,
+which yields `/C:/swiftpos/…` on Windows; `path.resolve` then prepends the drive,
+producing `C:\C:\swiftpos\…` and 17 failures on the owner's machine. Correct
+on Linux, the only place it had run.
+
+Every other script in this repository already used `fileURLToPath`. Mine was the
+sole deviation — the convention was right and I did not follow it.
+
+Fixed, plus the harness now **fails immediately with the resolved path** when the
+migrations directory is missing. Without that, a path bug presents as every
+assertion failing for its own apparent reason — missing columns, empty views —
+and the real cause is buried in the noise, which is precisely what the owner saw.
+
+**CONFIRMED ON TARGET 08-10** — all 7 files pass on the owner's Windows machine.
+This could not be proved from Linux (`fileURLToPath` is platform-dependent), and
+it is the second time in one day that only the target could settle a claim.
+
+### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
+The unifying finding. `REPLICATED_TABLES` is `orders, shifts, float_transactions,
+expenses, business_days, events` — **all sales-side**. Everything a till READS
+still comes from the cloud: `syncEngine:476` pulls the catalogue from
+`/api/pos/init` and `:581` pulls staff from `/api/staff`, both against
+`_serverUrl`. `nodeClient` pulls only `/node/since`.
+
+**The node replicates sales upward and sideways; nothing flows downward through
+it.** A17 (auth), A20 (roster for failover) and this are three symptoms of that
+one sentence, not three findings.
+
+Consequence at a remote site: a price change reaches the node when *it* has
+internet and never reaches the tills; a cashier hired at HQ can never sign in on
+a peer; receipt text and kitchen exclusions never update. Two tills at one branch
+can quietly sell the same item at different prices — the class `branch_prices`
+and `local_price_edits` exist to control.
+
+**Fix:** extend `collectDistribution` downstream to carry `users` and the
+catalogue tables. That closes A17, A20 and A24 together and is an extension of an
+existing mechanism rather than a new one. See `PHASE5-NODE-AUTHORITY.md` §11.
+
+### CORRECTION 08-09 — the register under-credits what is built
+Owner's push-back, checked and upheld. Verified present and sound: bidirectional
+branch replication with cursors; orders replicating COMPLETE with `_items` and
+`_payments`; promotion and demotion, session-gated, audited and probe-before-save;
+`emitEvent` with `EVENT_WHITELIST` as an explicit security boundary; Phase 4
+central day close with instructions and acks; the staff sync pipe; `can_authorize`
+and `/api/staff/authorizers`; order idempotency end to end.
+
+**PHASE5 §§3-5 over-specified as a result** — in particular it proposed a new
+`branch_staff` table when the local `users` table already exists and is already
+synced. Superseded by §11.4: add columns to `users`, one flag on `shapeStaff`,
+one `/node/verify-pin` route, and extend distribution. Items 6, 7 and 9 there are
+a handful of lines each.
+
+### A2 · P1 · CLOSED 08-09 · BUG-17 — mpesa `.single()`
+Both sites fixed. `:224` raised PGRST116 on a refunded order (two mpesa legs —
+migration 37 keeps both rows) and told the cashier "No M-Pesa payment leg found"
+for an order that had one. Now reads all legs, picks the `pending` one, and
+distinguishes "already completed" (409) from "nothing to collect" (404).
+
+`:372` was worse and was not in the original finding: the callback destructured
+**only `data`**, so any lookup failure produced `payment === undefined`, logged
+"unknown checkout", and returned. **A payment M-Pesa had already collected was
+dropped, and the log said the checkout did not exist.** Now `maybeSingle` shape
+with an explicit error branch that says the payment was NOT recorded and needs
+reconciling against the Daraja statement, plus a loud error if two rows ever
+share a checkout id.
+
+### A14 · P0 · CLOSED 08-09 · Owner token can carry an `auth.users` id
+**This is the Beryl root cause.** `auth.ts` resolved the owner's `public.users`
+row with `.eq('email', data.user.email)` — a **case-sensitive** match against a
+column holding whatever was typed at signup, while Supabase Auth lowercases. On
+a miss both `/login` and `/desktop-login` fall back to `data.user.id`, which is
+an **`auth.users`** id, and mint a token carrying it as `userId`.
+
+`orders.cashier_id` is `REFERENCES public.users(id)` (confirmed in the live
+dump), and `orders.ts` writes `cashier_id: req.userId`. So the push fails
+**23503** — which was neither 23505 nor 23514, so it fell to `throw createErr`
+and became "Failed to create order (ref: …)".
+
+It persists for a whole session because **`/refresh` reuses `cleanPayload.userId`
+and never re-resolves it**, so one bad login poisons the entire 30-day refresh
+chain until a fresh `/desktop-login`. That is the bounded 21:09–22:53 window.
+
+`pos-login` already had the correct pattern from BUG-05 (escaped coarse `ilike`,
+exact compare in JS). It was never applied to the two owner paths. Now shared as
+`resolveOwnerUserRow()`.
+
+**Login is deliberately NOT refused when the row is missing** — a release is in
+flight and an owner who works today must still work tomorrow — but it now logs
+an explicit error naming the consequence instead of failing silently.
+
+**Still to confirm on production** (the deduction is from source, not from the
+database): see §E.
+
+### A15 · P1 · CLOSED 08-09 · Every order-create failure was one sentence
+Anything that was not 23505 or 23514 became "Failed to create order (ref: …)" —
+the same message for a bad foreign key, a malformed uuid and a dead database.
+Extracted to `lib/orderErrors.ts` and classified: 23503 → 422
+`ORDER_FK_VIOLATION`, 22P02/22007/22008 → 422 `ORDER_MALFORMED_VALUE`, 23502 →
+422 `ORDER_MISSING_FIELD`. Unknown codes still rethrow, but the log now carries
+the SQLSTATE — the one thing missing for three sessions.
+
+Note `22007`: the RPC casts `created_at` with a bare
+`NULLIF(...)::timestamptz`, and **only the offline path populates that field.**
+Same shape as the `pump_id` bug migration 69 exists to fix.
+
+### A16 · P0 · CLOSED 08-09 · No test in `tests/` had ever run in CI
+All 18 offline suites — including `pay-claim-and-loyalty`, `tip-reconciliation`,
+`atomic-order` and `stock-effects-parity`, i.e. **the money paths** — were
+written one per incident, passed once on the author's machine, and were never
+executed again. Nor were any of the 92 desktop tests added on 08-08.
+
+New `server-suites` CI job runs all 18. The two Electron-free desktop suites
+(`logFile`, `syncEngine-failures`) added to `desktop-scope`. The three SQLite
+suites cannot run on a Linux runner by design (better-sqlite3 is built for
+Electron's ABI) and stay a target-machine step; a comment in the workflow says
+so, so the next person does not "fix" it.
 
 ### A3 · P1 · OPEN · BUG-21 — KDS realtime / RLS
 Never re-verified. Still unknown, not known-good.
@@ -278,12 +870,37 @@ all `Failed to create order (ref: …)`. Ruled out by evidence, not by reasoning
   that path is 23514 and returns a readable 400 anyway.
 - **Not an order-number collision** — 23505, handled as a 409 at `orders.ts:669`.
 
-Only `throw createErr` at `orders.ts:681` produces the generic message, so it is
-an unhandled Postgres error **or something throwing after the RPC committed**
-(stock deduction and the rest run inside the same `try`). Two ways to settle it:
-grep the server log for `error 341849fb`, or check whether those idempotency keys
-already exist in `public.orders` — if they do, the money is recorded and the till
-is lying.
+**CORRECTED 08-09 — "something threw after the RPC committed" is ruled out.**
+`syncEngine.ts:1161` sends `X-Idempotency-Key: row.order_id`, identical on every
+retry, and `orders.ts:360-372` checks that key **before anything else** and
+returns `200 duplicate` when a matching order exists. So had attempt #1
+committed — even if something then threw post-commit — attempt #2 would have
+short-circuited and the row would have cleared at `attempts=2`. All eight
+reached 5. **No attempt ever committed. The money is not banked and the till was
+telling the truth.**
+
+That leaves `throw createErr` on a code that is neither 23505 nor 23514.
+**A14 is the candidate: 23503 on `orders_cashier_id_fkey`,** because the desktop
+owner token can carry an `auth.users` id. It fits every ruled-out item, and it
+fits the bounded window, because `/refresh` never re-resolves `userId`.
+
+Settle it with either:
+
+```sql
+-- Expect ZERO rows. Any row means the deduction above is wrong.
+select id, order_number, created_at, idempotency_key from public.orders
+where idempotency_key in ( <the 8 local order ids from sync_queue> );
+
+-- The smoking gun for A14: a cashier_id equal to businesses.owner_id
+-- (an auth.users id) rather than a public.users id.
+select b.name, b.owner_id as auth_id, u.id as users_id, u.email
+from businesses b left join users u on u.business_id = b.id
+where b.name ilike '%beryl%';
+select distinct cashier_id from orders where business_id = '<beryl>';
+```
+
+The server log for `error 341849fb` remains the direct answer and now would
+print the SQLSTATE (A15).
 
 ---
 
@@ -392,4 +1009,14 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-07 | Live schema dump reviewed. Added B6, C7-C9, §0 dump caveat. BUG-19 upgraded and sized. |
 | 2026-08-08 | G1-G7 shipped. 31 items closed. Printing migrated to ESC/POS end to end (P-01…P-19). Two new gates. Register restructured: open items first, closed items retained as evidence. |
 | 2026-08-08 | Desktop audit (D1-D15) and Beryl sync investigation. Migration ledger reconciled against production (§M). Migration 46 applied. D12 and A1 packaging closed. Header counts and commit corrected. |
+| 2026-08-10 | A32: six migration tests existed and none ran; test-migration-47 had never worked (hardcoded sandbox path, 19 dead assertions). Runner added, all 7 in CI. A33: Windows path bug in my harness. |
+| 2026-08-10 | Target run: 92 desktop tests green under real Electron ABI. A31 found — failover-cursors was never wired into test:desktop, A16 repeated in the batch that closed A16. A9 measured: 23/3-critical is desktop, server is 6/0. |
+| 2026-08-10 | Migration 74 failed on the owner's database (42P16). Fixed, plus a second idempotency bug only execution found. Migrations now run against real Postgres (PGlite) in CI — 17 tests. A30 closed. |
+| 2026-08-10 | D4: migration 74 makes a claimed role verifiable — TOFU per branch, recorded conflicts, one-hour handover window, unique index. A25 closed; A22 partly closed. A29 found: --merge-migrations resurrects renamed columns and weakens the audit. |
+| 2026-08-10 | Office role (view-only node) brought into scope. PHASE5 §4b corrected from `=== 'node'` to `isNodeRole()`. Migration 73 adds device_role; till reports it; registry stores and labels it. A27, A28 closed. A4 measured: 20/66. A25 still open — a role can now be seen, not verified. |
+| 2026-08-10 | Rule 17 sweep on D14. Cause found at `auth.ts:432` — an opt-in flag, not a missing upsert; far more was built than credited. D14 and A26 closed; approval and registration separated. A25 still open by design. |
+| 2026-08-09 | Owner's correction upheld: most of the architecture is built. A24 opened as the unifying finding — the node has no downstream distribution. PHASE5 §11 rewrites the delta; `branch_staff` dropped in favour of columns on the existing `users` table. |
+| 2026-08-09 | Failover clarified: data replicates to all tills, a peer can be promoted. Promotion machinery confirmed present and sound. A20-A23 opened against the gaps; PHASE5 gains §10. |
+| 2026-08-09 | Owner's design clarification: node is branch source of truth, sole cloud uplink, may stay offline forever and may authorise. A17/A19 resolved to a design; `PHASE5-NODE-AUTHORITY.md` written for approval. Reverses D16's override-PIN decision (§5) and makes D4/D14 prerequisites (§7). |
+| 2026-08-09 | Batch 1 (server). A14 Beryl root cause found and fixed, A15 error classification, A16 CI gap, A2 closed. Beryl post-commit hypothesis ruled out by idempotency deduction. 17 new tests, mutation-checked. |
 | 2026-08-08 (eve) | D2, D12, D13 (client half), D16 offline sign-in, A1 packaging closed. Migration 46 applied. 78 desktop tests added, green on Windows/Node 20 with SQLite suites on the real Electron ABI. Working rules moved into the handoff §0. |
