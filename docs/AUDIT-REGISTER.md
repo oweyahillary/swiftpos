@@ -278,6 +278,38 @@ migration 52's branch binding (`checkDeviceBranch` waves an unknown device
 through, by design), fleet telemetry (an UPDATE matching no rows is not an
 error), and A25.
 
+**MEASURED IN PRODUCTION 2026-08-10, before the fix deployed:**
+
+```
+select count(*) from public.user_devices;                    ->  0
+select count(*) ... where business_id = '<beryl>';           ->  0
+select ... where key = 'require_device_registration';
+   Lovers Rock | require_device_registration | false         (one row, all tenants)
+```
+
+**Zero registered devices across the ENTIRE fleet — ten businesses, seven of them
+non-test.** And exactly one row for the flag anywhere: someone opened that
+setting on Lovers Rock once and left it off.
+
+So this was never a Beryl problem. **Device registration has never run for any
+tenant, ever.** Everything downstream of it has been dead code in production
+since the day it was written:
+
+- `lib/deviceBinding.ts` (181 lines) — branch binding, rebind windows,
+  relocation history, terminal-code conflict handling. Never executed.
+- `routes/devices.ts` (216 lines) — fleet view, approve, reject, delete. Mounted
+  at `routes/index.ts:94`, permission-gated, and always empty.
+- Migration 43's telemetry columns — `app_version`, `schema_version`,
+  `last_sync_at` never written for any till, so every diagnosis has required
+  somebody physically at the machine.
+- Migration 52's anti-relocation control — inert everywhere. A till moved
+  between branches has been undetectable this whole time.
+
+That is a large amount of correct, careful, well-tested work that has never once
+run, gated behind a boolean nobody knew to set. **The lesson is not "turn the
+flag on"** — it is that a subsystem with no observable output cannot tell you it
+is idle. Nothing anywhere reported an empty fleet as unusual.
+
 **Fix — the two concerns were conflated and are now separated.**
 `require_device_registration` means *"cashiers must be approved before signing in
 from a new BROWSER"*. It is a real, optional policy and is **untouched**. But a
@@ -656,6 +688,60 @@ key before that. These two steps are what stand between that and a repeat.
 reason. `test-migration-47` had never run (A32), `failover-cursors` was never
 invoked (A31), and now a secret scan that had never scanned a PR. All three
 looked like coverage.
+
+### A36 · **P0** · CLOSED 08-10 · `/desktop-login` minted `surface: 'web'` — four features silently dead
+The one-word bug behind everything chased today.
+
+`routes/auth.ts` `/desktop-login` set `surface: 'web'` in its token payload. **The
+header of that same file has said `surface='desktop'` since the route was
+written.** The comment and the code disagreed for months and nothing compared
+them.
+
+It propagates: `/verify-pin` issues `surface: req.surface ?? 'web'`, so the
+owner token's value flows into every staff token minted from it. On every till
+that signed in through that route, four things were false and therefore silent:
+
+1. **`offlineAuth` (`auth.ts:1356`) is gated on `surface === 'desktop'`.** The
+   PIN hash was never returned, so `staff_pin_cache` stayed EMPTY. **The entire
+   offline sign-in feature — D16, shipped 2026-08-08 with 16 passing pinCache
+   tests — has never worked in the field.** Measured on Beryl's till 2026-08-10:
+   manager and cashier PINs entered ONLINE, then
+   `select count(*) from staff_pin_cache` → **0**.
+2. **Desktop terminal registration (D14) never ran.** `user_devices` was empty
+   for all ten businesses, which kept migration 52's branch binding and every
+   telemetry column inert. This is the *real* reason the fleet was empty — the
+   `require_device_registration` flag was a second, independent cause.
+3. **The `desktop_licensed` gate never fired** for those tills (`pos.ts:87`,
+   `auth.ts:1174`). A till signing in this way traded unlicensed.
+4. **`requireWebSurface` was bypassed**, so a till could reach web-portal-only
+   routes.
+
+**Why nothing caught it.** `/pos-login` derives surface from the request body and
+CAN be `'desktop'` — so the fixtures, and the real `BRANCH_NOT_LICENSED` errors
+seen in the field, both looked right. Two login routes, two different answers,
+and the tests exercised the correct one.
+
+**Deploy safety, checked before shipping:** the till never calls `/api/reports*`,
+so activating `requireWebSurface` changes nothing; and Beryl's Main Branch has
+`desktop_licensed = true` since 2026-07-25, so the licence gate will pass. **On
+an unlicensed branch this fix stops the catalogue pull with a 403** — check
+before deploying anywhere else.
+
+`tests/auth-surface.test.mjs`, 10 tests, mutation-checked. It is a source-text
+test on purpose: the bug was one word in a literal, and a unit test asserting
+`payload.surface === 'desktop'` against a stub would only prove the stub. It also
+asserts the header and the code agree, which is the specific thing that failed.
+
+### A37 · P2 · OPEN · The desktop licence is bypassable by client-supplied `surface`
+`/pos-login` reads `surface` from the request body (`auth.ts:925`) and gates the
+licence on it (`:1062` — `callerSurface !== 'web' && !allowed.desktop_licensed`).
+A client that sends `surface: 'web'` skips the desktop licence check, and
+`pos.ts:87` then also passes because it tests the same value.
+
+A commercial control decided by client input. **Not changed here** — the
+legitimate web POS uses this path, and closing it without breaking that is its
+own piece of work. `tests/auth-surface.test.mjs` §4 pins the current shape so a
+change forces this to be revisited.
 
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 The unifying finding. `REPLICATED_TABLES` is `orders, shifts, float_transactions,
@@ -1086,6 +1172,8 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-07 | Live schema dump reviewed. Added B6, C7-C9, §0 dump caveat. BUG-19 upgraded and sized. |
 | 2026-08-08 | G1-G7 shipped. 31 items closed. Printing migrated to ESC/POS end to end (P-01…P-19). Two new gates. Register restructured: open items first, closed items retained as evidence. |
 | 2026-08-08 | Desktop audit (D1-D15) and Beryl sync investigation. Migration ledger reconciled against production (§M). Migration 46 applied. D12 and A1 packaging closed. Header counts and commit corrected. |
+| 2026-08-10 | **A36 (P0)**: `/desktop-login` minted `surface: 'web'` while its own header said `'desktop'`. Four features silently dead on every till — offline sign-in (D16) never worked in the field, device registration never ran, the licence gate never fired, requireWebSurface bypassed. One word. A37 opened. |
+| 2026-08-10 | D14 measured in production: **0 registered devices across all 10 businesses**, and one `require_device_registration` row anywhere (Lovers Rock, false). Registration has never run for any tenant; deviceBinding.ts, devices.ts, migration 43 telemetry and migration 52 binding have all been dead code in production. |
 | 2026-08-10 | CI #44 (PR dev→main): secret scan 403 — no permissions block, so gitleaks could not read PR commits and scanned nothing. Passing on push for 40+ runs, never exercised on the event that gates main. Fixed; .env check moved first so one fault cannot skip both gates. |
 | 2026-08-10 | CI #42: desktop-scope red — the three desktop suites import dist/main and the job never built it. Build + the two installs added, verified from a clean checkout. Other five jobs green, including all 7 migration files. |
 | 2026-08-10 | A32: six migration tests existed and none ran; test-migration-47 had never worked (hardcoded sandbox path, 19 dead assertions). Runner added, all 7 in CI. A33: Windows path bug in my harness. |

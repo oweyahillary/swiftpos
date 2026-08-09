@@ -781,7 +781,31 @@ router.post('/desktop-login', async (req, res) => {
     permissionKeys:     ['*'],
     permissionsVersion: pv,
     sessionId,
-    surface:            'web',
+    // 'desktop', not 'web'. This route exists to mint a DESKTOP session — the
+    // header of this file has said `surface='desktop'` since it was written —
+    // and it minted 'web'. One word, and four things silently did nothing on
+    // every till that used it:
+    //
+    //   1. offlineAuth (verify-pin) is gated on surface === 'desktop', so the
+    //      PIN hash was never returned and `staff_pin_cache` stayed EMPTY. The
+    //      entire offline sign-in feature — register D16, shipped 2026-08-08
+    //      with 16 passing tests — has never worked in the field. Confirmed on
+    //      Beryl's till 2026-08-10: two PINs entered ONLINE, then
+    //      `select count(*) from staff_pin_cache` = 0.
+    //   2. Desktop terminal registration (D14) never ran, so `user_devices`
+    //      stayed empty, which kept migration 52's branch binding and all fleet
+    //      telemetry inert.
+    //   3. The desktop_licensed gate (pos.ts:87, and pos-login) was never
+    //      applied — a till signing in this way trades unlicensed.
+    //   4. requireWebSurface let a till reach web-portal-only features.
+    //
+    // It PROPAGATES: /verify-pin issues `surface: req.surface ?? 'web'`, so the
+    // owner token's value flows into every staff token minted from it.
+    //
+    // Nothing caught it because /pos-login derives surface from the request
+    // body and CAN be 'desktop', so the fixtures and the licence errors seen in
+    // the field both looked right. Two login routes, two different answers.
+    surface:            'desktop',
   };
 
   const { accessToken, refreshToken } = issueTokenPair(payload);

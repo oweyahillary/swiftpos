@@ -1122,3 +1122,130 @@ batch `-i`'s build fix worked on the runner.
 A check passing for the wrong reason: `test-migration-47` had never run (A32),
 `failover-cursors` was never invoked (A31), and now a secret scan that had never
 scanned a PR. All three looked like coverage.
+
+---
+
+# Batch 2026-08-10-**k** — D14 measured in production (docs only, NO ZIP per rule 18)
+
+| File | Change |
+|---|---|
+| `docs/AUDIT-REGISTER.md` | D14 gains the production measurement |
+
+## The before-shot, taken 2026-08-10 ahead of the merge
+
+```
+select count(*) from public.user_devices;              ->  0
+... where business_id = '<beryl>';                     ->  0
+... where key = 'require_device_registration';
+   Lovers Rock | require_device_registration | false      (one row, all tenants)
+```
+
+**Zero registered devices across the entire fleet.** Ten businesses, seven of
+them non-test. One flag row anywhere, set to false.
+
+## This was never a Beryl problem
+
+Device registration has never run for **any** tenant. Everything downstream has
+been dead code in production since it was written:
+
+- `lib/deviceBinding.ts` — 181 lines, never executed
+- `routes/devices.ts` — 216 lines, mounted and always empty
+- migration 43 telemetry — `app_version`, `schema_version`, `last_sync_at`
+  never written for any till, which is why every diagnosis needed somebody at
+  the machine
+- migration 52 branch binding — inert everywhere; a relocated till has been
+  undetectable this whole time
+
+## The lesson is not "turn the flag on"
+
+A subsystem with no observable output cannot tell you it is idle. **Nothing
+anywhere reported an empty fleet as unusual** — no dashboard warning, no log
+line, no gate. The register listed D14 as "the till is not registered," which
+read as one client's misconfiguration. It was the whole fleet, for the entire
+life of the feature.
+
+Same shape as A31, A32 and A35: something that looked like coverage and was not.
+This one just had a much larger blast radius.
+
+## After the merge
+
+Re-run the same three queries. 0 → 1 for Beryl is the test.
+
+---
+
+# Batch 2026-08-10-**l** — A36 (P0) · one word, four dead features
+
+| File | Change |
+|---|---|
+| `apps/server/src/routes/auth.ts` | `/desktop-login` mints `surface: 'desktop'`, not `'web'` |
+| `tests/auth-surface.test.mjs` | **NEW**, 10 tests, mutation-checked |
+| `docs/AUDIT-REGISTER.md` | A36 closed · A37 opened |
+
+## The bug
+
+`/desktop-login` set `surface: 'web'`. **The header of the same file has said
+`surface='desktop'` since the route was written.** Nothing compared them.
+
+`/verify-pin` issues `surface: req.surface ?? 'web'`, so it propagated into every
+staff token. Four things were then false, and silence is what a false branch
+produces:
+
+| What broke | Where |
+|---|---|
+| `offlineAuth` never sent → `staff_pin_cache` EMPTY | `auth.ts:1356` |
+| Desktop registration (D14) never ran → `user_devices` empty fleet-wide | `auth.ts:1304` |
+| `desktop_licensed` gate never fired — tills traded unlicensed | `pos.ts:87`, `auth.ts:1174` |
+| `requireWebSurface` bypassed | `middleware/auth.ts:225` |
+
+**D16 — offline sign-in, a full session on 2026-08-08, 16 passing pinCache tests
+— has never worked on a real till.** Measured today: two PINs entered online,
+`select count(*) from staff_pin_cache` = **0**. The tests were right, the client
+was right; the server withheld the hash.
+
+## Checked before shipping, because this turns dormant gates ON
+
+- **`requireWebSurface`** guards `/api/reports*` only, and `grep` confirms the
+  till never calls them. Owners are exempt anyway (`req.isOwner ||`).
+- **`desktop_licensed`** — Beryl's Main Branch is licensed since 2026-07-25, so
+  the gate passes. **On an unlicensed branch this fix returns 403 and kills the
+  catalogue pull.** Check `desktop_licensed` before deploying anywhere else.
+
+## Why the test reads source text
+
+The bug was one word in a literal. A unit test asserting
+`payload.surface === 'desktop'` against a stub proves the stub. This reads the
+shipped file — the same approach `test-office-role.mjs` uses — and additionally
+asserts **the header and the code agree**, which is the exact comparison nobody
+was making.
+
+## What was run
+
+```
+server tsc OK · desktop main tsc OK · 10 gates OK · schema-audit total: 0
+7 migration files OK · 21 server suites OK (was 20)
+tests/auth-surface.test.mjs                          10/10
+```
+
+**Mutation check:** reinstated `surface: 'web'` → exit 1, 3 failures naming the
+consequence. Restored → exit 0.
+
+## Still open
+
+**A37** — `/pos-login` takes `surface` from the request body and gates the
+licence on it, so a client sending `surface: 'web'` skips the desktop licence
+check. Recorded, not changed: the legitimate web POS uses that path.
+
+## After deploying
+
+1. Owner signs out and back in — **required**, the current token still says
+   `web`. "Lock till" is not enough this time; the owner token must be re-minted.
+2. Then a PIN sign-in, and check both:
+
+```sql
+select count(*) from public.user_devices
+where business_id = 'b5096e81-8a8d-4316-97d5-9e6a4bd91751';   -- expect 1
+```
+```sql
+-- on the till
+select count(*) from staff_pin_cache;                          -- expect >= 1
+```
