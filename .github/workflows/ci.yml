@@ -90,20 +90,30 @@ jobs:
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
+    # gitleaks-action lists the PR's commits through the API on a pull_request
+    # event, which needs pull-requests: read. The repository default token is
+    # contents/metadata/packages read only, so PR #2 (CI #44) died with
+    #   403 Resource not accessible by integration  .../pulls/2/commits
+    # having scanned NOTHING. Every earlier run was a push event, where the API
+    # is never touched — so this gate had been passing for a reason that did not
+    # hold on the one event type that gates a merge to main.
+    #
+    # Scoped to this job rather than the workflow: nothing else here calls the
+    # API, and a read-only default is worth keeping wherever it still works.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # gitleaks needs history to scan commits
 
-      # This repo previously leaked a hardcoded Ed25519 signing key to a public
-      # remote (see handoffs/handoff-14-07-2026.md §1). This job is the guardrail
-      # that makes a repeat fail loudly instead of quietly.
-      - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Belt and braces: fail if a real .env is ever committed.
+      # FIRST, deliberately. This needs no action, no API and no network, so an
+      # infrastructure failure cannot skip it. When gitleaks crashed on CI #44
+      # the job stopped and this never ran either — one outage silently took out
+      # BOTH secret gates at once. Cheap checks go ahead of fragile ones.
+      #
+      # Fail if a real .env is ever committed.
       - name: Assert no committed .env files
         run: |
           found=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|production)$' || true)
@@ -111,6 +121,15 @@ jobs:
             echo "::error::Real .env file(s) tracked in git:"; echo "$found"; exit 1
           fi
           echo "No tracked .env files."
+
+      # This repo previously leaked a hardcoded Ed25519 signing key to a public
+      # remote (see handoffs/handoff-14-07-2026.md §1), and a service-role key in
+      # a packaged zip on 2026-08-08 (register A1). This is the guardrail that
+      # makes a repeat fail loudly instead of quietly.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   schema:
     name: Schema drift

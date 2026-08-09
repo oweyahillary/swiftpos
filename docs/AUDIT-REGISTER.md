@@ -619,6 +619,44 @@ from nothing. Everything local benefits from state built up by hand, and A32
 invisible for the same reason. Expect more of this on the next few runs; each
 one is a real gap, not noise.
 
+### A35 · P1 · CLOSED 08-10 · The secret scan never ran on a pull request
+CI #44, PR #2 (`dev → main`):
+
+```
+RequestError [HttpError]: Resource not accessible by integration
+  GET .../repos/oweyahillary/swiftpos/pulls/2/commits   403
+  x-accepted-github-permissions: pull_requests=read
+```
+
+`gitleaks-action` lists the PR's commits through the API on a `pull_request`
+event. The workflow declared **no `permissions` block at all**, so it inherited
+the repository default — `contents`, `metadata`, `packages`, all read — and the
+action crashed **before scanning anything**.
+
+**Every earlier run was a `push` event, where the API is never touched.** So this
+gate had been passing for a reason that did not hold on the one event type that
+gates a merge to `main`. It looked like 40-odd green runs of a working secret
+scan; on the path that matters it had never been exercised.
+
+`permissions: { contents: read, pull-requests: read }`, scoped to that job —
+nothing else here calls the API, and a read-only default is worth keeping
+everywhere it still works.
+
+**Second finding, from the same failure.** The job's steps ran gitleaks FIRST and
+the `.env` assertion second, so when gitleaks crashed the job stopped and **both
+secret gates were skipped by one infrastructure fault.** The `.env` check needs
+no action, no API and no network. It now runs first, so it cannot be taken out by
+something unrelated failing.
+
+Context for why this matters more than a red tick: A1 was a service-role key
+leaked in a packaged zip on 2026-08-08, and the repo leaked an Ed25519 signing
+key before that. These two steps are what stand between that and a repeat.
+
+**The general shape, third time today:** a check that passes for the wrong
+reason. `test-migration-47` had never run (A32), `failover-cursors` was never
+invoked (A31), and now a secret scan that had never scanned a PR. All three
+looked like coverage.
+
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 The unifying finding. `REPLICATED_TABLES` is `orders, shifts, float_transactions,
 expenses, business_days, events` — **all sales-side**. Everything a till READS
@@ -1048,6 +1086,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-07 | Live schema dump reviewed. Added B6, C7-C9, §0 dump caveat. BUG-19 upgraded and sized. |
 | 2026-08-08 | G1-G7 shipped. 31 items closed. Printing migrated to ESC/POS end to end (P-01…P-19). Two new gates. Register restructured: open items first, closed items retained as evidence. |
 | 2026-08-08 | Desktop audit (D1-D15) and Beryl sync investigation. Migration ledger reconciled against production (§M). Migration 46 applied. D12 and A1 packaging closed. Header counts and commit corrected. |
+| 2026-08-10 | CI #44 (PR dev→main): secret scan 403 — no permissions block, so gitleaks could not read PR commits and scanned nothing. Passing on push for 40+ runs, never exercised on the event that gates main. Fixed; .env check moved first so one fault cannot skip both gates. |
 | 2026-08-10 | CI #42: desktop-scope red — the three desktop suites import dist/main and the job never built it. Build + the two installs added, verified from a clean checkout. Other five jobs green, including all 7 migration files. |
 | 2026-08-10 | A32: six migration tests existed and none ran; test-migration-47 had never worked (hardcoded sandbox path, 19 dead assertions). Runner added, all 7 in CI. A33: Windows path bug in my harness. |
 | 2026-08-10 | Target run: 92 desktop tests green under real Electron ABI. A31 found — failover-cursors was never wired into test:desktop, A16 repeated in the batch that closed A16. A9 measured: 23/3-critical is desktop, server is 6/0. |

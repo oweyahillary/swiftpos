@@ -1072,3 +1072,53 @@ CI is the first environment in this project that starts from nothing. Everything
 local benefits from state assembled by hand — which is precisely why A31 (a suite
 never wired in) and A32 (six migration tests never run) stayed invisible.
 **Expect one or two more of these; each is a real gap, not noise.**
+
+---
+
+# Batch 2026-08-10-**j** — A35 · the secret scan had never scanned a PR
+
+| File | Change |
+|---|---|
+| `.github/workflows/ci.yml` | `permissions: {contents: read, pull-requests: read}` on the `secrets` job; `.env` assertion moved before gitleaks |
+| `docs/AUDIT-REGISTER.md` | A35 |
+
+## Not a code failure — a gate that had never been exercised
+
+```
+403 Resource not accessible by integration   .../pulls/2/commits
+x-accepted-github-permissions: pull_requests=read
+```
+
+The workflow declared **no `permissions` block anywhere**, so it inherited the
+repository read-only default. `gitleaks-action` needs `pull-requests: read` to
+list a PR's commits, and crashed **before scanning anything**.
+
+**Every earlier run was a `push` event, where it never touches the API.** Forty-odd
+green ticks, and on the one event type that gates a merge to `main` it had never
+worked. A1 was a leaked service-role key; this is the gate that exists because
+of it.
+
+## The second half, from the same log
+
+gitleaks ran FIRST and the `.env` assertion second — so when gitleaks crashed,
+the job stopped and **one infrastructure fault skipped both secret gates.** The
+`.env` check needs no action, no API and no network. It now runs first.
+
+## Verified
+
+```
+YAML parses · permissions on `secrets` only, other five jobs unchanged
+step order: checkout → .env assertion → gitleaks
+.env assertion run locally: "No tracked .env files."
+```
+
+## Everything else on CI #44 was green
+
+Type-check, Build, Schema drift, Server suites, **and Desktop row scope** — so
+batch `-i`'s build fix worked on the runner.
+
+## Third time today
+
+A check passing for the wrong reason: `test-migration-47` had never run (A32),
+`failover-cursors` was never invoked (A31), and now a secret scan that had never
+scanned a PR. All three looked like coverage.
