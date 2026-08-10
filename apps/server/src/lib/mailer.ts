@@ -1,16 +1,7 @@
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
-import type SMTPTransport from 'nodemailer/lib/smtp-transport';
+import dns from 'node:dns/promises';
 
-/**
- * `family` is honoured by nodemailer at runtime — it is forwarded to
- * net.connect — but it is absent from @types/nodemailer 8.0.x, and supplying an
- * unknown key makes TypeScript fall through to a different createTransport
- * overload and report the misleading "'host' does not exist". Widening the type
- * here is narrower and more honest than casting the whole options object to
- * any, which would have silenced real mistakes in the same literal.
- */
-type SmtpOptions = SMTPTransport.Options & { family?: 4 | 6 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FROM ADDRESS
@@ -28,44 +19,91 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-const smtpTransport = (
-  process.env.SMTP_HOST &&
-  process.env.SMTP_USER &&
-  process.env.SMTP_PASS
-) ? nodemailer.createTransport(<SmtpOptions>{
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT ?? '587'),
-  secure: process.env.SMTP_PORT === '465',
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = parseInt(process.env.SMTP_PORT ?? '587');
 
-  // ── WHY family: 4 ─────────────────────────────────────────────────────────
-  // Without it, Node resolves AAAA first and Render's container has no usable
-  // route to Google's IPv6 space, so every send died before TLS:
-  //
-  //   [dailySummary] Failed for Beryl: connect ENETUNREACH 2607:f8b0:400e:c02::6c:587
-  //
-  // That is a NETWORK-layer failure on connect(), so nothing was authenticated
-  // and no recipient was ever offered — which is how we know it was not bad
-  // addresses on the test businesses: a bad recipient produces an SMTP 550
-  // after RCPT TO, and Beryl (a real client) failed identically. Nine
-  // businesses, every night, two days observed, zero delivered.
-  //
-  // The `Connection timeout` entries in the same run are the same fault hitting
-  // connectionTimeout below instead of failing instantly — a different IPv6
-  // route, not a different problem.
-  //
-  // This is the FALLBACK path, so it is what everything lands on whenever
-  // Resend is unset or has a bad day. It has to work on its own. See A50.
-  family: 4,
+/**
+ * The SMTP host, pinned to an IPv4 literal.
+ *
+ * ── WHY THIS IS NOT `family: 4` (register A50, second attempt) ────────────────
+ * The first fix set `family: 4` on the transport. It changed nothing, and the
+ * boot check said so in production:
+ *
+ *   [mailer] SMTP FALLBACK IS DEAD — smtp.gmail.com:587 —
+ *            connect ENETUNREACH 2607:f8b0:400e:c20::6c:587
+ *
+ * **nodemailer never reads `family` when resolving.** `smtp-connection/index.js`
+ * builds its DNS options as `{ port, host, allowInternalNetworkInterfaces,
+ * timeout }` — `family` is not among them. Resolution then goes through
+ * `dns.lookup(host, { all: true })`, filters with `isFamilySupported()` (which
+ * asks whether this machine HAS an IPv6 interface, not whether it has a working
+ * ROUTE), and `formatDNSValue()` picks **a random address from what survives**.
+ *
+ * Render's container has an IPv6 interface and no usable route, so nodemailer
+ * counted IPv6 as supported and chose it roughly half the time. That also
+ * explains the mixed `ENETUNREACH` and `Connection timeout` lines in the same
+ * run — different random picks, one failing instantly and one hitting
+ * connectionTimeout. Not two problems; one.
+ *
+ * Because the pick is RANDOM rather than ordered, `dns.setDefaultResultOrder
+ * ('ipv4first')` would not have fixed it either. The only reliable lever is to
+ * hand nodemailer an address it cannot get wrong.
+ *
+ * So: resolve A records ourselves and connect to the literal, with
+ * `tls.servername` set to the real hostname so certificate validation still
+ * matches — without it, TLS would be checked against "74.125.126.108" and every
+ * send would fail verification instead of routing.
+ *
+ * Re-resolved on a TTL because Google rotates these addresses. On failure we
+ * keep the last good value rather than falling back to the hostname, since the
+ * hostname is exactly what does not work here.
+ */
+let _pinnedIPv4: string | null = null;
+let _pinnedAt = 0;
+const PIN_TTL_MS = 10 * 60_000;
 
-  connectionTimeout: 10_000,
-  greetingTimeout:   10_000,
-  socketTimeout:     20_000,
+async function resolveSmtpIPv4(): Promise<string | null> {
+  if (!SMTP_HOST) return null;
+  if (_pinnedIPv4 && Date.now() - _pinnedAt < PIN_TTL_MS) return _pinnedIPv4;
+  try {
+    const [addr] = await dns.resolve4(SMTP_HOST);
+    if (addr) { _pinnedIPv4 = addr; _pinnedAt = Date.now(); }
+  } catch {
+    // Keep the previous value. A DNS blip must not demote us back to the
+    // hostname, because the hostname is the failure mode.
+  }
+  return _pinnedIPv4;
+}
 
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-}) : null;
+/**
+ * Built per send rather than once at module load, because the pinned address
+ * has a TTL. Creating a transport is cheap — it opens no socket until sendMail.
+ */
+async function getSmtpTransport() {
+  if (!SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+
+  const ipv4 = await resolveSmtpIPv4();
+
+  return nodemailer.createTransport({
+    // The literal when we have one; the hostname only as a last resort, which
+    // is no worse than the behaviour that was already failing.
+    host: ipv4 ?? SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+
+    connectionTimeout: 10_000,
+    greetingTimeout:   10_000,
+    socketTimeout:     20_000,
+
+    // Certificate validation must still be against the NAME, not the address.
+    tls: { servername: SMTP_HOST },
+
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
 
 // A free-mail FROM address cannot work on Resend: it will only send from a
 // domain you have verified, so `NOTIFY_FROM_EMAIL=…@gmail.com` fails EVERY send
@@ -112,7 +150,9 @@ export interface MailOptions {
  * Never throws, never awaited by the caller.
  */
 export async function reportMailReadiness(): Promise<void> {
-  if (!resend && !smtpTransport) {
+  const smtp = await getSmtpTransport();
+
+  if (!resend && !smtp) {
     console.warn(
       '[mailer] NO EMAIL PROVIDER CONFIGURED. Daily summaries and low-stock '
       + 'alerts will not be delivered. Set RESEND_API_KEY, or SMTP_HOST + '
@@ -130,7 +170,7 @@ export async function reportMailReadiness(): Promise<void> {
     );
   }
 
-  if (!smtpTransport) {
+  if (!smtp) {
     console.warn(
       '[mailer] No SMTP fallback configured. If Resend rejects a message '
       + '(unverified domain is the usual cause) it will not be delivered.',
@@ -139,17 +179,19 @@ export async function reportMailReadiness(): Promise<void> {
   }
 
   try {
-    await smtpTransport.verify();
+    await smtp.verify();
     console.info(
-      `[mailer] SMTP fallback reachable: ${process.env.SMTP_HOST}:`
-      + `${process.env.SMTP_PORT ?? '587'} (IPv4).`,
+      `[mailer] SMTP fallback reachable: ${SMTP_HOST}:${SMTP_PORT} `
+      + `via ${_pinnedIPv4 ?? 'hostname'} (IPv4 pinned).`,
     );
   } catch (err: any) {
     console.error(
-      `[mailer] SMTP FALLBACK IS DEAD — ${process.env.SMTP_HOST}:`
-      + `${process.env.SMTP_PORT ?? '587'} — ${err?.message ?? err}\n`
-      + '         Nothing will be delivered through it. If this reads ENETUNREACH\n'
-      + '         with an IPv6 address, the `family: 4` above is not taking effect.',
+      `[mailer] SMTP FALLBACK IS DEAD — ${SMTP_HOST}:${SMTP_PORT} `
+      + `(pinned to ${_pinnedIPv4 ?? 'NOTHING — A-record lookup failed'}) — `
+      + `${err?.message ?? err}\n`
+      + '         Nothing will be delivered through it. An ENETUNREACH on an\n'
+      + '         IPv6 address here would mean the pin is not being applied at\n'
+      + '         all, since a pinned A record cannot resolve to one.',
     );
   }
 }
@@ -178,8 +220,9 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
   }
 
   // ── Fallback: Nodemailer SMTP ─────────────────────────────
-  if (smtpTransport) {
-    await smtpTransport.sendMail({
+  const smtp = await getSmtpTransport();
+  if (smtp) {
+    await smtp.sendMail({
       from,
       to: opts.to,
       subject: opts.subject,

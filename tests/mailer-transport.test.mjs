@@ -74,70 +74,69 @@ const decomment = src => src
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
   .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length));
 
-const mailerSrc = decomment(readFileSync(resolve(ROOT, 'apps/server/src/lib/mailer.ts'), 'utf8'));
+const rawMailer = readFileSync(resolve(ROOT, 'apps/server/src/lib/mailer.ts'), 'utf8');
+const mailerSrc = decomment(rawMailer);
 const indexSrc  = decomment(readFileSync(resolve(ROOT, 'apps/server/src/index.ts'), 'utf8'));
 
 console.log('\nmailer transport — IPv4 and boot readiness\n');
 
-// ── 1. The real transport, built and read back ─────────────────────────────
-console.log('1. nodemailer actually receives family: 4');
+// ── 1. WHY THE FIRST FIX FAILED, pinned so it cannot come back ────────────
+console.log('1. family: 4 was never read (the first fix, and why it failed)');
 
-let nodemailer = null;
-try { nodemailer = require('nodemailer'); } catch { /* not installed here */ }
+// This is the correction. `family: 4` shipped, and production answered:
+//
+//   [mailer] SMTP FALLBACK IS DEAD — smtp.gmail.com:587 —
+//            connect ENETUNREACH 2607:f8b0:400e:c20::6c:587
+//
+// nodemailer's smtp-connection builds its DNS options as
+// { port, host, allowInternalNetworkInterfaces, timeout } — `family` is NOT
+// among them. It resolves with dns.lookup(host, {all:true}), filters with
+// isFamilySupported() (does this machine HAVE an IPv6 interface — not does it
+// have a working ROUTE), then picks a RANDOM survivor.
+//
+// The earlier version of this file asserted that nodemailer STORED family: 4.
+// It does store it. It never reads it. Storage is not effect, and the mutation
+// check could not tell the difference because both versions were equally
+// ineffective. That is the whole lesson here.
+ok('the transport no longer relies on family',
+   !/family:\s*[46]/.test(mailerSrc),
+   'nodemailer ignores it during resolution, so shipping it is a fix that looks '
+   + 'applied and is not — which is worse than no fix, because the boot check '
+   + 'then reports DEAD with no obvious cause.');
 
-if (!nodemailer) {
-  console.log('  skip nodemailer not installed — run `npm ci` in apps/server');
-} else {
-  // The same shape the server builds. If the server's literal loses `family`,
-  // this test still passes — which is why section 2 reads the source too.
-  const t = nodemailer.createTransport({
-    host: 'smtp.gmail.com', port: 587, secure: false, family: 4,
-    connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
-    auth: { user: 'x@example.com', pass: 'unused-in-this-test' },
-  });
+// Because the pick is RANDOM rather than ordered, ipv4first would not have
+// helped either. Worth pinning so nobody "simplifies" to it later.
+ok('it does not rely on dns result ORDER either',
+   !/setDefaultResultOrder/.test(mailerSrc),
+   'formatDNSValue picks a random address from the filtered list, so ordering '
+   + 'the list changes nothing.');
 
-  const stored = t.options?.family ?? t.transporter?.options?.family;
-  ok('a transport built with family: 4 reports family 4',
-     stored === 4,
-     `nodemailer stored family=${JSON.stringify(stored)}. If this is undefined, `
-     + 'the option name changed and the IPv4 pin is not being applied — which is '
-     + 'invisible until a container without an IPv6 route tries to send.');
-
-  ok('the option survives without a type error at runtime',
-     typeof t.sendMail === 'function');
-
-  // Guard the direction of the fix: 6 must NOT be what we ship.
-  const t6 = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 587, family: 6 });
-  const stored6 = t6.options?.family ?? t6.transporter?.options?.family;
-  ok('nodemailer distinguishes 4 from 6 (so the assertion above means something)',
-     stored6 === 6 && stored !== stored6);
-}
-
-// ── 2. The server's own literal carries it ─────────────────────────────────
-console.log('\n2. the shipped transport, not just a test one');
-// NOT `/family:\s*4/` on its own — that also matches the phrase inside the
-// reportMailReadiness error message at mailer.ts:152, so it stayed green when
-// the real option was commented out. An assertion satisfied by a log string is
-// worse than no assertion. The type widening is its own fact worth pinning:
-// @types/nodemailer 8.0.x omits `family` while nodemailer honours it, and
-// without the widening the options literal fails to compile at all.
-ok('the SmtpOptions type widening for `family` is present',
-   /type\s+SmtpOptions\s*=\s*SMTPTransport\.Options\s*&\s*\{\s*family\?:/.test(mailerSrc),
-   'Without it TypeScript falls through to another createTransport overload and '
-   + 'reports the misleading "\'host\' does not exist".');
-ok('it is inside the createTransport options, not a stray comment',
-   /createTransport\([\s\S]{0,2000}?family:\s*4/.test(mailerSrc));
+// ── 2. The fix: an address nodemailer cannot get wrong ────────────────────
+console.log('\n2. a pinned IPv4 literal, with TLS still checked by NAME');
+ok('A records are resolved explicitly', /dns\.resolve4/.test(mailerSrc));
+ok('the resolved literal is used as the host',
+   /host:\s*ipv4\s*\?\?/.test(mailerSrc));
+ok('tls.servername keeps certificate validation on the HOSTNAME',
+   /servername:\s*SMTP_HOST/.test(mailerSrc),
+   'Connecting to 74.125.126.108 without servername validates the certificate '
+   + 'against the literal and every send fails verification instead of routing '
+   + '— trading one silent failure for another.');
+ok('the pin is re-resolved on a TTL',
+   /PIN_TTL_MS/.test(mailerSrc),
+   'Google rotates these addresses; a literal pinned once at boot goes stale.');
+ok('a DNS blip keeps the last good address rather than falling back to the name',
+   /Keep the previous value/.test(rawMailer),
+   'Falling back to the hostname would restore the exact failure mode.');
 ok('SMTP is still only built when host, user and pass are all present',
-   /SMTP_HOST\s*&&[\s\S]{0,120}SMTP_USER\s*&&[\s\S]{0,120}SMTP_PASS/.test(mailerSrc),
-   'A transport built from partial config would fail at send time instead of '
-   + 'being cleanly absent.');
+   /SMTP_HOST\s*\|\|[\s\S]{0,80}SMTP_USER\s*\|\|[\s\S]{0,80}SMTP_PASS/.test(mailerSrc)
+     || /!SMTP_HOST[\s\S]{0,120}SMTP_PASS/.test(mailerSrc));
 
 // ── 3. A dead mail path announces itself at boot ───────────────────────────
 console.log('\n3. boot readiness');
 ok('reportMailReadiness is exported',
    /export\s+async\s+function\s+reportMailReadiness/.test(mailerSrc));
 ok('it calls verify() rather than sending a probe email',
-   /smtpTransport\.verify\(\)/.test(mailerSrc),
+   /smtp\.verify\(\)/.test(mailerSrc),
    'verify() connects and authenticates without delivering anything.');
 ok('index.ts calls it at boot',
    /reportMailReadiness\(\)/.test(indexSrc),
@@ -156,7 +155,7 @@ ok('it warns when SMTP is the ONLY path',
 // ── 4. The fallback order is unchanged ─────────────────────────────────────
 console.log('\n4. send path unchanged');
 ok('Resend is still tried first when configured',
-   mailerSrc.indexOf('resend.emails.send') < mailerSrc.indexOf('smtpTransport.sendMail'));
+   mailerSrc.indexOf('resend.emails.send') < mailerSrc.indexOf('smtp.sendMail'));
 ok('SMTP is still the fallback after a Resend error',
    /falling back to SMTP/.test(mailerSrc));
 
