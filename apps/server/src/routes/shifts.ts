@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import { chunkIn, fetchAllIds } from '../lib/pgQuery';
 import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
-import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
+import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -95,8 +95,9 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
     return;
   }
 
-  const deviceId     = (req.headers['x-device-id'] as string | undefined)?.trim()
-                       || (req.body?.device_id as string | undefined)?.trim() || null;
+  // deviceIdFromRequest, not a raw header read — a duplicated header arrives
+  // comma-joined, and this value keys the one-open-drawer index. terminalKey.ts.
+  const deviceId     = deviceIdFromRequest(req) || null;
   const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || null;
 
   const { data, error } = await supabase

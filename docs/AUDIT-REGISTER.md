@@ -743,6 +743,51 @@ legitimate web POS uses this path, and closing it without breaking that is its
 own piece of work. `tests/auth-surface.test.mjs` §4 pins the current shape so a
 change forces this to be revisited.
 
+### A38 · **P1** · CLOSED 08-10 · The till sent `X-Device-Id` twice — every reader got a comma-joined value
+Found in Render's logs while chasing A36, and it is the SECOND independent cause
+of the empty fleet:
+
+```
+[fleet] no user_devices row for device
+  24dbc289-ee7f-42b6-8fed-6e089095b719, 24dbc289-ee7f-42b6-8fed-6e
+```
+
+`syncEngine.pushAuthHeaders()` declared **both** `'x-device-id'` and
+`'X-Device-Id'` in one object literal. HTTP header names are case-insensitive,
+so fetch emitted the pair and the server received them joined with `", "`. The
+reader then did `.slice(0, 64)` on the JOINED string, chopping the second copy
+mid-uuid — which is the trailing fragment in that log line.
+
+**Four places consumed it:**
+- fleet telemetry — `WHERE device_id = ?` could never match, so this would have
+  stayed broken even after registration started creating rows
+- `orders.device_id`
+- `shifts.device_id`
+- `terminalKeyFromRequest`, which feeds migration 63's one-open-drawer-per-terminal
+  unique index
+
+**The rollout risk, and why the server fix matters more than the client one.**
+An updated till sending a single value would resolve to a DIFFERENT terminal key
+than the shift it opened under the joined value — looking like a new terminal and
+being allowed a second open drawer against the same physical till. New
+`deviceIdFromRequest()` in `lib/terminalKey.ts` takes the first comma-separated
+value, so an old build and a new one resolve identically and the change is
+invisible to that index. `orders.ts`, `shifts.ts` and `sync.ts` all route through
+it.
+
+Client side: one spelling in both header builders. They previously disagreed —
+`'x-device-id'` in `authHeaders`, `'X-Device-Id'` in `pushAuthHeaders` — which is
+how a copy-paste put both into one object.
+
+`tests/device-id-header.test.mjs`, 10 tests, mutation-checked both halves
+(removing the split → exit 1; restoring the duplicate key → exit 1). It asserts
+against **the exact string Render logged**, not a value typed into the test.
+
+**Worth stating plainly:** the empty `user_devices` table had THREE independent
+causes — the `require_device_registration` opt-in (D14), `surface: 'web'` (A36),
+and this. Fixing any one alone would have produced no visible change, which is
+why the first two fixes appeared to do nothing.
+
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 The unifying finding. `REPLICATED_TABLES` is `orders, shifts, float_transactions,
 expenses, business_days, events` — **all sales-side**. Everything a till READS
@@ -1172,6 +1217,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-07 | Live schema dump reviewed. Added B6, C7-C9, §0 dump caveat. BUG-19 upgraded and sized. |
 | 2026-08-08 | G1-G7 shipped. 31 items closed. Printing migrated to ESC/POS end to end (P-01…P-19). Two new gates. Register restructured: open items first, closed items retained as evidence. |
 | 2026-08-08 | Desktop audit (D1-D15) and Beryl sync investigation. Migration ledger reconciled against production (§M). Migration 46 applied. D12 and A1 packaging closed. Header counts and commit corrected. |
+| 2026-08-10 | **A38**: the till sent X-Device-Id twice; every server reader got a comma-joined, truncated value. Third independent cause of the empty fleet, alongside D14's opt-in flag and A36's surface. Normalised server-side so old and new builds resolve the same terminal key. |
 | 2026-08-10 | **A36 (P0)**: `/desktop-login` minted `surface: 'web'` while its own header said `'desktop'`. Four features silently dead on every till — offline sign-in (D16) never worked in the field, device registration never ran, the licence gate never fired, requireWebSurface bypassed. One word. A37 opened. |
 | 2026-08-10 | D14 measured in production: **0 registered devices across all 10 businesses**, and one `require_device_registration` row anywhere (Lovers Rock, false). Registration has never run for any tenant; deviceBinding.ts, devices.ts, migration 43 telemetry and migration 52 binding have all been dead code in production. |
 | 2026-08-10 | CI #44 (PR dev→main): secret scan 403 — no permissions block, so gitleaks could not read PR commits and scanned nothing. Passing on push for 40+ runs, never exercised on the event that gates main. Fixed; .env check moved first so one fault cannot skip both gates. |

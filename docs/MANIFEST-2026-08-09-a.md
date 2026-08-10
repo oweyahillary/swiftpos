@@ -1249,3 +1249,65 @@ where business_id = 'b5096e81-8a8d-4316-97d5-9e6a4bd91751';   -- expect 1
 -- on the till
 select count(*) from staff_pin_cache;                          -- expect >= 1
 ```
+
+---
+
+# Batch 2026-08-10-**m** — A38 · the device id header was sent twice
+
+| File | Change |
+|---|---|
+| `apps/desktop/src/main/syncEngine.ts` | One spelling of the device id header in both builders |
+| `apps/server/src/lib/terminalKey.ts` | **NEW** `deviceIdFromRequest()` — takes the first comma-separated value |
+| `apps/server/src/routes/sync.ts` | Uses it; split before the length cap |
+| `apps/server/src/routes/orders.ts` | Uses it |
+| `apps/server/src/routes/shifts.ts` | Uses it |
+| `tests/device-id-header.test.mjs` | **NEW**, 10 tests, both halves mutation-checked |
+| `docs/AUDIT-REGISTER.md` | A38 |
+
+## Found in your Render log, not by reading
+
+```
+[fleet] no user_devices row for device
+  24dbc289-ee7f-42b6-8fed-6e089095b719, 24dbc289-ee7f-42b6-8fed-6e
+```
+
+`pushAuthHeaders()` declared both `'x-device-id'` and `'X-Device-Id'`. Header
+names are case-insensitive to HTTP but not to an object literal, so fetch sent
+the pair and the server got them comma-joined — then sliced the joined string.
+
+**I saw this duplicate earlier today and called it harmless.** It was not.
+
+## Why the server fix matters more than the client fix
+
+`terminalKeyFromRequest` feeds migration 63's one-open-drawer-per-terminal unique
+index. A till updated **mid-shift** would switch from the joined value to the
+single one, resolve to a different terminal key, and be allowed a **second open
+drawer against the same physical till**.
+
+Normalising on the server means an old build and a new one produce the same key,
+so the transition is invisible to that index. The test asserts exactly that.
+
+## The empty fleet had THREE causes
+
+1. `require_device_registration` opt-in never enabled (D14)
+2. `/desktop-login` minting `surface: 'web'` (A36)
+3. this
+
+Fixing any one alone changes nothing visible — which is why the first two
+appeared to do nothing.
+
+## What was run
+
+```
+server tsc OK · desktop main tsc OK · 10 gates OK · schema-audit total: 0
+7 migration files OK · 22 server suites OK (was 21)
+tests/device-id-header.test.mjs   10/10
+```
+
+Mutation: split removed → exit 1. Duplicate key restored → exit 1. Both back → 0.
+
+## Still to do on the server
+
+`fca625f` (A36) is pushed to `dev` but **the last Render deploy in the log is
+13:51 UTC**, before it. Check Render → Events; if auto-deploy is off, trigger it.
+Nothing registers until that build is live.

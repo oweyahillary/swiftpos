@@ -78,7 +78,13 @@ export function configureStaffSession(staffToken: string, staffRefresh = '') {
 function authHeaders() {
   return {
     'Content-Type': 'application/json',
-    'x-device-id': getDeviceConfig()?.device_id ?? '',
+    // Same spelling as pushAuthHeaders. These two builders disagreed —
+    // 'x-device-id' here, 'X-Device-Id' there — and when a copy-paste brought
+    // both spellings into ONE object, fetch sent the header twice and the
+    // server received them comma-joined. Header names are case-insensitive to
+    // HTTP but not to an object literal, so consistency here is what stops that
+    // recurring.
+    'X-Device-Id': getDeviceConfig()?.device_id ?? '',
     Authorization: `Bearer ${_accessToken}`,
   };
 }
@@ -207,7 +213,6 @@ function pushAuthHeaders() {
   const token = _staffToken || _accessToken;
   return {
     'Content-Type': 'application/json',
-    'x-device-id': getDeviceConfig()?.device_id ?? '',
     Authorization: `Bearer ${token}`,
     // Which local schema this build carries. Tills are updated by installing an
     // .exe by hand, so one is always behind; sending this lets the server say so
@@ -215,6 +220,19 @@ function pushAuthHeaders() {
     'X-Schema-Version': String(LOCAL_SCHEMA_VERSION),
     // Stable per-install identity, so the fleet view can attribute sync recency
     // to a specific terminal rather than to a User-Agent hash shared by all three.
+    //
+    // ONE key only. This object carried BOTH 'x-device-id' and 'X-Device-Id'.
+    // HTTP header names are case-insensitive, so fetch sent the pair and the
+    // server received them JOINED WITH A COMMA — then `.slice(0, 64)` chopped
+    // the result mid-uuid. Observed in production 2026-08-09:
+    //
+    //   [fleet] no user_devices row for device
+    //     24dbc289-ee7f-42b6-8fed-6e089095b719, 24dbc289-ee7f-42b6-8fed-6e
+    //
+    // `WHERE device_id = ?` could never match that, so fleet telemetry would
+    // have stayed broken even after registration started creating rows. Two
+    // independent faults producing one symptom, which is why the first fix
+    // appeared to do nothing.
     'X-Device-Id': getDeviceConfig()?.device_id ?? '',
     // What this terminal IS — 'till', 'node' or 'office'. The server had no way
     // to know: it saw a device id, a schema version and a build number, and every

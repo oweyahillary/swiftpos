@@ -10,7 +10,7 @@ import { fireWebhook } from '../lib/webhooks';
 import { requireAuth } from '../middleware/auth';
 import { branchScope, requirePermission, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
-import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
+import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
@@ -429,8 +429,9 @@ router.post('/', async (req, res) => {
   // refuses a CHANGE, so a moved till is caught. Refusing leaves the order on
   // the till to re-push once the branch is corrected; nothing is lost.
   {
-    const deviceId = (req.headers['x-device-id'] as string | undefined)?.trim()
-                     || (req.body?.device_id as string | undefined)?.trim() || null;
+    // deviceIdFromRequest, not a raw header read: a duplicated header arrives
+    // comma-joined and would never match a bound device. See terminalKey.ts.
+    const deviceId = deviceIdFromRequest(req) || null;
     const binding = await checkDeviceBranch(req.businessId, deviceId, branch_id);
     if (!binding.ok) {
       res.status(409).json({ error: binding.error, code: binding.code });

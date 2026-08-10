@@ -16,11 +16,41 @@
 
 import type { Request } from 'express';
 
-export function terminalKeyFromRequest(req: Request): string {
-  const deviceId =
-    (req.headers['x-device-id'] as string | undefined)?.trim() ||
-    (req.body?.device_id as string | undefined)?.trim() ||
+/**
+ * The device id from a request, normalised.
+ *
+ * A header sent TWICE arrives joined with a comma. The desktop sent both
+ * 'x-device-id' and 'X-Device-Id' — HTTP header names are case-insensitive, so
+ * fetch emitted the pair — and every reader here got:
+ *
+ *   "24dbc289-ee7f-42b6-8fed-6e089095b719, 24dbc289-ee7f-42b6-8fed-6e089095b719"
+ *
+ * Observed in production 2026-08-09. It reached four places: fleet telemetry
+ * (where `WHERE device_id = ?` could never match), `orders.device_id`,
+ * `shifts.device_id`, and this terminal key.
+ *
+ * NORMALISING MATTERS FOR THE ROLLOUT, not just for tidiness. The terminal key
+ * feeds migration 63's "one open drawer session per terminal" unique index. A
+ * till updated mid-shift would otherwise switch from the joined value to the
+ * single one, look like a DIFFERENT terminal, and be allowed a second open
+ * drawer against the same physical till. Taking the first value makes an old
+ * build and a new one resolve to the same key, so the change is invisible to
+ * that index.
+ *
+ * Body value preferred order is unchanged; only the parsing is fixed.
+ */
+export function deviceIdFromRequest(req: Request): string {
+  const raw =
+    (req.headers['x-device-id'] as string | undefined) ??
+    (req.body?.device_id as string | undefined) ??
     '';
+  // Split before trimming: the join is ", " and the second copy may be truncated
+  // by a downstream slice, so only the first is trustworthy.
+  return String(raw).split(',')[0].trim();
+}
+
+export function terminalKeyFromRequest(req: Request): string {
+  const deviceId = deviceIdFromRequest(req);
   const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || '';
   const branchId = (req as any).branchId || (req.body?.branch_id as string | undefined) || '';
   return terminalKey(deviceId, terminalCode, branchId);
