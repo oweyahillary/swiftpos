@@ -1845,3 +1845,29 @@ That comparator would be the fourth, after `check-ipc-parity`,
 Grant the role `settings.manage` on the dashboard, or edit the receipt as the
 owner — **knowing it also grants eTIMS registration and till revocation** until
 A46 lands.
+
+---
+
+# Batch 2026-08-10-**v** — rules 22 and 23 (docs only, NO ZIP)
+
+Checking that the session's rules had actually been written down surfaced two
+that were recorded only as findings. Both cost real time today.
+
+| File | Change |
+|---|---|
+| `docs/HANDOFF-2026-08-08-evening.md` | **+rules 22, 23** |
+| `docs/AUDIT-REGISTER.md` · `docs/HANDOFF-2026-08-10.md` | Pointers updated |
+
+**22 — a delivery zip carries the change, never the version.**
+`apps/desktop/package.json` rode along at 0.5.25 and overwrote a 0.5.26 bump
+already built. The next `release:patch` produced **a second, different binary
+with the same version number**, and the first was already on a till.
+
+**23 — mutation-check the GATE, not only the fix.** Extends rule 10. Both gates
+written today failed their own first version, and `check-header-keys` failed
+**silently**: its regex refused nested braces, so every headers bag containing
+`` `Bearer ${token}` `` was skipped. It scanned 23 literals, printed OK, and
+passed its mutation test by not looking.
+
+Rules 1-16 verified intact — 17-23 append rather than renumber, because 9, 10,
+14 and 15 are cited by ID throughout the register.

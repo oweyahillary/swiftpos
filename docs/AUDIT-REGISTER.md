@@ -33,8 +33,11 @@ given till.
 per-session. Rule 14 is the one this file depends on: nothing ships without an ID
 and an entry here, in the same change as the code.
 
-**Rule 21 added 2026-08-10** (owner): say **node** or **cloud**, never "server"
-on its own. Two machines answer to that word and it has already cost an
+**Rules 21-23 added 2026-08-10.** 21 (owner): say **node** or **cloud**, never
+"server" on its own. 22: a delivery zip carries the change, never the version —
+a zip overwrote a version bump and produced two different binaries with the same
+number. 23: mutation-check the GATE, not only the fix — both gates written that
+day failed their own first version, one silently. Two machines answer to that word and it has already cost an
 afternoon. `getServerUrl()` returns the CLOUD url and should be renamed.
 
 **Rules 17-20 added 2026-08-09** (owner): assume it is already built halfway and
