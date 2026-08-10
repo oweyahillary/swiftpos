@@ -314,6 +314,12 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
   let pushed = 0;
 
   try {
+    // Refresh the DEVICE token before it expires rather than after (A51). The
+    // reactive branch below is untouched and stays the backstop — this only
+    // stops the 10-minute tick colliding with the 15-minute lifetime and
+    // 401'ing every second pull by construction.
+    await refreshDeviceTokenIfExpiring();
+
     pulled = await pullCatalogue();
     // If pull returns false it may be a 401 — try refreshing once
     if (!pulled && _refreshToken) {
@@ -496,6 +502,89 @@ function currentInboundFailure(): { message: string; since: string } | null {
     if (hit) return hit;
   }
   return null;
+}
+
+/**
+ * Seconds until this JWT expires, or null if it cannot be read.
+ *
+ * Payload only — no signature check. That is deliberate and safe here: this is
+ * used to decide WHEN TO REFRESH EARLY, never to decide whether a token is
+ * trusted. The server verifies every token on every request; a tampered `exp`
+ * would at worst make the till refresh sooner than needed. Same base64url
+ * decode as techService.ts:120.
+ */
+function secondsUntilExpiry(jwt: string): number | null {
+  try {
+    const payloadB64 = jwt.split('.')[1];
+    if (!payloadB64) return null;
+    const { exp } = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    if (typeof exp !== 'number') return null;
+    return exp - Math.floor(Date.now() / 1000);
+  } catch {
+    return null;   // unreadable → fall through to the reactive 401 path
+  }
+}
+
+/**
+ * Refresh the DEVICE token before it expires, rather than after.
+ *
+ * ── THE SAWTOOTH THIS ENDS (register A51) ────────────────────────────────────
+ * Beryl's till log was 90 lines and every one of them was the same pair, exactly
+ * twenty minutes apart, all day:
+ *
+ *     [sync] catalogue pull failed: HTTP 401 Unauthorized
+ *     [sync] recovered after: catalogue pull failed: HTTP 401 Unauthorized
+ *
+ * Deterministic, not intermittent. syncAll() runs every 10 minutes
+ * (index.ts:226); the access token lives 15 minutes (auth.ts:51); refresh was
+ * purely reactive. So after a refresh at T the pull at T+10 succeeded and the
+ * pull at T+20 COULD NOT — 20 > 15. Every other pull 401'd by construction.
+ *
+ * Three costs, and the third is why this is worth code rather than a shrug:
+ *   1. every other catalogue pull was 3-5 seconds slower than it needed to be;
+ *   2. ~72 refresh-token rotations per day per till, each one a chance for two
+ *      refreshes to race — and validateRefreshToken answers a REUSED refresh
+ *      token by revoking EVERY session for that user;
+ *   3. the till log stopped being usable. A revoked till, a rotated service key
+ *      or a genuine expiry all looked identical to routine noise. An error that
+ *      always fires is an error nobody reads — and this log is the first thing
+ *      we ask for when a till misbehaves (RUNBOOK §0.1).
+ *
+ * ── WHY THIS TOUCHES THE DEVICE TOKEN ONLY ───────────────────────────────────
+ * The catalogue pull uses authHeaders() → _accessToken. pushAuthHeaders()
+ * prefers _staffToken. Those are different tokens with different lifecycles,
+ * and the distinction is load-bearing:
+ *
+ * A GENERIC proactive refresh across both would have refreshed the staff token
+ * too — and the staff token expiring on an IDLE till is exactly the condition
+ * A47 was reported under. Refreshing it ahead of time would have made A47's
+ * field test pass whether or not manageFetch was fixed, in the same way a
+ * 3-minute auto-lock would. So this is scoped, and must stay scoped.
+ *
+ * ── WHY NOT JUST SHORTEN THE PULL INTERVAL ───────────────────────────────────
+ * A pull inside 15 minutes would hide the sawtooth without removing it: the
+ * token would still expire mid-gap whenever a pull was skipped for being
+ * offline, and the 401 would come back the moment anything perturbed the
+ * cadence. Refreshing against the token's OWN expiry is independent of how
+ * often anything happens to run.
+ *
+ * Returns true if a refresh was performed. The reactive 401 path in every
+ * caller is untouched and remains the backstop — an unreadable `exp`, a clock
+ * skew, or a token rotated elsewhere all still land there.
+ */
+const REFRESH_SKEW_SECONDS = 120;
+
+async function refreshDeviceTokenIfExpiring(): Promise<boolean> {
+  if (!_accessToken || !_serverUrl) return false;
+
+  const remaining = secondsUntilExpiry(_accessToken);
+  // null → cannot read the token; leave it to the 401 path rather than
+  // refreshing blindly on every tick and burning rotations for no reason.
+  if (remaining === null) return false;
+  if (remaining > REFRESH_SKEW_SECONDS) return false;
+
+  logLine('auth', `device token expires in ${remaining}s — refreshing ahead of the 401`);
+  return refreshAccessToken();
 }
 
 async function pullCatalogue(): Promise<boolean> {
