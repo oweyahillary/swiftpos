@@ -224,6 +224,34 @@ contextBridge.exposeInMainWorld('swiftpos', {
     },
   },
 
+  // ── Idle lock (A52) ────────────────────────────────────────────────────────
+  // The main process owns the decision because powerMonitor.getSystemIdleTime()
+  // reports OS-level idle — the same signal Windows uses to blank a screen. A
+  // cashier mid-sale is touching the machine, so idle is 0 and the lock cannot
+  // fire; "never lock mid-transaction" is true by construction, not by a
+  // special case. Renderer mouse listeners would lock a till somebody is
+  // standing at, and staff answer that with trivial or shared PINs.
+  idle: {
+    // Which surface is showing, so the right threshold applies. null for the
+    // PIN pad, owner login, install and tech — locking a lock screen is
+    // meaningless.
+    setSurface: (surface: 'manager' | 'pos' | null) => ipcRenderer.invoke('idle:setSurface', surface),
+    // The user PINned back in.
+    clear:      ()                                  => ipcRenderer.invoke('idle:clear'),
+    // Hold the lock off while work is in flight and nobody is at the screen —
+    // an STK push awaiting its callback, a print job spooling. A curtain
+    // dropping over a payment the customer is completing on their phone would
+    // read as a crash. Resolves to a token the renderer passes back to release.
+    suppress:   ()                                  => ipcRenderer.invoke('idle:suppress'),
+    release:    (token: number)                     => ipcRenderer.invoke('idle:release', token),
+    // Push, not poll. Returns its own unsubscribe for a React effect.
+    onLock:     (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('idle:lock', h);
+      return () => { ipcRenderer.removeListener('idle:lock', h); };
+    },
+  },
+
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
     create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) =>

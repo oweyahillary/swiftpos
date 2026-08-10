@@ -176,6 +176,16 @@ declare global {
         getStaffSession: () => Promise<StaffSession | null>;
         clearStaffSession: () => Promise<boolean>;
       };
+      // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
+      // in the main process (OS idle cannot fire mid-sale; renderer activity
+      // tracking can).
+      idle: {
+        setSurface: (surface: 'manager' | 'pos' | null) => Promise<boolean>;
+        clear:      () => Promise<boolean>;
+        suppress:   () => Promise<number>;
+        release:    (token: number) => Promise<boolean>;
+        onLock:     (cb: () => void) => () => void;
+      };
       pos: {
         init: () => Promise<{ products: any[]; categories: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
           comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>>;

@@ -7,6 +7,7 @@ import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
+import { startIdleMonitor } from './idleMonitor';
 import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
@@ -220,6 +221,11 @@ app.whenReady().then(() => {
   //   2. A full pull+push every 10 minutes to keep the catalogue fresh.
   // The renderer additionally notifies us the instant the OS reports
   // online/offline (see 'net:changed' in ipcHandlers) for immediate flushes.
+  // A52: lock the till when the MACHINE is idle, not when the app thinks it is.
+  // See idleMonitor.ts for why OS idle is the only signal that cannot fire
+  // mid-sale.
+  startIdleMonitor();
+
   setInterval(() => {
     if (getSyncStatus().pendingCount > 0) syncPush().catch(console.error);
   }, 60_000);

@@ -21,6 +21,7 @@ import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
 import { logLine } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
+import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken } from './syncEngine';
@@ -507,6 +508,32 @@ export function registerIpcHandlers() {
       branchId: s.branch_id,
       branchName: s.branch_name,
     };
+  });
+
+  // ── Idle lock (A52) ────────────────────────────────────────────────────────
+  // Suppression tokens are handed out rather than exposing the release closure,
+  // because a renderer that reloads mid-print would otherwise strand a
+  // suppression forever and the till would never lock again. Tokens are held
+  // here, in the process that owns the counter.
+  const _idleReleases = new Map<number, () => void>();
+  let _idleToken = 0;
+
+  ipcMain.handle('idle:setSurface', async (_e, surface: 'manager' | 'pos' | null) => {
+    setIdleSurface(surface);
+    return true;
+  });
+  ipcMain.handle('idle:clear', async () => { clearIdleLock(); return true; });
+  ipcMain.handle('idle:suppress', async () => {
+    const token = ++_idleToken;
+    _idleReleases.set(token, suppressIdleLock());
+    return token;
+  });
+  ipcMain.handle('idle:release', async (_e, token: number) => {
+    const release = _idleReleases.get(token);
+    if (!release) return false;   // already released, or never issued
+    release();
+    _idleReleases.delete(token);
+    return true;
   });
 
   ipcMain.handle('auth:clearStaffSession', async () => {
