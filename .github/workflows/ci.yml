@@ -418,6 +418,30 @@ jobs:
       # Currently FAILS on three documents the owner is restoring. Once they
       # land this stays green, and the next dangling citation fails the build
       # the day it is written.
+      # A47: manageFetch attached a bearer token to 35 manager-screen handlers
+      # and had no 401 branch, while ownerFetch forty lines earlier in the same
+      # file always had one. The staff access token lives 15 minutes and its
+      # refresh token 30 days, so the first manager action after idling reported
+      # "This till was signed out" on a till that was signed in. Selling was
+      # unaffected — the sync engine refreshes on its own token — which is why
+      # it looked intermittent and took a field report to find.
+      #
+      # This asserts only that expiry was CONSIDERED. Whether the retry is
+      # correct is asserted by apps/desktop/test/manage-fetch-refresh.test.mjs,
+      # which can drive the decision; a source scan claiming more would be
+      # pretending to knowledge it does not have.
+      - name: Authenticated fetches handle 401
+        run: node scripts/check-auth-retry.mjs
+
+      # A50: daily summaries were never delivered — nine businesses, every run,
+      # both observed days. The SMTP fallback died as ENETUNREACH on Google's
+      # IPv6 because the transport set no address family. Silent, because
+      # dailySummary catches per business and moves on. This pins the IPv4
+      # setting against a real nodemailer transport, and pins the boot check
+      # that makes a dead mail path announce itself.
+      - name: Mailer transport and boot readiness
+        run: node --no-warnings tests/mailer-transport.test.mjs
+
       - name: Cited documents exist
         run: node scripts/check-doc-refs.mjs
 
@@ -474,3 +498,20 @@ jobs:
       - name: Desktop failover cursors (stand-in driver)
         working-directory: apps/desktop
         run: node --no-warnings test/failover-cursors.test.mjs
+
+      # manageFetch serves 35 manager-screen handlers and had no 401 branch,
+      # while ownerFetch in the same file always had one. The staff access token
+      # lives 15 minutes, so the first manager action after idling reported
+      # "This till was signed out" on a till that was signed in. Field report,
+      # 0.5.27. Plain node — no Electron, no SQLite.
+      - name: Desktop manager-screen token refresh
+        working-directory: apps/desktop
+        run: node --no-warnings test/manage-fetch-refresh.test.mjs
+
+      # The receipt closing block — thank-you, TAX RECEIPT, credit. It lived
+      # only in the HTML receipt, which 0.5.27 deleted (D8), so both lines
+      # vanished from the paper a customer is handed. Drives the real renderer
+      # at both paper widths.
+      - name: Receipt closing block
+        working-directory: shared/printing
+        run: npm test

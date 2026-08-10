@@ -257,7 +257,7 @@ function pushAuthHeaders() {
 // path all reach it, and a busy till runs them together.
 let _staffRefreshInFlight: Promise<boolean> | null = null;
 
-async function refreshStaffToken(): Promise<boolean> {
+export async function refreshStaffToken(): Promise<boolean> {
   if (_staffRefreshInFlight) return _staffRefreshInFlight;
   _staffRefreshInFlight = doRefreshStaffToken().finally(() => { _staffRefreshInFlight = null; });
   return _staffRefreshInFlight;

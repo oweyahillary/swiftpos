@@ -6,10 +6,19 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-09, Beryl root cause (A14) + CI gap (A16)** |
-| Tree | `dev` @ `5ad57f7`, tag **v0.5.25**, desktop **v0.5.25**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 1 P0 · 4 P1 · 3 P2 · 5 P3 — D: 2 P0 · 2 P1 · 5 P2 · 2 P3** |
-| Closed this session | **31 (printing) + 1 (migration 46)** |
+| Last updated | **2026-08-10, two field faults closed (A47, A48) + register reconciled against the tree** |
+| Tree | `dev` @ `84400d6`, desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
+| Open | **A: 0 P0 · 11 P1 · 6 P2 · 5 P3 — D: 3 P0 · 4 P1 · 4 P2 · 4 P3** |
+| Closed 08-10 (late) | **A47 · A48 · A50.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A51**. |
+
+**Counts above were re-derived by reading this file, not carried forward.** The
+previous header said 5 P2 where section A listed 3, and said `415e044 + this
+session's work` for work committed at `a80c224`. A header that disagrees with its
+own body is the same failure the register exists to catch.
+
+**Every correction on 2026-08-10 (late) was verified by running or reading the
+tree, never by reading this file.** Where the two disagreed, the tree won and the
+entry says what was measured.
 
 **Header corrections, 08-08.** The previous header said `415e044 + this session's
 work`; the work is committed at `a80c224` (59 files, not 58). It said the counts
@@ -91,12 +100,28 @@ Agreed plan, in order:
 ---
 ## A. OPEN — carried into tomorrow
 
-### A1 · P0 · OPEN · Secrets leak on every zip
-`.env` files ride along because `pos.zip` is built from the working folder.
-Rotated once this session; **the packaging is still unfixed**, so it will recur.
+### A1 · P0 · **SPLIT 08-10 — packaging CLOSED, rotation UNCONFIRMED**
+This entry contradicted the rest of the file. §E and §4 of
+`HANDOFF-2026-08-08-evening.md` both record the packaging fix as closed, while
+this section still read OPEN. Verified 08-10:
 
-**Fix:** `git archive --format=zip HEAD -o pos.zip`. It honours the index, so
-ignored files physically cannot get in. Two minutes, and it is the fourth time.
+```
+package.json:10  "package":       "git archive --format=zip HEAD -o pos.zip"
+package.json:11  "package:check": "node scripts/check-package.mjs"
+scripts/check-package.mjs           present
+```
+
+`git archive` honours the index, so an ignored file physically cannot enter the
+archive. **The packaging half is closed.** Two independent CI gates back it: the
+tracked-`.env` assertion and gitleaks, and since 08-10 the `.env` check runs
+FIRST so an action crash cannot skip both (A35).
+
+**What remains open is the ROTATION half, and it is not a code question.**
+`SUPABASE_SERVICE_ROLE_KEY` was exposed in a packaged zip on 2026-08-08. The
+evening handoff's first "before anything else" item was to confirm it had been
+rotated. **No document in this repo records that it was.** The script prevents
+the next leak, not the last one. Until someone confirms the rotation in writing,
+treat a P0 credential as live in an artefact that left the building.
 
 ### A17 · P0 · OPEN · A peer till cannot sell "offline forever" — it locks out on day 15
 **Stated design (owner, 08-09):** the main/server till is registered online once;
@@ -409,7 +434,9 @@ which migration is missing, and say plainly what still worked.
 ### A4 · measured 08-10 — the migration ledger covers less than a third
 Concrete figure for the "under-reports" claim: **only 20 of 66 migration files
 contain an `INSERT INTO public.schema_migrations`**, so 46 are invisible to the
-ledger. The version format is also split — 17 named (`'52_device_branch_binding'`)
+ledger. **Re-measured 08-10: 22 of 68** — the ratio is unchanged, so the finding
+stands; the figures are refreshed so a future reader does not conclude the file
+was never re-checked. The version format is also split — 17 named (`'52_device_branch_binding'`)
 against 1 bare (`'71'`) — so the table cannot be queried reliably by number
 either. `60_menu_composition` and `61_adjust_product_stock` are recent examples
 that record nothing.
@@ -851,8 +878,13 @@ naming a since-deleted document is an accurate record, not a broken link — but
 documents living there still count as PRESENT, so a live doc pointing at an
 archived handoff passes.
 
-**The gate is RED until those three land.** That is the correct state: it is
-reporting a real gap, not a false alarm.
+**UPDATED 08-10 — the gate is red on ONE document, not three.** Re-run measured
+158 citations across 496 files. `DESKTOP_DESIGN.md` is now in `docs/` (A40) and
+`SwiftPOS_eTIMS_Integration_Scope.md` is in `docs/history/handoffs/`, which the
+scan counts as present. **Only `BRANCH-SERVER-PLAN.md` is still missing.**
+
+That matters for sequencing: PHASE6 is recorded elsewhere in this file as blocked
+on three documents. It is blocked on one.
 
 ### A40 · P1 · CLOSED 08-10 · `DESKTOP_DESIGN.md` is lost — recorded, not reconstructed
 Searched the repository, its full history (`--diff-filter=D`) and the owner's
@@ -984,9 +1016,57 @@ for **per-station** exclusions (PHASE6 §4, `print_stations.exclude_terms`) rath
 than a global card bolted onto a per-station layout. Exclusions stay on the web
 dashboard until PHASE6.
 
-**Thermal is now proven, so `PrintersTab.tsx` can be deleted** — the condition its
-retention was gated on has been met. Not done here: it still serves nothing, and
-deleting it is a separate, clean change.
+**DELETION ATTEMPTED AND REVERTED 08-10. A43 STAYS OPEN — it is not the
+one-line removal this entry implied, and the reason is worth more than the
+deletion.**
+
+Thermal ran a full service on 2026-08-10, so the condition
+`ManagerPage.tsx:1116` set for retention IS met. The file is genuinely
+unreachable: no `import PrintersTab` anywhere in `apps/desktop/src`, only
+comments. Deleted; desktop main tsc, renderer tsc and `vite build` all passed
+(64 modules transformed).
+
+**Then `scripts/test-print-resilience.mjs` went red — 51 assertions, ENOENT.**
+Four of them read `PrintersTab.tsx` directly, at lines 63, 70, 81 and 178. Two
+things are tangled in there and they need separating before anything is deleted:
+
+1. **§4 protects a real field bug that has nothing to do with this file's
+   reachability.** `PrinterPicker` was once declared INSIDE the component, so
+   every render made a new component type, React remounted the `<select>`, and
+   an open dropdown snapped shut under the status-dot probes — read on site as
+   *"stuck on Microsoft Print to PDF"*. The assertions pin it to module scope.
+   **`PrinterSetupScreen.tsx:270` has a `<select>` of its own and no equivalent
+   assertion.** So deleting `PrintersTab` does not merely drop dead coverage; it
+   drops the ONLY guard against that bug, on the screen that is now live.
+2. **§5 asserts the owner edits kitchen exclusions "on the Printers tab"** —
+   `PB2.includes('Kitchen exclusions')`. That assertion is already describing
+   something unreachable, which is this very finding. The gate is protecting a
+   fiction and has been since 0.5.27.
+
+**Rule 20 decides it: the assertion complains, so the change moves.** Rule 12
+too — "delete 479 dead lines" grew into "rewrite a print-resilience suite
+covering a live field bug", which means the diagnosis was wrong, not that the
+fix is bigger. Reverted rather than loosened.
+
+**The right sequence, and it is a decision, not a chore:**
+
+1. Port §4's picker assertions to `PrinterSetupScreen.tsx` — that is where the
+   remount bug can actually bite now. **Strengthening, not relocating: the
+   coverage currently sits on a screen nobody can open.**
+2. Resolve §5 — either exclusions move somewhere reachable (PHASE6 §8c makes them
+   per-station), or the assertion is dropped as describing a screen that is gone.
+3. Only then delete the file.
+
+**Also note what the deletion orphans:** `components/StationsPanel.tsx` (294
+lines — define print stations, route categories) is imported ONLY by
+`PrintersTab:22`. It is the nearest existing desktop implementation of what
+PHASE6 §8c wants at the branch, so it should not be swept up with the parent.
+
+Checked and NOT orphaned — all still have live callers, so D8's retention
+reasoning holds: `printReceipt` (8, incl. `POSPage`), `printKOT`
+(`usePrinterSettings`), `printDispatcher` (`printKOT`), `buildCalibrationTicket`
+and `buildThermalDocument` (`PrinterSettingsModal`, `thermal`, `printReceipt`),
+`PaperWidthControl` (`PrinterSettingsModal`).
 
 ### A44 · P2 · CLOSED 08-10 · Adding a station — already built, and it anticipated this
 Owner asked for a "Barista" station. `dashboard/pages/settings/StationsPage.tsx`
@@ -1066,7 +1146,7 @@ affected."* Correct, and the measurement supports it.
 registration and the power to revoke a till.** That is not a permissions model;
 it is one switch.
 
-`products.manage` is worse by volume — **29 routes** — and includes station
+`products.manage` is worse by volume — **30 routes** (re-counted 08-10; the entry said 29) — and includes station
 create/delete, which PHASE6 §8c moves to the branch.
 
 **Proposed split** (names follow the existing `noun.verb` convention):
@@ -1091,6 +1171,248 @@ infrastructure.
 **Not started.** It touches 45 route gates and every UI gate that mirrors them,
 and it needs the A45 comparator built first or the two will drift again while
 being changed. Sequence: comparator → split → re-point UI gates.
+
+### A50 · P1 · CLOSED 08-10 · Daily summaries have never been delivered — SMTP died on IPv6
+Found by reading Beryl's server log, not by anyone reporting it. **Nine
+businesses, every scheduled run, both observed days, zero delivered.**
+
+```
+[dailySummary] Failed for Beryl: connect ENETUNREACH 2607:f8b0:400e:c02::6c:587
+[dailySummary] Failed for MAZURI Petrol Station: Connection timeout
+```
+
+`2607:f8b0::/32` is Google over IPv6, port 587 — the SMTP fallback. Render's
+container has no usable route there, so nodemailer resolved AAAA first and died
+in `connect()`, before TLS, before AUTH, before any recipient was offered.
+`Connection timeout` in the same run is the same fault on a different IPv6 route,
+hitting `connectionTimeout` instead of failing instantly.
+
+**Two plausible explanations were checked and ruled out against the log:**
+
+- *Unverified Resend domain.* No — `RESEND_API_KEY` was **absent**. The boot line
+  *"Not set … will fall back to SMTP"* only prints for variables missing from
+  `env.ts`'s optional list, so `resend` was `null` and that branch never ran. The
+  free-mail warning at `mailer.ts:44` never fired either. Resend was not in the
+  picture on either day.
+- *Test businesses with unreal addresses.* No — `ENETUNREACH` is a NETWORK-layer
+  failure on connect, so no address was ever sent. A bad recipient produces an
+  SMTP 550 after `RCPT TO`. Beryl, a real production client, failed identically,
+  and all nine failed the same way on both days.
+
+**Fixed:** `family: 4` on the transport. `family` is honoured by nodemailer at
+runtime but is absent from `@types/nodemailer` 8.0.x, so supplying it made
+TypeScript fall through to another `createTransport` overload and report the
+misleading *"'host' does not exist"*. Widened with a named
+`SmtpOptions = SMTPTransport.Options & { family?: 4 | 6 }` rather than casting the
+literal to `any`, which would have silenced real mistakes in the same object.
+
+**Also fixed: the silence.** `dailySummary.ts:61` catches per business, logs, and
+moves on, so the only trace was a line at 18:00 UTC. `reportMailReadiness()` now
+runs at boot — `verify()`, which connects and authenticates without sending — and
+names a dead transport at startup beside the other things that are wrong. Not
+awaited and it never throws, same rule as `reportSeededAdmins`: a shop must not
+fail to trade because nobody verified a mail domain.
+
+It also names the case production was actually in — **`RESEND_API_KEY` unset means
+SMTP is the ONLY path**, so an SMTP failure is total, not a degraded fallback.
+
+**This is §L in a form the register has not recorded before.** Not two things
+that must agree — a feature and its own failure report, with nothing making the
+failure reach anybody. Nine businesses believed they had a daily summary.
+
+**Still outstanding, and NOT code:**
+- `Mama Ari Restaurant` has `owner_id = null` and is skipped before any send is
+  attempted. A data-integrity problem in the business row, both days, silent.
+- Setting `RESEND_API_KEY` is still worth doing. If it is set, `NOTIFY_FROM_EMAIL`
+  must be on a domain verified at resend.com/domains, or every send is rejected
+  and demoted back to SMTP — the boot warning will say so.
+
+**The test failed its own mutation check before it passed.** Commenting out
+`family: 4,` and `void reportMailReadiness();` left both matching their regexes,
+so all 14 assertions reported green against a codebase with the fix removed. One
+assertion was worse: `/family:\s*4/` was satisfied by the phrase inside an ERROR
+MESSAGE at `mailer.ts:152`. Comments and string literals are code to a regex.
+**Third occurrence this session** — `check-auth-retry` read `.from('stock')` out
+of the comment explaining the B6 fix, and `manage-fetch-refresh` asserted against
+an empty default parameter. Rule 23 keeps being right.
+
+### A51 · P2 · OPEN · The device token sawtooths: every other catalogue pull 401s by construction
+Beryl's till log is **90 lines and every one of them is this**:
+
+```
+07:32:58 [sync] catalogue pull failed: HTTP 401 …
+07:32:58 → recovered after: …          (3-5s later)
+07:52:58  … and again, exactly 20 minutes later, all day
+```
+
+Deterministic, not intermittent:
+
+- `syncAll()` runs every **10 minutes** (`index.ts:226`)
+- the access token lives **15 minutes** (`auth.ts:51`)
+- **refresh is purely reactive** — nothing decodes `exp`, nothing refreshes ahead
+
+So after a refresh at T the pull at T+10 succeeds and the pull at T+20 **cannot**:
+20 > 15. Every other pull 401s, refreshes, and resets the clock. A permanent
+sawtooth.
+
+**Which token:** the catalogue pull uses `authHeaders()` → `_accessToken`, the
+DEVICE token. `pushAuthHeaders()` prefers `_staffToken`. So this sawtooth refreshes
+the device token only and never touches the staff token — which is precisely why
+A47 could sit undetected on a busy till: selling triggers pushes, pushes refresh
+the STAFF token on 401, and `manageFetch` read the fresh one from the store for
+free. On an idle till nothing pushes, the staff token dies alone, and the first
+manager action eats the 401.
+
+Three costs, and the third is the one that matters:
+
+1. Every other catalogue pull is 3-5 seconds slower than it needs to be.
+2. **~72 refresh-token rotations per day per till.** Each is a chance for two
+   refreshes to race, and `validateRefreshToken` treats a reused token as stolen
+   and revokes EVERY session for that user. Running that lottery 72 times a day
+   for no reason.
+3. **The log is no longer usable as a diagnostic.** A revoked till, a rotated
+   service key, a genuine expiry — all would look identical to routine noise.
+   An error that always fires is an error nobody reads.
+
+**Fix (not done — deliberately):** refresh when the token is within ~2 minutes of
+expiry rather than waiting for the 401, or move the pull inside 15 minutes.
+
+**Held back from 0.5.28 on purpose.** It lives in `syncEngine.ts`, the file A47
+touched, and A47's idle test was still running. More importantly a GENERIC
+proactive refresh would refresh the staff token too — which would mask the A47
+test exactly as the auto-lock would. The fix must be scoped to the device token.
+
+### A47 · P1 · CLOSED 08-10 · `manageFetch` never refreshed — every manager screen reported the till signed out
+**Field report, Beryl, 0.5.27, Menu screen: the banner appears after the till has
+been signed in and left a while. Selling unaffected.**
+
+Not a refresh-token failure and nothing to do with D13's crash window.
+
+`manageFetch` (`ipcHandlers.ts:1288`) serves **35 manager-screen handlers** —
+Menu, Staff, Prices, Combos, Receipt, Printers. It read the staff access token
+once and threw on any non-2xx. **It had no 401 branch at all.**
+
+The staff ACCESS token lives 15 minutes (`auth.ts:51`); its REFRESH token lives
+30 days and was valid throughout. So the first manager action after fifteen idle
+minutes returned 401, `humaniseError` matched `/unauthor/i` (`posApi.ts:401`), and
+printed *"This till was signed out. Ask a manager to sign in again."*
+
+The till was never signed out. The sync engine had been refreshing on its own
+token the whole time — which is why sales kept working, only manager screens
+broke, and the fault read as intermittent rather than as a missing branch.
+
+**`ownerFetch`, forty lines earlier in the same file, has had the branch since it
+was written.** §L again: two things that must agree with nothing comparing them —
+the same shape as A38's two header spellings, one file apart instead of two.
+
+Fixed with the `ownerFetch` pattern: on 401 refresh, re-read from the store
+(refresh persists a new pair to SQLite, so the in-memory copy can lag), retry
+ONCE. A second 401 is a real rejection — revoked, `ACCOUNT_INACTIVE`,
+`PERMISSIONS_CHANGED` — and reaches the user. `refreshStaffToken` is already
+single-flight, which is load-bearing: two concurrent refreshes present the same
+rotating token, and `validateRefreshToken` (`auth.ts:210-222`) treats a reused
+token as stolen and **revokes every session for that user** — the real "signed
+out" this change prevents rather than causes.
+
+15 tests, mutation-checked (remove the branch → 4 red, exit 1, naming it).
+
+**The test failed its own first version (rule 23, third time).** Its
+brace-balancer took `ownerFetch`'s `= {}` DEFAULT PARAMETER as the function body,
+so every assertion about `ownerFetch` was evaluated against `"{}"` and passed by
+not looking. Fixed by walking the parameter list to its matching `)` first.
+
+**GATE BUILT — `scripts/check-auth-retry.mjs`, in CI.** Every function that both
+attaches `Authorization: Bearer` and calls `fetch()` must handle 401. It asserts
+only that expiry was CONSIDERED; whether the retry is correct is the test's job,
+because a source scan claiming more would be pretending to knowledge it lacks.
+Mutation-checked: it names the exact file, function and line.
+
+**It found a second instance on its first run** — `refreshTechConfig`
+(`techService.ts:85`). Exempted with a checkable reason, not fixed: one call site
+(`ipcHandlers.ts:126`), fire-and-forget, passing a token seconds old from
+`/desktop-login`. A 401 there is not expiry, and the only cost of failing is that
+the tech panel cannot be unlocked offline until the next login. Machinery for a
+case that cannot arise is rule 12.
+
+### A48 · P1 · CLOSED 08-10 · The receipt closing block was lost with the HTML sale path
+**Field report: `Thank you for your business!` and `TAX RECEIPT UPON REQUEST`
+missing above `Powered by SwiftPOS`.**
+
+A regression from 0.5.27's removal of the HTML sale path (D8). The footer stack is
+an owner-approved arrangement dated 04 Aug 2026, recorded at
+`ReceiptView.tsx:250-256`: the owner's box verbatim, a rule only when that box has
+content, then a fixed closing block the box cannot edit.
+
+**The closing block existed only in the HTML receipt.** The thermal renderer had
+never carried two of its behaviours:
+
+- the DEFAULT thank-you when the owner's box is blank. `ipcHandlers.ts:792` passes
+  `receipt_footer || undefined`, so an empty field printed no thank-you AND no
+  rule — the receipt ended on the payment line and then the credit.
+- `TAX RECEIPT UPON REQUEST` whenever VAT applies. The string appeared nowhere in
+  `shared/printing` — only in the deleted component, and in `wrapAuthored`'s
+  docstring, which uses it as its worked example.
+
+`wrapAuthored` was never at fault. P-15 fixed newline handling and it still works;
+the lines were not reaching it.
+
+Restored in `render.ts` so it renders once for every receipt path. The tax line is
+gated on `vatRate > 0` — a zero-rated business printing it claims something untrue
+on a document the customer keeps — and is deliberately NOT taken from
+`receipt_footer`: a line with legal meaning that depends on someone remembering to
+type it is a line that goes missing, and on this build a manager cannot type it
+anyway (**A45**).
+
+11 tests driving the real renderer at 80mm and 58mm. Mutation-checked twice —
+remove the block → 7 red; remove ONLY the `vatRate > 0` guard → exactly 1 red.
+
+**Records a gap in D8's sweep.** The rule 17 sweep correctly found what still USED
+the HTML modules — shift reports, calibration, previews — and correctly kept them.
+It did not ask what those modules EMITTED that nothing else did. Deleting a path
+means auditing its output, not only its callers.
+
+**`SAMPLE-OUTPUT.txt` is NOT regenerated by `npm test`.** This file claims it is,
+in §I and in the 08-08 status block, and cites it as evidence. It is a captured
+run, updated by hand via `npm run sample` — which prints a money check and writes
+nothing. Corrected here; the citations elsewhere should be read with that in mind.
+
+### A49 · P1 · OPEN · `stock_adjustments` is a dead table, hidden by a false gate exception
+Found 08-10 by a column-level sweep for more A12-shaped bugs.
+
+`stock_adjustments` is a real table — baseline, RLS-enabled, FKs, CHECK
+constraints. It is **read in exactly one place**, `reports.ts:286`, which builds
+the Adjustments section of the stock-movement report. It is **written nowhere**:
+not `apps/server`, not `apps/dashboard`, not `apps/desktop`, not any migration,
+not any RPC.
+
+`reports.ts` derives `restocked` and `written_off` from it and unions them with
+sold quantities. **Every one of those figures is permanently zero.** The report
+shows what sold and states that nothing was ever restocked or written off.
+
+**`check-table-usage` — the gate built for exactly this shape (B6) — was silenced
+on it by an exception whose stated reason was false on both counts:**
+
+> *"Written by the till via /api/sync/push, which resolves the table name
+> dynamically."*
+
+`/api/sync/push` writes four hardcoded tables — `business_days`, `shifts`,
+`float_transactions`, `expenses`. There is no dynamic resolution anywhere in
+`sync.ts`. And the till has no such local table: `stock_adjustments` appears in
+neither `SYNC_DIRECTION` nor `localDb.ts`. **It had never been true.** The entry
+even carried its own caveat — *"Confirm this stays true if the sync route is ever
+refactored"* — which invited a re-check of a claim that was wrong at rest.
+
+Adjustments are actually recorded in `stock_movements` (`stockEffects.ts:378`,
+`orders.ts:1097`, `fueltanks.ts:194`, `branches.ts:162`).
+
+**This is rule 20 arriving by a quieter route.** Not a loosened assertion — a
+plausible-sounding exception nobody re-derived. `table-usage-exceptions.json` is
+the least-tested part of the gate system: every reason in it is prose that nothing
+checks. The file's header now says so.
+
+Exception corrected 08-10 to state the finding instead of hiding it. **The fix
+itself is a product decision and is NOT done:** point the report at
+`stock_movements`, or drop the table and the report section.
 
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 
@@ -1219,13 +1541,94 @@ Recoverable: `git show 0f85155:HANDOFF.md`. Commit `a4aee05` overwrote the path
 with a different document. Nothing in `docs/` records the tech DB console or the
 wipe gates.
 
-### A7 · P2 · OPEN · `ParkingPOS` / `PetrolPOS` unrouted, no ROADMAP line
+### A7 · P2 · OPEN · `ParkingPOS` / `PetrolPOS` are UNWIRED UPGRADES, not missing features
+**Re-characterised 2026-08-10 — the previous wording ("unrouted, no ROADMAP
+line") invites someone to rebuild what already exists.**
+
+Parking and petrol already ship. `CashierScreen.tsx` (2,739 lines) serves both
+inline: `isParking`/`isPetrol` at `:184-185`, the bay grid at `:1141`, the pump
+grid at `:1182`.
+
+`ParkingPOS.tsx` (890) and `PetrolPOS.tsx` (889) are FINISHED replacement
+components that carry their own wiring instructions in their headers —
+*"INTEGRATION IN CashierScreen.tsx — Replace the existing bay-grid block:
+`{isParking && view === 'bays' && (<ParkingPOS bays={tables} … />)}`"*. The block
+they name is still the live code at `:1141`.
+
+Their sibling `MinimartPOS.tsx` carries the same style of header and **was**
+wired in (`CashierScreen.tsx` imports it). Two of three were connected.
+
+**Rule 17's defining pattern exactly** — complete at every layer except one wire,
+same as ESC/POS built and left unconnected, same as `adjust_product_stock`. The
+decision is whether to wire or to delete; it is not a build.
+
 ### A8 · P2 · OPEN · `SplitBillModal` unrouted while `PATCH /:id/split` is live
-### A9 · P3 · OPEN · Empty `apps/desktop/src/renderer/{lib,pages,components}/`
-### A10 · P3 · OPEN · `PrinterSetupScreen` docstring claims a supersession that has not happened
+Confirmed 08-10: the endpoint is at `orders.ts:1932`, scopes edits to the order's
+own items via `ownSet`, and works. `SplitBillModal.tsx` (152 lines) has zero
+references anywhere in `apps/dashboard/src`.
+
+**Full unreferenced sweep of the dashboard, 08-10** — six files, 2,903 lines:
+`ParkingPOS` (890), `PetrolPOS` (889), `OrderHistoryTab` (361),
+`BranchSelectScreen` (353), `VariantModal` (258), `SplitBillModal` (152).
+
+### A9 · P3 · **CLOSED 08-10 — was never true** · "Empty" renderer directories
+The finding read *"Empty `apps/desktop/src/renderer/{lib,pages,components}/`"*.
+Measured: **12, 12 and 14 files.** Not empty, and no history of being so.
+
+**ID COLLISION, and it is the register's own rule being broken.** `A9` is used
+TWICE — this entry and *"A9 · RESOLVED 08-10 — `npm audit`, split by workspace"*
+above. The header of this file says *"IDs are stable and never reused."* Reusing
+one is how a closed item and an open one become indistinguishable in a changelog.
+This copy retains the number because renumbering would break citations; the audit
+entry is the one meant by "A9" elsewhere.
+
+### A10 · P3 · OPEN · `PrinterSetupScreen` docstring claims a supersession that has only PARTLY happened
+**Confirmed still open 08-10, after first being wrongly dismissed.** The docstring
+(`PrinterSetupScreen.tsx:4`) claims it *"Replaces PrinterSettingsModal,
+PaperWidthControl, PrintersTab and PrintersPage."* Checked one by one:
+
+| Claimed replaced | Reality |
+|---|---|
+| `PrintersTab` | **True** — unrouted. Deletion attempted 08-10 and reverted; see A43 |
+| `PrinterSettingsModal` | **FALSE — still live.** Imported at `POSPage.tsx:21` and rendered at `:1351` behind `showPrinters` |
+| `PaperWidthControl` | **FALSE** — still imported by `PrinterSettingsModal.tsx:6`. `PrinterSetupScreen` imports only React and `posApi` |
+| `PrintersPage` | dashboard, out of this tree |
+
+So one of four. A docstring that overstates what it replaced is how the next
+reader deletes something still on the sell path.
+
 ### A11 · P3 · OPEN · `ManagerPage.tsx:1061-65` comment contradicts itself
-### A12 · P3 · INVESTIGATE · `ingredients.current_stock` vs `ingredient_stock_levels.current_stock`
-Same duplicate-table shape as B6. Find who reads it before it becomes B6's sequel.
+Confirmed present 08-10.
+
+### A12 · **P1** · OPEN · `ingredients.current_stock` has had no writer since migration 23
+**Raised from P3/INVESTIGATE to P1 on 08-10 — it is no longer a question. It is
+B6's sequel, exactly as this entry predicted, and it is live.**
+
+Migration 23 moved ingredient stock to `ingredient_stock_levels`, backfilled once,
+and says so in its own header: *"It does NOT drop `ingredients.current_stock` yet
+(that's Phase 6…)"*. Phase 6 never came. Since then:
+
+- **Nothing writes `ingredients.current_stock`.** `adjust_ingredient_stock`
+  (migration 23) writes `ingredient_stock_levels`. `stock.ts:58` touches
+  `ingredients` only for `unit_cost`. `stock.ts:190` creates catalogue rows with
+  no stock at all, and says so.
+- **`recipes.ts` reads it in three places** — `:28`, `:44`, `:110` — and serves it.
+- **`RecipeDrawer.tsx:308-309` renders it**, red when `<= 0`.
+
+So the Recipes drawer shows a snapshot frozen at whenever migration 23 ran, and
+every ingredient created since reads **"0 in stock" in red**, while
+`IngredientsPage` — which goes through `stock.ts:162` and flattens
+`ingredient_stock_levels` — shows the true figure. Two screens, two numbers, one
+ingredient, and the wrong one is styled as an alarm.
+
+**Why no gate caught it.** `check-table-usage` compares TABLES. Both tables are
+legitimately read and written, so it is satisfied. B6 was a dead table; this is a
+dead COLUMN inside a live one. A column-level read/write comparator is the gap.
+
+**Fix needs a decision and is NOT a one-line repoint:** `recipes` is
+business-level and `ingredient_stock_levels` is per-branch, so pointing
+`recipes.ts` at it requires choosing a branch (the caller's? summed? per-branch
+rows returned?). Not started for that reason.
 
 ### A13 · P3 · NOTE · Two suites run on `node:sqlite`, not the app's driver
 `test-node-ingest`, `test-sync-rejection-routing`. They say so themselves. A
@@ -1526,6 +1929,13 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-10 | **A50**: daily summaries never delivered — nine businesses, every run, both observed days. SMTP fallback died as ENETUNREACH on Google's IPv6. Not an unverified Resend domain (`RESEND_API_KEY` was absent) and not unreal test addresses (ENETUNREACH is pre-`RCPT TO`; Beryl failed identically). Fixed with `family: 4` plus a boot `verify()` so a dead mail path announces itself. |
+| 2026-08-10 | **A51**: the device token sawtooths — 10-minute pull against a 15-minute token means every other catalogue pull 401s by construction. ~72 refresh rotations/day and a till log that can no longer show a real auth failure. Held out of 0.5.28 so it cannot mask A47's idle test. |
+| 2026-08-10 | **A47**: `manageFetch` served 35 manager handlers with no 401 branch while `ownerFetch` in the same file always had one. Staff access token 15m, refresh 30d — so idling produced "This till was signed out" on a signed-in till. Field report. Gate `check-auth-retry` built and in CI; it found `refreshTechConfig` on its first run. |
+| 2026-08-10 | **A48**: the receipt closing block (thank-you, TAX RECEIPT) lived only in the HTML receipt and went with it in 0.5.27. Restored in `render.ts`, tax line gated on VAT. Also: `SAMPLE-OUTPUT.txt` is NOT regenerated by `npm test`, contrary to §I. |
+| 2026-08-10 | **A49**: `stock_adjustments` is read by the stock report and written nowhere, so restocked/written-off are permanently zero. `check-table-usage` was silenced on it by an exception that had never been true. Exceptions file now warns that its reasons are unchecked prose. |
+| 2026-08-10 | **A43 stays OPEN** — deletion attempted, `test-print-resilience` went red (ENOENT, 4 reads). Its §4 pins a real field bug (PrinterPicker remount = dropdown snaps shut) and `PrinterSetupScreen.tsx:270` has an unguarded `<select>` of its own, so deleting drops the ONLY guard on the screen that is now live. §5 asserts exclusions are edited on a tab nobody can open. Reverted per rules 12 and 20; sequence recorded. |
+| 2026-08-10 | Register reconciled against the tree. A9 closed (dirs were never empty; ID collision with the npm-audit A9 recorded). A10 REOPENED — only 1 of its 4 claimed supersessions happened; `PrinterSettingsModal` is still live in `POSPage`. A12 raised P3 → **P1**, it is live. A7 re-characterised: parking/petrol ship inside `CashierScreen`; the two files are unwired upgrades carrying their own integration instructions. A1 split — packaging closed, key rotation still unconfirmed. A39 down to one missing document. A4 (22/68) and A46 (30 routes) refreshed. |
 | 2026-08-07 | Opened. A1, B1-B5, C1-C6, D1-D3, E1-E4, F, G1-G2, H1-H2, I. |
 | 2026-08-07 | Live schema dump reviewed. Added B6, C7-C9, §0 dump caveat. BUG-19 upgraded and sized. |
 | 2026-08-08 | G1-G7 shipped. 31 items closed. Printing migrated to ESC/POS end to end (P-01…P-19). Two new gates. Register restructured: open items first, closed items retained as evidence. |

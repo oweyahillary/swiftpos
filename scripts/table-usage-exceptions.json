@@ -9,7 +9,18 @@
     "",
     "KNOWN LIMITATION of the scanner: it matches `.from('t')` chains only. A table",
     "read through a PostgREST nested embed — `products ( combo_items ( ... ) )` —",
-    "is invisible to it and will look write-only. That is why combo_items is here."
+    "is invisible to it and will look write-only. That is why combo_items is here.",
+    "",
+    "KNOWN LIMITATION of THIS FILE, added 2026-08-10: every reason below is prose",
+    "that nothing checks. `stock_adjustments` sat here for weeks behind a reason",
+    "that was false on both of its claims and had never been true, and the effect",
+    "was to silence the one gate built to catch exactly that table's shape (B6).",
+    "An exception is a claim about the code, and an unverified claim in a file",
+    "whose whole job is suppressing warnings is the most expensive kind.",
+    "",
+    "So: re-derive a reason before trusting it, and prefer a reason a reader can",
+    "check in one grep ('written by RPC apply_credit_transaction') over one they",
+    "cannot ('resolved dynamically somewhere')."
   ],
 
   "readOnly": [
@@ -20,7 +31,7 @@
     { "table": "customer_credit_transactions",
       "reason": "Written exclusively by the apply_credit_transaction RPC, which the scanner cannot see. Reading it in credit.ts is correct." },
     { "table": "stock_adjustments",
-      "reason": "Written by the till via /api/sync/push, which resolves the table name dynamically. reports.ts:286 reads it. Confirm this stays true if the sync route is ever refactored." }
+      "reason": "FINDING, NOT AN EXCEPTION — register A49. Left listed so the gate output stays readable, but the entry below is the truth and it is not a justification. Read at reports.ts:286 only. Written NOWHERE: not apps/server, not apps/dashboard, not apps/desktop, not any migration, not any RPC. So the 'restocked' and 'written_off' columns of the stock-movement report are permanently zero, and the report says nothing was ever restocked or written off. This entry PREVIOUSLY read 'Written by the till via /api/sync/push, which resolves the table name dynamically' — both halves were false and had never been true: /api/sync/push writes exactly four hardcoded tables (business_days, shifts, float_transactions, expenses) and stock_adjustments appears in neither SYNC_DIRECTION nor the till's localDb.ts. Adjustments are actually recorded in stock_movements (stockEffects.ts:378, orders.ts:1097, fueltanks.ts:194, branches.ts:162). Fix needs a product decision — point the report at stock_movements, or drop the table and the report section. Do not remove this note to make the output tidy." }
   ],
 
   "writeOnly": [

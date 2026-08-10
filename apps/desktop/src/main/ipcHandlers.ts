@@ -23,7 +23,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
@@ -1285,18 +1285,63 @@ export function registerIpcHandlers() {
   // Every call runs under the STAFF token, so the server's own permission
   // checks (products.manage, staff.manage) apply exactly as they do on the web.
   // The till does not get to decide who may edit the menu.
+  /**
+   * The manager-screen fetch: Menu, Staff, Prices, Combos, Receipt, Printers.
+   * 35 handlers route through it.
+   *
+   * ── WHY THE 401 BRANCH EXISTS ──────────────────────────────────────────────
+   * The staff ACCESS token lives 15 minutes; its refresh token lives 30 days.
+   * This function used to read the access token once and throw on any non-2xx,
+   * so the first manager action after fifteen idle minutes produced a 401,
+   * humaniseError matched /unauthor/i, and the screen said
+   *
+   *     "This till was signed out. Ask a manager to sign in again."
+   *
+   * The till was NOT signed out. The sync engine was refreshing on its own
+   * schedule the whole time and selling was unaffected — only the manager
+   * screens were, and only because this one function never refreshed. Reported
+   * from the field on 0.5.27 (Beryl), on the Menu screen, after idling.
+   *
+   * ownerFetch has had exactly this branch since it was written. The two
+   * builders disagreed about token expiry and nothing compared them — the same
+   * seam as A38's two header spellings.
+   *
+   * refreshStaffToken() is single-flight, so overlapping manager actions await
+   * one request rather than presenting the same rotating token twice. That
+   * matters: a doubled refresh is what the server's replay detection treats as
+   * a stolen token, and it revokes EVERY session for that user.
+   *
+   * ONE retry, and only on 401. A second 401 after a successful refresh is a
+   * real rejection (revoked, deactivated, permissions changed) and must reach
+   * the user rather than looping.
+   */
   async function manageFetch(path: string, method: string, body?: any) {
     const db = getLocalDb();
-    const row = { token: readStaffTokens().token };
-    if (!row?.token) throw new Error('Not signed in');
+    const readToken = () => readStaffTokens().token;
+
+    let token = readToken();
+    if (!token) throw new Error('Not signed in');
+
+    const call = (t: string) => fetch(`${getServerUrl()}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
 
     let res: Response;
     try {
-      res = await fetch(`${getServerUrl()}${path}`, {
-        method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${row.token}` },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
+      res = await call(token);
+
+      if (res.status === 401) {
+        // Expired, not wrong. refreshStaffToken persists the new pair to
+        // SQLite, so read it back rather than assuming what it is — the
+        // in-memory copy can lag the disk.
+        const refreshed = await refreshStaffToken();
+        if (refreshed) {
+          const fresh = readToken();
+          if (fresh) res = await call(fresh);
+        }
+      }
     } catch {
       throw new Error('No connection — menu and staff changes need internet. Try again once you are back online.');
     }

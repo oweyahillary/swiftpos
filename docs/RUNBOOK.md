@@ -1,7 +1,71 @@
 # SwiftPOS — runbook
 
-Unzip over the repo root. Delete `scripts/test-migration-41.mjs` if you still
-have it (renamed to `test-migrations-41-42.mjs`).
+> **⚠ STALENESS WARNING — added 2026-08-10.**
+> **Section 1 below is out of date and must not be followed as written.** It
+> describes running migrations 41 and 42. The repository is at **74**. It was
+> written when 41 was the next migration and has not been revised since.
+>
+> **Do not infer from this document what is applied in production.** Nobody has
+> recorded that here, and `schema_migrations` cannot answer it either — only
+> **22 of 68** migration files record themselves, and 68 and 72 are applied in
+> production while absent from this repo entirely (register A4). Ask the
+> database, then check the answer against the file.
+>
+> What IS current and safe to rely on: `npm run test:migrations` runs every
+> `scripts/test-migration*.mjs` against a real Postgres (PGlite) and is in CI —
+> **7 files, 110 assertions.** Run it before applying anything anywhere.
+>
+> Section 0 below was added 2026-08-10 and IS current.
+
+---
+
+# 0. FIELD INCIDENTS — read before touching a machine
+
+These are the actions that are irreversible if taken in the wrong order. Each one
+exists because the register recorded a consequence, and a register entry is not
+where somebody looks at nine at night with a dead node.
+
+## 0.1 A node has failed and you are replacing it
+
+**DO NOT WIPE OR RE-IMAGE THE FAILED NODE UNTIL ITS `swiftpos.db` HAS BEEN READ.**
+
+Promotion cannot recover rows the dead node ORIGINATED but never distributed —
+its own sales live only on its disk, and nothing anywhere measures how far behind
+distribution had got. That lag *is* the recovery point (register A23).
+
+1. Take a copy of `%APPDATA%\SwiftPOS\swiftpos.db` off the failed machine **first**.
+2. Only then promote a peer or image the replacement.
+3. Take `%APPDATA%\SwiftPOS\swiftpos.log` too — it is the first place to look
+   when a till "isn't syncing" and it holds no secrets by design.
+
+## 0.2 A terminal has gone missing or been stolen
+
+**ROTATE THE PINs OF EVERY CASHIER WHO SIGNED IN ON THAT TERMINAL.**
+
+A till caches a bcrypt PIN hash for each cashier who signed in on it while online
+(`staff_pin_cache`). It is wrapped with DPAPI, which defeats a copied `.db`, a
+stolen backup and a pulled disk — but **not** code running as the app user on
+that machine. A till that auto-logs into Windows gives whoever powers it on
+exactly the access the app has, and a 4–6 digit PIN over bcrypt is a small space.
+
+What is NOT at risk, by design: `override_pin_hash` is never cached, so voids,
+discounts past the floor and refunds on other terminals are not exposed.
+
+The cache expires 14 days after the last server contact, which bounds the window
+but does not close it today (register A20; A17 for why that TTL is also the wrong
+bound for a branch-node deployment).
+
+Also: revoke the terminal in the dashboard — Settings → Devices. Registration
+never re-approves a rejected row, so a revoked till stays revoked even if someone
+signs in on it again.
+
+## 0.3 Before ANY till trades on 0.5.27 or later
+
+**Tick the thermal checkbox** on the Printers screen. With it unticked, **nothing
+prints** — no kitchen ticket, no dispatch slip, no receipt. The HTML fallback was
+removed in 0.5.27 (register D8), so OFF no longer means "print the old way"; it
+means print nothing. The label says so in amber since A42; it previously
+reassured.
 
 ---
 
