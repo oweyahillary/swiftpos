@@ -2,6 +2,23 @@
 
 _Last updated: 2026-07-10 (session 2 — tests, dine-in fix, printing notes, bundle split)_
 
+> **⚠ STALE BY TWO PHASES — read this first (register A5), noted 2026-08-10.**
+>
+> This file predates roughly a month of shipped work and **mentions none of it**:
+> zero references to Phase 2, Phase 4, Close Branch, `/node/since`, the office
+> role, or the ESC/POS printing migration. Its "now vs later" calls are therefore
+> not a guide to what is next — several "later" items already exist and some
+> "now" items were overtaken.
+>
+> **Do not use this to decide what to work on.** The current picture lives in
+> `AUDIT-REGISTER.md` (open items, by priority, reconciled against the tree on
+> 2026-08-10) and in `PHASE5-NODE-AUTHORITY.md` / `PHASE6-BRANCH-SETTINGS.md`
+> for the two designs that are agreed but unbuilt.
+>
+> Kept rather than deleted because §1's product north star — perfect the
+> fast-food flow first, keep petrol/minimart/parking working as secondary — is
+> still the standing direction and is not recorded anywhere else.
+
 Purpose: a single place to park ideas that came up during testing so they don't get
 lost, with an explicit **now vs later** call on each. This is a planning doc, not a
 commitment — items move up only when we agree to schedule them.

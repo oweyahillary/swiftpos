@@ -9,7 +9,7 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | Last updated | **2026-08-10, two field faults closed (A47, A48) + register reconciled against the tree** |
 | Tree | `dev` @ `84400d6`, desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
 | Open | **A: 0 P0 · 11 P1 · 6 P2 · 5 P3 — D: 3 P0 · 4 P1 · 4 P2 · 4 P3** |
-| Closed 08-10 (late) | **A47 · A48 · A50.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A51**. |
+| Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
 **Counts above were re-derived by reading this file, not carried forward.** The
 previous header said 5 P2 where section A listed 3, and said `415e044 + this
@@ -573,6 +573,43 @@ bridge; the equivalent gate here would assert that every `apps/desktop/test/*.te
 appears in a package script. Not built — recorded as the obvious next hardening.
 
 ### A9 · RESOLVED 08-10 — `npm audit`, split by workspace
+**TRIAGE DONE 08-10 (late). The open half of this item is now closed, and the
+answer is that almost none of it reaches a till.**
+
+The measurement said 23 vulnerabilities / 3 critical on desktop. What it did not
+say is which of them ship. Split against `apps/desktop/package.json`:
+
+| | Verdict |
+|---|---|
+| **All 3 CRITICAL** — `concurrently`, `shell-quote`, `tar` | **devDependencies.** `concurrently` and `shell-quote` are the dev-server runner; `tar` arrives via `node-gyp` → `electron-rebuild`. None is in the packaged app. |
+| **16 of 18 HIGH** | The `electron-builder` / `node-gyp` / `app-builder-lib` chain, plus `postcss`, `js-yaml`, `nanoid`, `brace-expansion`, `ip-address`. All devDependencies — **build machine only**. |
+| **`electron` itself (HIGH)** | The advisory is *AppleScript injection in `app.moveToApplicationsFolder`* — **macOS only**. Every till is `win32`. Not reachable on any deployed machine. |
+| **2 MODERATE — `uuid`, `exceljs`** | **The only PRODUCTION dependencies in the list.** `exceljs` is flagged solely via `uuid`. |
+
+**The `uuid` finding does not apply to how we call it.** The advisory is a missing
+buffer bounds check in **v3/v5/v6 when `buf` is provided**. Every call site in
+this repo is `import { v4 as uuid }` — five of them, all `uuid()` with no
+argument. v4, no buffer. (`schemas.ts:5` is a Zod validator that shadows the
+name; unrelated.)
+
+**So the shipped surface of 23 vulnerabilities is: none.** That is worth stating
+plainly, because "3 critical" on a POS handling money reads as urgent and would
+have had someone running `npm audit fix --force` on the electron-builder chain —
+a MAJOR bump of the toolchain that builds the installer, the week after a build
+went out with two binaries under one version (rule 22).
+
+**Server side, real but lower:** `body-parser` (DoS via a silently-disabled size
+limit), `brace-expansion`, `ip-address` (SSRF / trust-boundary bypass). All fixed
+by a plain `npm audit fix` — no majors. `ip-address` matters more here than on
+the till because the server takes inbound requests; worth doing, but not tonight,
+and not in the same change as a mail fix going to production.
+
+**What is NOT claimed:** that these packages are safe in general, only that the
+vulnerable code paths are not on the till's shipped surface. A future dependency
+could pull `uuid` v5 with a buffer, or move a dev dependency into `dependencies`,
+and this triage would be stale. Re-run per workspace when the dependency set
+changes rather than trusting this table.
+
 The register carried "23 vulnerabilities, 3 critical — probably build-chain only"
 as an unverified guess. Measured on both sides:
 
@@ -1050,9 +1087,17 @@ fix is bigger. Reverted rather than loosened.
 
 **The right sequence, and it is a decision, not a chore:**
 
-1. Port §4's picker assertions to `PrinterSetupScreen.tsx` — that is where the
-   remount bug can actually bite now. **Strengthening, not relocating: the
-   coverage currently sits on a screen nobody can open.**
+1. ~~Port §4's picker assertions to `PrinterSetupScreen.tsx`~~ **DONE 08-10.**
+   `test-print-resilience.mjs` §4b, four assertions on the live screen, in the
+   general form of the bug rather than a copy: no component declared INSIDE
+   `PrinterSetupScreen` (the identity churn that remounts an open `<select>`);
+   options keyed by `p.name` not index; a target still settable with no printer
+   plugged in; and the free-text input not hidden behind `localPrinters.length`,
+   or a machine reporting no printers could set no target at all.
+   Mutation-checked twice — nest a component inside the export, and key by index;
+   each fires its own assertion. **The screen currently uses inline JSX and so
+   cannot have the original bug, but it is one refactor away, and the refactor is
+   the obvious thing to do as the file grows.**
 2. Resolve §5 — either exclusions move somewhere reachable (PHASE6 §8c makes them
    per-station), or the assertion is dropped as describing a screen that is gone.
 3. Only then delete the file.
@@ -1281,6 +1326,76 @@ expiry rather than waiting for the 401, or move the pull inside 15 minutes.
 touched, and A47's idle test was still running. More importantly a GENERIC
 proactive refresh would refresh the staff token too — which would mask the A47
 test exactly as the auto-lock would. The fix must be scoped to the device token.
+
+### A52 · P1 · CLOSED 08-10 · The till stayed signed in on an unattended machine
+Requested after A47: *"can we make the app lock after 3-5min of inactivity"*, then
+clarified — *"it should only fire when there is no activity in the software, not
+when someone is using it; it should work like screen lock"*.
+
+**That clarification chose the design.** `powerMonitor.getSystemIdleTime()`
+reports seconds since the last keyboard or mouse input ANYWHERE on the machine —
+the signal Windows uses to blank a screen. A cashier mid-sale is touching the
+machine, so idle is 0 and the timer cannot fire. **"Never lock mid-transaction"
+is true by construction, not by a special case somebody must keep working.**
+
+Renderer activity tracking would have been the obvious build and the wrong one:
+it misses a cashier reading a long receipt or counting cash into the drawer, so
+it locks a till somebody is standing at. Staff answer lock fatigue with trivial
+or shared PINs, which on a 4-6 digit PIN over bcrypt is a net security LOSS.
+
+**Thresholds:** manager 5 min, POS 10 min. The split is exposure, not friction —
+the manager screens hold Close Day, Close Branch, Staff and Receipt, and
+`settings.manage` also gates till revocation and eTIMS registration (A46). Not 3
+minutes anywhere: too short to distinguish "away" from "not typing".
+
+**It is a CURTAIN, not a reset.** `LockCurtain` renders OVER whatever is mounted.
+It does not unmount `POSPage`/`ManagerPage`, does not clear the staff session,
+does not touch SQLite. The cart, the part-entered payment and the open tab are
+all still there behind it. **Losing a sale to the lock is unreachable rather than
+merely unlikely** — there is no code path that discards anything, so there is
+nothing to get wrong later.
+
+**Unlock is the PIN pad, never the owner login** (A17). It calls the same
+`auth.verifyPin` `PinPage` does, so the offline cache (`staff_pin_cache`, 14
+days) and the revocation handling come for free instead of being a second
+implementation that must agree with the first. **Only the locked staff member can
+dismiss it** — another cashier's valid PIN would otherwise continue the first
+cashier's shift under their identity, with every order still attributed to the
+person who walked away.
+
+**Suppression** holds the lock off while work is in flight and nobody is at the
+screen — an M-Pesa STK push awaiting its callback, a print job spooling. A
+counter, not a boolean, because those overlap and a boolean lets whichever
+finishes first re-arm the lock. Tokens are held in MAIN: handing the release
+closure to the renderer would let a reload mid-print strand a suppression and the
+till would never lock again.
+
+27 tests. Three mutation checks, each caught by exactly the assertion that owns
+it: make the curtain clear the staff session → the cart-loss guard fires; remove
+the identity check → the wrong-cashier guard fires; render the curtain INSTEAD of
+the screen rather than alongside → the unmount guard fires.
+
+### A53 · P2 · OPEN · Twenty audit IDs are cited in code with no entry anywhere
+This register records being opened on 2026-08-07 with sections
+`A1, B1-B5, C1-C6, D1-D3, E1-E4, F, G1-G2, H1-H2, I`. The 08-08 restructure kept
+**only A and D**. The code still cites the rest — `// Audit H10` in `render.yaml`,
+`// audit C4` in `index.ts`, `audit B6`, `audit H14` and more.
+
+**They are not recoverable.** The first committed version of this file
+(`a80c224`) already contained only A-section headings, so those entries never
+reached the repository at all. An earlier note in this register suggesting
+recovery from `git show 415e044:docs/AUDIT-REGISTER.md` was wrong — that commit
+is not in this history. **Reconstructing them would mean inventing findings**,
+which is worse than a gap a reader can see.
+
+`docs/AUDIT-ID-INDEX.md` now lists all 20 cited IDs with their call sites and
+marks each *in register* or *cited only*, so a citation leads somewhere. It is
+generated by reading the tree, not hand-maintained.
+
+**Fix, when a cited-only line is next touched:** resolve the reference into the
+comment — say what the finding was, in place — or drop the citation. A reference
+a reader cannot follow looks like documentation and is not, which is the same
+reasoning that produced `check-doc-refs` for documents (A39).
 
 ### A47 · P1 · CLOSED 08-10 · `manageFetch` never refreshed — every manager screen reported the till signed out
 **Field report, Beryl, 0.5.27, Menu screen: the banner appears after the till has
@@ -1531,12 +1646,38 @@ Applied to the live database, never committed to any branch. Confirmed absent
 from git history. The repo cannot reproduce production.
 **Blocked on:** `select version, applied_at from public.schema_migrations order by version;`
 
-### A5 · P1 · OPEN · Docs understate the system by two phases
+### A5 · P1 · CLOSED 08-10 · Documentation understated the system by two phases
+Both documents now carry a status header stating what is actually true, rather
+than being silently wrong.
+
+`PHASE2-3-DESIGN.md` said *"For approval before code"* a week after the code
+shipped — Phase 2a in `5ef0f08` (v47), Phase 2b+2c in `fee91cc` (v49), Phase 4's
+central day close in `40f53ac` (v46). It now says to read it as a record of what
+was decided and built, names the code as the authority where they disagree, and
+lists the drift already known from running it (A19 replica-not-relay, A24 stale
+reference data, A17 no node authority) — none of which the design anticipated.
+
+`ROADMAP.md` (dated 2026-07-10) mentions **none** of Phase 2, Phase 4, Close
+Branch, `/node/since`, the office role or the ESC/POS migration, so its "now vs
+later" calls are not a guide to what is next. It now says so and points at the
+register. Kept rather than deleted: §1's product north star — fast food first,
+petrol/minimart/parking secondary — is the standing direction and is recorded
+nowhere else.
+
+**Not the same as rewriting them.** Restating a month of decisions as a fresh
+plan would be inventing intent. A document that announces its own staleness is
+honest; one that looks current and is not is the failure this item was about.
+
 `ROADMAP.md` last touched 2026-07-10; no mention of Phase 2, Phase 4, Close
 Branch, `/node/since`, events or the office role — all of which pass tests.
 `PHASE2-3-DESIGN.md` still reads *"For approval before code."*
 
-### A6 · P2 · OPEN · The 3-Aug handoff was never filed
+### A6 · P2 · CLOSED 08-10 · The 3-Aug handoff was never filed
+Recovered from `git show 0f85155:HANDOFF.md` — 383 lines, intact — and filed at
+`docs/history/handoffs/HANDOFF-2026-08-03.md`. It supersedes
+`SESSION-HANDOFF-2026-08-02.md` and the interim 08-03 file, and its §5 (zip
+supersession) is the origin of rule 3.
+
 Recoverable: `git show 0f85155:HANDOFF.md`. Commit `a4aee05` overwrote the path
 with a different document. Nothing in `docs/` records the tech DB console or the
 wipe gates.
@@ -1684,7 +1825,32 @@ See §E. Wrapped at rest via `main/tokenStore.ts`; plaintext columns retained as
 a fallback and never cleared until the wrapped value has been read back in the
 same write.
 
-### D6 · P2 · Local schema 46-51 undocumented
+### D6 · P2 · CLOSED 08-10 · Local schema 46-51 undocumented
+`docs/LOCAL-SCHEMA-VERSIONS.md`, reconstructed from `localDb.ts` and its history.
+
+**The mechanism is not numbered steps** — there is no `case 46:` ladder. New
+tables arrive via `CREATE TABLE IF NOT EXISTS` and columns via `migrateColumns`,
+which reads `PRAGMA table_info` and adds what is absent. Both additive and
+idempotent, so any older till converges by running the whole file.
+`LOCAL_SCHEMA_VERSION` labels the resulting SHAPE; it does not drive replay.
+
+Traced: **43** baseline · **44** `device_id` on expenses/floats, never shipped
+alone · **45** replication seq/outbox/cursors (`3763946`) · **46** Phase 4 node
+tables (`40f53ac`) · **47** Phase 2a distribution (`5ef0f08`) · **49** events and
+maintenance_state (`fee91cc`) · **51** `escpos_enabled`, `kitchen_exclusions`
+(`a80c224`).
+
+**48 and 50 NEVER EXISTED.** No commit sets either value; the constant jumped
+47 → 49 → 51. Nothing broke, because the number labels a shape — but a reader
+hunting "what did 48 do?" finds nothing, and would reasonably conclude a
+migration was lost. **The same shape as the server side**, where 31 and 32 are
+recorded SKIPPED and 64 never existed (A4, §M). Two independent numbering
+schemes, both with gaps that looked like data loss until somebody checked.
+
+Not reconstructed, and said so in the file: what 44 and below did in detail, and
+whether every field till has actually reached 51 — nothing in this repo records
+the fleet's state. `X-Schema-Version` puts it on every push; ask the machines.
+
 `localDb.ts` explains 43/44/45 in detail, then goes silent through 51. Six
 generations with no record, on the mechanism deciding whether a field till works.
 
@@ -1929,6 +2095,14 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-10 | **A5 closed** — `PHASE2-3-DESIGN.md` said "For approval before code" a week after Phase 2a/2b/2c and Phase 4 shipped; `ROADMAP.md` (2026-07-10) mentions none of it. Both now carry status headers naming the code as authority. Not rewritten: restating a month of decisions as a fresh plan would be inventing intent. |
+| 2026-08-10 | **D6 closed** — `docs/LOCAL-SCHEMA-VERSIONS.md`. Local schema is additive and idempotent, not a numbered ladder; the version labels a shape. **48 and 50 never existed** — the constant jumped 47→49→51, the same shape as the server's SKIPPED 31/32 and never-existed 64. |
+| 2026-08-10 | **A9 triage closed** — 3 critical and 16 of 18 high are devDependencies (electron-builder / node-gyp chain); the Electron CVE is macOS-only and every till is win32; the only prod vulns are `uuid`/`exceljs`, and the advisory covers v3/v5/v6 with a buffer while every call here is `v4` with none. **Shipped surface: none.** Server has real but lower items fixed by a plain `npm audit fix`. |
+| 2026-08-10 | **A43 step 1 done** — the picker protection now exists on `PrinterSetupScreen`, the screen that is actually rendered, in the general form of the bug. Step 2 (§5 exclusions) still blocks the deletion. |
+| 2026-08-10 | **A52**: idle lock built. OS idle via powerMonitor, so it cannot fire mid-sale by construction. Manager 5 min, POS 10. A curtain over mounted state — never clears the cart or the session; unlock is the PIN pad (A17) and only for the locked staff member. 27 tests, 3 mutation checks. |
+| 2026-08-10 | **A53**: 20 audit IDs cited in code with no entry anywhere. The B/C/E/F/G/H sections went in the 08-08 restructure and were never in the first commit, so they are unrecoverable — a previous note suggesting recovery from `415e044` was wrong, that commit is not in this history. `docs/AUDIT-ID-INDEX.md` indexes all 20 with call sites. |
+| 2026-08-10 | **A6 closed** — the 3-Aug handoff recovered from `0f85155:HANDOFF.md` (383 lines) and filed at `docs/history/handoffs/HANDOFF-2026-08-03.md`. |
+| 2026-08-10 | **A51 fixed** — proactive device-token refresh, scoped so it cannot touch the staff token and mask A47's field test. An assertion fails if anyone later widens it. 21 tests, 4 mutation checks. |
 | 2026-08-10 | **A50**: daily summaries never delivered — nine businesses, every run, both observed days. SMTP fallback died as ENETUNREACH on Google's IPv6. Not an unverified Resend domain (`RESEND_API_KEY` was absent) and not unreal test addresses (ENETUNREACH is pre-`RCPT TO`; Beryl failed identically). Fixed with `family: 4` plus a boot `verify()` so a dead mail path announces itself. |
 | 2026-08-10 | **A51**: the device token sawtooths — 10-minute pull against a 15-minute token means every other catalogue pull 401s by construction. ~72 refresh rotations/day and a till log that can no longer show a real auth failure. Held out of 0.5.28 so it cannot mask A47's idle test. |
 | 2026-08-10 | **A47**: `manageFetch` served 35 manager handlers with no 401 branch while `ownerFetch` in the same file always had one. Staff access token 15m, refresh 30d — so idling produced "This till was signed out" on a signed-in till. Field report. Gate `check-auth-retry` built and in CI; it found `refreshTechConfig` on its first run. |

@@ -512,6 +512,23 @@ jobs:
       # only in the HTML receipt, which 0.5.27 deleted (D8), so both lines
       # vanished from the paper a customer is handed. Drives the real renderer
       # at both paper widths.
+      # A51: syncAll ran every 10 minutes against a 15-minute token with purely
+      # reactive refresh, so every SECOND catalogue pull 401'd by construction —
+      # ~72 refresh rotations a day and a till log in which a real auth failure
+      # was indistinguishable from noise. Scoped to the DEVICE token: refreshing
+      # the staff token ahead of time would mask A47's field test.
+      - name: Device token proactive refresh
+        working-directory: apps/desktop
+        run: node --no-warnings test/device-token-refresh.test.mjs
+
+      # A52: the idle lock. OS idle (powerMonitor) rather than renderer activity,
+      # so it cannot fire mid-sale by construction. Asserts the curtain never
+      # clears the cart or the session, that unlock is the PIN pad and not the
+      # owner login (A17), and that only the locked staff member can dismiss it.
+      - name: Idle lock
+        working-directory: apps/desktop
+        run: node --no-warnings test/idle-lock.test.mjs
+
       - name: Receipt closing block
         working-directory: shared/printing
         run: npm test
