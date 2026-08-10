@@ -9,8 +9,6 @@ import type { HeldOrder } from '../lib/heldOrders';
 import TablesView from '../components/TablesView';
 import PumpsView from '../components/PumpsView';
 import type { DiningTable, Pump } from '../lib/posApi';
-import { printKOT } from '../lib/printKOT';
-import { printDispatcher } from '../lib/printDispatcher';
 import { buildTicketLines, kitchenOnly, linesForStation, routingIsConfigured, ROUTING_UNCONFIGURED } from '../lib/ticketLines';
 import type { StationRouting } from '../lib/ticketLines';
 import type { ComboMap } from '../lib/ticketLines';
@@ -452,10 +450,15 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     // real service has gone through the thermal one on this hardware. Untick
     // the box on the Printers screen and this runs again exactly as before.
     try {
-      // canPrint, not enabled(). With thermal on but no kitchen station bound
-      // on this terminal, skipping the HTML path would send NOTHING to the
-      // kitchen while telling the cashier it had gone.
-      if (await window.swiftpos.escpos.canPrint('kitchen')) {
+      // 0.5.27 — the HTML sale path is gone, so there is no longer a fallback
+      // to guard against. This used to test canPrint('kitchen') and fall through
+      // to HTML when nothing was bound (register D8: kitchen bound but dispatch
+      // not meant a dispatch slip printed on NEITHER system, silently).
+      //
+      // With one path, an unbound station has to REPORT rather than be routed
+      // around — printProduction returns the stations it skipped and those are
+      // surfaced below, which is the behaviour D8 was missing.
+      {
         // Queue the kitchen and dispatch tickets NOW.
         //
         // This used to do nothing but mark the lines sent, because main queued
@@ -466,7 +469,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         //
         // Only the UNSENT lines are sent, so a second course added later does
         // not reprint the first.
-        await window.swiftpos.escpos.printProduction({
+        const result = await window.swiftpos.escpos.printProduction({
           order_number: num,
           order_type:   flags.isRestaurant ? orderType : 'retail',
           table_number: orderType === 'dine_in' ? tableNumber : undefined,
@@ -489,90 +492,23 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
         setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
         setKotCount(n => n + 1);
-        setKitchenMsg(
-          `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
+
+        // D8, closed. A station with no printer bound is NAMED, not skipped in
+        // silence. "Sent to kitchen" while a dispatch slip went nowhere is how a
+        // bag leaves with items missing.
+        const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+        setKitchenMsg(skipped.length
+          ? `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'}, but nothing printed for: ${skipped.join(', ')}`
+          : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
         return;
       }
-    } catch {
-      // Cannot tell — assume off and print the way that has always worked.
-    }
-
-    try {
-      const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds, routing);
-      const problems: string[] = [];
-
-      if (routingIsConfigured(routing)) {
-        // One ticket per configured station, each seeing only what routes to it.
-        // Sequential rather than parallel: printing is already serialised in the
-        // main process, and firing them together only reorders the queue while
-        // making a failure harder to attribute to a station.
-        for (const st of routing.stations) {
-          const lines = linesForStation(allLines, st.id, routing);
-          if (lines.length === 0) continue;   // nothing here routes to this station
-
-          const printerName = printerSettings.stationPrinters?.[st.id]
-            // Fall back to the legacy per-kind printer so a station created before
-            // anyone bound hardware still prints somewhere sensible.
-            ?? (st.kind === 'dispatch' ? printerSettings.dispatcherPrinterName
-              : st.kind === 'receipt'  ? printerSettings.receiptPrinterName
-              : printerSettings.kitchenPrinterName);
-
-          if (!printerName) {
-            problems.push(`${st.name}: no printer set on this till`);
-            continue;
-          }
-
-          const res = st.kind === 'dispatch'
-            ? await printDispatcher(lines, {
-                orderNumber: num,
-                billNumber: num,
-                deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
-                stationName: st.name,
-                tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-                orderType,
-              }, { ...printerSettings, dispatcherPrinterName: printerName })
-            : await printKOT(lines, {
-                orderNumber: num,
-                tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-                orderType,
-                stationName: st.name,
-              }, { ...printerSettings, kitchenPrinterName: printerName });
-
-          if (!res.printed) problems.push(`${st.name}: ${res.reason ?? 'did not print'}`);
-        }
-      } else {
-        // UNCONFIGURED: exactly the previous behaviour. A till that upgrades
-        // before stations exist must print as it did yesterday — anything else
-        // means a kitchen receiving nothing, discovered mid-service.
-        const kot = await printKOT(kitchenOnly(allLines), {
-          orderNumber: num,
-          tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-          orderType,
-        }, printerSettings);
-
-        const pack = await printDispatcher(allLines, {
-          orderNumber: num,
-          billNumber: num,
-          deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
-          stationName: deviceName ?? undefined,
-          tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-          orderType,
-        }, printerSettings);
-
-        if (kot.reason) problems.push(kot.reason);
-        if (!pack.printed && pack.reason) problems.push(pack.reason);
-      }
-
-      setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
-      setKotCount(n => n + 1);
-      // Report whichever ticket failed. Announcing "sent to kitchen" when a
-      // station silently died is how a bag goes out with items missing.
-      setKitchenMsg(problems.length
-        ? problems.join(' · ')
-        : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
     } catch (err: any) {
-      setKitchenMsg(`Kitchen print failed: ${err?.message ?? 'unknown'}`);
+      // There is no fallback to fall back TO. Report it rather than swallow it —
+      // the cashier needs to know the kitchen did not hear about this order.
+      setKitchenMsg(`Kitchen print failed: ${err?.message ?? 'unknown error'}`);
+      return;
     }
+
   };
 
   const handleHold = async () => {

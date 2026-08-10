@@ -150,7 +150,14 @@ declare global {
         enabled:     () => Promise<boolean>;
         setEnabled:  (on: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
         canPrint:    (kind: 'kitchen' | 'dispatch' | 'receipt') => Promise<boolean>;
-        printProduction: (payload: unknown) => Promise<{ ok: boolean }>;
+        // `skipped` names the stations that produced NOTHING — no printer
+        // bound on this terminal. With the HTML fallback gone (0.5.27) this is
+        // the only way the cashier learns a ticket did not go. Register D8.
+        printProduction: (payload: unknown) => Promise<{ ok: boolean; skipped: string[] }>;
+        // The branch's exclusion list as the printer applies it. The Printers
+        // tab previews with THIS, not a per-till localStorage copy — a preview
+        // that disagrees with the printer is worse than no preview.
+        kitchenExclusions: () => Promise<{ terms: string[] }>;
         reprintReceipt: () => Promise<{ ok: boolean; error?: string }>;
         printShiftReport: (data: unknown) => Promise<{ ok: boolean; error?: string; internal?: boolean }>;
         retry:       (id: string) => Promise<unknown>;

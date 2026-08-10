@@ -393,6 +393,34 @@ jobs:
       - name: IPC bridge parity
         run: node scripts/check-ipc-parity.mjs
 
+      # A38: syncEngine declared 'x-device-id' AND 'X-Device-Id' in one object.
+      # Header names are case-insensitive to HTTP but not to an object literal,
+      # so fetch sent both and every server reader got them comma-joined —
+      # breaking fleet telemetry, orders.device_id, shifts.device_id and the
+      # terminal key behind migration 63's one-open-drawer index. Invisible by
+      # inspection: both keys look right and TypeScript sees two distinct strings.
+      - name: Header keys are declared once
+        run: node scripts/check-header-keys.mjs
+
+      # A31: failover-cursors.test.mjs was written, committed, and never added to
+      # test:desktop — 92 tests ran on the target and the sixth suite was silently
+      # absent. A32: test-migration-47.mjs pointed at a sandbox path and had never
+      # executed once. Both looked like coverage.
+      - name: Every test file is invoked
+        run: node scripts/check-test-registration.mjs
+
+      # A comment must not cite a document that is not in the tree.
+      # BRANCH_AUTHORITY_AND_SYNC_DESIGN.md was cited BY SECTION in six source
+      # files and existed in neither the repo nor its history (A39) — and it
+      # specified most of what the register spent a week rediscovering. A
+      # citation a reader cannot follow is worse than none: it looks present.
+      #
+      # Currently FAILS on three documents the owner is restoring. Once they
+      # land this stays green, and the next dangling citation fails the build
+      # the day it is written.
+      - name: Cited documents exist
+        run: node scripts/check-doc-refs.mjs
+
       # ── Desktop suites that do NOT need Electron ────────────────────────────
       # 92 desktop tests were added on 2026-08-08 and none of them ran here, so
       # the newest and riskiest code on the till — offline sign-in, credentials

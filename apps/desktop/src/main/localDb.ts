@@ -898,16 +898,46 @@ function initSchema(db: Database.Database) {
     // locally so an offline till still prints the right address and footer.
     ['receipt_header', 'TEXT'],
     ['receipt_footer', 'TEXT'],
-    // Thermal (ESC/POS) printing on THIS terminal. Per-machine, not per-business:
-    // till 1 can be proving the new path while till 3 still runs the old HTML
-    // one. Defaults OFF — the subsystem is verified by unit test and has never
-    // touched a printer, and a till that prints nothing during service is worse
-    // than one that prints slowly. See main/escposBridge.ts.
-    ['escpos_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+    // Thermal (ESC/POS) printing on THIS terminal.
+    //
+    // DEFAULTS ON as of 0.5.27. It defaulted OFF while the HTML path was the
+    // fallback — "a till that prints nothing during service is worse than one
+    // that prints slowly", and that was right at the time. The HTML sale path is
+    // now gone (thermal ran a full service on 2026-08-10, dispatch slips
+    // included), so OFF no longer means "print the old way" — it means print
+    // NOTHING. The old default is now the dangerous one.
+    //
+    // A new column on an existing install takes this default too, so a till
+    // upgrading straight from an HTML build lands ON. Tills that were switched
+    // on during the trial already hold 1; the backfill below covers any that
+    // were explicitly set to 0. See main/escposBridge.ts.
+    ['escpos_enabled', 'INTEGER NOT NULL DEFAULT 1'],
     // JSON array of names that must never reach a kitchen ticket. Owner-stated,
     // pulled with the catalogue, cached so an offline till still honours it.
     ['kitchen_exclusions', 'TEXT'],
   ]);
+
+  // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
+  // already exist, so a till that ran the trial with thermal OFF would keep 0 —
+  // and with the HTML sale path removed it would print nothing at all. Guarded
+  // by a marker row so a manager who deliberately switches it off later is not
+  // overridden on the next boot.
+  try {
+    const done = db.prepare(
+      `SELECT value FROM maintenance_state WHERE key = 'escpos_default_on_0527'`).get() as
+      { value?: string } | undefined;
+    if (!done) {
+      db.prepare(`UPDATE device_config SET escpos_enabled = 1 WHERE escpos_enabled = 0`).run();
+      db.prepare(
+        `INSERT OR REPLACE INTO maintenance_state (key, value, updated_at)
+         VALUES ('escpos_default_on_0527', 'applied', ?)`
+      ).run(new Date().toISOString());
+    }
+  } catch {
+    // maintenance_state absent on a build predating schema 49. The column
+    // default covers new installs; this is belt and braces, never a reason to
+    // fail startup.
+  }
   migrateColumns(db, 'order_items', [
     ['course', 'TEXT'],
     ["fire_status", "TEXT DEFAULT 'fired'"],

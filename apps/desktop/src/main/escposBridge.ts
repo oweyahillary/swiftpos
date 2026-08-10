@@ -215,7 +215,7 @@ export function describeFromText(text: string | null | undefined): string[] {
  * and "1L soda" without catching "Sodalite Special". A multi-word entry like
  * "cole slaw" is matched as a phrase.
  */
-function kitchenExclusions(): string[] {
+export function kitchenExclusions(): string[] {
   try {
     const raw = (getDeviceConfig() as any)?.kitchen_exclusions;
     if (!raw) return [];

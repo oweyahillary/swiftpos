@@ -208,6 +208,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // it is paid. See main/escposBridge.ts.
     printProduction: (payload: unknown) =>
                    ipcRenderer.invoke('escpos:printProduction', payload),
+    // The list the PRINTER applies, so a preview cannot disagree with it.
+    kitchenExclusions: () => ipcRenderer.invoke('escpos:kitchenExclusions'),
     reprintReceipt: () => ipcRenderer.invoke('escpos:reprintReceipt'),
     printShiftReport: (data: unknown) => ipcRenderer.invoke('escpos:printShiftReport', data),
     retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),

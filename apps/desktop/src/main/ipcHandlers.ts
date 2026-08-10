@@ -13,7 +13,7 @@
 
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
-import { printSale, escposEnabled, setEscposEnabled } from './escposBridge';
+import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions } from './escposBridge';
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
@@ -712,9 +712,14 @@ export function registerIpcHandlers() {
     payload: any,
     kinds: Array<'kitchen' | 'dispatch' | 'receipt'>,
     reprint?: { at: Date; count: number },
-  ): void {
+    // 0.5.27 — returns the stations that produced NOTHING. printSale has always
+    // computed this and every caller threw it away, so a station with no printer
+    // bound on this terminal was skipped in silence. That is register D8, and
+    // with the HTML fallback gone there is no second system to catch it: the
+    // cashier must be told, or a bag leaves with items missing.
+  ): { skipped: string[] } {
     try {
-      if (!escposEnabled()) return;
+      if (!escposEnabled()) return { skipped: [] };
 
       const db = getLocalDb();
       const cfg = getDeviceConfig();
@@ -755,7 +760,7 @@ export function registerIpcHandlers() {
         `SELECT business_name, currency FROM session WHERE id = 1`
       ).get() as { business_name?: string; currency?: string } | undefined;
 
-      printSale(
+      const saleResult = printSale(
         {
           billNumber:     String(payload.order_number ?? ''),
           orderType:      String(payload.order_type ?? 'retail'),
@@ -801,8 +806,13 @@ export function registerIpcHandlers() {
         :                         receiptPreset(s.id, s.name)),
         kinds,
       );
+
+      return { skipped: saleResult?.skipped ?? [] };
     } catch (e) {
       console.error('[escpos] queueing tickets failed (non-blocking):', e);
+      // NEVER THROWS — it runs after the money is taken. An empty list is not a
+      // claim that everything printed; the console line above is the record.
+      return { skipped: [] };
     }
   }
 
@@ -813,9 +823,28 @@ export function registerIpcHandlers() {
    * kot_sent on the payload it later passes to order:create so the same tickets
    * are not produced twice.
    */
+  /**
+   * The branch's kitchen exclusion list, as the PRINTER applies it.
+   *
+   * 0.5.27. The Printers tab previewed and test-printed using a per-till
+   * localStorage list, while the live path used this server-synced one — so the
+   * preview could show a drink dropped that the printer would happily send, or
+   * the reverse. A preview that disagrees with the printer is worse than none.
+   *
+   * Read-only and derived: the value is owned by the cloud today and by the node
+   * under PHASE6. Nothing here writes it.
+   */
+  ipcMain.handle('escpos:kitchenExclusions', () => {
+    try { return { terms: kitchenExclusions() }; }
+    catch { return { terms: [] as string[] }; }
+  });
+
   ipcMain.handle('escpos:printProduction', (_e, payload: any) => {
-    queueThermal(payload, ['kitchen', 'dispatch']);
-    return { ok: true };
+    // `skipped` reaches the renderer so the cashier is told which station
+    // produced nothing. Previously this returned a bare { ok: true } and the
+    // information was discarded here — D8.
+    const { skipped } = queueThermal(payload, ['kitchen', 'dispatch']);
+    return { ok: true, skipped };
   });
 
   /**

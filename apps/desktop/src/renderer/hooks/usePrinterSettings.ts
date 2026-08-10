@@ -50,6 +50,12 @@ export interface PrinterSettings {
   stationPrinters:    Record<string, string>;
   /** Owner's kitchen exclusions, one term per line — items that must never
    *  print on the kitchen ticket, on top of the built-in sauces/drinks rule. */
+  /**
+   * @deprecated 0.5.27 — the live printer uses the branch's server-synced list
+   * (`device_config.kitchen_exclusions`, read via escpos.kitchenExclusions()),
+   * never this. Kept only so printKOT's signature is unchanged for the Printers
+   * tab's preview, which now passes the live value in. Nothing writes it.
+   */
   kitchenExcludeTerms: string;
   /**
    * Last width the DRIVER reported, in mm. Cached here — rather than kept in
