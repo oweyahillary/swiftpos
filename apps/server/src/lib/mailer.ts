@@ -40,10 +40,34 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT ?? '587');
  * ROUTE), and `formatDNSValue()` picks **a random address from what survives**.
  *
  * Render's container has an IPv6 interface and no usable route, so nodemailer
- * counted IPv6 as supported and chose it roughly half the time. That also
- * explains the mixed `ENETUNREACH` and `Connection timeout` lines in the same
- * run — different random picks, one failing instantly and one hitting
- * connectionTimeout. Not two problems; one.
+ * counted IPv6 as supported and chose it roughly half the time.
+ *
+ * ── CORRECTION, 2026-08-10 (register A54) ─────────────────────────────────────
+ * This comment used to end: *"That also explains the mixed ENETUNREACH and
+ * Connection timeout lines in the same run — different random picks, one failing
+ * instantly and one hitting connectionTimeout. **Not two problems; one.**"*
+ *
+ * **That was wrong, and production disproved it.** With the pin applied and IPv6
+ * eliminated by construction, the boot check still reported:
+ *
+ *   [mailer] SMTP FALLBACK IS DEAD — smtp.gmail.com:587
+ *            (pinned to 74.125.195.108) — Connection timeout
+ *
+ * `74.125.195.108` is IPv4, so the pin demonstrably worked and the ENETUNREACH
+ * half is genuinely closed. The timeout survived it. It **was** two problems.
+ *
+ * The second one is not a DNS fault and no amount of address pinning reaches it:
+ * a connect-layer timeout to a valid IPv4 literal means the SYN is being dropped,
+ * i.e. the port is filtered upstream. Render blocks outbound 25/465/587 on FREE
+ * web services (25 is blocked on every plan, they run on EC2). `render.yaml`
+ * declares `plan: starter`, on which 465 and 587 are permitted — so either the
+ * live instance is not on the plan the blueprint declares, or something else
+ * filters 587.
+ *
+ * Nothing in this file can fix a filtered port. What it CAN do is stop reporting
+ * the same four-line hint for every failure class, which is what sent the last
+ * diagnosis down the DNS hole. `classifySmtpFailure` below reads the error and
+ * names the cause. Rule 6: the class, not the line that shouted.
  *
  * Because the pick is RANDOM rather than ordered, `dns.setDefaultResultOrder
  * ('ipv4first')` would not have fixed it either. The only reliable lever is to
@@ -79,17 +103,24 @@ async function resolveSmtpIPv4(): Promise<string | null> {
  * Built per send rather than once at module load, because the pinned address
  * has a TTL. Creating a transport is cheap — it opens no socket until sendMail.
  */
-async function getSmtpTransport() {
+async function getSmtpTransport(portOverride?: number) {
   if (!SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
 
   const ipv4 = await resolveSmtpIPv4();
+
+  // Defaults to the configured port. The override exists ONLY for the boot
+  // probe (A54): when the configured port times out, we try the alternate and
+  // tell the owner which one answered. The SEND path never passes it, so send
+  // behaviour is unchanged — a probe that silently rerouted real mail to a port
+  // the owner did not configure would be a worse bug than the one it diagnoses.
+  const port = portOverride ?? SMTP_PORT;
 
   return nodemailer.createTransport({
     // The literal when we have one; the hostname only as a last resort, which
     // is no worse than the behaviour that was already failing.
     host: ipv4 ?? SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
+    port,
+    secure: port === 465,
 
     connectionTimeout: 10_000,
     greetingTimeout:   10_000,
@@ -117,6 +148,78 @@ if (resend && FREE_MAIL.test(DEFAULT_FROM)) {
     'free-mail domain and will reject every message. Verify your own domain at ' +
     'https://resend.com/domains and set NOTIFY_FROM_EMAIL to an address on it.',
   );
+}
+
+/**
+ * Turn an SMTP failure into the thing the reader should go and check.
+ *
+ * ── WHY (register A54) ────────────────────────────────────────────────────────
+ * The previous boot check printed the SAME four-line hint for every failure —
+ * and that hint only described ENETUNREACH, one specific cause on one specific
+ * layer. When the real failure turned out to be a connect timeout, the hint said
+ * nothing useful about it and actively pointed at DNS, which had already been
+ * fixed. A50 was diagnosed, fixed and reopened three times; at least one of those
+ * rounds went down the wrong hole because the log only knew how to describe one
+ * fault.
+ *
+ * These classes are ordered most-specific first. Every one of them is a cause
+ * that has actually been observed on this deployment or is the documented
+ * behaviour of the host, not a guess at what might go wrong.
+ */
+export function classifySmtpFailure(err: any, host: string, port: number): string {
+  const code = String(err?.code ?? '');
+  const msg  = String(err?.message ?? err ?? '');
+
+  // ENETUNREACH to a v6 literal means the IPv4 pin is not reaching the socket.
+  // A pinned A record cannot resolve to an IPv6 address, so this is a REGRESSION
+  // of the A50 fix rather than a new fault. Colons in the address are the tell.
+  if (code === 'ENETUNREACH' || /ENETUNREACH/.test(msg)) {
+    if (/:[0-9a-f]*:/i.test(msg)) {
+      return 'The IPv4 pin is NOT being applied — this is an IPv6 address, and a '
+           + 'pinned A record cannot resolve to one. Check that resolveSmtpIPv4() '
+           + 'returned a literal and that host: uses it (register A50).';
+    }
+    return 'The network has no route to that address at all. Check outbound '
+         + 'egress rules on the host.';
+  }
+
+  // A connect-layer timeout to a valid literal is a dropped SYN, i.e. filtering.
+  // This is the A54 case and the one the old hint could not describe.
+  if (code === 'ETIMEDOUT' || code === 'ESOCKET' || /timeout/i.test(msg)) {
+    return `Connect timed out against a valid address, which means the SYN is `
+         + `being dropped — port ${port} is filtered upstream, NOT a DNS or `
+         + `credential problem.\n`
+         + `         MOST LIKELY: Render blocks outbound 25/465/587 on FREE web `
+         + `services (25 is blocked on every plan). render.yaml declares `
+         + `plan: starter, on which 465 and 587 are allowed.\n`
+         + `         CHECK THE LIVE INSTANCE TYPE IN THE RENDER DASHBOARD FIRST`
+         + ` — the blueprint is not proof of what is running.\n`
+         + `         No change to this file can fix a filtered port.`;
+  }
+
+  // Gmail rejects a plain account password outright once 2FA is on. This fails
+  // at AUTH, well after connect, so it is a different fault from the above and
+  // must not be described as one.
+  if (code === 'EAUTH' || /535|5\.7\.\d|invalid login|username and password/i.test(msg)) {
+    return 'The connection SUCCEEDED and authentication was rejected — so the '
+         + 'network path is fine and SMTP_USER / SMTP_PASS are the problem. '
+         + 'Gmail refuses ordinary account passwords: SMTP_PASS must be a '
+         + '16-character App Password generated for this account.';
+  }
+
+  if (code === 'ECONNREFUSED') {
+    return `Something answered and refused the connection — ${host}:${port} is `
+         + `reachable but not speaking SMTP there. Check SMTP_HOST and SMTP_PORT.`;
+  }
+
+  if (/certificate|self.signed|altname/i.test(msg)) {
+    return 'TLS validation failed. Because we connect to a pinned literal, '
+         + 'tls.servername must carry the real hostname or the certificate is '
+         + 'checked against the IP address and every send fails here.';
+  }
+
+  return 'Unrecognised failure class — record it in register A54 with the '
+       + 'verbatim text (rule 11) rather than guessing at a cause.';
 }
 
 export interface MailOptions {
@@ -185,14 +288,40 @@ export async function reportMailReadiness(): Promise<void> {
       + `via ${_pinnedIPv4 ?? 'hostname'} (IPv4 pinned).`,
     );
   } catch (err: any) {
+    const onlyPath = !resend;
     console.error(
-      `[mailer] SMTP FALLBACK IS DEAD — ${SMTP_HOST}:${SMTP_PORT} `
+      `[mailer] SMTP ${onlyPath ? 'IS DEAD AND IS THE ONLY PATH' : 'FALLBACK IS DEAD'}`
+      + ` — ${SMTP_HOST}:${SMTP_PORT} `
       + `(pinned to ${_pinnedIPv4 ?? 'NOTHING — A-record lookup failed'}) — `
       + `${err?.message ?? err}\n`
-      + '         Nothing will be delivered through it. An ENETUNREACH on an\n'
-      + '         IPv6 address here would mean the pin is not being applied at\n'
-      + '         all, since a pinned A record cannot resolve to one.',
+      + `         ${classifySmtpFailure(err, SMTP_HOST!, SMTP_PORT)}`,
     );
+
+    // Probe the other standard submission port and say whether it answers.
+    // Diagnostic ONLY — this never changes where mail is sent. The owner reads
+    // one line and knows whether to change SMTP_PORT or to go and look at the
+    // instance plan, instead of the two being indistinguishable in the log.
+    const alt = SMTP_PORT === 587 ? 465 : SMTP_PORT === 465 ? 587 : null;
+    if (alt) {
+      const altSmtp = await getSmtpTransport(alt);
+      if (altSmtp) {
+        try {
+          await altSmtp.verify();
+          console.error(
+            `[mailer] …but port ${alt} DOES answer on the same host. Set `
+            + `SMTP_PORT=${alt} and mail will flow. (Only ${SMTP_PORT} is `
+            + `filtered, so this is not the free-instance SMTP block, which `
+            + `covers 465 and 587 together.)`,
+          );
+        } catch (altErr: any) {
+          console.error(
+            `[mailer] …and port ${alt} fails too: ${altErr?.message ?? altErr}. `
+            + `Both submission ports blocked is the signature of the host `
+            + `filtering SMTP outright, not of a misconfigured port.`,
+          );
+        }
+      }
+    }
   }
 }
 

@@ -1,3 +1,11 @@
+> **README ACCURACY, 2026-08-11 (register A7).** This file describes the web
+> dashboard and the Express API. It does **not** yet cover: the Electron desktop
+> till (`apps/desktop`), offline mode, the branch-node architecture and failover,
+> eTIMS, the print server (`apps/print-server`), or `apps/admin`. There are 77
+> migrations, not the two listed below, and each app installs its own
+> dependencies — there is no root workspace. Treat `docs/AUDIT-REGISTER.md` and
+> the handoffs as authoritative until this is rewritten.
+
 # SwiftPOS — Point of Sale System
 
 A multi-tenant POS platform targeting restaurants, cafés, minimarts, petrol stations, and parking operations.
@@ -119,7 +127,7 @@ migrations/02_hourly_rate.sql
 
 ```bash
 # From repo root
-pnpm install
+npm install   # per workspace — there is no root workspace; see the note below
 
 # Terminal 1 — API server
 cd apps/server && pnpm dev
@@ -154,8 +162,12 @@ cd apps/dashboard && pnpm dev
 | `restaurant`    | CashierScreen (tables) | RestaurantSettingsPage |
 | `cafe`          | CashierScreen (tables) | RestaurantSettingsPage |
 | `minimart`      | MinimartPOS        | MinimartSettingsPage    |
-| `parking`       | ParkingPOS (bays)  | ParkingSettingsPage     |
-| `petrol_station`| PetrolPOS (pumps)  | PetrolSettingsPage      |
+| `parking`       | CashierScreen (bay grid, `:1141`) | ParkingSettingsPage |
+| `petrol_station`| CashierScreen (pump grid, `:1182`) | PetrolSettingsPage |
+
+> `ParkingPOS.tsx` and `PetrolPOS.tsx` exist but are imported nowhere — they are
+> finished replacement components, not the live path. This table said otherwise
+> until 2026-08-11; see register A7 before changing either file.
 
 ---
 

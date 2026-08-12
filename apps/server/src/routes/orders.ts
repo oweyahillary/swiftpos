@@ -791,22 +791,25 @@ router.post('/', async (req, res) => {
         await awardLoyaltyPoints(customer_id, req.businessId, order.id, pointsToEarn, order_number);
       }
 
-      // 8c. Update total_spent on customer (inline — no RPC dependency)
-      // total_spent is numeric(12,2), which PostgREST returns as a STRING. The
-      // old code did `"1500.00" + 890`, which concatenates to "1500.00890"
-      // rather than adding — so total_spent effectively never grew and every
-      // RFM / CRM segment built on it was reading a dead column. Both operands
-      // are coerced with Number() before the addition.
-      const { data: cSpent } = await supabase
-        .from('customers')
-        .select('total_spent')
-        .eq('id', customer_id)
-        .single();
-      await supabase
-        .from('customers')
-        .update({ total_spent: Number(cSpent?.total_spent ?? 0) + Number(authTotal) })
-        .eq('id', customer_id)
-        .eq('business_id', req.businessId);
+      // 8c. Update total_spent on customer — ATOMIC (register A55).
+      //
+      // This was a SELECT then a write-back of `current + amount`. Two tills
+      // serving the same customer at once both read the old value and both
+      // wrote their own total, so one sale silently vanished from lifetime
+      // spend and from every RFM / CRM segment built on it.
+      //
+      // It was also the odd one out: loyalty_points and visit_count on this
+      // SAME row have been atomic since migration 53, and awardLoyaltyPoints
+      // calls that RPC about twenty lines above. The old comment here read
+      // "inline — no RPC dependency", which was true and was the problem.
+      //
+      // The numeric(12,2)-as-string hazard the previous comment described is
+      // gone with the arithmetic: Postgres does the addition on a numeric
+      // column, so there is no JS coercion left to get wrong.
+      await supabase.rpc('increment_customer_spend', {
+        p_customer_id: customer_id,
+        p_amount:      authTotal,
+      });
     }
 
     // 9. Increment discount usage count if a promo was applied
@@ -1314,14 +1317,31 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
           pointsDelta -= txn.points;
         }
 
-        const newPoints = Math.max(0, (customer.loyalty_points ?? 0) + pointsDelta);
-        const newSpent = Math.max(0, (customer.total_spent ?? 0) - order.total);
-        const newVisits = Math.max(0, (customer.visit_count ?? 0) - 1);
-
-        await supabase
-          .from('customers')
-          .update({ loyalty_points: newPoints, total_spent: newSpent, visit_count: newVisits })
-          .eq('id', order.customer_id);
+        // ATOMIC (register A55). This wrote all THREE columns as one
+        // read-modify-write, so a void racing a sale for the same customer lost
+        // whichever landed first. Each column now moves by a delta in the
+        // database, and each floors at 0 there.
+        //
+        // Three calls rather than one because the three move independently:
+        // migration 67 split adjust_loyalty_points from increment_loyalty_points
+        // for exactly this reason, and a payment adds spend without a visit.
+        //
+        // NOTE: the previous statement also had no .eq('business_id', ...),
+        // unlike the other two total_spent writers. It was safe because `order`
+        // was fetched business-scoped above, but it was the odd one out. The
+        // RPCs take the customer id alone, so the inconsistency goes with it.
+        await supabase.rpc('adjust_loyalty_points', {
+          p_customer_id: order.customer_id,
+          p_points:      pointsDelta,
+        });
+        await supabase.rpc('increment_customer_spend', {
+          p_customer_id: order.customer_id,
+          p_amount:      -order.total,
+        });
+        await supabase.rpc('adjust_customer_visits', {
+          p_customer_id: order.customer_id,
+          p_delta:       -1,
+        });
 
         await supabase
           .from('loyalty_transactions')
@@ -1859,16 +1879,13 @@ router.post('/:id/pay', async (req, res) => {
       //     both operands are coerced before the addition — "1500.00" + 890
       //     concatenates to "1500.00890" rather than adding, which is how this
       //     column died on the counter path before it was fixed there.
-      const { data: cSpent } = await supabase
-        .from('customers')
-        .select('total_spent')
-        .eq('id', customer_id)
-        .single();
-      await supabase
-        .from('customers')
-        .update({ total_spent: Number(cSpent?.total_spent ?? 0) + Number(payTotal) })
-        .eq('id', customer_id)
-        .eq('business_id', req.businessId);
+      // ATOMIC (register A55) — see the note at the paid path above. A payment
+      // recorded against an existing order adds spend but is NOT a second
+      // visit, which is why visit_count is deliberately untouched here.
+      await supabase.rpc('increment_customer_spend', {
+        p_customer_id: customer_id,
+        p_amount:      payTotal,
+      });
     }
 
     // 6. Increment discount usage

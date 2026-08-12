@@ -6,9 +6,11 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-10, two field faults closed (A47, A48) + register reconciled against the tree** |
-| Tree | `dev` @ `84400d6`, desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 0 P0 · 11 P1 · 6 P2 · 5 P3 — D: 3 P0 · 4 P1 · 4 P2 · 4 P3** |
+| Last updated | **2026-08-11 — A45 closed cloud-side (one grant from done). A59 opened: the till gates on roles, the cloud on keys. A46 partly closed. A57 closed, A58 shipped.** |
+| Tree | `dev` @ `0215475` (was recorded as `84400d6`; the deploy log and `git log` both read `0215475`), desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
+| Open | **A: 1 P0 · 12 P1 · 6 P2 · 3 P3 — D: 1 P0 · 2 P1 · 1 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A59 A18 A19 A20 A43 A50 A49 A24 A3 A4 A12 · A-P2: A22 A23 A37 A51 A53 A8 · A-P3: A10 A11 A13 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 D15 |
+| Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
 **Counts above were re-derived by reading this file, not carried forward.** The
@@ -100,7 +102,11 @@ Agreed plan, in order:
 ---
 ## A. OPEN — carried into tomorrow
 
-### A1 · P0 · **SPLIT 08-10 — packaging CLOSED, rotation UNCONFIRMED**
+### A1 · P0 · **CLOSED 2026-08-11 — packaging closed 08-10, rotation confirmed by owner**
+**Owner, 2026-08-11: the key was rotated long ago.** That was the only half
+outstanding. Entry retained in full below because IDs are never reused and the
+packaging reasoning is still load-bearing.
+
 This entry contradicted the rest of the file. §E and §4 of
 `HANDOFF-2026-08-08-evening.md` both record the packaging fix as closed, while
 this section still read OPEN. Verified 08-10:
@@ -122,6 +128,409 @@ evening handoff's first "before anything else" item was to confirm it had been
 rotated. **No document in this repo records that it was.** The script prevents
 the next leak, not the last one. Until someone confirms the rotation in writing,
 treat a P0 credential as live in an artefact that left the building.
+
+### A54 · P1 · OPEN (blocked on the owner) · Mail still undelivered — and A50's recorded diagnosis was wrong
+**Third recurrence of A50.** Production log, 2026-08-10 20:57 UTC, on `dev`
+@ `0215475`:
+
+```
+[mailer] RESEND_API_KEY not set — SMTP is the ONLY path…
+[mailer] SMTP FALLBACK IS DEAD — smtp.gmail.com:587
+         (pinned to 74.125.195.108) — Connection timeout
+```
+
+**The A50 fix worked.** `74.125.195.108` is IPv4, so `resolveSmtpIPv4()` reached
+the socket and the ENETUNREACH half is genuinely closed. **The timeout survived
+it**, which falsifies the claim written into `mailer.ts` and into
+`mailer-transport.test.mjs`'s header:
+
+> *"`Connection timeout` in the same run is the same fault on a different IPv6
+> route… **Not two problems; one.**"*
+
+It was two. One is fixed; the second was never diagnosed, and the comment told
+every future reader there was nothing left to find. That is a false-confidence
+trap in the P0 sense of the severity scale, sitting in the file whose whole
+purpose is that a dead mail path announces itself.
+
+**Cause of the surviving half.** A connect-layer timeout against a valid IPv4
+literal is a dropped SYN — the port is filtered upstream. It is not DNS, not
+TLS, not credentials. Render blocks outbound 25/465/587 on **free** web services
+(25 on every plan; they run on EC2). `render.yaml:8` declares `plan: starter`,
+on which 465 and 587 are permitted.
+
+**So the repo and the running instance disagree, and the repo cannot settle it.**
+`render.yaml` also declares no `branch` and no `autoDeploy`, yet the deploy log
+reads `Checking out commit … in branch dev` — so this service is dashboard-managed
+and the blueprint is not proof of what runs. §L's shape again: two things that
+must agree, with nothing comparing them.
+
+**Owner decision, 2026-08-10: Gmail SMTP is the LIVE path, Resend later.** So
+SMTP is not a fallback today and must work on its own. The provider order in
+`sendEmail()` already matches that intent (Resend when keyed, SMTP otherwise)
+and was **not** changed.
+
+**Shipped in this batch — none of it can open a filtered port:**
+- the falsified comment corrected, with the production evidence that disproved it;
+- `classifySmtpFailure()` — the boot check printed one ENETUNREACH-shaped hint
+  for every failure, which is how a timeout got read as more DNS trouble. Now
+  routes by class: timeout → filtered port, check the instance plan; ENETUNREACH
+  **on a v6 literal** → the pin regressed; EAUTH → Gmail App Password;
+  ECONNREFUSED → wrong host/port; TLS → `servername`;
+- an alternate-port probe (587↔465) that reports which port answers.
+  **Diagnostic only** — `sendEmail` never passes the override, asserted, and
+  mutation-checked by making it pass one;
+- `secure` now follows the *effective* port. Probing 465 while `secure` still
+  read `SMTP_PORT === 587` would hang and report "465 fails too" — a probe
+  lying in the direction that hides the fix.
+
+**BLOCKED ON THE OWNER — no code change reaches these:**
+1. Confirm the live instance type in the Render dashboard. If Free, that is the
+   whole cause; upgrade, or move mail off SMTP.
+2. `SMTP_PASS` must be a 16-character Gmail **App Password**. An ordinary account
+   password fails at AUTH once 2FA is on — the next failure after a port opens.
+3. `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` are `sync: false` in `render.yaml`;
+   nothing in the repo can confirm they are set.
+
+**Still open after this batch**, and deliberately not built (rule 12 — it grew a
+third concern): **nothing reports a failed DELIVERY.** `reportMailReadiness`
+proves a socket opens at boot; `dailySummary.ts:61` still catches per business,
+logs and moves on. Nine businesses went undelivered across **three distinct root
+causes** without the product ever saying so. A boot check is not a delivery
+check. Recommend a `mail_deliveries` outcome row or a per-run summary line — a
+decision, not a chore, so it is recorded rather than slipped in.
+
+### A56 · P1 · CLOSED 2026-08-11 · The permission comparator exists — `check-permission-parity`
+The gate A45 asks for and A46 is blocked on. **Built before the split, not after**,
+which was the whole point: 45 route gates and every UI gate that mirrors them are
+about to be re-pointed, and without a comparator the two sides drift again while
+being changed.
+
+Compares **three** surfaces, not the two A45 names:
+
+| Surface | Read from | Count |
+|---|---|---|
+| ENFORCED | `requirePermission('k')` in `apps/server/src` | 13 keys, 84 files |
+| REGISTERED | `INSERT INTO permissions` in `migrations/` (archive excluded) | 8 keys |
+| UI | `hasPermission('k')` · `can('k')` · `permission: 'k'` | 10 keys, 148 files |
+
+**Ratcheted, not pass/fail.** The ground is not green — 6 unregistered, 6 ungated,
+2 phantom. A gate that is red on day one gets switched off, which rule 23 names as
+worse than no gate. Semantics copied from `typecheck-ratchet.mjs` (rule 17 — this
+repo had already solved this problem): rising fails, **and so does falling**, so a
+fix must lower `scripts/permission-parity-baseline.json` rather than be absorbed
+silently.
+
+**What it will not do:** decide whether a UI gate is CORRECT — that the tab behind
+`hasPermission('x')` is the same action the route enforces. A source scan cannot
+know that. It answers the narrower question honestly: is the same key named on both
+sides, and does it exist at all. A45's fault fails the second question alone.
+
+**Three defects in my own gate, caught before it shipped:**
+1. It walked `migrations/archive/**` — files that are **never run** — and reported
+   `printers.manage`, `printers.view` and `ingredients.view` as registered on the
+   strength of superseded legacy migrations. A49's shape precisely: a false claim
+   in the position where a false claim silences the gate. Counts were unaffected
+   (none is enforced); the correctness was the point.
+2. Phantom keys were written as a **hard fail on the assumption that there were
+   none**. There are two (A58). Measurement corrected the assumption; ratcheted.
+3. Its first mutation check passed because the mutation used an *alias*
+   (`requirePermission as _rp`), which the scanner correctly does not match — my
+   mutation was wrong, not the gate. Re-run with a literal call: red, naming the key.
+
+**Mutation-checked (rules 10, 23), each mutation confirmed present first:**
+new route on an unregistered key → `UNREGISTERED ROSE: 6 -> 7` naming
+`audit.export` · misspelt UI key → `UNGATED ROSE` + phantom listing ·
+**seeding a missing key → `UNREGISTERED FELL: 6 -> 5`, asking for a lower
+baseline** · and `stripComments` proven load-bearing: raw source yields a phantom
+key `x` from a comment at `asyncHandler.ts:54`.
+
+**A57 — the original finding, as opened by check-permission-parity.** Retained verbatim; its closure by migration 75 is recorded in the A57 entry below.
+Found by A56 on its first run. The chain is three links and every one is in the tree:
+
+```
+role_permissions.permission_id -> permissions.id     FK, 00_baseline.sql:5212
+requirePermission allows on isOwner | '*' | key      rbac.ts:20  (fails CLOSED)
+```
+
+A key with no `permissions` row can never be attached to a role, so it can never
+reach `req.permissionKeys`, so **the route is owner-only and nothing says so.**
+
+| Key | Routes | Seeded by any migration? |
+|---|---|---|
+| `products.manage` | 29 | **no** |
+| `settings.manage` | 16 | **no** |
+| `staff.manage` | 6 | **no** |
+| `expenses.manage` | 6 | **no** |
+| `expenses.view` | 3 | **no** |
+| `orders.void` | 2 | **no** |
+
+**READ THE SCOPE CAREFULLY. This does NOT say 62 routes are broken in production.**
+The live `permissions` table is almost certainly seeded — these are the oldest keys
+and `00_baseline.sql` is a schema-only dump with no INSERTs. What it says is that
+**the repository cannot rebuild a working permission set**: a new tenant, a staging
+rebuild, or a PGlite migration test produces a database where a manager cannot be
+granted any of them. That is the A4 shape — migrations under-represent production —
+and it is unfalsifiable from the repo alone, which is why it got a gate and not a fix.
+
+**Not fixed here, deliberately.** The fix is a seed migration, and (a) rule 13 asks
+whether a release is in flight, (b) it must not conflict with rows production may
+already hold, and (c) A46's split is about to add seven more keys — seeding twice
+is how two copies drift (rule 17). **Do it as part of A46, in one migration.**
+
+**VERIFY IN PRODUCTION FIRST** — this is the query that settles it, and nothing in
+the repo can:
+```sql
+select key from public.permissions
+where key in ('products.manage','settings.manage','staff.manage',
+              'expenses.manage','expenses.view','orders.void')
+order by key;
+```
+Six rows: production is fine and this is a repo-rebuild gap only. Fewer: those
+routes are owner-only in the field right now, and A45's "grant the role
+`settings.manage`" unblock **cannot work**, because the key cannot be granted.
+
+**A58 — the original finding, as opened by check-permission-parity.** Retained verbatim; the fix is recorded in the A58 entry below.
+Found by A56's phantom check. `ManagerDashboard.tsx` `NAV_ITEMS`:
+
+| Nav item | Gated on | Enforced by cloud? | In any migration? |
+|---|---|---|---|
+| Orders (`:68`) | `orders.view_all` | no | no |
+| Turnover (`:73`) | `orders.view_all` | no | no |
+| Inventory (`:69`) | `inventory.view` | no | no |
+
+`hasPermission` is `session.permissions['*'] === true || session.permissions[key]
+=== true` (`POSAuthContext.tsx:134`). A key with no `permissions` row can never be
+granted, so **the gate is always false for anyone who is not the owner** and
+`visibleNav` (`:1191`) drops all three.
+
+This is A45 inverted and arguably worse: A45 shows a manager something the cloud
+then refuses, so at least they see it and get an error. Here **three tabs are
+simply not there**, with no error, no log, and nothing to report.
+
+Same caveat as A57 and the same query settles it: if production seeds
+`orders.view_all` and `inventory.view` and grants them to the manager role, the
+tabs appear and this is a repo-rebuild gap. If it does not, no manager has ever
+seen Orders, Turnover or Inventory. **Ask the owner whether managers can currently
+open those three tabs** — one answer, thirty seconds, and it decides the severity.
+
+### A57 · P1 · CLOSED 2026-08-11 · Registered by migration 75
+Six keys covering ~62 routes now have `permissions` rows, so a role can actually
+be granted them. `ON CONFLICT (key) DO NOTHING`, so it is a no-op where
+production is already seeded — which is why it did not need to wait on the
+production query, contrary to what the `-b` manifest said. That deferral was
+over-cautious: migration 24 and 49 had already established the idempotent
+pattern, and rule 17 should have found it sooner.
+
+**Proven against real Postgres**, not read: `scripts/test-migration-75.mjs`, 11
+assertions under PGlite, including that the migration runs twice with no
+duplicates and that a row pre-existing with production's own label **keeps that
+label** (DO NOTHING, not DO UPDATE). Mutation-checked: flipping to `DO UPDATE`
+turns that assertion red.
+
+**Still worth running in production**, because it decides whether this was ever
+a live fault or only a rebuild gap:
+```sql
+select key from public.permissions
+where key in ('products.manage','settings.manage','staff.manage',
+              'expenses.manage','expenses.view','orders.void');
+```
+
+### A58 · P1 · FIX SHIPPED 2026-08-11, CONFIRMATION WANTED · Three manager nav items
+Migration 75 registers `orders.view_all` and `inventory.view` and grants them to
+manager / supervisor / branch_manager / admin / owner, following migration 49's
+precedent and its stated reason: *a permission nobody holds gets granted to
+everybody within a week*. Orders, Turnover and Inventory should now appear.
+
+**This is the one behaviour change in migration 75, and it is separated into its
+own block so it can be deleted before running.** Turnover shows branch revenue.
+If a branch manager is not meant to see branch revenue, drop that block — the
+keys stay registered and the tabs stay hidden. Revert line is in the migration.
+
+### A45 · P1 · CLOSED 2026-08-11 (cloud side) — one grant away from fixed
+`POST /business/settings` now accepts `receipt.manage` **or** `settings.manage`,
+and narrows PER KEY inside the handler: anyone without full settings access may
+write only `receipt_header` and `receipt_footer`.
+
+**Why per-key and not a route swap.** That one handler writes every setting,
+including `supervisor_pin` (bcrypt) and ENCRYPTED_SETTING_KEYS
+(`mpesa_consumer_secret`, `mpesa_passkey`, AES-256-GCM). Widening the route gate
+alone would have handed a manager the supervisor PIN and the merchant's M-Pesa
+credentials. The guard is an ALLOW-LIST and runs **before** both branches —
+asserted by index comparison, and mutation-checked by moving it below the bcrypt
+branch, which turns that assertion red.
+
+**No desktop change was needed.** `ReceiptTextTab` writes exactly those two keys
+(`ipcHandlers.ts:1591-1592`), and the tab is already listed for managers. The
+tab was never wrong; the cloud was.
+
+**ONE STEP LEFT, and it is yours:** grant `receipt.manage` to the Manager role in
+the dashboard Roles screen. The key was registered by migration 75, so this is a
+tick-box, not a migration. Until then no one holds it and the tab still refuses.
+
+**Not granted by migration, deliberately** — same reasoning migration 75 used for
+A46's keys: which roles may edit what a customer sees on a receipt is a business
+decision, and a migration is the wrong place to make it silently.
+
+### A59 · P1 · OPEN · The till gates on ROLES; the cloud gates on PERMISSION KEYS
+Found while closing A45, and it is the reason A45 happened rather than a detail of it.
+
+`apps/desktop/src/renderer` contains **no permission-key plumbing at all** —
+`grep -rn "permissionKeys\|hasPermission" apps/desktop/src/renderer` returns
+nothing. Every till gate is a role test: `ManagerPage.tsx:1046`'s `isManagerRole`
+decides Receipt, Close Day, Close Branch, Prices, Staff and the rest. The cloud
+decides the same actions with `requirePermission` / `requireAnyPermission` on
+seventeen keys.
+
+So the two sides are not two gates disagreeing about one key — they are **two
+different vocabularies**, with no translation and nothing comparing them. §L in
+its purest form, and the most consequential instance found so far:
+
+- A45 is one visible symptom. There are 14 role-gated tabs on that page and any
+  of them can disagree with the cloud the same way.
+- `check-permission-parity` **cannot see the till at all.** Its UI surface scan
+  covers `apps/dashboard/src` and `apps/desktop/src/renderer`, and finds zero
+  keys in the latter — so every till gate is invisible to the comparator built to
+  catch exactly this.
+- Granting a manager a narrow key changes what the CLOUD allows and nothing about
+  what the till SHOWS. The two will keep drifting as A46 continues.
+
+**Not fixable in a batch.** It needs permission keys delivered to the till (they
+are not in the staff token today), a `hasPermission` on the renderer, and the 14
+gates re-pointed — with the offline case decided, since a till that cannot reach
+the cloud must still decide what to show. **Design decision first, then a phase.**
+
+### A55 · P1 · CLOSED 2026-08-11 · `total_spent` was the last racy write on the customer row
+`orders.ts` updated `customers.total_spent` by SELECTing the value and writing
+back `current + amount`, in three places: order paid (`:800`), order voided
+(`:1323`), payment recorded (`:1869`). Two tills serving the same customer at
+once both read the old value and both wrote their own total, so one sale
+silently vanished from lifetime spend and from every RFM / CRM segment built on it.
+
+**It was the odd one out, which is what makes it a defect rather than a
+tradeoff.** `loyalty_points` and `visit_count` on the SAME row have been atomic
+since migration 53, and `awardLoyaltyPoints` calls that RPC about twenty lines
+above. `adjust_product_stock`, `apply_credit_transaction` and
+`increment_discount_usage` are RPCs for the same reason — the 08-08 session
+converted three racy stock writes deliberately. The comment here read
+*"inline — no RPC dependency"*, which was true and was the problem.
+
+**Migration 77** adds `increment_customer_spend(uuid, numeric)` (signed, so the
+void subtracts; floored at 0) and `adjust_customer_visits(uuid, int)`. Kept
+separate for migration 67's stated reason: a payment recorded against an
+existing order adds spend WITHOUT counting a second visit.
+
+The void path wrote all three columns in one read-modify-write, so it now makes
+three RPC calls — `adjust_loyalty_points` (migration 67, already existed),
+`increment_customer_spend`, `adjust_customer_visits`. A partial fix would have
+left a racy write in the same statement and read as if it had been handled.
+
+**Proven by racing it, not by asserting about it** (`scripts/test-migration-77.mjs`,
+13 assertions): the OLD shape banks 100 + 250 and records **250**; the new shape
+keeps 350; twenty concurrent increments of 50 all land. An assertion that only
+read the SQL would have passed against the racy version too.
+
+**Also fixed in passing:** the void path's customer update had no
+`.eq('business_id', …)`, unlike the other two writers. Safe because `order` was
+fetched business-scoped, but it was the odd one out; the RPCs take the customer
+id alone, so the inconsistency went with it.
+
+### A60 · P1 · CLOSED 2026-08-11 · The register disagreed with itself — now gated
+This file's preamble says *"a header that disagrees with its own body is the same
+failure the register exists to catch."* It then did exactly that, twice over:
+
+- **The header claimed `0 P0`** while §A carried `A17 · P0 · OPEN` — the day-15
+  lockout, hidden by the count that decides what gets worked on next.
+- **Ten audit IDs had two `###` headings each** — A4, A9, A25, A45, A46, A47,
+  A50, A57, A58, D8, D14 — several with contradictory statuses. A57 said both
+  OPEN and CLOSED in the same file.
+
+**THREE OF THOSE DUPLICATES WERE CREATED ON 2026-08-11 BY THE SESSION THAT
+CLOSED THIS ITEM** (A45, A57, A58), hours after criticising the same failure in
+the same file. That is the argument for a gate rather than more care: at 2,200
+lines, reconciling this register by reading is a session's work nobody schedules.
+
+`scripts/check-register-consistency.mjs` now checks (a) no ID has two headings
+and (b) the header's open P0–P3 counts match the body. All ten duplicates merged
+into single authoritative entries, with the superseded text retained in place as
+a labelled note rather than deleted. Header re-derived from the body, not
+hand-counted.
+
+**It deliberately does NOT check whether a status is TRUE** — whether something
+marked CLOSED really is. Only running the code can tell you that, and a gate that
+appeared to check it would be worse than one that admits it does not (A49).
+
+**Also ratchets A53** (see that entry): 21 orphan audit-ID citations, may shrink,
+may never grow.
+
+### A61 · P1 · CLOSED 2026-08-11 · Role grants missed any business that typed the role name with a space
+**A bug shipped by this session in migration 75, found by running the A58
+verification query against a seeded database.**
+
+`roles.name` is free text and per business (`roles.business_id` is NOT NULL).
+Migrations 24, 49 and 75 all grant on:
+
+```sql
+lower(r.name) IN ('manager','supervisor','branch_manager','admin','owner')
+```
+
+A business that typed **"Branch Manager"** with a space never matched
+`branch_manager` and silently received no grant. No error — the staff member
+simply cannot receive stock, and the manager dashboard simply has fewer tabs.
+The A58 shape exactly, which is how it surfaced.
+
+**One bug in three migrations.** 24 shipped 2026-07 and 49 shipped 2026-08, so
+`inventory.receive` and `inventory.transfer` have been missing from such a role
+since then.
+
+Fixed at source in 75 and backfilled by **migration 76** for the rows 24, 49 and
+the pre-fix 75 already missed. Normalised with `lower(replace(name,' ','_'))` —
+the SAME five names with punctuation variance. Deliberately NOT widened to
+`ILIKE '%manager%'`, which would sweep in names nobody has looked at ("Trainee
+Manager") and hand them stock and revenue access as a side effect of a backfill.
+
+**76 restricts itself to roles whose NORMALISED name matches but whose RAW name
+did not**, so it touches only the rows the bug skipped rather than re-deriving
+every grant. The migration carries a SELECT showing exactly who is affected —
+run it first if you want the blast radius before committing.
+
+### A62 · P1 · CLOSED 2026-08-11 · Migration 76 failed in production — one unqualified table name
+**Reported from the field, 2026-08-11:**
+
+```
+ERROR:  42P01: relation "role_permissions" does not exist
+LINE 46: INSERT INTO role_permissions (role_id, permission_id)
+```
+
+The table exists. The session's `search_path` did not include `public` —
+Supabase's hardened default in several contexts. **Line 46 was the only
+unqualified name in the file**: every other reference was written
+`public.…`, including one to the SAME table eleven lines below, inside the
+`NOT EXISTS` guard. Mixed qualification in a single statement, shipped by this
+session in batch `-e`.
+
+**Reproduced before fixing** (`SET search_path TO ''` under PGlite), then all
+three of 75/76/77 re-run under both `search_path = public` and `search_path = ''`
+with identical results.
+
+**Fixed by qualifying every table reference in 75, 76 and 77.** 77 was already
+fully qualified. 75 was fully UNqualified, which is worth noting: it inherited
+that from migrations 24 and 49. It would have failed the same way in the same
+session — so if 75 appeared to succeed earlier, it ran somewhere with `public`
+on the path, and its section 3 grant should be re-verified.
+
+**The lucky failure, and the one to fear.** This aborted on its first statement,
+so nothing committed. The dangerous shape is a file whose EARLY statements are
+qualified and whose later ones are not: the early half commits, the run aborts
+part-way, and whether `schema_migrations` records it depends on where the ledger
+INSERT sits. That is a half-applied migration, the hardest state to diagnose later.
+
+**Gated.** `check-schema-drift` check D flags unqualified DML targets, ratcheted
+at 22 — 12 of 71 migrations predate the rule and have already run, and demanding
+they change would be rewriting history to make a gate green. Table names are
+read from `schema-index.json`, not guessed by regex, because a bare word match
+reports `OF`, `ON` and `TO` as tables and a gate that cries wolf gets ignored.
+Mutation-checked by reintroducing the exact production bug: it names
+`role_permissions` at line 46.
 
 ### A17 · P0 · OPEN · A peer till cannot sell "offline forever" — it locks out on day 15
 **Stated design (owner, 08-09):** the main/server till is registered online once;
@@ -254,7 +663,7 @@ removing the DELETE (9 passed / 3 failed, exit 1; restored, exit 0). Ran on
 `node:sqlite`, and **the suite prints that it did** — it is a stand-in, not the
 app driver. Run under Electron on the target for a hardware-equivalent green.
 
-### A25 · P1 · OPEN · The server cannot tell a node from any other till
+**A25 — the original finding.** Retained verbatim; its closure is the A25 entry later in this file (the server can now verify a claimed role).
 Found while attempting PHASE5 §4b. **`device_role` does not exist anywhere in
 `apps/server`** — grep returns nothing. So an endpoint that hands out the
 branch's PIN hashes could only be gated on `surface === 'desktop'`, which every
@@ -431,7 +840,7 @@ columns, so the terminal registers regardless; and sync writes the role as a
 **separate** statement, so telemetry is unaffected either way. Both paths log
 which migration is missing, and say plainly what still worked.
 
-### A4 · measured 08-10 — the migration ledger covers less than a third
+**A4 — measurement note, 08-10** (the migration ledger covers less than a third). Belongs to the A4 entry later in this file, which is the authoritative one.
 Concrete figure for the "under-reports" claim: **only 20 of 66 migration files
 contain an `INSERT INTO public.schema_migrations`**, so 46 are invisible to the
 ledger. **Re-measured 08-10: 22 of 68** — the ratio is unchanged, so the finding
@@ -572,7 +981,7 @@ added. `check-ipc-parity` exists because a feature reached every layer except th
 bridge; the equivalent gate here would assert that every `apps/desktop/test/*.test.mjs`
 appears in a package script. Not built — recorded as the obvious next hardening.
 
-### A9 · RESOLVED 08-10 — `npm audit`, split by workspace
+**A9 (`npm audit`) — RESOLVED 08-10.** Retained as the original record. See the note under the other A9 entry: two unrelated findings were filed under this one ID.
 **TRIAGE DONE 08-10 (late). The open half of this item is now closed, and the
 answer is that almost none of it reaches a till.**
 
@@ -1143,7 +1552,7 @@ half is the write path and the upward sync — the same `/node/settings` channel
 per-station exclusions need, so building them apart would mean building that sync
 twice.
 
-### A45 · P1 · OPEN · The Receipt tab is shown to a manager the server then refuses
+**A45 — the original finding, as written on 08-10.** Retained verbatim. Its closure is recorded in the A45 entry earlier in this file (cloud side closed 2026-08-11, one role grant away from fixed).
 Observed on a live till 2026-08-10: a manager opens Receipt, edits the branch
 address and phone, presses Save, and gets **"Your role does not allow this
 change."**
@@ -1170,7 +1579,42 @@ A source-text gate asserting that every permission-gated route has a UI gate
 naming the same permission would catch this class — the fourth comparator, after
 `check-ipc-parity`, `check-header-keys` and `check-doc-refs`.
 
-### A46 · **P1** · OPEN · One permission gates sixteen routes with wildly different blast radii
+### A46 · **P1** · PARTLY CLOSED 2026-08-11 — machinery built, 13 of 16 routes split
+**Shipped:** `requireAnyPermission()` (`rbac.ts`), migration 75 registering all
+twelve keys, and 13 of the 16 `settings.manage` routes re-pointed:
+
+| File | Routes | Now accepts |
+|---|---|---|
+| `devices.ts` | 5 | `devices.approve` **or** `settings.manage` |
+| `tables.ts` | 4 | `tables.manage` **or** `settings.manage` |
+| `etims.ts` | 4 | `etims.manage` **or** `settings.manage` |
+
+**Additive, and that is the design, not a compromise.** A role holding
+`settings.manage` today keeps exactly what it has, so the split is deployable
+without a coordinated permission migration and nobody is locked out mid-service.
+The narrow key is what a manager is granted *instead*, going forward. This does
+not shrink `settings.manage`; it provides alternatives to it. Shrinking it needs
+to know who holds it in production and is a separate decision.
+
+**THREE ROUTES DELIBERATELY NOT SPLIT, each for a different reason:**
+1. **`business.ts:110` — `receipt.manage`. This is A45's actual field bug and it
+   is NOT a route swap.** `POST /settings` writes any key through one handler,
+   including `supervisor_pin` (bcrypt-hashed) and the ENCRYPTED_SETTING_KEYS
+   M-Pesa secrets. `receipt.manage` must therefore be a PER-KEY check inside the
+   handler, allowing only `receipt_header` / `receipt_footer`. Getting that
+   wrong grants write access to a PIN hash or a payment secret. Different
+   mechanism, security-sensitive, own batch. The key is already registered so
+   that batch needs no migration.
+2. **`shifts.ts:369` — `shifts.force_close`.** Its UI is
+   `apps/desktop/src/renderer/pages/DayCloseTab.tsx`, so touching it triggers a
+   desktop version bump (rule 15) and a green this bench cannot produce (rule 9).
+3. **`flags.ts:26`** stays `settings.manage` — feature flags are business-wide
+   and are exactly what the retained key is for.
+
+**`products.manage`'s 29 routes are untouched.** `stations.manage` is registered
+ready for PHASE6 §8c but nothing enforces it yet.
+
+### A46 (original finding) · One permission gates sixteen routes with wildly different blast radii
 Owner, 08-10: *"split these roles into fine small roles that would not affect
 operations… rather than having one role once implemented a whole section is
 affected."* Correct, and the measurement supports it.
@@ -1268,7 +1712,7 @@ being changed. Sequence: comparator → split → re-point UI gates.
 > drop `tls.servername`, reintroduce `family`. **Still unproven in production
 > until the next deploy prints `SMTP fallback reachable`.**
 
-### A50 · P1 · CLOSED 08-10 · Daily summaries have never been delivered — SMTP died on IPv6
+**A50 — the FIRST close, 08-10.** Superseded by the REOPENED entry above, and then by A54: the IPv4 pin worked and a second, independent cause (a filtered port) survived it. Retained because the reasoning in this text is what A54 falsifies.
 Found by reading Beryl's server log, not by anyone reporting it. **Nine
 businesses, every scheduled run, both observed days, zero delivered.**
 
@@ -1426,7 +1870,7 @@ it: make the curtain clear the staff session → the cart-loss guard fires; remo
 the identity check → the wrong-cashier guard fires; render the curtain INSTEAD of
 the screen rather than alongside → the unmount guard fires.
 
-### A53 · P2 · OPEN · Twenty audit IDs are cited in code with no entry anywhere
+### A53 · P2 · RATCHETED 2026-08-11 (was OPEN) · Twenty-one audit IDs are cited in code with no entry anywhere
 This register records being opened on 2026-08-07 with sections
 `A1, B1-B5, C1-C6, D1-D3, E1-E4, F, G1-G2, H1-H2, I`. The 08-08 restructure kept
 **only A and D**. The code still cites the rest — `// Audit H10` in `render.yaml`,
@@ -1442,6 +1886,13 @@ which is worse than a gap a reader can see.
 `docs/AUDIT-ID-INDEX.md` now lists all 20 cited IDs with their call sites and
 marks each *in register* or *cited only*, so a citation leads somewhere. It is
 generated by reading the tree, not hand-maintained.
+
+**RATCHETED 2026-08-11.** The recorded fix below was "when a cited-only line is
+next touched", which is a policy nothing enforces — so the set could quietly
+grow. `check-register-consistency.mjs` now counts orphan citations against
+`scripts/register-orphan-baseline.json` (21 today): the set may shrink and may
+never grow. Fixing some fails the run until the baseline is lowered, same as
+typecheck-ratchet. The 21 remain unrecoverable and are NOT to be reconstructed.
 
 **Fix, when a cited-only line is next touched:** resolve the reference into the
 comment — say what the finding was, in place — or drop the citation. A reference
@@ -1466,7 +1917,7 @@ reasoning that produced `check-doc-refs` for documents (A39).
 > the second, on a build that does not yet carry that fix, exactly as the
 > simulation in `device-token-refresh.test.mjs` predicts.
 
-### A47 · P1 · CLOSED 08-10 · `manageFetch` never refreshed — every manager screen reported the till signed out
+**A47 (duplicate wording) — superseded.** Same finding as the A47 entry immediately above; the two headings said the same thing twice.
 **Field report, Beryl, 0.5.27, Menu screen: the banner appears after the till has
 been signed in and left a while. Selling unaffected.**
 
@@ -1751,7 +2202,21 @@ Recoverable: `git show 0f85155:HANDOFF.md`. Commit `a4aee05` overwrote the path
 with a different document. Nothing in `docs/` records the tech DB console or the
 wipe gates.
 
-### A7 · P2 · OPEN · `ParkingPOS` / `PetrolPOS` are UNWIRED UPGRADES, not missing features
+### A7 · P2 · CLOSED 2026-08-11 · `ParkingPOS` / `PetrolPOS` are UNWIRED UPGRADES — and the README said otherwise
+**Closed by correcting the document that was actively wrong.** `README.md`'s
+business-type table claimed `parking -> ParkingPOS` and `petrol_station ->
+PetrolPOS`. Both are imported nowhere. The live path is `CashierScreen.tsx` —
+bay grid at `:1141`, pump grid at `:1182` — which is what the table now says,
+with a note pointing at this entry before anyone touches either file.
+
+A README that names a dead component is worse than one that says nothing: it is
+the first thing a new session reads, and it sends them to the wrong file.
+
+The accuracy note added at the top of README.md also records what it still does
+NOT cover: the Electron till, offline mode, the branch-node architecture and
+failover, eTIMS, the print server, `apps/admin`, that there are 77 migrations
+rather than two, and that each app installs its own dependencies (there is no
+root workspace, so the `pnpm install` instruction was wrong as well).
 **Re-characterised 2026-08-10 — the previous wording ("unrouted, no ROADMAP
 line") invites someone to rebuild what already exists.**
 
@@ -1781,7 +2246,7 @@ references anywhere in `apps/dashboard/src`.
 `ParkingPOS` (890), `PetrolPOS` (889), `OrderHistoryTab` (361),
 `BranchSelectScreen` (353), `VariantModal` (258), `SplitBillModal` (152).
 
-### A9 · P3 · **CLOSED 08-10 — was never true** · "Empty" renderer directories
+**A9 ("empty" renderer directories) — CLOSED 08-10, was never true.** Retained as the original record. NOTE: an earlier A9 heading in this file covers a DIFFERENT subject (`npm audit` findings) — two unrelated findings were filed under one ID, which is precisely why IDs must not be reused.
 The finding read *"Empty `apps/desktop/src/renderer/{lib,pages,components}/`"*.
 Measured: **12, 12 and 14 files.** Not empty, and no history of being so.
 
@@ -1927,7 +2392,7 @@ generations with no record, on the mechanism deciding whether a field till works
 `check-ipc-parity` proves a channel exists, not that its two sides agree. This is
 the gap §L already names, and what P-09 and P-11 were.
 
-### D8 · P2 · Dispatch ticket can print nowhere
+**D8 (legacy summary line) — superseded.** The authoritative D8 entry is the CLOSED one earlier in this file (dispatch slips could print on neither system).
 `POSPage.tsx:455` early-returns on `canPrint('kitchen')`, but the HTML path it
 skips prints kitchen **and** dispatch. `escposBridge.ts:409` filters targets to
 bound stations. Kitchen bound + dispatch unbound = the dispatch slip prints on
@@ -1967,7 +2432,7 @@ same token and the loser gets a 401.
 **Fix:** single-flight mutex; on 401 re-read the token from SQLite once before
 giving up; server-side, a short grace window returning the current pair.
 
-### D14 · P2 · The till is not registered
+**D14 (legacy summary line) — superseded.** The authoritative D14 entry is the CLOSED one earlier in this file; this one-line version predates it and is retained only as the original wording.
 `user_devices` has **no row for Beryl at all**. `sync.ts:71` is an `UPDATE`, not
 an upsert, so telemetry writes nothing; `checkDeviceBranch` returns `ok:true` for
 unknown devices, so migration 52's binding is inert. Consequence: no remote
@@ -2164,6 +2629,26 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-11 (f) | **A62 opened and closed** — migration 76 failed in the field with 42P01 on `role_permissions`. One unqualified table name in an otherwise fully-qualified file, shipped by this session. All of 75/76/77 qualified and re-verified under `search_path = ''`; `check-schema-drift` gained check D, ratcheted at 22, mutation-checked against the real bug. |
+| 2026-08-11 (e) | **A55 closed** — `total_spent` was the last racy read-modify-write on the customer row, in three places, while loyalty_points and visit_count on the SAME row had been atomic since migration 53. Migration 77 adds `increment_customer_spend` and `adjust_customer_visits`; the void path now makes three RPC calls instead of one racy statement. Proven by RUNNING the race under PGlite: the old shape banks 100+250 and records 250. |
+| 2026-08-11 (e) | **A60 closed** — `check-register-consistency`. Ten IDs had two headings (A4 A9 A25 A45 A46 A47 A50 A57 A58 D8 D14), several contradictory; the header claimed 0 P0 while A17 sat OPEN at P0. **Three duplicates were created by this session**, hours after it criticised the same failure. All merged; header re-derived from the body. |
+| 2026-08-11 (e) | **A61 closed** — a bug THIS SESSION shipped in migration 75: grants matched `branch_manager` but not `Branch Manager`, so a business that typed the name with a space got nothing, silently. Migrations 24 and 49 carry the same blind spot since 2026-07. Fixed at source; migration 76 backfills only the rows the bug skipped. |
+| 2026-08-11 (e) | **A7 closed** — README claimed `parking -> ParkingPOS` / `petrol_station -> PetrolPOS`; both are imported nowhere. Corrected to the live `CashierScreen` path, plus an accuracy note recording what the README still does not cover. |
+| 2026-08-11 (e) | **A53 ratcheted** — 21 orphan audit-ID citations may shrink, never grow. The recorded fix was a policy nothing enforced. |
+| 2026-08-11 (e) | **`check-schema-drift` gained a self-clearing pending declaration.** Migration 77 is written but not run, which the gate correctly called drift — leaving CI red on a correct commit. `schema-index.json` was NOT refreshed to hide it (that would claim production has functions it does not — the A49 shape). Instead `scripts/schema-pending.json` declares the window and FAILS once the functions appear live, so it cannot become a silencer. |
+| 2026-08-11 | **A45 closed cloud-side.** `POST /business/settings` takes `receipt.manage` or `settings.manage` and narrows per key: without full settings access, only `receipt_header` / `receipt_footer` are writable. Allow-list, not deny-list; runs before the bcrypt and encrypted-credential branches. 21 assertions against the real compiled middleware. **Remaining step is yours: grant `receipt.manage` to Manager in the Roles screen.** No desktop change needed. |
+| 2026-08-11 | **A59 opened (P1)** — the till has NO permission-key plumbing; every gate there is a role test, while the cloud enforces 17 keys. Not two gates disagreeing, two vocabularies. `check-permission-parity` scans the renderer and finds zero keys, so every till gate is invisible to the comparator meant to catch this. A45 was one symptom of it; 14 tabs share the shape. |
+| 2026-08-11 | **Known limit of check-permission-parity, recorded not hidden:** it reads MIGRATIONS, not the live database. A key granted through the Roles UI — which is how `receipt.manage` will be granted — does not move its `ungated` count. The ratchet catches drift introduced in the repo; it cannot see grants made in production. |
+| 2026-08-11 | **A46 partly closed** — `requireAnyPermission` built; 13 of 16 `settings.manage` routes split onto `devices.approve` / `tables.manage` / `etims.manage`, additively, so no existing role loses access. Three routes deliberately left: `receipt.manage` is a PER-KEY check inside a handler that also writes PIN hashes and M-Pesa secrets (A45's real fix, own batch); `shifts.force_close` needs a desktop file (rules 9, 15); `flags` correctly keeps the retained key. |
+| 2026-08-11 | **A57 closed** — migration 75 registers all twelve keys. Idempotent, proven under PGlite (11 assertions), including that a row pre-existing with production's label keeps it. **Correction: the `-b` manifest said this needed the production query first. It did not — ON CONFLICT DO NOTHING makes it safe either way, and migrations 24 and 49 had already set that pattern.** |
+| 2026-08-11 | **A58 fix shipped, confirmation wanted** — `orders.view_all` and `inventory.view` registered and granted to manager-level roles, restoring Orders, Turnover and Inventory. Isolated in its own migration block with a revert line, because Turnover shows branch revenue and that is the owner's call. |
+| 2026-08-11 | **check-permission-parity revised.** `ungated` now ratchets only on keys GRANTED to some role — a key nobody can hold is owner-only and no screen can gate on it (FleetPage is read-only; devices' four write routes have no UI at all). Raw figure still printed. **Scrutinise this: it was changed while adding keys it then exempted.** Also gained a self-check after mutation showed the scanner could go blind to `requireAnyPermission` and still exit 0 — twice, because the first self-check compared the pattern against itself. |
+| 2026-08-11 | **A56 built and CLOSED** — `check-permission-parity`, the comparator A45 asks for and A46 is blocked on. Compares THREE surfaces (cloud `requirePermission`, migration seeds, UI gates), not the two A45 names. Ratcheted on `typecheck-ratchet`'s semantics because the ground is not green (6/6/2) and a day-one-red gate gets switched off. Three defects in my own gate caught first: it walked never-run archive migrations, it assumed zero phantom keys, and its first mutation used an alias the scanner rightly ignores. |
+| 2026-08-11 | **A57 opened (P1)** — 6 enforced keys have no `permissions` seed in any migration; `requirePermission` fails closed and `role_permissions` has an FK, so ~62 routes are owner-only on ANY database built from this repo. Not necessarily broken in production — one SQL query settles it, and it is in the entry. Fix deferred INTO A46 so the keys are seeded once, not twice. |
+| 2026-08-11 | **A58 opened (P1)** — Orders, Turnover and Inventory nav items gate on `orders.view_all` / `inventory.view`, which the cloud never enforces and no migration defines. `hasPermission` can only ever return false for a non-owner, so three manager tabs are invisible with no error. A45 inverted. |
+| 2026-08-11 | **A54 opened.** Mail still undelivered in production. A50's pin WORKED (74.125.195.108 is IPv4); the timeout survived it, falsifying "not two problems; one" in `mailer.ts` and the test header. Second cause is a filtered port, not DNS — `render.yaml` says `plan: starter`, the running instance is dashboard-managed and unverified. Shipped: failure classification by cause, alternate-port probe (diagnostic only), corrected comment. Blocked on the owner for the instance type and a Gmail App Password. **Delivery-level reporting NOT built (rule 12) — recorded as the remaining gap.** |
+| 2026-08-11 | **A1 STRUCK** — owner confirms `SUPABASE_SERVICE_ROLE_KEY` was rotated long ago. The packaging half was already closed with two CI gates behind it; the rotation half was the only thing outstanding. Entry retained below per the never-reuse-IDs rule. |
+| 2026-08-11 | Header count corrected: **0 P0 → 1 P0**. §A listed A17 as `P0 · OPEN` while the header claimed none. Same failure the preamble names — a header disagreeing with its own body — on the count that decides sequencing. |
 | 2026-08-10 | **A5 closed** — `PHASE2-3-DESIGN.md` said "For approval before code" a week after Phase 2a/2b/2c and Phase 4 shipped; `ROADMAP.md` (2026-07-10) mentions none of it. Both now carry status headers naming the code as authority. Not rewritten: restating a month of decisions as a fresh plan would be inventing intent. |
 | 2026-08-10 | **D6 closed** — `docs/LOCAL-SCHEMA-VERSIONS.md`. Local schema is additive and idempotent, not a numbered ladder; the version labels a shape. **48 and 50 never existed** — the constant jumped 47→49→51, the same shape as the server's SKIPPED 31/32 and never-existed 64. |
 | 2026-08-10 | **A9 triage closed** — 3 critical and 16 of 18 high are devDependencies (electron-builder / node-gyp chain); the Electron CVE is macOS-only and every till is win32; the only prod vulns are `uuid`/`exceljs`, and the advisory covers v3/v5/v6 with a buffer while every call here is `v4` with none. **Shipped surface: none.** Server has real but lower items fixed by a plain `npm audit fix`. |

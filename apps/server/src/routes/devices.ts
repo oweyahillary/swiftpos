@@ -14,7 +14,7 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requireAnyPermission } from '../middleware/rbac';
 import { isNodeRole } from '../lib/deviceRegistry';
 import { ROLE_HANDOVER_WINDOW_MINUTES } from '../lib/deviceRole';
 import { supabase }    from '../lib/supabase';
@@ -73,7 +73,7 @@ router.get('/', async (req, res) => {
 // The server states the facts and computes nothing subjective beyond staleness in
 // hours; whether "behind" is acceptable is a judgement for whoever reads it.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/fleet', requirePermission('settings.manage'), async (req, res) => {
+router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
   const { data, error } = await supabase
     .from('user_devices')
     .select(`
@@ -122,7 +122,7 @@ router.get('/fleet', requirePermission('settings.manage'), async (req, res) => {
 
 // ── PATCH /api/devices/:id/approve ───────────────────────────────────────────
 
-router.patch('/:id/approve', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.patch('/:id/approve', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -162,7 +162,7 @@ router.patch('/:id/approve', requirePermission('settings.manage'), async (req, r
 
 // ── PATCH /api/devices/:id/reject ────────────────────────────────────────────
 
-router.patch('/:id/reject', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.patch('/:id/reject', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -193,7 +193,7 @@ router.patch('/:id/reject', requirePermission('settings.manage'), async (req, re
 // ── DELETE /api/devices/:id ───────────────────────────────────────────────────
 // Revoke a previously approved device — e.g. lost/stolen or staff departure.
 
-router.delete('/:id', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.delete('/:id', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, business_id')
@@ -231,7 +231,7 @@ router.delete('/:id', requirePermission('settings.manage'), async (req, res) => 
 // incumbent rather than the newcomer is deliberate: the operator names the
 // machine being replaced, which is the one they can identify, and there may be
 // no row yet for a replacement that has never synced.
-router.post('/:id/authorise-handover', requirePermission('settings.manage'), async (req, res) => {
+router.post('/:id/authorise-handover', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, device_id, device_label, branch_id, device_role, role_confirmed_at')

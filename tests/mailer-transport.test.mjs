@@ -19,8 +19,11 @@
  *     SMTP 550 after RCPT TO, and Beryl (a real client) failed identically;
  *   * it is not an unverified Resend domain — RESEND_API_KEY was absent, so
  *     `resend` was null and that branch never ran. The boot log said so;
- *   * `Connection timeout` in the same run is the same fault on a different
- *     IPv6 route, hitting connectionTimeout rather than failing instantly.
+ *   * `Connection timeout` in the same run was READ as the same fault on a
+ *     different IPv6 route. **That was wrong — see A54.** With the pin applied
+ *     and IPv6 gone, the timeout survived: it is a filtered port, a second and
+ *     independent cause. Section 5 exists because this header once said
+ *     otherwise and the file agreed with it.
  *
  * The transport is the FALLBACK, so it is what every send lands on whenever
  * Resend is unset or rejects. It has to work by itself.
@@ -158,6 +161,81 @@ ok('Resend is still tried first when configured',
    mailerSrc.indexOf('resend.emails.send') < mailerSrc.indexOf('smtp.sendMail'));
 ok('SMTP is still the fallback after a Resend error',
    /falling back to SMTP/.test(mailerSrc));
+
+// ── 5. A54 — the failure names its own cause ───────────────────────────────
+//
+// A50 was diagnosed, fixed and reopened THREE times. At least one of those
+// rounds went down the wrong hole because the boot check printed the same
+// ENETUNREACH-shaped hint no matter what had actually failed — and the comment
+// in mailer.ts asserted the timeout and the ENETUNREACH were "not two problems;
+// one". Production disproved that: the pin worked (74.125.195.108 is IPv4) and
+// the timeout survived it.
+//
+// These assert on source rather than by calling verify(), for the same reason
+// section 3 does: exercising them for real opens a socket from CI.
+console.log('\n5. failures are classified, not described generically (A54)');
+
+ok('classifySmtpFailure is exported',
+   /export\s+function\s+classifySmtpFailure/.test(mailerSrc),
+   'Exported so it can be asserted on and reused by any future send-time '
+   + 'reporting, rather than being inlined in one console.error.');
+
+// Matched on the INTERPOLATION, not the bare name.
+//
+// The first version of this assertion was /classifySmtpFailure\(err/ — which
+// also matches the function's own DECLARATION on line 169, so it passed with
+// the call site removed. Found by the rule-23 mutation check, and it is the
+// check-header-keys defect exactly: a gate that passes by not looking.
+ok('the boot check routes its hint through it',
+   /\$\{classifySmtpFailure\(/.test(mailerSrc),
+   'A classifier nobody calls is the same failure as a boot check nobody calls.');
+
+ok('a connect TIMEOUT is a distinct branch from ENETUNREACH',
+   /ETIMEDOUT/.test(mailerSrc) && /ENETUNREACH/.test(mailerSrc),
+   'One hint for both is what produced the wrong diagnosis: the timeout was '
+   + 'read as more DNS trouble when it is a filtered port.');
+
+ok('the timeout branch sends the reader to the INSTANCE PLAN, not to DNS',
+   /CHECK THE LIVE INSTANCE TYPE/.test(mailerSrc),
+   'Render blocks 25/465/587 on free web services. render.yaml declares '
+   + 'plan: starter, which permits 465/587 — so the blueprint and the running '
+   + 'instance disagreeing is the first thing to rule out, and no code change '
+   + 'reaches it.');
+
+ok('the ENETUNREACH branch only blames the pin when the address is IPv6',
+   /:\[0-9a-f\]\*:/.test(mailerSrc) || /\[0-9a-f\]/.test(mailerSrc),
+   'A pinned A record cannot resolve to an IPv6 address, so colons in the '
+   + 'address are what make it a REGRESSION of A50 rather than a new fault. '
+   + 'Blaming the pin for every ENETUNREACH would resurrect the wrong hole.');
+
+ok('an auth rejection is reported as a CREDENTIAL fault, not a network one',
+   /App Password/.test(mailerSrc),
+   'EAUTH means connect and TLS both succeeded. Gmail refuses ordinary account '
+   + 'passwords once 2FA is on, and that is now the live path — so this is the '
+   + 'most likely NEXT failure after a port is opened.');
+
+// ── 6. The probe cannot move real mail ─────────────────────────────────────
+console.log('\n6. the alternate-port probe is diagnostic only');
+
+ok('the transport takes an optional port override',
+   /getSmtpTransport\(portOverride\?:\s*number\)/.test(mailerSrc));
+
+ok('secure follows the EFFECTIVE port, not the configured one',
+   /secure:\s*port\s*===\s*465/.test(mailerSrc),
+   'Probing 465 while secure was still computed from SMTP_PORT=587 would use '
+   + 'STARTTLS semantics on an implicit-TLS port, hang, and report "465 fails "'
+   + 'too" — a probe that lies in exactly the direction that hides the fix.');
+
+ok('the SEND path never passes an override',
+   !/getSmtpTransport\(\s*(alt|SMTP_PORT|\d)/.test(
+     mailerSrc.slice(mailerSrc.indexOf('export async function sendEmail'))),
+   'A probe that silently rerouted real mail to a port the owner never '
+   + 'configured would be a worse bug than the one it diagnoses.');
+
+ok('both-ports-blocked is named as the host filtering SMTP outright',
+   /Both submission ports blocked/.test(mailerSrc),
+   'Distinguishes "wrong SMTP_PORT" from "this host does not allow SMTP", '
+   + 'which are the two outcomes the owner must act on differently.');
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

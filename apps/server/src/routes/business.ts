@@ -3,7 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import bcrypt from 'bcrypt';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requireAnyPermission, hasFullSettingsAccess } from '../middleware/rbac';
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 
@@ -14,6 +14,20 @@ const BCRYPT_ROUNDS = 12;
 // Settings whose values are secrets and must never be stored in clear text.
 // When one of these keys is written we bcrypt-hash the value and persist it
 // under "<key>_hash" instead. The plaintext key is never stored.
+// ── A45: the narrow slice of settings a manager may write ───────────────────
+// The free-text blocks printed above and below the receipt body — branch
+// address, phone, KRA PIN, thank-you line. ReceiptTextTab writes exactly these
+// two keys and nothing else (ipcHandlers.ts:1591-1592, two sequential POSTs),
+// so this allow-list is the whole surface that tab needs.
+//
+// It is an ALLOW-LIST and it must stay one. POST /settings writes ANY key
+// through one handler, including supervisor_pin (bcrypt-hashed below) and the
+// ENCRYPTED_SETTING_KEYS M-Pesa credentials. A deny-list here would mean every
+// setting added in future is writable by a manager until somebody remembers to
+// add it — and the thing they would forget is whichever one is newest, which is
+// also the one least likely to be noticed.
+const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer']);
+
 const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
 
 // ── H9: settings encrypted at rest, never a hash (need to be readable back) ─
@@ -107,11 +121,32 @@ router.get('/settings', requireAuth, async (req, res) => {
 // POST /api/business/settings
 // Upserts a single key/value pair for this business.
 // Body: { key: string, value: string }
-router.post('/settings', requireAuth, requirePermission('settings.manage'), async (req, res) => {
+router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'settings.manage'), async (req, res) => {
   const { key, value } = req.body;
 
   if (!key || value === undefined) {
     res.status(400).json({ error: 'key and value are required' });
+    return;
+  }
+
+  // ── A45: per-key authorisation, BEFORE any write ───────────────────────────
+  // The route gate above admits anyone holding EITHER key, because Express
+  // middleware runs before the body is inspected and cannot know which setting
+  // is being written. So the narrowing happens here, and it happens FIRST —
+  // ahead of the bcrypt branch and ahead of the encrypted branch, because
+  // otherwise a caller holding only receipt.manage would reach the code path
+  // that writes supervisor_pin_hash or an M-Pesa credential.
+  //
+  // Fails closed: settings.manage (or owner / wildcard) writes anything, and
+  // everyone else writes only what is explicitly allowed.
+  if (!hasFullSettingsAccess(req) && !RECEIPT_SETTING_KEYS.has(key)) {
+    res.status(403).json({
+      error: 'Forbidden',
+      // Name the key they tried, not the permission they lack: the caller with
+      // receipt.manage is a manager who has just been told "no" on a screen
+      // that offered them the field. A45 is what the vaguer message cost.
+      detail: `receipt.manage may only write receipt_header and receipt_footer, not "${key}"`,
+    });
     return;
   }
 

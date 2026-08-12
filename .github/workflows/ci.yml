@@ -445,6 +445,19 @@ jobs:
       - name: Cited documents exist
         run: node scripts/check-doc-refs.mjs
 
+      # A45: the Receipt tab was shown on isManagerRole while the cloud demanded
+      # settings.manage. Ratcheted, not pass/fail — the ground is not green yet
+      # (6 unregistered, 6 ungated, 2 phantom) and a gate nobody can make green
+      # gets switched off. See scripts/permission-parity-baseline.json.
+      - name: Permission keys agree across cloud, migrations and UI
+        run: node scripts/check-permission-parity.mjs
+
+      # A60: nine audit IDs had two entries with contradictory statuses, and the
+      # header claimed 0 P0 while A17 sat OPEN at P0. Also ratchets A53's orphan
+      # audit-ID citations, which may shrink and may never grow.
+      - name: Register agrees with itself
+        run: node scripts/check-register-consistency.mjs
+
       # ── Desktop suites that do NOT need Electron ────────────────────────────
       # 92 desktop tests were added on 2026-08-08 and none of them ran here, so
       # the newest and riskiest code on the till — offline sign-in, credentials
