@@ -232,13 +232,21 @@ for (const file of walk(join(ROOT, MIGRATIONS), /\.sql$/)) {
 }
 
 // ── 3. UI — what a screen tells the user they may do ───────────────────────
-// Three spellings, all live: the hook, the shorthand helper, and the object
-// field NAV_ITEMS uses. Requiring a dotted key keeps `can(` from matching
-// unrelated helpers.
+// Four spellings, all live: the hook, two shorthand helpers, and the object
+// field NAV_ITEMS uses. Requiring a dotted key keeps the bare-word matchers
+// (`can(`, `has(`) from matching unrelated helpers.
+//
+// The fourth, `has(`, is the TILL's renderer helper (ManagerPage.tsx:1030,
+// `const has = key => perms['*'] || perms[key]`). It is not hasPermission/can,
+// so without this pattern the four till gates are invisible to the comparator —
+// the "pattern drifted from the code it scans" blindness this file exists to
+// catch (register A59). The negative lookbehind excludes Set/Map `.has(` and any
+// `…has(` identifier, so only a bare `has('x.y')` call matches.
 const { found: ui, files: uiFiles } = scan(UI_DIRS, [
   /\bhasPermission\(\s*['"]([\w]+\.[\w]+)['"]/g,
   /\bcan\(\s*['"]([\w]+\.[\w]+)['"]/g,
   /\bpermission:\s*['"]([\w]+\.[\w]+)['"]/g,
+  /(?<![.\w])has\(\s*['"]([\w]+\.[\w]+)['"]/g,
 ]);
 
 // ── 3b. GRANTED — which keys any non-owner role is actually given ──────────

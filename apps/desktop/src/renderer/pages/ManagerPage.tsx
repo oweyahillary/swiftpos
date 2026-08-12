@@ -1031,6 +1031,11 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   const canManageProducts = has('products.manage');
   const canManageStaff    = has('staff.manage');
   const canManageSettings = has('settings.manage');
+  // A59/A45 · Gate Receipt on the permission KEYS the cloud enforces, not the role.
+  // Cloud: business.ts POST /settings → requireAnyPermission('receipt.manage','settings.manage').
+  // receipt.manage is granted to manager roles by migration 78; settings.manage
+  // covers managers who already hold it, so no current manager loses the tab.
+  const canManageReceipt  = has('receipt.manage') || canManageSettings;
 
   // Closing the trading day is a CASH operation, not a settings one, so it must
   // not hide behind settings.manage. Gated on the same rule dayService.isManager()
@@ -1080,14 +1085,21 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // screen rather than as a sibling nobody connects to the menu they are editing.
     ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
     ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
-    ...(isManagerRole ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
+    ...(canManageReceipt ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
     // Gated like the other configuration tabs. It was briefly left open on the
     // reasoning that printer bindings are per-device, so whoever stands at the
     // till is who needs them. That was wrong: re-pointing a printer mid-service
     // sends receipts to the wrong station and nobody notices until the queue
     // backs up. Cashiers keep the read-only view on the POS screen, where they
     // can see connection status and fire a test print.
-    ...(isManagerRole ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
+    //
+    // A59 / permission-model · Gated on stations.manage. NOT settings.manage,
+    // which migration 59 makes owner/admin-only — keying Printers there would
+    // hide it from every manager. Migration 79 grants stations.manage to the
+    // manager roles, so this is additive: everyone who reached Printers via the
+    // role gate still does. Ships in the same batch as 79; without that grant,
+    // managers would lose the tab.
+    ...(has('stations.manage') ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
     // Hidden when nothing is stock-tracked — an owner who turned stock off
     // shouldn't be shown an empty Stock screen and conclude it's broken.
     ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),

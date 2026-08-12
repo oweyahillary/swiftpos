@@ -399,6 +399,40 @@ are not in the staff token today), a `hasPermission` on the renderer, and the 14
 gates re-pointed — with the offline case decided, since a till that cannot reach
 the cloud must still decide what to show. **Design decision first, then a phase.**
 
+**UPDATED 2026-08-12 — the diagnosis above was written from a grep and is partly
+stale; verified against source.** The plumbing already exists: `verify-pin`
+returns `permissions` as a `Record<string,boolean>`, the main process caches it
+for offline (`pinCache.ts`) and delivers it to the renderer, and
+`ManagerPage.tsx:1030` already has `has(key) = perms['*'] || perms[key]` —
+identical to the dashboard and cloud. **The offline case is therefore already
+decided** (`has()` reads the cached map). The real work was re-pointing the four
+gates still on the coarse `isManagerRole`:
+
+- **Receipt → `receipt.manage || settings.manage`** — matches the cloud
+  (`business.ts` `requireAnyPermission('receipt.manage','settings.manage')`); the
+  A45 symptom, closed in the till. Grant via migration 78.
+- **Printers -> `stations.manage`.** Migration 79 grants that key to the manager
+  roles (registered by 75, it had been granted to no one and enforced nowhere —
+  the "printers hid inside settings" dead key). The till Printers tab now gates on
+  it and the cloud station routes enforce it additively
+  (`requireAnyPermission('stations.manage','products.manage')`). Additive and
+  verified (`test-migration-79`, 8 assertions; parity green; both tsc clean). This
+  is the first batch of the permission-model decision (`docs/permission-model.md`).
+- **Close Day / Close Branch — left on the role gate deliberately.** The code
+  states they are cash operations that *"must not hide behind settings.manage"*,
+  gated on `dayService.isManager()`. Re-pointing them would be a design change.
+
+Two cloud-side inconsistencies surfaced and are **not** fixed here: `stations.manage`
+is enforced on no route (stations CRUD uses `products.manage`), and
+`POST /shifts/:id/force-close` gates on `settings.manage`, not the registry's
+`shifts.force_close`. **Done this session:** `check-permission-parity` extended to
+scan the till's `has()` helper (four keys now visible where zero were, baseline
+unchanged), and the renderer typechecks clean (`tsc --noEmit`, exit 0).
+**Still needs the DB/Windows:** confirm migration 78 grants `receipt.manage` to
+manager AND supervisor AND branch_manager (or those roles lose Receipt — the
+additive-safety query is in the working note), and smoke-test the till.
+Full working note: `docs/A59-till-permission-keys.md`.
+
 ### A55 · P1 · CLOSED 2026-08-11 · `total_spent` was the last racy write on the customer row
 `orders.ts` updated `customers.total_spent` by SELECTing the value and writing
 back `current + amount`, in three places: order paid (`:800`), order voided
@@ -1355,6 +1389,16 @@ depends on are implemented and readable.
 
 Still missing and worth finding: `BRANCH-SERVER-PLAN.md`,
 `SwiftPOS_eTIMS_Integration_Scope.md`.
+
+**UPDATED 2026-08-12 — `check-doc-refs` is now GREEN.** Neither document was
+recovered, so following A40's precedent both are filed as honest tombstones that
+reconstruct nothing: `docs/BRANCH-SERVER-PLAN.md` (records that the plan was
+never committed and maps to the surviving `PHASE2-3-DESIGN.md` amendment and the
+branch/node design docs) and `docs/history/handoffs/SESSION-HANDOFF-2026-08-02.md`
+(records that `HANDOFF-2026-08-03.md` superseded it, per A6).
+`SwiftPOS_eTIMS_Integration_Scope.md` was already present in
+`docs/history/handoffs/`. The gate resolves every live citation; no original
+content is claimed.
 
 ### A41 · P1 · CLOSED 08-10 · Two gates for the seam that produced everything this week
 §L: *"two things that must agree, with nothing comparing them."* Every finding
