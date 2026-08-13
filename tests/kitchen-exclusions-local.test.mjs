@@ -27,10 +27,21 @@
  * kept in sync by hand, exactly as discount-clamp.test.mjs copies the clamp.
  */
 
-import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// node:sqlite is a Node >= 22.5 built-in. The Node-20 CI lane (and older local
+// runtimes) lack it — skip cleanly there, the same way the tests/ suites that
+// need better-sqlite3 do, so the runner does not crash on a runtime mismatch.
+// This test runs on the Node 22 lane / locally under Node 22.
+let DatabaseSync;
+try {
+  ({ DatabaseSync } = await import('node:sqlite'));
+} catch {
+  console.log('node:sqlite unavailable (needs Node >= 22.5) — skipping. Runs under Node 22.');
+  process.exit(0);
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');

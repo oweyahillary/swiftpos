@@ -8,8 +8,8 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | Opened | 2026-08-07 |
 | Last updated | **2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
 | Tree | `dev` @ `0215475` (was recorded as `84400d6`; the deploy log and `git log` both read `0215475`), desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 1 P0 · 10 P1 · 4 P2 · 1 P3 — D: 1 P0 · 2 P1 · 1 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A50 A49 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 · A-P3: A13 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 |
+| Open | **A: 1 P0 · 9 P1 · 4 P2 · 1 P3 — D: 1 P0 · 2 P1 · 1 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 · A-P3: A13 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
@@ -2338,7 +2338,7 @@ in §I and in the 08-08 status block, and cites it as evidence. It is a captured
 run, updated by hand via `npm run sample` — which prints a money check and writes
 nothing. Corrected here; the citations elsewhere should be read with that in mind.
 
-### A49 · P1 · OPEN · `stock_adjustments` is a dead table, hidden by a false gate exception
+### A49 · P1 · CLOSED 08-13 · `stock_adjustments` is a dead table, hidden by a false gate exception
 Found 08-10 by a column-level sweep for more A12-shaped bugs.
 
 `stock_adjustments` is a real table — baseline, RLS-enabled, FKs, CHECK
@@ -2375,6 +2375,27 @@ checks. The file's header now says so.
 Exception corrected 08-10 to state the finding instead of hiding it. **The fix
 itself is a product decision and is NOT done:** point the report at
 `stock_movements`, or drop the table and the report section.
+
+**Fixed 08-13 — pointed the report at `stock_movements`** (owner's direction:
+stock management lives on the web, so the web report should show the real
+figures). `GET /api/reports/inventory` now folds `stock_movements` instead of the
+dead table, scoped to the business via the `products!inner` embed with
+`.eq('products.business_id', …)` — the exact pattern `inventory.ts` and
+`branches.ts` already use — and per branch when scoped. `'sale'` is excluded (it
+is already counted in the "sold" column, so counting it again would double-count
+every sale); `'restock'` → restocked, `'write_off'` → written-off, and
+`'correction'` is split by the sign of `quantity_change` (a positive correction
+found stock, a negative one lost it). The fold is extracted to
+`apps/server/src/lib/stockMovementSummary.ts` (pure, supabase-free) and proven
+against the REAL compiled function — `tests/stock-movement-summary.test.mjs`,
+6 assertions, **mutation-checked** (drop the correction sign-split and it fails).
+Server `tsc` clean. The stale `readOnly` exception for `stock_adjustments` is
+removed and `check-table-usage` stays green. **`stock_adjustments` is now read and
+written NOWHERE — a fully dead table, a drop candidate for a future tidy migration**
+(the same shape as `sync_queue`/migration 80); left in place for now since the
+finding — a report showing permanent zeros — is what is fixed. What the bench
+cannot prove and a live check should: the report returning real restocked/
+written-off numbers against a database with actual `stock_movements` rows.
 
 ### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
 
@@ -3094,6 +3115,8 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-13 | **A66 CI regressions fixed** — the commit went red on two lanes. (1) `REQUIRED_DESKTOP_SCHEMA` was still 51 while A66 bumped `LOCAL_SCHEMA_VERSION` to 52; the two must move together (test-branch-close, test-events enforce it) — bumped to 52 (a till on 51 is merely shown behind, HARD_MIN unchanged). (2) `kitchen-exclusions-local.test.mjs` hard-imported `node:sqlite`, crashing the Node-20 server-suites lane which globs all of tests/; now skips gracefully when the module is absent, like the better-sqlite3 suites. Both verified against the app driver. |
+| 2026-08-13 | **A49 closed** — the stock report read `stock_adjustments` (a dead table), so restocked/written-off were permanently zero. Repointed `GET /reports/inventory` to fold `stock_movements` (sale excluded to avoid double-counting; correction split by sign). Extracted `lib/stockMovementSummary.ts` (pure); `tests/stock-movement-summary.test.mjs` (6 assertions, mutation-checked). Stale table-usage exception removed; `stock_adjustments` now fully dead (drop candidate). Also: the A59 stations.manage leftover was already enforced additively (migration 79) — only force-close remains, deferred as it touches a desktop file. |
 | 2026-08-13 | **A63 closed** — the onboarding seeder matched role names un-normalised (`nm==='branch_manager'`), so a "Branch Manager" typed with a space would be seeded with ZERO permissions (A61 one layer up). Extracted `roleTier()` to `lib/roleTier.ts` (pure, supabase-free), normalising `lower(replace(name,' ','_'))` like the migrations. `tests/role-tier.test.mjs` (12 assertions, mutation-checked). |
 | 2026-08-13 | **A64 closed** — owner chose the strict manager policy (receive + see, no adjust/manage/financial; management lives on web). Seeder MANAGER_DENY is authoritative; migration 82 revokes the three keys migration 59 over-granted from manager-type roles only, owner/admin and other grants untouched. `scripts/test-migration-82.mjs` (10 checks, mutation-checked). Run the blast-radius SELECT before applying to prod. |
 | 2026-08-13 | **A37 closed** — the desktop licence was bypassable by a client sending `surface: 'web'` on /pos-login. Now the exempting surface is server-derived: honoured only when the business holds web access (`getWebAccess().canLogin`), else forced to desktop and licence-checked. `tests/auth-surface.test.mjs` (11 assertions, mutation-checked). Also fixed a D11 regression this test caught — §3 pinned the pre-D11 `pos.ts` gate shape and had been silently failing. Residual: dual web+desktop subscribers (business-policy call). |
