@@ -309,13 +309,24 @@ if (functionsIndex) {
 
 // ── C. INDEX FRESHNESS ──────────────────────────────────────────────────────
 if (schemaIndex) {
+  // Net CREATE against DROP in migration order: a table created in baseline and
+  // dropped in a later migration (e.g. 80 drops the dead sync_queue, D15) must
+  // NOT be expected in the index. Processing in order also handles the
+  // create → drop → recreate case correctly (the last op wins).
   const created = new Set();
-  for (const f of files) {
+  const ordered = [...files].sort((a, b) => {
+    const na = parseInt(a, 10), nb = parseInt(b, 10);
+    return (Number.isNaN(na) ? -1 : na) - (Number.isNaN(nb) ? -1 : nb) || a.localeCompare(b);
+  });
+  for (const f of ordered) {
     const sql = stripComments(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'));
     for (const m of sql.matchAll(/CREATE\s+(?:UNLOGGED\s+|TEMP\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?"?(\w+)"?/gi)) {
       // 'CREATE TABLE x AS SELECT' and 'CREATE TABLE OF' would otherwise add a
       // table literally named AS / OF.
       if (!/^(as|of|only)$/i.test(m[1])) created.add(m[1]);
+    }
+    for (const m of sql.matchAll(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?"?(\w+)"?/gi)) {
+      created.delete(m[1]);
     }
   }
   const missing = [...created].filter(t => !schemaIndex[t]).sort();

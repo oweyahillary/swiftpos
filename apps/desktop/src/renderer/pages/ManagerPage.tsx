@@ -1127,9 +1127,11 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'receipt': return <ReceiptTextTab />;
       // PrinterSetupScreen supersedes PrintersTab: one screen, live preview
       // rendered from the same Document the printer receives, and a test print
-      // that reports the real result. PrintersTab stays reachable until the
-      // thermal path is proven on site. PrintersTab.tsx remains in the tree,
-      // unrouted, until then.
+      // that reports the real result. PrintersTab.tsx remains in the tree but is
+      // UNROUTED — the Printers tab renders PrinterSetupScreen. (The old comment
+      // said PrintersTab "stays reachable" AND "remains unrouted", which cannot
+      // both be true; it is not reachable — register A11. Its read-only kitchen-
+      // exclusions box was ported into PrinterSetupScreen, closing A43.)
       case 'printers': return <PrinterSetupScreen stations={escposStations.length ? escposStations : FALLBACK_STATIONS} />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;

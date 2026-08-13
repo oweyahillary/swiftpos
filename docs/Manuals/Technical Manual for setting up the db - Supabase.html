@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technical Manual — Setting up the SwiftPOS DB (Supabase)</title>
+<style>
+  :root{
+    --ink:#14181d; --muted:#5b6672; --faint:#8a95a1;
+    --rule:#e4e8ec; --rail:#f7f8fa; --card:#ffffff;
+    --accent:#10794e; --accent-bright:#3ECF8E; --accent-wash:#ecfdf3; --accent-line:#abefc6;
+    --danger:#b42318; --danger-wash:#fef3f2; --danger-line:#fecdca;
+    --warn:#b54708; --warn-wash:#fffaeb; --warn-line:#fedf89;
+    --code-bg:#0f141a; --code-ink:#e6edf3; --code-faint:#8b98a5; --code-accent:#5be3a3;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--card);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.9em}
+
+  /* ── shell ─────────────────────────────────────────── */
+  .wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:0;max-width:1160px;margin:0 auto}
+  .rail{border-right:1px solid var(--rule);padding:34px 22px;position:sticky;top:0;height:100vh;overflow:auto}
+  .rail .brand{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  .rail .brandsub{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px;letter-spacing:.04em}
+  nav{margin-top:26px}
+  nav a{display:block;color:var(--muted);font-size:13.5px;padding:5px 0 5px 12px;border-left:2px solid transparent;line-height:1.35}
+  nav a:hover{color:var(--ink);text-decoration:none}
+  nav a.active{color:var(--accent);border-left-color:var(--accent-bright);font-weight:600}
+  nav .grp{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin:18px 0 6px;padding-left:12px}
+
+  main{padding:56px 60px 120px;min-width:0}
+  .max{max-width:800px}
+
+  /* ── header ────────────────────────────────────────── */
+  .badge{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;
+    letter-spacing:.06em;color:var(--accent);background:var(--accent-wash);border:1px solid var(--accent-line);
+    padding:5px 11px;border-radius:999px;font-weight:600}
+  .badge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent-bright)}
+  h1{font-size:38px;line-height:1.1;letter-spacing:-.02em;margin:20px 0 8px;font-weight:800}
+  .lede{font-size:18px;color:var(--muted);margin:0 0 26px;max-width:64ch}
+  .meta{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .meta div{flex:1 1 150px;padding:12px 16px;border-right:1px solid var(--rule)}
+  .meta div:last-child{border-right:0}
+  .meta .k{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+  .meta .v{font-size:14px;font-weight:600;margin-top:3px}
+
+  /* ── sections ──────────────────────────────────────── */
+  section{padding-top:44px;margin-top:8px;scroll-margin-top:20px}
+  h2{font-size:13px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);
+    margin:0 0 4px;font-weight:700;display:flex;align-items:baseline;gap:10px}
+  h2 .n{color:var(--faint)}
+  h2 + .h{font-size:26px;letter-spacing:-.01em;font-weight:800;margin:0 0 14px}
+  h3{font-size:17px;margin:28px 0 8px;font-weight:700}
+  p{margin:12px 0}
+  .max ul,.max ol{margin:12px 0;padding-left:22px}
+  li{margin:6px 0}
+
+  /* ── code ──────────────────────────────────────────── */
+  .code{position:relative;background:var(--code-bg);border-radius:10px;margin:16px 0;overflow:hidden;border:1px solid #1e2630}
+  .code .bar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e2630}
+  .code .bar .lbl{font-family:var(--mono);font-size:11px;color:var(--code-faint);letter-spacing:.06em}
+  .code pre{margin:0;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-ink)}
+  .code pre .c{color:var(--code-faint)}      /* comment */
+  .code pre .p{color:var(--code-accent)}     /* prompt / accent */
+  .copy{font-family:var(--mono);font-size:11px;color:var(--code-faint);background:transparent;border:1px solid #2a333e;
+    border-radius:6px;padding:3px 9px;cursor:pointer}
+  .copy:hover{color:var(--code-ink);border-color:#3a4551}
+  .copy:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+  kbd{font-family:var(--mono);font-size:.85em;background:var(--rail);border:1px solid var(--rule);border-bottom-width:2px;border-radius:5px;padding:1px 6px}
+
+  /* ── steps ─────────────────────────────────────────── */
+  .step{display:grid;grid-template-columns:44px 1fr;gap:18px;padding:22px 0;border-top:1px solid var(--rule)}
+  .step .num{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent);line-height:1}
+  .step .num small{display:block;font-size:10px;color:var(--faint);letter-spacing:.1em;margin-top:6px}
+  .step h3{margin-top:0}
+
+  /* ── callouts ──────────────────────────────────────── */
+  .call{border:1px solid var(--rule);border-left-width:3px;border-radius:8px;padding:14px 16px;margin:18px 0;background:var(--rail)}
+  .call .lbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:4px;display:block}
+  .call p{margin:4px 0}
+  .call.danger{border-color:var(--danger-line);border-left-color:var(--danger);background:var(--danger-wash)}
+  .call.danger .lbl{color:var(--danger)}
+  .call.warn{border-color:var(--warn-line);border-left-color:var(--warn);background:var(--warn-wash)}
+  .call.warn .lbl{color:var(--warn)}
+  .call.note{border-color:var(--accent-line);border-left-color:var(--accent);background:var(--accent-wash)}
+  .call.note .lbl{color:var(--accent)}
+
+  /* ── tables ────────────────────────────────────────── */
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:700}
+  td code{background:var(--rail);padding:1px 5px;border-radius:4px}
+  .tsq{color:var(--danger);font-weight:600}
+
+  hr{border:0;border-top:1px solid var(--rule);margin:8px 0}
+  .foot{margin-top:60px;padding-top:20px;border-top:1px solid var(--rule);color:var(--faint);font-size:13px;font-family:var(--mono)}
+
+  /* ── responsive ────────────────────────────────────── */
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr}
+    .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule)}
+    nav{columns:2;margin-top:16px}
+    main{padding:34px 22px 80px}
+    h1{font-size:30px}
+  }
+  /* ── print ─────────────────────────────────────────── */
+  @media print{
+    .rail{display:none}.wrap{display:block;max-width:none}
+    main{padding:0}
+    .code{background:#f4f6f8;border-color:#d8dee4}
+    .code pre{color:#14181d}.code .bar{border-color:#d8dee4}.code .bar .lbl{color:#5b6672}
+    .code pre .c{color:#6a7885}.copy{display:none}
+    a{color:var(--ink)}
+    section{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside class="rail">
+    <div class="brand">SwiftPOS · DB</div>
+    <div class="brandsub">target: supabase</div>
+    <nav id="toc">
+      <div class="grp">Understand</div>
+      <a href="#overview">The setup model</a>
+      <a href="#traps">Traps &amp; gaps</a>
+      <div class="grp">Prepare</div>
+      <a href="#prereq">Prerequisites</a>
+      <a href="#conn">Connection string</a>
+      <a href="#files">Files you need</a>
+      <div class="grp">Run</div>
+      <a href="#dryrun">1 · Dry run</a>
+      <a href="#apply">2 · Apply</a>
+      <a href="#verify">3 · Verify</a>
+      <a href="#seed">4 · Seed admin</a>
+      <div class="grp">Operate</div>
+      <a href="#prod">Production cautions</a>
+      <a href="#trouble">Troubleshooting</a>
+      <a href="#appendix">Appendix</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="max">
+      <span class="badge"><span class="dot"></span>SUPABASE / POSTGRESQL 16</span>
+      <h1>Setting up the SwiftPOS database</h1>
+      <p class="lede">A repeatable procedure for standing up a complete, clean SwiftPOS schema on a Supabase project and confirming it matches what the codebase expects.</p>
+      <div class="meta">
+        <div><div class="k">Audience</div><div class="v">Backend / DevOps</div></div>
+        <div><div class="k">Time</div><div class="v">10–15 min</div></div>
+        <div><div class="k">Client</div><div class="v">psql 16.x</div></div>
+        <div><div class="k">Result</div><div class="v">~98 tables, RLS on all</div></div>
+      </div>
+      <div class="call note">
+        <span class="lbl">Before production</span>
+        <p>This is the same procedure you ran in dev. For production, run it against a <strong>fresh, empty project</strong> and read <a href="#prod">Production cautions</a> first — one step is destructive and must never touch a project that already holds data.</p>
+      </div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <section id="overview" class="max">
+      <h2><span class="n">01</span> Understand</h2>
+      <div class="h">The setup model</div>
+      <p>The schema is <strong>not</strong> reproducible by replaying the numbered migrations in order. It comes together in three layers, and the runner applies them for you:</p>
+      <ol>
+        <li><strong>Baseline</strong> — <code>00_baseline.sql</code> is a full <code>pg_dump</code> (85 tables, RLS on every one, 94 policies) captured 2026‑07‑28. It <em>is</em> the starting point; the early numbered files only <code>ALTER</code> tables the baseline creates.</li>
+        <li><strong>Tracking</strong> — <code>01_schema_migrations.sql</code> creates <code>public.schema_migrations</code> and backfills the state already contained in the baseline (migrations 01–18 and 21–38).</li>
+        <li><strong>Forward migrations</strong> — everything still outstanding: <code>19</code>, <code>20</code>, and <code>39</code> onward, applied in numeric order and recorded as they go.</li>
+      </ol>
+      <p>On Supabase, the baseline’s dependencies — the <code>auth</code> schema, <code>auth.uid()</code>, the <code>anon</code>/<code>authenticated</code>/<code>service_role</code> roles, and the <code>extensions</code> schema — already exist, so there is no bootstrap step. (That is the one big difference from the bare‑Postgres manual.)</p>
+    </section>
+
+    <!-- TRAPS -->
+    <section id="traps" class="max">
+      <h2><span class="n">02</span> Understand</h2>
+      <div class="h">Traps &amp; gaps a naïve run would hit</div>
+      <p>A plain <code>psql -f *.sql</code> loop breaks or silently mis‑tracks. The runner handles each of these; they are listed so the output makes sense.</p>
+      <ul>
+        <li><strong>19 and 20 are not in the baseline.</strong> They were never applied historically, so they must run <em>after</em> it. They are the only sub‑38 files that still execute.</li>
+        <li><strong>33–38 are already inside the baseline.</strong> The files exist in <code>migrations/</code> but must not re‑run; the tracking table causes them to be skipped.</li>
+        <li><strong>31 and 32 are recorded <code>SKIPPED</code></strong> — numbers never used, not lost work.</li>
+        <li><strong>Number gaps 62, 64, 65, 66, 68, 72 have no files.</strong> Expected.</li>
+        <li><strong>68 and 72 were applied in the historical production DB but are absent from the repo.</strong> A from‑scratch build cannot reproduce them — see <a href="#prod">Production cautions</a>.</li>
+        <li><strong>Self‑recording is inconsistent</strong> (19, 20, 53–61 don’t record themselves). The runner stamps every file uniformly so tracking is complete.</li>
+      </ul>
+    </section>
+
+    <!-- PREREQ -->
+    <section id="prereq" class="max">
+      <h2><span class="n">03</span> Prepare</h2>
+      <div class="h">Prerequisites</div>
+      <ul>
+        <li><strong><code>psql</code> 16.x</strong> — the baseline uses the <code>\restrict</code> meta‑command that only a recent <code>psql</code> understands.</li>
+        <li><strong>Node.js 18+</strong> — for the verifier (<code>verify-db-schema.mjs</code>).</li>
+        <li>A Supabase project you control, and its <strong>database password</strong>.</li>
+      </ul>
+      <div class="call danger">
+        <span class="lbl">Do not use the Supabase SQL editor for the baseline</span>
+        <p>It cannot run the <code>\restrict</code> / <code>\unrestrict</code> meta‑commands and will choke on a 7,000‑line dump. Use <code>psql</code> from your machine.</p>
+      </div>
+    </section>
+
+    <!-- CONN -->
+    <section id="conn" class="max">
+      <h2><span class="n">04</span> Prepare</h2>
+      <div class="h">Connection string</div>
+      <p>Use the <strong>Session pooler</strong> string: Dashboard → Project Settings → Database → Connection string → <em>Session pooler</em>. The username becomes <code>postgres.&lt;ref&gt;</code> and the port is <strong>5432</strong>.</p>
+      <div class="code">
+        <div class="bar"><span class="lbl">export the session-pooler URL</span><button class="copy">Copy</button></div>
+        <pre><span class="c"># Session pooler — connects as the real postgres role, works over IPv4</span>
+export DATABASE_URL='postgresql://postgres.&lt;ref&gt;:PASSWORD@aws-0-&lt;region&gt;.pooler.supabase.com:5432/postgres?sslmode=require'</pre>
+      </div>
+      <div class="call warn">
+        <span class="lbl">Not the direct host, not the transaction pooler</span>
+        <p>The <strong>direct</strong> host <code>db.&lt;ref&gt;.supabase.co</code> is IPv6‑only and fails with <em>“could not translate host name”</em> on most networks. The <strong>transaction pooler</strong> (port <code>6543</code>) breaks multi‑statement migrations. Session mode on <code>5432</code> is the one that works.</p>
+      </div>
+    </section>
+
+    <!-- FILES -->
+    <section id="files" class="max">
+      <h2><span class="n">05</span> Prepare</h2>
+      <div class="h">Files you need</div>
+      <p>From the repo (or the setup package), in this structure:</p>
+      <div class="code">
+        <div class="bar"><span class="lbl">layout</span><button class="copy">Copy</button></div>
+        <pre>swiftpos/
+├─ migrations/            <span class="c"># 00_baseline.sql, 01_schema_migrations.sql, all numbered *.sql</span>
+└─ scripts/
+   ├─ setup-clean-db.sh   <span class="c"># the runner</span>
+   ├─ verify-db-schema.mjs <span class="c"># DB vs schema-index.json</span>
+   ├─ build-schema-index.sql <span class="c"># used by the verifier</span>
+   ├─ schema-index.json   <span class="c"># the expected schema</span>
+   └─ seed-admin.sql      <span class="c"># admin seed</span></pre>
+      </div>
+    </section>
+
+    <!-- STEP 1 -->
+    <section id="dryrun" class="max">
+      <h2><span class="n">06</span> Run</h2>
+      <div class="h">Apply the migrations</div>
+      <div class="step">
+        <div class="num">1<small>DRY RUN</small></div>
+        <div>
+          <h3>Preview the plan</h3>
+          <p>Applies nothing; confirms the connection and prints what would run. The <em>target</em> line should show your database and <code>role postgres</code>.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> ./scripts/setup-clean-db.sh --dry-run</pre>
+          </div>
+          <p class="c" style="color:var(--muted);font-size:14px">The dry run lists ~70 files because on an empty DB nothing is recorded yet. On the real run the ~34 already folded into the baseline are skipped.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="apply" class="max">
+      <div class="step">
+        <div class="num">2<small>APPLY</small></div>
+        <div>
+          <h3>Build the database</h3>
+          <p>On a fresh, empty project this is non‑destructive — it tolerates the one redundant <code>CREATE SCHEMA public</code> and relies on Supabase’s existing default grants.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> ./scripts/setup-clean-db.sh</pre>
+          </div>
+          <p>Expect a stream of <code>→ migration</code> lines, then a summary like <code>36 applied, 34 already-present</code> and a verification block (~98 tables, RLS on all, highest version recorded). Lines reading <code>NOTICE: … already exists, skipping</code> are the idempotency guards, not errors.</p>
+          <div class="call danger">
+            <span class="lbl">--reset is destructive</span>
+            <p><code>./scripts/setup-clean-db.sh --reset</code> runs <code>DROP SCHEMA public CASCADE</code> before rebuilding (then restores the Supabase grants). Use it only to reclaim a <strong>dirty but disposable</strong> project — never one holding data. It prompts for the database name to confirm.</p>
+          </div>
+          <p>The runner is idempotent and resumable — if it stops partway, run it again and it skips what’s already applied.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- VERIFY -->
+    <section id="verify" class="max">
+      <div class="step">
+        <div class="num">3<small>VERIFY</small></div>
+        <div>
+          <h3>Confirm it matches the codebase</h3>
+          <p>Diffs the live database against <code>scripts/schema-index.json</code> — the file the code audits every query against — and lists any table with RLS disabled.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> node scripts/verify-db-schema.mjs
+<span class="c"># or, to also fail on extras / RLS gaps:</span>
+<span class="p">$</span> node scripts/verify-db-schema.mjs --strict</pre>
+          </div>
+          <p><strong>PASS</strong> means every expected table and column is present. <em>Missing</em> findings are critical (a half‑applied migration or the 68/72 gap). <em>Extra</em> findings just mean the DB is ahead of the index and are normally fine.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEED -->
+    <section id="seed" class="max">
+      <div class="step">
+        <div class="num">4<small>SEED</small></div>
+        <div>
+          <h3>Seed the admin password</h3>
+          <p>Creates/resets the admin‑portal <code>super_admin</code>. Choose a strong password (10+ chars). Both options write a bcrypt‑cost‑12 hash the server accepts and both satisfy migration 48’s constraint that blocks the old public tutorial hash.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">option A — over your psql connection</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> psql -d "$DATABASE_URL" \
+     -v email="admin@swiftpos.co.ke" \
+     -v pw="your-strong-password" \
+     -f scripts/seed-admin.sql</pre>
+          </div>
+          <div class="code">
+            <div class="bar"><span class="lbl">option B — app-maintained script (needs apps/server/.env)</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> cd apps/server
+<span class="p">$</span> ADMIN_PASSWORD='your-strong-password' npx tsx src/scripts/reset-admin.ts</pre>
+          </div>
+          <div class="call note">
+            <span class="lbl">Secret hygiene</span>
+            <p>Store the admin password and the project’s <code>service_role</code> key in your secrets manager. Option A puts the password in your shell process list while it runs; Option B reads it from the environment, which is marginally cleaner for shared machines.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROD -->
+    <section id="prod" class="max">
+      <h2><span class="n">07</span> Operate</h2>
+      <div class="h">Production cautions</div>
+      <div class="call danger">
+        <span class="lbl">Never --reset a project with data</span>
+        <p>For production, target a brand‑new project (or a verified‑empty one). Take a backup first regardless. The reset path exists for disposable environments only.</p>
+      </div>
+      <div class="call warn">
+        <span class="lbl">The 68 / 72 gap</span>
+        <p>Migrations 68 and 72 are recorded as applied in the historical production database but their files are not in the repo. A fresh build will not contain whatever they changed. If this new production DB must match the old one, obtain those two migrations from the current production owner and apply them before cutover; otherwise document the difference.</p>
+      </div>
+      <ul>
+        <li>Keep the <code>service_role</code> key server‑side only — never ship it to any client bundle.</li>
+        <li>Run the <a href="#verify">verifier</a> as the final gate before pointing the app at the new database.</li>
+        <li>Confirm RLS is enabled on all tables (the verifier reports this) before exposing the PostgREST/anon surface.</li>
+      </ul>
+    </section>
+
+    <!-- TROUBLE -->
+    <section id="trouble" class="max">
+      <h2><span class="n">08</span> Operate</h2>
+      <div class="h">Troubleshooting</div>
+      <table>
+        <thead><tr><th>Symptom</th><th>Cause &amp; fix</th></tr></thead>
+        <tbody>
+          <tr><td class="tsq">could not translate host name <code>db.&lt;ref&gt;.supabase.co</code></td><td>You used the direct host (IPv6‑only). Switch to the <strong>Session pooler</strong> string, port 5432.</td></tr>
+          <tr><td class="tsq">extra command-line argument … ignored</td><td>An older copy of the runner passed the connection string positionally. Use the current <code>setup-clean-db.sh</code>, which passes it via <code>-d</code>.</td></tr>
+          <tr><td class="tsq">password authentication failed</td><td>On the pooler the username must be <code>postgres.&lt;ref&gt;</code>. If your password contains <code>@ # / :</code>, percent‑encode it in the URL.</td></tr>
+          <tr><td class="tsq">prepared statement … already exists</td><td>You connected through the <strong>transaction</strong> pooler (6543). Use session mode (5432).</td></tr>
+          <tr><td class="tsq">permission denied for schema public</td><td>After <code>--reset</code>, ensure you connect as the <code>postgres</code> role; the runner restores grants at the end.</td></tr>
+          <tr><td>NOTICE: … already exists / does not exist, skipping</td><td>Not an error — idempotency guards. Nothing aborts because <code>ON_ERROR_STOP</code> is active.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- APPENDIX -->
+    <section id="appendix" class="max">
+      <h2><span class="n">09</span> Reference</h2>
+      <div class="h">Appendix — what runs, in order</div>
+      <p><strong>Applied on a clean DB:</strong> <code>00_baseline</code> → <code>01_schema_migrations</code> → <code>19, 20</code> → <code>39–61, 63, 67, 69–71, 73–78</code>.</p>
+      <p><strong>Auto‑skipped</strong> (already in the baseline): <code>01–18, 21–30, 33–38</code>.</p>
+      <p><strong>Recorded but never files:</strong> <code>31_SKIPPED, 32_SKIPPED</code>. <strong>No file, no run:</strong> <code>62, 64, 65, 66, 68, 72</code>.</p>
+      <div class="foot">SwiftPOS · Database setup manual · Supabase target · psql 16.x · Keep with the runbook.</div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // copy buttons
+  document.querySelectorAll('.code').forEach(function(block){
+    var btn=block.querySelector('.copy'), pre=block.querySelector('pre');
+    if(!btn||!pre)return;
+    btn.addEventListener('click',function(){
+      var text=pre.innerText;
+      navigator.clipboard.writeText(text).then(function(){
+        var old=btn.textContent;btn.textContent='Copied';
+        setTimeout(function(){btn.textContent=old;},1200);
+      }).catch(function(){btn.textContent='Ctrl+C';});
+    });
+  });
+  // scroll-spy
+  var links=[].slice.call(document.querySelectorAll('#toc a'));
+  var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(a){a.classList.remove('active');});
+        var a=map[e.target.id];if(a)a.classList.add('active');
+      }
+    });
+  },{rootMargin:'-10% 0px -80% 0px'});
+  document.querySelectorAll('section[id]').forEach(function(s){obs.observe(s);});
+</script>
+</body>
+</html>

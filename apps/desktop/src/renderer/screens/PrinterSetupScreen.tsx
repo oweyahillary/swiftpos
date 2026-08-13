@@ -1,8 +1,12 @@
 /**
  * PrinterSetupScreen — one screen for the whole print setup.
  *
- * Replaces PrinterSettingsModal, PaperWidthControl, PrintersTab and PrintersPage.
- * Setup was spread across three screens in two apps, which is part of why
+ * Supersedes PrintersTab (the old manager Printers tab, now unrouted). It does
+ * NOT replace PrinterSettingsModal or PaperWidthControl: both are still live on
+ * the POS screen (POSPage.tsx imports PrinterSettingsModal, which renders
+ * PaperWidthControl). An earlier docstring claimed to replace all four, which is
+ * how a still-live component gets deleted by the next reader (register A10).
+ * Setup used to be spread across screens in two apps, which is part of why
  * getting a receipt right meant printing a test, walking to the machine,
  * reading it, and coming back to guess again.
  *
@@ -65,6 +69,18 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
   const [localPrinters, setLocalPrinters] = useState<{ name: string; displayName?: string; isDefault?: boolean }[]>([]);
   /** Whether this terminal prints through ESC/POS at all. Off by default. */
   const [thermalOn, setThermalOn] = useState(false);
+
+  // A43: the kitchen-exclusion list the PRINTER applies — cloud-owned and
+  // read-only on the till. Ported here from the now-unrouted PrintersTab, whose
+  // read-only exclusions box was the only thing living on that dead screen.
+  const [liveExclusions, setLiveExclusions] = useState<string>('');
+  useEffect(() => {
+    let alive = true;
+    window.swiftpos.escpos.kitchenExclusions()
+      .then(r => { if (alive) setLiveExclusions((r?.terms ?? []).join('\n')); })
+      .catch(() => { /* the built-in rule still applies */ });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -377,6 +393,27 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
                               border border-gray-800 rounded-xl p-4 inline-block">
                 {preview}
               </pre>
+
+              {/* A43: ported from PrintersTab (unrouted). Read-only — the list is
+                  owned by the cloud and edited on the web dashboard; it reaches
+                  this till on the next sync. */}
+              <div className="mt-6 max-w-md">
+                <h2 className="text-sm text-gray-400 mb-2">
+                  Kitchen exclusions — never printed on the kitchen ticket
+                </h2>
+                <textarea
+                  value={liveExclusions}
+                  readOnly
+                  placeholder="(none — the built-in rule still applies)"
+                  spellCheck={false}
+                  className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2
+                             text-gray-300 text-sm font-mono h-20 resize-y cursor-default"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Applies on top of the built-in rule, for every till at this branch.
+                  Edited on the web dashboard; it reaches this till on the next sync.
+                </p>
+              </div>
             </section>
           </>
         ) : (

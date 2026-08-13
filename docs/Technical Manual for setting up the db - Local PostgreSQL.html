@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technical Manual — Setting up the SwiftPOS DB (Local PostgreSQL)</title>
+<style>
+  :root{
+    --ink:#14181d; --muted:#586573; --faint:#8a95a1;
+    --rule:#e3e7ec; --rail:#f6f8fa; --card:#ffffff;
+    --accent:#24506f; --accent-bright:#336791; --accent-wash:#eef4f9; --accent-line:#bcd4e6;
+    --danger:#b42318; --danger-wash:#fef3f2; --danger-line:#fecdca;
+    --warn:#b54708; --warn-wash:#fffaeb; --warn-line:#fedf89;
+    --code-bg:#0f1620; --code-ink:#e6edf3; --code-faint:#8b98a5; --code-accent:#7fb2d8;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--card);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.9em}
+
+  .wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:0;max-width:1160px;margin:0 auto}
+  .rail{border-right:1px solid var(--rule);padding:34px 22px;position:sticky;top:0;height:100vh;overflow:auto}
+  .rail .brand{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  .rail .brandsub{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px;letter-spacing:.04em}
+  nav{margin-top:26px}
+  nav a{display:block;color:var(--muted);font-size:13.5px;padding:5px 0 5px 12px;border-left:2px solid transparent;line-height:1.35}
+  nav a:hover{color:var(--ink);text-decoration:none}
+  nav a.active{color:var(--accent);border-left-color:var(--accent-bright);font-weight:600}
+  nav .grp{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin:18px 0 6px;padding-left:12px}
+
+  main{padding:56px 60px 120px;min-width:0}
+  .max{max-width:800px}
+
+  .badge{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;
+    letter-spacing:.06em;color:var(--accent);background:var(--accent-wash);border:1px solid var(--accent-line);
+    padding:5px 11px;border-radius:999px;font-weight:600}
+  .badge .dot{width:8px;height:8px;border-radius:2px;background:var(--accent-bright);transform:rotate(45deg)}
+  h1{font-size:38px;line-height:1.1;letter-spacing:-.02em;margin:20px 0 8px;font-weight:800}
+  .lede{font-size:18px;color:var(--muted);margin:0 0 26px;max-width:64ch}
+  .meta{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .meta div{flex:1 1 150px;padding:12px 16px;border-right:1px solid var(--rule)}
+  .meta div:last-child{border-right:0}
+  .meta .k{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+  .meta .v{font-size:14px;font-weight:600;margin-top:3px}
+
+  section{padding-top:44px;margin-top:8px;scroll-margin-top:20px}
+  h2{font-size:13px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);
+    margin:0 0 4px;font-weight:700;display:flex;align-items:baseline;gap:10px}
+  h2 .n{color:var(--faint)}
+  h2 + .h{font-size:26px;letter-spacing:-.01em;font-weight:800;margin:0 0 14px}
+  h3{font-size:17px;margin:28px 0 8px;font-weight:700}
+  p{margin:12px 0}
+  .max ul,.max ol{margin:12px 0;padding-left:22px}
+  li{margin:6px 0}
+
+  .code{position:relative;background:var(--code-bg);border-radius:10px;margin:16px 0;overflow:hidden;border:1px solid #1e2833}
+  .code .bar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e2833}
+  .code .bar .lbl{font-family:var(--mono);font-size:11px;color:var(--code-faint);letter-spacing:.06em}
+  .code pre{margin:0;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-ink)}
+  .code pre .c{color:var(--code-faint)}
+  .code pre .p{color:var(--code-accent)}
+  .copy{font-family:var(--mono);font-size:11px;color:var(--code-faint);background:transparent;border:1px solid #2a3541;
+    border-radius:6px;padding:3px 9px;cursor:pointer}
+  .copy:hover{color:var(--code-ink);border-color:#3a4756}
+  .copy:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+  kbd{font-family:var(--mono);font-size:.85em;background:var(--rail);border:1px solid var(--rule);border-bottom-width:2px;border-radius:5px;padding:1px 6px}
+
+  .step{display:grid;grid-template-columns:44px 1fr;gap:18px;padding:22px 0;border-top:1px solid var(--rule)}
+  .step .num{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent);line-height:1}
+  .step .num small{display:block;font-size:10px;color:var(--faint);letter-spacing:.1em;margin-top:6px}
+  .step h3{margin-top:0}
+
+  .call{border:1px solid var(--rule);border-left-width:3px;border-radius:8px;padding:14px 16px;margin:18px 0;background:var(--rail)}
+  .call .lbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:4px;display:block}
+  .call p{margin:4px 0}
+  .call.danger{border-color:var(--danger-line);border-left-color:var(--danger);background:var(--danger-wash)}
+  .call.danger .lbl{color:var(--danger)}
+  .call.warn{border-color:var(--warn-line);border-left-color:var(--warn);background:var(--warn-wash)}
+  .call.warn .lbl{color:var(--warn)}
+  .call.note{border-color:var(--accent-line);border-left-color:var(--accent);background:var(--accent-wash)}
+  .call.note .lbl{color:var(--accent)}
+
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:700}
+  td code{background:var(--rail);padding:1px 5px;border-radius:4px}
+  .tsq{color:var(--danger);font-weight:600}
+
+  hr{border:0;border-top:1px solid var(--rule);margin:8px 0}
+  .foot{margin-top:60px;padding-top:20px;border-top:1px solid var(--rule);color:var(--faint);font-size:13px;font-family:var(--mono)}
+
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr}
+    .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule)}
+    nav{columns:2;margin-top:16px}
+    main{padding:34px 22px 80px}
+    h1{font-size:30px}
+  }
+  @media print{
+    .rail{display:none}.wrap{display:block;max-width:none}
+    main{padding:0}
+    .code{background:#f4f6f8;border-color:#d8dee4}
+    .code pre{color:#14181d}.code .bar{border-color:#d8dee4}.code .bar .lbl{color:#586573}
+    .code pre .c{color:#6a7885}.copy{display:none}
+    a{color:var(--ink)}
+    section{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside class="rail">
+    <div class="brand">SwiftPOS · DB</div>
+    <div class="brandsub">target: local postgres</div>
+    <nav id="toc">
+      <div class="grp">Understand</div>
+      <a href="#overview">The setup model</a>
+      <a href="#scope">Scope on bare Postgres</a>
+      <a href="#traps">Traps &amp; gaps</a>
+      <div class="grp">Prepare</div>
+      <a href="#prereq">Prerequisites</a>
+      <a href="#conn">Connection string</a>
+      <a href="#files">Files you need</a>
+      <div class="grp">Run</div>
+      <a href="#bootstrap">1 · Bootstrap</a>
+      <a href="#dryrun">2 · Dry run</a>
+      <a href="#apply">3 · Apply</a>
+      <a href="#verify">4 · Verify</a>
+      <a href="#seed">5 · Seed admin</a>
+      <div class="grp">Operate</div>
+      <a href="#prod">Production cautions</a>
+      <a href="#trouble">Troubleshooting</a>
+      <a href="#appendix">Appendix</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="max">
+      <span class="badge"><span class="dot"></span>SELF-HOSTED / POSTGRESQL 16</span>
+      <h1>Setting up the SwiftPOS database</h1>
+      <p class="lede">Standing up a complete SwiftPOS schema on a bare or self‑hosted PostgreSQL 16 instance — including the bootstrap the Supabase dump silently depends on — and confirming it matches the codebase.</p>
+      <div class="meta">
+        <div><div class="k">Audience</div><div class="v">Backend / DevOps</div></div>
+        <div><div class="k">Time</div><div class="v">15–25 min</div></div>
+        <div><div class="k">Client</div><div class="v">psql 16.x · superuser</div></div>
+        <div><div class="k">Result</div><div class="v">~98 tables, RLS on all</div></div>
+      </div>
+      <div class="call warn">
+        <span class="lbl">Read the scope section first</span>
+        <p>The baseline is a Supabase dump. On bare Postgres it needs a bootstrap prelude, and some Supabase <em>services</em> (Auth, the auto REST API, Realtime) are simply not present. <a href="#scope">What that means for you →</a></p>
+      </div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <section id="overview" class="max">
+      <h2><span class="n">01</span> Understand</h2>
+      <div class="h">The setup model</div>
+      <p>The schema is <strong>not</strong> reproducible by replaying the numbered migrations in order. It assembles in layers, and — apart from the first — the runner applies them for you:</p>
+      <ol>
+        <li><strong>Bootstrap</strong> (local only) — <code>00_prereqs_local.sql</code> creates the roles, schemas, extensions, and <code>auth</code> shim the dump assumes already exist. <span style="color:var(--muted)">You run this once, first.</span></li>
+        <li><strong>Baseline</strong> — <code>00_baseline.sql</code>, a full <code>pg_dump</code> (85 tables, RLS on every one, 94 policies) from 2026‑07‑28. The starting point; early numbered files only <code>ALTER</code> what it creates.</li>
+        <li><strong>Tracking</strong> — <code>01_schema_migrations.sql</code> creates <code>public.schema_migrations</code> and backfills the state already in the baseline (01–18, 21–38).</li>
+        <li><strong>Forward migrations</strong> — everything outstanding: <code>19</code>, <code>20</code>, and <code>39</code> onward, in order, recorded as they go.</li>
+      </ol>
+    </section>
+
+    <!-- SCOPE -->
+    <section id="scope" class="max">
+      <h2><span class="n">02</span> Understand</h2>
+      <div class="h">What bare Postgres does &amp; doesn’t give you</div>
+      <p>The baseline references Supabase primitives it never creates: <code>auth.uid()</code> (used by 150 RLS policies), foreign keys into <code>auth.users</code>, the roles <code>anon</code> / <code>authenticated</code> / <code>service_role</code>, and <code>extensions.uuid_generate_v4()</code>. The bootstrap in step 1 provides minimal stand‑ins so the schema loads.</p>
+      <div class="call danger">
+        <span class="lbl">Services are not the same as schema</span>
+        <p>This procedure provisions the <strong>database</strong>. Supabase <em>Auth</em> (the owner dashboard login), the <em>PostgREST</em> auto‑API, and <em>Realtime</em> are separate services a bare Postgres does not run. Use this path only if either:</p>
+        <p>&nbsp;&nbsp;<strong>(a)</strong> you run <strong>self‑hosted Supabase</strong> — then connect to its bundled Postgres and follow the <em>Supabase</em> manual, not this one; or</p>
+        <p>&nbsp;&nbsp;<strong>(b)</strong> your API server connects with a <strong>privileged / BYPASSRLS</strong> role and you do not depend on Supabase Auth for sign‑in.</p>
+      </div>
+      <div class="call note">
+        <span class="lbl">The auth shim is a stub</span>
+        <p><code>auth.uid()</code> returns a per‑session GUC (or NULL), and <code>auth.users</code> is an empty table that only satisfies the foreign keys. If you later attach real authentication, replace the stub with the genuine <code>auth</code> schema before going live.</p>
+      </div>
+    </section>
+
+    <!-- TRAPS -->
+    <section id="traps" class="max">
+      <h2><span class="n">03</span> Understand</h2>
+      <div class="h">Traps &amp; gaps a naïve run would hit</div>
+      <ul>
+        <li><strong>19 and 20 are not in the baseline</strong> — they run after it, and are the only sub‑38 files that still execute.</li>
+        <li><strong>33–38 are already inside the baseline</strong> — the files exist but must not re‑run; tracking skips them.</li>
+        <li><strong>31 and 32 are recorded <code>SKIPPED</code></strong> — numbers never used.</li>
+        <li><strong>62, 64, 65, 66, 68, 72 have no files</strong> — expected gaps.</li>
+        <li><strong>68 and 72 were applied in the historical production DB but are absent from the repo</strong> — a fresh build cannot reproduce them. See <a href="#prod">Production cautions</a>.</li>
+        <li><strong>Self‑recording is inconsistent</strong> — the runner stamps every file uniformly so tracking is complete.</li>
+      </ul>
+    </section>
+
+    <!-- PREREQ -->
+    <section id="prereq" class="max">
+      <h2><span class="n">04</span> Prepare</h2>
+      <div class="h">Prerequisites</div>
+      <ul>
+        <li><strong>PostgreSQL 16</strong> server you can reach, and a <strong>superuser</strong> login — <code>CREATE ROLE</code> and <code>CREATE EXTENSION</code> require it.</li>
+        <li><strong><code>psql</code> 16.x</strong> — the baseline uses the <code>\restrict</code> meta‑command.</li>
+        <li><strong>Node.js 18+</strong> — for the verifier.</li>
+        <li>The <code>uuid-ossp</code> and <code>pgcrypto</code> contrib extensions available to the server (standard in most distributions / <code>postgresql-contrib</code>).</li>
+      </ul>
+    </section>
+
+    <!-- CONN -->
+    <section id="conn" class="max">
+      <h2><span class="n">05</span> Prepare</h2>
+      <div class="h">Connection string</div>
+      <p>Connect as the superuser to the target database. Create the database first if it doesn’t exist.</p>
+      <div class="code">
+        <div class="bar"><span class="lbl">create db + export URL</span><button class="copy">Copy</button></div>
+        <pre><span class="p">$</span> createdb swiftpos            <span class="c"># or: CREATE DATABASE swiftpos;</span>
+export DATABASE_URL='postgresql://postgres:PASSWORD@localhost:5432/swiftpos'</pre>
+      </div>
+    </section>
+
+    <!-- FILES -->
+    <section id="files" class="max">
+      <h2><span class="n">06</span> Prepare</h2>
+      <div class="h">Files you need</div>
+      <div class="code">
+        <div class="bar"><span class="lbl">layout</span><button class="copy">Copy</button></div>
+        <pre>swiftpos/
+├─ migrations/               <span class="c"># 00_baseline.sql, 01_schema_migrations.sql, all numbered *.sql</span>
+└─ scripts/
+   ├─ 00_prereqs_local.sql   <span class="c"># LOCAL ONLY — roles, extensions, auth shim</span>
+   ├─ setup-clean-db.sh      <span class="c"># the runner</span>
+   ├─ verify-db-schema.mjs   <span class="c"># DB vs schema-index.json</span>
+   ├─ build-schema-index.sql <span class="c"># used by the verifier</span>
+   ├─ schema-index.json      <span class="c"># the expected schema</span>
+   └─ seed-admin.sql         <span class="c"># admin seed</span></pre>
+      </div>
+    </section>
+
+    <!-- STEP 1 BOOTSTRAP -->
+    <section id="bootstrap" class="max">
+      <h2><span class="n">07</span> Run</h2>
+      <div class="h">Provision the database</div>
+      <div class="step">
+        <div class="num">1<small>BOOTSTRAP</small></div>
+        <div>
+          <h3>Run the prereqs prelude (as superuser)</h3>
+          <p>This is the step that makes the Supabase dump loadable on bare Postgres. It creates the <code>anon</code>/<code>authenticated</code>/<code>service_role</code> roles, the <code>extensions</code> schema with <code>uuid-ossp</code> and <code>pgcrypto</code>, and the <code>auth</code> schema with a <code>users</code> stub and an <code>auth.uid()</code> shim.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> psql -d "$DATABASE_URL" -f scripts/00_prereqs_local.sql</pre>
+          </div>
+          <p>Run it once per database, before the runner. It is idempotent — safe to re‑run.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2 DRY -->
+    <section id="dryrun" class="max">
+      <div class="step">
+        <div class="num">2<small>DRY RUN</small></div>
+        <div>
+          <h3>Preview the plan</h3>
+          <p>Applies nothing; confirms the connection and lists what would run. The <em>target</em> line should show your database and <code>role postgres</code>.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> ./scripts/setup-clean-db.sh --dry-run</pre>
+          </div>
+          <p style="color:var(--muted);font-size:14px">The dry run lists ~70 files because on an empty DB nothing is recorded yet; the real run skips the ~34 already folded into the baseline.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3 APPLY -->
+    <section id="apply" class="max">
+      <div class="step">
+        <div class="num">3<small>APPLY</small></div>
+        <div>
+          <h3>Build the database</h3>
+          <p>On a fresh database the default (non‑reset) mode is correct: <code>public</code> already exists empty, so the runner strips the one redundant <code>CREATE SCHEMA public</code> and applies the rest.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> ./scripts/setup-clean-db.sh</pre>
+          </div>
+          <p>Expect a stream of <code>→ migration</code> lines, then <code>36 applied, 34 already-present</code> and a verification block. <code>NOTICE: … already exists / does not exist, skipping</code> lines are idempotency guards, not errors. The runner is resumable — re‑run if it stops partway.</p>
+          <div class="call danger">
+            <span class="lbl">--reset is destructive</span>
+            <p><code>--reset</code> runs <code>DROP SCHEMA public CASCADE</code> before rebuilding, then re‑grants the app roles. Use it only on a disposable database, never one holding data. It prompts for the database name to confirm.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 4 VERIFY -->
+    <section id="verify" class="max">
+      <div class="step">
+        <div class="num">4<small>VERIFY</small></div>
+        <div>
+          <h3>Confirm it matches the codebase</h3>
+          <p>Diffs the live database against <code>scripts/schema-index.json</code> and lists any table with RLS disabled.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> node scripts/verify-db-schema.mjs
+<span class="c"># or, to also fail on extras / RLS gaps:</span>
+<span class="p">$</span> node scripts/verify-db-schema.mjs --strict</pre>
+          </div>
+          <p><strong>PASS</strong> means every expected table and column is present. <em>Missing</em> findings are critical; <em>extra</em> findings mean the DB is ahead of the index and are normally fine.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 5 SEED -->
+    <section id="seed" class="max">
+      <div class="step">
+        <div class="num">5<small>SEED</small></div>
+        <div>
+          <h3>Seed the admin password</h3>
+          <p>Creates/resets the admin‑portal <code>super_admin</code>. Choose a strong password (10+ chars). The seed uses <code>pgcrypto</code> (installed by the bootstrap) to write a bcrypt‑cost‑12 hash the server accepts, and it avoids the retired public tutorial hash so migration 48’s constraint is satisfied.</p>
+          <div class="code">
+            <div class="bar"><span class="lbl">bash</span><button class="copy">Copy</button></div>
+            <pre><span class="p">$</span> psql -d "$DATABASE_URL" \
+     -v email="admin@swiftpos.co.ke" \
+     -v pw="your-strong-password" \
+     -f scripts/seed-admin.sql</pre>
+          </div>
+          <div class="call note">
+            <span class="lbl">Secret hygiene</span>
+            <p>Store the admin password in your secrets manager. The value is visible in the process list while <code>psql</code> runs; on shared hosts prefer a wrapper that reads it from the environment.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROD -->
+    <section id="prod" class="max">
+      <h2><span class="n">08</span> Operate</h2>
+      <div class="h">Production cautions</div>
+      <div class="call danger">
+        <span class="lbl">Replace the auth stub before real sign-in</span>
+        <p>The bootstrap’s <code>auth.users</code> / <code>auth.uid()</code> are placeholders. If production will authenticate real users, wire in genuine authentication (self‑hosted Supabase/GoTrue or your own) and ensure <code>auth.uid()</code> returns the real subject before exposing any RLS‑gated surface.</p>
+      </div>
+      <div class="call warn">
+        <span class="lbl">The 68 / 72 gap</span>
+        <p>Migrations 68 and 72 are recorded as applied in the historical production database but are absent from the repo. A fresh build will not contain their changes. If this new DB must match the old one, obtain those migrations from the current production owner and apply them before cutover; otherwise document the difference.</p>
+      </div>
+      <ul>
+        <li>Give the API server a role that mirrors <code>service_role</code> (BYPASSRLS) — or connect it as the owner — so RLS behaves as designed. Do not hand out that role to clients.</li>
+        <li>Take a base backup and set up WAL archiving / point‑in‑time recovery before go‑live.</li>
+        <li>Run the <a href="#verify">verifier</a> as the final gate before pointing the app at the database.</li>
+      </ul>
+    </section>
+
+    <!-- TROUBLE -->
+    <section id="trouble" class="max">
+      <h2><span class="n">09</span> Operate</h2>
+      <div class="h">Troubleshooting</div>
+      <table>
+        <thead><tr><th>Symptom</th><th>Cause &amp; fix</th></tr></thead>
+        <tbody>
+          <tr><td class="tsq">function <code>extensions.uuid_generate_v4()</code> does not exist</td><td>Bootstrap not run, or <code>uuid-ossp</code> not installed into the <code>extensions</code> schema. Run <code>00_prereqs_local.sql</code> as superuser.</td></tr>
+          <tr><td class="tsq">schema <code>auth</code> does not exist / relation <code>auth.users</code> does not exist</td><td>Bootstrap not run. It creates the <code>auth</code> schema and the <code>users</code> stub.</td></tr>
+          <tr><td class="tsq">role <code>authenticated</code> / <code>service_role</code> does not exist</td><td>Bootstrap not run. It creates the three app roles.</td></tr>
+          <tr><td class="tsq">permission denied to create extension / role</td><td>You’re not a superuser. Reconnect as one to run the bootstrap.</td></tr>
+          <tr><td class="tsq">\restrict: invalid command</td><td>Your <code>psql</code> is older than 16. Upgrade the client to 16.x.</td></tr>
+          <tr><td class="tsq">CREATE SCHEMA public — already exists</td><td>Only appears if the redundant line isn’t stripped. Use the current runner (default mode strips it) or <code>--reset</code> on a disposable DB.</td></tr>
+          <tr><td>NOTICE: … already exists / does not exist, skipping</td><td>Not an error — idempotency guards.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- APPENDIX -->
+    <section id="appendix" class="max">
+      <h2><span class="n">10</span> Reference</h2>
+      <div class="h">Appendix — what runs, in order</div>
+      <p><strong>Bootstrap (once):</strong> <code>00_prereqs_local.sql</code>.</p>
+      <p><strong>Applied on a clean DB:</strong> <code>00_baseline</code> → <code>01_schema_migrations</code> → <code>19, 20</code> → <code>39–61, 63, 67, 69–71, 73–78</code>.</p>
+      <p><strong>Auto‑skipped</strong> (already in the baseline): <code>01–18, 21–30, 33–38</code>.</p>
+      <p><strong>Recorded but never files:</strong> <code>31_SKIPPED, 32_SKIPPED</code>. <strong>No file, no run:</strong> <code>62, 64, 65, 66, 68, 72</code>.</p>
+      <div class="foot">SwiftPOS · Database setup manual · Local / self-hosted PostgreSQL 16 · Keep with the runbook.</div>
+    </section>
+  </main>
+</div>
+
+<script>
+  document.querySelectorAll('.code').forEach(function(block){
+    var btn=block.querySelector('.copy'), pre=block.querySelector('pre');
+    if(!btn||!pre)return;
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        var old=btn.textContent;btn.textContent='Copied';
+        setTimeout(function(){btn.textContent=old;},1200);
+      }).catch(function(){btn.textContent='Ctrl+C';});
+    });
+  });
+  var links=[].slice.call(document.querySelectorAll('#toc a'));
+  var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(a){a.classList.remove('active');});
+        var a=map[e.target.id];if(a)a.classList.add('active');
+      }
+    });
+  },{rootMargin:'-10% 0px -80% 0px'});
+  document.querySelectorAll('section[id]').forEach(function(s){obs.observe(s);});
+</script>
+</body>
+</html>

@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-11 — A45 closed cloud-side (one grant from done). A59 opened: the till gates on roles, the cloud on keys. A46 partly closed. A57 closed, A58 shipped.** |
+| Last updated | **2026-08-12 — A65 opened+closed (report scheduler: toggle never persisted, sender ignored it). A54 stays open (transport, blocked on owner). Desktop printer-screen cluster closed: A10 docstring, A11 comment, A43 exclusions ported to the routed screen. D15 dead sync_queue dropped (migration 80).** |
 | Tree | `dev` @ `0215475` (was recorded as `84400d6`; the deploy log and `git log` both read `0215475`), desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 1 P0 · 12 P1 · 6 P2 · 3 P3 — D: 1 P0 · 2 P1 · 1 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A54 A59 A18 A19 A20 A43 A50 A49 A24 A3 A4 A12 · A-P2: A22 A23 A37 A51 A53 A8 · A-P3: A10 A11 A13 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 D15 |
+| Open | **A: 1 P0 · 11 P1 · 7 P2 · 2 P3 — D: 1 P0 · 2 P1 · 1 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A59 A18 A19 A20 A50 A49 A24 A3 A4 A12 · A-P2: A22 A23 A37 A51 A53 A8 A63 · A-P3: A13 A64 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
@@ -198,6 +198,13 @@ logs and moves on. Nine businesses went undelivered across **three distinct root
 causes** without the product ever saying so. A boot check is not a delivery
 check. Recommend a `mail_deliveries` outcome row or a per-run summary line — a
 decision, not a chore, so it is recorded rather than slipped in.
+
+**2026-08-12 — the SCHEDULING layer of this feature was fixed separately; see
+A65.** The enable-toggle never persisted (missing read route) and the sender
+ignored the schedule entirely; both are fixed and verified. That is orthogonal to
+this entry. A54 is the TRANSPORT — mail that never leaves the instance because
+the SMTP port is filtered — and it STAYS OPEN, blocked on the three owner checks
+above. A correct scheduler still sends into a filtered port.
 
 ### A56 · P1 · CLOSED 2026-08-11 · The permission comparator exists — `check-permission-parity`
 The gate A45 asks for and A46 is blocked on. **Built before the split, not after**,
@@ -565,6 +572,110 @@ read from `schema-index.json`, not guessed by regex, because a bare word match
 reports `OF`, `ON` and `TO` as tables and a gate that cries wolf gets ignored.
 Mutation-checked by reintroducing the exact production bug: it names
 `role_permissions` at line 46.
+
+### A63 · P2 · OPEN · The onboarding permission seeder never learned A61's lesson
+`apps/server/src/lib/defaultRolePermissions.ts` decides a new role's grants by
+**exact, un-normalised name match** — `nm === 'manager'`, `nm === 'branch_manager'`
+(lower-cased only). The grant migrations 24/49/75 shipped this exact bug and
+migration 76 fixed it by normalising `lower(replace(name,' ','_'))` (register
+A61). The seeder is the same shape one layer up, un-fixed.
+
+**Not triggered today, which is why it is P2 not P1.** Both onboarding paths
+create simple names the exact match handles — self-service
+(`onboarding.ts:119`) seeds `Admin / Manager / Cashier`, the agent path
+(`admin.ts:406`) seeds `owner / manager / cashier`. Every one matches. The
+`supervisor` / `branch_manager` branches in the seeder are dead for onboarding;
+they exist only for a caller that passes those names.
+
+**The latent failure.** If a default role name ever gains a space
+(`Branch Manager`), or any caller passes such a name to `seedDefaultRolePermissions`,
+that role falls through every tier to `false` and is created with **zero**
+permissions — not a missing tab, an empty rights set and no staff access — with
+no error, exactly A61's signature. Fix once, the same way 76 did: normalise the
+name before the tier test (`lower(replace(role.name,' ','_'))`). Cheap now,
+because onboarding's names are simple; a field incident the day someone renames a
+default.
+
+### A64 · P3 · OPEN · Two manager deny-lists that should agree, don't
+The default manager permission set is defined in **two** places with **different**
+deny-lists:
+
+- **Migration 59** (backfill for roles that existed then) grants managers
+  *everything except* `settings.manage` — a one-key deny.
+- **`defaultRolePermissions.ts`** (the seeder for roles created at onboarding)
+  denies four: `settings.manage`, `inventory.adjust`, `ingredients.manage`,
+  `reports.financial`, with a comment explaining each as owner-only (the last two
+  are a theft vector and audit H6's financial reports).
+
+The **code divergence is verified**; its **runtime effect is not**, and the
+register does not assert what it has not run (A49). Whether 59 actually granted
+the three extra keys to managers depends on whether each was registered when 59
+ran, and `check-permission-parity`'s grant parser is blind to 59's
+`CROSS JOIN … WHERE key <> …` form, so static analysis cannot answer it. Confirm
+against a DB where 59 ran (dev has tenants; prod has none, so prod is unaffected
+— its managers come only from the seeder):
+
+```sql
+SELECT r.name,
+       bool_or(p.key='inventory.adjust')  AS adjust,
+       bool_or(p.key='ingredients.manage') AS ingredients,
+       bool_or(p.key='reports.financial')  AS fin_reports
+FROM   public.roles r
+LEFT JOIN public.role_permissions rp ON rp.role_id=r.id
+LEFT JOIN public.permissions p ON p.id=rp.permission_id
+WHERE  lower(r.name) IN ('manager','supervisor','branch_manager')
+GROUP  BY r.name;
+```
+
+Any `true` means a backfilled manager holds a key the current policy makes
+owner-only — an over-grant on existing tenants, not a break. The fix is to make
+the two deny-lists a single shared constant so they cannot drift again, then
+decide which policy is correct and reconcile the outliers.
+
+### A65 · P1 · CLOSED 08-12 · The daily-report scheduler: the toggle never persisted, and the sender ignored it
+Same feature as A54 (the daily summary email), a different layer. A54 is
+TRANSPORT — mail that never leaves the instance. This is SCHEDULING and CONFIG —
+what the owner sets and whether the job honours it. Reported by the owner: *"save
+send reports shows saved but reverts to off."* Two bugs.
+
+**1. The read route did not exist.** The dashboard reads its toggle state from
+`GET /api/business/settings/report-schedule`. There was no such route. The 404
+was swallowed by a `.catch(() => {})`, so the control fell back to *off* on every
+load — the value HAD saved (POST `/settings`, key `report_schedule`), it was
+simply never read back. Fixed: added `GET /settings/report-schedule`
+(`business.ts`) — reads the `business_settings` key, tolerant parse, defaults to
+`{enabled:false, send_time:'21:00', recipients:[]}`.
+
+**2. The sender ignored the config entirely.** `dailySummary.ts` ran one global
+cron, emailed only the owner, and never read `enabled`, `recipients` or
+`send_time`. Rewritten to decide per business: send only if `enabled`, at that
+business's own `send_time` (EAT), **once per EAT day** (dedup via a
+`report_schedule_last_sent` stamp written only after a successful send), to
+**owner + active branch managers** (users joined to `roles`, name normalised to
+`branch_manager`, with an email on file) **+ the schedule's added addresses**,
+deduped. The cron now runs every 15 min so per-business times can be honoured.
+
+**Owner decisions, 2026-08-12:** `enabled` is authoritative (off stops the mail);
+recipients are owner + branch managers + the added list; `send_time` is
+per-business.
+
+**Verified on the bench:** server `tsc` green; the send decision was extracted to
+`reportScheduleDecision.ts` (pure, no imports) and the REAL compiled function run
+through 16 cases — disabled/null/undefined, dedup (sent-today vs sent-yesterday),
+the time boundary (before/at/after), minute precision, non-padded and default
+times, and dedup-beats-time. What the bench CANNOT prove and a live check must:
+the cron firing, the branch-manager query against real rows, and actual delivery.
+
+**Two behaviour changes, flagged deliberately:** (a) because the read was broken
+no business has `enabled=true` persisted, so after deploy only businesses that
+opt in are emailed — correct per the toggle, but the current always-on owner
+email stops until each opts in; (b) if the prod env `DAILY_SUMMARY_CRON` is set
+to a once-a-day value it DEFEATS per-business `send_time` — unset it.
+
+**Not closed by this:** delivery. A working scheduler still sends into a filtered
+port — that is A54, still blocked on the owner. The live report-schedule check
+(enable for a test business, `send_time` a few minutes out) is also the cleanest
+end-to-end exercise of A54's transport.
 
 ### A17 · P0 · OPEN · A peer till cannot sell "offline forever" — it locks out on day 15
 **Stated design (owner, 08-09):** the main/server till is registered online once;
@@ -1487,7 +1598,16 @@ The 0.5.27 backfill is confirmed working on real hardware: marker row
 did **not** override the owner's later deliberate untick — the property verified
 against SQLite before shipping.
 
-### A43 · P1 · OPEN · Exclusions were built on a screen that is not rendered
+### A43 · P1 · CLOSED 08-12 · Exclusions were built on a screen that is not rendered
+**Closed 08-12.** The read-only kitchen-exclusions box (plus the
+`escpos:kitchenExclusions` read) was ported from the unrouted `PrintersTab` into
+`PrinterSetupScreen`, which IS routed — `ManagerPage`'s `case 'printers'` renders
+it. The root cause (orphaned on a screen nothing mounts) is therefore resolved:
+the box now lives where the code path reaches it. The list is cloud-owned and
+read-only on the till (synced via `syncEngine.ts:645`, read via the live IPC), so
+there is no save path to break. Renderer `tsc` green. **Smoke-test on Windows to
+confirm the box renders and shows the synced terms** — the residual is visual
+confirmation, not wiring (unlike the original, this screen mounts).
 `PrintersTab.tsx` was superseded by `screens/PrinterSetupScreen.tsx`.
 `ManagerPage.tsx:1116` says so in a comment: *"PrinterSetupScreen supersedes
 PrintersTab… PrintersTab.tsx remains in the tree"* until thermal is proven.
@@ -2301,7 +2421,11 @@ one is how a closed item and an open one become indistinguishable in a changelog
 This copy retains the number because renumbering would break citations; the audit
 entry is the one meant by "A9" elsewhere.
 
-### A10 · P3 · OPEN · `PrinterSetupScreen` docstring claims a supersession that has only PARTLY happened
+### A10 · P3 · CLOSED 08-12 · `PrinterSetupScreen` docstring claims a supersession that has only PARTLY happened
+**Closed 08-12.** Docstring corrected to reality: it supersedes only `PrintersTab`
+(now unrouted); it does NOT replace `PrinterSettingsModal` or `PaperWidthControl`,
+both still live on the POS screen (`POSPage.tsx:21` imports the modal, which
+renders the control at `:249`) — re-verified 08-12. Renderer `tsc` green.
 **Confirmed still open 08-10, after first being wrongly dismissed.** The docstring
 (`PrinterSetupScreen.tsx:4`) claims it *"Replaces PrinterSettingsModal,
 PaperWidthControl, PrintersTab and PrintersPage."* Checked one by one:
@@ -2316,8 +2440,13 @@ PaperWidthControl, PrintersTab and PrintersPage."* Checked one by one:
 So one of four. A docstring that overstates what it replaced is how the next
 reader deletes something still on the sell path.
 
-### A11 · P3 · OPEN · `ManagerPage.tsx:1061-65` comment contradicts itself
-Confirmed present 08-10.
+### A11 · P3 · CLOSED 08-12 · `ManagerPage.tsx` comment contradicts itself
+Confirmed present 08-10. The comment on the `printers` nav case said `PrintersTab`
+*"stays reachable"* AND *"remains … unrouted"* — an unrouted tab is not reachable;
+both cannot hold. **Closed 08-12:** rewritten to state plainly that `PrintersTab`
+is unrouted and the Printers tab renders `PrinterSetupScreen`. (Line ref drifted
+from the original 1061-65 after the A59 edits; the comment is now at the `case
+'printers'` render.) Renderer `tsc` green.
 
 ### A12 · **P1** · OPEN · `ingredients.current_stock` has had no writer since migration 23
 **Raised from P3/INVESTIGATE to P1 on 08-10 — it is no longer a question. It is
@@ -2483,7 +2612,15 @@ unknown devices, so migration 52's binding is inert. Consequence: no remote
 visibility of `app_version` or `schema_version` — every diagnosis needs someone
 physically at the machine.
 
-### D15 · P3 · Two different tables named `sync_queue`
+### D15 · P3 · CLOSED 08-12 · Two different tables named `sync_queue`
+**Closed 08-12** by migration `80_drop_dead_sync_queue.sql` —
+`DROP TABLE IF EXISTS public.sync_queue CASCADE`. Re-confirmed dead 08-12 (zero
+`sync_queue` references in apps/server or apps/dashboard; nothing FK-references
+it). Removed from `schema-index.json` in the same change so `verify-db-schema`
+does not then report it missing. Migration test `test-migration-80.mjs` (PGlite,
+5 assertions: drops when present, records itself, idempotent when absent) passes;
+full harness green. The live SQLite queue of the same name on the till is
+untouched.
 `public.sync_queue` in Postgres (`retry_count`, `table_name`) is **dead** —
 no hit for `from('sync_queue')` anywhere in `apps/server` or `apps/dashboard`.
 The live one is the till's SQLite table (`attempts`, `last_error`). Same name,

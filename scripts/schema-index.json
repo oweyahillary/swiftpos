@@ -1033,18 +1033,6 @@
     "status": "\"character varying\" NOT NULL",
     "notes": "\"text\""
   },
-  "sync_queue": {
-    "id": "\"uuid\" NOT NULL",
-    "branch_id": "\"uuid\" NOT NULL",
-    "table_name": "\"character varying\" NOT NULL",
-    "record_id": "\"uuid\" NOT NULL",
-    "operation": "\"character varying\" NOT NULL",
-    "payload": "\"jsonb\" NOT NULL",
-    "status": "\"character varying\" NOT NULL",
-    "retry_count": "\"integer\" NOT NULL",
-    "last_attempted_at": "\"timestamp with time zone\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
-  },
   "tables": {
     "id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",

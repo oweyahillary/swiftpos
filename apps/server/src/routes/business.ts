@@ -118,6 +118,37 @@ router.get('/settings', requireAuth, async (req, res) => {
   res.json(flat);
 });
 
+// GET /api/business/settings/report-schedule
+// The daily-report scheduler config, stored as one JSON blob under the
+// `report_schedule` key by POST /settings below. It needs its OWN read route
+// because the generic GET /settings is default-deny (audit C2) and this key is
+// not on that allow-list. Without this route the dashboard's read
+// (`api.get('/api/business/settings/report-schedule')`) hits nothing, its
+// `.catch(() => {})` swallows the 404, and the toggle silently reverts to the
+// default — "saved" on screen, off on reload (register A54).
+router.get('/settings/report-schedule', requireAuth, async (req, res) => {
+  const DEFAULT = { enabled: false, send_time: '21:00', recipients: [] as string[] };
+
+  const { data, error } = await supabase
+    .from('business_settings')
+    .select('value')
+    .eq('business_id', req.businessId)
+    .eq('key', 'report_schedule')
+    .maybeSingle();
+
+  if (error) { sendError(res, error); return; }
+  if (!data) { res.json(DEFAULT); return; }
+
+  // POST /settings stores the JSON string the client sent; tolerate a column
+  // that hands back already-parsed JSON too, and never let a malformed row throw.
+  let parsed: any = DEFAULT;
+  try {
+    parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+  } catch { parsed = DEFAULT; }
+
+  res.json({ ...DEFAULT, ...(parsed && typeof parsed === 'object' ? parsed : {}) });
+});
+
 // POST /api/business/settings
 // Upserts a single key/value pair for this business.
 // Body: { key: string, value: string }

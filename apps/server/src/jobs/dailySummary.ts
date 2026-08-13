@@ -3,10 +3,13 @@ import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { sendEmail } from '../lib/mailer';
 import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
+import { decideDailySend } from './reportScheduleDecision';
 
 /**
- * Daily summary job — runs at 9:00 PM EAT (18:00 UTC) every day.
- * Sends a full HTML report to each business owner covering:
+ * Daily summary job — runs every 15 min and, for each business that has enabled
+ * the daily report (dashboard → Settings → Report Scheduler), sends once per day
+ * at that business's own send_time, to the owner + branch managers + any extra
+ * addresses on the schedule (register A54). Report covers:
  *   - Today's sales total + order count + VAT collected
  *   - Top 5 products by revenue
  *   - Staff performance (orders per staff member)
@@ -17,11 +20,18 @@ import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
  *   pass as fromOverride to sendEmail() so each business sends from their domain.
  */
 export function startDailySummaryJob(): void {
-  // 0 18 * * * = 18:00 UTC = 21:00 EAT (UTC+3)
-  const schedule = process.env.DAILY_SUMMARY_CRON ?? '0 18 * * *';
+  // Runs FREQUENTLY, not once a day, because each business now chooses its own
+  // send_time (register A54). Each run decides, per business, whether "now" (EAT)
+  // is at/after that business's send_time and whether today's report has already
+  // gone out — so a business is emailed at most once per EAT day, near its own
+  // configured minute. 15 minutes bounds how late a report can be.
+  //
+  // PROD NOTE: if DAILY_SUMMARY_CRON is set in the environment to a once-a-day
+  // value it DEFEATS per-business send_time (only businesses due at that instant
+  // are caught). Unset it, or set a frequent schedule.
+  const schedule = process.env.DAILY_SUMMARY_CRON ?? '*/15 * * * *';
 
   cron.schedule(schedule, async () => {
-    console.log('[dailySummary] Running daily summary job…');
     try {
       await runDailySummary();
     } catch (err: any) {
@@ -29,7 +39,7 @@ export function startDailySummaryJob(): void {
     }
   }, { timezone: 'UTC' });
 
-  console.log(`[dailySummary] Scheduled: ${schedule} UTC`);
+  console.log(`[dailySummary] Scheduled: ${schedule} (per-business send_time honoured)`);
 }
 
 async function runDailySummary(): Promise<void> {
@@ -54,13 +64,108 @@ async function runDailySummary(): Promise<void> {
 
   if (!businesses?.length) return;
 
+  // Current EAT wall-clock, for the per-business send decision.
+  const nowEatDate = tzFormat(now, 'yyyy-MM-dd', { timeZone: EAT });
+  const nowEatHHMM = tzFormat(now, 'HH:mm', { timeZone: EAT });
+
   for (const biz of businesses) {
     try {
-      await sendSummaryForBusiness(biz, dateFrom, dateTo);
+      // A54: the report goes out only if this business enabled it, only at/after
+      // its own send_time, and only once per EAT day.
+      const schedule = await readReportSchedule(biz.id);
+      const lastSent = await readLastSent(biz.id);
+      if (!decideDailySend(schedule, nowEatDate, nowEatHHMM, lastSent)) continue;
+
+      const recipients = await gatherRecipients(biz, schedule);
+      if (recipients.length === 0) {
+        console.warn(`[dailySummary] ${biz.name} (${biz.id}): enabled but no recipients — skipping.`);
+        continue;
+      }
+
+      await sendSummaryForBusiness(biz, dateFrom, dateTo, recipients);
+      // Stamp AFTER a successful send, so a failure retries on the next run
+      // rather than being silently marked done.
+      await writeLastSent(biz.id, nowEatDate);
     } catch (err: any) {
       console.error(`[dailySummary] Failed for ${biz.name} (${biz.id}):`, err.message);
     }
   }
+}
+
+// ── A54: per-business scheduling, recipients, and once-per-day dedup ─────────
+// The send decision itself lives in ./reportScheduleDecision (pure + tested).
+
+const normRole = (s: string) => (s || '').toLowerCase().replace(/ /g, '_');
+
+async function readReportSchedule(
+  businessId: string,
+): Promise<{ enabled: boolean; send_time: string; recipients: string[] }> {
+  const DEFAULT = { enabled: false, send_time: '21:00', recipients: [] as string[] };
+  const { data } = await supabase
+    .from('business_settings').select('value')
+    .eq('business_id', businessId).eq('key', 'report_schedule').maybeSingle();
+  if (!data) return DEFAULT;
+  try {
+    const p = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+    return { ...DEFAULT, ...(p && typeof p === 'object' ? p : {}) };
+  } catch { return DEFAULT; }
+}
+
+async function readLastSent(businessId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('business_settings').select('value')
+    .eq('business_id', businessId).eq('key', 'report_schedule_last_sent').maybeSingle();
+  if (!data?.value) return null;
+  return typeof data.value === 'string' ? data.value.replace(/"/g, '') : String(data.value);
+}
+
+async function writeLastSent(businessId: string, dateStr: string): Promise<void> {
+  const { data: existing } = await supabase
+    .from('business_settings').select('id')
+    .eq('business_id', businessId).eq('key', 'report_schedule_last_sent').maybeSingle();
+  if (existing) {
+    await supabase.from('business_settings')
+      .update({ value: dateStr, updated_at: new Date().toISOString() }).eq('id', existing.id);
+  } else {
+    await supabase.from('business_settings')
+      .insert({ business_id: businessId, key: 'report_schedule_last_sent', value: dateStr });
+  }
+}
+
+/** Owner + active branch managers (with an email) + the scheduler's added addresses, deduped. */
+async function gatherRecipients(
+  biz: { id: string; owner_id: string; name: string },
+  schedule: { recipients?: string[] },
+): Promise<string[]> {
+  const set = new Set<string>();
+
+  // Owner. getUserById THROWS on a malformed id, so keep the UUID guard here.
+  if (biz.owner_id && UUID_RE.test(biz.owner_id)) {
+    const { data: ownerData, error } = await supabase.auth.admin.getUserById(biz.owner_id);
+    if (!error) {
+      const e = ownerData?.user?.email?.trim().toLowerCase();
+      if (e) set.add(e);
+    }
+  }
+
+  // Active branch managers who have an email on file.
+  const { data: staff } = await supabase
+    .from('users').select('email, roles ( name )')
+    .eq('business_id', biz.id).eq('status', 'active').not('email', 'is', null);
+  for (const u of staff ?? []) {
+    if (normRole((u as any).roles?.name) === 'branch_manager') {
+      const e = String((u as any).email ?? '').trim().toLowerCase();
+      if (e) set.add(e);
+    }
+  }
+
+  // The addresses the owner typed into the scheduler.
+  for (const r of schedule.recipients ?? []) {
+    const e = String(r).trim().toLowerCase();
+    if (e) set.add(e);
+  }
+
+  return [...set];
 }
 
 /**
@@ -79,31 +184,11 @@ async function sendSummaryForBusiness(
   biz: { id: string; name: string; owner_id: string; currency: string },
   dateFrom: string,
   dateTo: string,
+  recipients: string[],
 ): Promise<void> {
-  // A business with no valid owner has nobody to send to. That is a data problem
-  // to fix in the dashboard, not a reason to throw out of this job.
-  if (!biz.owner_id || !UUID_RE.test(biz.owner_id)) {
-    console.warn(
-      `[dailySummary] ${biz.name} (${biz.id}) has no valid owner_id ` +
-      `(${JSON.stringify(biz.owner_id)}) — no recipient, skipping.`,
-    );
-    return;
-  }
-
-  // Get owner email.
-  //
-  // Destructured defensively: the original `const { data: { user } } = …` throws
-  // "Cannot destructure property 'user' of ... as it is null" whenever the call
-  // returns an error, because `data` is null on the error path. A missing owner
-  // record should skip this business quietly, not crash it.
-  const { data: ownerData, error: ownerErr } =
-    await supabase.auth.admin.getUserById(biz.owner_id);
-  if (ownerErr) {
-    console.warn(`[dailySummary] ${biz.name} (${biz.id}): owner lookup failed — ${ownerErr.message}`);
-    return;
-  }
-  const ownerEmail = ownerData?.user?.email;
-  if (!ownerEmail) return;
+  // Recipients (owner + branch managers + added addresses) are resolved and
+  // de-duped by gatherRecipients before this is called; an empty set never
+  // reaches here.
 
   const currency = biz.currency ?? 'KES';
 
@@ -262,7 +347,7 @@ async function sendSummaryForBusiness(
 
   // ── 6. Send email ─────────────────────────────────────────
   await sendEmail({
-    to: ownerEmail,
+    to: recipients.join(', '),
     subject: `📊 Daily summary — ${biz.name} · ${todayShort}`,
     html: buildSummaryEmail({
       businessName: biz.name,
@@ -280,7 +365,7 @@ async function sendSummaryForBusiness(
     // e.g. from: `${biz.name} <reports@${biz.domain}>`
   });
 
-  console.log(`[dailySummary] Sent for ${biz.name} → ${ownerEmail}`);
+  console.log(`[dailySummary] Sent for ${biz.name} → ${recipients.length} recipient(s)`);
 }
 
 // ── Email template ────────────────────────────────────────────
