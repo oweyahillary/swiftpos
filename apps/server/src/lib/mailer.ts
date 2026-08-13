@@ -363,3 +363,56 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
   // ── Neither configured ────────────────────────────────────
   console.warn('[mailer] No email provider configured. Email not sent:', opts.subject, '→', opts.to);
 }
+
+export interface SendResult {
+  ok: boolean;
+  provider: 'resend' | 'smtp' | 'none';
+  error?: string;
+}
+
+/**
+ * Like sendEmail, but RETURNS the outcome instead of logging and swallowing it.
+ *
+ * The jobs (daily summary, low-stock) are fire-and-forget and use sendEmail —
+ * a failure there must not crash a job, so it logs and moves on. But a human
+ * asking "does email work?" needs the answer handed back, not left in a log:
+ * the owner-only test-email endpoint (register A54) calls this to prove one real
+ * message was delivered, by which provider, or to read the exact provider error.
+ * Same order as sendEmail (Resend first, SMTP fallback) so it tests the real path.
+ */
+export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
+  const from = opts.from ?? DEFAULT_FROM;
+  let resendError: string | undefined;
+
+  if (resend) {
+    try {
+      const { error } = await resend.emails.send({
+        from, to: opts.to, subject: opts.subject, html: opts.html,
+      });
+      if (!error) return { ok: true, provider: 'resend' };
+      resendError = error.message;
+    } catch (err: any) {
+      resendError = err?.message ?? String(err);
+    }
+  }
+
+  const smtp = await getSmtpTransport();
+  if (smtp) {
+    try {
+      await smtp.sendMail({ from, to: opts.to, subject: opts.subject, html: opts.html });
+      return { ok: true, provider: 'smtp' };
+    } catch (err: any) {
+      return {
+        ok: false, provider: 'smtp',
+        error: `${err?.message ?? err} — ${classifySmtpFailure(err, SMTP_HOST!, SMTP_PORT)}`,
+      };
+    }
+  }
+
+  return {
+    ok: false, provider: 'none',
+    error: resendError
+      ? `Resend rejected the message (${resendError}) and no SMTP fallback is configured.`
+      : 'No email provider configured. Set RESEND_API_KEY, or SMTP_HOST + SMTP_USER + SMTP_PASS.',
+  };
+}

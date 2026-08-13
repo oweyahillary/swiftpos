@@ -2,6 +2,7 @@ import { safeRouter } from "../middleware/asyncHandler";
 import { sendError } from '../lib/sendError';
 import { requireAuth } from "../middleware/auth";
 import { supabase } from "../lib/supabase";
+import { sendEmailChecked } from "../lib/mailer";
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -63,6 +64,53 @@ router.patch("/read-all", async (req, res) => {
     return;
   }
   res.status(204).send();
+});
+
+// POST /api/notifications/test-email — owner-only.
+// Sends ONE real message to the owner's OWN address to prove notification
+// delivery end to end (register A54). Delivery to self only — there is no
+// user-supplied recipient, so this cannot be used to send mail to anyone else.
+// Returns the provider that delivered it, or the exact provider error, so the
+// owner can confirm mail is live without reading the server boot log.
+router.post("/test-email", async (req, res) => {
+  if (!req.isOwner) {
+    res.status(403).json({ error: "Owner only." });
+    return;
+  }
+
+  const { data: me, error: meErr } = await supabase
+    .from("users")
+    .select("email")
+    .eq("id", req.userId)
+    .maybeSingle();
+  if (meErr) {
+    sendError(res, meErr);
+    return;
+  }
+
+  const to = ((me as any)?.email ?? "").trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+    res
+      .status(400)
+      .json({ error: "Your account has no valid email address to send the test to." });
+    return;
+  }
+
+  const result = await sendEmailChecked({
+    to,
+    subject: "SwiftPOS test email",
+    html:
+      "<p>This is a SwiftPOS test email.</p>" +
+      "<p>If you are reading this, notification delivery is working.</p>" +
+      `<p style="color:#888">Sent ${new Date().toISOString()}</p>`,
+  });
+
+  if (result.ok) {
+    res.json({ ok: true, provider: result.provider, to });
+  } else {
+    // The request was well-formed; the mail provider is what failed → 502.
+    res.status(502).json({ ok: false, provider: result.provider, to, error: result.error });
+  }
 });
 
 export default router;

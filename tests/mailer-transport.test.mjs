@@ -237,5 +237,32 @@ ok('both-ports-blocked is named as the host filtering SMTP outright',
    'Distinguishes "wrong SMTP_PORT" from "this host does not allow SMTP", '
    + 'which are the two outcomes the owner must act on differently.');
 
+// ── 7. A checked send + an owner-only test endpoint (A54) ─────────────────
+console.log('\n7. sendEmailChecked and the owner-only test-email endpoint (A54)');
+
+const notifSrc = decomment(
+  readFileSync(resolve(ROOT, 'apps/server/src/routes/notifications.ts'), 'utf8'));
+
+ok('mailer exports sendEmailChecked',
+   /export async function sendEmailChecked/.test(mailerSrc));
+ok('it returns the provider that delivered, not void',
+   /provider:\s*'resend'/.test(mailerSrc) && /provider:\s*'smtp'/.test(mailerSrc),
+   'The caller must be able to say WHICH provider sent it, or why none did.');
+ok('it tries Resend before SMTP, the same order as sendEmail',
+   mailerSrc.indexOf("provider: 'resend'") < mailerSrc.indexOf("provider: 'smtp'"));
+ok('sendEmail is left untouched (still void, still the job path)',
+   /export async function sendEmail\(opts: MailOptions\): Promise<void>/.test(mailerSrc));
+
+ok('the test-email route exists', /['"]\/test-email['"]/.test(notifSrc));
+ok('it is owner-gated', /req\.isOwner/.test(notifSrc) && /Owner only/.test(notifSrc),
+   'Anyone-authenticated must not be able to trigger sends.');
+ok('it sends to the owner\'s OWN email, no user-supplied recipient',
+   /from\("users"\)[\s\S]*?\.eq\("id", req\.userId\)/.test(notifSrc)
+   && !/req\.body[\s\S]*?to/.test(notifSrc),
+   'Self-only delivery removes any spam vector.');
+ok('it reports the provider on success and the error on failure',
+   /ok:\s*true, provider: result\.provider/.test(notifSrc)
+   && /status\(502\)[\s\S]*?error: result\.error/.test(notifSrc));
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);
