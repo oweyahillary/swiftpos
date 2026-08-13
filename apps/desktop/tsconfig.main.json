@@ -12,6 +12,13 @@
   "include": [
     "src/main/**/*"
   ],
+  // D3 auto-update scaffold: excluded from the build until `electron-updater` is
+  // added and it is wired + given a publish target and cert (register D3). It is
+  // an orphan (imported nowhere), so excluding it changes no runtime behaviour;
+  // without this its unresolved `electron-updater` import fails the main build.
+  "exclude": [
+    "src/main/autoUpdate.ts"
+  ],
   "references": [
     {
       "path": "../../shared/printing"

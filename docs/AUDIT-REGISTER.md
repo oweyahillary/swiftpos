@@ -2711,8 +2711,14 @@ wires electron-updater correctly (dev-guarded, silent, checks on launch + every
 `docs/DESKTOP-AUTOUPDATE.md` is the runbook to finish it. It is deliberately not
 wired into `index.ts` and cannot be — it will not type-check or build until
 `electron-updater` is a dependency and an electron-builder `publish` target
-exists, and the bench has neither Electron nor a feed. **Outstanding, all owner
-work:** add the dep, wire the one call, choose a publish target, obtain a Windows
+exists, and the bench has neither Electron nor a feed. **Excluded from the main
+build (08-13):** `tsconfig.main.json` excludes `src/main/autoUpdate.ts`, because
+the `src/main/**/*` glob otherwise pulls it into `tsc -b tsconfig.main.json` and
+its unresolved `electron-updater` import fails the desktop build (it did, in CI).
+It is an orphan (imported nowhere), so excluding it changes no runtime behaviour;
+finishing D3 means adding the dependency, removing this exclude, and wiring it.
+
+**Outstanding, all owner work:** add the dep, wire the one call, choose a publish target, obtain a Windows
 signing certificate, cut the first published release, run the end-to-end check,
 and put the release in CI (which is what actually closes A1). Stays OPEN — a
 scaffold that has never run is not a fix.
@@ -3115,6 +3121,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-13 | **D3 scaffold excluded from the main build** — the committed `autoUpdate.ts` scaffold broke `tsc -b tsconfig.main.json` in CI (unresolved `electron-updater`, an unheld dep). Added it to `tsconfig.main.json` exclude — it is an orphan (imported nowhere), so no runtime change; D3 stays held. Removing the exclude + adding the dep is part of finishing D3. |
 | 2026-08-13 | **A66 CI regressions fixed** — the commit went red on two lanes. (1) `REQUIRED_DESKTOP_SCHEMA` was still 51 while A66 bumped `LOCAL_SCHEMA_VERSION` to 52; the two must move together (test-branch-close, test-events enforce it) — bumped to 52 (a till on 51 is merely shown behind, HARD_MIN unchanged). (2) `kitchen-exclusions-local.test.mjs` hard-imported `node:sqlite`, crashing the Node-20 server-suites lane which globs all of tests/; now skips gracefully when the module is absent, like the better-sqlite3 suites. Both verified against the app driver. |
 | 2026-08-13 | **A49 closed** — the stock report read `stock_adjustments` (a dead table), so restocked/written-off were permanently zero. Repointed `GET /reports/inventory` to fold `stock_movements` (sale excluded to avoid double-counting; correction split by sign). Extracted `lib/stockMovementSummary.ts` (pure); `tests/stock-movement-summary.test.mjs` (6 assertions, mutation-checked). Stale table-usage exception removed; `stock_adjustments` now fully dead (drop candidate). Also: the A59 stations.manage leftover was already enforced additively (migration 79) — only force-close remains, deferred as it touches a desktop file. |
 | 2026-08-13 | **A63 closed** — the onboarding seeder matched role names un-normalised (`nm==='branch_manager'`), so a "Branch Manager" typed with a space would be seeded with ZERO permissions (A61 one layer up). Extracted `roleTier()` to `lib/roleTier.ts` (pure, supabase-free), normalising `lower(replace(name,' ','_'))` like the migrations. `tests/role-tier.test.mjs` (12 assertions, mutation-checked). |
