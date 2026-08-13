@@ -828,7 +828,102 @@ router.post('/desktop-login', async (req, res) => {
   });
 });
 
-// ── POST /api/auth/refresh ────────────────────────────────────────────────────
+// ── POST /api/auth/enrol/redeem ───────────────────────────────────────────────
+// Device enrolment (register D4, closes D1). A till provisions itself with a
+// single-use CODE the owner issued in the portal (POST /api/enrol/code), not by
+// an owner typing their password on the terminal. The business is identified by
+// its id — so a two-business owner is no longer the dead end D1 describes.
+//
+// No requireAuth: the caller has no session yet; the code IS the credential.
+// This route sits on /api/auth so it inherits authLimiter — a code must be
+// brute-force-protected. It mints exactly the owner-scoped desktop token that
+// /desktop-login mints: the code replaces the password check, not the token's
+// identity (orders.cashier_id references public.users(id), and the till's
+// catalogue-pull token has always been owner-scoped).
+router.post('/enrol/redeem', async (req, res) => {
+  const businessId = String(req.body?.business_id ?? '').trim();
+  const rawCode    = String(req.body?.code ?? '').trim().toUpperCase();
+  const deviceId   = String(req.body?.device_id ?? '').trim();
+  if (!businessId || !rawCode || !deviceId) {
+    res.status(400).json({ error: 'business_id, code and device_id are required' });
+    return;
+  }
+  const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+  const nowIso   = new Date().toISOString();
+
+  // THE BURN — one atomic UPDATE ... WHERE ... RETURNING (proven in
+  // test-migration-81.mjs). Redeemable iff active AND unexpired AND this
+  // business's; the flip to 'redeemed' is what makes it single-use, so two
+  // concurrent redeems cannot both win. Scoped to business_id so a code cannot
+  // be spent against another tenant.
+  const { data: burned, error: burnErr } = await supabase
+    .from('device_enrolment_codes')
+    .update({ status: 'redeemed', redeemed_at: nowIso, redeemed_device_id: deviceId.slice(0, 64) })
+    .eq('code_hash', codeHash)
+    .eq('business_id', businessId)
+    .eq('status', 'active')
+    .gt('expires_at', nowIso)
+    .select('id, business_id, branch_id, created_by')
+    .maybeSingle();
+
+  if (burnErr) { sendError(res, burnErr); return; }
+  if (!burned) {
+    // Uniform message: never tell an attacker whether the code was wrong,
+    // expired, already used, or for another business.
+    res.status(401).json({ error: 'Invalid, expired or already-used code', code: 'ENROL_INVALID' });
+    return;
+  }
+
+  const ownerId = (burned as any).created_by as string;   // public.users id — the token principal
+
+  // A suspended business must not bring a new till online, same as /desktop-login.
+  // Also the fields the till needs to provision its session row (name, currency,
+  // type) — so the desktop can store enrolment exactly as it stores a login.
+  const { data: biz } = await supabase
+    .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
+  if (!biz) { res.status(500).json({ error: 'Business not found for a valid code', code: 'ENROL_STATE' }); return; }
+  if ((biz as any).status === 'suspended') {
+    res.status(403).json({ error: 'Your account has been suspended. Please contact SwiftPOS support.', code: 'ACCOUNT_SUSPENDED' });
+    return;
+  }
+
+  // Record the terminal (D14). Returns null rather than throwing — enrolment must
+  // not fail over a telemetry row.
+  await registerDesktopTerminal(businessId, ownerId, {
+    deviceId,
+    appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
+    terminalCode: req.body?.terminal_code ?? null,
+    ipAddress:    req.ip ?? null,
+    role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+  });
+
+  const pv = await getPermissionsVersion(ownerId);
+  const sessionId = newSessionId();
+  const payload: TokenPayload = {
+    userId:             ownerId,
+    businessId,
+    branchId:           null,          // unbound-till fallback, like /desktop-login
+    isOwner:            true,
+    permissionKeys:     ['*'],
+    permissionsVersion: pv,
+    sessionId,
+    surface:            'desktop',
+  };
+  const { accessToken, refreshToken } = issueTokenPair(payload);
+  await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
+
+  res.json({
+    accessToken,
+    refreshToken,
+    token: accessToken,
+    user:     { id: ownerId },
+    business: biz,                       // id, name, currency, type, status
+    businessId,
+    branchId: (burned as any).branch_id ?? null,
+  });
+});
+
+
 // Validates the refresh token against the DB, rotates it (old revoked, new issued),
 // and re-fetches permissions so role changes propagate immediately.
 
@@ -1037,6 +1132,17 @@ router.post('/pos-login', async (req, res) => {
   const role    = (user as any).roles;
   const isOwner = ['owner', 'admin'].includes((role?.name ?? '').toLowerCase());
 
+  // A37 — the surface that EXEMPTS a caller from the per-branch desktop licence
+  // must be earned, not asserted. /pos-login serves the web POS AND, from a
+  // misusing client, a till claiming surface:'web' to skip the licence. Honour
+  // 'web' only when the business actually holds web access — the same server
+  // check /login gates on (webAccess.ts). A caller with no web entitlement that
+  // claims 'web' is treated as a desktop till, so the licence gate below applies
+  // and pos.ts's gate (which reads this token's surface) can no longer be dodged.
+  const posWebAccess = await getWebAccess((user as any).business_id);
+  const effectiveSurface: 'web' | 'desktop' =
+    callerSurface === 'web' && posWebAccess.canLogin ? 'web' : 'desktop';
+
   let accessibleBranches: { id: string; name: string; desktop_licensed: boolean }[];
   if (isOwner || ((user as any).user_branches ?? []).length === 0) {
     const { data: allBranches } = await supabase
@@ -1058,8 +1164,10 @@ router.post('/pos-login', async (req, res) => {
       return;
     }
     // Desktop-licence gate applies to desktop tills only. A web POS login is
-    // gated by web access, not by the branch's desktop licence.
-    if (callerSurface !== 'web' && !allowed.desktop_licensed) {
+    // gated by web access, not by the branch's desktop licence. effectiveSurface
+    // (A37) is 'web' only if the business truly holds web access, so a till
+    // claiming 'web' without web entitlement lands here and is licence-checked.
+    if (effectiveSurface !== 'web' && !allowed.desktop_licensed) {
       res.status(403).json({
         error: `${allowed.name} does not have a desktop licence. Contact SwiftPOS to activate.`,
         code:  'BRANCH_NOT_LICENSED',
@@ -1142,7 +1250,7 @@ router.post('/pos-login', async (req, res) => {
     permissionKeys:     Object.entries(effectivePerms).filter(([, g]) => g).map(([k]) => k),
     permissionsVersion: pv,
     sessionId,
-    surface:            callerSurface === 'web' ? 'web' : 'desktop',
+    surface:            effectiveSurface,
   };
 
   const { accessToken, refreshToken } = issueTokenPair(tokenPayload);

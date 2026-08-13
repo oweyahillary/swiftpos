@@ -103,9 +103,10 @@ ok('/verify-pin inherits the caller surface rather than hard-coding one', () => 
     'a staff token must carry the surface of the session that authorised it');
 });
 
-ok('/pos-login can still mint desktop', () => {
+ok('/pos-login mints the server-derived surface, not the raw client claim (A37)', () => {
   const s = mintedSurface(AUTH, '/pos-login');
-  assert.match(s, /desktop/);
+  assert.equal(s, 'effectiveSurface',
+    'pos-login must mint effectiveSurface — the web-access-gated value — not callerSurface');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,7 +124,10 @@ ok('desktop terminal registration is gated on it (D14)', () => {
 });
 
 ok('the desktop licence gate is gated on it', () => {
-  assert.match(POS, /req\.surface === 'desktop' && branch && !branch\.desktop_licensed/);
+  // D11 rewrote the gate to resolve the operating branch (boundBranch ?? mainBranch)
+  // as opBranch, so match the surface key + a desktop_licensed check rather than
+  // the old `branch && !branch.desktop_licensed` exact shape.
+  assert.match(POS, /req\.surface === 'desktop' &&[^\n]*desktop_licensed/);
 });
 
 ok('requireWebSurface still exempts owners', () => {
@@ -133,16 +137,20 @@ ok('requireWebSurface still exempts owners', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n4. Recorded: the surface is client-supplied on /pos-login');
+console.log('\n4. A37 CLOSED: the surface is server-derived from web access, not client-supplied');
 
-ok('pos-login reads surface from the request body — a known, open hole', () => {
-  assert.match(AUTH, /surface:\s*callerSurface\s*\}\s*=\s*req\.body|surface: callerSurface/);
-  // A client sending surface:'web' skips the desktop_licensed check at
-  // auth.ts:1062. That is a commercial control decided by client input.
-  // Recorded rather than changed here: the legitimate web POS uses this path,
-  // and closing it is its own piece of work. Register A37.
-  assert.match(AUTH, /callerSurface !== 'web' && !allowed\.desktop_licensed/,
-    'if this changes shape, revisit A37');
+ok('pos-login honours surface:web only when the business holds web access (A37)', () => {
+  // The exempting surface is now earned, not asserted: effectiveSurface is 'web'
+  // ONLY when callerSurface==='web' AND the business's web access permits login.
+  assert.match(AUTH, /effectiveSurface[^\n]*=\s*[\s\S]{0,120}callerSurface === 'web' && [\w.]*[Ww]ebAccess\.canLogin/,
+    'effectiveSurface must gate the web claim on getWebAccess(...).canLogin');
+});
+
+ok('the licence gate keys off effectiveSurface, not the raw claim (A37)', () => {
+  assert.match(AUTH, /effectiveSurface !== 'web' && !allowed\.desktop_licensed/,
+    'a till claiming web without web access must still hit the desktop licence gate');
+  assert.doesNotMatch(AUTH, /callerSurface !== 'web' && !allowed\.desktop_licensed/,
+    'the old client-supplied gate must be gone');
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

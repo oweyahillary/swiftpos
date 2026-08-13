@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { roleTier } from './roleTier';
 
 // Default permission grants for the roles seeded at business creation.
 //
@@ -41,6 +42,10 @@ const MANAGER_DENY = new Set([
   'reports.financial',
 ]);
 
+/**
+ * The grant tier for each role is decided by `roleTier` (lib/roleTier.ts), which
+ * normalises the name the same way the grant migrations do — see A63/A61.
+ */
 export async function seedDefaultRolePermissions(
   roles: { id: string; name: string }[],
 ): Promise<void> {
@@ -51,16 +56,13 @@ export async function seedDefaultRolePermissions(
 
   const rows: { role_id: string; permission_id: string }[] = [];
   for (const role of roles) {
-    const nm = (role.name || '').toLowerCase();
-    const isFull    = nm === 'admin' || nm === 'owner';
-    const isManager = nm === 'manager' || nm === 'supervisor' || nm === 'branch_manager';
-    const isCashier = nm === 'cashier';
+    const tier = roleTier(role.name);
 
     for (const p of perms) {
       const grant =
-        isFull    ? true :
-        isManager ? !MANAGER_DENY.has(p.key) :
-        isCashier ? CASHIER_KEYS.has(p.key) :
+        tier === 'full'    ? true :
+        tier === 'manager' ? !MANAGER_DENY.has(p.key) :
+        tier === 'cashier' ? CASHIER_KEYS.has(p.key) :
         false;
       if (grant) rows.push({ role_id: role.id, permission_id: p.id });
     }

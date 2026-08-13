@@ -245,6 +245,18 @@
     "credit_limit": "\"numeric\" NOT NULL",
     "credit_balance": "\"numeric\" NOT NULL"
   },
+  "device_enrolment_codes": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "code_hash": "\"text\" NOT NULL",
+    "created_by": "\"uuid\" NOT NULL",
+    "expires_at": "\"timestamp with time zone\" NOT NULL",
+    "redeemed_at": "\"timestamp with time zone\"",
+    "redeemed_device_id": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "discounts": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",

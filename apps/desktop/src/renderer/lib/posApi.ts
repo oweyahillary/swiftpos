@@ -154,10 +154,17 @@ declare global {
         // bound on this terminal. With the HTML fallback gone (0.5.27) this is
         // the only way the cashier learns a ticket did not go. Register D8.
         printProduction: (payload: unknown) => Promise<{ ok: boolean; skipped: string[] }>;
-        // The branch's exclusion list as the printer applies it. The Printers
-        // tab previews with THIS, not a per-till localStorage copy — a preview
-        // that disagrees with the printer is worse than no preview.
-        kitchenExclusions: () => Promise<{ terms: string[] }>;
+        // The EFFECTIVE list, where it came from, and the cloud baseline. The
+        // setup screen previews with `terms`, so a preview never disagrees with
+        // the printer; `source`/`cloudTerms` drive the "local override vs
+        // business default" affordance.
+        kitchenExclusions: () => Promise<{ terms: string[]; source: 'local' | 'cloud'; cloudTerms: string[] }>;
+        // Set this terminal's local override. Allowed on any till; the override
+        // wins over the cloud default and is never overwritten by a sync.
+        setKitchenExclusions: (terms: string[]) => Promise<{ ok: boolean; error?: string; terms: string[] }>;
+        // Drop the override and follow the cloud baseline again. Returns the
+        // baseline now in force.
+        clearKitchenExclusions: () => Promise<{ ok: boolean; error?: string; terms: string[] }>;
         reprintReceipt: () => Promise<{ ok: boolean; error?: string }>;
         printShiftReport: (data: unknown) => Promise<{ ok: boolean; error?: string; internal?: boolean }>;
         retry:       (id: string) => Promise<unknown>;
@@ -169,6 +176,7 @@ declare global {
       platform: string;
       auth: {
         login: (email: string, password: string) => Promise<{ user: any; business: any }>;
+        redeemEnrolment: (business_id: string, code: string) => Promise<{ user: any; business: any; branchId: string | null }>;
         logout: () => Promise<boolean>;
         getSession: () => Promise<{ user: any; business: any } | null>;
         listBranches: () => Promise<{ id: string; name: string; desktop_licensed: boolean }[]>;

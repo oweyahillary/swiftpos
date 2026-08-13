@@ -73,8 +73,12 @@ export interface DeviceConfig {
   // Free-text blocks printed above and below the receipt body. Multi-line.
   receipt_header: string | null;
   receipt_footer: string | null;
-  /** JSON array of names that must never reach a kitchen ticket. */
+  /** JSON array of names that must never reach a kitchen ticket — the CLOUD
+   *  baseline, refreshed on every catalogue pull. */
   kitchen_exclusions: string | null;
+  /** Per-terminal local override. NULL = follow the cloud baseline above;
+   *  non-NULL = this terminal's own list, which wins and survives every sync. */
+  kitchen_exclusions_override: string | null;
   configured: boolean;
 }
 
@@ -104,6 +108,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     receipt_header: row.receipt_header ?? null,
     receipt_footer: row.receipt_footer ?? null,
     kitchen_exclusions: row.kitchen_exclusions ?? null,
+    kitchen_exclusions_override: row.kitchen_exclusions_override ?? null,
     configured: row.configured === 1,
   };
 }
@@ -149,14 +154,15 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     receipt_header: patch.receipt_header !== undefined ? patch.receipt_header : (current?.receipt_header ?? null),
     receipt_footer: patch.receipt_footer !== undefined ? patch.receipt_footer : (current?.receipt_footer ?? null),
     kitchen_exclusions: patch.kitchen_exclusions !== undefined ? patch.kitchen_exclusions : (current?.kitchen_exclusions ?? null),
+    kitchen_exclusions_override: patch.kitchen_exclusions_override !== undefined ? patch.kitchen_exclusions_override : (current?.kitchen_exclusions_override ?? null),
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
 
   db.prepare(`
     INSERT INTO device_config
-      (id, deploy_mode, server_url, branch_id, business_type, device_name, device_id, device_role, node_url, node_secret, terminal_code, vat_rate, ctl_rate, max_discount_pct, receipt_header, receipt_footer, configured, created_at, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, deploy_mode, server_url, branch_id, business_type, device_name, device_id, device_role, node_url, node_secret, terminal_code, vat_rate, ctl_rate, max_discount_pct, receipt_header, receipt_footer, kitchen_exclusions, kitchen_exclusions_override, configured, created_at, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       deploy_mode=excluded.deploy_mode,
       server_url=excluded.server_url,
@@ -173,6 +179,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
       max_discount_pct=excluded.max_discount_pct,
       receipt_header=excluded.receipt_header,
       receipt_footer=excluded.receipt_footer,
+      kitchen_exclusions=excluded.kitchen_exclusions,
+      kitchen_exclusions_override=excluded.kitchen_exclusions_override,
       configured=excluded.configured,
       updated_at=excluded.updated_at
   `).run(
@@ -191,6 +199,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     merged.max_discount_pct,
     merged.receipt_header,
     merged.receipt_footer,
+    merged.kitchen_exclusions,
+    merged.kitchen_exclusions_override,
     merged.configured ? 1 : 0,
     current ? (db.prepare(`SELECT created_at FROM device_config WHERE id=1`).get() as any)?.created_at ?? now : now,
     now,

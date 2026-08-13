@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import authRoutes          from './auth';
+import enrolRoutes         from './enrol';
 import businessRoutes      from './business';
 import onboardingRoutes    from './onboarding';
 import categoriesRoutes    from './categories';
@@ -46,6 +47,7 @@ import branchPricesRoutes  from './branch-prices';
 const router = Router();
 
 router.use('/auth',           authRoutes);
+router.use('/enrol',          enrolRoutes);
 router.use('/branches',       branchesRoutes);
 router.use('/discounts',      discountsRoutes);
 router.use('/promotions',     promotionsRoutes);

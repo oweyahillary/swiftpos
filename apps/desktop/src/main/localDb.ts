@@ -914,7 +914,13 @@ function initSchema(db: Database.Database) {
     ['escpos_enabled', 'INTEGER NOT NULL DEFAULT 1'],
     // JSON array of names that must never reach a kitchen ticket. Owner-stated,
     // pulled with the catalogue, cached so an offline till still honours it.
+    // This is the CLOUD BASELINE (business-wide, dashboard-edited).
     ['kitchen_exclusions', 'TEXT'],
+    // Per-terminal local override. NULL = follow the cloud baseline above;
+    // non-NULL (a JSON array, possibly empty) = this terminal's own list, which
+    // WINS over the baseline and is never overwritten by a catalogue pull. This
+    // is how a local edit is "final" while the cloud default keeps updating.
+    ['kitchen_exclusions_override', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -986,7 +992,10 @@ function initSchema(db: Database.Database) {
 // built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
 // node on 44 would ingest peer rows with no seq, and every one of them would be
 // invisible to the cursor that decides what still needs replicating.
-export const LOCAL_SCHEMA_VERSION = 51;
+// 52 adds device_config.kitchen_exclusions_override — a per-terminal local
+// override that wins over the synced cloud baseline. Additive and idempotent
+// like every column here; an older till converges by running migrateColumns.
+export const LOCAL_SCHEMA_VERSION = 52;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

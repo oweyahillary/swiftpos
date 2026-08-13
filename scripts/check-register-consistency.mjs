@@ -40,6 +40,7 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative, join } from 'node:path';
+import { deriveStatus } from './lib/register-status.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -59,13 +60,9 @@ lines.forEach((line, i) => {
   if (!m) return;
   const rest = m[2].replace(/\*\*/g, '');
   const sev = /\bP([0-3])\b/.exec(rest);
-  // OPEN unless a closing word appears. REOPENED must be tested before OPEN
-  // and before CLOSED, since it contains both substrings.
-  const r = rest.toUpperCase();
-  let status = 'OPEN';
-  if (/\bREOPENED\b/.test(r)) status = 'OPEN';
-  else if (/\bCLOSED\b|\bSTRUCK\b|\bFIX SHIPPED\b|\bPARTLY CLOSED\b/.test(r)) status = 'CLOSED';
-  else if (/\bOPEN\b/.test(r)) status = 'OPEN';
+  // Status comes from a leading heading FIELD, not a word anywhere in the title:
+  // "…fails closed…" in a title must not read as CLOSED (D11). See lib/register-status.mjs.
+  const status = deriveStatus(rest);
   entries.push({ id: m[1], sev: sev ? `P${sev[1]}` : null, status, line: i + 1, text: rest.slice(0, 70) });
 });
 

@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-12 — A65 opened+closed (report scheduler: toggle never persisted, sender ignored it). A54 stays open (transport, blocked on owner). Desktop printer-screen cluster closed: A10 docstring, A11 comment, A43 exclusions ported to the routed screen. D15 dead sync_queue dropped (migration 80).** |
+| Last updated | **2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
 | Tree | `dev` @ `0215475` (was recorded as `84400d6`; the deploy log and `git log` both read `0215475`), desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 1 P0 · 11 P1 · 7 P2 · 2 P3 — D: 1 P0 · 2 P1 · 1 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A54 A59 A18 A19 A20 A50 A49 A24 A3 A4 A12 · A-P2: A22 A23 A37 A51 A53 A8 A63 · A-P3: A13 A64 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 |
+| Open | **A: 1 P0 · 10 P1 · 4 P2 · 1 P3 — D: 1 P0 · 2 P1 · 1 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A50 A49 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 · A-P3: A13 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
@@ -378,7 +378,7 @@ tick-box, not a migration. Until then no one holds it and the tab still refuses.
 A46's keys: which roles may edit what a customer sees on a receipt is a business
 decision, and a migration is the wrong place to make it silently.
 
-### A59 · P1 · OPEN · The till gates on ROLES; the cloud gates on PERMISSION KEYS
+### A59 · P1 · CLOSED 08-13 · The till gates on ROLES; the cloud gates on PERMISSION KEYS
 Found while closing A45, and it is the reason A45 happened rather than a detail of it.
 
 `apps/desktop/src/renderer` contains **no permission-key plumbing at all** —
@@ -435,10 +435,25 @@ is enforced on no route (stations CRUD uses `products.manage`), and
 `shifts.force_close`. **Done this session:** `check-permission-parity` extended to
 scan the till's `has()` helper (four keys now visible where zero were, baseline
 unchanged), and the renderer typechecks clean (`tsc --noEmit`, exit 0).
-**Still needs the DB/Windows:** confirm migration 78 grants `receipt.manage` to
-manager AND supervisor AND branch_manager (or those roles lose Receipt — the
-additive-safety query is in the working note), and smoke-test the till.
-Full working note: `docs/A59-till-permission-keys.md`.
+**Grant now proven on the bench (08-13).** The one benchable gap — whether
+migration 78 actually grants `receipt.manage` to manager AND supervisor AND
+branch_manager, or those roles silently lose the Receipt tab — is closed:
+`scripts/test-migration-78.mjs` runs 78 against real Postgres (PGlite), 7 checks,
+**mutation-checked** (drop `branch_manager` from the grant set and two assertions
+fail). It confirms all three manager-type roles are granted, the normalised match
+catches "Branch Manager" with a space (A61), the grant is additive (an unrelated
+Cashier grant is untouched) and idempotent, and — since 78 does not self-register
+the key — that 75 must run first or the grant is inert.
+
+**Closed on the same basis as A66/A43:** the permission model is proven (the grant
+test, the `has()` gate, `check-permission-parity` now seeing the till), only the
+render is not. **The one remaining step needs Windows:** sign in on a real till as
+a manager holding `receipt.manage` and confirm the Receipt tab appears and Save
+succeeds (the A45 loop). Two cloud-side inconsistencies surfaced here are OUT of
+this finding's scope and recorded in the working note for a later pass:
+`stations.manage` is enforced on no route (station CRUD gates on `products.manage`),
+and `POST /shifts/:id/force-close` gates on `settings.manage` not the registry's
+`shifts.force_close`. Full working note: `docs/A59-till-permission-keys.md`.
 
 ### A55 · P1 · CLOSED 2026-08-11 · `total_spent` was the last racy write on the customer row
 `orders.ts` updated `customers.total_spent` by SELECTing the value and writing
@@ -573,7 +588,7 @@ reports `OF`, `ON` and `TO` as tables and a gate that cries wolf gets ignored.
 Mutation-checked by reintroducing the exact production bug: it names
 `role_permissions` at line 46.
 
-### A63 · P2 · OPEN · The onboarding permission seeder never learned A61's lesson
+### A63 · P2 · CLOSED 08-13 · The onboarding permission seeder never learned A61's lesson
 `apps/server/src/lib/defaultRolePermissions.ts` decides a new role's grants by
 **exact, un-normalised name match** — `nm === 'manager'`, `nm === 'branch_manager'`
 (lower-cased only). The grant migrations 24/49/75 shipped this exact bug and
@@ -596,7 +611,17 @@ name before the tier test (`lower(replace(role.name,' ','_'))`). Cheap now,
 because onboarding's names are simple; a field incident the day someone renames a
 default.
 
-### A64 · P3 · OPEN · Two manager deny-lists that should agree, don't
+**Fixed 08-13.** The tier decision is extracted to `apps/server/src/lib/roleTier.ts`
+as a pure `roleTier(name)` that normalises with the same `lower(replace(name,' ','_'))`
+the migrations use; `defaultRolePermissions.ts` imports it. Kept free of any
+supabase import so it loads and tests in isolation. Proven against the REAL
+compiled function — `tests/role-tier.test.mjs`, 12 assertions, **mutation-checked**
+(remove the space-normalisation and "Branch Manager" → `none` again), including
+that a name merely *containing* a keyword ("Trainee Manager") is NOT swept in.
+Server `tsc` clean. This makes the seeder and the grant migrations (76/78/82) share
+one normalisation rule so they cannot drift about who is a manager.
+
+### A64 · P3 · CLOSED 08-13 · Two manager deny-lists that should agree, don't
 The default manager permission set is defined in **two** places with **different**
 deny-lists:
 
@@ -631,6 +656,27 @@ Any `true` means a backfilled manager holds a key the current policy makes
 owner-only — an over-grant on existing tenants, not a break. The fix is to make
 the two deny-lists a single shared constant so they cannot drift again, then
 decide which policy is correct and reconcile the outliers.
+
+**Owner decided 08-13 — the STRICT policy.** Managers *receive* stock and *see*
+inventory and branch reports; they do NOT adjust/manage inventory or see financial
+reports — that lives on the web only. So the seeder's four-key `MANAGER_DENY`
+(`settings.manage`, `inventory.adjust`, `ingredients.manage`, `reports.financial`)
+is authoritative, and migration 59's one-key deny was the over-grant. `MANAGER_DENY`
+in `defaultRolePermissions.ts` is the single source of truth for the policy going
+forward; any future grant/revoke migration must match it (a SQL migration and a TS
+constant can't literally share, so this is a discipline note, enforced by review).
+
+**Reconcile written and proven — `migrations/82_manager_deny_reconcile.sql`.**
+Revokes the three over-granted keys from the `manager`/`supervisor`/`branch_manager`
+role set (normalised names, A61), leaving owner/admin and every other manager grant
+(`inventory.view`, `inventory.receive`, `reports.view`, …) untouched.
+`scripts/test-migration-82.mjs` — 10 checks against real Postgres, **mutation-checked**
+(drop the role scope and the owner-untouched assertion fails). Idempotent; the DELETE
+is a no-op on a database where managers never held the keys, so it is safe to apply
+regardless of the runtime uncertainty the query above could not resolve.
+**Before applying to prod, run the blast-radius SELECT at the foot of the migration**
+to see exactly which (business, role, key) rows it removes; a per-shop exception
+that an owner wants kept is re-granted in the Roles screen afterward.
 
 ### A65 · P1 · CLOSED 08-12 · The daily-report scheduler: the toggle never persisted, and the sender ignored it
 Same feature as A54 (the daily summary email), a different layer. A54 is
@@ -676,6 +722,86 @@ to a once-a-day value it DEFEATS per-business `send_time` — unset it.
 port — that is A54, still blocked on the owner. The live report-schedule check
 (enable for a test business, `send_time` a few minutes out) is also the cleanest
 end-to-end exercise of A54's transport.
+
+### A66 · P1 · CLOSED 08-13 · Kitchen exclusions never reached the till — and the local override that lets an offline till own them
+Two things in one entry because the fix and the feature are the same code path:
+a bug that made the cloud list silently vanish, and the local override built on
+top of the now-working persistence.
+
+**The bug — `saveDeviceConfig` dropped `kitchen_exclusions` on the floor.** The
+column was in the `DeviceConfig` type, the read map and the merge object, but
+**absent from the INSERT column list, the VALUES and the ON CONFLICT SET.** So
+`syncEngine`'s `saveDeviceConfig({ kitchen_exclusions })` (the only writer)
+merged the value and then wrote a statement that never named the column: on
+insert it took the column default (NULL), on conflict it was not in the SET, so
+the existing value stood. The till's `device_config.kitchen_exclusions` stayed
+NULL forever, `escposBridge.kitchenExclusions()` returned `[]`, the printer
+applied no exclusions, and the read-only box A43 shipped always showed empty —
+the owner configured drinks-off-the-kitchen-ticket on the dashboard and the till
+sent them anyway. `escpos_enabled` survives the same omission only because it has
+its own dedicated `UPDATE`; `kitchen_exclusions` had no such fallback.
+**Invisible to every gate:** `check-sql-binds` only balances placeholders, and
+the statement was internally balanced — it simply never mentioned the column.
+Proven by executing the file's own INSERT under `node:sqlite`: the value did not
+land. Fixed by adding `kitchen_exclusions` (and the new override, below) to the
+INSERT/VALUES/SET and the bound args; binds re-verified balanced.
+
+**The feature — "cloud editable, local is final" (owner decision, 08-13).** Cloud
+stays the **business-wide baseline**, edited on the web dashboard, refreshed on
+every catalogue pull — unchanged, and now actually persisting. Each till gains a
+**local override**: new `device_config.kitchen_exclusions_override`
+(`LOCAL_SCHEMA_VERSION` 51 → 52, additive/idempotent via `migrateColumns`, no
+replay). The reader resolves `override ?? baseline`. The override is editable on
+**every** till, not gated to a deploy mode — a cloud-connected terminal may still
+override the business default for its own printer — saved on blur, with a "Reset
+to cloud default" that clears it. `syncEngine` keeps the baseline current and
+**never touches the override**, so a local edit wins and survives every sync.
+NULL override means "follow the cloud"; an empty-but-present override means "this
+terminal excludes nothing, deliberately" — two different states, and the
+clear-vs-empty distinction is load-bearing.
+
+**Verified on the bench:** persistence + precedence proven by running the real
+INSERT — `tests/kitchen-exclusions-local.test.mjs`, 17 assertions, `node:sqlite`,
+**mutation-checked** (reverting the column from the INSERT fails 7). `check-ipc-parity`
+138/138 (two new channels, `escpos:setKitchenExclusions` and
+`escpos:clearKitchenExclusions`, both bridged and handled); `check-sql-binds`
+green; renderer `tsc` clean; main `tsc` shows the identical pre-existing
+`@swiftpos/printing` set and **zero new errors** (diffed against the stashed
+tree). Recorded in `LOCAL-SCHEMA-VERSIONS.md` (v52).
+
+**What the bench CANNOT prove — a live Windows check must, same limit as A43:**
+that the box renders and edits; that the fixed baseline now actually reaches the
+till; that the override wins after a sync and "Reset" returns to the dashboard
+list. Closed on the same basis as A43 — the data path is proven, the render is
+not — with the smoke test called out, not hidden.
+
+**Two findings surfaced en route, recorded so they are not re-discovered:**
+- **Cloud exclusions are business-wide by design.** `business_settings` is keyed
+  `(business_id, key)` with no branch dimension, and `/api/pos/init` serves one
+  list to every branch. Not a bug — a constraint to know before anyone asks for
+  per-branch *cloud* lists (that would need a branch dimension + a dashboard
+  selector). Local overrides are per-terminal, so per-branch granularity is
+  already available that way.
+- **A `deploy_mode: 'local'` till is not provisionable.** `InstallPage` hardcodes
+  `mode = 'cloud'` (the picker was deliberately removed) and activation requires
+  online owner sign-in, so nothing can *become* local yet. This feature works in
+  BOTH modes, so it is not blocked on that — but a genuine non-cloud product is.
+  Raise as a D-item if standalone provisioning moves into scope.
+
+### A67 · P3 · CLOSED 08-13 · `check-register-consistency` read status from the whole heading, not the status field
+Surfaced by D11. The gate decided OPEN/CLOSED by scanning the entire heading for
+the words "closed"/"open"/"struck", so a title that merely contained one —
+D11's *"…fails closed and kills the catalogue pull"* — was read as CLOSED. An
+open item silently left the counts; the header balanced only by coincidence.
+
+Fixed by matching a status LABEL at the start of a leading `·`-separated field
+(the first two fields after the ID), never a substring in the free-text title.
+Extracted to `scripts/lib/register-status.mjs` as a pure `deriveStatus(rest)` and
+imported by the gate. Verified: `tests/register-status-parse.test.mjs`
+(12 assertions incl. the D11 title → OPEN, plus REOPENED/PARTLY CLOSED/NOTE/bold
+and an "Opening-hours" title that must not read as OPEN-the-status); and the gate
+still reports the header agreeing with the body, so no existing entry's status
+changed under the new parser. Not a ratchet — a correctness fix with a test.
 
 ### A17 · P0 · OPEN · A peer till cannot sell "offline forever" — it locks out on day 15
 **Stated design (owner, 08-09):** the main/server till is registered online once;
@@ -1357,16 +1483,43 @@ test on purpose: the bug was one word in a literal, and a unit test asserting
 `payload.surface === 'desktop'` against a stub would only prove the stub. It also
 asserts the header and the code agree, which is the specific thing that failed.
 
-### A37 · P2 · OPEN · The desktop licence is bypassable by client-supplied `surface`
-`/pos-login` reads `surface` from the request body (`auth.ts:925`) and gates the
-licence on it (`:1062` — `callerSurface !== 'web' && !allowed.desktop_licensed`).
-A client that sends `surface: 'web'` skips the desktop licence check, and
-`pos.ts:87` then also passes because it tests the same value.
+### A37 · P2 · CLOSED 08-13 · The desktop licence was bypassable by client-supplied `surface`
+`/pos-login` read `surface` from the request body and gated the licence on it
+(`callerSurface !== 'web' && !allowed.desktop_licensed`). A client that sent
+`surface: 'web'` skipped the desktop-licence check, and `pos.ts` then also passed
+because it reads the same value from the minted token. A commercial control
+decided by client input.
 
-A commercial control decided by client input. **Not changed here** — the
-legitimate web POS uses this path, and closing it without breaking that is its
-own piece of work. `tests/auth-surface.test.mjs` §4 pins the current shape so a
-change forces this to be revisited.
+**Fixed by making the exempting surface earned, not asserted.** Web access and the
+desktop licence are separate products (`webAccess.ts`: "Offline desktop POS is NOT
+affected by web-access state"). `/pos-login` now honours `surface: 'web'` only when
+the business actually holds web access — `effectiveSurface = callerSurface === 'web'
+&& getWebAccess(businessId).canLogin ? 'web' : 'desktop'` — the same server check
+`/login` gates on. The licence gate and the token mint both key off
+`effectiveSurface`, so a caller with no web entitlement that claims `web` is
+treated as a desktop till and licence-checked, and the token it carries into
+`pos.ts` can no longer be dodged. The legitimate web POS (a business that holds web
+access) is unchanged.
+
+**Residual, documented not hidden:** a business that holds BOTH web access and
+physical tills could still claim `web` on a till. Closing that for dual-subscribers
+is a business-policy call (does a web subscriber's physical till need its own
+desktop licence?), not a code question — the primary bypass, a desktop-only
+business dodging the per-branch licence entirely, is closed.
+
+**Verified on the bench:** server `tsc` clean; `tests/auth-surface.test.mjs`,
+11 assertions, **mutation-checked** (revert the gate to `callerSurface` and the
+A37 assertion fails). What the bench cannot prove and a live check should: an
+actual `/pos-login` from a no-web-access business claiming `web` receiving the 403
+`BRANCH_NOT_LICENSED`, and a real web-access business still logging in.
+
+**Also fixed here — a D11 regression this test caught.** D11 rewrote `pos.ts`'s
+licence gate (`branch && !branch.desktop_licensed` → `!opBranch?.desktop_licensed`)
+but `auth-surface.test.mjs` §3 pinned the old shape and had been silently failing
+since; the D11 session ran its own test and the gates but not the full
+`tests/*.test.mjs` suite. The assertion is updated to match the D11 shape and now
+passes — a reminder that a shape-pinning test must be re-run whenever the shape it
+guards is changed.
 
 ### A38 · **P1** · CLOSED 08-10 · The till sent `X-Device-Id` twice — every reader got a comma-joined value
 Found in Render's logs while chasing A36, and it is the SECOND independent cause
@@ -1940,7 +2093,7 @@ MESSAGE at `mailer.ts:152`. Comments and string literals are code to a regex.
 of the comment explaining the B6 fix, and `manage-fetch-refresh` asserted against
 an empty default parameter. Rule 23 keeps being right.
 
-### A51 · P2 · OPEN · The device token sawtooths: every other catalogue pull 401s by construction
+### A51 · P2 · CLOSED 08-13 · The device token sawtooths: every other catalogue pull 401s by construction
 Beryl's till log is **90 lines and every one of them is this**:
 
 ```
@@ -1978,13 +2131,23 @@ Three costs, and the third is the one that matters:
    service key, a genuine expiry — all would look identical to routine noise.
    An error that always fires is an error nobody reads.
 
-**Fix (not done — deliberately):** refresh when the token is within ~2 minutes of
-expiry rather than waiting for the 401, or move the pull inside 15 minutes.
+**Fixed — `refreshDeviceTokenIfExpiring()` in `syncEngine.ts`.** `syncAll()` now
+refreshes the device token when it is within `REFRESH_SKEW_SECONDS` (120s) of
+expiry, before the pull, so the 10-minute tick can no longer collide with the
+15-minute lifetime. Reads `exp` payload-only via `secondsUntilExpiry()` (no
+signature trust — the server still verifies every request); an unreadable `exp`
+returns null and falls through to the reactive 401 path, which is untouched and
+remains the backstop. Scoped to the DEVICE token only — it never reads
+`_staffToken` or calls `refreshStaffToken`, which was load-bearing while A47's
+idle test was live.
 
-**Held back from 0.5.28 on purpose.** It lives in `syncEngine.ts`, the file A47
-touched, and A47's idle test was still running. More importantly a GENERIC
-proactive refresh would refresh the staff token too — which would mask the A47
-test exactly as the auto-lock would. The fix must be scoped to the device token.
+**Verified on the bench:** `apps/desktop/test/device-token-refresh.test.mjs`,
+21 assertions — the sawtooth simulation, device-only scoping, the reactive
+backstop still present, and safe `exp` reading (garbage/empty/no-exp all return
+null rather than throwing into the sync tick). The register entry had lagged the
+code: this was implemented after the entry was written and closed here on 08-13.
+**Not yet field-confirmed** — a till running a build from before this landed still
+sawtooths, so a rebuilt release must reach the fleet before the log goes quiet.
 
 ### A52 · P1 · CLOSED 08-10 · The till stayed signed in on an unattended machine
 Requested after A47: *"can we make the app lock after 3-5min of inactivity"*, then
@@ -2515,17 +2678,56 @@ Closed by the D4 enrolment work, which removes owner login from the till.
 See §E. Held orders now sit in SQLite, one row per tab. D9 (cross-till recall)
 remains open — that needs server state, not local storage.
 
-### D3 · P1 · No auto-update
+### D3 · P1 · OPEN · No auto-update — scaffold added, release pipeline outstanding
 No `electron-updater`, no `autoUpdater`. Every release is a hand-installed `.exe`
 per till; `localDb.ts` says so itself. Root cause of A1 — no release pipeline is
 why `pos.zip` gets hand-built from a working folder. Also the tax on every other
 fix in this list.
 
-### D4 · P1 · Owner portal credential used to provision the till
-No device-scoped enrolment. Couples portal and till blast radius.
+**Scaffold added (08-13), NOT verified.** `apps/desktop/src/main/autoUpdate.ts`
+wires electron-updater correctly (dev-guarded, silent, checks on launch + every
+6h, installs on next quit so a till is never interrupted), and
+`docs/DESKTOP-AUTOUPDATE.md` is the runbook to finish it. It is deliberately not
+wired into `index.ts` and cannot be — it will not type-check or build until
+`electron-updater` is a dependency and an electron-builder `publish` target
+exists, and the bench has neither Electron nor a feed. **Outstanding, all owner
+work:** add the dep, wire the one call, choose a publish target, obtain a Windows
+signing certificate, cut the first published release, run the end-to-end check,
+and put the release in CI (which is what actually closes A1). Stays OPEN — a
+scaffold that has never run is not a fix.
+
+### D4 · P1 · OPEN · Owner portal credential used to provision the till — implemented, pending live verification
+No device-scoped enrolment. Couples portal and till blast radius, and is the D1
+dead end: the owner's credentials belong to a person, and a two-business owner
+cannot say which business a till serves.
 **Agreed design:** business ID identifies, a single-use enrolment code authorises.
 Portal issues it; server burns it, writes the `user_devices` row and returns a
-device-scoped token. Copy `routes/tech.ts` — that flow is already this shape.
+device session. Copy `routes/tech.ts` — that flow is already this shape.
+
+**Implemented across all three layers (08-13):**
+- **Schema** — `migrations/81_device_enrolment_codes.sql` (single-use, expiring,
+  business-scoped; `code_hash` UNIQUE, raw shown once; RLS on). Proven against
+  real Postgres: `scripts/test-migration-81.mjs`, 13 checks, mutation-checked on
+  the atomic burn. `schema-index.json` updated.
+- **Server** — `POST /api/enrol/code` (owner issues; `routes/enrol.ts`) and
+  `POST /api/auth/enrol/redeem` (burn + mint; in `auth.ts`, on the authLimiter
+  surface, reusing the local session helpers). Redeem runs the exact atomic
+  burn the migration test proved and mints the same owner-scoped desktop token
+  `/desktop-login` does — the code replaces the password, not the token identity.
+  Server `tsc` clean; `tests/enrol-endpoints.test.mjs` (19 assertions: code
+  generation + hashing, and source guards pinning the burn guard, business scope,
+  desktop surface, single non-oracle 401, owner-only issue).
+- **Desktop** — `auth:enrolDevice` IPC handler (a near-mirror of `auth:login`),
+  preload bridge + `posApi.auth.redeemEnrolment`, and the InstallPage now takes a
+  **Business ID + enrolment code** instead of an owner email/password. Renderer
+  `tsc` clean; IPC parity 139/139; main `tsc` adds no new errors.
+
+**What has NOT run, and must before this closes:** the end-to-end path — a real
+`POST /enrol/code` in the portal, the till redeeming it, the token minting, and a
+completed install binding a branch. None of that is bench-verifiable (no server
+round-trip, no Electron). Stays OPEN until that live test passes. **Closes D1**
+when it does — the InstallPage no longer asks for owner credentials, so the
+two-business dead end is structurally gone. Runbook: `docs/DEVICE-ENROLMENT-D4.md`.
 
 ### D5 · P1 · CLOSED 08-08 · Owner and staff tokens stored plaintext in SQLite
 See §E. Wrapped at rest via `main/tokenStore.ts`; plaintext columns retained as
@@ -2561,9 +2763,30 @@ the fleet's state. `X-Schema-Version` puts it on every push; ask the machines.
 `localDb.ts` explains 43/44/45 in detail, then goes silent through 51. Six
 generations with no record, on the mechanism deciding whether a field till works.
 
-### D7 · P2 · 126 IPC channels, no shared payload validation
-`check-ipc-parity` proves a channel exists, not that its two sides agree. This is
-the gap §L already names, and what P-09 and P-11 were.
+### D7 · P2 · OPEN · IPC channels have no per-channel payload validation — shared mechanism now added, rollout pending
+`check-ipc-parity` proves a channel is bridged AND handled, not that its two
+sides agree on the payload. 136 channels crossed the boundary unchecked; a
+renderer sending the wrong shape surfaced as an undefined-dereference deep in a
+handler, or a silent wrong write. This is the gap §L already names, and what
+P-09 and P-11 were.
+
+**Shared mechanism added (08-13), rollout under way.** `apps/desktop/src/main/ipcValidate.ts` —
+a dependency-free validator (the desktop has no zod, and adding one is its own
+footprint call): `validatePayload` / `assertPayload` for object payloads,
+`expectStringArray` for the bare-value channels, extra fields allowed so a schema
+names only what a handler depends on. **Adopted so far:** `escpos:setKitchenExclusions`
+(bare array — rejects a malformed payload instead of silently coercing it to an
+empty list, which would wipe the list); and the auth / money-adjacent object
+payloads `auth:verifyPin`, `order:void` and `auth:enrolDevice` (throwing
+`assertPayload` at the top, so a malformed payload is a clean, uniform error
+instead of an undefined-dereference mid-handler, and valid payloads pass through
+untouched). Tested — `tests/ipc-validate.test.mjs`, 25 assertions (validator
+truth table + source guards pinning every adoption, mutation-checked). **Still
+open:** the remaining ~132 channels. `order:create` is **deliberately left
+unvalidated** — its payload is a deep nested object and the primary sale path must
+not get a validation schema written blind; it needs a schema designed against
+`createLocalOrder` and a live test before adoption. Kept OPEN: the gap it names is
+the unvalidated channels, and a few of 136 is progress, not a close.
 
 **D8 (legacy summary line) — superseded.** The authoritative D8 entry is the CLOSED one earlier in this file (dispatch slips could print on neither system).
 `POSPage.tsx:455` early-returns on `canPrint('kitchen')`, but the HTML path it
@@ -2571,16 +2794,77 @@ skips prints kitchen **and** dispatch. `escposBridge.ts:409` filters targets to
 bound stations. Kitchen bound + dispatch unbound = the dispatch slip prints on
 neither system, silently. Dormant while thermal is off.
 
-### D9 · P3 · Held orders are not visible across tills
+### D9 · P3 · OPEN · Held orders are not visible across tills
+Tabs (open restaurant tables — food cooking, no bill yet) are **local to one
+till** by design: one row per tab in that till's SQLite, out of the sync queue.
+`heldOrders.ts` says so and points here — *"Cross-till recall is register D9 and
+needs server state."* So a tab opened on the floor terminal cannot be charged at
+the counter, which for a multi-till restaurant is a real gap.
+
+**Designed 08-13, deliberately NOT built — `docs/HELD-ORDERS-CROSS-TILL-D9.md`.**
+This is the most dangerous data in the app (losing a tab is its worst failure),
+and it is not "add `held_orders` to `REPLICATED_TABLES`": that mechanism is
+seq-append and origin-scoped, built for write-once records (orders, shifts), and
+held orders are **mutated and deleted** — a charged tab must vanish on every other
+till at once or a second cashier charges it. Two things block a blind build:
+
+1. **A concurrency decision the owner must make** — when till 2 wants a tab open
+   on till 1: hard claim/handoff, soft-view-with-charge-lock, or view-only. A
+   workflow choice about how the floor runs, and it decides the whole design.
+2. **Multi-till runtime** — the real risk (two tills racing a claim, a till going
+   offline mid-charge, a ghost tab) is exactly what the bench cannot exercise.
+
+Recommended shape once the decision is made: **node-authoritative** — the branch
+node is the single source of truth for open tabs, recall/charge is one atomic
+claim (409 on double-claim, the same conditional-update shape proven for D4's
+enrolment burn), so there is no peer-to-peer race to reconcile and delete
+propagates for free. The claim is benchable; the multi-till behaviour is not.
+**P3, on the worst-failure path, owner-decision-gated — should NOT ride the client
+rollout.** Left unbuilt on purpose: a double-charged table is worse than the gap.
 ### D10 · P3 · `ipcHandlers.ts` at 1,639 lines
-### D11 · P1 · `/api/pos/init` fails closed and kills the catalogue pull
-`pos.ts:62-67` does `.single()` on `branches WHERE is_main` — zero rows errors,
-and `one_main_branch_per_business` permits zero. `pos.ts:87` returns 403 on
-`desktop_licensed`, which defaults false — **and resolves it from the `is_main`
-branch, not the branch the till is bound to.** A till bound to branch B is
-licensed by branch A's flag.
-**Not the Beryl fault** — verified 08-08: one branch, `is_main` true,
-`desktop_licensed` true. The licence-resolution bug stands regardless.
+### D11 · P1 · CLOSED 08-13 · `/api/pos/init` licensed the till from the wrong branch, and 500'd on zero main branches
+`pos.ts` fetched only the `is_main` branch with `.single()` and gated the desktop
+licence on **that** branch's `desktop_licensed` — regardless of which branch the
+till was bound to. Two bugs in one place:
+
+1. **Wrong branch for the licence.** A till bound to branch B was licensed by
+   branch A's `desktop_licensed` flag. A licensed till at B could be locked out
+   by A being unlicensed, and an unlicensed B could ride A's licence. The route
+   already knew the bound branch — it fetched it a second time, lower down, for
+   per-branch pricing — but the licence check never used it.
+2. **Fail-closed on zero main branches.** `one_main_branch_per_business` permits
+   ZERO main branches; `.single()` errors on zero rows, and that error was in the
+   hard-error check, so a business with no main branch got a 500 that killed the
+   whole catalogue pull.
+
+**Fix.** The bound branch (the caller's `branch_id`, validated to the business
+and carrying `desktop_licensed`) is now resolved in the same parallel fetch as
+`boundBranch`; the operating branch is `boundBranch ?? mainBranch`; the licence
+gate keys off that, and per-branch pricing reuses the same resolution instead of
+a second lookup — so licence and pricing can no longer disagree about which
+branch the till is on. The main-branch query is `maybeSingle()`, so zero main
+branches is no longer an error; a desktop till with no resolvable licensed branch
+now gets a clean 403 `BRANCH_NOT_LICENSED` rather than a 500. `branchId` in the
+response stays the MAIN branch — the desktop uses it only as the fallback for an
+unbound till (`syncEngine`: `effectiveBranchId = boundBranchId || branchId`), so
+that is deliberately unchanged.
+
+**Verified on the bench:** server `tsc` clean; `tests/pos-init-desktop-licence.test.mjs`
+— 14 assertions, **mutation-checked** (reverting the gate to the main branch, or
+`maybeSingle` back to `single`, fails 3). The test pairs a licence truth table
+(bound-licensed-under-unlicensed-main → allowed; the mirror → blocked; web exempt;
+zero branches → clean block) with source guards that pin the fix in `pos.ts`, so
+the bug cannot silently return. What the bench does NOT prove and a live check
+should: an actual two-branch business where one branch is unlicensed, confirming
+a till at the licensed branch syncs and a till at the unlicensed one gets the 403.
+
+**Gate note.** The old title — *"fails closed and kills the catalogue pull"* —
+contained the word "closed", which `check-register-consistency` reads as a CLOSED
+status. D11 was therefore counted as closed while it was open; the header's D-P1
+total happened to match only because of that. The title now avoids status words.
+A heading whose prose trips the status parser is a latent false-positive worth
+knowing about; the parser now reads only the status field — **A67**, fixed in
+this same session, not silently worked around.
 
 ### D12 · P1 · CLOSED 08-08 · Inbound sync failures were entirely silent
 See §E.
@@ -2810,6 +3094,20 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-13 | **A63 closed** — the onboarding seeder matched role names un-normalised (`nm==='branch_manager'`), so a "Branch Manager" typed with a space would be seeded with ZERO permissions (A61 one layer up). Extracted `roleTier()` to `lib/roleTier.ts` (pure, supabase-free), normalising `lower(replace(name,' ','_'))` like the migrations. `tests/role-tier.test.mjs` (12 assertions, mutation-checked). |
+| 2026-08-13 | **A64 closed** — owner chose the strict manager policy (receive + see, no adjust/manage/financial; management lives on web). Seeder MANAGER_DENY is authoritative; migration 82 revokes the three keys migration 59 over-granted from manager-type roles only, owner/admin and other grants untouched. `scripts/test-migration-82.mjs` (10 checks, mutation-checked). Run the blast-radius SELECT before applying to prod. |
+| 2026-08-13 | **A37 closed** — the desktop licence was bypassable by a client sending `surface: 'web'` on /pos-login. Now the exempting surface is server-derived: honoured only when the business holds web access (`getWebAccess().canLogin`), else forced to desktop and licence-checked. `tests/auth-surface.test.mjs` (11 assertions, mutation-checked). Also fixed a D11 regression this test caught — §3 pinned the pre-D11 `pos.ts` gate shape and had been silently failing. Residual: dual web+desktop subscribers (business-policy call). |
+| 2026-08-13 | **A59 closed** — the till/cloud permission-vocabulary mismatch. The renderer already gates on keys (`has()`), the gates were re-pointed, and `check-permission-parity` now sees the till; the one benchable gap — proving migration 78 grants `receipt.manage` to manager/supervisor/branch_manager — is closed by `scripts/test-migration-78.mjs` (7 checks, PGlite, mutation-checked). Closed on the A66/A43 basis: model proven, only the Windows render smoke-test remains. Two cloud-side inconsistencies (unenforced `stations.manage`, force-close key) recorded for a later pass. |
+| 2026-08-13 | **D9 designed, not built** — cross-till held orders. Turned the bare title into a real entry + `docs/HELD-ORDERS-CROSS-TILL-D9.md`. It is the app's worst-failure data path (open tabs), needs an owner concurrency decision (claim/handoff vs charge-lock vs view-only) and a multi-till rig to verify, so it is deliberately unbuilt and should not ride the rollout. Recommended shape: node-authoritative with an atomic claim. |
+| 2026-08-13 | **A51 closed (register was stale)** — the device-token sawtooth fix (`refreshDeviceTokenIfExpiring` in `syncEngine.ts`, refresh within 120s of expiry, device-scoped, reactive 401 backstop intact) was already implemented and passing `device-token-refresh.test.mjs` (21 assertions); the entry still read "not done". Corrected to CLOSED. NOT yet field-confirmed — a build predating the fix still sawtooths, so the fix must ship. |
+| 2026-08-13 | **D4 implemented end-to-end (stays OPEN; closes D1 on live test)** — issue (`routes/enrol.ts`) + redeem (`auth.ts`, atomic burn, mints the owner-scoped desktop token) endpoints; desktop `auth:enrolDevice` + `posApi.auth.redeemEnrolment` + InstallPage now takes Business ID + enrolment code instead of owner email/password. Server/renderer `tsc` clean, IPC parity 139/139, `tests/enrol-endpoints.test.mjs` (19 assertions). The end-to-end HTTP/token/install path is unrun on the bench — `docs/DEVICE-ENROLMENT-D4.md` has the live-test checklist. |
+| 2026-08-13 | **D7 rollout (stays OPEN)** — shared IPC validator now adopted on `auth:verifyPin`, `order:void` and `auth:enrolDevice` (throwing `assertPayload`, valid payloads unchanged), in addition to `escpos:setKitchenExclusions`. `tests/ipc-validate.test.mjs` up to 25 assertions (mutation-checked). `order:create` left unvalidated on purpose — the sale path needs a schema written against `createLocalOrder` and a live test, not a blind guard. ~132 channels remain. |
+| 2026-08-13 | **A67 closed** — `check-register-consistency` read OPEN/CLOSED from the whole heading, so D11's "fails closed" title counted as CLOSED. Now matches a status label at the start of a leading field, via a pure `scripts/lib/register-status.mjs`; `tests/register-status-parse.test.mjs` (12 assertions). |
+| 2026-08-13 | **D7 advanced (stays OPEN)** — added a shared, dependency-free IPC payload validator (`apps/desktop/src/main/ipcValidate.ts`: `validatePayload`/`assertPayload`/`expectStringArray`) — the desktop had none and no zod. Reference adoption on `escpos:setKitchenExclusions` (malformed → clean reject, not a silent coerce-to-empty). `tests/ipc-validate.test.mjs` (21 assertions). ~135 channels still to adopt; rollout is per-channel. |
+| 2026-08-13 | **D3 advanced (stays OPEN)** — added an auto-update scaffold (`apps/desktop/src/main/autoUpdate.ts`, electron-updater, dev-guarded, installs on quit) + `docs/DESKTOP-AUTOUPDATE.md` runbook. Not bench-verifiable (no Electron/feed): needs the dep, wiring, a publish target, code-signing and a CI release — which is what actually closes A1. |
+| 2026-08-13 | **D4 advanced (stays OPEN; closes D1 when finished)** — `migrations/81_device_enrolment_codes.sql`: single-use, business-scoped, expiring enrolment codes so a till provisions without an owner login. Proven against real Postgres — `scripts/test-migration-81.mjs` (13 checks, mutation-checked on the atomic burn); `schema-index.json` updated. Endpoints + desktop InstallPage are a reviewed proposal in `docs/DEVICE-ENROLMENT-D4.md`, held back because the token path can't be bench-verified. |
+| 2026-08-13 | **D11 closed** — `/api/pos/init` gated the desktop licence on the `is_main` branch, so a till bound to branch B was licensed by branch A's flag; and `.single()` on the main branch 500'd the whole pull when a business had zero main branches (which the schema permits). Now resolves `boundBranch ?? mainBranch` in the parallel fetch, gates on that, reuses it for pricing, and uses `maybeSingle` so zero main branches is a clean 403 not a 500. `tests/pos-init-desktop-licence.test.mjs` (14 assertions, mutation-checked). Noticed in passing: the old title "fails closed" made `check-register-consistency` read D11 as CLOSED while it was open — title reworded; parser fixed under A67. |
+| 2026-08-13 | **A66 opened and closed** — kitchen exclusions never persisted on the till: `saveDeviceConfig` omitted `kitchen_exclusions` from its INSERT/VALUES/SET, so the synced cloud list vanished and the printer applied nothing (invisible to `check-sql-binds` — the statement was balanced, it just never named the column). Fixed, and a per-terminal `kitchen_exclusions_override` added (`LOCAL_SCHEMA_VERSION` 52) so a till can own its list and keep it through every sync — "local is final". Proven by running the real INSERT under `node:sqlite` (`tests/kitchen-exclusions-local.test.mjs`, 17 assertions, mutation-checked). Windows render check outstanding (A43's limit). Two findings recorded: cloud lists are business-wide by design; a `deploy_mode:'local'` till is still not provisionable. |
 | 2026-08-11 (f) | **A62 opened and closed** — migration 76 failed in the field with 42P01 on `role_permissions`. One unqualified table name in an otherwise fully-qualified file, shipped by this session. All of 75/76/77 qualified and re-verified under `search_path = ''`; `check-schema-drift` gained check D, ratcheted at 22, mutation-checked against the real bug. |
 | 2026-08-11 (e) | **A55 closed** — `total_spent` was the last racy read-modify-write on the customer row, in three places, while loyalty_points and visit_count on the SAME row had been atomic since migration 53. Migration 77 adds `increment_customer_spend` and `adjust_customer_visits`; the void path now makes three RPC calls instead of one racy statement. Proven by RUNNING the race under PGlite: the old shape banks 100+250 and records 250. |
 | 2026-08-11 (e) | **A60 closed** — `check-register-consistency`. Ten IDs had two headings (A4 A9 A25 A45 A46 A47 A50 A57 A58 D8 D14), several contradictory; the header claimed 0 P0 while A17 sat OPEN at P0. **Three duplicates were created by this session**, hours after it criticised the same failure. All merged; header re-derived from the body. |

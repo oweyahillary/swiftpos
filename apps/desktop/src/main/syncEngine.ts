@@ -642,6 +642,13 @@ async function pullCatalogue(): Promise<boolean> {
   if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });
   // Cached for the same reason: a till that loses the internet mid-service must
   // keep excluding drinks from the kitchen ticket, not start printing them.
+  //
+  // This is the CLOUD BASELINE — business-wide, edited on the web dashboard. It
+  // is refreshed on every pull. A local edit does NOT live here; it lives in
+  // kitchen_exclusions_override, which this never touches, so "local is final"
+  // holds while the cloud default still updates underneath it. The reader
+  // (escposBridge.kitchenExclusions) returns the override when one is set and
+  // this baseline otherwise.
   if (Array.isArray(kitchenExclusions)) {
     saveDeviceConfig({ kitchen_exclusions: JSON.stringify(kitchenExclusions) });
   }

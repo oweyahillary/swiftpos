@@ -26,7 +26,8 @@ router.get('/init', async (req, res) => {
     { data: categories, error: cErr },
     { data: comboRows },
     { data: receiptTextRows },
-    { data: branch, error: brErr },
+    { data: mainBranch, error: brErr },
+    { data: boundBranch },
     { data: business },
   ] = await Promise.all([
     supabase
@@ -59,12 +60,30 @@ router.get('/init', async (req, res) => {
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
       .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions']),
+    // The MAIN branch — used only as the fallback operating branch for a till
+    // that has not sent its binding yet, and as the `branchId` the desktop falls
+    // back to when unbound. maybeSingle, not single: one_main_branch_per_business
+    // permits ZERO main branches, and a .single() there errored and failed the
+    // whole catalogue pull closed (D11).
     supabase
       .from('branches')
       .select('id, desktop_licensed')
       .eq('business_id', req.businessId)
       .eq('is_main', true)
-      .single(),
+      .maybeSingle(),
+    // The BOUND branch the till actually operates on, when it sent one. Fetched
+    // here in the same round-trip and validated to this business, so the desktop
+    // licence and per-branch pricing can both key off the real operating branch
+    // rather than the main one (D11: a till bound to branch B was licensed by
+    // branch A's flag). Resolves to null for legacy callers that send no branch_id.
+    requestedBranchId
+      ? supabase
+          .from('branches')
+          .select('id, desktop_licensed')
+          .eq('id', requestedBranchId)
+          .eq('business_id', req.businessId)   // tenant guard — never resolve another business's branch
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     supabase
       .from('businesses')
       .select('type, name, currency, vat_rate, ctl_rate')
@@ -78,13 +97,18 @@ router.get('/init', async (req, res) => {
   }
 
   // ── Desktop branch licence check ──────────────────────────────────────────
-  // The branch resolved above must have a paid desktop licence.
+  // The branch the till OPERATES on must have a paid desktop licence. That is the
+  // bound branch it sent, falling back to the main branch only for legacy callers
+  // with no binding. D11: this used to read the main branch's flag regardless of
+  // where the till was bound, so a till at an unlicensed branch B rode branch A's
+  // licence — and a licensed till at B could be locked out by A being unlicensed.
   // If it doesn't, the desktop app can't sync — blocks the POS at the data layer.
   // (PIN entry is also blocked in verify-pin, so this is defence-in-depth.)
   // Desktop-licence gate applies to the DESKTOP surface only. The web POS is
   // gated by web access at login (businesses.web_access_expires_at), NOT by a
   // per-branch desktop licence — so web tokens must not be blocked here.
-  if (req.surface === 'desktop' && branch && !branch.desktop_licensed) {
+  const opBranch = boundBranch ?? mainBranch;
+  if (req.surface === 'desktop' && !opBranch?.desktop_licensed) {
     res.status(403).json({
       error: 'This branch does not have a desktop licence. Please contact SwiftPOS to activate.',
       code:  'BRANCH_NOT_LICENSED',
@@ -124,20 +148,13 @@ router.get('/init', async (req, res) => {
   });
 
   // ── Per-branch price resolution ─────────────────────────────────────────────
-  // Resolve the branch we're pricing for: the caller's branch_id if it belongs to
-  // this business, otherwise the main branch (legacy/fallback). Then overlay each
-  // product with branch_price (nullable). Effective price the client charges is
-  // COALESCE(branch_price, base_price) — base_price stays the default.
-  let pricingBranchId: string | null = branch?.id ?? null;
-  if (requestedBranchId) {
-    const { data: reqBranch } = await supabase
-      .from('branches')
-      .select('id')
-      .eq('id', requestedBranchId)
-      .eq('business_id', req.businessId)   // tenant guard — never price for another business
-      .single();
-    if (reqBranch) pricingBranchId = reqBranch.id;
-  }
+  // Price for the same operating branch the licence check resolved — the two must
+  // agree on where the till is. opBranch is boundBranch ?? mainBranch, already
+  // fetched in the parallel batch above; this used to run a SECOND branch lookup
+  // here, and split the two resolutions was how licence and pricing could drift
+  // (D11). Overlay each product with branch_price (nullable): the effective price
+  // the client charges is COALESCE(branch_price, base_price).
+  const pricingBranchId: string | null = opBranch?.id ?? null;
 
   const productsOut = products ?? [];
   if (pricingBranchId && productIds.length > 0) {
@@ -207,7 +224,11 @@ router.get('/init', async (req, res) => {
       return [] as string[];
     })(),
     categories: categories ?? [],
-    branchId: branch?.id ?? null,
+    // The desktop falls back to this when it has no binding of its own
+    // (syncEngine: effectiveBranchId = boundBranchId || branchId). It is the
+    // MAIN branch, deliberately — the fallback for an unbound till, not the
+    // operating branch, which the till already knows.
+    branchId: mainBranch?.id ?? null,
     pricingBranchId,
     loyaltyEnabled: loyaltyFlag?.enabled ?? false,
     variantsByProduct,

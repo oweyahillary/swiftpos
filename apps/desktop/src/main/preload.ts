@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
 
   auth: {
     login:      (email: string, password: string) => ipcRenderer.invoke('auth:login', { email, password }),
+    redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
     logout:     ()                                 => ipcRenderer.invoke('auth:logout'),
     getSession: ()                                 => ipcRenderer.invoke('auth:getSession'),
     listBranches:      ()                                 => ipcRenderer.invoke('auth:listBranches'),
@@ -208,8 +209,13 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // it is paid. See main/escposBridge.ts.
     printProduction: (payload: unknown) =>
                    ipcRenderer.invoke('escpos:printProduction', payload),
-    // The list the PRINTER applies, so a preview cannot disagree with it.
+    // The effective list + where it came from (override vs synced cloud base).
     kitchenExclusions: () => ipcRenderer.invoke('escpos:kitchenExclusions'),
+    // Set this terminal's local override — wins over cloud, survives every sync.
+    setKitchenExclusions: (terms: string[]) =>
+                   ipcRenderer.invoke('escpos:setKitchenExclusions', terms),
+    // Drop the override and follow the cloud baseline again.
+    clearKitchenExclusions: () => ipcRenderer.invoke('escpos:clearKitchenExclusions'),
     reprintReceipt: () => ipcRenderer.invoke('escpos:reprintReceipt'),
     printShiftReport: (data: unknown) => ipcRenderer.invoke('escpos:printShiftReport', data),
     retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),

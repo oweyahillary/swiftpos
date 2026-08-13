@@ -1,7 +1,7 @@
 # Local (SQLite) schema versions
 
 **Reconstructed 2026-08-10 by reading `localDb.ts` and its git history. Register
-D6.** `LOCAL_SCHEMA_VERSION` is currently **51**.
+D6.** `LOCAL_SCHEMA_VERSION` is currently **52**.
 
 ## Why this file exists
 
@@ -43,7 +43,8 @@ table predates the mechanism.
 | **48** | — | **NEVER EXISTED.** No commit ever sets this value. |
 | **49** | `fee91cc` | Phase 2b+2c — `events`, `maintenance_state`. Mutation events; bounded replicas and nightly snapshots. |
 | **50** | — | **NEVER EXISTED.** No commit ever sets this value. |
-| **51** | `a80c224` | ESC/POS printing — `escpos_enabled INTEGER`, `kitchen_exclusions TEXT` on the settings table. The current value. |
+| **51** | `a80c224` | ESC/POS printing — `escpos_enabled INTEGER`, `kitchen_exclusions TEXT` on the settings table. |
+| **52** | — | Local kitchen-exclusion override — `kitchen_exclusions_override TEXT` on `device_config`. NULL follows the synced cloud baseline (`kitchen_exclusions`); non-NULL is this terminal's own list, which wins and survives every catalogue pull. Shipped with the fix that made `saveDeviceConfig` actually persist `kitchen_exclusions` (it had been omitted from the INSERT/UPSERT, so the synced baseline never reached the DB). The current value. |
 
 ## The gaps are real, and they are the same shape as the server's
 

@@ -13,7 +13,8 @@
 
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
-import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions } from './escposBridge';
+import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
+import { expectStringArray, assertPayload } from './ipcValidate';
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
@@ -130,6 +131,62 @@ export function registerIpcHandlers() {
     await syncAll().catch(console.error);
 
     return { user: data.user, business: data.business };
+  });
+
+  // D4 — provision this till with a single-use enrolment code instead of an owner
+  // login (closes D1: the business is chosen by id, so a two-business owner is no
+  // longer a dead end). A near-mirror of auth:login — the ONLY difference is the
+  // credential (business_id + code, not email + password) and the endpoint. The
+  // server returns the same { token, refreshToken, user, business } shape, so the
+  // session is stored identically.
+  ipcMain.handle('auth:enrolDevice', async (_event, payload) => {
+    // D7: both credentials must be present and non-empty before we call the server.
+    const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
+      { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
+    const res = await fetch(`${getServerUrl()}/api/auth/enrol/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_id: String(business_id ?? '').trim(),
+        code:        String(code ?? '').trim(),
+        // Same stable per-install device_id the login path sends, so the server
+        // records THIS terminal and tells it apart from the rest of the fleet.
+        device_id:   getDeviceConfig()?.device_id ?? undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Enrolment failed');
+
+    const db = getLocalDb();
+    clearCatalogue(db);
+
+    db.prepare(`
+      INSERT INTO session (id, token, refresh_token, user_id, business_id, business_name, currency, logged_in_at)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        token=excluded.token, refresh_token=excluded.refresh_token, user_id=excluded.user_id, business_id=excluded.business_id,
+        business_name=excluded.business_name, currency=excluded.currency, logged_in_at=excluded.logged_in_at
+    `).run(
+      data.token,
+      data.refreshToken ?? null,
+      data.user.id,
+      data.business.id,
+      data.business.name,
+      data.business.currency ?? 'KES',
+      new Date().toISOString(),
+    );
+
+    // D5: wrap the credentials at rest, same as the login path.
+    writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
+
+    if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
+
+    configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
+    refreshTechConfig(data.token).catch(() => {});
+    await syncAll().catch(console.error);
+
+    return { user: data.user, business: data.business, branchId: data.branchId ?? null };
   });
 
   ipcMain.handle('auth:logout', async () => {
@@ -373,7 +430,11 @@ export function registerIpcHandlers() {
     }));
   });
 
-  ipcMain.handle('auth:verifyPin', async (_event, { pin, branch_id }) => {
+  ipcMain.handle('auth:verifyPin', async (_event, payload) => {
+    // D7: validate at the boundary. A malformed payload throws a clear error the
+    // renderer already catches, instead of destructuring undefined mid-handler.
+    const { pin, branch_id } = assertPayload<{ pin: string; branch_id: string }>(
+      { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } }, payload);
     const db = getLocalDb();
     const session = db.prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
 
@@ -851,19 +912,47 @@ export function registerIpcHandlers() {
    * are not produced twice.
    */
   /**
-   * The branch's kitchen exclusion list, as the PRINTER applies it.
+   * The exclusion list this terminal's printer applies, and where it came from.
    *
-   * 0.5.27. The Printers tab previewed and test-printed using a per-till
-   * localStorage list, while the live path used this server-synced one — so the
-   * preview could show a drink dropped that the printer would happily send, or
-   * the reverse. A preview that disagrees with the printer is worse than none.
+   * `terms` is the EFFECTIVE list (override if set, else the synced cloud
+   * baseline); `source` says which; `cloudTerms` carries the baseline so the
+   * setup screen can show "the dashboard says X" while a local override is in
+   * force. `terms` is kept as the first field so the older PrintersTab caller,
+   * which destructured `{ terms }`, keeps working unchanged.
    *
-   * Read-only and derived: the value is owned by the cloud today and by the node
-   * under PHASE6. Nothing here writes it.
+   * "Local is final" lives one layer down, in escposBridge: the printer path
+   * calls kitchenExclusions() directly, which already resolves the override.
    */
   ipcMain.handle('escpos:kitchenExclusions', () => {
-    try { return { terms: kitchenExclusions() }; }
-    catch { return { terms: [] as string[] }; }
+    try { return kitchenExclusionsState(); }
+    catch { return { terms: [] as string[], source: 'cloud' as const, cloudTerms: [] as string[] }; }
+  });
+
+  /**
+   * Set this terminal's local override. Available on any till — a cloud till may
+   * still override the business default for its own printer, and the override
+   * survives every catalogue pull. See escposBridge.setKitchenExclusions.
+   */
+  ipcMain.handle('escpos:setKitchenExclusions', (_e, terms: unknown) => {
+    // D7 reference adoption: validate at the boundary. A malformed payload is a
+    // clean rejection, not a silent coerce-to-empty that would wipe the list.
+    const v = expectStringArray(terms, 'terms');
+    if (!v.ok) return { ok: false, error: v.error, terms: kitchenExclusions() };
+    try {
+      const saved = setKitchenExclusions(v.value);
+      return { ok: true, terms: saved };
+    } catch {
+      return { ok: false, error: 'write failed', terms: kitchenExclusions() };
+    }
+  });
+
+  /**
+   * Drop the local override and follow the cloud baseline again. Returns the
+   * baseline that is now in force so the screen can repaint without a round trip.
+   */
+  ipcMain.handle('escpos:clearKitchenExclusions', () => {
+    try { return { ok: true, terms: clearKitchenExclusionsOverride() }; }
+    catch { return { ok: false, error: 'write failed', terms: kitchenExclusions() }; }
   });
 
   ipcMain.handle('escpos:printProduction', (_e, payload: any) => {
@@ -1691,8 +1780,18 @@ export function registerIpcHandlers() {
   });
 
   // ── Order void (manager/supervisor only — server enforces permission) ──────
-  ipcMain.handle('order:void', async (_event, { orderId, reason, supervisor_pin, override_pin, authorizer_id }:
-    { orderId: string; reason: string; supervisor_pin?: string; override_pin?: string; authorizer_id?: string }) => {
+  ipcMain.handle('order:void', async (_event, payload) => {
+    // D7: the void identifier and reason must be present and well-typed before we
+    // build a request from them; the approval PINs are optional.
+    const { orderId, reason, supervisor_pin, override_pin, authorizer_id } =
+      assertPayload<{ orderId: string; reason: string; supervisor_pin?: string; override_pin?: string; authorizer_id?: string }>(
+        {
+          orderId:        { t: 'string', min: 1 },
+          reason:         { t: 'string' },
+          supervisor_pin: { t: 'string', optional: true },
+          override_pin:   { t: 'string', optional: true },
+          authorizer_id:  { t: 'string', optional: true },
+        }, payload);
     const db = getLocalDb();
     // Get server URL + best available auth token
     const cfg = getDeviceConfig();
