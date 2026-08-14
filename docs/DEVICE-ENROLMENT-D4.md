@@ -1,5 +1,13 @@
 # Device enrolment (register D4, closes D1)
 
+> **UPDATE 2026-08-14 (register A69): issuance moved to the admin portal.** The
+> owner-side `POST /api/enrol/code` described below is **retired** (now a 410).
+> Codes are issued by a SwiftPOS admin at `POST /api/admin/clients/:id/branches/
+> :branchId/enrol-code` — branch-bound, licence-gated, and billed via the branch
+> licence — so a client cannot self-provision a till. The **redeem** path and its
+> single-use burn (below) are unchanged. Read A69 for the current issuance design;
+> the "issue" section here is retained as the origin of the redeem contract.
+
 **Status: implemented across all three layers and type-checked; pending one live
 end-to-end test.** The `device_enrolment_codes` table (migration 81) and its
 single-use/expiry guarantee are proven against real Postgres

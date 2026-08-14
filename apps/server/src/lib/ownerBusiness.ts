@@ -93,3 +93,37 @@ export function firstOrNull(r: OwnerBusinessResult): OwnedBusiness | null {
   if (r.kind === 'many') return r.businesses[0];
   return null;
 }
+
+/**
+ * Resolve a business's OWNER public.users.id — the token principal a redeemed
+ * enrolment code mints under (A69). The admin issuing a code is an `admin_users`
+ * row, not a `public.users` row, so `created_by` on the code cannot be the admin;
+ * it must be the owner, exactly as the owner-issued path used `req.userId`.
+ *
+ * The owner user row is created by `POST /clients` with `email = businesses.email`
+ * and the seeded `owner` role (see admin.ts create-business). We resolve by that
+ * same email — an exact, case-insensitive match, `%`/`_` neutralised — so this
+ * agrees with `resolveOwnerUserRow` in auth.ts, which does the same match on the
+ * desktop-login path. (Kept here so admin.ts need not import from a routes file;
+ * if the two ever unify, this is the home.)
+ *
+ * Returns null rather than throwing — the caller decides how to fail, and issuing
+ * a code with no valid principal must be refused, not papered over.
+ */
+export async function resolveOwnerUserId(businessId: string): Promise<string | null> {
+  const { data: biz } = await supabase
+    .from('businesses').select('email').eq('id', businessId).maybeSingle();
+  const email = String((biz as any)?.email ?? '').trim().toLowerCase();
+  if (!email) return null;
+
+  const likeSafe = email.replace(/[\\%_]/g, ch => `\\${ch}`);
+  const { data: candidates, error } = await supabase
+    .from('users').select('id, email')
+    .eq('business_id', businessId).ilike('email', likeSafe).limit(200);
+  if (error) return null;
+
+  const match = (candidates ?? []).find(
+    (u: any) => String(u.email ?? '').trim().toLowerCase() === email,
+  );
+  return (match as any)?.id ?? null;
+}

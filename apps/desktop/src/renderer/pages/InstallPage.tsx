@@ -63,6 +63,9 @@ export default function InstallPage({ onComplete }: Props) {
 
   // ── Step 3: bind branch + role ──
   const [branchId, setBranchId] = useState('');
+  // A69: admin-issued codes are branch-bound. When the code carried a branch, we
+  // LOCK it here — the installer confirms placement, they don't get to change it.
+  const [branchLocked, setBranchLocked] = useState(false);
   const [role, setRole] = useState<DeviceRole>('till');
   // is typed in from the branch server's screen.
   const [nodeSecret, setNodeSecret] = useState('');
@@ -175,9 +178,10 @@ export default function InstallPage({ onComplete }: Props) {
       setBusinessName(business?.name ?? '');
       const list = await posApi.auth.listBranches();
       setBranches(list.map(b => ({ id: b.id, name: b.name })));
-      // If the code was issued bound to a branch, pre-select it; else default to the first.
-      if (boundBranch && list.some(b => b.id === boundBranch)) setBranchId(boundBranch);
-      else if (list.length) setBranchId(list[0].id);
+      // If the code was issued bound to a branch, pre-select AND lock it (A69);
+      // else fall back to a picker (legacy/unbound codes).
+      if (boundBranch && list.some(b => b.id === boundBranch)) { setBranchId(boundBranch); setBranchLocked(true); }
+      else if (list.length) { setBranchId(list[0].id); setBranchLocked(false); }
       if (business?.type) setBusinessType(business.type);
       setStep('bind');
     } catch (err: any) {
@@ -355,11 +359,16 @@ export default function InstallPage({ onComplete }: Props) {
               )}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Branch</label>
-                <select value={branchId} onChange={e => setBranchId(e.target.value)} className={inputCls}>
+                <select value={branchId} onChange={e => setBranchId(e.target.value)} disabled={branchLocked}
+                  className={`${inputCls}${branchLocked ? ' opacity-70 cursor-not-allowed' : ''}`}>
                   {branches.length === 0 && <option value="">No branches found</option>}
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
-                <p className="text-xs text-gray-400 mt-1.5">This device is bound to one branch. All its sales belong here.</p>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {branchLocked
+                    ? 'Set by the enrolment code — this device belongs to this branch. All its sales belong here.'
+                    : 'This device is bound to one branch. All its sales belong here.'}
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Device role</label>

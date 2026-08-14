@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.27",
+  "version": "0.5.30",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -12,8 +12,8 @@
     "build:main": "tsc -b tsconfig.main.json --force",
     "postinstall": "electron-builder install-app-deps",
     "pack:dir": "electron-builder --dir --config.directories.output=build-out",
-    "pack:installer": "electron-builder --win nsis --config.directories.output=release",
-    "pack:portable": "electron-builder --win portable --config.directories.output=release",
+    "pack:installer": "electron-builder --win nsis --config electron-builder.config.js --config.directories.output=release",
+    "pack:portable": "electron-builder --win portable --config electron-builder.config.js --config.directories.output=release",
     "pack:lowmem": "electron-builder --win nsis --config.directories.output=release --config.compression=store",
     "build:all": "npm run clean && npm run build:main && npm run build:renderer",
     "version:patch": "npm version patch --no-git-tag-version",
@@ -22,8 +22,13 @@
     "assert:built": "node scripts/assert-built.mjs",
     "dist": "npm run assert:built && npm run pack:installer && npm run pack:portable",
     "release:patch": "npm run version:patch && npm run build:all && npm run dist",
+    "release:patch:dev": "node scripts/release-flavour.mjs dev patch",
     "release:minor": "npm run version:minor && npm run build:all && npm run dist",
+    "release:minor:dev": "node scripts/release-flavour.mjs dev minor",
     "release:major": "npm run version:major && npm run build:all && npm run dist",
+    "release:major:dev": "node scripts/release-flavour.mjs dev major",
+    "release:both": "node scripts/release-both.mjs",
+    "pack:both": "node scripts/release-both.mjs none",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:held": "node test/heldOrders.test.mjs",
     "test:held:electron": "node test/run-under-electron.mjs test/heldOrders.test.mjs",
@@ -66,61 +71,6 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
     "wait-on": "^8.0.3"
-  },
-  "build": {
-    "appId": "com.swiftpos.desktop",
-    "productName": "SwiftPOS",
-    "directories": {
-      "output": "release"
-    },
-    "compression": "normal",
-    "files": [
-      "dist/**/*",
-      "resources/**/*",
-      "!**/*.map",
-      "!**/*.ts",
-      "!**/*.md",
-      "!**/{test,__tests__,tests,powered-test,example,examples}/**",
-      "!**/{.eslintrc,.prettierrc,.editorconfig,tsconfig.json,.npmignore}",
-      "!node_modules/exceljs/dist/**",
-      "!node_modules/better-sqlite3/{src,deps,build/Release/obj,build/Release/obj.target}/**",
-      "!node_modules/better-sqlite3/build/**/*.{o,a,lib,exp,pdb,ilk}"
-    ],
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "resources/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "SwiftPOS",
-      "include": "build/installer.nsh",
-      "allowElevation": true
-    },
-    "portable": {
-      "artifactName": "SwiftPOS-${version}-portable.exe"
-    },
-    "electronLanguages": [
-      "en-US"
-    ]
   },
   "description": "SwiftPOS offline-first point of sale terminal",
   "author": "SwiftPOS",

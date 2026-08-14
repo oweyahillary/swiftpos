@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftPOS — Session Handover · 13 Aug 2026</title>
+<style>
+  :root{
+    --ink:#1a1d21;--muted:#5c6570;--line:#e4e7eb;--bg:#f7f8fa;--card:#fff;
+    --green:#2f6f4f;--green-s:#e8f2ec;--amber:#8a5a00;--amber-s:#fbf1dc;
+    --red:#9a2f2f;--red-s:#f8ebeb;--blue:#274b9c;--blue-s:#e7eefc;--codebg:#f2f4f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:40px 24px 90px}
+  h1{font-size:28px;margin:0 0 4px;letter-spacing:-.015em}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .meta{color:var(--muted);font-size:13px;border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:28px}
+  h2{font-size:19px;margin:34px 0 10px;padding-top:10px;letter-spacing:-.01em}
+  h3{font-size:15px;margin:20px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:650}
+  p{margin:8px 0}
+  ul{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  code{background:var(--codebg);padding:1px 6px;border-radius:5px;font:13px ui-monospace,Menlo,Consolas,monospace}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin:16px 0}
+  @media(max-width:640px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card .h{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+  .card .v{font-size:15px;font-weight:600}
+  .pill{display:inline-block;font-size:12px;font-weight:650;padding:2px 9px;border-radius:99px}
+  .ok{background:var(--green-s);color:var(--green)}.wait{background:var(--amber-s);color:var(--amber)}
+  .todo{background:var(--blue-s);color:var(--blue)}.skip{background:#eef0f2;color:var(--muted)}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 22px;margin:14px 0}
+  .row{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:flex-start}
+  .row:first-child{border-top:none}
+  .row .id{min-width:74px;font-weight:650;font-size:14px}
+  .row .d{flex:1;font-size:14.5px}
+  .row .d small{color:var(--muted);display:block;margin-top:2px;font-size:13px}
+  .callout{border-radius:10px;padding:14px 18px;margin:16px 0;font-size:14.5px}
+  .callout.g{background:var(--green-s)}.callout.a{background:var(--amber-s);color:var(--amber)}
+  .callout.r{background:var(--red-s);color:var(--red)}.callout.b{background:var(--blue-s);color:var(--blue)}
+  ol.steps{counter-reset:s;list-style:none;padding-left:0}
+  ol.steps li{counter-increment:s;padding:10px 0 10px 42px;position:relative;border-top:1px solid var(--line)}
+  ol.steps li:first-child{border-top:none}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:9px;width:28px;height:28px;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:650}
+  footer{color:var(--muted);font-size:13px;text-align:center;margin-top:44px;border-top:1px solid var(--line);padding-top:20px}
+  a{color:var(--blue)}
+  @media print{body{background:#fff}.card,.box{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS — Session Handover</h1>
+  <p class="sub">Desktop stability + audit-register batch, and where the client rollout stands.</p>
+  <div class="meta">13 Aug 2026 · repo <code>oweyahillary/swiftpos</code> · branch <code>dev</code> · server <code>swiftpos-server.onrender.com</code></div>
+
+  <div class="callout g">
+    <b>Bottom line.</b> Ten audit items closed and verified, four migrations applied to production, the server is live, and CI is green.
+    What remains to reach the client is a desktop build, a one-time enrolment smoke test, and the hand-install. Email is not a code
+    issue — it needs a Render env change (Resend). Nothing below blocks trading.
+  </div>
+
+  <h2>System status</h2>
+  <div class="grid">
+    <div class="card"><div class="h">Database (Supabase)</div><div class="v"><span class="pill ok">Done</span> migrations 78 · 79 · 81 · 82 applied &amp; verified in SQL</div></div>
+    <div class="card"><div class="h">Server (Render)</div><div class="v"><span class="pill ok">Live</span> deployed from <code>dev</code></div></div>
+    <div class="card"><div class="h">CI (GitHub Actions)</div><div class="v"><span class="pill ok">Green</span> after the register fix</div></div>
+    <div class="card"><div class="h">Email</div><div class="v"><span class="pill wait">Config</span> SMTP blocked on host — needs Resend env</div></div>
+    <div class="card"><div class="h">Desktop build</div><div class="v"><span class="pill todo">To do</span> package <code>dev</code> → install to tills</div></div>
+    <div class="card"><div class="h">Register open count</div><div class="v">A: 1 P0 · 9 P1 · 4 P2 · 1 P3 · D: 1 P0 · 2 P1 · 1 P2 · 2 P3</div></div>
+  </div>
+
+  <h2>Closed &amp; verified this session</h2>
+  <div class="box">
+    <div class="row"><div class="id">D11</div><div class="d">Desktop licence gated on the wrong branch and 500'd on zero main branches. <small>pos.ts — bound-branch resolution + maybeSingle · tests/pos-init-desktop-licence.test.mjs</small></div></div>
+    <div class="row"><div class="id">A37</div><div class="d">Desktop licence bypassable via client-supplied <code>surface</code>. <small>/pos-login surface now server-derived from web access · also fixed a D11-broken test</small></div></div>
+    <div class="row"><div class="id">A51</div><div class="d">Device-token 401 sawtooth (the client's "session bug"). <small>Fix was already in dev; ships with this build — watch the till log to confirm it stops</small></div></div>
+    <div class="row"><div class="id">A59</div><div class="d">Till gated on roles, cloud on permission keys. <small>Migration 78 grant proven (test-migration-78) · Windows render smoke-test still owed</small></div></div>
+    <div class="row"><div class="id">A64</div><div class="d">Manager permissions reconciled to the strict policy (receive + view, no adjust/manage/financial). <small>Migration 82 · your decision</small></div></div>
+    <div class="row"><div class="id">A63</div><div class="d">Onboarding seeder now normalises role names (no zero-permission "Branch Manager"). <small>lib/roleTier.ts</small></div></div>
+    <div class="row"><div class="id">A49</div><div class="d">Stock report repointed from a dead table to <code>stock_movements</code> (real restocked/written-off figures). <small>lib/stockMovementSummary.ts</small></div></div>
+    <div class="row"><div class="id">A66 · A67</div><div class="d">Kitchen-exclusion persistence + per-terminal override; register status parser hardened. <small>A66 render still owed on Windows</small></div></div>
+  </div>
+
+  <h2>Built, pending a live test</h2>
+  <div class="box">
+    <div class="row"><div class="id">D4</div><div class="d">Single-use enrolment codes replace owner-login provisioning (closes D1 too). <small>Migration 81 applied · endpoints live · run <b>D4-enrolment-smoke-test.html</b> on one test till before any new-device provisioning</small></div></div>
+  </div>
+
+  <h2>What remains — desktop</h2>
+  <h3>Blocks the client build</h3>
+  <ol class="steps">
+    <li>Build the <code>.exe</code> from <code>dev</code> — <code>npm run package</code> → <code>npm run package:check</code>.</li>
+    <li>Run the <b>D4 enrolment smoke test</b> once on a test till (see the companion HTML).</li>
+    <li>Hand-install to the client's tills; confirm the A51 sawtooth disappears from the logs.</li>
+  </ol>
+
+  <h3>Field verification owed (code done, never run on a real till)</h3>
+  <ul>
+    <li><b>A51</b> — 401 sawtooth stops · <b>A66</b> — kitchen exclusions render + override survives sync · <b>D7</b> — verify-pin / order:void / enrolDevice still work · <b>A59</b> — manager sees Receipt/Printers tabs · <b>A43</b> — receipts/tickets print correctly.</li>
+  </ul>
+
+  <h3>Open desktop work — not this build</h3>
+  <ul>
+    <li><b>D3</b> (P1) — auto-update: add <code>electron-updater</code>, remove the tsconfig exclude, wire it, publish target, OV cert, CI release. Scaffold is in-tree, excluded from the build.</li>
+    <li><b>D7</b> (P2) — ~132 IPC channels still unvalidated; <code>order:create</code> needs a real schema.</li>
+    <li><b>D9</b> (P3) — cross-till held orders. Designed, not built; needs your concurrency decision + a multi-till rig.</li>
+    <li><b>D10</b> (P3) — <code>ipcHandlers.ts</code> refactor. Low value, high blind-risk — leave until the app can be run.</li>
+  </ul>
+
+  <h3>Not this client — offline / multi-branch cluster</h3>
+  <ul>
+    <li><b>A17 · A19 · A20 · A24</b> — peer lockout, offline sales relay, failover roster, stale reference data. Real, but this client is single-branch and online. <b>A18</b> — kept open on purpose (doc-revert reminder for PHASE5 §3).</li>
+  </ul>
+
+  <h2>Email — the real story</h2>
+  <div class="callout a">
+    <b>Not a bug, and not your credentials.</b> The SwiftPOS daily-summary emails delivered fine in July, so the SMTP config is
+    correct. On Render's free tier, outbound SMTP (both 587 and 465) is now blocked at the network layer — the boot log shows
+    <code>Both submission ports blocked</code>. No code change reaches a filtered port.
+  </div>
+  <p><b>Fix (Render dashboard env, no code):</b></p>
+  <ol class="steps">
+    <li>Create a <a href="https://resend.com">Resend</a> API key → set <code>RESEND_API_KEY</code>.</li>
+    <li>Verify a domain at resend.com/domains and set <code>NOTIFY_FROM_EMAIL</code> to an address on it (<b>not</b> a gmail address).</li>
+    <li>Save &amp; redeploy. Boot log flips from <code>RESEND_API_KEY not set…</code> to <code>[mailer] Resend configured (primary).</code></li>
+  </ol>
+  <p>Resend sends over HTTPS/443, which the host does not block. Confirm delivery on demand with the new owner-only endpoint
+  <code>POST /api/notifications/test-email</code> → <code>{ ok: true, provider: "resend" }</code>. Register A54 stays open until the key is set.</p>
+
+  <h2>Owner decisions / actions still pending</h2>
+  <div class="box">
+    <div class="row"><div class="id"><span class="pill wait">Action</span></div><div class="d"><b>A54</b> — set Resend env vars (above).</div></div>
+    <div class="row"><div class="id"><span class="pill wait">Action</span></div><div class="d"><b>A4</b> — run <code>select version, applied_at from public.schema_migrations order by version;</code> on prod so the repo can reconcile migration 68.</div></div>
+    <div class="row"><div class="id"><span class="pill todo">Decide</span></div><div class="d"><b>D9</b> — cross-till held-orders concurrency model: hard-claim / charge-lock / view-only.</div></div>
+    <div class="row"><div class="id"><span class="pill todo">Decide</span></div><div class="d"><b>A12</b> — which branch's stock the recipe view should show (recipes are business-level, stock is per-branch).</div></div>
+    <div class="row"><div class="id"><span class="pill todo">Decide</span></div><div class="d"><b>A37 residual</b> — does a web-subscriber's physical till need its own desktop licence? · <b>A8</b> — wire or drop the web split-bill modal.</div></div>
+  </div>
+
+  <h2>Deploy order (for any future change)</h2>
+  <div class="callout b">
+    <b>Database → Server → Desktop.</b> Migrations 78/79 (the <code>receipt.manage</code> / <code>stations.manage</code> grants) must be
+    live <b>before</b> the desktop build reaches a till, or a manager sees fewer tabs, not more. Migration 82 revokes manager keys —
+    run its blast-radius SELECT before applying. Full sequence in <code>docs/PRE-BUILD-CHECKLIST.md</code>.
+  </div>
+
+  <h2>Tooling &amp; where things live</h2>
+  <ul>
+    <li><code>scripts/run-all.mjs</code> — one-command full pre-ship check (build + unit tests + migration tests + gates + tsc). Cross-platform; run before every build.</li>
+    <li><code>docs/AUDIT-REGISTER.md</code> — the record of every finding; header counts are re-derived by <code>check-register-consistency</code>.</li>
+    <li><code>docs/PRE-BUILD-CHECKLIST.md</code> — the deploy sequence · <code>docs/DEVICE-ENROLMENT-D4.md</code> — D4 design/runbook · <code>docs/HELD-ORDERS-CROSS-TILL-D9.md</code> — D9 design.</li>
+  </ul>
+
+  <h2>Gotchas worth knowing</h2>
+  <ul>
+    <li><b>CI is the real gate, not local.</b> It caught three regressions local Node 20 could not (schema-version pairing, a node:sqlite lane crash, and a main-build dependency). Wait for a green CI run before building the <code>.exe</code>.</li>
+    <li><b>node:sqlite tests need Node 22.</b> On Node 20 they skip (or error if run raw); CI runs them on a dedicated Node-22 lane. A few tests also need <code>apps/server</code> built first (they import from <code>dist</code>).</li>
+    <li><b>Commit narrowly.</b> Prefer <code>git add &lt;path&gt;</code> over <code>git add -A</code> when applying a delivered file, so nothing stale rides along.</li>
+  </ul>
+
+  <footer>Handover prepared 13 Aug 2026 · companion: <b>D4-enrolment-smoke-test.html</b> · source of record: <code>docs/AUDIT-REGISTER.md</code></footer>
+</div>
+</body>
+</html>

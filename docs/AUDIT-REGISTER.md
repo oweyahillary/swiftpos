@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
+| Last updated | **2026-08-14 — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
 | Tree | `dev` @ `0215475` (was recorded as `84400d6`; the deploy log and `git log` both read `0215475`), desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 1 P0 · 9 P1 · 4 P2 · 1 P3 — D: 1 P0 · 2 P1 · 1 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 · A-P3: A13 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 |
+| Open | **A: 1 P0 · 9 P1 · 5 P2 · 2 P3 — D: 1 P0 · 2 P1 · 1 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 A69 · A-P3: A13 A68 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 D17 |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
@@ -2715,6 +2715,81 @@ Verified green there: 21/21 on better-sqlite3 under Electron 35.7.5, Windows.
 
 ---
 
+### A68 · P3 · OPEN · Deploy environment is not visually distinguishable (dashboard + admin)
+
+`main` (prod) and `dev` are separate cloud instances, separate Supabase
+projects, separate Vercel URLs — and until now identical to the eye. Nothing in
+a browser tab told you whether you were about to act on prod or dev, which is the
+kind of two-things-that-must-agree gap this register exists to name — here the
+two things are "which deploy am I looking at" and "what am I about to change."
+
+Fixed **per deployment, not per branch**. A committed-per-branch favicon would
+diverge on every `dev → main` merge (A39's class); instead a single env var
+`VITE_APP_ENV` (set on each Vercel project) selects the badge at runtime, so the
+two branches stay byte-identical in git. `apps/dashboard/src/lib/appFlavor.ts`
+and `apps/admin/src/lib/appFlavor.ts` generate an SVG-data-URI favicon and set
+the tab title: prod → blue `#3b82f6` "S" / `SwiftPOS`; dev → amber `#f59e0b`
+"SD" / `[DEV] SwiftPOS`. Amber is already the UI's "attention" colour. Absent or
+unknown env resolves to **prod**, so a missing variable never disguises dev as
+prod. Called once in each app's `main.tsx` before render.
+
+**OPEN, not closed:** the code is verified (dashboard `tsc` green on the bench),
+but the badge only appears once `VITE_APP_ENV` is set on the three Vercel
+projects (owner action — see MANIFEST-2026-08-14-a.md), and "looks right in the
+tab" is a browser check the bench cannot make. Closes when the vars are set and
+seen. Palette confirmed against the dashboard's own hex usage, not assumed.
+
+---
+
+### A69 · P2 · OPEN · Enrolment issuance moves to admin (billable), branch-bound; owner self-provisioning retired
+
+D4 shipped issuance on the **owner** side (`POST /api/enrol/code`, owner-scoped).
+That is a revenue leak by design: a client who can provision their own tills has
+nothing to be charged for. Owner's call — **provisioning is a billable act and
+belongs behind the SwiftPOS admin gate.** So issuance moves; the redeem path
+(`/api/auth/enrol/redeem`) is untouched.
+
+Built and bench-verified:
+- **New admin endpoint** `POST /api/admin/clients/:id/branches/:branchId/enrol-code`
+  (`requireAdmin`). **Branch-bound** (branch from the URL, always set — the
+  owner's optional-branch ambiguity is gone). **Licence-gated**: refuses with
+  `BRANCH_NOT_LICENSED` unless the branch is desktop-licensed, which is also what
+  the D11 init gate would enforce anyway — fail early, not at first sync. The
+  code's `created_by` is the **owner's** `public.users.id` (resolved via
+  `resolveOwnerUserId`, the same business_id+email match `resolveOwnerUserRow`
+  uses on desktop-login), because redeem mints an owner-scoped token and
+  `orders.cashier_id` REFERENCES `public.users(id)`. The **admin** is recorded in
+  the audit log, not as the principal. Refuses (`NO_OWNER`) rather than mint a bad
+  token if the owner can't be resolved.
+- **Owner endpoint retired** to a 410 `ENROL_ISSUE_MOVED` (not a silent 404 — old
+  callers are told where issuance went). No self-provisioning path remains.
+- **Shared `lib/enrolCode.ts`** (makeCode/hashCode/expiry), rejection-sampled to
+  drop the modulo bias the owner path had; hashes the upper-cased code. So the
+  admin path and the retired path cannot drift.
+- **Billing** needs nothing new: the branch-licence handler already auto-creates
+  an `invoices` row when `invoice_amount` is passed, and the admin UI already
+  prompts for the one-off desktop fee. Enrolment codes are provisioning, not a
+  separate charge — the branch licence is the billable unit (per the owner's
+  confirmed model: desktop = one-off **per branch**, unlimited tills, no trial).
+- **Desktop InstallPage** now LOCKS the branch when the code carried one (it
+  already pre-selected it), so a branch-bound code fixes placement — the installer
+  confirms, can't reassign. Renderer `tsc` clean.
+- **Admin UI**: "Enrol till" per licensed branch → shows Business ID + code once,
+  copyable, with the 15-min expiry.
+- `tests/enrol-endpoints.test.mjs` rewritten for the relocation (25 checks, run;
+  the licence-gate guard mutation-checked after its first version was too loose —
+  `/BRANCH_NOT_LICENSED/` matched a mutated `..._X`; tightened to a word boundary
+  and the actual gate line, rule 23).
+
+**OPEN, not closed (rule 16):** the HTTP flow, the admin token mint, owner
+resolution against a real row, and a completed admin→till enrolment have NOT run
+— the bench has no server round-trip or Electron. Closes when: an admin issues a
+code for a licensed branch, a till redeems it, the branch is locked on the till,
+and a second redeem of the same code is refused. The owner 410 and the licence
+gate are the two new refusals to confirm live.
+
+---
+
 ## D. OPEN — desktop app audit, 2026-08-08
 
 Every item below was verified against source at `a80c224`, not against docs.
@@ -2968,6 +3043,55 @@ untouched.
 no hit for `from('sync_queue')` anywhere in `apps/server` or `apps/dashboard`.
 The live one is the till's SQLite table (`attempts`, `last_error`). Same name,
 different columns, one of them a decoy. Drop or rename it.
+
+---
+
+### D17 · P3 · OPEN · Desktop build has no dev/prod flavour (icon, appId, userData, update channel)
+
+The desktop build was one identity regardless of which cloud it targets: same
+icon, same `com.swiftpos.desktop` appId, same `%APPDATA%\SwiftPOS` data folder.
+A dev-testing build and a prod build could not be told apart on the taskbar, and
+worse, installing one over the other shared a single local `swiftpos.db` — dev
+trading writing into prod's till data.
+
+Two layers of fix, the split that matters here: **build-time identity** and
+**runtime truth.**
+
+- **Build-time (what you asked for):** `apps/desktop/electron-builder.config.js`
+  (new) replaces the static `build` block in `package.json`. `SWIFTPOS_ENV=dev`
+  swaps icon (`resources/icon.dev.ico`, an amber DEV-badged variant of the
+  existing mark), `productName` → "SwiftPOS Dev", `appId` →
+  `com.swiftpos.desktop.dev`, and the artifact name — all from one source so the
+  four cannot disagree. Distinct `productName` gives dev its own
+  `%APPDATA%\SwiftPOS Dev` (Electron derives userData from productName — the
+  index.ts comment already warns of this), so dev and prod coexist with isolated
+  local DBs, which is the point. Default (unset) is prod. **Version stays owned
+  by the build tooling — the config sets no version (rule 22).** Resolution
+  proven by requiring the config under both env values (prod + dev) and printing
+  the result; not asserted. Named cross-platform release scripts
+  (`release:patch:dev` etc.) route through `scripts/release-flavour.mjs` — a
+  ~20-line wrapper we own rather than a `cross-env` dependency + lockfile change
+  (rule 22); its flavour/bump parsing and env mapping are proven by a dry-run.
+  Both flavours build at ONE version via `scripts/release-both.mjs` (`release:both`
+  bumps once then packs prod + dev; `pack:both` rebuilds both at the current
+  version) — running the two `release:*` scripts separately bumped the version
+  twice, which is the build-up this removes.
+
+- **Runtime (the honest signal):** a build's real environment is the cloud it is
+  *enrolled* against (`getServerUrl()`), not a build flag — so `index.ts` now
+  titles the window from the enrolled cloud host (`SwiftPOS — {host}`),
+  collapsing to plain `SwiftPOS` only for hosts in `PROD_CLOUD_HOSTS` (owner
+  fills this; empty default over-shows and never hides). Held against renderer
+  `document.title` via `page-title-updated`.
+
+**OPEN, not closed (rule 9/16):** the config logic is proven on the bench, but no
+installer was built here — `electron-builder` cannot run on this Linux bench
+against Electron's Windows ABI, and "the `.ico` renders crisply at 16/32px in the
+taskbar and Start menu" is a target check only. Closes after a real
+`SWIFTPOS_ENV=dev pack:installer` on Windows shows the DEV icon and an isolated
+data folder, and a prod build still installs clean. **Interacts with D3:** if the
+dev flavour ever self-updates it needs its own feed keyed on the dev appId, or a
+dev build could be offered a prod installer — recorded in DESKTOP-AUTOUPDATE.md.
 
 ---
 

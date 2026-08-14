@@ -71,13 +71,28 @@ ok('redeem returns a single 401 ENROL_INVALID for any failure (no oracle)',
    (redeem.match(/ENROL_INVALID/g) || []).length === 1);
 ok('redeem takes the token principal from the code (created_by)', /created_by/.test(redeem));
 
-// ── 3. Source guard — enrol.ts issue ────────────────────────────────────────
+// ── 3. Source guard — issuance moved to admin (register A69) ─────────────────
+// The owner-side issue is RETIRED (410); the admin endpoint is the real issuer.
 const enrolSrc = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/enrol.ts'), 'utf8');
-ok('issue requires auth', /router\.use\(requireAuth\)/.test(enrolSrc));
-ok('issue is owner-only', /req\.isOwner/.test(enrolSrc));
-ok('issue stores the hash, never the raw code', /createHash\('sha256'\)/.test(enrolSrc) && /code_hash:\s*codeHash/.test(enrolSrc));
-ok('issue sets an expiry', /expires_at:\s*expiresAt/.test(enrolSrc));
-ok('issue records who created it', /created_by:\s*req\.userId/.test(enrolSrc));
+ok('owner issue is retired with a 410', /status\(410\)/.test(enrolSrc) && /ENROL_ISSUE_MOVED/.test(enrolSrc));
+ok('owner path no longer self-provisions (no code insert)',
+   !/device_enrolment_codes/.test(enrolSrc) && !/code_hash:/.test(enrolSrc));
+
+const adminSrc = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/admin.ts'), 'utf8');
+const issue = (adminSrc.split("/branches/:branchId/enrol-code'")[1] ?? '').split('router.post(')[0].split('router.get(')[0];
+ok('admin enrol-code route exists', issue.length > 0);
+ok('admin issue is admin-authed', /router\.post\('\/clients\/:id\/branches\/:branchId\/enrol-code',\s*requireAdmin/.test(adminSrc));
+ok('admin issue is BRANCH-BOUND (branch_id required, from the URL)', /branch_id:\s*branchId/.test(issue));
+ok('admin issue is licence-gated',
+   /if\s*\(\s*!branch\.desktop_licensed\s*\)/.test(issue) && /status\(409\)/.test(issue) && /BRANCH_NOT_LICENSED\b/.test(issue));
+ok('admin issue resolves the OWNER as the token principal', /resolveOwnerUserId/.test(issue) && /created_by:\s*ownerId/.test(issue));
+ok('admin issue stores the hash + an expiry, never the raw', /hashCode\(/.test(issue) && /expires_at:\s*expiresAt/.test(issue));
+ok('admin issue writes an audit row', /writeAdminAudit/.test(issue) && /enrol_code\.issue/.test(issue));
+
+// ── 3b. Source guard — the shared code lib (enrolCode.ts) ────────────────────
+const codeSrc = fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/enrolCode.ts'), 'utf8');
+ok('lib rejection-samples to kill modulo bias', /256\s*%\s*ALPHABET\.length/.test(codeSrc) && /continue/.test(codeSrc));
+ok('lib hashes the UPPER-CASED code with SHA-256', /toUpperCase\(\)/.test(codeSrc) && /sha256/.test(codeSrc));
 
 // ── 4. Source guard — mounting ──────────────────────────────────────────────
 const idxSrc = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/index.ts'), 'utf8');

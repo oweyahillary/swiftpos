@@ -63,6 +63,8 @@ import { isSeededAdminHash, SEEDED_ADMIN_MESSAGE } from '../lib/adminSeedGuard';
 import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
 import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/adminAuth';
 import { signTechToken, generateRevealCode } from '../lib/techToken';
+import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
+import { resolveOwnerUserId } from '../lib/ownerBusiness';
 
 const router = safeRouter();
 
@@ -1096,6 +1098,68 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req,
   });
 
   res.json(updated);
+});
+
+/**
+ * POST /api/admin/clients/:id/branches/:branchId/enrol-code   (register A69, D4)
+ * Admin mints a single-use, BRANCH-BOUND enrolment code for a till. Provisioning
+ * lives here, not in the owner dashboard, so a client cannot self-provision — the
+ * code is the billable act, gated behind the admin.
+ *
+ * The code's `created_by` is the business OWNER's public.users id (not the admin):
+ * redeem mints the same owner-scoped desktop token /desktop-login does, and
+ * orders.cashier_id REFERENCES public.users(id). The admin is recorded in the
+ * audit log instead. The branch must already hold a desktop licence — an enrolled
+ * till on an unlicensed branch is refused by the D11 gate at /api/pos/init anyway,
+ * so we fail early and clearly here.
+ */
+router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (req, res) => {
+  const { id: businessId, branchId } = req.params;
+
+  const { data: branch } = await supabase
+    .from('branches')
+    .select('id, name, desktop_licensed, business_id')
+    .eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!branch.desktop_licensed) {
+    res.status(409).json({
+      error: 'Assign a desktop licence to this branch before enrolling a till.',
+      code:  'BRANCH_NOT_LICENSED',
+    });
+    return;
+  }
+
+  // The token principal must be the owner, resolved the same way desktop-login
+  // resolves it. No owner → no valid principal → refuse (never mint a bad token).
+  const ownerId = await resolveOwnerUserId(businessId);
+  if (!ownerId) {
+    res.status(409).json({ error: 'Could not resolve the business owner for this code.', code: 'NO_OWNER' });
+    return;
+  }
+
+  const raw       = makeCode();
+  const codeHash  = hashCode(raw);
+  const expiresAt = expiryFromNow();
+
+  const { error } = await supabase.from('device_enrolment_codes').insert({
+    business_id: businessId,
+    branch_id:   branchId,            // REQUIRED here — admin codes are always branch-bound
+    code_hash:   codeHash,
+    created_by:  ownerId,             // owner public.users id — the redeemed token's principal
+    expires_at:  expiresAt,
+  });
+  if (error) { sendError(res, error); return; }
+
+  const { data: biz } = await supabase.from('businesses').select('name').eq('id', businessId).single();
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'branch.enrol_code.issue', resource: 'device_enrolment_code',
+    businessId, businessName: biz?.name,
+    after: { branch: branch.name, expires_at: expiresAt },
+  });
+
+  // Raw code shown ONCE; businessId travels so the admin reads both halves out.
+  res.json({ code: raw, businessId, branchId, branchName: branch.name, expiresAt });
 });
 
 // ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────

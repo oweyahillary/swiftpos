@@ -121,6 +121,45 @@ Wire this into CI later so releases are not hand-built from a working folder
   not downgrade automatically, so a bad release is pulled by publishing a higher
   version with the fix.
 
+## 8. Dev/prod flavour (register D17) — keep the channels separate
+
+D17 gives the desktop a dev build flavour (`SWIFTPOS_ENV=dev`): distinct
+`appId` (`com.swiftpos.desktop.dev`), `productName` ("SwiftPOS Dev"), and its own
+`%APPDATA%`. Auto-update must respect that split, or the mechanism this document
+adds becomes a way to push the wrong binary at the wrong machine.
+
+- **`electron-updater` matches a feed's `latest.yml` by version, not by appId.**
+  If a dev build and a prod build poll the **same** feed, the dev build will be
+  offered — and silently install on next quit — the prod installer, and vice
+  versa. That is exactly the "wrong binary already on the till" failure D17
+  exists to prevent, reintroduced through the update channel.
+
+- **Fix: one feed per flavour, from the same env var.** Set the `publish` target
+  in `electron-builder.config.js` (D17's config) off `SWIFTPOS_ENV`, so the feed
+  URL is baked per flavour and each build only ever polls its own channel:
+
+  ```js
+  // in electron-builder.config.js — generic example
+  publish: [{
+    provider: 'generic',
+    url: dev ? 'https://updates.swiftpos.co.ke/till-dev/'
+             : 'https://updates.swiftpos.co.ke/till/',
+  }],
+  ```
+
+  For the GitHub provider, use a separate repo or a channel prefix rather than
+  one shared `latest.yml`. The rule is simply: **a dev build must never see a
+  prod `latest.yml`.**
+
+- **Simplest safe default while D3 is still a scaffold:** leave the dev flavour
+  with **no `publish` target at all**, so `SWIFTPOS_ENV=dev` builds never
+  self-update. Dev machines are hand-updated (you are at them anyway), and there
+  is no channel to cross. Add the dev feed only if hands-off dev updates earn
+  their keep.
+
+Whichever you pick, the `appId` split from D17 is what makes a mistake
+recoverable: a dev build installs alongside prod, it does not replace it.
+
 ---
 
 ## What is done vs outstanding

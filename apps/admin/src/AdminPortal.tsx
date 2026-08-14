@@ -587,6 +587,8 @@ function ClientDetailPage({ client, req, onBack }) {
   const [plans, setPlans] = useState([]);
   const [branches, setBranches] = useState([]);
   const [licencingBranch, setLicencingBranch] = useState(null);
+  const [enrolBranch, setEnrolBranch] = useState(null);   // A69: branch currently minting a code
+  const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, code, branchName, expiresAt }
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [error, setError] = useState("");
@@ -714,6 +716,17 @@ function ClientDetailPage({ client, req, onBack }) {
     finally { setLicencingBranch(null); }
   }
 
+  // A69: mint a single-use, branch-bound enrolment code for a till. The branch
+  // must already be desktop-licensed (the server refuses otherwise).
+  async function generateEnrolCode(branch) {
+    setEnrolBranch(branch.id); setEnrolResult(null);
+    try {
+      const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/enrol-code`, {});
+      setEnrolResult({ businessId: r.businessId, code: r.code, branchName: r.branchName || branch.name, expiresAt: r.expiresAt });
+    } catch(e) { setError(e.message); }
+    finally { setEnrolBranch(null); }
+  }
+
   if (loading) return <div style={{ padding: 24, color: C.muted }}>Loading client…</div>;
 
   const d = detail || client;
@@ -835,6 +848,15 @@ function ClientDetailPage({ client, req, onBack }) {
                     }
                   </div>
                   <StatusBadge status={b.status} />
+                  {b.desktop_licensed && (
+                    <button
+                      disabled={enrolBranch === b.id}
+                      onClick={() => generateEnrolCode(b)}
+                      style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}
+                      title="Mint a single-use enrolment code for a till on this branch">
+                      {enrolBranch === b.id ? "…" : "Enrol till"}
+                    </button>
+                  )}
                   <button
                     disabled={licencingBranch === b.id}
                     onClick={() => toggleBranchLicence(b, !b.desktop_licensed)}
@@ -843,6 +865,25 @@ function ClientDetailPage({ client, req, onBack }) {
                   </button>
                 </div>
               ))}
+
+              {/* A69: the minted code — shown ONCE. Admin reads both halves to the till. */}
+              {enrolResult && (
+                <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Enrolment code — {enrolResult.branchName}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                    Single-use. Expires {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Read both to the person at the till.
+                  </div>
+                  {[["Business ID", enrolResult.businessId], ["Code", enrolResult.code]].map(([label, value]) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: C.muted, width: 84, flexShrink: 0 }}>{label}</span>
+                      <code style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{value}</code>
+                      <button onClick={() => navigator.clipboard?.writeText(value)}
+                        style={{ ...S.btn, fontSize: 10, padding: "3px 8px", flexShrink: 0 }}>Copy</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setEnrolResult(null)} style={{ ...S.btn, fontSize: 11, padding: "4px 10px", marginTop: 6 }}>Dismiss</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
