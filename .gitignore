@@ -29,3 +29,6 @@ shared/printing/test/*.d.ts.map
 
 shared/printing/test-dist/
 shared/printing/dist/
+
+# local delivery artifacts
+*.patch
