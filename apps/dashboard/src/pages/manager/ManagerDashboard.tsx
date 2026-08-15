@@ -89,6 +89,7 @@ interface SalesSummary {
 interface HourlyRow { hour: number; revenue: number; orders: number; }
 interface TopProduct { product_id: string; name: string; qty: number; revenue: number; }
 interface Shift { id: string; opened_at: string; status: string; opening_float: number; total_revenue?: number; }
+interface StockAlert { id: string; type: 'negative_stock' | 'low_stock'; title: string; message: string; link: string | null; }
 interface Expense { id: string; description: string; amount: number; expense_date: string; category_name: string | null; paid_by_name: string | null; }
 interface ExpenseCategory { id: string; name: string; }
 
@@ -518,6 +519,8 @@ function OverviewTab() {
 
   const [sales,    setSales]    = useState<SalesSummary | null>(null);
   const [voidAlerts, setVoidAlerts] = useState<{ name: string; voids: number; rate: number }[]>([]);
+  // Branch stock alerts (register A74) — shown on dashboard load, no realtime.
+  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([]);
   const [hourly,   setHourly]   = useState<HourlyRow[]>([]);
   const [topItems, setTopItems] = useState<TopProduct[]>([]);
   const [shift,    setShift]    = useState<Shift | null>(null);
@@ -561,6 +564,16 @@ function OverviewTab() {
             if (!cancelled) setShift(detail);
           } catch { /* use summary data */ }
         }
+
+        // Branch stock alerts — negative (sold beyond stock) and low. Scoped to
+        // this manager's branch server-side; best-effort so a failure here never
+        // blanks the dashboard.
+        try {
+          const notif = await posApi.get<{ notifications: StockAlert[] }>(
+            `/api/notifications?unread=true&type=negative_stock,low_stock&branch=${session.branchId}&limit=50`,
+          );
+          if (!cancelled) setStockAlerts(notif?.notifications ?? []);
+        } catch { /* leave stock alerts empty */ }
       } catch {
         if (!cancelled) setError("Could not load overview data.");
       } finally {
@@ -619,6 +632,44 @@ function OverviewTab() {
               </div>
             ))}
           </div>
+
+          {/* ── Stock Alerts (negative = sold beyond stock; low) ──────────── */}
+          {stockAlerts.length > 0 && (() => {
+            const negatives = stockAlerts.filter(a => a.type === 'negative_stock');
+            const lows      = stockAlerts.filter(a => a.type === 'low_stock');
+            return (
+              <div className="space-y-3">
+                {negatives.length > 0 && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+                    <p className="text-red-400 font-semibold text-sm mb-2 flex items-center gap-1.5">
+                      <Icon d={I.warning} size={14} />
+                      Sold beyond stock — {negatives.length} item{negatives.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="space-y-1.5">
+                      {negatives.map(a => (
+                        <p key={a.id} className="text-red-300 text-sm">{a.message}</p>
+                      ))}
+                    </div>
+                    <p className="text-red-400/50 text-xs mt-2">If a transfer arrived, receive it in Inventory to clear these.</p>
+                  </div>
+                )}
+                {lows.length > 0 && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                    <p className="text-amber-400 font-semibold text-sm mb-2 flex items-center gap-1.5">
+                      <Icon d={I.warning} size={14} />
+                      Low stock — {lows.length} item{lows.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="space-y-1.5">
+                      {lows.map(a => (
+                        <p key={a.id} className="text-amber-300 text-sm">{a.message}</p>
+                      ))}
+                    </div>
+                    <p className="text-amber-400/50 text-xs mt-2">Review in Inventory.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Void Rate Fraud Alert ─────────────────────────────────────── */}
           {voidAlerts.length > 0 && (

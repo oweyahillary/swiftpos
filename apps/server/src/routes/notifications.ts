@@ -7,15 +7,22 @@ import { sendEmailChecked } from "../lib/mailer";
 const router = safeRouter();
 router.use(requireAuth);
 
-// GET /api/notifications?unread=true&limit=20
-// Returns notifications for the business, optionally filtered to unread only.
+// GET /api/notifications?unread=true&limit=20&branch=<uuid>&type=a,b
+// Returns notifications for the business, optionally filtered to unread only,
+// to a single branch, and/or to one or more comma-separated types. branch and
+// type let a branch-scoped manager dashboard pull just its own stock alerts
+// (register A74); with neither, an owner sees everything as before.
 router.get("/", async (req, res) => {
   const unreadOnly = req.query.unread === "true";
   const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+  const branch = typeof req.query.branch === "string" ? req.query.branch.trim() : "";
+  const types = typeof req.query.type === "string"
+    ? req.query.type.split(",").map(t => t.trim()).filter(Boolean)
+    : [];
 
   let query = supabase
     .from("notifications")
-    .select("id, type, title, message, link, read_at, created_at", {
+    .select("id, type, title, message, link, read_at, created_at, branch_id", {
       count: "exact",
     })
     .eq("business_id", req.businessId)
@@ -23,6 +30,8 @@ router.get("/", async (req, res) => {
     .limit(limit);
 
   if (unreadOnly) query = query.is("read_at", null);
+  if (branch) query = query.eq("branch_id", branch);
+  if (types.length) query = query.in("type", types);
 
   const { data, error, count } = await query;
   if (error) {
