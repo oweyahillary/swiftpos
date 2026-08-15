@@ -29,7 +29,24 @@ interface Device {
   requested_at: string;
   reviewed_at:  string | null;
   last_seen_at: string | null;
+  // A71: device detail the owner can now see
+  branch_name:   string | null;
+  device_role:   string | null;   // 'till' | 'node' | 'office'
+  terminal_code: string | null;
+  app_version:   string | null;
+  created_at:    string | null;
+  last_sync_at:  string | null;   // A72: for the "not synced" staleness badge
   users:        DeviceUser | null;
+}
+
+// A71: absolute date + time, so "last active" is a real timestamp, not just "2h ago".
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return 'never';
+  return new Date(iso).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' });
+}
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-KE', { dateStyle: 'medium' });
 }
 
 function timeAgo(iso: string | null): string {
@@ -56,6 +73,20 @@ export default function DevicesTab() {
 
   const { toast, showToast }        = useToast();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
+  const [editingId, setEditingId]   = useState<string | null>(null);   // A72: device being renamed
+  const [editValue, setEditValue]   = useState('');
+
+  // A72: give a device a chosen name. Persists — registration never overwrites it.
+  async function saveLabel(device: Device) {
+    const label = editValue.trim();
+    if (!label) { showToast('Enter a device name', 'error'); return; }
+    try {
+      await api.patch(`/api/devices/${device.id}/label`, { label });
+      setDevices(prev => prev.map(d => d.id === device.id ? { ...d, device_label: label } : d));
+      setEditingId(null);
+      showToast('Device renamed', 'success');
+    } catch (e: any) { showToast(e.message ?? 'Rename failed', 'error'); }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -260,10 +291,40 @@ export default function DevicesTab() {
                     {d.users?.name ?? 'Unknown'}
                   </span>
                   <span className="text-gray-600 text-xs">·</span>
-                  <span className="text-gray-400 text-xs">{d.device_label ?? 'Unknown device'}</span>
+                  {editingId === d.id ? (
+                    <span className="inline-flex items-center gap-1">
+                      <input
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        maxLength={60}
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') saveLabel(d); if (e.key === 'Escape') setEditingId(null); }}
+                        className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white w-44"
+                        placeholder="e.g. Front Till"
+                      />
+                      <button onClick={() => saveLabel(d)} className="text-green-400 hover:text-green-300 text-xs font-medium">Save</button>
+                      <button onClick={() => setEditingId(null)} className="text-gray-500 hover:text-gray-300 text-xs">✕</button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-gray-400 text-xs">{d.device_label ?? 'Unnamed device'}</span>
+                      <button
+                        onClick={() => { setEditingId(d.id); setEditValue(d.device_label ?? ''); }}
+                        className="text-gray-600 hover:text-gray-300 text-xs"
+                        title="Rename device"
+                      >✎</button>
+                    </span>
+                  )}
                   <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize ${STATUS_BADGE[d.status]}`}>
                     {d.status}
                   </span>
+                  {/* A72: staleness — a till that hasn't synced in over a day is the one to worry about */}
+                  {d.status === 'approved' && d.last_sync_at &&
+                    (Date.now() - new Date(d.last_sync_at).getTime()) > 24 * 60 * 60 * 1000 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-amber-500/15 text-amber-400 border-amber-500/30">
+                      not synced {timeAgo(d.last_sync_at)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-gray-600 text-xs mt-0.5">
                   {d.users?.roles?.name ?? 'Staff'}
@@ -272,6 +333,15 @@ export default function DevicesTab() {
                   {d.status === 'approved' && ` · Last seen ${timeAgo(d.last_seen_at)}`}
                   {d.status === 'rejected' && ` · Rejected ${timeAgo(d.reviewed_at)}`}
                 </p>
+                {/* A71: device detail — branch, role, absolute last-active, version, enrolled */}
+                <div className="text-gray-500 text-xs mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  {d.branch_name    && <span>📍 {d.branch_name}</span>}
+                  {d.device_role    && <span className="capitalize">{d.device_role}</span>}
+                  {d.terminal_code  && <span>Terminal {d.terminal_code}</span>}
+                  {d.status === 'approved' && <span>Last active {fmtDateTime(d.last_seen_at)}</span>}
+                  {d.app_version    && <span>v{d.app_version}</span>}
+                  {d.created_at     && <span>Enrolled {fmtDate(d.created_at)}</span>}
+                </div>
               </div>
 
               {/* Actions */}

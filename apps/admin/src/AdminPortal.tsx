@@ -588,7 +588,8 @@ function ClientDetailPage({ client, req, onBack }) {
   const [branches, setBranches] = useState([]);
   const [licencingBranch, setLicencingBranch] = useState(null);
   const [enrolBranch, setEnrolBranch] = useState(null);   // A69: branch currently minting a code
-  const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, code, branchName, expiresAt }
+  const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
+  const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [error, setError] = useState("");
@@ -603,9 +604,11 @@ function ClientDetailPage({ client, req, onBack }) {
       req("GET", `/clients/${client.id}/notes`),
       req("GET", "/plans"),
       req("GET", `/clients/${client.id}/branches`).catch(() => []),
-    ]).then(([d, f, s, inv, n, p, br]) => {
+      req("GET", `/clients/${client.id}/devices`).catch(() => ({ devices: [] })),
+    ]).then(([d, f, s, inv, n, p, br, dev]) => {
       setDetail(d); setFeatures(f); setSubs(s); setInvoices(inv); setNotes(n); setPlans(p);
       setBranches(br || []);
+      setDevices((dev && dev.devices) || []);
     }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [client.id]);
@@ -716,13 +719,17 @@ function ClientDetailPage({ client, req, onBack }) {
     finally { setLicencingBranch(null); }
   }
 
-  // A69: mint a single-use, branch-bound enrolment code for a till. The branch
-  // must already be desktop-licensed (the server refuses otherwise).
+  // A69: mint one or more single-use, branch-bound codes. The branch must be
+  // desktop-licensed (the server refuses otherwise). Batching mints N separate
+  // single-use codes — it is NOT a reusable code.
   async function generateEnrolCode(branch) {
+    const ans = await askPrompt(`How many tills for ${branch.name}? (1–20)`, "1");
+    if (ans === null) return;                                   // cancelled
+    const count = Math.max(1, Math.min(20, parseInt(ans, 10) || 1));
     setEnrolBranch(branch.id); setEnrolResult(null);
     try {
-      const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/enrol-code`, {});
-      setEnrolResult({ businessId: r.businessId, code: r.code, branchName: r.branchName || branch.name, expiresAt: r.expiresAt });
+      const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/enrol-code`, { count });
+      setEnrolResult({ businessId: r.businessId, codes: r.codes || [], branchName: r.branchName || branch.name, expiresAt: r.expiresAt });
     } catch(e) { setError(e.message); }
     finally { setEnrolBranch(null); }
   }
@@ -866,15 +873,19 @@ function ClientDetailPage({ client, req, onBack }) {
                 </div>
               ))}
 
-              {/* A69: the minted code — shown ONCE. Admin reads both halves to the till. */}
+              {/* A69: minted codes — shown ONCE. Business ID once, then one code per till. */}
               {enrolResult && (
                 <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Enrolment code — {enrolResult.branchName}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-                    Single-use. Expires {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Read both to the person at the till.
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                    Enrolment {enrolResult.codes.length === 1 ? "code" : `codes (${enrolResult.codes.length})`} — {enrolResult.branchName}
                   </div>
-                  {[["Business ID", enrolResult.businessId], ["Code", enrolResult.code]].map(([label, value]) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                    Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each till the Business ID + one code.
+                  </div>
+                  {[["Business ID", enrolResult.businessId],
+                    ...enrolResult.codes.map((c, i) => [enrolResult.codes.length > 1 ? `Code ${i + 1}` : "Code", c])
+                  ].map(([label, value], i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 11, color: C.muted, width: 84, flexShrink: 0 }}>{label}</span>
                       <code style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{value}</code>
                       <button onClick={() => navigator.clipboard?.writeText(value)}
@@ -886,6 +897,37 @@ function ClientDetailPage({ client, req, onBack }) {
               )}
             </div>
           </div>
+        </div>
+
+        {/* A70: enrolled-device roster — what this client actually has provisioned */}
+        <div style={{ ...S.card, marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Enrolled Devices</div>
+            <div style={{ fontSize: 11, color: C.muted }}>{devices.length} total</div>
+          </div>
+          {devices.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.muted, padding: "8px 0" }}>No devices enrolled yet.</div>
+          ) : (
+            <div>
+              {devices.map(d => (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>
+                      {d.label}
+                      {d.role && <span style={{ fontSize: 10, color: C.muted, marginLeft: 6, textTransform: "uppercase" }}>{d.role}</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{d.branch}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, textAlign: "right", flexShrink: 0 }}>
+                    <div>{d.lastSeenAt ? `seen ${new Date(d.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}</div>
+                    <div style={{ marginTop: 2 }}>
+                      {d.appVersion ? `v${d.appVersion}` : "—"}{d.status !== "approved" ? ` · ${d.status}` : ""}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1314,6 +1356,7 @@ function TechPage({ req, admin }) {
   const [switchForm, setSwitchForm] = useState({ business_id: "", branch_id: "", to_mode: "cloud", branches: [], currentMode: "" });
   const [generating, setGenerating] = useState(false);
   const [generatedToken, setGeneratedToken] = useState(null);
+  const [revealCode, setRevealCode] = useState(null);   // D18: the branch doorknock code, shown with the token
   const [generatedSwitch, setGeneratedSwitch] = useState(null);
   const [error, setError]           = useState("");
   const { askPrompt, modal } = useModal();
@@ -1338,11 +1381,16 @@ function TechPage({ req, admin }) {
   }
 
   async function generateToken(e) {
-    e.preventDefault(); setGenerating(true); setError(""); setGeneratedToken(null);
+    e.preventDefault(); setGenerating(true); setError(""); setGeneratedToken(null); setRevealCode(null);
     try {
       const t = await req("POST", "/tech/generate-token", { business_id: genForm.business_id, branch_id: genForm.branch_id });
       setGeneratedToken(t);
       setTokens(prev => [{ ...t, id: t.token_id ?? t.id, admin_name: admin?.name, status: "active", created_at: new Date().toISOString() }, ...prev]);
+      // D18: the till asks for the branch reveal code first. Show it beside the
+      // token so the tech has both halves of the flow.
+      req("GET", `/branches/${genForm.branch_id}/reveal-code`)
+        .then(rc => setRevealCode(rc?.reveal_code ?? null))
+        .catch(() => setRevealCode(null));
     } catch(e) { setError(e.message); }
     finally { setGenerating(false); }
   }
@@ -1442,6 +1490,15 @@ function TechPage({ req, admin }) {
           {generatedToken && (
             <div style={{ marginTop: 14, padding: "12px 14px", background: "#0a1628", border: `1px solid ${C.accent}`, borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>TOKEN — share securely with tech. Shown once only.</div>
+              {revealCode && (
+                <div style={{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${C.accent}33` }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Reveal code — the tech enters this FIRST on the till.</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <code style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: C.accent }}>{revealCode}</code>
+                    <button onClick={() => navigator.clipboard?.writeText(revealCode)} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px" }}>Copy</button>
+                  </div>
+                </div>
+              )}
               <code style={{ fontSize: 11, color: C.accent, wordBreak: "break-all", display: "block", marginBottom: 8 }}>{generatedToken.token}</code>
               <div style={{ fontSize: 11, color: C.muted }}>Valid for {generatedToken.branch} until {fmtDate(generatedToken.expires_at)}</div>
               <button onClick={() => navigator.clipboard?.writeText(generatedToken.token)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, marginTop: 8 }}>Copy token</button>

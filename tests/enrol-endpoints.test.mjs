@@ -88,6 +88,16 @@ ok('admin issue is licence-gated',
 ok('admin issue resolves the OWNER as the token principal', /resolveOwnerUserId/.test(issue) && /created_by:\s*ownerId/.test(issue));
 ok('admin issue stores the hash + an expiry, never the raw', /hashCode\(/.test(issue) && /expires_at:\s*expiresAt/.test(issue));
 ok('admin issue writes an audit row', /writeAdminAudit/.test(issue) && /enrol_code\.issue/.test(issue));
+ok('admin issue BATCHES (count → codes[])', /req\.body\?\.count/.test(issue) && /codes:\s*raws/.test(issue) && /Math\.min\(20/.test(issue));
+
+// ── 3c. Source guard — enrolled-device roster (register A70) ─────────────────
+ok('admin devices roster route exists + admin-authed',
+   /router\.get\('\/clients\/:id\/devices',\s*requireAdmin/.test(adminSrc));
+const roster = (adminSrc.split("/clients/:id/devices'")[1] ?? '').split('router.')[0];
+ok('roster reads user_devices scoped to the business',
+   /from\('user_devices'\)/.test(roster) && /\.eq\('business_id',\s*businessId\)/.test(roster));
+ok('roster resolves branch names in one round-trip (no N+1)',
+   /\.in\('id',\s*branchIds\)/.test(roster));
 
 // ── 3b. Source guard — the shared code lib (enrolCode.ts) ────────────────────
 const codeSrc = fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/enrolCode.ts'), 'utf8');

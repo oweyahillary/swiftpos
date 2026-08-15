@@ -145,6 +145,21 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
                   <input
                     autoFocus value={revealInput}
                     onChange={e => { setRevealInput(e.target.value.toUpperCase()); setTechErr(''); }}
+                    onPaste={e => {
+                      // D18: a tech often has only the token (admin Tech Access hands
+                      // out the token, not a reveal code). Pasting it here would hit
+                      // maxLength/upper-casing and truncate — "not allowing the full
+                      // string". Detect a token and jump straight to the token step
+                      // with the full value. The reveal code is a low-value doorknock;
+                      // the token is branch-scoped and cryptographically verified.
+                      const text = e.clipboardData.getData('text').trim();
+                      if (text.startsWith('st2.')) {
+                        e.preventDefault();
+                        setTokenInput(text);
+                        setTechErr('');
+                        setTechStage('token');
+                      }
+                    }}
                     onKeyDown={e => e.key === 'Enter' && submitReveal()}
                     placeholder="ACCESS CODE" maxLength={12}
                     className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-4 py-2.5 text-white text-center font-mono tracking-widest uppercase focus:outline-none focus:border-green-500"

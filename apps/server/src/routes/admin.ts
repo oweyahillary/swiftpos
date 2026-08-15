@@ -1137,17 +1137,22 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
     return;
   }
 
-  const raw       = makeCode();
-  const codeHash  = hashCode(raw);
+  // Batch: mint `count` single-use codes in one call (default 1, capped). Each is
+  // its own single-use, branch-bound code — batching is a convenience, NOT a
+  // reusable code. One leaked code still enrols exactly one till.
+  const rawCount = Number(req.body?.count);
+  const count = Number.isFinite(rawCount) ? Math.max(1, Math.min(20, Math.trunc(rawCount))) : 1;
   const expiresAt = expiryFromNow();
 
-  const { error } = await supabase.from('device_enrolment_codes').insert({
+  const raws = Array.from({ length: count }, () => makeCode());
+  const rows = raws.map(raw => ({
     business_id: businessId,
     branch_id:   branchId,            // REQUIRED here — admin codes are always branch-bound
-    code_hash:   codeHash,
+    code_hash:   hashCode(raw),
     created_by:  ownerId,             // owner public.users id — the redeemed token's principal
     expires_at:  expiresAt,
-  });
+  }));
+  const { error } = await supabase.from('device_enrolment_codes').insert(rows);
   if (error) { sendError(res, error); return; }
 
   const { data: biz } = await supabase.from('businesses').select('name').eq('id', businessId).single();
@@ -1155,11 +1160,53 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
     adminId: req.adminId, adminEmail: req.adminEmail,
     action: 'branch.enrol_code.issue', resource: 'device_enrolment_code',
     businessId, businessName: biz?.name,
-    after: { branch: branch.name, expires_at: expiresAt },
+    after: { branch: branch.name, count, expires_at: expiresAt },
   });
 
-  // Raw code shown ONCE; businessId travels so the admin reads both halves out.
-  res.json({ code: raw, businessId, branchId, branchName: branch.name, expiresAt });
+  // Raw codes shown ONCE; businessId travels so the admin reads both halves out.
+  res.json({ businessId, branchId, branchName: branch.name, expiresAt, codes: raws });
+});
+
+/**
+ * GET /api/admin/clients/:id/devices   (register A70)
+ * The enrolled-device roster for a business: what got provisioned, on which
+ * branch, its claimed role, and when it was last seen. Read-only visibility so
+ * an admin can see the fleet a client is actually running. `device_role` and
+ * `branch_id` are self-reported claims confirmed on the server side (migrations
+ * 52/74) — shown as-is here; this is a view, not the gate.
+ */
+router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
+  const { id: businessId } = req.params;
+
+  const { data: devices, error } = await supabase
+    .from('user_devices')
+    .select('id, device_label, device_role, status, branch_id, last_seen_at, created_at, app_version')
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) { sendError(res, error); return; }
+
+  // Resolve branch names in one round-trip rather than N.
+  const branchIds = [...new Set((devices ?? []).map(d => d.branch_id).filter(Boolean))];
+  let branchName: Record<string, string> = {};
+  if (branchIds.length) {
+    const { data: branches } = await supabase
+      .from('branches').select('id, name').in('id', branchIds);
+    branchName = Object.fromEntries((branches ?? []).map(b => [b.id, b.name]));
+  }
+
+  res.json({
+    devices: (devices ?? []).map(d => ({
+      id:         d.id,
+      label:      d.device_label ?? '—',
+      role:       d.device_role ?? null,          // 'till' | 'node' | 'office' | null
+      status:     d.status,                        // pending | approved | rejected
+      branch:     d.branch_id ? (branchName[d.branch_id] ?? '—') : '— (unbound)',
+      lastSeenAt: d.last_seen_at,
+      enrolledAt: d.created_at,
+      appVersion: d.app_version ?? null,
+    })),
+  });
 });
 
 // ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────

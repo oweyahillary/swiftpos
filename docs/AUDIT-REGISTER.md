@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-14 — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
+| Last updated | **2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
 | Tree | `dev` @ `0215475` (was recorded as `84400d6`; the deploy log and `git log` both read `0215475`), desktop **v0.5.27**, `LOCAL_SCHEMA_VERSION` 51 |
-| Open | **A: 1 P0 · 9 P1 · 5 P2 · 2 P3 — D: 1 P0 · 2 P1 · 1 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 A69 · A-P3: A13 A68 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 · D-P3: D9 D10 D17 |
+| Open | **A: 1 P0 · 9 P1 · 6 P2 · 5 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 A69 A73 · A-P3: A13 A68 A70 A71 A72 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
 
@@ -2546,6 +2546,19 @@ Applied to the live database, never committed to any branch. Confirmed absent
 from git history. The repo cannot reproduce production.
 **Blocked on:** `select version, applied_at from public.schema_migrations order by version;`
 
+**NARROWED 2026-08-14 (owner supplied a table-only schema export, `swiftdb.sql`).**
+Diffed prod's 99 tables and all their columns against baseline + every committed
+migration: **every prod table and column is reproduced by the repo.** The lone
+prod-only table, `schema_migration_runs`, is **not** a missing migration — the
+runner `scripts/migrate.mjs:96` bootstraps it (`CREATE TABLE IF NOT EXISTS` + its
+own RLS). So whatever 68/72 did, it was NOT tables or columns. The export is
+table-only (no functions/indexes/policies), so the remaining candidates are a
+function, index, RLS policy, or data backfill — or a migration **superseded** by a
+later committed one (cf. 69 "supersedes 66"). Still OPEN, but the blast radius is
+now "invisible objects", not the whole schema. To close: `schema_migrations` rows
+WITH `notes` for the gap versions (62/64/65/66/68/72), or a real
+`pg_dump --schema-only` (which carries functions/indexes/policies).
+
 ### A5 · P1 · CLOSED 08-10 · Documentation understated the system by two phases
 Both documents now carry a status header stating what is actually true, rather
 than being silently wrong.
@@ -2694,6 +2707,18 @@ business-level and `ingredient_stock_levels` is per-branch, so pointing
 `recipes.ts` at it requires choosing a branch (the caller's? summed? per-branch
 rows returned?). Not started for that reason.
 
+**FIX APPLIED 2026-08-14.** The decision was already made elsewhere: `stock.ts`'s
+`GET /ingredients` flattens per-branch stock with `branchScope(req)` — scoped
+branch → that branch, owner/no-branch → business-wide sum. `recipes.ts` now
+mirrors it exactly (shared `branchScope`, same flatten), so the three reads join
+`ingredient_stock_levels` instead of the dead column and the Recipes drawer and
+the Ingredients page finally agree. Server `tsc` clean; the dead-column read is
+gone. **OPEN pending live verification** (rule 16): on a real DB, an ingredient
+with branch stock shows the true figure in the Recipes drawer (not "0 in red"),
+and matches `IngredientsPage` for the same branch. **Follow-up, not done:** the
+"dead column inside a live table" class still has no gate — a column-level
+read/write comparator is the missing check (`check-table-usage` is table-level).
+
 ### A13 · P3 · NOTE · Two suites run on `node:sqlite`, not the app's driver
 `test-node-ingest`, `test-sync-rejection-routing`. They say so themselves. A
 local green is not hardware-equivalent.
@@ -2787,6 +2812,105 @@ resolution against a real row, and a completed admin→till enrolment have NOT r
 code for a licensed branch, a till redeems it, the branch is locked on the till,
 and a second redeem of the same code is refused. The owner 410 and the licence
 gate are the two new refusals to confirm live.
+
+**Batch (2026-08-14):** the endpoint takes an optional `count` (1–20) and mints
+N single-use codes in one insert, returning `codes: [...]`; the admin UI prompts
+"how many tills?" and lists them. Batching is a **convenience, not a reusable
+code** — each is its own single-use, branch-bound code, so a leak still enrols
+exactly one till and the 1:1 `redeemed_device_id` trail is intact. A reusable
+branch code was declined for that reason (owner's call): no seat cap on a
+per-branch model means a reusable code's blast radius is unbounded.
+
+---
+
+### A70 · P3 · OPEN · Enrolled-device roster in the admin portal
+
+Provisioning is now visible from the admin side (`GET /api/admin/clients/:id/
+devices`, `requireAdmin`): the `user_devices` rows for a business, each with its
+label, claimed role (till/node/office), bound branch (names resolved in one
+round-trip, no N+1), status, last-seen, and app version. Rendered as an "Enrolled
+Devices" card under the client Overview. Read-only — `device_role`/`branch_id`
+are self-reported claims confirmed server-side elsewhere (migrations 52/74); this
+is a view of the fleet, not the gate. Scoped to the business, capped at 500.
+
+**OPEN (rule 16):** the query and shape are bench-verified (server `tsc`, source
+guards), but the card populated from real rows — a till that enrolled, reported
+its role, bound its branch, and phoned its version — is a live check. Closes when
+an enrolled till shows in the roster with the right branch and role.
+
+---
+
+### A71 · P3 · OPEN · Owner device view showed only person + generic label — enriched with branch, role, last-active, version, enrolled
+
+Settings → Devices (the owner's `user_devices` view, migration 14) led with the
+cashier's name and an auto-generated label ("SwiftPOS till"), and nothing else —
+no branch, no absolute last-active, no version. The person leads because the
+screen was built for cashier-login *approval* (per-user-per-device), not till
+management, and the data for a fuller picture was in `user_devices` all along; the
+`GET /api/devices` list simply never selected it.
+
+Fixed: the list now selects `branch_id, device_role, terminal_code, created_at`
+and resolves branch names in one round-trip (not embedded — `user_devices` has two
+FKs to `branches` via migration 52, so PostgREST embedding is ambiguous). The
+DevicesTab row gains a detail line: **branch**, role, terminal, **last active as an
+absolute date+time** (not just "2h ago"), app version, and enrolled date. Additive
+— the person/label/status line is unchanged. Server + dashboard `tsc` clean.
+
+**Not built (owner's call):** *renaming* a device to something meaningful ("Front
+Till") — that needs an editable `device_label` + a PATCH, which changes data.
+Recorded, not shipped, pending a decision.
+
+**OPEN (rule 16):** verified by `tsc` only; the row populated from a real device
+— branch name, a real last-active timestamp, the version — is a live check.
+
+---
+
+### A72 · P3 · OPEN · Devices are owner-nameable; a stale-sync badge flags a till that has gone quiet
+
+Devices carried only an auto-generated label ("SwiftPOS till"). The owner can now
+give one a chosen name (`PATCH /api/devices/:id/label`, tenant-guarded, ≤60 chars),
+edited inline in Settings → Devices. Safe against the clobber trap: `device_label`
+is written by registration **only on the first insert** — the refresh path applies
+`patch`, which never touches it — so a chosen name persists across sign-ins. No
+migration; the admin roster (A70) reads the same column, so a renamed device shows
+its name there for free.
+
+Bundled with it: a **"not synced" badge** on any approved device whose
+`last_sync_at` is over a day old — surfacing the failure the fleet code itself
+warns about (a till that signed in, then silently stopped syncing, looks healthy
+by last-seen while the day's takings quietly go missing in the cloud). Only shows
+for devices that have ever synced, so a browser cashier login doesn't trip it.
+
+Server + dashboard `tsc` clean.
+
+**OPEN (rule 16):** `tsc`-verified; the live checks — a rename that sticks after
+the till signs in again, a rename refused for another business's device, and the
+stale badge appearing on a genuinely quiet till — are on the target. **Not built
+(deferred):** naming a device *at enrolment*, and renaming from the admin roster;
+both easy follow-ons if wanted.
+
+---
+
+### A73 · P2 · OPEN · Fleet-health page was built, routed, and unreachable — nav drift
+
+`FleetPage` (the "Terminals" screen — which build each till runs and, the number
+that matters, when it last synced) is fully built and routed at
+`/dashboard/terminals`, but had **no way to reach it**: `DashboardLayout` holds two
+Setup definitions — a static one (with the Terminals link) and a dynamically
+rebuilt one that "replaces the static Settings group" to inject the business-type
+link. The rebuild was copied without the Terminals item, so the rendered nav
+dropped it. Two things that must agree, with nothing comparing them — the exact
+class this register exists for. A complete safety view (it exists to catch a till
+that signed in then silently stopped syncing while the day's takings go missing)
+sat invisible.
+
+Fix: the missing item added back to the dynamic group, matching the static one.
+Dashboard `tsc` clean. **Latent risk noted, not fixed (rule 12):** the two Setup
+definitions still duplicate each other and will drift again — they should be one
+source, but deduping the nav is its own change, not this one.
+
+**OPEN (rule 16):** `tsc`-verified; the live check is the "Terminals" link
+appearing under Setup and opening the fleet table.
 
 ---
 
@@ -3092,6 +3216,34 @@ taskbar and Start menu" is a target check only. Closes after a real
 data folder, and a prod build still installs clean. **Interacts with D3:** if the
 dev flavour ever self-updates it needs its own feed keyed on the dev appId, or a
 dev build could be offered a prod installer — recorded in DESKTOP-AUTOUPDATE.md.
+
+---
+
+### D18 · P2 · OPEN · A tech token pasted into the reveal field is truncated — "not allowing the full string"
+
+Admin Tech Access hands out a **token** (`st2.<payload>.<sig>`, a few hundred
+chars) and nothing else — no reveal code. But the desktop tech entry (`PinPage`,
+long-press the logo) asks for the 8-char **reveal code** first, in an
+`<input maxLength={12}>` that also upper-cases. A tech holding only the token
+pastes it there; `maxLength` truncates it to `st2.XXXXXXXX` and the upper-casing
+corrupts the base64 — so the full token can never be entered, and even the stub
+fails the reveal check as "Incorrect code". The token's own field (a `<textarea>`,
+no maxLength) is only reachable *after* the reveal gate, which the tech can't pass
+without a code admin never gave them.
+
+Fix: an `onPaste` on the reveal field detects a token (`st2.` prefix) and routes
+it straight to the token step with the **full** value, bypassing the truncation
+and the doorknock. Safe — the reveal code grants nothing on its own (it only
+reveals the prompt), and the token is branch-scoped and cryptographically
+verified. Renderer `tsc` clean. Desktop change → version bumps at the next build
+(rule 15).
+
+**OPEN (rule 16):** the live check is pasting a real admin-issued token at the
+reveal prompt and reaching an unlocked tech session. **Admin complement done
+(2026-08-14):** the Tech Access page now also fetches and shows the branch
+**reveal code** beside the token (`GET /branches/:branchId/reveal-code`, already
+built), labelled "enter this FIRST on the till", so the intended reveal→token flow
+works without relying on the paste shortcut — the two ends are now self-consistent.
 
 ---
 
