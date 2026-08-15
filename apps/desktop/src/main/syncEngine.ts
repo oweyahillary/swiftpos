@@ -929,6 +929,48 @@ async function pullCatalogue(): Promise<boolean> {
       });
     }
 
+    // Delta merge (A80). The upsert above set every level to the SERVER baseline,
+    // which reflects only the orders the server has ingested — i.e. our SYNCED
+    // orders. Orders still 'pending' here deducted stock locally in
+    // createLocalOrder but that deduction is NOT yet in the server baseline, so
+    // the plain overwrite just erased it — the till would show stale-high stock
+    // from reconnect until the next pull, and worse while a push keeps failing.
+    // Re-apply the pending deductions now, which is the "delta merge" the header
+    // and this block always claimed but never actually did. 'pending' covers
+    // failed-to-push orders too: the push failure branch never flips
+    // orders.sync_status, so it stays 'pending' until a push finally succeeds.
+    //
+    // Scoped to THIS till's own device_id: on a till acting as the branch node,
+    // `orders` also holds peer terminals' rows (nodeIngest replicates them), but
+    // nodeIngest never touches stock_levels — only this till's own
+    // createLocalOrder deducted local stock, so only its own pending orders may
+    // be re-applied. Summing peers' rows would over-subtract phantom stock.
+    const deviceId = getDeviceConfig()?.device_id ?? null;
+    const pendingDeltas = db.prepare(`
+      SELECT oi.product_id AS product_id, o.branch_id AS branch_id,
+             SUM(oi.quantity) AS deducted
+      FROM order_items oi
+      JOIN orders   o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      WHERE o.sync_status = 'pending' AND p.track_stock = 1
+        AND COALESCE(o.device_id,'') = COALESCE(@device_id,'')
+      GROUP BY oi.product_id, o.branch_id
+    `).all({ device_id: deviceId }) as Array<{ product_id: string; branch_id: string | null; deducted: number }>;
+
+    // quantity may go negative — that is the A74 "sold beyond stock" state and
+    // must survive the merge, so no floor here.
+    const applyDelta = db.prepare(`
+      UPDATE stock_levels SET quantity = quantity - @deducted
+      WHERE product_id = @product_id AND branch_id = @branch_id
+    `);
+    for (const d of pendingDeltas) {
+      applyDelta.run({
+        product_id: d.product_id,
+        branch_id:  d.branch_id ?? effectiveBranchId,
+        deducted:   Number(d.deducted) || 0,
+      });
+    }
+
     // Users — remote wins. roles is a to-one relation -> { name } from /api/staff.
     const upsertUser = db.prepare(`
       INSERT INTO users (id, name, role_name, status, synced_at)
@@ -1648,7 +1690,12 @@ export function createLocalOrder(orderPayload: any): string {
         `).get(item.product.id, orderPayload.branch_id) as any;
 
         const currentQty = stock?.quantity ?? 0;
-        const newQty = Math.max(0, currentQty - item.quantity);
+        // No floor (A81). The server's adjust_product_stock lets quantity go
+        // negative — that is the A74 "sold beyond stock" state (a transfer
+        // arrived and was sold before being received in the system). Clamping to
+        // 0 here made the offline till disagree with the server until the next
+        // pull and hid the oversell locally.
+        const newQty = currentQty - item.quantity;
 
         db.prepare(`
           INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold)
