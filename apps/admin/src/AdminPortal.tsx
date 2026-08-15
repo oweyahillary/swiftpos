@@ -800,6 +800,7 @@ function ClientDetailPage({ client, req, onBack }) {
 
       {/* OVERVIEW */}
       {tab === "overview" && (
+        <>
         <div className="sp-two-col" style={{ marginBottom: 0 }}>
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Business Profile</div>
@@ -929,6 +930,7 @@ function ClientDetailPage({ client, req, onBack }) {
             </div>
           )}
         </div>
+        </>
       )}
 
       {/* FEATURES */}

@@ -2838,6 +2838,13 @@ guards), but the card populated from real rows — a till that enrolled, reporte
 its role, bound its branch, and phoned its version — is a live check. Closes when
 an enrolled till shows in the roster with the right branch and role.
 
+**Build fix 2026-08-14:** the roster card was added as a second top-level element
+inside `{tab === "overview" && ( … )}` without a fragment — adjacent JSX, which
+`vite build` rejects ("Expected ) but found {"). It shipped because the check was a
+filtered `grep` of `tsc` output, not the actual build; the real gate is
+`npm run build`. Wrapped grid + roster in `<>…</>`; **`vite build` now passes
+(647 modules).** Lesson logged: verify UI with the build, not a grep.
+
 ---
 
 ### A71 · P3 · OPEN · Owner device view showed only person + generic label — enriched with branch, role, last-active, version, enrolled
