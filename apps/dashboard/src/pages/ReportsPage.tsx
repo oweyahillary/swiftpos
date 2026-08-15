@@ -1403,8 +1403,140 @@ function ComingSoonTab({ title }: { title: string }) {
     </div>
   );
 }
-function MatrixTab(_props: { range: DateRange; branchId: string; currency: string }) {
-  return <ComingSoonTab title="Menu Matrix" />;
+// ── Tab: Menu Matrix (menu engineering) ───────────────────────────────────────
+// Kasavana-Smith classification. Two axes:
+//   Popularity   = units sold. "High" when an item's share of units ≥ 70% of an
+//                  even split (the standard 70% rule): qty ≥ 0.70 × totalQty / N.
+//   Profitability = unit contribution margin in money = (revenue − cost) / qty.
+//                  "High" when ≥ the average unit CM across classifiable items.
+// Items with no cost price can't have a margin, so they're set aside (not fed
+// into the average, which they'd distort) with a prompt to set cost. (A78.)
+function MatrixTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+  const [data, setData]       = useState<ProductV2Report | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const p = new URLSearchParams({ from: range.from, to: range.to });
+      if (branchId) p.set('branch_id', branchId);
+      setData(await api.get<ProductV2Report>(`/api/reports/products-v2?${p}`));
+    } catch (e: any) { setError(e.message ?? 'Failed to load'); }
+    finally { setLoading(false); }
+  }, [range.from, range.to, branchId]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Spinner />;
+  if (error)   return <ErrMsg msg={error} />;
+  if (!data)   return null;
+
+  type Item = ProductV2Report['products'][number] & { unitCM: number };
+  const needsCost = data.products.filter(p => p.total_cost == null || p.cost_price == null);
+  const classifiable: Item[] = data.products
+    .filter(p => p.total_cost != null && p.qty > 0 && p.revenue > 0)
+    .map(p => ({ ...p, unitCM: (p.revenue - (p.total_cost as number)) / p.qty }));
+
+  const N = classifiable.length;
+  const totalQty = classifiable.reduce((s, p) => s + p.qty, 0);
+  const popThreshold = N > 0 ? 0.70 * (totalQty / N) : 0;
+  const avgUnitCM = N > 0 ? classifiable.reduce((s, p) => s + p.unitCM, 0) / N : 0;
+
+  const stars:      Item[] = [];
+  const plowhorses: Item[] = [];
+  const puzzles:    Item[] = [];
+  const dogs:       Item[] = [];
+  for (const p of classifiable) {
+    const highPop    = p.qty >= popThreshold;
+    const highProfit = p.unitCM >= avgUnitCM;
+    (highPop ? (highProfit ? stars : plowhorses) : (highProfit ? puzzles : dogs)).push(p);
+  }
+  const byQty = (a: Item, b: Item) => b.qty - a.qty;
+  [stars, plowhorses, puzzles, dogs].forEach(g => g.sort(byQty));
+
+  const Quad = ({ title, tag, items, tone, action }: {
+    title: string; tag: string; items: Item[]; action: string;
+    tone: 'green' | 'amber' | 'blue' | 'red';
+  }) => {
+    const ring = {
+      green: 'border-green-500/40 bg-green-500/5',
+      amber: 'border-amber-500/40 bg-amber-500/5',
+      blue:  'border-blue-500/40 bg-blue-500/5',
+      red:   'border-red-500/40 bg-red-500/5',
+    }[tone];
+    const dot = { green: 'bg-green-500', amber: 'bg-amber-500', blue: 'bg-blue-500', red: 'bg-red-500' }[tone];
+    return (
+      <div className={`rounded-xl border p-4 ${ring}`}>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${dot}`} />
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
+          </div>
+          <span className="text-xs text-gray-400 tabular-nums">{items.length}</span>
+        </div>
+        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">{tag} · {action}</p>
+        {items.length === 0
+          ? <p className="text-xs text-gray-400 dark:text-gray-600">No items.</p>
+          : (
+            <ul className="space-y-1.5">
+              {items.map(p => (
+                <li key={p.product_id} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700 dark:text-gray-200 truncate pr-2">{p.name}</span>
+                  <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">
+                    {p.qty.toLocaleString()} sold · {fmtShort(p.unitCM, currency)}/ea
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">Menu Matrix</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{range.from} — {range.to}</p>
+        </div>
+        <p className="text-[11px] text-gray-400">
+          Popular ≥ {popThreshold.toFixed(1)} units · Profitable ≥ {fmtShort(avgUnitCM, currency)}/unit margin
+        </p>
+      </div>
+
+      {N === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
+          <p className="text-sm text-gray-600 dark:text-gray-300">No items can be classified yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Set cost prices on your products (Inventory) so margins can be computed.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Quad title="Stars"      tag="Popular · High margin" tone="green" action="protect & feature" items={stars} />
+          <Quad title="Puzzles"    tag="Unpopular · High margin" tone="blue" action="reposition / promote" items={puzzles} />
+          <Quad title="Plowhorses" tag="Popular · Low margin" tone="amber" action="raise price / cut cost" items={plowhorses} />
+          <Quad title="Dogs"       tag="Unpopular · Low margin" tone="red" action="rework or remove" items={dogs} />
+        </div>
+      )}
+
+      {needsCost.length > 0 && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+            Not classified — no cost price set ({needsCost.length})
+          </p>
+          <p className="text-[11px] text-gray-400 mb-3">Add a cost price in Inventory to place these on the matrix.</p>
+          <div className="flex flex-wrap gap-1.5">
+            {needsCost.slice(0, 40).map(p => (
+              <span key={p.product_id} className="text-xs px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                {p.name}
+              </span>
+            ))}
+            {needsCost.length > 40 && <span className="text-xs text-gray-400 self-center">+{needsCost.length - 40} more</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 function FuelSalesTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
   const [data, setData] = useState<any>(null);

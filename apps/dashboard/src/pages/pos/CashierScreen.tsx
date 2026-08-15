@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { POSLoadingSkeleton } from './cashier/POSSkeletons';
 import { usePOSData }         from './cashier/usePOSData';
 import { useCart }            from './cashier/useCart';
@@ -288,6 +288,11 @@ export default function CashierScreen() {
   const [roomNumber,       setRoomNumber]        = useState('');
   const [roomGuestName,    setRoomGuestName]      = useState('');
   const [roomCharging,     setRoomCharging]       = useState(false);
+  // Synchronous double-post guard. setRoomCharging(true) only disables the button
+  // on the next render; this direct-create path also mints a fresh order number
+  // each call, so a fast double-tap would post two room charges. The ref flips in
+  // this tick, closing the window (register A79).
+  const roomChargeRef = useRef(false);
   const [roomChargeError,  setRoomChargeError]    = useState('');
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [shiftModal, setShiftModal] = useState<ShiftModalMode | null>(null);
@@ -2280,6 +2285,8 @@ export default function CashierScreen() {
                 disabled={!roomNumber.trim() || roomCharging}
                 onClick={async () => {
                   if (!roomNumber.trim() || !session) return;
+                  if (roomChargeRef.current) return;   // before any await
+                  roomChargeRef.current = true;
                   setRoomCharging(true); setRoomChargeError('');
                   try {
                     // Create the order. The room charge is recorded as an 'other'
@@ -2344,6 +2351,7 @@ Signature: _______________`;
                     setRoomChargeError(e.message ?? 'Failed to post room charge');
                   } finally {
                     setRoomCharging(false);
+                    roomChargeRef.current = false;
                   }
                 }}
                 style={{ flex: 2, padding: '11px 0', background: roomNumber.trim() ? '#f59e0b' : '#334155', border: 'none', borderRadius: 10, color: roomNumber.trim() ? '#000' : '#64748b', fontSize: 13, fontWeight: 700, cursor: roomNumber.trim() ? 'pointer' : 'default' }}>
