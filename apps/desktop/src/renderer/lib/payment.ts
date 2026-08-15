@@ -5,7 +5,12 @@
 // floating-point dust never blocks a sale.
 
 export const EPSILON = 0.01;
-export const round2 = (n: number) => Math.round(n * 100) / 100;
+// MUST match the four server copies (orders.ts, discountPolicy.ts, qr.ts,
+// reports-daily.ts) and the till math ordertax.test.mjs replicates. Without the
+// Number.EPSILON nudge, half-cent values round the other way (1.005 → 1.00 here
+// vs 1.01 on the server), so the receipt's VAT/CTL split could disagree with the
+// books by a cent even when the 0.01 total tolerance absorbs the difference.
+export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 // Discount ceiling — MUST match capDiscount() in apps/server/src/routes/orders.ts.
 //

@@ -135,6 +135,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
   const [placing, setPlacing] = useState(false);
+  // Synchronous double-charge guard. setPlacing(true) only disables the Pay
+  // button on the NEXT render, leaving a one-frame window where a fast double-tap
+  // fires handleCharge twice — two order numbers, two orders. A ref flips now, in
+  // this tick, so the second tap returns immediately.
+  const placingRef = useRef(false);
   const [payError, setPayError] = useState('');
   // Surfaced on the receipt screen when a ticket did not reach paper.
   const [printMsg, setPrintMsg] = useState('');
@@ -374,7 +379,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // another button — the reserve is a local SQLite round trip, so it has landed.
   useEffect(() => {
     if (cart.length > 0 && !reservedBill && !orderNumber) {
-      posApi.orders.nextBillNumber().then(setReservedBill).catch(() => {});
+      posApi.orders.nextBillNumber().then(setReservedBill).catch(e => {
+        // Best-effort — charge falls back to reserving at pay time — but a
+        // silent swallow hid that the reservation never landed. Surface it; the
+        // double-charge guard now lives on placingRef, not on this succeeding.
+        console.warn('[pos] bill-number reservation failed:', e?.message ?? e);
+      });
     }
   }, [cart.length, reservedBill, orderNumber]);
 
@@ -641,22 +651,28 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
   const handleCharge = async (payment: PaymentResult) => {
     if (!branchId) return;
+    // Return before any await — this is the whole point of the ref (see decl).
+    if (placingRef.current) return;
+    placingRef.current = true;
     setPlacing(true);
     setPayError('');
 
-    // Reuse the KOT's number if one was assigned; otherwise take the terminal-
-    // prefixed reserve now.
-    //
-    // This used to fall straight through to generateOrderNumber(), which mints
-    // the old unprefixed ORD-<ts>-<rand> form. ensureOrderNumber() is only
-    // reached from Send to kitchen and from hold, so an order that was rung and
-    // charged directly — every counter sale on the pay-first path this pilot is
-    // configured for — got an unprefixed number. That is A7 not applying to the
-    // common case, and it removes exactly the cross-till collision protection
-    // the terminal prefix exists to provide.
-    const num = await ensureOrderNumberAsync();
-
     try {
+      // Reuse the KOT's number if one was assigned; otherwise take the terminal-
+      // prefixed reserve now.
+      //
+      // This used to fall straight through to generateOrderNumber(), which mints
+      // the old unprefixed ORD-<ts>-<rand> form. ensureOrderNumber() is only
+      // reached from Send to kitchen and from hold, so an order that was rung and
+      // charged directly — every counter sale on the pay-first path this pilot is
+      // configured for — got an unprefixed number. That is A7 not applying to the
+      // common case, and it removes exactly the cross-till collision protection
+      // the terminal prefix exists to provide.
+      //
+      // Inside the try so a failure here also resets placing in finally, instead
+      // of leaving the till wedged with the Pay button disabled forever.
+      const num = await ensureOrderNumberAsync();
+
       await posApi.order.create({
         branch_id: branchId,
         order_number: num,
@@ -710,13 +726,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
       setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim() });
       setShowPayment(false);
-      setPlacing(false);
 
       // Refresh sync status
       posApi.sync.status().then(setSyncStatus);
     } catch (err: any) {
       setPayError(err.message ?? 'Failed to process payment');
+    } finally {
       setPlacing(false);
+      placingRef.current = false;
     }
   };
 

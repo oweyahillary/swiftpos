@@ -81,10 +81,13 @@ export default function LockCurtain({
     }
   };
 
+  // No auto-submit. With variable-length PINs (4–6) the pad cannot know when a
+  // shorter PIN is complete, so submitting at 4 truncated every 5–6 digit PIN
+  // to its first four and locked those staff out (the reported manager lockout).
+  // Enter or the OK key submits — the SAME interaction PinPage already uses, so
+  // a cashier's muscle memory carries over.
   const press = (d: string) => {
-    const next = (pin + d).slice(0, 6);
-    setPin(next);
-    if (next.length >= 4) void submit(next);
+    setPin(p => (p + d).slice(0, 6));
   };
 
   return (
@@ -116,10 +119,9 @@ export default function LockCurtain({
           inputMode="numeric"
           value={pin}
           onChange={e => {
-            const v = e.target.value.replace(/\D/g, '').slice(0, 6);
-            setPin(v);
-            if (v.length >= 4) void submit(v);
+            setPin(e.target.value.replace(/\D/g, '').slice(0, 6));
           }}
+          onKeyDown={e => { if (e.key === 'Enter') void submit(pin); }}
           className="sr-only"
           autoComplete="off"
         />
@@ -143,7 +145,12 @@ export default function LockCurtain({
               {d}
             </button>
           ))}
-          <div />
+          <button onClick={() => void submit(pin)} disabled={busy || pin.length < 4}
+            className="h-14 rounded-xl bg-green-600 text-white text-lg font-medium
+                       hover:bg-green-500 active:bg-green-700 disabled:opacity-40
+                       disabled:cursor-not-allowed">
+            OK
+          </button>
           <button onClick={() => press('0')} disabled={busy}
             className="h-14 rounded-xl bg-gray-900 text-white text-lg font-medium
                        hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40">
