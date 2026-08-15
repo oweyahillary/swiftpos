@@ -3206,7 +3206,10 @@ Two layers of fix, the split that matters here: **build-time identity** and
   Both flavours build at ONE version via `scripts/release-both.mjs` (`release:both`
   bumps once then packs prod + dev; `pack:both` rebuilds both at the current
   version) — running the two `release:*` scripts separately bumped the version
-  twice, which is the build-up this removes.
+  twice, which is the build-up this removes. `pack:dev`
+  (`release-flavour.mjs dev none`) builds the dev flavour at the CURRENT version —
+  no bump, no tag — for the routine dev-test loop; only real releases (both
+  flavours) move the number and get tagged.
 
 - **Runtime (the honest signal):** a build's real environment is the cloud it is
   *enrolled* against (`getServerUrl()`), not a build flag — so `index.ts` now

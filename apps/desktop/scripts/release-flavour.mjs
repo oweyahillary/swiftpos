@@ -13,6 +13,7 @@
  *
  *   node scripts/release-flavour.mjs dev  patch
  *   node scripts/release-flavour.mjs prod minor
+ *   node scripts/release-flavour.mjs dev  none    # build at current version, NO bump
  *   FLAVOUR_DRYRUN=1 node scripts/release-flavour.mjs dev patch   # print, don't build
  */
 import { spawnSync } from 'node:child_process';
@@ -23,20 +24,30 @@ if (!['prod', 'dev'].includes(flavour)) {
   console.error(`release-flavour: unknown flavour "${flavour}" — expected prod|dev`);
   process.exit(2);
 }
-if (!['patch', 'minor', 'major'].includes(bump)) {
-  console.error(`release-flavour: unknown bump "${bump}" — expected patch|minor|major`);
+if (!['patch', 'minor', 'major', 'none'].includes(bump)) {
+  console.error(`release-flavour: unknown bump "${bump}" — expected patch|minor|major|none`);
   process.exit(2);
 }
 
 const env = { ...process.env, SWIFTPOS_ENV: flavour };
-const cmd = `npm run release:${bump}`;
-console.log(`[release-flavour] SWIFTPOS_ENV=${flavour} → ${cmd}`);
+
+// `none` builds at the CURRENT version — no version:patch, no tag. For the dev
+// test loop, where a throwaway build shouldn't move the number that only real
+// releases (and tags) should touch. Otherwise hand off to the release:<bump> chain.
+const steps = bump === 'none'
+  ? ['build:all', 'assert:built', 'pack:installer', 'pack:portable']
+  : [`release:${bump}`];
+const desc = bump === 'none' ? `build:all + dist (no bump)` : `npm run release:${bump}`;
+console.log(`[release-flavour] SWIFTPOS_ENV=${flavour} → ${desc}`);
 
 // Dry run: prove the flavour→env mapping without bumping a version or building.
 if (process.env.FLAVOUR_DRYRUN) {
-  console.log(`[release-flavour] DRY RUN — would run: ${cmd} (SWIFTPOS_ENV=${env.SWIFTPOS_ENV})`);
+  console.log(`[release-flavour] DRY RUN — would run: ${steps.map(s => `npm run ${s}`).join(' && ')} (SWIFTPOS_ENV=${env.SWIFTPOS_ENV})`);
   process.exit(0);
 }
 
-const r = spawnSync('npm', ['run', `release:${bump}`], { stdio: 'inherit', env, shell: true });
-process.exit(r.status ?? 1);
+for (const s of steps) {
+  const r = spawnSync('npm', ['run', s], { stdio: 'inherit', env, shell: true });
+  if (r.status !== 0) { console.error(`[release-flavour] FAILED at: npm run ${s}`); process.exit(r.status ?? 1); }
+}
+process.exit(0);

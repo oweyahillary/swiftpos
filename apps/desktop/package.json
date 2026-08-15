@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.31",
+  "version": "0.5.32",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -29,6 +29,7 @@
     "release:major:dev": "node scripts/release-flavour.mjs dev major",
     "release:both": "node scripts/release-both.mjs",
     "pack:both": "node scripts/release-both.mjs none",
+    "pack:dev": "node scripts/release-flavour.mjs dev none",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:held": "node test/heldOrders.test.mjs",
     "test:held:electron": "node test/run-under-electron.mjs test/heldOrders.test.mjs",
