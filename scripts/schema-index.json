@@ -872,7 +872,8 @@
     "ip_address": "\"text\"",
     "expires_at": "\"timestamp with time zone\" NOT NULL",
     "revoked_at": "\"timestamp with time zone\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "replaced_by": "\"uuid\""
   },
   "reservations": {
     "id": "\"uuid\" NOT NULL",

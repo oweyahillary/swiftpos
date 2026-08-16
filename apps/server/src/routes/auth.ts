@@ -41,6 +41,7 @@ import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
+import { refreshGraceDecision } from '../lib/refreshGrace';
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
@@ -158,11 +159,11 @@ async function storeRefreshToken(
    * User-Agent only when it genuinely has nothing better.
    */
   deviceHint?: string,
-): Promise<void> {
+): Promise<string | null> {
   const jtiPayload = jwt.decode(refreshToken) as { jti: string };
   const jti = hashToken(jtiPayload.jti);
 
-  await supabase.from('refresh_tokens').insert({
+  const { data } = await supabase.from('refresh_tokens').insert({
     jti,
     user_id:     payload.userId,
     business_id: payload.businessId,
@@ -170,7 +171,8 @@ async function storeRefreshToken(
     device_hint: deviceHint?.slice(0, 200) ?? null,
     ip_address:  ip ?? null,
     expires_at:  new Date(Date.now() + REFRESH_EXPIRES_MS).toISOString(),
-  });
+  }).select('id').single();
+  return (data as { id?: string } | null)?.id ?? null;
 }
 
 /**
@@ -180,6 +182,7 @@ async function storeRefreshToken(
 async function validateRefreshToken(refreshToken: string): Promise<{
   payload: any;
   dbRow:   any;
+  graceReissue?: boolean;
 }> {
   // 1. Verify JWT signature + expiry
   let payload: any;
@@ -208,8 +211,34 @@ async function validateRefreshToken(refreshToken: string): Promise<{
   }
 
   if (dbRow.revoked_at) {
-    // Token already used or explicitly revoked.
-    // If it's been used twice this may be a replay attack — revoke the entire session.
+    // Chain-based reuse detection (A88 / D13). A revoked token is not always a
+    // replay: if it was rotated and its replacement is STILL the live head, the
+    // client never received the rotation response — a lost packet, not an
+    // attack. Nuking every session there logs the owner out of the till on a
+    // dropped response. Look at the successor to tell them apart.
+    let successorExists = false;
+    let successorRevokedAt: string | null | undefined;
+    if (dbRow.replaced_by) {
+      const { data: succ } = await supabase
+        .from('refresh_tokens')
+        .select('revoked_at')
+        .eq('id', dbRow.replaced_by)
+        .maybeSingle();
+      if (succ) { successorExists = true; successorRevokedAt = (succ as any).revoked_at; }
+    }
+
+    const decision = refreshGraceDecision({
+      revokedAt: dbRow.revoked_at, successorExists, successorRevokedAt,
+    });
+
+    if (decision === 'reissue') {
+      // Lost rotation response — let the client recover. The handler mints a
+      // fresh pair and re-points the chain; do NOT revoke the session.
+      return { payload, dbRow, graceReissue: true };
+    }
+
+    // Genuine replay (successor already rotated, or the token was revoked by
+    // logout with no successor) — revoke the whole session, as before.
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
@@ -936,8 +965,9 @@ router.post('/refresh', async (req, res) => {
 
   let payload: any;
   let dbRow: any;
+  let graceReissue = false;
   try {
-    ({ payload, dbRow } = await validateRefreshToken(refreshToken));
+    ({ payload, dbRow, graceReissue = false } = await validateRefreshToken(refreshToken));
   } catch (err: any) {
     // Deliberate token errors carry a TOKEN_* code and a user-safe message —
     // surface those so the client can react. Anything else is unexpected and
@@ -950,11 +980,26 @@ router.post('/refresh', async (req, res) => {
     return;
   }
 
-  // Revoke the consumed token atomically before issuing the new pair
-  await supabase
-    .from('refresh_tokens')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', dbRow.id);
+  if (graceReissue) {
+    // Lost rotation response (A88 / D13): the consumed token is already revoked
+    // and the successor it points to was never received by the client. Revoke
+    // that orphan successor so the session stays single-headed, then mint a
+    // fresh pair below. No session-wide revoke — this is recovery, not a replay.
+    if (dbRow.replaced_by) {
+      await supabase
+        .from('refresh_tokens')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', dbRow.replaced_by)
+        .is('revoked_at', null);
+    }
+  } else {
+    // Normal rotation: revoke the consumed token atomically before issuing the
+    // new pair.
+    await supabase
+      .from('refresh_tokens')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', dbRow.id);
+  }
 
   const { tokenType, iat, exp, jti, ...cleanPayload } = payload;
 
@@ -973,7 +1018,7 @@ router.post('/refresh', async (req, res) => {
   const newPayload: TokenPayload = { ...cleanPayload };
   const { accessToken, refreshToken: newRefreshToken } = issueTokenPair(newPayload);
 
-  await storeRefreshToken(newRefreshToken, newPayload,
+  const newId = await storeRefreshToken(newRefreshToken, newPayload,
     req.ip ?? undefined,
     // Carry the ORIGINAL device key forward rather than re-deriving it.
     //
@@ -983,6 +1028,17 @@ router.post('/refresh', async (req, res) => {
     // not having made it, because the failure would look intermittent.
     dbRow.device_hint ?? req.headers['user-agent'] ?? undefined,
   );
+
+  // Link the consumed (or superseded, on the grace path) token to its
+  // replacement so a later presentation can tell a lost response from a replay
+  // (A88 / D13). On the grace path this re-points the chain from the orphaned
+  // successor to the fresh token.
+  if (newId) {
+    await supabase
+      .from('refresh_tokens')
+      .update({ replaced_by: newId })
+      .eq('id', dbRow.id);
+  }
 
   res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken });
 });

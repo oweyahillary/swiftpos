@@ -1000,8 +1000,15 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   useEffect(() => {
     void (async () => {
       try {
-        const init = await posApi.pos.init();
-        const live = (init.stationRouting?.stations ?? [])
+        // The REAL station source is GET /api/stations (print_stations), the same
+        // one the Stations tab uses — so both tabs agree. This used to read
+        // pos.init().stationRouting, a field the server never actually emits, so
+        // the list always collapsed to the single synthetic receipt below and a
+        // venue's Kitchen/Dispatch stations vanished from the Printers tab (a
+        // configured station showed nowhere to bind a printer). (A89.)
+        const rows = await posApi.manage.listStations();
+        const live = (rows ?? [])
+          .filter(s => s.active !== false)
           .map(s => ({ id: s.id, name: s.name, kind: s.kind }));
 
         // EVERY till needs somewhere to print the customer receipt.
