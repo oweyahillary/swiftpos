@@ -329,6 +329,10 @@ declare global {
         listCategories: () => Promise<any[]>;
         createCategory: (payload: any) => Promise<any>;
         listStations:  () => Promise<PrintStation[]>;
+        listPaymentMethods: () => Promise<{ id: string; name: string; code: string; is_active: boolean; sort_order: number }[]>;
+        createPaymentMethod: (payload: { name: string; sort_order?: number }) => Promise<{ id: string; name: string; code: string; is_active: boolean; sort_order: number }>;
+        updatePaymentMethod: (id: string, patch: { name?: string; is_active?: boolean; sort_order?: number }) => Promise<any>;
+        deletePaymentMethod: (id: string) => Promise<{ success: boolean }>;
         seedDefaultStations: () => Promise<{ created: boolean; stations: number; routed: { packing: number; kitchen: number } }>;
         unassignedCategories: () => Promise<{ id: string; name: string }[]>;
         createStation: (payload: { name: string; kind?: StationKind; sort_order?: number }) => Promise<PrintStation>;

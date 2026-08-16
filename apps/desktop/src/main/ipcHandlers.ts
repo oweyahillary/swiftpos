@@ -1567,6 +1567,37 @@ export function registerIpcHandlers() {
     try { return await manageFetch('/api/stations', 'GET'); }
     catch { return localStations(); }
   });
+
+  // ── Custom payment methods (A97) ──────────────────────────────────────────
+  // Manage from the till too, not just the dashboard. Writes go to the server;
+  // after each, the local payment_methods cache (read by PaymentModal) is
+  // rewritten so a newly-added tender appears at the POS without waiting for the
+  // next full pull.
+  async function refreshPaymentMethodsLocal() {
+    try {
+      const rows = await manageFetch('/api/payment-methods', 'GET') as Array<{ code: string; name: string; is_active: boolean }>;
+      const db = getLocalDb();
+      db.prepare('DELETE FROM payment_methods').run();
+      const ins = db.prepare('INSERT OR REPLACE INTO payment_methods (code, name, sort_order) VALUES (?, ?, ?)');
+      (rows ?? []).filter(m => m.is_active).forEach((m, i) => ins.run(m.code, m.name, i));
+    } catch { /* the next catalogue pull will reconcile */ }
+  }
+  ipcMain.handle('manage:listPaymentMethods', async () => manageFetch('/api/payment-methods', 'GET'));
+  ipcMain.handle('manage:createPaymentMethod', async (_e, payload: any) => {
+    const out = await manageFetch('/api/payment-methods', 'POST', payload);
+    await refreshPaymentMethodsLocal();
+    return out;
+  });
+  ipcMain.handle('manage:updatePaymentMethod', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/payment-methods/${id}`, 'PATCH', patch);
+    await refreshPaymentMethodsLocal();
+    return out;
+  });
+  ipcMain.handle('manage:deletePaymentMethod', async (_e, id: string) => {
+    const out = await manageFetch(`/api/payment-methods/${id}`, 'DELETE');
+    await refreshPaymentMethodsLocal();
+    return out;
+  });
   ipcMain.handle('manage:unassignedCategories', async () => {
     try { return await manageFetch('/api/stations/unassigned', 'GET'); }
     catch {

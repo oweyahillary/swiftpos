@@ -14,6 +14,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
+import PaymentMethodsPanel from '../components/PaymentMethodsPanel';
 import PrintersScreen from '../screens/PrintersScreen';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
@@ -1078,7 +1079,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   }, []);
 
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers' | 'payments';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
@@ -1102,6 +1103,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // screen rather than as a sibling nobody connects to the menu they are editing.
     ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
     ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
+    ...((canManageSettings || canManageProducts) ? [{ key: 'payments' as TabKey, label: 'Payments', icon: I.receipt }] : []),
     // Gated like the other configuration tabs. It was briefly left open on the
     // reasoning that printer bindings are per-device, so whoever stands at the
     // till is who needs them. That was wrong: re-pointing a printer mid-service
@@ -1144,6 +1146,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
+      case 'payments': return <PaymentMethodsPanel canEdit={canManageSettings || canManageProducts} />;
       // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
       // Stations, Printers, Exclusions (all stations.manage) and Receipt
       // (receipt.manage/settings.manage). Per-tab gating passed in below.

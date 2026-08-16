@@ -169,6 +169,7 @@ export default function CashierScreen() {
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
+    paymentMethods,
     loading,
     error:         posDataError,
     reload:        reloadPOSData,
@@ -1967,6 +1968,7 @@ export default function CashierScreen() {
           loyaltyState={loyaltyState}
           discountState={discountState}
           maxDiscountPct={maxDiscountPct}
+          customMethods={paymentMethods}
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
