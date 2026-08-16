@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getModifiers: (productId: string) => ipcRenderer.invoke('pos:getModifiers', productId),
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
+    paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
   },
 
   order: {

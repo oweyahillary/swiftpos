@@ -208,6 +208,7 @@ declare global {
         getModifiers: (productId: string) => Promise<any[]>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
+        paymentMethods: () => Promise<{ code: string; name: string }[]>;
       };
       order: {
         create: (payload: any) => Promise<{ orderId: string }>;

@@ -298,6 +298,15 @@ function initSchema(db: Database.Database) {
       subtotal      REAL NOT NULL
     );
 
+    -- Custom payment methods (A96), cached from /api/pos/init so they appear as
+    -- tender options offline. Built-in Cash/M-Pesa/Card are not stored here.
+    -- Replaced wholesale on each pull. Local mirror only, never pushed.
+    CREATE TABLE IF NOT EXISTS payment_methods (
+      code       TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
     -- Local-only (never synced). The exact order payload that printed, kept so
     -- any recent order can be reprinted byte-identically from Order History
     -- (register A94) — replayed through the same queueThermal path as the

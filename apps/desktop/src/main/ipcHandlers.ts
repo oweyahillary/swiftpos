@@ -617,6 +617,13 @@ export function registerIpcHandlers() {
 
   // Fuel pumps for the petrol grid, each joined to its fuel product so the
   // renderer has the name + price/litre without a second lookup.
+  ipcMain.handle('pos:paymentMethods', async () => {
+    // Custom tenders cached from the last pull (A96). Available offline.
+    return getLocalDb().prepare(
+      `SELECT code, name FROM payment_methods ORDER BY sort_order, name`
+    ).all();
+  });
+
   ipcMain.handle('pos:getPumps', async () => {
     const db = getLocalDb();
     return db.prepare(`

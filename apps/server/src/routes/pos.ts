@@ -224,6 +224,18 @@ router.get('/init', async (req, res) => {
       return [] as string[];
     })(),
     categories: categories ?? [],
+    // Custom payment methods (A96) — the extras a business accepts beyond the
+    // built-in Cash / M-Pesa / Card. Active only; the till caches these so they
+    // appear as tender options offline. Per business (owner decision, A95).
+    paymentMethods: await (async () => {
+      const { data } = await supabase
+        .from('payment_methods')
+        .select('code, name')
+        .eq('business_id', req.businessId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      return (data ?? []).map(m => ({ code: m.code, name: m.name }));
+    })(),
     // The desktop falls back to this when it has no binding of its own
     // (syncEngine: effectiveBranchId = boundBranchId || branchId). It is the
     // MAIN branch, deliberately — the fallback for an unbound till, not the

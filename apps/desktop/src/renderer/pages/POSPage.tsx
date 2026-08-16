@@ -148,6 +148,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Surfaced on the receipt screen when a ticket did not reach paper.
   const [printMsg, setPrintMsg] = useState('');
   const [reprintNote, setReprintNote] = useState('');
+  // Custom tenders (A96), cached locally so they work offline. Refreshed on mount.
+  const [customMethods, setCustomMethods] = useState<{ code: string; name: string }[]>([]);
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
@@ -201,6 +203,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       const has = (k: string) => perms['*'] === true || perms[k] === true;
       setCanForceClose(has('shifts.force_close') || has('settings.manage'));
     }).catch(() => {});
+    posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     // NOT reserving a bill number here. See the reservedBill declaration.
 
     posApi.config.get().then(async cfg => {
@@ -1369,6 +1372,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           currency={currency}
           placing={placing}
           error={payError}
+          customMethods={customMethods}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
         />

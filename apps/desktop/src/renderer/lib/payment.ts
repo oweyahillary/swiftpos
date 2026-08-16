@@ -33,10 +33,13 @@ export const DEFAULT_MAX_DISCOUNT_PCT = 10;
 export type LegMethod = 'cash' | 'mpesa' | 'card' | 'glovo';
 
 export interface DraftLeg {
-  method: LegMethod;
+  // Built-in codes are cash/mpesa/card/glovo; a custom method (A96) is its own
+  // `code` string. Reconciliation filters on method === 'cash' specifically, so
+  // any non-cash code — built-in or custom — cannot inflate expected cash.
+  method: string;
   amount: string;     // raw input; '' means "the remaining balance"
   tendered: string;   // cash only
-  reference: string;  // mpesa/card/glovo — the aggregator's order reference
+  reference: string;  // mpesa/card/glovo/custom — the aggregator's order reference
 }
 
 // VAT-inclusive pricing: VAT is extracted from the post-discount goods total.

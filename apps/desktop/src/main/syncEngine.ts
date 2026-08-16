@@ -612,7 +612,7 @@ async function pullCatalogue(): Promise<boolean> {
     return false;
   }
 
-  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions } = await res.json();
+  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions, paymentMethods } = await res.json();
   clearInboundFailure('sync');
   const db = getLocalDb();
   const now = new Date().toISOString();
@@ -781,6 +781,16 @@ async function pullCatalogue(): Promise<boolean> {
     `);
     for (const c of categories) {
       upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
+    }
+
+    // Custom payment methods (A96). Replaced wholesale like stations: a method
+    // deactivated or deleted upstream must stop appearing at the till. Guarded on
+    // a defined list so a partial response can't wipe the tenders. The built-in
+    // Cash / M-Pesa / Card are not stored here — they live in the POS.
+    if (Array.isArray(paymentMethods)) {
+      db.prepare(`DELETE FROM payment_methods`).run();
+      const insPm = db.prepare(`INSERT OR REPLACE INTO payment_methods (code, name, sort_order) VALUES (?, ?, ?)`);
+      paymentMethods.forEach((m: { code: string; name: string }, i: number) => insPm.run(m.code, m.name, i));
     }
 
     // Stations and their routing. Replaced wholesale, not upserted: a station

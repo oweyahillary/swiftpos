@@ -106,7 +106,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
     d.line('No sales this shift');
   } else {
     for (const m of r.byMethod) {
-      const label = METHOD_LABELS[m.method] ?? m.method.toUpperCase();
+      const label = METHOD_LABELS[m.method] ?? m.method.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       d.line(pair(cols, `${label} (${m.orders})`, money(m.amount)));
     }
   }
