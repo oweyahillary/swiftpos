@@ -13,6 +13,7 @@ const EMPTY_FORM = {
   name: '',
   description: '',
   base_price: '',
+  cost_price: '',
   category_id: '',
   track_stock: true,
   status: 'active' as 'active' | 'inactive',
@@ -44,6 +45,45 @@ export default function ProductsPage() {
   const [recipeProduct, setRecipeProduct] = useState<Product | null>(null);
   const [productRecipes, setProductRecipes] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Bulk cost editor ────────────────────────────────────────────────────────
+  const [showBulkCost, setShowBulkCost] = useState(false);
+  const [bulkCosts, setBulkCosts] = useState<Record<string, string>>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkResult, setBulkResult] = useState('');
+
+  const openBulkCost = () => {
+    const seed: Record<string, string> = {};
+    for (const p of products) seed[p.id] = (p as any).cost_price != null ? String((p as any).cost_price) : '';
+    setBulkCosts(seed);
+    setBulkResult('');
+    setShowBulkCost(true);
+  };
+
+  const saveBulkCost = async () => {
+    // Send only rows whose cost actually changed from what's stored.
+    const items = products
+      .map(p => {
+        const cur  = (p as any).cost_price != null ? String((p as any).cost_price) : '';
+        const next = (bulkCosts[p.id] ?? '').trim();
+        if (next === cur) return null;
+        return { id: p.id, cost_price: next === '' ? null : (parseFloat(next) || 0) };
+      })
+      .filter(Boolean) as { id: string; cost_price: number | null }[];
+    if (!items.length) { setShowBulkCost(false); return; }
+    setBulkSaving(true); setBulkResult('');
+    try {
+      const r = await api.patch<{ updated: number; skipped: number; errors: { id: string; error: string }[] }>(
+        '/api/products/bulk-cost/by-ids', { items });
+      await fetchAll();
+      if (r?.errors?.length) setBulkResult(`Saved ${r.updated}. ${r.errors.length} failed.`);
+      else setShowBulkCost(false);
+    } catch (e: any) {
+      setBulkResult(e.message ?? 'Save failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   const fetchAll = async () => {
     if (!business) return;
@@ -79,6 +119,7 @@ export default function ProductsPage() {
       name: p.name,
       description: p.description ?? '',
       base_price: String(p.base_price),
+      cost_price: (p as any).cost_price != null ? String((p as any).cost_price) : '',
       category_id: p.category_id ?? '',
       track_stock: p.track_stock,
       status: p.status,
@@ -125,6 +166,7 @@ export default function ProductsPage() {
       name: form.name.trim(),
       description: form.description.trim() || null,
       base_price: parseFloat(form.base_price) || 0,
+      cost_price: form.cost_price !== '' ? (parseFloat(form.cost_price) || 0) : null,
       category_id: form.category_id || null,
       track_stock: form.track_stock,
       status: form.status,
@@ -192,9 +234,14 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-bold text-white">{term('products')}<span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 ml-2 align-middle">All branches</span></h1>
           <p className="text-gray-400 text-sm mt-0.5">{products.length} product{products.length !== 1 ? 's' : ''}</p>
         </div>
-        <button onClick={openNew} className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
-          + New product
-        </button>
+        <div className="flex gap-2">
+          <button onClick={openBulkCost} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
+            Set costs
+          </button>
+          <button onClick={openNew} className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
+            + New product
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -231,6 +278,7 @@ export default function ProductsPage() {
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Product</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Category</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Price</th>
+                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Cost</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider"></th>
               </tr>
@@ -267,6 +315,11 @@ export default function ProductsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-white">{currency} {Number(p.base_price).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {(p as any).cost_price != null
+                      ? <span className="text-gray-300">{currency} {Number((p as any).cost_price).toLocaleString()}</span>
+                      : <span className="text-amber-500/70 text-xs">no cost</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-1 rounded-full ${p.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
                       {p.status}
@@ -388,6 +441,24 @@ export default function ProductsPage() {
                 />
               </div>
               <div>
+                <label className="block text-sm text-gray-400 mb-1.5">
+                  Cost ({currency}) <span className="text-gray-600">— for margin</span>
+                </label>
+                <input
+                  type="number"
+                  value={form.cost_price}
+                  onChange={e => setForm(f => ({ ...f, cost_price: e.target.value }))}
+                  placeholder="0"
+                  min="0"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                />
+                {form.base_price && form.cost_price && parseFloat(form.base_price) > 0 && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Margin: {(((parseFloat(form.base_price) - parseFloat(form.cost_price)) / parseFloat(form.base_price)) * 100).toFixed(0)}%
+                  </p>
+                )}
+              </div>
+              <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Category</label>
                 <select
                   value={form.category_id}
@@ -480,6 +551,66 @@ export default function ProductsPage() {
               </button>
               <button onClick={handleSave} disabled={saving || !form.name.trim()} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
                 {uploading ? 'Uploading…' : saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showBulkCost && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-800">
+              <h2 className="text-white font-semibold text-lg">Set cost prices</h2>
+              <p className="text-gray-400 text-sm mt-0.5">
+                The unit cost drives margin, COGS and the Menu Matrix. Leave blank to clear.
+              </p>
+            </div>
+
+            <div className="overflow-y-auto flex-1 divide-y divide-gray-800">
+              {products.map(p => {
+                const price = Number(p.base_price) || 0;
+                const costStr = bulkCosts[p.id] ?? '';
+                const cost = parseFloat(costStr);
+                const margin = price > 0 && costStr !== '' && Number.isFinite(cost)
+                  ? ((price - cost) / price) * 100 : null;
+                return (
+                  <div key={p.id} className="flex items-center gap-3 px-5 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">{p.name}</p>
+                      <p className="text-xs text-gray-500">{currency} {price.toLocaleString()}</p>
+                    </div>
+                    {margin != null && (
+                      <span className={`text-xs tabular-nums w-14 text-right ${margin >= 60 ? 'text-green-400' : margin >= 30 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {margin.toFixed(0)}%
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-gray-500">{currency}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={costStr}
+                        onChange={e => setBulkCosts(m => ({ ...m, [p.id]: e.target.value }))}
+                        placeholder="0"
+                        className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {products.length === 0 && (
+                <p className="text-gray-500 text-sm text-center py-10">No products yet.</p>
+              )}
+            </div>
+
+            {bulkResult && <p className="text-amber-400 text-sm px-5 pt-3">{bulkResult}</p>}
+
+            <div className="flex gap-3 px-5 py-4 border-t border-gray-800">
+              <button onClick={() => setShowBulkCost(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
+                Cancel
+              </button>
+              <button onClick={saveBulkCost} disabled={bulkSaving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+                {bulkSaving ? 'Saving…' : 'Save costs'}
               </button>
             </div>
           </div>
