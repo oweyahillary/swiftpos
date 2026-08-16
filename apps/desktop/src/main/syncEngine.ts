@@ -1303,6 +1303,17 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   let pushed = 0;
   let triedStaffRefresh = false;  // refresh once per sync pass
 
+  // S3: move BOTH rows to 'synced' in one transaction, so a crash between the
+  // two writes can never leave sync_queue and orders disagreeing (queue synced
+  // while the order still reads pending, or vice versa). Prepared once, reused
+  // per row; the same statements the two success branches ran inline before.
+  const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`);
+  const _markOrderSynced = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
+  const markSynced = db.transaction((queueId: number, orderId: string) => {
+    _markQueueSynced.run(queueId);
+    _markOrderSynced.run(orderId);
+  });
+
   // Every till pushes its OWN orders to the cloud, including tills that have a
   // branch node.
   //
@@ -1345,14 +1356,12 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         // (200 with { duplicate: true }) — both mean the server has this order,
         // so the local row is safely marked synced. A lost first response that
         // caused this retry therefore resolves correctly instead of duplicating.
-        db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
-        db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`).run(row.order_id);
+        markSynced(row.id, row.order_id);
         pushed++;
       } else if (res.status === 409) {
         // Defensive: some deployments may signal an existing record with 409.
         // That still means the server holds the order — treat as synced.
-        db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
-        db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`).run(row.order_id);
+        markSynced(row.id, row.order_id);
         pushed++;
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
