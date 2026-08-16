@@ -14,7 +14,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
-import PrinterSetupScreen from '../screens/PrinterSetupScreen';
+import PrintersScreen from '../screens/PrintersScreen';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
@@ -1125,14 +1125,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
       case 'receipt': return <ReceiptTextTab />;
-      // PrinterSetupScreen supersedes PrintersTab: one screen, live preview
-      // rendered from the same Document the printer receives, and a test print
-      // that reports the real result. PrintersTab.tsx remains in the tree but is
-      // UNROUTED — the Printers tab renders PrinterSetupScreen. (The old comment
-      // said PrintersTab "stays reachable" AND "remains unrouted", which cannot
-      // both be true; it is not reachable — register A11. Its read-only kitchen-
-      // exclusions box was ported into PrinterSetupScreen, closing A43.)
-      case 'printers': return <PrinterSetupScreen stations={escposStations.length ? escposStations : FALLBACK_STATIONS} />;
+      // PrintersScreen (register A83) puts three sub-tabs under the one Printers
+      // nav item: Stations (StationsPanel — create/route stations, restored after
+      // the A43 supersession orphaned it in the unrouted PrintersTab), Printers
+      // (PrinterSetupScreen — per-till binding + live preview + test), and
+      // Exclusions (kitchen list; dispatcher list joins in Phase 2).
+      case 'printers': return <PrintersScreen stations={escposStations.length ? escposStations : FALLBACK_STATIONS} />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }
