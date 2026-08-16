@@ -602,12 +602,16 @@ router.post('/', async (req, res) => {
       amount_tendered: leg.amount_tendered ?? leg.amount,
       change_given:    leg.change_given ?? 0,
       reference:       leg.reference ?? null,
-      // An M-Pesa leg awaits the STK callback, so it is written 'pending' and the
-      // callback flips it to 'completed' on payment (finding #5). Its amount is
-      // still counted toward the reconciliation total — the money is promised —
-      // but it is not marked collected until M-Pesa confirms. All other methods
-      // are immediate and default to 'completed'.
-      status:          leg.method === 'mpesa' ? 'pending' : 'completed',
+      // An M-Pesa leg defaults to 'pending' for the STK-push flow, which the
+      // callback flips to 'completed'. But a manual tender (the desktop till,
+      // where the cashier confirms the payment on their own phone) sends
+      // status='completed' explicitly — honour it, or the leg sits 'pending'
+      // forever with no callback ever coming, and the dashboard payment-method
+      // breakdown (which counts only 'completed') shows it as "unaccounted"
+      // (A93). All non-M-Pesa methods are immediate and 'completed'.
+      status: leg.method === 'mpesa'
+        ? (leg.status === 'completed' ? 'completed' : 'pending')
+        : 'completed',
     }));
 
     const orderPayload = {

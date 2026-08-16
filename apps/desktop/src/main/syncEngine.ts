@@ -1752,7 +1752,13 @@ export function createLocalOrder(orderPayload: any): string {
       // have already been queued. It is not part of an order and the server has
       // no column for it, so it is dropped here rather than shipped and ignored.
       ...(() => { const { kot_sent: _kotSent, ...rest } = orderPayload; return rest; })(),
-      payments: legs, shift_id: shiftId, device_id: deviceId,
+      // The till is a manual-tender POS — no STK push. Every leg is a payment
+      // the cashier has already confirmed (cash in drawer, M-Pesa on the phone),
+      // so mark them 'completed' explicitly; otherwise the server writes M-Pesa
+      // 'pending' awaiting an STK callback that never comes, and it reports as
+      // "unaccounted" on the cloud (A93).
+      payments: (legs as any[]).map(l => ({ ...l, status: 'completed' })),
+      shift_id: shiftId, device_id: deviceId,
       _localOrderId: orderId, idempotency_key: orderId, created_at: now,
     }), now);
   })();
