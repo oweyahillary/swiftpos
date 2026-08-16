@@ -54,6 +54,7 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/categories', label: 'Categories', icon: '◈' },
       { to: '/dashboard/products',   label: 'Products',   icon: '⊞' },
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: '🏷️' },
+      { to: '/dashboard/payment-methods', label: 'Payment methods', icon: '💳' },
       { to: '/dashboard/promotions', label: 'Promotions',   icon: '🎉' },
       { to: '/dashboard/combos',     label: 'Combo Meals',  icon: '🍱', verticals: FOOD_VERTICALS },
     ],

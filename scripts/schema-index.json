@@ -716,6 +716,15 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "payment_methods": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"character varying\" NOT NULL",
+    "code": "\"character varying\" NOT NULL",
+    "is_active": "\"boolean\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "printer_stations": {
     "id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",

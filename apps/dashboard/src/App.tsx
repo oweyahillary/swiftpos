@@ -36,6 +36,7 @@ const CustomersPage           = lazy(() => import('./pages/crm/CustomersPage'));
 const CreditAccountsPage      = lazy(() => import('./pages/customers/CreditAccountsPage'));
 const TableTurnoverPage       = lazy(() => import('./pages/pos/TableTurnoverPage'));
 const DiscountsPage           = lazy(() => import('./pages/DiscountsPage'));
+const PaymentMethodsPage      = lazy(() => import('./pages/PaymentMethodsPage'));
 const PromotionsPage          = lazy(() => import('./pages/PromotionsPage'));
 const CombosPage              = lazy(() => import('./pages/products/CombosPage'));
 const ReservationsPage        = lazy(() => import('./pages/ReservationsPage'));
@@ -121,6 +122,7 @@ export default function App() {
                       <Route path="customers/credit"          element={<CreditAccountsPage />} />
                       <Route path="turnover"                  element={<TableTurnoverPage />} />
                       <Route path="discounts"                 element={<DiscountsPage />} />
+                      <Route path="payment-methods"           element={<PaymentMethodsPage />} />
                       <Route path="promotions"                element={<PromotionsPage />} />
                       <Route path="combos"                    element={<CombosPage />} />
                       <Route path="reservations"              element={<ReservationsPage />} />
