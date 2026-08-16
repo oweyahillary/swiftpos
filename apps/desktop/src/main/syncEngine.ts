@@ -1761,6 +1761,16 @@ export function createLocalOrder(orderPayload: any): string {
       shift_id: shiftId, device_id: deviceId,
       _localOrderId: orderId, idempotency_key: orderId, created_at: now,
     }), now);
+
+    // Keep the exact payload for a faithful reprint from Order History (A94).
+    // Replayed through the same queueThermal path as the original, so the copy is
+    // byte-identical and marked "Duplicate Print". Local-only, pruned to 200.
+    db.prepare(`INSERT OR REPLACE INTO receipt_payloads (order_id, payload, created_at) VALUES (?, ?, ?)`)
+      .run(orderId, JSON.stringify(orderPayload), now);
+    db.prepare(`
+      DELETE FROM receipt_payloads WHERE order_id NOT IN (
+        SELECT order_id FROM receipt_payloads ORDER BY created_at DESC LIMIT 200
+      )`).run();
   })();
 
   return orderId;

@@ -298,6 +298,16 @@ function initSchema(db: Database.Database) {
       subtotal      REAL NOT NULL
     );
 
+    -- Local-only (never synced). The exact order payload that printed, kept so
+    -- any recent order can be reprinted byte-identically from Order History
+    -- (register A94) — replayed through the same queueThermal path as the
+    -- original, marked "Duplicate Print". Pruned to the last 200 per boot.
+    CREATE TABLE IF NOT EXISTS receipt_payloads (
+      order_id   TEXT PRIMARY KEY,
+      payload    TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS order_item_variants (
       id                   TEXT PRIMARY KEY,
       order_item_id        TEXT NOT NULL,

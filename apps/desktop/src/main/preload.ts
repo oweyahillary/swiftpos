@@ -218,6 +218,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // Drop the override and follow the cloud baseline again.
     clearKitchenExclusions: () => ipcRenderer.invoke('escpos:clearKitchenExclusions'),
     reprintReceipt: () => ipcRenderer.invoke('escpos:reprintReceipt'),
+    reprintReceiptForOrder: (orderId: string) => ipcRenderer.invoke('escpos:reprintReceiptForOrder', orderId),
     printShiftReport: (data: unknown) => ipcRenderer.invoke('escpos:printShiftReport', data),
     retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),
     preview:     (ctx: unknown)      => ipcRenderer.invoke('escpos:preview', ctx),

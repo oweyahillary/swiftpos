@@ -166,6 +166,7 @@ declare global {
         // baseline now in force.
         clearKitchenExclusions: () => Promise<{ ok: boolean; error?: string; terms: string[] }>;
         reprintReceipt: () => Promise<{ ok: boolean; error?: string }>;
+        reprintReceiptForOrder: (orderId: string) => Promise<{ ok: boolean; error?: string }>;
         printShiftReport: (data: unknown) => Promise<{ ok: boolean; error?: string; internal?: boolean }>;
         retry:       (id: string) => Promise<unknown>;
         preview:     (ctx: unknown) => Promise<unknown>;

@@ -982,6 +982,25 @@ export function registerIpcHandlers() {
     return { ok: true };
   });
 
+  // Reprint any recent order from Order History (A94). Replays the stored payload
+  // through the same path as the original — byte-identical, marked "Duplicate
+  // Print". Only orders created on THIS terminal (after the feature shipped) have
+  // a stored payload; anything else reports honestly rather than printing wrong.
+  ipcMain.handle('escpos:reprintReceiptForOrder', (_e, orderId: string) => {
+    const row = getLocalDb()
+      .prepare('SELECT payload FROM receipt_payloads WHERE order_id = ?')
+      .get(orderId) as { payload?: string } | undefined;
+    if (!row?.payload) {
+      return { ok: false, error: 'No stored receipt for this order on this terminal.' };
+    }
+    try {
+      queueThermal(JSON.parse(row.payload), ['receipt'], { at: new Date(), count: 1 });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Could not rebuild this receipt.' };
+    }
+  });
+
   ipcMain.handle('order:create', async (_event, orderPayload: any) => {
     const orderId = createLocalOrder(orderPayload);
     lastOrderPayload = orderPayload;

@@ -147,6 +147,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [payError, setPayError] = useState('');
   // Surfaced on the receipt screen when a ticket did not reach paper.
   const [printMsg, setPrintMsg] = useState('');
+  const [reprintNote, setReprintNote] = useState('');
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
@@ -1423,8 +1424,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
                 <p className="text-gray-300 text-xs mt-0.5">Last 30 orders · tap a completed order to void</p>
+                {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
-              <button onClick={() => setShowHistory(false)}
+              <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
                 className="text-gray-300 hover:text-white transition-colors text-lg">✕</button>
             </div>
 
@@ -1475,17 +1477,31 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                             )}
                           </td>
                           <td className="px-4 py-2.5">
-                            {canVoidThis && (
-                              <button
-                                onClick={() => { setVoidTarget(o); setShowHistory(false); }}
-                                className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors"
-                              >
-                                Void
-                              </button>
-                            )}
-                            {o.status === 'completed' && ageMin > 30 && (
-                              <span className="text-xs text-gray-400">expired</span>
-                            )}
+                            <div className="flex items-center gap-2 justify-end">
+                              {o.status === 'completed' && (
+                                <button
+                                  onClick={async () => {
+                                    const r = await window.swiftpos.escpos.reprintReceiptForOrder(o.id);
+                                    setReprintNote(r.ok ? `Receipt ${o.order_number} sent to the printer` : (r.error ?? 'Could not reprint'));
+                                  }}
+                                  className="text-xs text-gray-300 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg px-2.5 py-1 transition-colors"
+                                  title="Print a duplicate of this receipt"
+                                >
+                                  Reprint
+                                </button>
+                              )}
+                              {canVoidThis && (
+                                <button
+                                  onClick={() => { setVoidTarget(o); setShowHistory(false); }}
+                                  className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors"
+                                >
+                                  Void
+                                </button>
+                              )}
+                              {o.status === 'completed' && ageMin > 30 && (
+                                <span className="text-xs text-gray-400">expired</span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
