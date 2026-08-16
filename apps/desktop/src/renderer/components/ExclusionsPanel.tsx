@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { KITCHEN_NOTE_EXCLUDE_LABELS } from '../lib/ticketLines';
 
 export default function ExclusionsPanel() {
   const [liveExclusions, setLiveExclusions] = useState<string>('');
@@ -70,6 +71,22 @@ export default function ExclusionsPanel() {
         <p className="text-xs text-gray-400 mt-0.5">
           Items whose name matches any of these terms are never printed on the kitchen
           ticket — on top of the built-in drinks rule.
+        </p>
+      </div>
+
+      {/* Built-in rule, read-only, so the owner sees what's already handled and
+          doesn't re-add it. These always apply and can't be turned off here. */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-3">
+        <p className="text-xs text-gray-400 mb-2">Always excluded (built in):</p>
+        <div className="flex flex-wrap gap-1.5">
+          {KITCHEN_NOTE_EXCLUDE_LABELS.map(t => (
+            <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">
+              {t}
+            </span>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-600 mt-2">
+          Matched as whole words, so &ldquo;water&rdquo; won&rsquo;t catch &ldquo;watermelon&rdquo;. Add your own below.
         </p>
       </div>
 
