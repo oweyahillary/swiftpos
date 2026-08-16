@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
-import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
+import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import PrintersScreen from '../screens/PrintersScreen';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
@@ -1092,7 +1092,6 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // screen rather than as a sibling nobody connects to the menu they are editing.
     ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
     ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
-    ...(canManageReceipt ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
     // Gated like the other configuration tabs. It was briefly left open on the
     // reasoning that printer bindings are per-device, so whoever stands at the
     // till is who needs them. That was wrong: re-pointing a printer mid-service
@@ -1106,7 +1105,11 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // manager roles, so this is additive: everyone who reached Printers via the
     // role gate still does. Ships in the same batch as 79; without that grant,
     // managers would lose the tab.
-    ...(has('stations.manage') ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
+    // Now holds Receipt too (A90), so it shows for anyone who can manage EITHER
+    // stations OR the receipt text; PrintersScreen then shows only the sub-tabs
+    // each permission allows. A manager with only receipt.manage keeps Receipt.
+    ...((has('stations.manage') || canManageReceipt)
+      ? [{ key: 'printers' as TabKey, label: 'Printing', icon: I.printer }] : []),
     // Hidden when nothing is stock-tracked — an owner who turned stock off
     // shouldn't be shown an empty Stock screen and conclude it's broken.
     ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
@@ -1131,13 +1134,14 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
-      case 'receipt': return <ReceiptTextTab />;
-      // PrintersScreen (register A83) puts three sub-tabs under the one Printers
-      // nav item: Stations (StationsPanel — create/route stations, restored after
-      // the A43 supersession orphaned it in the unrouted PrintersTab), Printers
-      // (PrinterSetupScreen — per-till binding + live preview + test), and
-      // Exclusions (kitchen list; dispatcher list joins in Phase 2).
-      case 'printers': return <PrintersScreen stations={escposStations.length ? escposStations : FALLBACK_STATIONS} />;
+      // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
+      // Stations, Printers, Exclusions (all stations.manage) and Receipt
+      // (receipt.manage/settings.manage). Per-tab gating passed in below.
+      case 'printers': return <PrintersScreen
+        stations={escposStations.length ? escposStations : FALLBACK_STATIONS}
+        canManageStations={has('stations.manage')}
+        canManageReceipt={canManageReceipt}
+      />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }
