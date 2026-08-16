@@ -1557,6 +1557,14 @@ export function registerIpcHandlers() {
     await refreshStationsLocal();
     return out;
   });
+  // One-click day-one seed: Kitchen + Packing + Till, categories routed by
+  // is_kitchen server-side (A92). Refresh the local station cache so routing
+  // works on this terminal immediately.
+  ipcMain.handle('manage:seedDefaultStations', async () => {
+    const out = await manageFetch('/api/stations/seed-defaults', 'POST', {});
+    await refreshStationsLocal();
+    return out;
+  });
   ipcMain.handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/stations/${id}`, 'PATCH', patch);
     await refreshStationsLocal();

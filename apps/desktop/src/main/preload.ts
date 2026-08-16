@@ -157,6 +157,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // ("$.manage.createStation is not a function") and the kitchen could not
     // be routed at all. check-ipc-parity.mjs now fails CI on this class.
     listStations:         ()                             => ipcRenderer.invoke('manage:listStations'),
+    seedDefaultStations:  ()                             => ipcRenderer.invoke('manage:seedDefaultStations'),
     unassignedCategories: ()                             => ipcRenderer.invoke('manage:unassignedCategories'),
     createStation:        (payload: any)                 => ipcRenderer.invoke('manage:createStation', payload),
     updateStation:        (id: string, patch: any)       => ipcRenderer.invoke('manage:updateStation', { id, patch }),

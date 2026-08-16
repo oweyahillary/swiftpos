@@ -327,6 +327,7 @@ declare global {
         listCategories: () => Promise<any[]>;
         createCategory: (payload: any) => Promise<any>;
         listStations:  () => Promise<PrintStation[]>;
+        seedDefaultStations: () => Promise<{ created: boolean; stations: number; routed: { packing: number; kitchen: number } }>;
         unassignedCategories: () => Promise<{ id: string; name: string }[]>;
         createStation: (payload: { name: string; kind?: StationKind; sort_order?: number }) => Promise<PrintStation>;
         updateStation: (id: string, patch: Partial<{ name: string; kind: StationKind; sort_order: number; active: boolean }>) => Promise<PrintStation>;

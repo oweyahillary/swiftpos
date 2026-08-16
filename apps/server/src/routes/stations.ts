@@ -106,6 +106,57 @@ router.get('/unassigned', async (req, res) => {
 });
 
 // ── POST /api/stations ───────────────────────────────────────────────────────
+// POST /api/stations/seed-defaults
+// One-click day-one setup for a venue with no stations yet (register A92).
+// Creates Kitchen (kitchen), Packing (dispatch) and Till (receipt), then routes
+// every category so none "prints nowhere": cooked categories (is_kitchen) go to
+// Kitchen, and ALL categories go to Packing (the packer bags the whole order).
+// Till is the customer receipt and carries no category routing. Guarded: refuses
+// if any station already exists, so it can't duplicate or clobber a real setup.
+router.post('/seed-defaults', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
+  const { data: existing } = await supabase
+    .from('print_stations').select('id').eq('business_id', req.businessId).limit(1);
+  if ((existing ?? []).length > 0) {
+    res.status(409).json({ error: 'Stations already exist; seed skipped', created: false });
+    return;
+  }
+
+  const branchId = req.body?.branch_id ?? null;
+  const { data: made, error: mkErr } = await supabase
+    .from('print_stations')
+    .insert([
+      { business_id: req.businessId, branch_id: branchId, name: 'Kitchen', kind: 'kitchen',  sort_order: 0 },
+      { business_id: req.businessId, branch_id: branchId, name: 'Packing', kind: 'dispatch', sort_order: 1 },
+      { business_id: req.businessId, branch_id: branchId, name: 'Till',    kind: 'receipt',  sort_order: 2 },
+    ])
+    .select();
+  if (mkErr) { sendError(res, mkErr); return; }
+
+  const kitchen = (made ?? []).find(s => s.kind === 'kitchen');
+  const packing = (made ?? []).find(s => s.kind === 'dispatch');
+
+  const { data: cats } = await supabase
+    .from('categories')
+    .select('id, is_kitchen')
+    .eq('business_id', req.businessId);
+  const all = (cats ?? []).map(c => c.id);
+  const cooked = (cats ?? []).filter(c => (c as { is_kitchen?: boolean }).is_kitchen).map(c => c.id);
+
+  const routing: Array<{ category_id: string; station_id: string }> = [];
+  if (packing) for (const category_id of all)    routing.push({ category_id, station_id: packing.id });
+  if (kitchen) for (const category_id of cooked) routing.push({ category_id, station_id: kitchen.id });
+  if (routing.length) {
+    const { error: rErr } = await supabase.from('category_stations').insert(routing);
+    if (rErr) { sendError(res, rErr); return; }
+  }
+
+  res.status(201).json({
+    created: true,
+    stations: (made ?? []).length,
+    routed: { packing: all.length, kitchen: cooked.length },
+  });
+});
+
 router.post('/', requireAnyPermission('stations.manage', 'products.manage'), async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   const kind = String(req.body?.kind ?? 'kitchen') as Kind;
