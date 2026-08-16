@@ -1011,23 +1011,33 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
           .filter(s => s.active !== false)
           .map(s => ({ id: s.id, name: s.name, kind: s.kind }));
 
-        // EVERY till needs somewhere to print the customer receipt.
-        //
-        // Kitchen and dispatch stations are per-venue — a retail shop has
-        // neither. A receipt station is not optional: if the business has not
-        // defined one, the till still has to be able to bind its own printer,
-        // or the installer is sent to the dashboard mid-setup for something
-        // that is purely a property of the machine in front of them. On a
-        // fully-offline branch the dashboard may not even be reachable.
-        //
-        // The id here matches the fallback escpos:canPrint checks when a
-        // business has no receipt station of its own, so binding a printer to
-        // it is what makes the receipt actually print.
+        if (live.length === 0) {
+          // No stations configured on the server yet. Seed the day-one defaults
+          // so the till works offline without a dashboard round-trip (A91). A
+          // restaurant gets all three — Kitchen, Dispatch, Till — matching
+          // shared/printing's kitchen/dispatch/receipt presets, the incumbent's
+          // three-station layout, and the escpos routing fallback
+          // (is_kitchen → ids.kitchen, else ids.dispatch), which recognises
+          // these built-in ids. A retail shop has no kitchen or dispatch, so it
+          // gets the receipt alone. Previously the loader pushed only a synthetic
+          // receipt here, collapsing a restaurant's Printers tab to one station
+          // and never reaching FALLBACK_STATIONS.
+          const seeded = flags.isRestaurant
+            ? FALLBACK_STATIONS.map(s => ({ ...s }))
+            : FALLBACK_STATIONS.filter(s => s.kind === 'receipt').map(s => ({ ...s }));
+          setEscposStations(seeded);
+          return;
+        }
+
+        // Configured stations exist. EVERY till still needs somewhere to print
+        // the customer receipt — if the business defined none, add the receipt
+        // fallback (its id matches the escpos:canPrint checks) so a printer can
+        // still be bound to it.
         if (!live.some(s => s.kind === 'receipt')) {
           live.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' });
         }
 
-        if (live.length) setEscposStations(live);
+        setEscposStations(live);
       } catch { /* fallback list stands */ }
     })();
   }, []);
