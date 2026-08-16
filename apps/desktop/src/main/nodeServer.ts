@@ -43,6 +43,7 @@ import { getLocalDb } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents } from './nodeIngest';
+import { verifyPinAtNode } from './branchStaff';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
@@ -150,6 +151,31 @@ export function startNodeServer(): void {
       // node's own would make peer drawers indistinguishable from its own in
       // getOpenShift, which the sell gate reads. applyPeerRows refuses rather
       // than guesses; see nodeIngest.ts.
+      // PHASE5 §4c (A17): authenticate a peer's cashier against this node's
+      // roster when the cloud is unreachable. Guarded by the same X-Node-Secret
+      // + branch scope as every /node/* route (checked centrally above). Scans
+      // all candidates and refuses on two, exactly as the server does. No JWT is
+      // minted — the peer gets the identity + permissions and pushes orders under
+      // its own owner token with this cashier_id, unchanged from the online path.
+      if (req.method === 'POST' && url === '/node/verify-pin') {
+        const body = await readBody(req);
+        const c = getDeviceConfig();
+        const branchId = String(body?.branch_id ?? c?.branch_id ?? '');
+        const pin = String(body?.pin ?? '');
+        if (c?.branch_id && body?.branch_id && body.branch_id !== c.branch_id) {
+          return json(res, 403, { error: 'branch mismatch' });
+        }
+        if (!pin || !branchId) return json(res, 400, { error: 'pin and branch_id are required' });
+
+        const verdict = verifyPinAtNode(pin, branchId);
+        if (verdict.ok) return json(res, 200, { ok: true, staff: verdict.staff });
+        // A rejection is FINAL (the peer must not fall back to another authority
+        // on a 'no'): 401 for a bad/ambiguous PIN, 503 only when the node cannot
+        // read its own roster (a transport-like failure the peer may retry).
+        const status = verdict.reason === 'unavailable' ? 503 : 401;
+        return json(res, status, { ok: false, reason: verdict.reason, error: verdict.message });
+      }
+
       if (req.method === 'POST' && url === '/node/sync') {
         const body = await readBody(req);
         const c = getDeviceConfig();

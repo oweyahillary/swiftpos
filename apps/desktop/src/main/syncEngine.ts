@@ -12,7 +12,8 @@ import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
-import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
+import { storeBranchStaff } from './branchStaff';
 import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
@@ -1045,6 +1046,21 @@ async function pullCatalogue(): Promise<boolean> {
       }
     }
   })();
+
+  // PHASE5 §4b (A17): a NODE also pulls the branch staff roster so it can
+  // authenticate cashiers offline. Node-only, best-effort, and AFTER the
+  // catalogue is safely stored — a failure here must never fail the catalogue
+  // pull. The endpoint 403s a non-node device, which is the correct outcome for
+  // a plain till and is simply ignored.
+  if (isNodeRole(getDeviceConfig()?.device_role)) {
+    try {
+      const rosterRes = await fetch(`${_serverUrl || getServerUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
+      if (rosterRes.ok) {
+        const { branch_id: rBranch, staff } = await rosterRes.json();
+        if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);
+      }
+    } catch { /* the node keeps its existing roster; next pull retries */ }
+  }
 
   return true;
 }

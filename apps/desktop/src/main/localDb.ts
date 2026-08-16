@@ -85,6 +85,25 @@ function initSchema(db: Database.Database) {
       cached_at    TEXT NOT NULL
     );
 
+    -- Branch NODE roster (PHASE5 §4a / A17). Node-only: the whole branch's active
+    -- staff, pulled from GET /api/pos/branch-staff, so the node can authenticate
+    -- a peer's cashier offline (POST /node/verify-pin). Hashes wrapped with
+    -- safeStorage, exactly like staff_pin_cache. Unlike that cache there is NO
+    -- cached_at / TTL — a node is the branch's authority and its roster is valid
+    -- until replaced (§4e). Replaced wholesale on each pull so a deactivated
+    -- staff member disappears here too.
+    CREATE TABLE IF NOT EXISTS branch_staff (
+      staff_id              TEXT PRIMARY KEY,
+      name                  TEXT NOT NULL,
+      role_name             TEXT,
+      branch_id             TEXT NOT NULL,
+      permissions           TEXT NOT NULL DEFAULT '{}',
+      pin_hash_enc          TEXT NOT NULL,
+      override_pin_hash_enc  TEXT,
+      status                TEXT NOT NULL DEFAULT 'active',
+      updated_at            TEXT
+    );
+
     -- ── Held orders (restaurant tabs) ────────────────────────────────────────
     --
     -- These are OPEN TABLES. Until 2026-08-08 they lived in the renderer's
