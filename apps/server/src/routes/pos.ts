@@ -3,6 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
+import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 
 const router = safeRouter();
@@ -12,6 +13,69 @@ router.use(requireAuth);
 // GET /api/pos/init
 // Fetches everything the POS screen needs to boot in a single round-trip:
 // active products (with category colour), active categories, main branch id, and variant groups.
+// GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
+// PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
+// the one route that gives a machine the branch's PIN hashes, so the guard is
+// four conditions: the desktop surface, the caller's own business, a device
+// registered as a node/office, and that device's own branch. bcrypt only.
+router.get('/branch-staff', async (req, res) => {
+  if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+
+  const deviceId = String(req.headers['x-device-id'] ?? '');
+  if (!deviceId) { res.status(400).json({ error: 'x-device-id required' }); return; }
+
+  const { data: device } = await supabase
+    .from('user_devices')
+    .select('device_role, branch_id')
+    .eq('device_id', deviceId)
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+
+  if (!device || !isNodeRole((device as { device_role?: string }).device_role)) {
+    res.status(403).json({ error: 'this device is not registered as a branch server', code: 'not_a_node' });
+    return;
+  }
+  const branchId = (device as { branch_id?: string }).branch_id;
+  if (!branchId) { res.status(400).json({ error: 'this device is not bound to a branch' }); return; }
+
+  const { data: staffList, error } = await supabase
+    .from('users')
+    .select(`
+      id, name, status, pin_hash, override_pin_hash,
+      roles ( name, role_permissions ( permissions ( key ) ) ),
+      user_branches ( branch_id ),
+      user_permissions ( granted, permissions ( key ) )
+    `)
+    .eq('business_id', req.businessId)
+    .eq('status', 'active');
+  if (error) { sendError(res, error); return; }
+
+  // Effective permissions = role grants (all true) then per-user overrides
+  // (granted true/false) — identical resolution to /verify-pin and the JWT.
+  const roster = (staffList ?? [])
+    .filter((u: any) => (u.user_branches ?? []).some((b: any) => b.branch_id === branchId))
+    .map((u: any) => {
+      const permissions: Record<string, boolean> = {};
+      (u.roles?.role_permissions ?? []).forEach((rp: any) => { if (rp.permissions?.key) permissions[rp.permissions.key] = true; });
+      (u.user_permissions ?? []).forEach((up: any) => { if (up.permissions?.key) permissions[up.permissions.key] = up.granted; });
+      return {
+        staff_id:          u.id,
+        name:              u.name,
+        role_name:         u.roles?.name ?? null,
+        branch_id:         branchId,
+        permissions,
+        pin_hash:          u.pin_hash ?? null,
+        override_pin_hash: u.override_pin_hash ?? null,
+        status:            u.status,
+      };
+    })
+    // bcrypt only — a legacy hash upgrades on the next ONLINE sign-in; the node
+    // never tries to match against a format pinCache would refuse anyway.
+    .filter((s: { pin_hash: string | null }) => !!s.pin_hash && s.pin_hash.startsWith('$2'));
+
+  res.json({ branch_id: branchId, staff: roster });
+});
+
 router.get('/init', async (req, res) => {
   // ── Which branch are we pricing for? ────────────────────────────────────────
   // Per-branch pricing (BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6): the till is bound
