@@ -66,6 +66,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [deviceName, setDeviceName] = useState<string | null>(null);
   // Cashier on the receipt — attribution matters when three tills share a branch.
   const [cashierName, setCashierName] = useState<string | null>(null);
+  // A59: the signed-in staff may force-close a drawer if they hold the dedicated
+  // shifts.force_close key or the broad settings.manage — same rule the server
+  // route now enforces (requireAnyPermission). Owner carries '*'.
+  const [canForceClose, setCanForceClose] = useState(false);
   // One bill number held in reserve so ensureOrderNumber() can stay synchronous —
   // it is called from non-async paths like autoHold, which several table
   // handlers invoke and then immediately depend on having cleared the cart.
@@ -190,7 +194,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     });
 
     // Business mode from the device config written at install time.
-    posApi.auth.getStaffSession().then(ss => setCashierName(ss?.staff?.name ?? null)).catch(() => {});
+    posApi.auth.getStaffSession().then(ss => {
+      setCashierName(ss?.staff?.name ?? null);
+      const perms = ((ss?.staff as any)?.permissions ?? {}) as Record<string, boolean>;
+      const has = (k: string) => perms['*'] === true || perms[k] === true;
+      setCanForceClose(has('shifts.force_close') || has('settings.manage'));
+    }).catch(() => {});
     // NOT reserving a bill number here. See the reservedBill declaration.
 
     posApi.config.get().then(async cfg => {
@@ -1050,6 +1059,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       {showShift && (
         <ShiftPanel
           business={business}
+          canForceClose={canForceClose}
           onClose={() => setShowShift(false)}
           onShiftChange={setShift}
         />

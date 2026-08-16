@@ -6,11 +6,12 @@ import ZReportView from '../components/ZReportView';
 
 interface Props {
   business: { name: string; currency: string };
+  canForceClose?: boolean;
   onClose: () => void;
   onShiftChange: (report: ZReport | null) => void;
 }
 
-export default function ShiftPanel({ business, onClose, onShiftChange }: Props) {
+export default function ShiftPanel({ business, canForceClose = false, onClose, onShiftChange }: Props) {
   const [report, setReport] = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -266,8 +267,11 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
                 {/* The escape hatch for a shift nobody counted — typically one
                     left open overnight. Kept below the real close, styled as a
                     plain link, because it must be available and must never look
-                    like the normal way to end a day. */}
-                {!showForce ? (
+                    like the normal way to end a day. Shown only to staff who can
+                    actually force-close (A59): has('shifts.force_close') ||
+                    has('settings.manage'), the same rule the server enforces —
+                    so the button no longer 403s for cashiers who can't use it. */}
+                {canForceClose && (!showForce ? (
                   <button
                     onClick={() => setShowForce(true)}
                     className="w-full text-xs text-gray-400 hover:text-amber-400 transition-colors pt-1"
@@ -305,7 +309,7 @@ export default function ShiftPanel({ business, onClose, onShiftChange }: Props) 
                       </button>
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             </>
           )}
