@@ -44,6 +44,7 @@
 import { safeStorage } from 'electron';
 import bcrypt from 'bcryptjs';
 import { getLocalDb } from './localDb';
+import { getDeviceConfig } from './deviceConfig';
 import { logLine } from './logFile';
 
 /**
@@ -137,7 +138,14 @@ export function verifyPinOffline(pin: string, branchId: string): OfflineVerdict 
   }
 
   const cutoff = Date.now() - PIN_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
-  const fresh = rows.filter(r => Date.parse(r.cached_at) >= cutoff);
+  // A till with a branch node configured NEVER time-expires its cache (A17,
+  // owner's call): a remote site that relies on its node must not be locked out
+  // by a clock — "an expiry date is a time bomb". Revocation for such a till is
+  // the node's roster (wholesale-replaced each pull), not this TTL. Only a
+  // STANDALONE till with no node keeps the fortnight bound, since it has no other
+  // authority that could ever retire a credential.
+  const nodeConfigured = !!getDeviceConfig()?.node_url;
+  const fresh = nodeConfigured ? rows : rows.filter(r => Date.parse(r.cached_at) >= cutoff);
   if (fresh.length === 0) {
     return { ok: false, reason: 'expired',
       message: `Saved sign-in expired after ${PIN_CACHE_TTL_DAYS} days offline. Reconnect to sign in.` };

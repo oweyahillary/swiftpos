@@ -41,7 +41,8 @@ import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
-import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode } from './nodeClient';
+import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient } from './nodeClient';
+import { verifyPinAtNode } from './branchStaff';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
@@ -450,6 +451,52 @@ export function registerIpcHandlers() {
     // and honouring the cache over them would mean a sacked cashier signs in by
     // unplugging the network cable. Only a transport failure (fetch throws)
     // reaches the cache. Everything else is the server's answer and stands.
+    const authCfg = getDeviceConfig();
+    const amNode = isNodeRole(authCfg?.device_role);
+    const hasNodeUrl = !!authCfg?.node_url && !amNode;
+
+    // Local sign-in from a resolved staff identity — no server JWT. Orders push
+    // under the OWNER token (syncEngine authHeaders) and cashier_id comes from
+    // this staff_session row, so the sale queues, attributes correctly and syncs
+    // when the line returns. Shared by the node, node-own-roster and cache paths.
+    const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
+      const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
+      db.prepare(`
+        INSERT INTO staff_session
+          (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
+        VALUES (1, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
+          branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
+          token=NULL, refresh_token=NULL, logged_in_at=excluded.logged_in_at
+      `).run(
+        staff.staffId, staff.name, staff.roleName, branch_id,
+        branchRowOff?.name ?? null, JSON.stringify(staff.permissions ?? {}),
+        new Date().toISOString(),
+      );
+      configureStaffSession('', '');
+      return {
+        staff: { id: staff.staffId, name: staff.name, role: staff.roleName },
+        permissions: staff.permissions,
+        branch: { id: branch_id, name: branchRowOff?.name ?? null },
+        business: { name: session?.business_name ?? null, currency: session?.currency ?? null },
+        offline: true,
+      };
+    };
+
+    // AUTHORITY CHAIN (A17): node → cloud → last resort. Fall back only when an
+    // authority could not be REACHED; a rejection from any of them is FINAL, or a
+    // sacked cashier signs in by unplugging a cable — now with two to choose from.
+
+    // 1. A peer asks its branch node over the LAN first.
+    if (hasNodeUrl) {
+      const r = await verifyPinAtNodeClient(String(pin), branch_id);
+      if (r.status === 'ok') { logLine('pin', `node sign-in: ${r.staff.name}`); return signInLocal(r.staff); }
+      if (r.status === 'rejected') throw new Error(r.message);   // answered no — final
+      // transport failure → fall through to the cloud
+    }
+
+    // 2. The cloud, exactly as before.
     let res: Awaited<ReturnType<typeof ownerFetch>>;
     try {
       res = await ownerFetch('/api/auth/verify-pin', {
@@ -466,35 +513,18 @@ export function registerIpcHandlers() {
       }),
       });
     } catch (netErr: any) {
-      logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the offline cache`);
+      logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
+      // 3. Last resort. A NODE verifies against its OWN roster (never expires); a
+      //    peer or standalone till uses the offline cache (which no longer expires
+      //    on a node-configured peer — see pinCache, A17).
+      if (amNode) {
+        const v = verifyPinAtNode(String(pin), branch_id);
+        if (!v.ok) throw new Error(v.message);
+        return signInLocal(v.staff);
+      }
       const verdict = verifyPinOffline(String(pin), branch_id);
       if (!verdict.ok) throw new Error(verdict.message);
-
-      const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
-      // No server JWT offline, and none is needed: orders push under the OWNER
-      // token (syncEngine authHeaders) and cashier_id comes from this row. The
-      // sale queues, attributes correctly, and syncs when the line returns.
-      db.prepare(`
-        INSERT INTO staff_session
-          (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
-        VALUES (1, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
-          branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
-          token=NULL, refresh_token=NULL, logged_in_at=excluded.logged_in_at
-      `).run(
-        verdict.staff.staffId, verdict.staff.name, verdict.staff.roleName, branch_id,
-        branchRowOff?.name ?? null, JSON.stringify(verdict.staff.permissions ?? {}),
-        new Date().toISOString(),
-      );
-      configureStaffSession('', '');
-      return {
-        staff: { id: verdict.staff.staffId, name: verdict.staff.name, role: verdict.staff.roleName },
-        permissions: verdict.staff.permissions,
-        branch: { id: branch_id, name: branchRowOff?.name ?? null },
-        business: { name: session?.business_name ?? null, currency: session?.currency ?? null },
-        offline: true,
-      };
+      return signInLocal(verdict.staff);
     }
 
     const data = await res.json();
