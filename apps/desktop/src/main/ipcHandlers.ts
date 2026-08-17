@@ -908,6 +908,7 @@ export function registerIpcHandlers() {
         {
           name:            sess?.business_name ?? '',
           branchName:      staff?.branch_name ?? undefined,
+          header:          (cfg as any)?.receipt_header || undefined,
           currencyCode:    sess?.currency ?? 'KES',
           // Cached from /api/pos/init on every catalogue pull, so an offline
           // till still prints the business's real rates rather than a hardcoded

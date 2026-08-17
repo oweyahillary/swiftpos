@@ -13,11 +13,25 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
   const [name, setName] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [offline, setOffline] = useState(false);
 
   const load = useCallback(async () => {
-    try { setMethods(await posApi.manage.listPaymentMethods()); }
-    catch (e: any) { setError(e?.message ?? 'Could not load payment methods (are you online?)'); }
-    finally { setLoading(false); }
+    try {
+      setMethods(await posApi.manage.listPaymentMethods());
+      setOffline(false); setError('');
+    } catch (e: any) {
+      // The server couldn't be reached (or the manage token is offline). Don't
+      // dead-end on a useless error — show the methods CACHED on this till so the
+      // manager can at least see what's active. Management needs a connection.
+      try {
+        const local = await posApi.pos.paymentMethods();
+        setMethods(local.map((m, i) => ({ id: '', name: m.name, code: m.code, is_active: true, sort_order: i })));
+        setOffline(true);
+        setError("Can't reach the server to manage payment methods. Showing what's active on this till — reconnect to add, rename, or remove.");
+      } catch {
+        setError(e?.message ?? 'Could not load payment methods.');
+      }
+    } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -50,9 +64,9 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
         Cash, M-Pesa and Card are always available. Add any other tenders you accept
         (e.g. Coop Card) — they appear at the POS and in reports. All are non-cash.
       </p>
-      {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+      {error && <p className={`text-sm mt-3 ${offline ? "text-amber-400" : "text-red-400"}`}>{error}</p>}
 
-      {canEdit && (
+      {canEdit && !offline && (
         <div className="mt-5 flex gap-2">
           <input
             value={name}
@@ -79,10 +93,10 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
             No custom methods yet.
           </div>
         ) : methods.map(m => (
-          <div key={m.id} className="flex items-center gap-3 border border-gray-800 rounded-lg px-4 py-3">
+          <div key={m.id || m.code} className="flex items-center gap-3 border border-gray-800 rounded-lg px-4 py-3">
             <span className={`flex-1 text-sm ${m.is_active ? 'text-white' : 'text-gray-500 line-through'}`}>{m.name}</span>
             <span className="text-xs text-gray-600 font-mono">{m.code}</span>
-            {canEdit && (
+            {canEdit && !offline && (
               <>
                 <button
                   onClick={() => toggle(m)}

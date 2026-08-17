@@ -107,6 +107,9 @@ export interface Order {
 export interface BusinessConfig {
   name: string;
   branchName?: string;
+  /** Owner's editable header lines, printed under the business/branch name — the
+   *  same text the on-screen ReceiptView shows. One entry per line. */
+  header?: string;
   kraPin?: string;
   telephone?: string;
   /** Label and value are separate so a Paybill client is not stuck saying "Buy Goods". */

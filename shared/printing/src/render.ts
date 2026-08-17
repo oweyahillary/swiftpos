@@ -215,6 +215,14 @@ function renderReceipt(ctx: PrintContext): Document {
 
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
+  // Owner's custom header (address, phone, tagline…), one line per line, centred
+  // — matching the on-screen ReceiptView. Blank lines dropped so a stray return
+  // doesn't waste paper. This was shown on screen but never printed (register).
+  if (business.header) {
+    for (const ln of business.header.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) {
+      d.line(center(cols, ln));
+    }
+  }
   if (business.kraPin) d.line(center(cols, `PIN: ${business.kraPin}`));
   if (business.telephone) d.line(center(cols, `Tel: ${business.telephone}`));
   d.line(rule(cols));
