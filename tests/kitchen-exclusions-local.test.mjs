@@ -79,7 +79,7 @@ function freshDb() {
     deploy_mode TEXT, server_url TEXT, branch_id TEXT, business_type TEXT,
     device_name TEXT, device_id TEXT, device_role TEXT, node_url TEXT, node_secret TEXT,
     terminal_code TEXT, vat_rate REAL, ctl_rate REAL, max_discount_pct REAL,
-    receipt_header TEXT, receipt_footer TEXT,
+    receipt_header TEXT, receipt_footer TEXT, continuous_operation INTEGER,
     kitchen_exclusions TEXT, kitchen_exclusions_override TEXT,
     configured INTEGER, created_at TEXT, updated_at TEXT);`);
   return db;
