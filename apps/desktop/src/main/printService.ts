@@ -216,7 +216,12 @@ export async function listPrinters(): Promise<PrinterInfo[]> {
     return printers.map(p => ({
       name: p.name,
       displayName: p.displayName || p.name,
-      isDefault: !!p.isDefault,
+      // Electron 43 removed `isDefault` from PrinterInfo (default-ness now lives
+      // in the platform-specific `options` bag). This value is display-only — the
+      // renderer appends a "(default)" label with it — so read it defensively:
+      // the legacy field where a runtime still provides it, else the Windows
+      // options key. Worst case the label is absent; printing is unaffected.
+      isDefault: !!((p as any).isDefault ?? ((p as any).options?.['printer-is-default'] === 'true')),
       status: typeof (p as any).status === 'number' ? (p as any).status : 0,
       options: ((p as any).options ?? {}) as Record<string, string>,
     }));

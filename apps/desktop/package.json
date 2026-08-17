@@ -49,11 +49,12 @@
   "dependencies": {
     "@swiftpos/printing": "file:../../shared/printing",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "^13.0.3",
     "exceljs": "^4.4.0",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.8",
     "@types/react": "^18.3.22",
@@ -62,9 +63,8 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.2",
-    "electron": "35.7.5",
-    "electron-builder": "^25.1.8",
-    "electron-rebuild": "^3.2.9",
+    "electron": "43.4.0",
+    "electron-builder": "^26.15.7",
     "postcss": "^8.5.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -75,5 +75,10 @@
   },
   "description": "SwiftPOS offline-first point of sale terminal",
   "author": "SwiftPOS",
-  "productName": "SwiftPOS"
+  "productName": "SwiftPOS",
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
 }

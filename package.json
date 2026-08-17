@@ -15,7 +15,7 @@
     "db:verify": "node scripts/verify-db-schema.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4"

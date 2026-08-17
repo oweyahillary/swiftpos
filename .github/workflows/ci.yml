@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20' # matches apps/server engines.node
+          node-version: '22' # matches apps/server engines.node
           cache: npm
           cache-dependency-path: |
             apps/server/package-lock.json
@@ -56,7 +56,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             apps/server/package-lock.json
@@ -139,7 +139,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # supabase-js types `.from('x')` as `any`, so tsc is structurally blind to
       # a select or insert naming a column that does not exist. Everything below
@@ -248,7 +248,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install server deps
         working-directory: apps/server
