@@ -219,3 +219,52 @@ Not code. Set these in Windows printer properties:
 
 And tick the **Kitchen** box on the `3PC Chicken` category — it is the only item
 on any of these lists that loses food.
+
+# 6. HEALTH MONITORING & KEEP-WARM (free-tier hosting)
+
+Two free-tier idle timers can take prod down with no error in the logs:
+
+- **Render** web service spins down after ~15 min with no inbound traffic → ~50s
+  cold start on the next request.
+- **Supabase** free project **PAUSES** after ~7 days with no database activity →
+  tills cannot sync until someone un-pauses it in the Supabase dashboard.
+
+## Endpoints
+
+- `GET /health` — liveness + a real DB round-trip. Returns **200** while the DB is
+  reachable (status `degraded` with a `missing` list if schema has drifted, but
+  still 200); **503** only when the DB is unreachable. This is the keep-warm target.
+- `GET /health/schema` — strict. **503** when migrations this build expects are not
+  applied. A deploy-drift alarm, NOT a liveness check.
+
+## UptimeRobot monitors
+
+1. **Keep-warm / liveness** — HTTP(s), URL `…/health`, interval **5 min**, timeout
+   **≥ 60s** (a cold Render start takes ~50s; a shorter timeout false-alarms on
+   wake). Alert on 503 (= DB down). Counts toward uptime.
+2. **Schema-drift alarm** — HTTP(s), URL `…/health/schema`, interval 15–30 min,
+   timeout ≥ 60s. A 503 here means "migrations not applied — run the prod
+   migration", not "site down". **Exclude this monitor from your uptime %/SLA**, or
+   a bad deploy reads as an outage.
+
+## Supabase keep-warm — the important caveat
+
+`/health` keeps Supabase warm ONLY while the ping reaches the DB **through** Render.
+That chain is fragile on free tier: a cold or hour-capped Render instance can drop
+the ping before it touches Postgres — which is how a project can still pause despite
+an UptimeRobot monitor (a sister app paused at ~day 15 this way). So Supabase warmth
+is covered two ways:
+
+- **Live stores**: trading tills sync constantly → Supabase never idles. No action.
+- **Dormant deployments** (dev, a not-yet-trading store): `.github/workflows/
+  supabase-keepalive.yml` touches Supabase **directly** every 3 days, independent of
+  Render. Needs repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Wake it now any
+  time via Actions → "Supabase keep-alive" → Run workflow.
+
+## The real fix if cold-starts/pauses ever hurt operations
+
+These are free-tier behaviours, not bugs. **Render paid** (no spin-down) and
+**Supabase Pro** (no auto-pause) remove them entirely. For a store actually trading
+on this, that is the correct answer — not more aggressive pinging. A free Supabase
+project left paused long enough can eventually be deleted, so Pro also protects the
+data, not just the uptime.

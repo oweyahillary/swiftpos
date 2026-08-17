@@ -1,0 +1,46 @@
+name: Supabase keep-alive
+
+# Free Supabase projects PAUSE after ~7 days with no database activity (→ tills
+# can't sync until someone un-pauses it in the dashboard). The /health endpoint
+# keeps Supabase warm ONLY while Render is up AND the ping actually reaches the
+# DB — a fragile chain: a free Render instance that is cold (~50s wake) or has
+# hit its monthly-hour cap can drop the ping before it touches Postgres, which is
+# how a project can still pause despite an UptimeRobot monitor.
+#
+# This job touches Supabase DIRECTLY, independent of Render, every few days —
+# comfortably inside the 7-day window even with GitHub's scheduler drift. It is a
+# safety net for DORMANT deployments (dev, a not-yet-trading store); a live store
+# keeps Supabase warm on its own through till sync. Register A115.
+#
+# Requires two repository secrets: SUPABASE_URL and SUPABASE_ANON_KEY.
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'   # every 3 days, 06:00 UTC
+  workflow_dispatch: {}       # manual "wake it now" from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Touch Supabase REST (real DB round-trip)
+        env:
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set SUPABASE_URL and SUPABASE_ANON_KEY as repository secrets (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          # A tiny PostgREST read. RLS may return no rows or 401/403 — that is
+          # fine: the request still reaches Postgres, which is all keep-warm needs.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 --retry 2 --retry-delay 5 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/businesses?select=id&limit=1" || echo 000)
+          echo "Supabase REST responded: $code"
+          case "$code" in
+            2*|401|403|404) echo "DB reached — project stays warm." ;;
+            000)            echo "::error::No response (DNS/timeout) — Supabase was NOT touched."; exit 1 ;;
+            *)              echo "::warning::Unexpected status $code (treating as reached)" ;;
+          esac
