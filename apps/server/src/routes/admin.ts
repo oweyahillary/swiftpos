@@ -1410,6 +1410,7 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
       label:      d.device_label ?? '—',
       role:       d.device_role ?? null,          // 'till' | 'node' | 'office' | null
       status:     d.status,                        // pending | approved | rejected
+      branchId:   d.branch_id ?? null,
       branch:     d.branch_id ? (branchName[d.branch_id] ?? '—') : '— (unbound)',
       lastSeenAt: d.last_seen_at,
       enrolledAt: d.created_at,
@@ -1447,6 +1448,21 @@ router.delete('/clients/:id/devices/:deviceId', requireAdmin, async (req: any, r
     reason:     `Revoked device ${device.device_label ?? deviceId}`,
   });
   res.status(204).send();
+});
+
+// GET /clients/:id/devices/:deviceId/tech-audit — tech actions logged on a till
+// (from the desktop tech console via POST /api/tech/audit). Read-only, scoped.
+router.get('/clients/:id/devices/:deviceId/tech-audit', requireAdmin, async (req: any, res) => {
+  const { id: businessId, deviceId } = req.params;
+  const { data, error } = await supabase
+    .from('tech_audit_log')
+    .select('id, action, tech_name, detail, occurred_at, branch_id')
+    .eq('business_id', businessId)
+    .eq('device_id', deviceId)
+    .order('occurred_at', { ascending: false })
+    .limit(100);
+  if (error) { sendError(res, error); return; }
+  res.json(data ?? []);
 });
 
 // ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────

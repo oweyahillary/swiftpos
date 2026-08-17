@@ -610,6 +610,9 @@ function ClientDetailPage({ client, req, onBack }) {
   const [branchForm, setBranchForm] = useState({ name: "", address: "", phone: "" });
   const [closingBranch, setClosingBranch] = useState(null);      // G2: branch currently closing/reopening
   const [purgePreview, setPurgePreview] = useState(null);        // Stage 2: dry-run preview data
+  const [branchView, setBranchView] = useState(null);           // Branches tab: selected branch (drill-down)
+  const [deviceView, setDeviceView] = useState(null);           // Branches tab: selected till
+  const [techAudit, setTechAudit] = useState(null);             // Branches tab: tech audit log for the till
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
   const [editing, setEditing] = useState(false);          // G5: business edit panel open
@@ -776,6 +779,14 @@ function ClientDetailPage({ client, req, onBack }) {
     catch (e) { setError(e?.message ?? "Preview failed"); }
   }
 
+  // Branches tab: drill from branch → tills → tech audit log.
+  function openTills(b) { setBranchView(b); setDeviceView(null); setTechAudit(null); }
+  async function openDeviceLog(dev) {
+    setDeviceView(dev); setTechAudit(null);
+    try { setTechAudit(await req("GET", `/clients/${client.id}/devices/${dev.id}/tech-audit`)); }
+    catch (e) { setError(e?.message ?? "Failed to load tech log"); setTechAudit([]); }
+  }
+
   // G1: admin creates a branch (owners are blocked — branches are billed separately).
   async function createBranch() {
     if (!branchForm.name.trim()) { await askConfirm("Branch name is required."); return; }
@@ -850,7 +861,7 @@ function ClientDetailPage({ client, req, onBack }) {
   const activeSub = subs.find(s => s.status === "active");
   const TYPE = TYPE_META[d.type] || TYPE_META.other;
 
-  const TABS = ["overview", "features", "subscription", "billing", "notes"];
+  const TABS = ["overview", "branches", "features", "subscription", "billing", "notes"];
 
   return (
     <div style={S.content}>
@@ -1143,6 +1154,77 @@ function ClientDetailPage({ client, req, onBack }) {
       )}
 
       {/* FEATURES */}
+      {tab === "branches" && (
+        <div style={S.card}>
+          {!branchView ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Branches</div>
+                <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
+              </div>
+              {addingBranch && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", padding: "12px", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
+                  <div style={{ flex: 1, minWidth: 140 }}><label style={S.label}>Name *</label><input style={S.input} value={branchForm.name} onChange={e => setBranchForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Westlands" autoFocus /></div>
+                  <div style={{ flex: 1, minWidth: 120 }}><label style={S.label}>Address</label><input style={S.input} value={branchForm.address} onChange={e => setBranchForm(f => ({ ...f, address: e.target.value }))} /></div>
+                  <div style={{ width: 130 }}><label style={S.label}>Phone</label><input style={S.input} value={branchForm.phone} onChange={e => setBranchForm(f => ({ ...f, phone: e.target.value }))} /></div>
+                  <button onClick={createBranch} style={{ ...S.btn, ...S.btnPrimary, flexShrink: 0 }}>Create</button>
+                </div>
+              )}
+              {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No branches yet.</p>}
+              {branches.map(b => {
+                const tills = devices.filter(x => x.branchId === b.id);
+                return (
+                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ flex: 1, cursor: "pointer" }} onClick={() => openTills(b)}>
+                      <div style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>{b.name}{b.is_main && <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>MAIN</span>}</div>
+                      <div style={{ fontSize: 11, color: b.desktop_licensed ? "#34e5a0" : C.danger, marginTop: 2 }}>{b.desktop_licensed ? "✓ Licensed" : "✗ Not licensed"} · {tills.length} till{tills.length === 1 ? "" : "s"}</div>
+                    </div>
+                    <StatusBadge status={b.status} />
+                    <button onClick={() => openTills(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tills →</button>
+                    {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol till"}</button>}
+                    <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke" : "Activate"}</button>
+                    {!b.is_main && <button disabled={closingBranch === b.id} onClick={() => toggleBranchStatus(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>{closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}</button>}
+                  </div>
+                );
+              })}
+            </>
+          ) : !deviceView ? (
+            <>
+              <button onClick={() => setBranchView(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, marginBottom: 12 }}>← Branches</button>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{branchView.name} — tills</div>
+              {devices.filter(x => x.branchId === branchView.id).length === 0
+                ? <p style={{ fontSize: 12, color: C.muted }}>No tills enrolled on this branch.</p>
+                : devices.filter(x => x.branchId === branchView.id).map(dev => (
+                    <div key={dev.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{dev.label}{dev.role && <span style={{ fontSize: 10, color: C.muted, marginLeft: 6, textTransform: "uppercase" }}>{dev.role}</span>}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dev.lastSeenAt ? `seen ${new Date(dev.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}{dev.appVersion ? ` · v${dev.appVersion}` : ""}{dev.status !== "approved" ? ` · ${dev.status}` : ""}</div>
+                      </div>
+                      <button onClick={() => openDeviceLog(dev)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tech log →</button>
+                      <button onClick={() => revokeDevice(dev)} style={{ ...S.btn, ...S.btnDanger, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Revoke</button>
+                    </div>
+                  ))}
+            </>
+          ) : (
+            <>
+              <button onClick={() => { setDeviceView(null); setTechAudit(null); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, marginBottom: 12 }}>← Tills</button>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{deviceView.label} — tech audit log</div>
+              {techAudit === null
+                ? <p style={{ fontSize: 12, color: C.muted }}>Loading…</p>
+                : techAudit.length === 0
+                  ? <p style={{ fontSize: 12, color: C.muted }}>No tech actions logged on this till.</p>
+                  : techAudit.map(e => (
+                      <div key={e.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 13 }}><b style={{ color: C.accent }}>{e.action}</b>{e.tech_name ? ` · ${e.tech_name}` : ""}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{new Date(e.occurred_at).toLocaleString("en-KE")}</div>
+                        {e.detail && <pre style={{ fontSize: 10.5, color: C.muted, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "monospace" }}>{typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail)}</pre>}
+                      </div>
+                    ))}
+            </>
+          )}
+        </div>
+      )}
+
       {tab === "features" && (
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Feature Flags</div>
