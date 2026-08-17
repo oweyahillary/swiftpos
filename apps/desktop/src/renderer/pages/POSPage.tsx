@@ -120,7 +120,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Trading-day gate. Polled because the block can begin without the cashier
   // doing anything: at midnight, an unclosed day becomes yesterday's.
   const [dayGate, setDayGate] = useState<{ canTrade: boolean; reason?: string;
-    needsManager?: boolean; needsShift?: boolean } | null>(null);
+    needsManager?: boolean; needsShift?: boolean; staleGrace?: string } | null>(null);
   const [staleShift, setStaleShift] = useState<null | {
     id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number; orders: number;
   }>(null);
@@ -440,6 +440,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // and met the refusal at payment.
   const needsShift = !!dayGate?.needsShift;
   const needsManager = !!dayGate?.needsManager;
+  // 24-hour grace (A104): an unclosed prior day, but still trading behind a
+  // reminder. Amber, not the red hard block — the till is not stopped.
+  const staleGrace = dayGate?.staleGrace;
 
   const ensureOrderNumber = (): string => {
     if (orderNumber) return orderNumber;
@@ -1038,6 +1041,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           <span className="text-xs text-red-300/70 whitespace-nowrap">
             Manager → Close Day
           </span>
+        </div>
+      )}
+
+      {/* 24-hour grace (A104): the prior day isn't closed, but a continuous
+          business keeps trading through the handover window behind this reminder.
+          Amber and non-blocking — Charge still works — until the grace ends, when
+          checkDayGate flips to the red manager block above. */}
+      {staleGrace && !needsManager && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
+          <span className="text-amber-400 text-base">⏳</span>
+          <p className="flex-1 text-xs text-amber-200/90">{staleGrace}</p>
+          <span className="text-xs text-amber-300/70 whitespace-nowrap">Manager → Close Day</span>
         </div>
       )}
 

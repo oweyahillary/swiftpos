@@ -936,6 +936,9 @@ function initSchema(db: Database.Database) {
     // locally so an offline till still prints the right address and footer.
     ['receipt_header', 'TEXT'],
     ['receipt_footer', 'TEXT'],
+    // 24-hour / continuous operation (A104): 1 = never hard-lock on rollover,
+    // just a grace banner. Per business, cached from init on every pull.
+    ['continuous_operation', 'INTEGER'],
     // Thermal (ESC/POS) printing on THIS terminal.
     //
     // DEFAULTS ON as of 0.5.27. It defaulted OFF while the HTML path was the

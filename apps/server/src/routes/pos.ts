@@ -123,7 +123,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions']),
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation']),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
     // back to when unbound. maybeSingle, not single: one_main_branch_per_business
@@ -271,6 +271,10 @@ router.get('/init', async (req, res) => {
     products: productsOut,
     comboItems,
     receiptHeader: receiptText.receipt_header ?? '',
+    // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
+    // a short grace window at rollover instead of an immediate hard lock, so a
+    // round-the-clock branch keeps trading while a manager closes the day.
+    continuousOperation: receiptText.continuous_operation === 'true',
     receiptFooter: receiptText.receipt_footer ?? '',
     // Things that must never reach a kitchen ticket — drinks, sauces, packaged
     // sides. Stated by the owner rather than inferred: a keyword guess is wrong

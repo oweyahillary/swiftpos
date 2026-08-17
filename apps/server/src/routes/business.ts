@@ -64,6 +64,8 @@ const READABLE_SETTING_KEYS = new Set([
   // body — address, PIN, phone, thank-you line, social handles. Multi-line;
   // newlines are preserved and rendered as separate lines.
   'receipt_header', 'receipt_footer',
+  // 24-hour operation: a business that never closes overnight (A104).
+  'continuous_operation',
   // Names that must never reach a kitchen ticket — drinks, sauces, packaged
   // sides. A JSON array of strings, or one name per line. Owner-stated rather
   // than inferred from the item name: a keyword guess is wrong occasionally and

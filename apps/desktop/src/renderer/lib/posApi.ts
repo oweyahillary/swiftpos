@@ -362,6 +362,8 @@ declare global {
         updateStaff:    (id: string, patch: any) => Promise<any>;
         getReceiptText: () => Promise<{ header: string; footer: string }>;
         setReceiptText: (header: string, footer: string) => Promise<any>;
+        getContinuousOperation: () => Promise<{ enabled: boolean }>;
+        setContinuousOperation: (enabled: boolean) => Promise<any>;
       };
       manager: {
         reportScope: () => Promise<{

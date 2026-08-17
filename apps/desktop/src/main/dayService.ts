@@ -37,6 +37,12 @@ import { v4 as uuid } from 'uuid';
 /** Same rule as the renderer's hasManagerRights (App.tsx) so the two agree. */
 const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
+// 24-hour operation grace (A104): hours after midnight a continuous business may
+// keep trading with an unclosed prior day, behind a reminder, before the till
+// hard-locks. Owner's call — long enough to close the drawer during handover,
+// short enough that "confirm the cash" still means today.
+const GRACE_HOURS = 2;
+
 export interface BusinessDay {
   id: string;
   business_id: string;
@@ -128,6 +134,12 @@ export interface DayGate {
   /** The stale day, when that is what is blocking. */
   staleDay?: BusinessDay;
   /**
+   * 24-hour operation (A104): an unclosed prior day inside the grace window.
+   * The till keeps trading; the renderer shows this as an amber reminder, not
+   * the red hard block. A manager must still close the day before the grace ends.
+   */
+  staleGrace?: string;
+  /**
    * Distinguishes "nobody has opened a drawer" from "a manager must clear
    * yesterday". Both stop a sale, but the cashier's next action is completely
    * different — open your own drawer, or go and find a manager — and the first
@@ -152,27 +164,46 @@ export interface DayGate {
 export function checkDayGate(): DayGate {
   const today = businessDateNow();
   const open = getOpenDay();
+  let graceReason: string | undefined;
 
   if (open && open.business_date < today) {
-    return {
-      canTrade: false,
-      needsManager: true,
-      staleDay: open,
-      reason:
-        `Trading day ${open.business_date} was never closed on this till. ` +
-        `A manager must count the cash and close it before ${today} can start.`,
-    };
+    // 24-hour / continuous operation (A104): keep the hard lock — cash must be
+    // confirmed before a day closes — but a round-the-clock branch cannot be
+    // stopped dead the instant the date rolls over. Give a GRACE_HOURS window
+    // from midnight during which the till keeps trading behind a reminder; after
+    // it, the hard lock stands and only a manager can clear it. A non-continuous
+    // business locks immediately, as before.
+    const startOfToday = new Date(`${today}T00:00:00`).getTime();
+    const graceUntil = startOfToday + GRACE_HOURS * 60 * 60 * 1000;
+    const inGrace = getDeviceConfig()?.continuous_operation === true && Date.now() < graceUntil;
+
+    if (!inGrace) {
+      return {
+        canTrade: false,
+        needsManager: true,
+        staleDay: open,
+        reason:
+          `Trading day ${open.business_date} was never closed on this till. ` +
+          `A manager must count the cash and close it before ${today} can start.`,
+      };
+    }
+    const g = new Date(graceUntil);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    graceReason =
+      `Trading day ${open.business_date} still needs closing. A manager must count ` +
+      `the cash and close it by ${pad(g.getHours())}:${pad(g.getMinutes())} — the till keeps running until then.`;
   }
 
   if (!getOpenShift()) {
     return {
       canTrade: false,
       needsShift: true,
+      staleGrace: graceReason,
       reason: 'No drawer is open. Open a shift with its counted float to start selling.',
     };
   }
 
-  return { canTrade: true };
+  return { canTrade: true, staleGrace: graceReason };
 }
 
 /**

@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     updateStaff:    (id: string, patch: any)             => ipcRenderer.invoke('manage:updateStaff', { id, patch }),
     getReceiptText: ()                                   => ipcRenderer.invoke('manage:getReceiptText'),
     setReceiptText: (header: string, footer: string)     => ipcRenderer.invoke('manage:setReceiptText', { header, footer }),
+    getContinuousOperation: ()                           => ipcRenderer.invoke('manage:getContinuousOperation'),
+    setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
   },
 
   manager: {

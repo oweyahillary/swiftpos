@@ -1781,6 +1781,20 @@ export function registerIpcHandlers() {
     return out;
   });
 
+  // 24-hour / continuous operation (A104), per business. Read from the cached
+  // config; written to business_settings so it reaches every till, and cached
+  // locally at once so the day gate honours it before the next sync.
+  ipcMain.handle('manage:getContinuousOperation', async () => {
+    return { enabled: getDeviceConfig()?.continuous_operation === true };
+  });
+  ipcMain.handle('manage:setContinuousOperation', async (_e, enabled: boolean) => {
+    const out = await manageFetch('/api/business/settings', 'POST', {
+      key: 'continuous_operation', value: enabled ? 'true' : 'false',
+    });
+    saveDeviceConfig({ continuous_operation: !!enabled });
+    return out;
+  });
+
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
 
   // Range is optional so existing callers keep today's behaviour untouched.

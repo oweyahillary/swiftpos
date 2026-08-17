@@ -613,7 +613,7 @@ async function pullCatalogue(): Promise<boolean> {
     return false;
   }
 
-  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions, paymentMethods } = await res.json();
+  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions, paymentMethods, continuousOperation } = await res.json();
   clearInboundFailure('sync');
   const db = getLocalDb();
   const now = new Date().toISOString();
@@ -641,6 +641,7 @@ async function pullCatalogue(): Promise<boolean> {
   // Cached so an offline till still prints the owner's current header/footer.
   if (typeof receiptHeader === 'string') saveDeviceConfig({ receipt_header: receiptHeader });
   if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });
+  if (typeof continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: continuousOperation });
   // Cached for the same reason: a till that loses the internet mid-service must
   // keep excluding drinks from the kitchen ticket, not start printing them.
   //
