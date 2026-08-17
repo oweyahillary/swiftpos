@@ -98,37 +98,38 @@ function isPurgeDue(biz) {
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  bg:       "#0a0e17",
-  surface:  "#111827",
-  card:     "#1a2234",
-  border:   "#1e2d45",
-  accent:   "#00d4ff",
-  green:    "#00ff88",
-  text:     "#e2e8f0",
-  muted:    "#64748b",
-  danger:   "#ef4444",
+  bg:       "#070b14",
+  surface:  "rgba(15,23,40,0.55)",     // dark glass — sidebar / topbar / modal
+  card:     "rgba(255,255,255,0.045)", // frosted glass — cards / panels
+  border:   "rgba(255,255,255,0.09)",  // glass edge (top-highlight)
+  accent:   "#38e1ff",
+  violet:   "#a78bfa",
+  green:    "#34e5a0",
+  text:     "#e8eef7",
+  muted:    "#8ea0bd",
+  danger:   "#ff5c6c",
 };
 
 const SIDEBAR_W = 220;
 
 const S = {
   // Sidebar — CSS class handles responsive visibility
-  sidebar: { width: SIDEBAR_W, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "fixed", top: 0, left: 0, zIndex: 100, transition: "transform 0.25s ease" },
+  sidebar: { width: SIDEBAR_W, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "fixed", top: 0, left: 0, zIndex: 100, transition: "transform 0.25s ease" },
   // Main — CSS class handles the responsive margin
-  main:    { minHeight: "100vh", background: C.bg, color: C.text, display: "flex", flexDirection: "column", flex: 1, minWidth: 0, overflow: "hidden" },
-  topbar:  { height: 52, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 12, flexShrink: 0 },
+  main:    { minHeight: "100vh", background: "transparent", color: C.text, display: "flex", flexDirection: "column", flex: 1, minWidth: 0, overflow: "hidden" },
+  topbar:  { height: 52, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 12, flexShrink: 0 },
   content: { padding: "24px", flex: 1 },
-  card:    { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 16 },
-  kpiCard: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", flex: 1, minWidth: 0 },
-  btn:     { padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", flexShrink: 0 },
-  btnPrimary: { background: C.accent, color: "#0a0e17" },
-  btnGhost:   { background: "transparent", color: C.muted, border: `1px solid ${C.border}` },
-  btnDanger:  { background: "rgba(239,68,68,0.1)", color: C.danger, border: `1px solid rgba(239,68,68,0.3)` },
-  input:   { background: "#0f1929", border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", width: "100%", fontFamily: "inherit", boxSizing: "border-box" },
+  card:    { background: C.card, backdropFilter: "blur(22px) saturate(150%)", WebkitBackdropFilter: "blur(22px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: "16px 20px", marginBottom: 16, boxShadow: "0 10px 34px rgba(2,6,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05)" },
+  kpiCard: { background: C.card, backdropFilter: "blur(22px) saturate(150%)", WebkitBackdropFilter: "blur(22px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px 24px", flex: 1, minWidth: 0, boxShadow: "0 10px 34px rgba(2,6,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05)" },
+  btn:     { padding: "8px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", flexShrink: 0 },
+  btnPrimary: { background: C.accent, color: "#04121a" },
+  btnGhost:   { background: "rgba(255,255,255,0.05)", color: C.muted, border: `1px solid ${C.border}` },
+  btnDanger:  { background: "rgba(255,92,108,0.12)", color: C.danger, border: `1px solid rgba(255,92,108,0.3)` },
+  input:   { background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", width: "100%", fontFamily: "inherit", boxSizing: "border-box" },
   label:   { fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 },
   badge:   { fontSize: 11, padding: "2px 8px", borderRadius: 20, fontWeight: 600 },
   table:   { width: "100%", borderCollapse: "collapse", minWidth: 600 },
-  th:      { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${C.border}`, background: "#0f1929", whiteSpace: "nowrap" },
+  th:      { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.03)", whiteSpace: "nowrap" },
   td:      { padding: "12px 14px", fontSize: 13, borderBottom: `1px solid ${C.border}` },
   tab:     { padding: "8px 16px", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", color: C.muted, borderBottom: "2px solid transparent", whiteSpace: "nowrap" },
   tabActive: { color: C.accent, borderBottom: `2px solid ${C.accent}` },
@@ -150,9 +151,9 @@ function useModal() {
   const modal = state && (
     <div
       onClick={() => resolve(state.kind === 'confirm' ? false : null)}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      style={{ position: "fixed", inset: 0, background: "rgba(3,6,16,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, width: "min(420px, 92vw)", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+        style={{ background: C.surface, backdropFilter: "blur(24px) saturate(150%)", WebkitBackdropFilter: "blur(24px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: 20, width: "min(420px, 92vw)", boxShadow: "0 24px 70px rgba(2,6,16,0.55), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
         <div style={{ fontSize: 13, color: C.text, marginBottom: 14, lineHeight: 1.5 }}>{state.message}</div>
         {state.kind === 'prompt' && (
           <input
@@ -278,7 +279,7 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 380, padding: 40, background: C.surface, borderRadius: 16, border: `1px solid ${C.border}` }}>
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", color: C.accent }}>SwiftPOS</div>
+          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: C.accent, fontFamily: "'Space Grotesk', sans-serif" }}>SwiftPOS</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Admin Command Centre</div>
         </div>
 
@@ -341,7 +342,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
         className={`sp-sidebar${isOpen ? " sp-sidebar-open" : ""}`}>
         <div style={{ padding: "20px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: C.accent, letterSpacing: "-0.01em" }}>SwiftPOS</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: C.accent, letterSpacing: "-0.01em", fontFamily: "'Space Grotesk', sans-serif" }}>SwiftPOS</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Admin Portal</div>
           </div>
           {/* Close button — mobile only */}
@@ -433,7 +434,7 @@ function DashboardPage({ req }) {
         ].map(k => (
           <div key={k.label} style={S.kpiCard}>
             <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{k.label}</div>
-            <div style={{ fontSize: k.mono ? 18 : 28, fontWeight: 700, color: k.color, fontFamily: k.mono ? "monospace" : "inherit" }}>{k.value}</div>
+            <div style={{ fontSize: k.mono ? 18 : 28, fontWeight: 700, color: k.color, fontFamily: k.mono ? "monospace" : "'Space Grotesk', sans-serif" }}>{k.value}</div>
           </div>
         ))}
       </div>
@@ -2107,7 +2108,7 @@ export default function AdminPortal() {
         ::-webkit-scrollbar-track { background: ${C.bg}; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-        select option { background: ${C.surface}; }
+        select option { background: #0d1526; }
 
         /* ── Sidebar: desktop always visible, mobile hidden by default ── */
         .sp-sidebar {
