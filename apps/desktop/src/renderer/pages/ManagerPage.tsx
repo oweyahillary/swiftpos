@@ -497,6 +497,71 @@ function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: nu
 }
 
 // ── Orders Tab ────────────────────────────────────────────────────────────────
+// A small segmented selector, the "like the print option" control the owner
+// asked for (A105). Used to fold two sibling tabs into one — Orders/Item Mix and
+// Current shift/Shift report — so a manager picks the view inside one nav item
+// rather than hunting two.
+function SegmentedSelector<T extends string>({ options, value, onChange }: {
+  options: { key: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-gray-700 bg-gray-900 p-0.5">
+      {options.map(o => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            value === o.key ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// #7 (A105): Orders and Item Mix under one nav item. Item Mix is restaurant-only,
+// so a non-restaurant business sees just Orders with no selector.
+function OrdersAndMixTab({ currency, isRestaurant }: { currency: string; isRestaurant: boolean }) {
+  const [view, setView] = useState<'orders' | 'mix'>('orders');
+  return (
+    <div className="space-y-4">
+      {isRestaurant && (
+        <SegmentedSelector
+          options={[{ key: 'orders', label: 'Orders' }, { key: 'mix', label: 'Item Mix' }]}
+          value={view}
+          onChange={v => setView(v)}
+        />
+      )}
+      {view === 'orders' || !isRestaurant
+        ? <OrdersTab currency={currency} />
+        : <TopItemsTab currency={currency} />}
+    </div>
+  );
+}
+
+// #6 (A105): the shift and its report under one "Shift" nav item. The manager
+// sees the open shift, then switches to "Shift report" to view (and print) the
+// Z-report — instead of two separate tabs that never referenced each other.
+function ShiftAndReportTab({ currency, businessName }: { currency: string; businessName: string }) {
+  const [view, setView] = useState<'shift' | 'report'>('shift');
+  return (
+    <div className="space-y-4">
+      <SegmentedSelector
+        options={[{ key: 'shift', label: 'Current shift' }, { key: 'report', label: 'Shift report' }]}
+        value={view}
+        onChange={v => setView(v)}
+      />
+      {view === 'shift'
+        ? <ShiftTab currency={currency} />
+        : <ZReportTab businessName={businessName} currency={currency} />}
+    </div>
+  );
+}
+
 function OrdersTab({ currency }: { currency: string }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1085,14 +1150,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     { key: 'overview', label: 'Overview',     icon: I.overview },
     { key: 'orders',   label: 'Orders',       icon: I.orders   },
     { key: 'shift',    label: 'Shift',        icon: I.shift    },
-    { key: 'zreport',  label: 'Shift Report', icon: I.zreport  },
+    // #6 (A105): the Shift Report is now a view INSIDE the Shift tab, not its own
+    // nav item.
     // Manager-only: this is the escape route for the trading-day gate. Without
     // it a till stays frozen the first morning nobody closed the day.
     ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
     // Phase 4. Registered for every manager; the tab itself explains when this
     // till is not the branch server, which beats an option that silently is not there.
     ...(isManagerRole ? [{ key: 'branchclose' as TabKey, label: 'Close Branch', icon: I.shift }] : []),
-    ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
+    // #7 (A105): Item Mix is now a view INSIDE the Orders tab (restaurant only),
+    // selected with a segmented control, not its own nav item.
     // Editing, not just viewing. Without these the owner has to phone us to add
     // a product or fix a price, which for fast food is a daily event.
     // ONE Menu tab. Prices, Combos and Import were three views of the same menu,
@@ -1135,10 +1202,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         if (flags.isPetrol)     return <PetrolOverview     currency={currency} />;
         if (flags.isRestaurant) return <RestaurantOverview currency={currency} />;
         return <RetailOverview currency={currency} />;
-      case 'orders':  return <OrdersTab  currency={currency} />;
-      case 'shift':   return <ShiftTab   currency={currency} />;
+      case 'orders':  return <OrdersAndMixTab currency={currency} isRestaurant={flags.isRestaurant} />;
+      case 'shift':   return <ShiftAndReportTab currency={currency} businessName={businessName} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
+      // Reachable only as a fallback now — the nav folds these into Orders/Shift
+      // (A105). Kept so any direct setActive still resolves.
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
