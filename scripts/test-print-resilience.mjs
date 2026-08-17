@@ -215,7 +215,12 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
         .replace('export function', 'function')
         .replace('(noteLines?: string[], extraTerms?: string): string[]', '(noteLines, extraTerms)');
       const rx = TL.match(/KITCHEN_NOTE_EXCLUDE =\s*(\/[^;]+\/i);/)[1];
-      const kitchen = new Function(`const KITCHEN_NOTE_EXCLUDE = ${rx}; ${fn}; return kitchenPrepLines;`)();
+      // kitchenPrepLines word-boundaries each owner term via escapeRegex (A84);
+      // extract that helper too so the eval'd copy has the same dependency the
+      // module does, instead of a ReferenceError.
+      const esc = TL.slice(TL.indexOf('function escapeRegex'), TL.indexOf('\n}', TL.indexOf('function escapeRegex')) + 2)
+        .replace('function escapeRegex(s: string): string', 'function escapeRegex(s)');
+      const kitchen = new Function(`const KITCHEN_NOTE_EXCLUDE = ${rx}; ${esc} ${fn}; return kitchenPrepLines;`)();
       const meal = ['5pc chicken', 'cole slaw', 'popcorn', 'medium fries', 'soft drink'];
       ok('built-in rule alone: drink out, food in', kitchen(meal).length === 4);
       ok("owner adds 'coleslaw\\npopcorn': both drop, no code change",
