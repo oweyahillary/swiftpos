@@ -1050,6 +1050,40 @@ router.get('/clients/:id/branches', requireAdmin, async (req, res) => {
 });
 
 /**
+ * POST /api/admin/clients/:id/branches — admin creates a branch (G1).
+ * Owner self-serve stays blocked (branches are billed separately), so creation is
+ * a SwiftPOS-agent operation. The new branch is inert until an admin licenses a
+ * till for it — this creates the record + audit only; billing follows via the
+ * existing per-branch licence flow.
+ */
+router.post('/clients/:id/branches', requireAdmin, async (req: any, res) => {
+  const businessId = req.params.id;
+  const name    = String(req.body?.name ?? '').trim();
+  const address = req.body?.address ? String(req.body.address).trim() : null;
+  const phone   = req.body?.phone   ? String(req.body.phone).trim()   : null;
+  if (!name)             { res.status(400).json({ error: 'Branch name is required' }); return; }
+  if (name.length > 100) { res.status(400).json({ error: 'Branch name is too long (max 100)' }); return; }
+
+  const { data: biz } = await supabase.from('businesses').select('id, name').eq('id', businessId).single();
+  if (!biz) { res.status(404).json({ error: 'Client not found' }); return; }
+
+  const { data: branch, error } = await supabase
+    .from('branches')
+    .insert({ business_id: businessId, name, address, phone, is_main: false, status: 'active' })
+    .select('id, name, is_main, status, city, desktop_licensed, desktop_licensed_at, desktop_licensed_by')
+    .single();
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'business.create_branch', resource: 'branch',
+    businessId, businessName: biz.name, after: { name, address, phone },
+  });
+
+  res.status(201).json(branch);
+});
+
+/**
  * POST /api/admin/clients/:id/branches/:branchId/licence
  * Enable or disable desktop licence for a specific branch.
  * Body: { licensed: boolean, invoice_ref?: string, notes?: string }

@@ -595,6 +595,8 @@ function ClientDetailPage({ client, req, onBack }) {
   const [branches, setBranches] = useState([]);
   const [licencingBranch, setLicencingBranch] = useState(null);
   const [enrolBranch, setEnrolBranch] = useState(null);   // A69: branch currently minting a code
+  const [addingBranch, setAddingBranch] = useState(false);       // G1: add-branch form open
+  const [branchForm, setBranchForm] = useState({ name: "", address: "", phone: "" });
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
   const [editing, setEditing] = useState(false);          // G5: business edit panel open
@@ -741,6 +743,21 @@ function ClientDetailPage({ client, req, onBack }) {
       setEnrolResult({ businessId: r.businessId, codes: r.codes || [], branchName: r.branchName || branch.name, expiresAt: r.expiresAt });
     } catch(e) { setError(e.message); }
     finally { setEnrolBranch(null); }
+  }
+
+  // G1: admin creates a branch (owners are blocked — branches are billed separately).
+  async function createBranch() {
+    if (!branchForm.name.trim()) { await askConfirm("Branch name is required."); return; }
+    try {
+      const created = await req("POST", `/clients/${client.id}/branches`, {
+        name:    branchForm.name.trim(),
+        address: branchForm.address.trim() || undefined,
+        phone:   branchForm.phone.trim() || undefined,
+      });
+      setBranches(prev => [...prev, created]);
+      setBranchForm({ name: "", address: "", phone: "" });
+      setAddingBranch(false);
+    } catch (e) { setError(e?.message ?? "Failed to create branch"); }
   }
 
   // G4: revoke a device (e.g. a lost/stolen till) straight from the fleet console.
@@ -915,8 +932,25 @@ function ClientDetailPage({ client, req, onBack }) {
             <div style={S.card}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Branch Licences</div>
-                <span style={{ fontSize: 11, color: C.muted }}>Desktop = one-off per branch</span>
+                <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
               </div>
+              {addingBranch && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", padding: "12px", background: "#0f1929", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <label style={S.label}>Name *</label>
+                    <input style={S.input} value={branchForm.name} onChange={e => setBranchForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Westlands" autoFocus />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <label style={S.label}>Address</label>
+                    <input style={S.input} value={branchForm.address} onChange={e => setBranchForm(f => ({ ...f, address: e.target.value }))} />
+                  </div>
+                  <div style={{ width: 130 }}>
+                    <label style={S.label}>Phone</label>
+                    <input style={S.input} value={branchForm.phone} onChange={e => setBranchForm(f => ({ ...f, phone: e.target.value }))} />
+                  </div>
+                  <button onClick={createBranch} style={{ ...S.btn, ...S.btnPrimary, flexShrink: 0 }}>Create</button>
+                </div>
+              )}
               {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No branches yet.</p>}
               {branches.map(b => (
                 <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
