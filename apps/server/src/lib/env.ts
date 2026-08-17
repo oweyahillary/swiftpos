@@ -33,7 +33,8 @@ const base = z.object({
   // Signing keys for the two token families. Both throw at import.
   JWT_SECRET:                nonEmpty('JWT_SECRET').min(16, 'JWT_SECRET should be at least 16 characters'),
   ADMIN_JWT_SECRET:          nonEmpty('ADMIN_JWT_SECRET').min(16, 'ADMIN_JWT_SECRET should be at least 16 characters'),
-  TECH_HMAC_SECRET:          nonEmpty('TECH_HMAC_SECRET').min(16, 'TECH_HMAC_SECRET should be at least 16 characters'),
+  // TECH_HMAC_SECRET retired (A113): tech tokens are v2 Ed25519, verified with
+  // TECH_SIGNING_PUBLIC_KEY; no HMAC secret is read any more.
 });
 
 /**

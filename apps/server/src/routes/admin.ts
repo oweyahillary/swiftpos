@@ -1249,18 +1249,9 @@ router.post('/branches/:branchId/reveal-code/regenerate', requireAdmin, async (r
 });
 
 // ─── TECH ACCESS TOKENS ───────────────────────────────────────────────────────
-
-const TECH_HMAC_SECRET = process.env.TECH_HMAC_SECRET ?? 'swiftpos-tech-dev-secret-change-at-install';
-
-function generateTechToken(payload: {
-  techId: string; techName: string;
-  branchId: string; businessId: string;
-}): string {
-  const exp     = Math.floor(Date.now() / 1000) + 48 * 3600; // 48h
-  const body    = Buffer.from(JSON.stringify({ ...payload, scope: 'tech_access', exp })).toString('base64url');
-  const sig     = crypto.createHmac('sha256', TECH_HMAC_SECRET).update(body).digest('hex');
-  return `${body}.${sig}`;
-}
+// Tokens are minted by signTechToken (v2 Ed25519, lib/techToken). The old v1 HMAC
+// minter and its hardcoded-default secret were removed (A113) — dead since v2
+// landed, and the default was a forgeable-token risk for the destructive paths.
 
 /**
  * POST /api/admin/tech/generate-token
