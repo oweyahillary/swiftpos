@@ -85,6 +85,25 @@ function initSchema(db: Database.Database) {
       cached_at    TEXT NOT NULL
     );
 
+    -- Branch NODE roster (PHASE5 §4a / A17). Node-only: the whole branch's active
+    -- staff, pulled from GET /api/pos/branch-staff, so the node can authenticate
+    -- a peer's cashier offline (POST /node/verify-pin). Hashes wrapped with
+    -- safeStorage, exactly like staff_pin_cache. Unlike that cache there is NO
+    -- cached_at / TTL — a node is the branch's authority and its roster is valid
+    -- until replaced (§4e). Replaced wholesale on each pull so a deactivated
+    -- staff member disappears here too.
+    CREATE TABLE IF NOT EXISTS branch_staff (
+      staff_id              TEXT PRIMARY KEY,
+      name                  TEXT NOT NULL,
+      role_name             TEXT,
+      branch_id             TEXT NOT NULL,
+      permissions           TEXT NOT NULL DEFAULT '{}',
+      pin_hash_enc          TEXT NOT NULL,
+      override_pin_hash_enc  TEXT,
+      status                TEXT NOT NULL DEFAULT 'active',
+      updated_at            TEXT
+    );
+
     -- ── Held orders (restaurant tabs) ────────────────────────────────────────
     --
     -- These are OPEN TABLES. Until 2026-08-08 they lived in the renderer's
@@ -296,6 +315,25 @@ function initSchema(db: Database.Database) {
       unit_price    REAL NOT NULL,
       quantity      INTEGER NOT NULL,
       subtotal      REAL NOT NULL
+    );
+
+    -- Custom payment methods (A96), cached from /api/pos/init so they appear as
+    -- tender options offline. Built-in Cash/M-Pesa/Card are not stored here.
+    -- Replaced wholesale on each pull. Local mirror only, never pushed.
+    CREATE TABLE IF NOT EXISTS payment_methods (
+      code       TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Local-only (never synced). The exact order payload that printed, kept so
+    -- any recent order can be reprinted byte-identically from Order History
+    -- (register A94) — replayed through the same queueThermal path as the
+    -- original, marked "Duplicate Print". Pruned to the last 200 per boot.
+    CREATE TABLE IF NOT EXISTS receipt_payloads (
+      order_id   TEXT PRIMARY KEY,
+      payload    TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS order_item_variants (
@@ -898,16 +936,55 @@ function initSchema(db: Database.Database) {
     // locally so an offline till still prints the right address and footer.
     ['receipt_header', 'TEXT'],
     ['receipt_footer', 'TEXT'],
-    // Thermal (ESC/POS) printing on THIS terminal. Per-machine, not per-business:
-    // till 1 can be proving the new path while till 3 still runs the old HTML
-    // one. Defaults OFF — the subsystem is verified by unit test and has never
-    // touched a printer, and a till that prints nothing during service is worse
-    // than one that prints slowly. See main/escposBridge.ts.
-    ['escpos_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+    // 24-hour / continuous operation (A104): 1 = never hard-lock on rollover,
+    // just a grace banner. Per business, cached from init on every pull.
+    ['continuous_operation', 'INTEGER'],
+    // Thermal (ESC/POS) printing on THIS terminal.
+    //
+    // DEFAULTS ON as of 0.5.27. It defaulted OFF while the HTML path was the
+    // fallback — "a till that prints nothing during service is worse than one
+    // that prints slowly", and that was right at the time. The HTML sale path is
+    // now gone (thermal ran a full service on 2026-08-10, dispatch slips
+    // included), so OFF no longer means "print the old way" — it means print
+    // NOTHING. The old default is now the dangerous one.
+    //
+    // A new column on an existing install takes this default too, so a till
+    // upgrading straight from an HTML build lands ON. Tills that were switched
+    // on during the trial already hold 1; the backfill below covers any that
+    // were explicitly set to 0. See main/escposBridge.ts.
+    ['escpos_enabled', 'INTEGER NOT NULL DEFAULT 1'],
     // JSON array of names that must never reach a kitchen ticket. Owner-stated,
     // pulled with the catalogue, cached so an offline till still honours it.
+    // This is the CLOUD BASELINE (business-wide, dashboard-edited).
     ['kitchen_exclusions', 'TEXT'],
+    // Per-terminal local override. NULL = follow the cloud baseline above;
+    // non-NULL (a JSON array, possibly empty) = this terminal's own list, which
+    // WINS over the baseline and is never overwritten by a catalogue pull. This
+    // is how a local edit is "final" while the cloud default keeps updating.
+    ['kitchen_exclusions_override', 'TEXT'],
   ]);
+
+  // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
+  // already exist, so a till that ran the trial with thermal OFF would keep 0 —
+  // and with the HTML sale path removed it would print nothing at all. Guarded
+  // by a marker row so a manager who deliberately switches it off later is not
+  // overridden on the next boot.
+  try {
+    const done = db.prepare(
+      `SELECT value FROM maintenance_state WHERE key = 'escpos_default_on_0527'`).get() as
+      { value?: string } | undefined;
+    if (!done) {
+      db.prepare(`UPDATE device_config SET escpos_enabled = 1 WHERE escpos_enabled = 0`).run();
+      db.prepare(
+        `INSERT OR REPLACE INTO maintenance_state (key, value, updated_at)
+         VALUES ('escpos_default_on_0527', 'applied', ?)`
+      ).run(new Date().toISOString());
+    }
+  } catch {
+    // maintenance_state absent on a build predating schema 49. The column
+    // default covers new installs; this is belt and braces, never a reason to
+    // fail startup.
+  }
   migrateColumns(db, 'order_items', [
     ['course', 'TEXT'],
     ["fire_status", "TEXT DEFAULT 'fired'"],
@@ -956,7 +1033,10 @@ function initSchema(db: Database.Database) {
 // built from 44. REQUIRED_DESKTOP_SCHEMA must reach 45 in that same release: a
 // node on 44 would ingest peer rows with no seq, and every one of them would be
 // invisible to the cursor that decides what still needs replicating.
-export const LOCAL_SCHEMA_VERSION = 51;
+// 52 adds device_config.kitchen_exclusions_override — a per-terminal local
+// override that wins over the synced cloud baseline. Additive and idempotent
+// like every column here; an older till converges by running migrateColumns.
+export const LOCAL_SCHEMA_VERSION = 52;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

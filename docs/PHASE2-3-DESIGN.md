@@ -1,5 +1,21 @@
 # Phase 2 & 3 — implementation design, 3 August 2026
 
+> **⚠ STATUS CORRECTION, 2026-08-10 (register A5).**
+> **This document still said "For approval before code" a week after the code
+> shipped.** Phase 2a landed in `5ef0f08` (branch distribution, replicated star,
+> local schema v47) and Phase 2b+2c in `fee91cc` (mutation events, bounded
+> replicas, nightly snapshots, v49). Phase 4's central day close landed in
+> `40f53ac` (v46).
+>
+> **Read this as a record of what was decided and built, not as a proposal.**
+> Where the shipped behaviour and this document disagree, the code is the
+> authority and the disagreement is a finding worth filing.
+>
+> Known drift already recorded elsewhere: the node is a **replica, not a relay**
+> (A19), reference data does not flow downstream to an offline peer (A24), and
+> the node cannot authorise anybody (A17). None of those limits are stated below,
+> because they were discovered by running it.
+
 For approval before code. One amendment to BRANCH-SERVER-PLAN.md, three open
 decisions resolved, mitigations for the consequences Phase 2 raises.
 

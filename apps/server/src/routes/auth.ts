@@ -41,6 +41,7 @@ import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
+import { refreshGraceDecision } from '../lib/refreshGrace';
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
@@ -158,11 +159,11 @@ async function storeRefreshToken(
    * User-Agent only when it genuinely has nothing better.
    */
   deviceHint?: string,
-): Promise<void> {
+): Promise<string | null> {
   const jtiPayload = jwt.decode(refreshToken) as { jti: string };
   const jti = hashToken(jtiPayload.jti);
 
-  await supabase.from('refresh_tokens').insert({
+  const { data } = await supabase.from('refresh_tokens').insert({
     jti,
     user_id:     payload.userId,
     business_id: payload.businessId,
@@ -170,7 +171,8 @@ async function storeRefreshToken(
     device_hint: deviceHint?.slice(0, 200) ?? null,
     ip_address:  ip ?? null,
     expires_at:  new Date(Date.now() + REFRESH_EXPIRES_MS).toISOString(),
-  });
+  }).select('id').single();
+  return (data as { id?: string } | null)?.id ?? null;
 }
 
 /**
@@ -180,6 +182,7 @@ async function storeRefreshToken(
 async function validateRefreshToken(refreshToken: string): Promise<{
   payload: any;
   dbRow:   any;
+  graceReissue?: boolean;
 }> {
   // 1. Verify JWT signature + expiry
   let payload: any;
@@ -208,8 +211,34 @@ async function validateRefreshToken(refreshToken: string): Promise<{
   }
 
   if (dbRow.revoked_at) {
-    // Token already used or explicitly revoked.
-    // If it's been used twice this may be a replay attack — revoke the entire session.
+    // Chain-based reuse detection (A88 / D13). A revoked token is not always a
+    // replay: if it was rotated and its replacement is STILL the live head, the
+    // client never received the rotation response — a lost packet, not an
+    // attack. Nuking every session there logs the owner out of the till on a
+    // dropped response. Look at the successor to tell them apart.
+    let successorExists = false;
+    let successorRevokedAt: string | null | undefined;
+    if (dbRow.replaced_by) {
+      const { data: succ } = await supabase
+        .from('refresh_tokens')
+        .select('revoked_at')
+        .eq('id', dbRow.replaced_by)
+        .maybeSingle();
+      if (succ) { successorExists = true; successorRevokedAt = (succ as any).revoked_at; }
+    }
+
+    const decision = refreshGraceDecision({
+      revokedAt: dbRow.revoked_at, successorExists, successorRevokedAt,
+    });
+
+    if (decision === 'reissue') {
+      // Lost rotation response — let the client recover. The handler mints a
+      // fresh pair and re-points the chain; do NOT revoke the session.
+      return { payload, dbRow, graceReissue: true };
+    }
+
+    // Genuine replay (successor already rotated, or the token was revoked by
+    // logout with no successor) — revoke the whole session, as before.
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
@@ -781,7 +810,31 @@ router.post('/desktop-login', async (req, res) => {
     permissionKeys:     ['*'],
     permissionsVersion: pv,
     sessionId,
-    surface:            'web',
+    // 'desktop', not 'web'. This route exists to mint a DESKTOP session — the
+    // header of this file has said `surface='desktop'` since it was written —
+    // and it minted 'web'. One word, and four things silently did nothing on
+    // every till that used it:
+    //
+    //   1. offlineAuth (verify-pin) is gated on surface === 'desktop', so the
+    //      PIN hash was never returned and `staff_pin_cache` stayed EMPTY. The
+    //      entire offline sign-in feature — register D16, shipped 2026-08-08
+    //      with 16 passing tests — has never worked in the field. Confirmed on
+    //      Beryl's till 2026-08-10: two PINs entered ONLINE, then
+    //      `select count(*) from staff_pin_cache` = 0.
+    //   2. Desktop terminal registration (D14) never ran, so `user_devices`
+    //      stayed empty, which kept migration 52's branch binding and all fleet
+    //      telemetry inert.
+    //   3. The desktop_licensed gate (pos.ts:87, and pos-login) was never
+    //      applied — a till signing in this way trades unlicensed.
+    //   4. requireWebSurface let a till reach web-portal-only features.
+    //
+    // It PROPAGATES: /verify-pin issues `surface: req.surface ?? 'web'`, so the
+    // owner token's value flows into every staff token minted from it.
+    //
+    // Nothing caught it because /pos-login derives surface from the request
+    // body and CAN be 'desktop', so the fixtures and the licence errors seen in
+    // the field both looked right. Two login routes, two different answers.
+    surface:            'desktop',
   };
 
   const { accessToken, refreshToken } = issueTokenPair(payload);
@@ -804,7 +857,102 @@ router.post('/desktop-login', async (req, res) => {
   });
 });
 
-// ── POST /api/auth/refresh ────────────────────────────────────────────────────
+// ── POST /api/auth/enrol/redeem ───────────────────────────────────────────────
+// Device enrolment (register D4, closes D1). A till provisions itself with a
+// single-use CODE the owner issued in the portal (POST /api/enrol/code), not by
+// an owner typing their password on the terminal. The business is identified by
+// its id — so a two-business owner is no longer the dead end D1 describes.
+//
+// No requireAuth: the caller has no session yet; the code IS the credential.
+// This route sits on /api/auth so it inherits authLimiter — a code must be
+// brute-force-protected. It mints exactly the owner-scoped desktop token that
+// /desktop-login mints: the code replaces the password check, not the token's
+// identity (orders.cashier_id references public.users(id), and the till's
+// catalogue-pull token has always been owner-scoped).
+router.post('/enrol/redeem', async (req, res) => {
+  const businessId = String(req.body?.business_id ?? '').trim();
+  const rawCode    = String(req.body?.code ?? '').trim().toUpperCase();
+  const deviceId   = String(req.body?.device_id ?? '').trim();
+  if (!businessId || !rawCode || !deviceId) {
+    res.status(400).json({ error: 'business_id, code and device_id are required' });
+    return;
+  }
+  const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+  const nowIso   = new Date().toISOString();
+
+  // THE BURN — one atomic UPDATE ... WHERE ... RETURNING (proven in
+  // test-migration-81.mjs). Redeemable iff active AND unexpired AND this
+  // business's; the flip to 'redeemed' is what makes it single-use, so two
+  // concurrent redeems cannot both win. Scoped to business_id so a code cannot
+  // be spent against another tenant.
+  const { data: burned, error: burnErr } = await supabase
+    .from('device_enrolment_codes')
+    .update({ status: 'redeemed', redeemed_at: nowIso, redeemed_device_id: deviceId.slice(0, 64) })
+    .eq('code_hash', codeHash)
+    .eq('business_id', businessId)
+    .eq('status', 'active')
+    .gt('expires_at', nowIso)
+    .select('id, business_id, branch_id, created_by')
+    .maybeSingle();
+
+  if (burnErr) { sendError(res, burnErr); return; }
+  if (!burned) {
+    // Uniform message: never tell an attacker whether the code was wrong,
+    // expired, already used, or for another business.
+    res.status(401).json({ error: 'Invalid, expired or already-used code', code: 'ENROL_INVALID' });
+    return;
+  }
+
+  const ownerId = (burned as any).created_by as string;   // public.users id — the token principal
+
+  // A suspended business must not bring a new till online, same as /desktop-login.
+  // Also the fields the till needs to provision its session row (name, currency,
+  // type) — so the desktop can store enrolment exactly as it stores a login.
+  const { data: biz } = await supabase
+    .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
+  if (!biz) { res.status(500).json({ error: 'Business not found for a valid code', code: 'ENROL_STATE' }); return; }
+  if ((biz as any).status === 'suspended') {
+    res.status(403).json({ error: 'Your account has been suspended. Please contact SwiftPOS support.', code: 'ACCOUNT_SUSPENDED' });
+    return;
+  }
+
+  // Record the terminal (D14). Returns null rather than throwing — enrolment must
+  // not fail over a telemetry row.
+  await registerDesktopTerminal(businessId, ownerId, {
+    deviceId,
+    appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
+    terminalCode: req.body?.terminal_code ?? null,
+    ipAddress:    req.ip ?? null,
+    role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+  });
+
+  const pv = await getPermissionsVersion(ownerId);
+  const sessionId = newSessionId();
+  const payload: TokenPayload = {
+    userId:             ownerId,
+    businessId,
+    branchId:           null,          // unbound-till fallback, like /desktop-login
+    isOwner:            true,
+    permissionKeys:     ['*'],
+    permissionsVersion: pv,
+    sessionId,
+    surface:            'desktop',
+  };
+  const { accessToken, refreshToken } = issueTokenPair(payload);
+  await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
+
+  res.json({
+    accessToken,
+    refreshToken,
+    token: accessToken,
+    user:     { id: ownerId },
+    business: biz,                       // id, name, currency, type, status
+    businessId,
+    branchId: (burned as any).branch_id ?? null,
+  });
+});
+
+
 // Validates the refresh token against the DB, rotates it (old revoked, new issued),
 // and re-fetches permissions so role changes propagate immediately.
 
@@ -817,8 +965,9 @@ router.post('/refresh', async (req, res) => {
 
   let payload: any;
   let dbRow: any;
+  let graceReissue = false;
   try {
-    ({ payload, dbRow } = await validateRefreshToken(refreshToken));
+    ({ payload, dbRow, graceReissue = false } = await validateRefreshToken(refreshToken));
   } catch (err: any) {
     // Deliberate token errors carry a TOKEN_* code and a user-safe message —
     // surface those so the client can react. Anything else is unexpected and
@@ -831,11 +980,26 @@ router.post('/refresh', async (req, res) => {
     return;
   }
 
-  // Revoke the consumed token atomically before issuing the new pair
-  await supabase
-    .from('refresh_tokens')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', dbRow.id);
+  if (graceReissue) {
+    // Lost rotation response (A88 / D13): the consumed token is already revoked
+    // and the successor it points to was never received by the client. Revoke
+    // that orphan successor so the session stays single-headed, then mint a
+    // fresh pair below. No session-wide revoke — this is recovery, not a replay.
+    if (dbRow.replaced_by) {
+      await supabase
+        .from('refresh_tokens')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', dbRow.replaced_by)
+        .is('revoked_at', null);
+    }
+  } else {
+    // Normal rotation: revoke the consumed token atomically before issuing the
+    // new pair.
+    await supabase
+      .from('refresh_tokens')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', dbRow.id);
+  }
 
   const { tokenType, iat, exp, jti, ...cleanPayload } = payload;
 
@@ -854,7 +1018,7 @@ router.post('/refresh', async (req, res) => {
   const newPayload: TokenPayload = { ...cleanPayload };
   const { accessToken, refreshToken: newRefreshToken } = issueTokenPair(newPayload);
 
-  await storeRefreshToken(newRefreshToken, newPayload,
+  const newId = await storeRefreshToken(newRefreshToken, newPayload,
     req.ip ?? undefined,
     // Carry the ORIGINAL device key forward rather than re-deriving it.
     //
@@ -864,6 +1028,17 @@ router.post('/refresh', async (req, res) => {
     // not having made it, because the failure would look intermittent.
     dbRow.device_hint ?? req.headers['user-agent'] ?? undefined,
   );
+
+  // Link the consumed (or superseded, on the grace path) token to its
+  // replacement so a later presentation can tell a lost response from a replay
+  // (A88 / D13). On the grace path this re-points the chain from the orphaned
+  // successor to the fresh token.
+  if (newId) {
+    await supabase
+      .from('refresh_tokens')
+      .update({ replaced_by: newId })
+      .eq('id', dbRow.id);
+  }
 
   res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken });
 });
@@ -1013,6 +1188,17 @@ router.post('/pos-login', async (req, res) => {
   const role    = (user as any).roles;
   const isOwner = ['owner', 'admin'].includes((role?.name ?? '').toLowerCase());
 
+  // A37 — the surface that EXEMPTS a caller from the per-branch desktop licence
+  // must be earned, not asserted. /pos-login serves the web POS AND, from a
+  // misusing client, a till claiming surface:'web' to skip the licence. Honour
+  // 'web' only when the business actually holds web access — the same server
+  // check /login gates on (webAccess.ts). A caller with no web entitlement that
+  // claims 'web' is treated as a desktop till, so the licence gate below applies
+  // and pos.ts's gate (which reads this token's surface) can no longer be dodged.
+  const posWebAccess = await getWebAccess((user as any).business_id);
+  const effectiveSurface: 'web' | 'desktop' =
+    callerSurface === 'web' && posWebAccess.canLogin ? 'web' : 'desktop';
+
   let accessibleBranches: { id: string; name: string; desktop_licensed: boolean }[];
   if (isOwner || ((user as any).user_branches ?? []).length === 0) {
     const { data: allBranches } = await supabase
@@ -1034,8 +1220,10 @@ router.post('/pos-login', async (req, res) => {
       return;
     }
     // Desktop-licence gate applies to desktop tills only. A web POS login is
-    // gated by web access, not by the branch's desktop licence.
-    if (callerSurface !== 'web' && !allowed.desktop_licensed) {
+    // gated by web access, not by the branch's desktop licence. effectiveSurface
+    // (A37) is 'web' only if the business truly holds web access, so a till
+    // claiming 'web' without web entitlement lands here and is licence-checked.
+    if (effectiveSurface !== 'web' && !allowed.desktop_licensed) {
       res.status(403).json({
         error: `${allowed.name} does not have a desktop licence. Contact SwiftPOS to activate.`,
         code:  'BRANCH_NOT_LICENSED',
@@ -1118,7 +1306,7 @@ router.post('/pos-login', async (req, res) => {
     permissionKeys:     Object.entries(effectivePerms).filter(([, g]) => g).map(([k]) => k),
     permissionsVersion: pv,
     sessionId,
-    surface:            callerSurface === 'web' ? 'web' : 'desktop',
+    surface:            effectiveSurface,
   };
 
   const { accessToken, refreshToken } = issueTokenPair(tokenPayload);

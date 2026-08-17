@@ -11,6 +11,7 @@ import apiRoutes   from './routes';
 import { supabase } from './lib/supabase';
 import { checkSchema, schemaAdvice } from './lib/schemaCheck';
 import { startDailySummaryJob } from './jobs/dailySummary';
+import { reportMailReadiness }  from './lib/mailer';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 
@@ -236,6 +237,13 @@ app.listen(PORT, () => {
   // problem visible in the log rather than to gate anything. A shop's tills must
   // not fail to start over an admin-portal seed.
   void reportSeededAdmins();
+
+  // Same shape and the same reason: make a broken mail path visible at boot
+  // instead of at 18:00 UTC in a log nobody reads. Nine businesses got no daily
+  // summary for as long as anyone has been looking (A50). Never awaited, never
+  // throws — a shop must not fail to trade over an unverified mail domain.
+  void reportMailReadiness();
+
   startDailySummaryJob();
   startEtimsRetryJob();
 });

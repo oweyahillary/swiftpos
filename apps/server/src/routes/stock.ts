@@ -18,6 +18,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
+import { resolveStockNotifications } from '../jobs/lowStockChecker';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -685,6 +686,11 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
     }
     await applyProductStockIn(lines, transfer.to_branch_id, req.userId, 'transfer_in',
       `Transfer ${transfer.transfer_number} ← ${transfer.from_branch_id}`);
+    // Booking the receipt is exactly the "received in the system" event that
+    // clears a sold-beyond-stock warning at the destination (register A75).
+    void resolveStockNotifications(
+      req.businessId, transfer.to_branch_id, lines.map((l: { product_id: string }) => l.product_id),
+    );
     patch.received_by = req.userId;
     patch.received_at = now;
     if (transfer.despatched_by === req.userId) {
@@ -703,6 +709,11 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
     if (from === 'in_transit') {
       await applyProductStockIn(lines, transfer.from_branch_id, req.userId, 'transfer_in',
         `Transfer ${transfer.transfer_number} CANCELLED — returned to source`);
+      // Returning the goods restores the source's on-hand, so any alert raised
+      // there while the stock was in transit can clear too (register A75).
+      void resolveStockNotifications(
+        req.businessId, transfer.from_branch_id, lines.map((l: { product_id: string }) => l.product_id),
+      );
     }
     patch.cancelled_by  = req.userId;
     patch.cancelled_at  = now;

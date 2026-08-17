@@ -63,7 +63,19 @@ router.post('/push', async (req, res) => {
   // a diagnostic, and a till must never fail to push a day's sales because a
   // statistics column is missing or a telemetry write timed out. If migration 43
   // has not been applied this simply does nothing.
-  const deviceId = String(req.header('X-Device-Id') ?? '').slice(0, 64);
+  // A duplicated header arrives JOINED WITH A COMMA. The till sent both
+  // 'x-device-id' and 'X-Device-Id' — HTTP names are case-insensitive, so fetch
+  // emitted the pair — and the naive `.slice(0, 64)` then chopped the joined
+  // value mid-uuid. Observed in production 2026-08-09:
+  //
+  //   [fleet] no user_devices row for device
+  //     24dbc289-ee7f-42b6-8fed-6e089095b719, 24dbc289-ee7f-42b6-8fed-6e
+  //
+  // `WHERE device_id = ?` can never match that. Fixed on the till, but every
+  // till is updated by hand (D3) and one is always behind, so the server takes
+  // the first value rather than trusting the client to send one. Slicing AFTER
+  // the split, so a legitimate id is never truncated by a duplicate's length.
+  const deviceId = String(req.header('X-Device-Id') ?? '').split(',')[0].trim().slice(0, 64);
   if (deviceId) {
     void supabase
       .from('user_devices')
@@ -412,9 +424,19 @@ router.post('/push', async (req, res) => {
         return;
       }
 
-      const rows = floats
-        .filter((f: any) => ownedShiftSet.has(f.shift_id))
-        .map((f: any) => ({
+      // Per-row (mirrors shifts/days), because the till marks every float NOT in
+      // `rejected` as synced — so a float we skip silently is a cash-drawer
+      // movement marked synced and then lost (register A85 / SS1). A float whose
+      // parent shift is not present for this business gets REJECTED with
+      // `missing_shift` (its only cause is a shift rejected earlier in this same
+      // push, which the till parks as a conflict — the float joins it there,
+      // instead of vanishing). A batch upsert is also avoided so one bad row
+      // cannot fail the whole set.
+      const results = await Promise.all(floats.map(async (f: any) => {
+        if (!ownedShiftSet.has(f.shift_id)) {
+          return { id: f.id, code: 'missing_shift', error: 'parent shift not synced' };
+        }
+        const row = {
           id:         f.id,
           shift_id:   f.shift_id,
           branch_id:  f.branch_id,
@@ -423,12 +445,19 @@ router.post('/push', async (req, res) => {
           amount:     Number(f.amount),
           reason:     f.reason ?? null,
           created_at: f.created_at,
-        }));
-      if (rows.length) {
-        const { error } = await supabase.from('float_transactions').upsert(rows, { onConflict: 'id' });
-        if (error) { sendError(res, error); return; }
+        };
+        const { error } = await supabase.from('float_transactions').upsert(row, { onConflict: 'id' });
+        return { id: f.id, code: (error as { code?: string })?.code, error: error?.message };
+      }));
+      for (const r of results) {
+        if (!r.error) { upserted.floats++; continue; }
+        rejected.push({
+          id: r.id,
+          code: r.code ?? 'error',
+          table: 'float_transactions',
+          error: r.error,
+        });
       }
-      upserted.floats = rows.length;
     }
 
     // ── Expenses (business-scoped) ───────────────────────────────────────────

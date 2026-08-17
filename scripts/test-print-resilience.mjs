@@ -73,6 +73,53 @@ console.log('\n4. Interactive pickers survive re-renders');
   ok('a saved-but-unplugged printer stays selectable', PT.includes('(saved)'));
 }
 
+// ── 4b. The SAME protection, on the screen that is actually rendered ─────────
+// Section 4 above guards PrintersTab.tsx — which ManagerPage does NOT render
+// (register A43). ManagerPage:1116 renders PrinterSetupScreen for case
+// 'printers', and that screen has a <select> of its own with NO equivalent
+// guard. So the coverage above sits entirely on a screen nobody can open, and
+// deleting PrintersTab would take the only guard on this bug with it.
+//
+// These assertions are the general form of the same field bug, aimed at the
+// live screen. Written 08-10 as step 1 of A43's sequence: the coverage has to
+// exist HERE before PrintersTab can be deleted.
+console.log('\n4b. The live printer screen has the same protection');
+{
+  const PS = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/renderer/screens/PrinterSetupScreen.tsx'), 'utf8');
+
+  // The field bug in its general form: ANY component declared inside another
+  // component is a new type on every render, so React unmounts and remounts its
+  // subtree — an open <select> snaps shut under the status-dot probes, which on
+  // site read as "stuck on Microsoft Print to PDF". PrintersTab hit this by
+  // declaring PrinterPicker inline. This screen currently uses inline JSX and
+  // therefore cannot, but it is one refactor away, and the refactor is the
+  // obvious thing to do when the file grows.
+  const body = PS.slice(PS.indexOf('export default function PrinterSetupScreen'));
+  ok('no component is declared INSIDE PrinterSetupScreen',
+     !/\n  (?:function|const) [A-Z][A-Za-z]*\s*[=(]/.test(body));
+
+  // Option identity must not be positional. Keying by index means unplugging a
+  // printer renumbers every option below it and React reuses the wrong DOM node
+  // — the selection appears to jump to a different printer.
+  ok('printer options are keyed by name, not by array index',
+     /key=\{p\.name\}/.test(PS) && !/\.map\(\(p, ?i\) =>[\s\S]{0,120}key=\{i\}/.test(PS));
+
+  // A printer saved while plugged in, then unplugged, must stay settable —
+  // otherwise a manager cannot fix a mis-set target without the hardware
+  // present. PrintersTab solved this with a "(saved)" entry; this screen keeps
+  // a free-text target input beside the picker, which covers the same case.
+  ok('a target can still be set with no printer plugged in',
+     /value=\{assignment\?\.target \?\? ''\}/.test(PS),
+     'The free-text input is what makes an unplugged-but-saved printer '
+     + 'reachable. Without it the picker is the only route and it lists only '
+     + 'what Windows can see right now.');
+
+  // The picker is hidden when the machine reports no printers; the free-text
+  // input must NOT be, or that machine has no way to set a target at all.
+  ok('the free-text input is not hidden behind localPrinters.length',
+     PS.indexOf("localPrinters.length > 0") < PS.indexOf("value={assignment?.target ?? ''}"));
+}
+
 console.log('\n5. Routing edits are instant; tickets say what to make; one owner per setting');
 {
   const IH = fs.readFileSync(path.join(ROOT, 'apps/desktop/src/main/ipcHandlers.ts'), 'utf8');
@@ -168,7 +215,12 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
         .replace('export function', 'function')
         .replace('(noteLines?: string[], extraTerms?: string): string[]', '(noteLines, extraTerms)');
       const rx = TL.match(/KITCHEN_NOTE_EXCLUDE =\s*(\/[^;]+\/i);/)[1];
-      const kitchen = new Function(`const KITCHEN_NOTE_EXCLUDE = ${rx}; ${fn}; return kitchenPrepLines;`)();
+      // kitchenPrepLines word-boundaries each owner term via escapeRegex (A84);
+      // extract that helper too so the eval'd copy has the same dependency the
+      // module does, instead of a ReferenceError.
+      const esc = TL.slice(TL.indexOf('function escapeRegex'), TL.indexOf('\n}', TL.indexOf('function escapeRegex')) + 2)
+        .replace('function escapeRegex(s: string): string', 'function escapeRegex(s)');
+      const kitchen = new Function(`const KITCHEN_NOTE_EXCLUDE = ${rx}; ${esc} ${fn}; return kitchenPrepLines;`)();
       const meal = ['5pc chicken', 'cole slaw', 'popcorn', 'medium fries', 'soft drink'];
       ok('built-in rule alone: drink out, food in', kitchen(meal).length === 4);
       ok("owner adds 'coleslaw\\npopcorn': both drop, no code change",

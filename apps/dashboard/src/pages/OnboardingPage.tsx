@@ -26,8 +26,6 @@ interface FormState {
   ownerEmail: string;
   ownerPassword: string;
   ownerPasswordConfirm: string;
-  ownerPin: string;
-  ownerPinConfirm: string;
 }
 
 const BUSINESS_TYPES = [
@@ -56,17 +54,8 @@ const STEPS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function hashPin(pin: string): string {
-  // Simple deterministic hash for demo — in production use bcrypt on the server
-  return btoa(`pin:${pin}:swiftpos`);
-}
-
 function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function validatePin(pin: string) {
-  return /^\d{4}$/.test(pin);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -79,8 +68,6 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showPin, setShowPin] = useState(false);
-  const [pinEntry, setPinEntry] = useState<'pin' | 'confirm'>('pin');
 
   const [form, setForm] = useState<FormState>({
     businessName: '',
@@ -100,8 +87,6 @@ export default function OnboardingPage() {
     ownerEmail: '',
     ownerPassword: '',
     ownerPasswordConfirm: '',
-    ownerPin: '',
-    ownerPinConfirm: '',
   });
 
   const set = (field: keyof FormState, value: string) =>
@@ -123,14 +108,11 @@ export default function OnboardingPage() {
   }
 
   // ── PIN pad input ───────────────────────────────────────────────────────────
-  function handlePinKey(key: string, field: 'ownerPin' | 'ownerPinConfirm') {
-    const current = form[field];
-    if (key === '⌫') {
-      set(field, current.slice(0, -1));
-    } else if (current.length < 4 && /\d/.test(key)) {
-      set(field, current + key);
-    }
-  }
+  // Removed: the owner no longer sets a till PIN at onboarding. Email + password
+  // is the owner credential; a till PIN (if the owner ever operates a register)
+  // is set later in Settings, which hashes it with bcrypt server-side. The old
+  // onboarding PIN was stored with btoa() and could never satisfy the server's
+  // bcrypt/sha256 verifyPin, so it never worked anyway (register A77).
 
   // ── Step validation ─────────────────────────────────────────────────────────
   function step1Valid() {
@@ -149,9 +131,7 @@ export default function OnboardingPage() {
     return (
       validateEmail(form.ownerEmail) &&
       form.ownerPassword.length >= 8 &&
-      form.ownerPassword === form.ownerPasswordConfirm &&
-      validatePin(form.ownerPin) &&
-      form.ownerPin === form.ownerPinConfirm
+      form.ownerPassword === form.ownerPasswordConfirm
     );
   }
 
@@ -203,7 +183,6 @@ export default function OnboardingPage() {
         branchCity:      form.branchCity.trim(),
         branchPhone:     form.branchPhone.trim(),
         ownerEmail:      form.ownerEmail,
-        ownerPinHash:    hashPin(form.ownerPin),
         mustChangePassword: true,
       });
 
@@ -622,99 +601,6 @@ export default function OnboardingPage() {
                 )}
               </div>
 
-              {/* POS PIN */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-[#475569] uppercase tracking-wide">POS terminal PIN (4 digits)</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowPin(p => !p)}
-                    className="text-[10px] text-[#334155] hover:text-[#64748b] transition-colors"
-                  >
-                    {showPin ? 'hide digits' : 'show digits'}
-                  </button>
-                </div>
-
-                <p className="text-xs text-[#334155] -mt-2">
-                  Used to unlock the cashier screen — separate from the dashboard password.
-                </p>
-
-                {/* PIN entry toggle */}
-                <div className="flex gap-2 mb-3">
-                  {(['pin', 'confirm'] as const).map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPinEntry(p)}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                        pinEntry === p
-                          ? 'bg-[#3b82f6]/10 border-[#3b82f6]/40 text-[#93c5fd]'
-                          : 'bg-[#0f172a] border-[#1e293b] text-[#334155]'
-                      }`}
-                    >
-                      {p === 'pin' ? 'Set PIN' : 'Confirm PIN'}
-                      {p === 'pin' && form.ownerPin.length === 4 && (
-                        <span className="ml-1.5 text-[#22c55e]">✓</span>
-                      )}
-                      {p === 'confirm' && form.ownerPinConfirm.length === 4 && form.ownerPin === form.ownerPinConfirm && (
-                        <span className="ml-1.5 text-[#22c55e]">✓</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-
-                {/* PIN dot display */}
-                <div className="flex items-center justify-center gap-4 mb-4">
-                  {[0,1,2,3].map(i => {
-                    const currentPin = pinEntry === 'pin' ? form.ownerPin : form.ownerPinConfirm;
-                    const filled = i < currentPin.length;
-                    const mismatch = pinEntry === 'confirm' && form.ownerPinConfirm.length === 4 && form.ownerPin !== form.ownerPinConfirm;
-                    return (
-                      <div
-                        key={i}
-                        className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${
-                          mismatch ? 'bg-red-500 border-red-500'
-                          : filled ? 'bg-[#3b82f6] border-[#3b82f6] scale-110'
-                          : 'bg-transparent border-[#334155]'
-                        }`}
-                      >
-                        {showPin && filled && (
-                          <span className="absolute text-[8px] font-bold text-white" style={{marginLeft:3,marginTop:-1}}>
-                            {(pinEntry === 'pin' ? form.ownerPin : form.ownerPinConfirm)[i]}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* PIN pad */}
-                <div className="grid grid-cols-3 gap-2 max-w-[220px] mx-auto">
-                  {['7','8','9','4','5','6','1','2','3','','0','⌫'].map((key, i) => (
-                    key === '' ? (
-                      <div key={i} />
-                    ) : (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => handlePinKey(key, pinEntry === 'pin' ? 'ownerPin' : 'ownerPinConfirm')}
-                        className={`py-2.5 rounded-xl border text-sm font-semibold transition-all active:scale-95 ${
-                          key === '⌫'
-                            ? 'bg-[#0f172a] border-[#1e293b] text-[#475569] hover:border-[#334155]'
-                            : 'bg-[#0f172a] border-[#1e293b] text-white hover:bg-[#1e293b] hover:border-[#334155]'
-                        }`}
-                      >
-                        {key}
-                      </button>
-                    )
-                  ))}
-                </div>
-
-                {form.ownerPin.length === 4 && form.ownerPinConfirm.length === 4 && form.ownerPin !== form.ownerPinConfirm && (
-                  <p className="text-[10px] text-red-400 text-center">PINs don't match — please re-enter</p>
-                )}
-              </div>
-
               {error && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
                   <p className="text-red-400 text-sm">{error}</p>
@@ -725,7 +611,7 @@ export default function OnboardingPage() {
               <div className="flex items-start gap-2.5 px-3 py-2.5 bg-[#0f172a] border border-[#1e293b] rounded-xl">
                 <span className="text-yellow-400 text-sm mt-0.5 flex-shrink-0">⚠</span>
                 <p className="text-xs text-[#475569] leading-relaxed">
-                  Owner will be asked to <strong className="text-[#64748b] font-medium">change their password</strong> on first login. Their PIN can be updated anytime in Settings.
+                  Owner will be asked to <strong className="text-[#64748b] font-medium">change their password</strong> on first login. A till PIN — only needed if the owner rings sales at a register — can be set anytime in Settings.
                 </p>
               </div>
 

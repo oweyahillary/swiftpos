@@ -393,6 +393,71 @@ jobs:
       - name: IPC bridge parity
         run: node scripts/check-ipc-parity.mjs
 
+      # A38: syncEngine declared 'x-device-id' AND 'X-Device-Id' in one object.
+      # Header names are case-insensitive to HTTP but not to an object literal,
+      # so fetch sent both and every server reader got them comma-joined —
+      # breaking fleet telemetry, orders.device_id, shifts.device_id and the
+      # terminal key behind migration 63's one-open-drawer index. Invisible by
+      # inspection: both keys look right and TypeScript sees two distinct strings.
+      - name: Header keys are declared once
+        run: node scripts/check-header-keys.mjs
+
+      # A31: failover-cursors.test.mjs was written, committed, and never added to
+      # test:desktop — 92 tests ran on the target and the sixth suite was silently
+      # absent. A32: test-migration-47.mjs pointed at a sandbox path and had never
+      # executed once. Both looked like coverage.
+      - name: Every test file is invoked
+        run: node scripts/check-test-registration.mjs
+
+      # A comment must not cite a document that is not in the tree.
+      # BRANCH_AUTHORITY_AND_SYNC_DESIGN.md was cited BY SECTION in six source
+      # files and existed in neither the repo nor its history (A39) — and it
+      # specified most of what the register spent a week rediscovering. A
+      # citation a reader cannot follow is worse than none: it looks present.
+      #
+      # Currently FAILS on three documents the owner is restoring. Once they
+      # land this stays green, and the next dangling citation fails the build
+      # the day it is written.
+      # A47: manageFetch attached a bearer token to 35 manager-screen handlers
+      # and had no 401 branch, while ownerFetch forty lines earlier in the same
+      # file always had one. The staff access token lives 15 minutes and its
+      # refresh token 30 days, so the first manager action after idling reported
+      # "This till was signed out" on a till that was signed in. Selling was
+      # unaffected — the sync engine refreshes on its own token — which is why
+      # it looked intermittent and took a field report to find.
+      #
+      # This asserts only that expiry was CONSIDERED. Whether the retry is
+      # correct is asserted by apps/desktop/test/manage-fetch-refresh.test.mjs,
+      # which can drive the decision; a source scan claiming more would be
+      # pretending to knowledge it does not have.
+      - name: Authenticated fetches handle 401
+        run: node scripts/check-auth-retry.mjs
+
+      # A50: daily summaries were never delivered — nine businesses, every run,
+      # both observed days. The SMTP fallback died as ENETUNREACH on Google's
+      # IPv6 because the transport set no address family. Silent, because
+      # dailySummary catches per business and moves on. This pins the IPv4
+      # setting against a real nodemailer transport, and pins the boot check
+      # that makes a dead mail path announce itself.
+      - name: Mailer transport and boot readiness
+        run: node --no-warnings tests/mailer-transport.test.mjs
+
+      - name: Cited documents exist
+        run: node scripts/check-doc-refs.mjs
+
+      # A45: the Receipt tab was shown on isManagerRole while the cloud demanded
+      # settings.manage. Ratcheted, not pass/fail — the ground is not green yet
+      # (6 unregistered, 6 ungated, 2 phantom) and a gate nobody can make green
+      # gets switched off. See scripts/permission-parity-baseline.json.
+      - name: Permission keys agree across cloud, migrations and UI
+        run: node scripts/check-permission-parity.mjs
+
+      # A60: nine audit IDs had two entries with contradictory statuses, and the
+      # header claimed 0 P0 while A17 sat OPEN at P0. Also ratchets A53's orphan
+      # audit-ID citations, which may shrink and may never grow.
+      - name: Register agrees with itself
+        run: node scripts/check-register-consistency.mjs
+
       # ── Desktop suites that do NOT need Electron ────────────────────────────
       # 92 desktop tests were added on 2026-08-08 and none of them ran here, so
       # the newest and riskiest code on the till — offline sign-in, credentials
@@ -446,3 +511,37 @@ jobs:
       - name: Desktop failover cursors (stand-in driver)
         working-directory: apps/desktop
         run: node --no-warnings test/failover-cursors.test.mjs
+
+      # manageFetch serves 35 manager-screen handlers and had no 401 branch,
+      # while ownerFetch in the same file always had one. The staff access token
+      # lives 15 minutes, so the first manager action after idling reported
+      # "This till was signed out" on a till that was signed in. Field report,
+      # 0.5.27. Plain node — no Electron, no SQLite.
+      - name: Desktop manager-screen token refresh
+        working-directory: apps/desktop
+        run: node --no-warnings test/manage-fetch-refresh.test.mjs
+
+      # The receipt closing block — thank-you, TAX RECEIPT, credit. It lived
+      # only in the HTML receipt, which 0.5.27 deleted (D8), so both lines
+      # vanished from the paper a customer is handed. Drives the real renderer
+      # at both paper widths.
+      # A51: syncAll ran every 10 minutes against a 15-minute token with purely
+      # reactive refresh, so every SECOND catalogue pull 401'd by construction —
+      # ~72 refresh rotations a day and a till log in which a real auth failure
+      # was indistinguishable from noise. Scoped to the DEVICE token: refreshing
+      # the staff token ahead of time would mask A47's field test.
+      - name: Device token proactive refresh
+        working-directory: apps/desktop
+        run: node --no-warnings test/device-token-refresh.test.mjs
+
+      # A52: the idle lock. OS idle (powerMonitor) rather than renderer activity,
+      # so it cannot fire mid-sale by construction. Asserts the curtain never
+      # clears the cart or the session, that unlock is the PIN pad and not the
+      # owner login (A17), and that only the locked staff member can dismiss it.
+      - name: Idle lock
+        working-directory: apps/desktop
+        run: node --no-warnings test/idle-lock.test.mjs
+
+      - name: Receipt closing block
+        working-directory: shared/printing
+        run: npm test

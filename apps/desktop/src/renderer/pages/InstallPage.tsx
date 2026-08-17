@@ -51,15 +51,21 @@ export default function InstallPage({ onComplete }: Props) {
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null);
 
-  // ── Step 2: activation (owner sign-in confirms the business online) ──
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // ── Step 2: activation (a single-use enrolment code provisions the till) ──
+  // D4/D1: the business is chosen by its ID and authorised by a one-time code the
+  // owner issues in the portal — no owner login on the terminal, and a
+  // two-business owner is no longer a dead end.
+  const [businessIdInput, setBusinessIdInput] = useState('');
+  const [enrolCode, setEnrolCode] = useState('');
   const [activating, setActivating] = useState(false);
   const [businessName, setBusinessName] = useState('');
   const [branches, setBranches] = useState<Branch[]>([]);
 
   // ── Step 3: bind branch + role ──
   const [branchId, setBranchId] = useState('');
+  // A69: admin-issued codes are branch-bound. When the code carried a branch, we
+  // LOCK it here — the installer confirms placement, they don't get to change it.
+  const [branchLocked, setBranchLocked] = useState(false);
   const [role, setRole] = useState<DeviceRole>('till');
   // is typed in from the branch server's screen.
   const [nodeSecret, setNodeSecret] = useState('');
@@ -159,22 +165,27 @@ export default function InstallPage({ onComplete }: Props) {
     }
   };
 
-  // Step 2: owner signs in ONLINE — confirms the business is real before we bind
-  // the install to one of its branches. Uses desktop-login (no web-access gate),
-  // so offline-only businesses activate too.
+  // Step 2: redeem a single-use enrolment code ONLINE — confirms the business is
+  // real and provisions a device session before we bind the install to a branch.
+  // Uses /enrol/redeem (no owner credentials, no web-access gate), so an
+  // offline-only business activates too.
   const activate = async () => {
-    if (!email.trim() || !password) { setError('Enter the owner email and password'); return; }
+    if (!businessIdInput.trim() || !enrolCode.trim()) { setError('Enter the business ID and the enrolment code'); return; }
     setActivating(true); setError('');
     try {
-      const { business } = await posApi.auth.login(email.trim(), password);
+      const { business, branchId: boundBranch } =
+        await posApi.auth.redeemEnrolment(businessIdInput.trim(), enrolCode.trim());
       setBusinessName(business?.name ?? '');
       const list = await posApi.auth.listBranches();
       setBranches(list.map(b => ({ id: b.id, name: b.name })));
-      if (list.length) setBranchId(list[0].id);
+      // If the code was issued bound to a branch, pre-select AND lock it (A69);
+      // else fall back to a picker (legacy/unbound codes).
+      if (boundBranch && list.some(b => b.id === boundBranch)) { setBranchId(boundBranch); setBranchLocked(true); }
+      else if (list.length) { setBranchId(list[0].id); setBranchLocked(false); }
       if (business?.type) setBusinessType(business.type);
       setStep('bind');
     } catch (err: any) {
-      setError(err?.message ?? 'Activation failed — check the owner credentials and connection.');
+      setError(err?.message ?? 'Enrolment failed — check the business ID, the code, and the connection.');
     } finally {
       setActivating(false);
     }
@@ -311,19 +322,20 @@ export default function InstallPage({ onComplete }: Props) {
               <div>
                 <p className="text-sm text-gray-300 font-medium">Activate this device</p>
                 <p className="text-xs text-gray-300 mt-1">
-                  Sign in once with the owner account to confirm the business and load its branches.
+                  Enter the business ID and the one-time enrolment code from the owner portal.
                   Requires internet for this step only.
                 </p>
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Owner email</label>
-                <input type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)}
-                  placeholder="owner@business.com" className={inputCls} />
+                <label className="block text-sm text-gray-400 mb-1.5">Business ID</label>
+                <input type="text" value={businessIdInput} autoFocus onChange={e => setBusinessIdInput(e.target.value)}
+                  placeholder="e.g. 3f9a…" className={inputCls} />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Owner password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && activate()} placeholder="••••••••" className={inputCls} />
+                <label className="block text-sm text-gray-400 mb-1.5">Enrolment code</label>
+                <input type="text" value={enrolCode} onChange={e => setEnrolCode(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && activate()} placeholder="ABCD23WXYZ"
+                  autoCapitalize="characters" className={inputCls} />
               </div>
               {error && <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2.5">{error}</p>}
               <div className="flex gap-3">
@@ -347,11 +359,16 @@ export default function InstallPage({ onComplete }: Props) {
               )}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Branch</label>
-                <select value={branchId} onChange={e => setBranchId(e.target.value)} className={inputCls}>
+                <select value={branchId} onChange={e => setBranchId(e.target.value)} disabled={branchLocked}
+                  className={`${inputCls}${branchLocked ? ' opacity-70 cursor-not-allowed' : ''}`}>
                   {branches.length === 0 && <option value="">No branches found</option>}
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
-                <p className="text-xs text-gray-400 mt-1.5">This device is bound to one branch. All its sales belong here.</p>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {branchLocked
+                    ? 'Set by the enrolment code — this device belongs to this branch. All its sales belong here.'
+                    : 'This device is bound to one branch. All its sales belong here.'}
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Device role</label>

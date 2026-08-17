@@ -54,6 +54,7 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/categories', label: 'Categories', icon: '◈' },
       { to: '/dashboard/products',   label: 'Products',   icon: '⊞' },
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: '🏷️' },
+      { to: '/dashboard/payment-methods', label: 'Payment methods', icon: '💳' },
       { to: '/dashboard/promotions', label: 'Promotions',   icon: '🎉' },
       { to: '/dashboard/combos',     label: 'Combo Meals',  icon: '🍱', verticals: FOOD_VERTICALS },
     ],
@@ -180,6 +181,10 @@ export default function DashboardLayout() {
       { to: '/dashboard/branches', label: 'Branches',         icon: '🏪' },
       { to: '/dashboard/printers', label: 'Printers',         icon: '🖨️' },
       { to: '/dashboard/stations', label: 'Print stations',   icon: '🍳' },
+      // Fleet health. Under Setup because it is estate management, not cash. A73:
+      // the static group above has always had this; the dynamic rebuild that
+      // replaces it dropped it, so the page was built + routed but unreachable.
+      { to: '/dashboard/terminals', label: 'Terminals',        icon: '🖥️' },
       { to: '/dashboard/turnover', label: 'Table Turnover',   icon: '⏱️', verticals: FOOD_VERTICALS },
       { to: '/dashboard/settings/etims', label: 'KRA eTIMS',        icon: '🧾' },
       { to: '/dashboard/settings', label: 'Staff Management', icon: '👥', end: true },

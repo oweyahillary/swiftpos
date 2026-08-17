@@ -1,8 +1,12 @@
 /**
  * PrinterSetupScreen — one screen for the whole print setup.
  *
- * Replaces PrinterSettingsModal, PaperWidthControl, PrintersTab and PrintersPage.
- * Setup was spread across three screens in two apps, which is part of why
+ * Supersedes PrintersTab (the old manager Printers tab, now unrouted). It does
+ * NOT replace PrinterSettingsModal or PaperWidthControl: both are still live on
+ * the POS screen (POSPage.tsx imports PrinterSettingsModal, which renders
+ * PaperWidthControl). An earlier docstring claimed to replace all four, which is
+ * how a still-live component gets deleted by the next reader (register A10).
+ * Setup used to be spread across screens in two apps, which is part of why
  * getting a receipt right meant printing a test, walking to the machine,
  * reading it, and coming back to guess again.
  *
@@ -162,11 +166,19 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
               className="mt-0.5 accent-green-500"
             />
             <span className="text-xs leading-relaxed">
-              <span className="block text-gray-200">Print receipts through these printers</span>
-              <span className="block text-gray-500">
+              <span className="block text-gray-200">Print through these printers</span>
+              {/*
+                0.5.27 — this text said "Off. Sales still print the old way;
+                nothing on this screen affects them yet." That was true while the
+                HTML fallback existed. It does not any more: OFF now means
+                NOTHING PRINTS. A label that reassures while the kitchen receives
+                nothing is the worst kind of wrong, so the off state is styled and
+                worded as the warning it now is.
+              */}
+              <span className={thermalOn ? 'block text-gray-500' : 'block text-amber-400'}>
                 {thermalOn
                   ? 'On. Sales on this terminal print here.'
-                  : 'Off. Sales still print the old way; nothing on this screen affects them yet.'}
+                  : 'OFF — nothing will print. Turn this on before trading.'}
               </span>
             </span>
           </label>

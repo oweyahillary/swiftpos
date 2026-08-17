@@ -1,0 +1,59 @@
+# Applies pending DB migrations to PRODUCTION when they land on main.
+#
+# ── ONE-TIME SETUP (repo Settings) ───────────────────────────────────────────
+# 1. Settings → Environments → New environment: "production".
+#      • Add "Required reviewers" → yourself/your team. THIS is the manual gate:
+#        the job pauses and waits for a click before anything touches prod.
+#      • (optional) restrict to the `main` branch.
+# 2. In that same "production" environment, add a secret:
+#      • DATABASE_URL  = the prod SESSION-pooler string (port 5432), e.g.
+#        postgresql://postgres.<ref>:PW@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+#    Scoping the secret to the environment means it is only readable after the
+#    reviewer approves — code on a branch can't exfiltrate it.
+#
+# Nothing here can DROP or reset: it runs scripts/migrate.mjs, which has no
+# baseline/reset path and refuses an uninitialised database.
+
+name: DB migrate (production)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'migrations/**'
+      - 'scripts/migrate.mjs'
+      - '.github/workflows/db-migrate-prod.yml'
+  workflow_dispatch: {}   # allows a manual re-run from the Actions tab
+
+# Never cancel a migration mid-flight; queue instead.
+concurrency:
+  group: db-migrate-prod
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: production          # ← the approval gate + scoped DATABASE_URL live here
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      MIGRATE_ENV: production
+      GIT_SHA: ${{ github.sha }}
+      TRIGGERED_BY: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Plan (what would apply)
+        run: node scripts/migrate.mjs --plan
+
+      - name: Apply pending migrations
+        run: node scripts/migrate.mjs
+
+      - name: Verify schema matches the codebase
+        run: node scripts/verify-db-schema.mjs

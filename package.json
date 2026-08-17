@@ -9,7 +9,10 @@
     "install:all": "cd apps/server && npm install && cd ../dashboard && npm install",
     "package": "git archive --format=zip HEAD -o pos.zip",
     "package:check": "node scripts/check-package.mjs",
-    "test:migrations": "node scripts/run-migration-tests.mjs"
+    "test:migrations": "node scripts/run-migration-tests.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate:plan": "node scripts/migrate.mjs --plan",
+    "db:verify": "node scripts/verify-db-schema.mjs"
   },
   "engines": {
     "node": ">=20"

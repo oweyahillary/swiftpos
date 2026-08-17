@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import authRoutes          from './auth';
+import enrolRoutes         from './enrol';
 import businessRoutes      from './business';
 import onboardingRoutes    from './onboarding';
 import categoriesRoutes    from './categories';
@@ -21,6 +22,7 @@ import creditRoutes        from './credit';
 import notificationsRoutes from './notifications';
 import branchesRoutes      from './branches';
 import discountsRoutes     from './discounts';
+import paymentMethodsRoutes from './payment-methods';
 import promotionsRoutes    from './promotions';
 import flagsRoutes         from './flags';
 import tablesRoutes        from './tables';
@@ -46,8 +48,10 @@ import branchPricesRoutes  from './branch-prices';
 const router = Router();
 
 router.use('/auth',           authRoutes);
+router.use('/enrol',          enrolRoutes);
 router.use('/branches',       branchesRoutes);
 router.use('/discounts',      discountsRoutes);
+router.use('/payment-methods', paymentMethodsRoutes);
 router.use('/promotions',     promotionsRoutes);
 router.use('/combos',         combosRoutes);
 router.use('/reservations',   reservationsRoutes);

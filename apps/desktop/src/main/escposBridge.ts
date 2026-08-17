@@ -28,7 +28,7 @@
  * able to take the counter down.
  */
 import { getLocalDb } from './localDb';
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig } from './deviceConfig';
 import { queueTickets } from './print/printWorker';
 import type { PrintContext, StationConfig, OrderLine, OrderUnit, UnitAttribute,
   PaymentLeg, OrderType } from '@swiftpos/printing';
@@ -215,15 +215,67 @@ export function describeFromText(text: string | null | undefined): string[] {
  * and "1L soda" without catching "Sodalite Special". A multi-word entry like
  * "cole slaw" is matched as a phrase.
  */
-function kitchenExclusions(): string[] {
+function parseTerms(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw) return [];
   try {
-    const raw = (getDeviceConfig() as any)?.kitchen_exclusions;
-    if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
   } catch {
     return [];
   }
+}
+
+/**
+ * The exclusion list this terminal's printer actually applies.
+ *
+ * "Local is final": a per-terminal override wins when one is set, and the synced
+ * cloud baseline is used otherwise. The override is stored separately from the
+ * baseline (device_config.kitchen_exclusions_override vs .kitchen_exclusions),
+ * so the cloud default can keep updating underneath a local edit without ever
+ * overwriting it. A NULL override — not merely an empty one — means "follow the
+ * cloud"; an empty-but-present override means "this terminal excludes nothing,
+ * and means it," which is a different, deliberate state.
+ */
+export function kitchenExclusions(): string[] {
+  const cfg = getDeviceConfig() as any;
+  if (cfg?.kitchen_exclusions_override != null) return parseTerms(cfg.kitchen_exclusions_override);
+  return parseTerms(cfg?.kitchen_exclusions);
+}
+
+/** Effective list plus where it came from, for the setup screen. */
+export function kitchenExclusionsState(): { terms: string[]; source: 'local' | 'cloud'; cloudTerms: string[] } {
+  const cfg = getDeviceConfig() as any;
+  const overridden = cfg?.kitchen_exclusions_override != null;
+  const cloudTerms = parseTerms(cfg?.kitchen_exclusions);
+  return {
+    terms: overridden ? parseTerms(cfg.kitchen_exclusions_override) : cloudTerms,
+    source: overridden ? 'local' : 'cloud',
+    cloudTerms,
+  };
+}
+
+/**
+ * Set this terminal's local override — the "final" list. Available on any till,
+ * cloud or local: a cloud-connected terminal can still override the business
+ * default for its own printer. Stored as a JSON array (blanks dropped) so it is
+ * byte-compatible with the cloud baseline and the reader above.
+ */
+export function setKitchenExclusions(terms: string[]): string[] {
+  const cleaned = (Array.isArray(terms) ? terms : [])
+    .map(t => String(t).trim())
+    .filter(Boolean);
+  saveDeviceConfig({ kitchen_exclusions_override: JSON.stringify(cleaned) });
+  return cleaned;
+}
+
+/**
+ * Drop the local override and follow the cloud baseline again. Writing NULL,
+ * not an empty array, is the whole point: empty would mean "exclude nothing,
+ * finally"; NULL means "I no longer have an opinion — defer to the dashboard."
+ */
+export function clearKitchenExclusionsOverride(): string[] {
+  saveDeviceConfig({ kitchen_exclusions_override: null });
+  return parseTerms((getDeviceConfig() as any)?.kitchen_exclusions);
 }
 
 export function isExcludedFromKitchen(name: string, exclusions: string[]): boolean {

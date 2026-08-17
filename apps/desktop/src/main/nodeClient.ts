@@ -289,3 +289,38 @@ export async function probeNode(url: string, timeoutMs = 4000): Promise<{ ok: bo
     clearTimeout(t);
   }
 }
+
+/** Result of asking the node to verify a cashier's PIN (PHASE5 §4d / A17).
+ *  'ok' and 'rejected' are both ANSWERS — a rejection is final and the caller
+ *  must NOT fall back to another authority. 'transport' means the node could not
+ *  be reached (or cannot read its roster), and only then does the caller fall
+ *  through to the cloud. */
+export type NodePinResult =
+  | { status: 'ok'; staff: { staffId: string; name: string; roleName: string | null; permissions: unknown } }
+  | { status: 'rejected'; message: string }
+  | { status: 'transport' };
+
+export async function verifyPinAtNodeClient(pin: string, branchId: string, timeoutMs = 3000): Promise<NodePinResult> {
+  const base = nodeUrl();
+  if (!base) return { status: 'transport' };   // no node configured → treat as unreachable
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/verify-pin`, {
+      method:  'POST',
+      signal:  ctrl.signal,
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body:    JSON.stringify({ pin, branch_id: branchId }),
+    });
+    // 503 = the node cannot read its own roster: transport-like, retry elsewhere.
+    if (res.status === 503) return { status: 'transport' };
+    const data = await res.json().catch(() => ({} as any));
+    if (res.ok && data?.ok) return { status: 'ok', staff: data.staff };
+    // Any other answer (401 bad/ambiguous PIN) is FINAL.
+    return { status: 'rejected', message: data?.error ?? 'Invalid PIN' };
+  } catch {
+    return { status: 'transport' };   // unreachable → fall through to cloud
+  } finally {
+    clearTimeout(t);
+  }
+}

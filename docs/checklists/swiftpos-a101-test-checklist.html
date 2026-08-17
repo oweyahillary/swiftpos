@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftPOS — A101 Offline-Auth Hardware Test</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --line:#1e2a36;
+    --text:#e6edf3; --muted:#8aa0b2; --dim:#5f7385;
+    --green:#22c55e; --greendim:#16351f; --amber:#f59e0b; --red:#ef4444; --sky:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:24px 16px 64px}
+  .wrap{max-width:820px;margin:0 auto}
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  h1{font-size:20px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:13px}
+  .badge{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .progress{margin:18px 0 6px;height:8px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .progress > i{display:block;height:100%;width:0;background:var(--green);transition:width .25s}
+  .progresslabel{color:var(--muted);font-size:12px;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:14px 0}
+  .card h2{font-size:15px;margin:0 0 4px}
+  .card .meta{color:var(--dim);font-size:12px;margin-bottom:10px}
+  ul.steps{margin:8px 0 0;padding-left:18px}
+  ul.steps li{margin:4px 0}
+  .expect{margin-top:10px;padding:10px 12px;border-left:3px solid var(--sky);background:var(--panel2);border-radius:0 8px 8px 0;font-size:14px}
+  .expect b{color:var(--sky);font-weight:600}
+  label.chk{display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin:6px 0}
+  label.chk input{margin-top:3px;width:16px;height:16px;accent-color:var(--green)}
+  .verdict{display:flex;gap:8px;margin-top:12px}
+  .verdict button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+    border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:600}
+  .verdict button.pass.on{background:var(--greendim);border-color:var(--green);color:var(--green)}
+  .verdict button.fail.on{background:#3a1618;border-color:var(--red);color:#fca5a5}
+  textarea{width:100%;margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    color:var(--text);padding:8px 10px;font:13px/1.5 inherit;resize:vertical;min-height:38px}
+  textarea::placeholder{color:var(--dim)}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;
+    background:var(--greendim);color:var(--green);font-size:12px;font-weight:700;margin-right:8px;vertical-align:middle}
+  .setup .num{background:#20272f;color:var(--muted)}
+  .bar{position:sticky;bottom:0;margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;
+    background:linear-gradient(transparent,var(--bg) 40%);padding-top:16px}
+  .bar button{border:0;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+  .bar .primary{background:var(--green);color:#04140a}
+  .bar .ghost{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+  .note{color:var(--dim);font-size:12px;margin-top:8px}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12.5px;color:#cbd5e1}
+  .warn{border-left-color:var(--amber)}
+  .warn b{color:var(--amber)}
+  #copied{color:var(--green);font-size:13px;align-self:center;opacity:0;transition:opacity .2s}
+  #copied.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>SwiftPOS — Offline-Auth Hardware Test</h1>
+      <div class="sub">Slice A101 (PHASE5) · node → cloud → cache · no time-bomb expiry</div>
+    </div>
+    <div class="badge">dev flavour · two tills</div>
+  </header>
+
+  <div class="progress"><i id="bar"></i></div>
+  <div class="progresslabel" id="barlabel">0 of 5 tests recorded</div>
+
+  <div class="card setup">
+    <h2>Setup — do this first</h2>
+    <div class="meta">The node only learns the staff roster on a sync, so step 3 is not optional.</div>
+    <label class="chk"><input type="checkbox" data-k="s1"><span><span class="num">1</span>Build the <b>dev</b> flavour on <b>both</b> tills: <code>cd apps/desktop &amp;&amp; npm run pack:dev</code></span></label>
+    <label class="chk"><input type="checkbox" data-k="s2"><span><span class="num">2</span>Enrol one till as the <b>node</b> (role <code>node</code>); enrol the other as a <b>peer</b> pointed at the node's URL + branch secret.</span></label>
+    <label class="chk"><input type="checkbox" data-k="s3"><span><span class="num">3</span>With <b>both online</b>, let them sync once — so the node pulls the roster (<code>GET /api/pos/branch-staff</code>).</span></label>
+    <label class="chk"><input type="checkbox" data-k="s4"><span><span class="num">4</span>Open the peer's log so you can watch the <code>pin</code> lines during the tests.</span></label>
+  </div>
+
+  <div class="card" data-test="1">
+    <h2><span class="num">1</span>Node is the first authority</h2>
+    <div class="meta">Both tills online.</div>
+    <ul class="steps"><li>Sign in on the <b>peer</b> with a valid PIN.</li></ul>
+    <div class="expect"><b>Expect:</b> signs in, and the peer log shows <code>node sign-in: &lt;name&gt;</code> (it went to the node, not the cloud).</div>
+    <div class="verdict"><button class="pass">Pass</button><button class="fail">Fail</button></div>
+    <textarea placeholder="Notes / what the log showed…"></textarea>
+  </div>
+
+  <div class="card" data-test="2">
+    <h2><span class="num">2</span>Cloud down, node up — the core fix</h2>
+    <div class="meta">Unplug the peer's internet (or block the cloud). Keep the node on the LAN.</div>
+    <ul class="steps"><li>Sign in on the <b>peer</b>.</li></ul>
+    <div class="expect"><b>Expect:</b> <b>still works</b>, via the node. This is the day-15 lockout, closed.</div>
+    <div class="verdict"><button class="pass">Pass</button><button class="fail">Fail</button></div>
+    <textarea placeholder="Notes…"></textarea>
+  </div>
+
+  <div class="card" data-test="3">
+    <h2><span class="num">3</span>A rejection is final — no cable-unplug backdoor</h2>
+    <div class="meta">Node up.</div>
+    <ul class="steps"><li>On the peer, enter a <b>wrong PIN</b>.</li></ul>
+    <div class="expect"><b>Expect:</b> <b>immediate "Invalid PIN"</b> — it must NOT pause and then fall through to cloud/cache.</div>
+    <div class="verdict"><button class="pass">Pass</button><button class="fail">Fail</button></div>
+    <textarea placeholder="Notes…"></textarea>
+  </div>
+
+  <div class="card" data-test="4">
+    <h2><span class="num">4</span>No time bomb — the offline door never expires</h2>
+    <div class="meta">Kill <b>both</b> node and cloud (peer fully isolated).</div>
+    <ul class="steps">
+      <li>Sign in with a cashier who has signed in on this peer before → works from cache.</li>
+      <li>Set the peer's clock forward <b>30+ days</b> and sign in again.</li>
+    </ul>
+    <div class="expect"><b>Expect:</b> <b>still works</b> — a node-configured till does not time-expire. (A standalone till with no node still expires at 14 days; that's intended.)</div>
+    <div class="verdict"><button class="pass">Pass</button><button class="fail">Fail</button></div>
+    <textarea placeholder="Notes…"></textarea>
+  </div>
+
+  <div class="card" data-test="5">
+    <h2><span class="num">5</span>Revocation still works through the node</h2>
+    <div class="meta">Requires the dashboard.</div>
+    <ul class="steps">
+      <li><b>Deactivate a cashier</b> on the dashboard.</li>
+      <li>Let the <b>node</b> sync once (re-pulls the roster).</li>
+      <li>With the <b>cloud unreachable</b> on the peer, try that cashier on the peer.</li>
+    </ul>
+    <div class="expect"><b>Expect:</b> <b>refused</b> — the node's roster no longer has them, so LAN revocation works offline.</div>
+    <div class="verdict"><button class="pass">Pass</button><button class="fail">Fail</button></div>
+    <textarea placeholder="Notes…"></textarea>
+  </div>
+
+  <div class="card warn">
+    <h2>Regression sanity — the important negative</h2>
+    <div class="expect warn"><b>Also confirm:</b> a till with <b>no node</b> configured still does cloud → cache exactly as before, and your normal online sign-in on both tills is unchanged. A101 must not alter the single-till path.</div>
+    <label class="chk"><input type="checkbox" data-k="reg1"><span>Standalone / online sign-in unchanged.</span></label>
+  </div>
+
+  <div class="bar">
+    <button class="primary" onclick="copyResults()">Copy results</button>
+    <button class="ghost" onclick="resetAll()">Reset</button>
+    <span id="copied">Copied — paste it back to Claude</span>
+  </div>
+  <div class="note">Progress is saved in this browser. “Copy results” puts a plain-text summary on your clipboard to paste back for sign-off. A19 (the node→cloud sales relay) stays blocked until tests 1–5 pass.</div>
+</div>
+
+<script>
+  const KEY = 'swiftpos_a101_test_v1';
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
+
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} render(); }
+
+  // Restore + wire checkboxes
+  document.querySelectorAll('input[type=checkbox][data-k]').forEach(cb=>{
+    const k = cb.dataset.k;
+    cb.checked = !!state[k];
+    cb.addEventListener('change', ()=>{ state[k]=cb.checked; save(); });
+  });
+
+  // Restore + wire verdicts and notes per test
+  document.querySelectorAll('.card[data-test]').forEach(card=>{
+    const id = card.dataset.test;
+    const v = state['t'+id] || {};
+    const passB = card.querySelector('.pass'), failB = card.querySelector('.fail'), ta = card.querySelector('textarea');
+    if(v.verdict==='pass') passB.classList.add('on');
+    if(v.verdict==='fail') failB.classList.add('on');
+    if(v.notes) ta.value = v.notes;
+    passB.addEventListener('click', ()=>{ setV(id, v.verdict==='pass'?null:'pass'); });
+    failB.addEventListener('click', ()=>{ setV(id, v.verdict==='fail'?null:'fail'); });
+    ta.addEventListener('input', ()=>{ const cur = state['t'+id]||{}; cur.notes = ta.value; state['t'+id]=cur; save(); });
+  });
+
+  function setV(id, verdict){
+    const cur = state['t'+id]||{}; cur.verdict = verdict; state['t'+id]=cur; save();
+    const card = document.querySelector('.card[data-test="'+id+'"]');
+    card.querySelector('.pass').classList.toggle('on', verdict==='pass');
+    card.querySelector('.fail').classList.toggle('on', verdict==='fail');
+  }
+
+  function render(){
+    let recorded=0, passed=0;
+    for(let i=1;i<=5;i++){ const v=(state['t'+i]||{}).verdict; if(v){recorded++; if(v==='pass')passed++;} }
+    document.getElementById('bar').style.width = (recorded/5*100)+'%';
+    document.getElementById('bar').style.background = (recorded===5 && passed===5) ? 'var(--green)' : (recorded && passed<recorded ? 'var(--amber)' : 'var(--green)');
+    document.getElementById('barlabel').textContent = recorded+' of 5 tests recorded'+(recorded?(' · '+passed+' passed'):'');
+  }
+
+  function copyResults(){
+    const lines = ['SwiftPOS A101 offline-auth test — results', ''];
+    const names = {1:'Node is first authority',2:'Cloud down, node up',3:'Rejection is final',4:'No time-bomb expiry',5:'Revocation via node'};
+    for(let i=1;i<=5;i++){
+      const v = state['t'+i]||{};
+      const mark = v.verdict==='pass'?'PASS':v.verdict==='fail'?'FAIL':'— (not run)';
+      lines.push(i+'. '+names[i]+': '+mark + (v.notes? ('  ['+v.notes.replace(/\s+/g,' ').trim()+']'):''));
+    }
+    lines.push('', 'Regression (standalone/online unchanged): '+(state.reg1?'confirmed':'not confirmed'));
+    const txt = lines.join('\n');
+    navigator.clipboard.writeText(txt).then(()=>{
+      const c=document.getElementById('copied'); c.classList.add('show'); setTimeout(()=>c.classList.remove('show'),2200);
+    }, ()=>{ window.prompt('Copy the results below:', txt); });
+  }
+
+  function resetAll(){ if(confirm('Clear all checks and notes?')){ state={}; save();
+    document.querySelectorAll('input[type=checkbox][data-k]').forEach(cb=>cb.checked=false);
+    document.querySelectorAll('.card[data-test]').forEach(card=>{card.querySelector('.pass').classList.remove('on');card.querySelector('.fail').classList.remove('on');card.querySelector('textarea').value='';});
+  } }
+
+  render();
+</script>
+</body>
+</html>

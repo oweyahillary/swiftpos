@@ -13,7 +13,7 @@ import type { DraftLeg, LegMethod } from '../lib/payment';
 export type { LegMethod };
 
 export interface PaymentLeg {
-  method: LegMethod;
+  method: string;
   amount: number;
   amount_tendered: number;
   change_given: number;
@@ -42,6 +42,9 @@ interface Props {
   currency: string;
   placing: boolean;
   error: string;
+  // Custom tenders beyond the built-ins (A96), cached from the last pull so they
+  // work offline. Rendered as extra method buttons; all are non-cash.
+  customMethods?: { code: string; name: string }[];
   onConfirm: (result: PaymentResult) => void;
   onClose: () => void;
 }
@@ -56,7 +59,7 @@ const METHOD_META: Record<LegMethod, { label: string; icon: string }> = {
   glovo: { label: 'Glovo',  icon: '🛵' },
 };
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], onConfirm, onClose }: Props) {
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
@@ -117,7 +120,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
         amount: l.resolvedAmount,
         amount_tendered: l.method === 'cash' ? l.resolvedTendered : l.resolvedAmount,
         change_given: l.method === 'cash' ? l.change : 0,
-        reference: l.method === 'mpesa' || l.method === 'card' || l.method === 'glovo' ? (l.reference || null) : null,
+        reference: l.method !== 'cash' ? (l.reference || null) : null,
       })),
     });
   };
@@ -217,13 +220,16 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
             <div key={i} className="bg-gray-800/40 border border-gray-800 rounded-xl p-3 space-y-3">
               <div className="flex items-center gap-2">
                 <div className="grid grid-cols-3 gap-1.5 flex-1">
-                  {(Object.keys(METHOD_META) as LegMethod[]).map(m => (
+                  {[
+                    ...(Object.keys(METHOD_META) as LegMethod[]).map(m => ({ code: m as string, label: METHOD_META[m].label, icon: METHOD_META[m].icon })),
+                    ...customMethods.map(cm => ({ code: cm.code, label: cm.name, icon: '🏦' })),
+                  ].map(m => (
                     <button
-                      key={m}
-                      onClick={() => setLeg(i, { method: m })}
-                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
+                      key={m.code}
+                      onClick={() => setLeg(i, { method: m.code })}
+                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
                     >
-                      {METHOD_META[m].icon} {METHOD_META[m].label}
+                      {m.icon} {m.label}
                     </button>
                   ))}
                 </div>

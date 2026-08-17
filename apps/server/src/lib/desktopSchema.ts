@@ -34,7 +34,13 @@
  * replicating — so the peer would re-offer its whole history every pass and the
  * node would refuse it every pass.
  */
-export const REQUIRED_DESKTOP_SCHEMA = 51;
+/**
+ * Schema 52 = per-terminal `kitchen_exclusions_override` (A66). Local-only, but
+ * REQUIRED moves with LOCAL_SCHEMA_VERSION by convention (the test enforces
+ * equality) so the "behind" check stays meaningful; a till on 51 keeps trading
+ * and syncing and is merely shown as behind until it takes the A66 build.
+ */
+export const REQUIRED_DESKTOP_SCHEMA = 52;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

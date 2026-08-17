@@ -76,6 +76,16 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
 
   useEffect(() => { void load(); }, [load]);
 
+  const seedDefaults = async () => {
+    setBusy('seed');
+    try {
+      await posApi.manage.seedDefaultStations();
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not create the default stations');
+    } finally { setBusy(''); }
+  };
+
   const addStation = async () => {
     const name = newName.trim();
     if (!name) return;
@@ -155,10 +165,25 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : stations.length === 0 ? (
-        <div className="border border-gray-700 rounded-lg p-6 text-center">
+        <div className="border border-gray-700 rounded-lg p-6 text-center space-y-3">
           <p className="text-sm text-gray-400">
-            No stations yet. Create one below — typically Kitchen and Packing.
+            No stations yet. Set up the usual three in one step, or create your own below.
           </p>
+          {canEdit && (
+            <>
+              <button
+                onClick={seedDefaults}
+                disabled={busy === 'seed'}
+                className="bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                {busy === 'seed' ? 'Creating…' : 'Create default stations'}
+              </button>
+              <p className="text-xs text-gray-600">
+                Creates Kitchen, Packing and Till, and routes every category — cooked ones to
+                Kitchen, all of them to Packing — so nothing prints nowhere. Adjust anytime.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

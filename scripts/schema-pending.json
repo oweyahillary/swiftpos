@@ -1,0 +1,22 @@
+{
+  "_README": [
+    "Migrations that are written but NOT YET RUN in production.",
+    "",
+    "A new function migration is not drift — it is a known window between writing",
+    "it and running it. Without this file check-schema-drift goes red on a correct",
+    "commit, and a gate that is red when nothing is wrong gets ignored.",
+    "",
+    "THIS FILE CANNOT BECOME A SILENCER. It is self-clearing: the moment a",
+    "declared migration's functions appear in schema-index.json, the entry is",
+    "stale and the gate FAILS until it is deleted. An entry naming a file with no",
+    "CREATE FUNCTION also fails. So a declaration buys the deploy window and",
+    "nothing else.",
+    "",
+    "TO CLEAR AN ENTRY: run the migration, refresh scripts/schema-index.json from",
+    "the live database, then delete the entry here. The gate will tell you if you",
+    "forget."
+  ],
+  "pending": {
+    "77_increment_customer_spend.sql": "Register A55. Adds increment_customer_spend and adjust_customer_visits. Written 2026-08-11, ships in batch 2026-08-11-e, not yet run in production."
+  }
+}

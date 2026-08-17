@@ -37,6 +37,7 @@ export interface POSData {
   currency:          string;
   loyaltyEnabled:    boolean;
   maxDiscountPct:    number;
+  paymentMethods:    { code: string; name: string }[];
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -48,6 +49,7 @@ export function usePOSData(): POSData {
 
   const [products,          setProducts]          = useState<Product[]>([]);
   const [categories,        setCategories]        = useState<Category[]>([]);
+  const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
@@ -74,6 +76,7 @@ export function usePOSData(): POSData {
 
       setProducts(init.products ?? []);
       setCategories(init.categories ?? []);
+      setPaymentMethods(init.paymentMethods ?? []);
       setVariantsByProduct(init.variantsByProduct ?? {});
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
@@ -142,7 +145,7 @@ export function usePOSData(): POSData {
   return {
     products, categories, variantsByProduct,
     tables, pumps, setPumps, branchPrinters,
-    businessMode, currency, loyaltyEnabled, maxDiscountPct, orderMode,
+    businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
     loading, error,
     reload: () => setTick(t => t + 1),
   };

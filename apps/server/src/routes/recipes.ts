@@ -12,7 +12,29 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+
+/**
+ * A12: recipe lines join `ingredients`, and used to read the dead
+ * `ingredients.current_stock` column (frozen since migration 23), so the Recipes
+ * drawer showed "0 in stock" for everything created since. The live figure is
+ * per-branch in `ingredient_stock_levels`. Flatten it the SAME way `stock.ts`
+ * does — scoped branch → that branch, no branch (owner) → business-wide sum — so
+ * the Recipes drawer and the Ingredients page finally show the same number.
+ */
+function flattenRecipeStock(rows: any[], scopedBranch: string | null): any[] {
+  return (rows ?? []).map((r: any) => {
+    const ing = r?.ingredients;
+    if (!ing || !Array.isArray(ing.ingredient_stock_levels)) return r;
+    const levels = ing.ingredient_stock_levels;
+    const current_stock = scopedBranch
+      ? Number(levels.find((l: any) => l.branch_id === scopedBranch)?.current_stock ?? 0)
+      : levels.reduce((s: number, l: any) => s + Number(l.current_stock ?? 0), 0);
+    const { ingredient_stock_levels, ...restIng } = ing;
+    return { ...r, ingredients: { ...restIng, current_stock } };
+  });
+}
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -25,13 +47,13 @@ router.get('/', async (req, res) => {
     .select(`
       id, product_id, ingredient_id, quantity_per_serving, unit,
       products   ( id, name ),
-      ingredients ( id, name, unit, current_stock )
+      ingredients ( id, name, unit, ingredient_stock_levels ( branch_id, current_stock ) )
     `)
     .eq('business_id', req.businessId)
     .order('product_id');
 
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  res.json(flattenRecipeStock(data ?? [], branchScope(req)));
 });
 
 // GET /api/recipes/:productId
@@ -41,14 +63,14 @@ router.get('/:productId', async (req, res) => {
     .from('recipes')
     .select(`
       id, product_id, ingredient_id, quantity_per_serving, unit,
-      ingredients ( id, name, unit, current_stock )
+      ingredients ( id, name, unit, ingredient_stock_levels ( branch_id, current_stock ) )
     `)
     .eq('business_id', req.businessId)
     .eq('product_id', req.params.productId)
     .order('created_at');
 
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  res.json(flattenRecipeStock(data ?? [], branchScope(req)));
 });
 
 // POST /api/recipes/:productId
@@ -107,13 +129,13 @@ router.post('/:productId', async (req, res) => {
     .from('recipes')
     .select(`
       id, product_id, ingredient_id, quantity_per_serving, unit,
-      ingredients ( id, name, unit, current_stock )
+      ingredients ( id, name, unit, ingredient_stock_levels ( branch_id, current_stock ) )
     `)
     .eq('product_id', productId)
     .eq('business_id', req.businessId)
     .order('created_at');
 
-  res.json({ product, lines: saved ?? [] });
+  res.json({ product, lines: flattenRecipeStock(saved ?? [], branchScope(req)) });
 });
 
 // DELETE /api/recipes/:productId

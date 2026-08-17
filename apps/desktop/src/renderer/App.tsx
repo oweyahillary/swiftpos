@@ -3,6 +3,7 @@ import { posApi, StaffSession } from './lib/posApi';
 import InstallPage from './pages/InstallPage';
 import LoginPage from './pages/LoginPage';
 import PinPage from './pages/PinPage';
+import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
 import TechPage from './pages/TechPage';
@@ -15,6 +16,9 @@ export default function App() {
   const [state, setState] = useState<AppState>('loading');
   const [session, setSession] = useState<{ user: any; business: any } | null>(null);
   const [staff, setStaff] = useState<StaffSession | null>(null);
+  // A52 — the idle lock. A CURTAIN over whatever is mounted, never a reset: the
+  // cart and the part-entered payment stay exactly where they are behind it.
+  const [locked, setLocked] = useState(false);
 
   // On boot — first decide whether the device has been configured at all.
   // No config -> install screen (open, because there's nothing to protect yet).
@@ -72,6 +76,18 @@ export default function App() {
       || perms['settings.manage'] === true;
   };
 
+  // Which surface is showing decides the threshold — 5 minutes on the manager
+  // screens (Close Day, Close Branch, Staff, Receipt, and settings.manage also
+  // gates till revocation, A46), 10 on the POS. null everywhere else, because
+  // locking the PIN pad, the owner login, the installer or the tech console is
+  // meaningless.
+  useEffect(() => {
+    const surface = state === 'manager' ? 'manager' : state === 'pos' ? 'pos' : null;
+    void posApi.idle.setSurface(surface);
+  }, [state]);
+
+  useEffect(() => posApi.idle.onLock(() => setLocked(true)), []);
+
   // Staff PIN verified → route by role.
   const handleStaffLogin = (s: StaffSession) => {
     setStaff(s);
@@ -82,6 +98,8 @@ export default function App() {
   const handleEndShift = async () => {
     await posApi.auth.clearStaffSession();
     setStaff(null);
+    setLocked(false);          // never leave a curtain over the PIN pad
+    await posApi.idle.clear();
     setState('pin');
   };
 
@@ -90,6 +108,8 @@ export default function App() {
     await posApi.auth.logout();
     setSession(null);
     setStaff(null);
+    setLocked(false);
+    await posApi.idle.clear();
     setState('owner-login');
   };
 
@@ -124,8 +144,21 @@ export default function App() {
     return <TechPage onExit={() => setState('pin')} />;
   }
 
+  // The curtain renders ALONGSIDE the screen, not instead of it — see
+  // LockCurtain.tsx. ManagerPage/POSPage stay mounted with all their state, so
+  // there is no code path that could discard a cart.
+  const curtain = locked && staff?.staff ? (
+    <LockCurtain
+      staffName={staff.staff.name}
+      staffId={staff.staff.id}
+      branchId={staff.branchId}
+      onUnlock={() => setLocked(false)}
+    />
+  ) : null;
+
   if (state === 'manager' && staff) {
     return (
+      <>
       <ManagerPage
         business={session!.business}
         staff={staff}
@@ -133,10 +166,13 @@ export default function App() {
         onLogout={handleEndShift}
         onSwitchAccount={handleSignOut}
       />
+      {curtain}
+      </>
     );
   }
 
   return (
+    <>
     <POSPage
       business={session!.business}
       onLogout={handleEndShift}
@@ -145,5 +181,7 @@ export default function App() {
       onOpenManager={hasManagerRights(staff) ? () => setState('manager') : undefined}
       canManagePrinters={hasManagerRights(staff)}
     />
+    {curtain}
+    </>
   );
 }

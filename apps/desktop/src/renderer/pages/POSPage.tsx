@@ -9,8 +9,6 @@ import type { HeldOrder } from '../lib/heldOrders';
 import TablesView from '../components/TablesView';
 import PumpsView from '../components/PumpsView';
 import type { DiningTable, Pump } from '../lib/posApi';
-import { printKOT } from '../lib/printKOT';
-import { printDispatcher } from '../lib/printDispatcher';
 import { buildTicketLines, kitchenOnly, linesForStation, routingIsConfigured, ROUTING_UNCONFIGURED } from '../lib/ticketLines';
 import type { StationRouting } from '../lib/ticketLines';
 import type { ComboMap } from '../lib/ticketLines';
@@ -68,6 +66,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [deviceName, setDeviceName] = useState<string | null>(null);
   // Cashier on the receipt — attribution matters when three tills share a branch.
   const [cashierName, setCashierName] = useState<string | null>(null);
+  // A59: the signed-in staff may force-close a drawer if they hold the dedicated
+  // shifts.force_close key or the broad settings.manage — same rule the server
+  // route now enforces (requireAnyPermission). Owner carries '*'.
+  const [canForceClose, setCanForceClose] = useState(false);
   // One bill number held in reserve so ensureOrderNumber() can stay synchronous —
   // it is called from non-async paths like autoHold, which several table
   // handlers invoke and then immediately depend on having cleared the cart.
@@ -118,7 +120,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Trading-day gate. Polled because the block can begin without the cashier
   // doing anything: at midnight, an unclosed day becomes yesterday's.
   const [dayGate, setDayGate] = useState<{ canTrade: boolean; reason?: string;
-    needsManager?: boolean; needsShift?: boolean } | null>(null);
+    needsManager?: boolean; needsShift?: boolean; staleGrace?: string } | null>(null);
   const [staleShift, setStaleShift] = useState<null | {
     id: string; opened_at: string; hoursOpen: number; cashier_name: string; expectedCash: number; orders: number;
   }>(null);
@@ -137,9 +139,17 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
   const [placing, setPlacing] = useState(false);
+  // Synchronous double-charge guard. setPlacing(true) only disables the Pay
+  // button on the NEXT render, leaving a one-frame window where a fast double-tap
+  // fires handleCharge twice — two order numbers, two orders. A ref flips now, in
+  // this tick, so the second tap returns immediately.
+  const placingRef = useRef(false);
   const [payError, setPayError] = useState('');
   // Surfaced on the receipt screen when a ticket did not reach paper.
   const [printMsg, setPrintMsg] = useState('');
+  const [reprintNote, setReprintNote] = useState('');
+  // Custom tenders (A96), cached locally so they work offline. Refreshed on mount.
+  const [customMethods, setCustomMethods] = useState<{ code: string; name: string }[]>([]);
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
@@ -187,7 +197,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     });
 
     // Business mode from the device config written at install time.
-    posApi.auth.getStaffSession().then(ss => setCashierName(ss?.staff?.name ?? null)).catch(() => {});
+    posApi.auth.getStaffSession().then(ss => {
+      setCashierName(ss?.staff?.name ?? null);
+      const perms = ((ss?.staff as any)?.permissions ?? {}) as Record<string, boolean>;
+      const has = (k: string) => perms['*'] === true || perms[k] === true;
+      setCanForceClose(has('shifts.force_close') || has('settings.manage'));
+    }).catch(() => {});
+    posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
     // NOT reserving a bill number here. See the reservedBill declaration.
 
     posApi.config.get().then(async cfg => {
@@ -376,7 +392,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // another button — the reserve is a local SQLite round trip, so it has landed.
   useEffect(() => {
     if (cart.length > 0 && !reservedBill && !orderNumber) {
-      posApi.orders.nextBillNumber().then(setReservedBill).catch(() => {});
+      posApi.orders.nextBillNumber().then(setReservedBill).catch(e => {
+        // Best-effort — charge falls back to reserving at pay time — but a
+        // silent swallow hid that the reservation never landed. Surface it; the
+        // double-charge guard now lives on placingRef, not on this succeeding.
+        console.warn('[pos] bill-number reservation failed:', e?.message ?? e);
+      });
     }
   }, [cart.length, reservedBill, orderNumber]);
 
@@ -419,6 +440,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // and met the refusal at payment.
   const needsShift = !!dayGate?.needsShift;
   const needsManager = !!dayGate?.needsManager;
+  // 24-hour grace (A104): an unclosed prior day, but still trading behind a
+  // reminder. Amber, not the red hard block — the till is not stopped.
+  const staleGrace = dayGate?.staleGrace;
 
   const ensureOrderNumber = (): string => {
     if (orderNumber) return orderNumber;
@@ -452,10 +476,15 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     // real service has gone through the thermal one on this hardware. Untick
     // the box on the Printers screen and this runs again exactly as before.
     try {
-      // canPrint, not enabled(). With thermal on but no kitchen station bound
-      // on this terminal, skipping the HTML path would send NOTHING to the
-      // kitchen while telling the cashier it had gone.
-      if (await window.swiftpos.escpos.canPrint('kitchen')) {
+      // 0.5.27 — the HTML sale path is gone, so there is no longer a fallback
+      // to guard against. This used to test canPrint('kitchen') and fall through
+      // to HTML when nothing was bound (register D8: kitchen bound but dispatch
+      // not meant a dispatch slip printed on NEITHER system, silently).
+      //
+      // With one path, an unbound station has to REPORT rather than be routed
+      // around — printProduction returns the stations it skipped and those are
+      // surfaced below, which is the behaviour D8 was missing.
+      {
         // Queue the kitchen and dispatch tickets NOW.
         //
         // This used to do nothing but mark the lines sent, because main queued
@@ -466,7 +495,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         //
         // Only the UNSENT lines are sent, so a second course added later does
         // not reprint the first.
-        await window.swiftpos.escpos.printProduction({
+        const result = await window.swiftpos.escpos.printProduction({
           order_number: num,
           order_type:   flags.isRestaurant ? orderType : 'retail',
           table_number: orderType === 'dine_in' ? tableNumber : undefined,
@@ -489,90 +518,23 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
         setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
         setKotCount(n => n + 1);
-        setKitchenMsg(
-          `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
+
+        // D8, closed. A station with no printer bound is NAMED, not skipped in
+        // silence. "Sent to kitchen" while a dispatch slip went nowhere is how a
+        // bag leaves with items missing.
+        const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+        setKitchenMsg(skipped.length
+          ? `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'}, but nothing printed for: ${skipped.join(', ')}`
+          : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
         return;
       }
-    } catch {
-      // Cannot tell — assume off and print the way that has always worked.
-    }
-
-    try {
-      const allLines = buildTicketLines(unsent, comboItems, kitchenCategoryIds, routing);
-      const problems: string[] = [];
-
-      if (routingIsConfigured(routing)) {
-        // One ticket per configured station, each seeing only what routes to it.
-        // Sequential rather than parallel: printing is already serialised in the
-        // main process, and firing them together only reorders the queue while
-        // making a failure harder to attribute to a station.
-        for (const st of routing.stations) {
-          const lines = linesForStation(allLines, st.id, routing);
-          if (lines.length === 0) continue;   // nothing here routes to this station
-
-          const printerName = printerSettings.stationPrinters?.[st.id]
-            // Fall back to the legacy per-kind printer so a station created before
-            // anyone bound hardware still prints somewhere sensible.
-            ?? (st.kind === 'dispatch' ? printerSettings.dispatcherPrinterName
-              : st.kind === 'receipt'  ? printerSettings.receiptPrinterName
-              : printerSettings.kitchenPrinterName);
-
-          if (!printerName) {
-            problems.push(`${st.name}: no printer set on this till`);
-            continue;
-          }
-
-          const res = st.kind === 'dispatch'
-            ? await printDispatcher(lines, {
-                orderNumber: num,
-                billNumber: num,
-                deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
-                stationName: st.name,
-                tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-                orderType,
-              }, { ...printerSettings, dispatcherPrinterName: printerName })
-            : await printKOT(lines, {
-                orderNumber: num,
-                tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-                orderType,
-                stationName: st.name,
-              }, { ...printerSettings, kitchenPrinterName: printerName });
-
-          if (!res.printed) problems.push(`${st.name}: ${res.reason ?? 'did not print'}`);
-        }
-      } else {
-        // UNCONFIGURED: exactly the previous behaviour. A till that upgrades
-        // before stations exist must print as it did yesterday — anything else
-        // means a kitchen receiving nothing, discovered mid-service.
-        const kot = await printKOT(kitchenOnly(allLines), {
-          orderNumber: num,
-          tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-          orderType,
-        }, printerSettings);
-
-        const pack = await printDispatcher(allLines, {
-          orderNumber: num,
-          billNumber: num,
-          deliveryPerson: orderType === 'delivery' ? deliveryPerson.trim() : undefined,
-          stationName: deviceName ?? undefined,
-          tableNumber: orderType === 'dine_in' ? tableNumber || undefined : undefined,
-          orderType,
-        }, printerSettings);
-
-        if (kot.reason) problems.push(kot.reason);
-        if (!pack.printed && pack.reason) problems.push(pack.reason);
-      }
-
-      setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
-      setKotCount(n => n + 1);
-      // Report whichever ticket failed. Announcing "sent to kitchen" when a
-      // station silently died is how a bag goes out with items missing.
-      setKitchenMsg(problems.length
-        ? problems.join(' · ')
-        : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
     } catch (err: any) {
-      setKitchenMsg(`Kitchen print failed: ${err?.message ?? 'unknown'}`);
+      // There is no fallback to fall back TO. Report it rather than swallow it —
+      // the cashier needs to know the kitchen did not hear about this order.
+      setKitchenMsg(`Kitchen print failed: ${err?.message ?? 'unknown error'}`);
+      return;
     }
+
   };
 
   const handleHold = async () => {
@@ -705,22 +667,28 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
   const handleCharge = async (payment: PaymentResult) => {
     if (!branchId) return;
+    // Return before any await — this is the whole point of the ref (see decl).
+    if (placingRef.current) return;
+    placingRef.current = true;
     setPlacing(true);
     setPayError('');
 
-    // Reuse the KOT's number if one was assigned; otherwise take the terminal-
-    // prefixed reserve now.
-    //
-    // This used to fall straight through to generateOrderNumber(), which mints
-    // the old unprefixed ORD-<ts>-<rand> form. ensureOrderNumber() is only
-    // reached from Send to kitchen and from hold, so an order that was rung and
-    // charged directly — every counter sale on the pay-first path this pilot is
-    // configured for — got an unprefixed number. That is A7 not applying to the
-    // common case, and it removes exactly the cross-till collision protection
-    // the terminal prefix exists to provide.
-    const num = await ensureOrderNumberAsync();
-
     try {
+      // Reuse the KOT's number if one was assigned; otherwise take the terminal-
+      // prefixed reserve now.
+      //
+      // This used to fall straight through to generateOrderNumber(), which mints
+      // the old unprefixed ORD-<ts>-<rand> form. ensureOrderNumber() is only
+      // reached from Send to kitchen and from hold, so an order that was rung and
+      // charged directly — every counter sale on the pay-first path this pilot is
+      // configured for — got an unprefixed number. That is A7 not applying to the
+      // common case, and it removes exactly the cross-till collision protection
+      // the terminal prefix exists to provide.
+      //
+      // Inside the try so a failure here also resets placing in finally, instead
+      // of leaving the till wedged with the Pay button disabled forever.
+      const num = await ensureOrderNumberAsync();
+
       await posApi.order.create({
         branch_id: branchId,
         order_number: num,
@@ -774,13 +742,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
       setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim() });
       setShowPayment(false);
-      setPlacing(false);
 
       // Refresh sync status
       posApi.sync.status().then(setSyncStatus);
     } catch (err: any) {
       setPayError(err.message ?? 'Failed to process payment');
+    } finally {
       setPlacing(false);
+      placingRef.current = false;
     }
   };
 
@@ -1075,6 +1044,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         </div>
       )}
 
+      {/* 24-hour grace (A104): the prior day isn't closed, but a continuous
+          business keeps trading through the handover window behind this reminder.
+          Amber and non-blocking — Charge still works — until the grace ends, when
+          checkDayGate flips to the red manager block above. */}
+      {staleGrace && !needsManager && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
+          <span className="text-amber-400 text-base">⏳</span>
+          <p className="flex-1 text-xs text-amber-200/90">{staleGrace}</p>
+          <span className="text-xs text-amber-300/70 whitespace-nowrap">Manager → Close Day</span>
+        </div>
+      )}
+
       {staleShift && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
           <span className="text-amber-400 text-sm">⚠</span>
@@ -1097,6 +1078,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       {showShift && (
         <ShiftPanel
           business={business}
+          canForceClose={canForceClose}
           onClose={() => setShowShift(false)}
           onShiftChange={setShift}
         />
@@ -1405,6 +1387,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           currency={currency}
           placing={placing}
           error={payError}
+          customMethods={customMethods}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
         />
@@ -1460,8 +1443,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
                 <p className="text-gray-300 text-xs mt-0.5">Last 30 orders · tap a completed order to void</p>
+                {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
-              <button onClick={() => setShowHistory(false)}
+              <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
                 className="text-gray-300 hover:text-white transition-colors text-lg">✕</button>
             </div>
 
@@ -1512,17 +1496,31 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                             )}
                           </td>
                           <td className="px-4 py-2.5">
-                            {canVoidThis && (
-                              <button
-                                onClick={() => { setVoidTarget(o); setShowHistory(false); }}
-                                className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors"
-                              >
-                                Void
-                              </button>
-                            )}
-                            {o.status === 'completed' && ageMin > 30 && (
-                              <span className="text-xs text-gray-400">expired</span>
-                            )}
+                            <div className="flex items-center gap-2 justify-end">
+                              {o.status === 'completed' && (
+                                <button
+                                  onClick={async () => {
+                                    const r = await window.swiftpos.escpos.reprintReceiptForOrder(o.id);
+                                    setReprintNote(r.ok ? `Receipt ${o.order_number} sent to the printer` : (r.error ?? 'Could not reprint'));
+                                  }}
+                                  className="text-xs text-gray-300 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg px-2.5 py-1 transition-colors"
+                                  title="Print a duplicate of this receipt"
+                                >
+                                  Reprint
+                                </button>
+                              )}
+                              {canVoidThis && (
+                                <button
+                                  onClick={() => { setVoidTarget(o); setShowHistory(false); }}
+                                  className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors"
+                                >
+                                  Void
+                                </button>
+                              )}
+                              {o.status === 'completed' && ageMin > 30 && (
+                                <span className="text-xs text-gray-400">expired</span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

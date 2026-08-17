@@ -107,6 +107,9 @@ export interface Order {
 export interface BusinessConfig {
   name: string;
   branchName?: string;
+  /** Owner's editable header lines, printed under the business/branch name — the
+   *  same text the on-screen ReceiptView shows. One entry per line. */
+  header?: string;
   kraPin?: string;
   telephone?: string;
   /** Label and value are separate so a Paybill client is not stuck saying "Buy Goods". */
@@ -114,6 +117,13 @@ export interface BusinessConfig {
   tillNumber?: string;
   thankYouMessage?: string;
   deliveryMessage?: string;
+  /**
+   * The fixed closing line above the tax line and the credit. Defaults to
+   * "Thank you for your business!" when absent — it is deliberately NOT the
+   * owner's editable footer box (that is thankYouMessage), so a blank box never
+   * produces a receipt that ends on the payment line.
+   */
+  closingMessage?: string;
   footerCredit?: string;
   currencyCode: string;
   /** As a percentage, e.g. 16 for 16%. */

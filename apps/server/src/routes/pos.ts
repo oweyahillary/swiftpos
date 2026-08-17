@@ -3,6 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
+import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 
 const router = safeRouter();
@@ -12,6 +13,69 @@ router.use(requireAuth);
 // GET /api/pos/init
 // Fetches everything the POS screen needs to boot in a single round-trip:
 // active products (with category colour), active categories, main branch id, and variant groups.
+// GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
+// PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
+// the one route that gives a machine the branch's PIN hashes, so the guard is
+// four conditions: the desktop surface, the caller's own business, a device
+// registered as a node/office, and that device's own branch. bcrypt only.
+router.get('/branch-staff', async (req, res) => {
+  if (req.surface !== 'desktop') { res.status(403).json({ error: 'desktop surface only' }); return; }
+
+  const deviceId = String(req.headers['x-device-id'] ?? '');
+  if (!deviceId) { res.status(400).json({ error: 'x-device-id required' }); return; }
+
+  const { data: device } = await supabase
+    .from('user_devices')
+    .select('device_role, branch_id')
+    .eq('device_id', deviceId)
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+
+  if (!device || !isNodeRole((device as { device_role?: string }).device_role)) {
+    res.status(403).json({ error: 'this device is not registered as a branch server', code: 'not_a_node' });
+    return;
+  }
+  const branchId = (device as { branch_id?: string }).branch_id;
+  if (!branchId) { res.status(400).json({ error: 'this device is not bound to a branch' }); return; }
+
+  const { data: staffList, error } = await supabase
+    .from('users')
+    .select(`
+      id, name, status, pin_hash, override_pin_hash,
+      roles ( name, role_permissions ( permissions ( key ) ) ),
+      user_branches ( branch_id ),
+      user_permissions ( granted, permissions ( key ) )
+    `)
+    .eq('business_id', req.businessId)
+    .eq('status', 'active');
+  if (error) { sendError(res, error); return; }
+
+  // Effective permissions = role grants (all true) then per-user overrides
+  // (granted true/false) — identical resolution to /verify-pin and the JWT.
+  const roster = (staffList ?? [])
+    .filter((u: any) => (u.user_branches ?? []).some((b: any) => b.branch_id === branchId))
+    .map((u: any) => {
+      const permissions: Record<string, boolean> = {};
+      (u.roles?.role_permissions ?? []).forEach((rp: any) => { if (rp.permissions?.key) permissions[rp.permissions.key] = true; });
+      (u.user_permissions ?? []).forEach((up: any) => { if (up.permissions?.key) permissions[up.permissions.key] = up.granted; });
+      return {
+        staff_id:          u.id,
+        name:              u.name,
+        role_name:         u.roles?.name ?? null,
+        branch_id:         branchId,
+        permissions,
+        pin_hash:          u.pin_hash ?? null,
+        override_pin_hash: u.override_pin_hash ?? null,
+        status:            u.status,
+      };
+    })
+    // bcrypt only — a legacy hash upgrades on the next ONLINE sign-in; the node
+    // never tries to match against a format pinCache would refuse anyway.
+    .filter((s: { pin_hash: string | null }) => !!s.pin_hash && s.pin_hash.startsWith('$2'));
+
+  res.json({ branch_id: branchId, staff: roster });
+});
+
 router.get('/init', async (req, res) => {
   // ── Which branch are we pricing for? ────────────────────────────────────────
   // Per-branch pricing (BRANCH_AUTHORITY_AND_SYNC_DESIGN.md §6): the till is bound
@@ -26,7 +90,8 @@ router.get('/init', async (req, res) => {
     { data: categories, error: cErr },
     { data: comboRows },
     { data: receiptTextRows },
-    { data: branch, error: brErr },
+    { data: mainBranch, error: brErr },
+    { data: boundBranch },
     { data: business },
   ] = await Promise.all([
     supabase
@@ -58,13 +123,31 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions']),
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation']),
+    // The MAIN branch — used only as the fallback operating branch for a till
+    // that has not sent its binding yet, and as the `branchId` the desktop falls
+    // back to when unbound. maybeSingle, not single: one_main_branch_per_business
+    // permits ZERO main branches, and a .single() there errored and failed the
+    // whole catalogue pull closed (D11).
     supabase
       .from('branches')
       .select('id, desktop_licensed')
       .eq('business_id', req.businessId)
       .eq('is_main', true)
-      .single(),
+      .maybeSingle(),
+    // The BOUND branch the till actually operates on, when it sent one. Fetched
+    // here in the same round-trip and validated to this business, so the desktop
+    // licence and per-branch pricing can both key off the real operating branch
+    // rather than the main one (D11: a till bound to branch B was licensed by
+    // branch A's flag). Resolves to null for legacy callers that send no branch_id.
+    requestedBranchId
+      ? supabase
+          .from('branches')
+          .select('id, desktop_licensed')
+          .eq('id', requestedBranchId)
+          .eq('business_id', req.businessId)   // tenant guard — never resolve another business's branch
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     supabase
       .from('businesses')
       .select('type, name, currency, vat_rate, ctl_rate')
@@ -78,13 +161,18 @@ router.get('/init', async (req, res) => {
   }
 
   // ── Desktop branch licence check ──────────────────────────────────────────
-  // The branch resolved above must have a paid desktop licence.
+  // The branch the till OPERATES on must have a paid desktop licence. That is the
+  // bound branch it sent, falling back to the main branch only for legacy callers
+  // with no binding. D11: this used to read the main branch's flag regardless of
+  // where the till was bound, so a till at an unlicensed branch B rode branch A's
+  // licence — and a licensed till at B could be locked out by A being unlicensed.
   // If it doesn't, the desktop app can't sync — blocks the POS at the data layer.
   // (PIN entry is also blocked in verify-pin, so this is defence-in-depth.)
   // Desktop-licence gate applies to the DESKTOP surface only. The web POS is
   // gated by web access at login (businesses.web_access_expires_at), NOT by a
   // per-branch desktop licence — so web tokens must not be blocked here.
-  if (req.surface === 'desktop' && branch && !branch.desktop_licensed) {
+  const opBranch = boundBranch ?? mainBranch;
+  if (req.surface === 'desktop' && !opBranch?.desktop_licensed) {
     res.status(403).json({
       error: 'This branch does not have a desktop licence. Please contact SwiftPOS to activate.',
       code:  'BRANCH_NOT_LICENSED',
@@ -124,20 +212,13 @@ router.get('/init', async (req, res) => {
   });
 
   // ── Per-branch price resolution ─────────────────────────────────────────────
-  // Resolve the branch we're pricing for: the caller's branch_id if it belongs to
-  // this business, otherwise the main branch (legacy/fallback). Then overlay each
-  // product with branch_price (nullable). Effective price the client charges is
-  // COALESCE(branch_price, base_price) — base_price stays the default.
-  let pricingBranchId: string | null = branch?.id ?? null;
-  if (requestedBranchId) {
-    const { data: reqBranch } = await supabase
-      .from('branches')
-      .select('id')
-      .eq('id', requestedBranchId)
-      .eq('business_id', req.businessId)   // tenant guard — never price for another business
-      .single();
-    if (reqBranch) pricingBranchId = reqBranch.id;
-  }
+  // Price for the same operating branch the licence check resolved — the two must
+  // agree on where the till is. opBranch is boundBranch ?? mainBranch, already
+  // fetched in the parallel batch above; this used to run a SECOND branch lookup
+  // here, and split the two resolutions was how licence and pricing could drift
+  // (D11). Overlay each product with branch_price (nullable): the effective price
+  // the client charges is COALESCE(branch_price, base_price).
+  const pricingBranchId: string | null = opBranch?.id ?? null;
 
   const productsOut = products ?? [];
   if (pricingBranchId && productIds.length > 0) {
@@ -190,6 +271,10 @@ router.get('/init', async (req, res) => {
     products: productsOut,
     comboItems,
     receiptHeader: receiptText.receipt_header ?? '',
+    // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
+    // a short grace window at rollover instead of an immediate hard lock, so a
+    // round-the-clock branch keeps trading while a manager closes the day.
+    continuousOperation: receiptText.continuous_operation === 'true',
     receiptFooter: receiptText.receipt_footer ?? '',
     // Things that must never reach a kitchen ticket — drinks, sauces, packaged
     // sides. Stated by the owner rather than inferred: a keyword guess is wrong
@@ -207,7 +292,23 @@ router.get('/init', async (req, res) => {
       return [] as string[];
     })(),
     categories: categories ?? [],
-    branchId: branch?.id ?? null,
+    // Custom payment methods (A96) — the extras a business accepts beyond the
+    // built-in Cash / M-Pesa / Card. Active only; the till caches these so they
+    // appear as tender options offline. Per business (owner decision, A95).
+    paymentMethods: await (async () => {
+      const { data } = await supabase
+        .from('payment_methods')
+        .select('code, name')
+        .eq('business_id', req.businessId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      return (data ?? []).map(m => ({ code: m.code, name: m.name }));
+    })(),
+    // The desktop falls back to this when it has no binding of its own
+    // (syncEngine: effectiveBranchId = boundBranchId || branchId). It is the
+    // MAIN branch, deliberately — the fallback for an unbound till, not the
+    // operating branch, which the till already knows.
+    branchId: mainBranch?.id ?? null,
     pricingBranchId,
     loyaltyEnabled: loyaltyFlag?.enabled ?? false,
     variantsByProduct,

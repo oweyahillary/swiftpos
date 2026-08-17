@@ -63,6 +63,8 @@ import { isSeededAdminHash, SEEDED_ADMIN_MESSAGE } from '../lib/adminSeedGuard';
 import { seedDefaultRolePermissions } from '../lib/defaultRolePermissions';
 import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/adminAuth';
 import { signTechToken, generateRevealCode } from '../lib/techToken';
+import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
+import { resolveOwnerUserId } from '../lib/ownerBusiness';
 
 const router = safeRouter();
 
@@ -1096,6 +1098,115 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req,
   });
 
   res.json(updated);
+});
+
+/**
+ * POST /api/admin/clients/:id/branches/:branchId/enrol-code   (register A69, D4)
+ * Admin mints a single-use, BRANCH-BOUND enrolment code for a till. Provisioning
+ * lives here, not in the owner dashboard, so a client cannot self-provision — the
+ * code is the billable act, gated behind the admin.
+ *
+ * The code's `created_by` is the business OWNER's public.users id (not the admin):
+ * redeem mints the same owner-scoped desktop token /desktop-login does, and
+ * orders.cashier_id REFERENCES public.users(id). The admin is recorded in the
+ * audit log instead. The branch must already hold a desktop licence — an enrolled
+ * till on an unlicensed branch is refused by the D11 gate at /api/pos/init anyway,
+ * so we fail early and clearly here.
+ */
+router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (req, res) => {
+  const { id: businessId, branchId } = req.params;
+
+  const { data: branch } = await supabase
+    .from('branches')
+    .select('id, name, desktop_licensed, business_id')
+    .eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!branch.desktop_licensed) {
+    res.status(409).json({
+      error: 'Assign a desktop licence to this branch before enrolling a till.',
+      code:  'BRANCH_NOT_LICENSED',
+    });
+    return;
+  }
+
+  // The token principal must be the owner, resolved the same way desktop-login
+  // resolves it. No owner → no valid principal → refuse (never mint a bad token).
+  const ownerId = await resolveOwnerUserId(businessId);
+  if (!ownerId) {
+    res.status(409).json({ error: 'Could not resolve the business owner for this code.', code: 'NO_OWNER' });
+    return;
+  }
+
+  // Batch: mint `count` single-use codes in one call (default 1, capped). Each is
+  // its own single-use, branch-bound code — batching is a convenience, NOT a
+  // reusable code. One leaked code still enrols exactly one till.
+  const rawCount = Number(req.body?.count);
+  const count = Number.isFinite(rawCount) ? Math.max(1, Math.min(20, Math.trunc(rawCount))) : 1;
+  const expiresAt = expiryFromNow();
+
+  const raws = Array.from({ length: count }, () => makeCode());
+  const rows = raws.map(raw => ({
+    business_id: businessId,
+    branch_id:   branchId,            // REQUIRED here — admin codes are always branch-bound
+    code_hash:   hashCode(raw),
+    created_by:  ownerId,             // owner public.users id — the redeemed token's principal
+    expires_at:  expiresAt,
+  }));
+  const { error } = await supabase.from('device_enrolment_codes').insert(rows);
+  if (error) { sendError(res, error); return; }
+
+  const { data: biz } = await supabase.from('businesses').select('name').eq('id', businessId).single();
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'branch.enrol_code.issue', resource: 'device_enrolment_code',
+    businessId, businessName: biz?.name,
+    after: { branch: branch.name, count, expires_at: expiresAt },
+  });
+
+  // Raw codes shown ONCE; businessId travels so the admin reads both halves out.
+  res.json({ businessId, branchId, branchName: branch.name, expiresAt, codes: raws });
+});
+
+/**
+ * GET /api/admin/clients/:id/devices   (register A70)
+ * The enrolled-device roster for a business: what got provisioned, on which
+ * branch, its claimed role, and when it was last seen. Read-only visibility so
+ * an admin can see the fleet a client is actually running. `device_role` and
+ * `branch_id` are self-reported claims confirmed on the server side (migrations
+ * 52/74) — shown as-is here; this is a view, not the gate.
+ */
+router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
+  const { id: businessId } = req.params;
+
+  const { data: devices, error } = await supabase
+    .from('user_devices')
+    .select('id, device_label, device_role, status, branch_id, last_seen_at, created_at, app_version')
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) { sendError(res, error); return; }
+
+  // Resolve branch names in one round-trip rather than N.
+  const branchIds = [...new Set((devices ?? []).map(d => d.branch_id).filter(Boolean))];
+  let branchName: Record<string, string> = {};
+  if (branchIds.length) {
+    const { data: branches } = await supabase
+      .from('branches').select('id, name').in('id', branchIds);
+    branchName = Object.fromEntries((branches ?? []).map(b => [b.id, b.name]));
+  }
+
+  res.json({
+    devices: (devices ?? []).map(d => ({
+      id:         d.id,
+      label:      d.device_label ?? '—',
+      role:       d.device_role ?? null,          // 'till' | 'node' | 'office' | null
+      status:     d.status,                        // pending | approved | rejected
+      branch:     d.branch_id ? (branchName[d.branch_id] ?? '—') : '— (unbound)',
+      lastSeenAt: d.last_seen_at,
+      enrolledAt: d.created_at,
+      appVersion: d.app_version ?? null,
+    })),
+  });
 });
 
 // ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────

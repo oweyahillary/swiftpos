@@ -14,7 +14,7 @@
 import { safeRouter } from '../middleware/asyncHandler';
 import { sendError } from '../lib/sendError';
 import { requireAuth } from '../middleware/auth';
-import { requirePermission } from '../middleware/rbac';
+import { requireAnyPermission } from '../middleware/rbac';
 import { isNodeRole } from '../lib/deviceRegistry';
 import { ROLE_HANDOVER_WINDOW_MINUTES } from '../lib/deviceRole';
 import { supabase }    from '../lib/supabase';
@@ -36,6 +36,7 @@ router.get('/', async (req, res) => {
       id, fingerprint, device_label, ip_address, status,
       requested_at, reviewed_at, last_seen_at, app_version,
       schema_version, last_sync_at, device_id,
+      branch_id, device_role, terminal_code, created_at,
       user_id,
       users ( id, name, email,
         roles ( name )
@@ -51,7 +52,21 @@ router.get('/', async (req, res) => {
   const { data, error } = await q;
   if (error) { sendError(res, error); return; }
 
-  res.json(data ?? []);
+  // A71: resolve branch names in one round-trip so the owner sees WHERE a device
+  // is bound. Not embedded via PostgREST because user_devices has two FKs to
+  // branches (branch_id + previous_branch_id, migration 52) — that's ambiguous.
+  const rows = data ?? [];
+  const branchIds = [...new Set(rows.map((d: any) => d.branch_id).filter(Boolean))];
+  let branchName: Record<string, string> = {};
+  if (branchIds.length) {
+    const { data: br } = await supabase.from('branches').select('id, name').in('id', branchIds);
+    branchName = Object.fromEntries((br ?? []).map((b: any) => [b.id, b.name]));
+  }
+
+  res.json(rows.map((d: any) => ({
+    ...d,
+    branch_name: d.branch_id ? (branchName[d.branch_id] ?? null) : null,
+  })));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,7 +88,7 @@ router.get('/', async (req, res) => {
 // The server states the facts and computes nothing subjective beyond staleness in
 // hours; whether "behind" is acceptable is a judgement for whoever reads it.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/fleet', requirePermission('settings.manage'), async (req, res) => {
+router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
   const { data, error } = await supabase
     .from('user_devices')
     .select(`
@@ -120,9 +135,31 @@ router.get('/fleet', requirePermission('settings.manage'), async (req, res) => {
   });
 });
 
+// ── PATCH /api/devices/:id/label ── A72: owner gives a device a chosen name ──
+// device_label is written by registration ONLY on first insert (deviceRegistry
+// refresh applies `patch`, which does not touch it), so a chosen name persists
+// across sign-ins and is not clobbered. Tenant-guarded — you can only rename your
+// own devices.
+router.patch('/:id/label', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+  const label = String(req.body?.label ?? '').trim();
+  if (!label)            { res.status(400).json({ error: 'A device name is required.' }); return; }
+  if (label.length > 60) { res.status(400).json({ error: 'Device name must be 60 characters or fewer.' }); return; }
+
+  const { data: device } = await supabase
+    .from('user_devices').select('id, business_id')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  const { error } = await supabase
+    .from('user_devices').update({ device_label: label }).eq('id', req.params.id);
+  if (error) { sendError(res, error); return; }
+
+  res.json({ id: req.params.id, device_label: label });
+});
+
 // ── PATCH /api/devices/:id/approve ───────────────────────────────────────────
 
-router.patch('/:id/approve', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.patch('/:id/approve', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -162,7 +199,7 @@ router.patch('/:id/approve', requirePermission('settings.manage'), async (req, r
 
 // ── PATCH /api/devices/:id/reject ────────────────────────────────────────────
 
-router.patch('/:id/reject', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.patch('/:id/reject', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { id } = req.params;
 
   const { data: device, error: fetchErr } = await supabase
@@ -193,7 +230,7 @@ router.patch('/:id/reject', requirePermission('settings.manage'), async (req, re
 // ── DELETE /api/devices/:id ───────────────────────────────────────────────────
 // Revoke a previously approved device — e.g. lost/stolen or staff departure.
 
-router.delete('/:id', requirePermission('settings.manage'), async (req, res) => {  // M22: was requireAuth only
+router.delete('/:id', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {  // M22: was requireAuth only
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, business_id')
@@ -231,7 +268,7 @@ router.delete('/:id', requirePermission('settings.manage'), async (req, res) => 
 // incumbent rather than the newcomer is deliberate: the operator names the
 // machine being replaced, which is the one they can identify, and there may be
 // no row yet for a replacement that has never synced.
-router.post('/:id/authorise-handover', requirePermission('settings.manage'), async (req, res) => {
+router.post('/:id/authorise-handover', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
   const { data: device, error: fetchErr } = await supabase
     .from('user_devices')
     .select('id, device_id, device_label, branch_id, device_role, role_confirmed_at')

@@ -5,7 +5,12 @@
 // floating-point dust never blocks a sale.
 
 export const EPSILON = 0.01;
-export const round2 = (n: number) => Math.round(n * 100) / 100;
+// MUST match the four server copies (orders.ts, discountPolicy.ts, qr.ts,
+// reports-daily.ts) and the till math ordertax.test.mjs replicates. Without the
+// Number.EPSILON nudge, half-cent values round the other way (1.005 → 1.00 here
+// vs 1.01 on the server), so the receipt's VAT/CTL split could disagree with the
+// books by a cent even when the 0.01 total tolerance absorbs the difference.
+export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 // Discount ceiling — MUST match capDiscount() in apps/server/src/routes/orders.ts.
 //
@@ -28,10 +33,13 @@ export const DEFAULT_MAX_DISCOUNT_PCT = 10;
 export type LegMethod = 'cash' | 'mpesa' | 'card' | 'glovo';
 
 export interface DraftLeg {
-  method: LegMethod;
+  // Built-in codes are cash/mpesa/card/glovo; a custom method (A96) is its own
+  // `code` string. Reconciliation filters on method === 'cash' specifically, so
+  // any non-cash code — built-in or custom — cannot inflate expected cash.
+  method: string;
   amount: string;     // raw input; '' means "the remaining balance"
   tendered: string;   // cash only
-  reference: string;  // mpesa/card/glovo — the aggregator's order reference
+  reference: string;  // mpesa/card/glovo/custom — the aggregator's order reference
 }
 
 // VAT-inclusive pricing: VAT is extracted from the post-discount goods total.

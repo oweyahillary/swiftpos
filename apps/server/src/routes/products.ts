@@ -338,6 +338,48 @@ router.patch('/bulk-tax/by-ids', requirePermission('products.manage'), async (re
   res.json(results);
 });
 
+// PATCH /api/products/bulk-cost/by-ids
+// Set cost_price on many products at once — each a different value — for the
+// cost-price editor. Mirrors bulk-tax/by-ids' business scoping. cost_price is
+// the unit cost that drives margin, COGS and the Menu Matrix; null/'' clears it.
+router.patch('/bulk-cost/by-ids', requirePermission('products.manage'), async (req, res) => {
+  const { items } = req.body ?? {};
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: 'items array is required' }); return;
+  }
+  if (items.length > 1000) {
+    res.status(400).json({ error: 'Maximum 1000 rows per update' }); return;
+  }
+
+  const ids = items.map((i: any) => i.id).filter(Boolean);
+  const { data: owned } = await supabase
+    .from('products').select('id').eq('business_id', req.businessId).in('id', ids);
+  const ownedSet = new Set((owned ?? []).map((p: any) => p.id));
+
+  const results = { updated: 0, skipped: 0, errors: [] as { id: string; error: string }[] };
+
+  for (const item of items) {
+    if (!ownedSet.has(item.id)) { results.skipped++; continue; }
+    let cost: number | null;
+    if (item.cost_price === null || item.cost_price === '' || item.cost_price === undefined) {
+      cost = null;
+    } else {
+      cost = Number(item.cost_price);
+      if (!Number.isFinite(cost) || cost < 0) {
+        results.errors.push({ id: item.id, error: 'invalid cost_price' }); continue;
+      }
+    }
+    const { error } = await supabase
+      .from('products')
+      .update({ cost_price: cost, updated_at: new Date().toISOString() })
+      .eq('id', item.id).eq('business_id', req.businessId);
+    if (error) results.errors.push({ id: item.id, error: error.message });
+    else results.updated++;
+  }
+
+  res.json(results);
+});
+
 router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   const { rows } = req.body;
 

@@ -13,8 +13,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
-import { MenuTab, StaffTab, ReceiptTextTab, CombosTab, ImportTab } from './ManageTabs';
-import PrinterSetupScreen from '../screens/PrinterSetupScreen';
+import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
+import SettingsPanel from '../components/SettingsPanel';
+import PrintersScreen from '../screens/PrintersScreen';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
@@ -496,6 +497,71 @@ function HourlyChart({ hourly, currency }: { hourly: { hour: number; revenue: nu
 }
 
 // ── Orders Tab ────────────────────────────────────────────────────────────────
+// A small segmented selector, the "like the print option" control the owner
+// asked for (A105). Used to fold two sibling tabs into one — Orders/Item Mix and
+// Current shift/Shift report — so a manager picks the view inside one nav item
+// rather than hunting two.
+function SegmentedSelector<T extends string>({ options, value, onChange }: {
+  options: { key: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-gray-700 bg-gray-900 p-0.5">
+      {options.map(o => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            value === o.key ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// #7 (A105): Orders and Item Mix under one nav item. Item Mix is restaurant-only,
+// so a non-restaurant business sees just Orders with no selector.
+function OrdersAndMixTab({ currency, isRestaurant }: { currency: string; isRestaurant: boolean }) {
+  const [view, setView] = useState<'orders' | 'mix'>('orders');
+  return (
+    <div className="space-y-4">
+      {isRestaurant && (
+        <SegmentedSelector
+          options={[{ key: 'orders', label: 'Orders' }, { key: 'mix', label: 'Item Mix' }]}
+          value={view}
+          onChange={v => setView(v)}
+        />
+      )}
+      {view === 'orders' || !isRestaurant
+        ? <OrdersTab currency={currency} />
+        : <TopItemsTab currency={currency} />}
+    </div>
+  );
+}
+
+// #6 (A105): the shift and its report under one "Shift" nav item. The manager
+// sees the open shift, then switches to "Shift report" to view (and print) the
+// Z-report — instead of two separate tabs that never referenced each other.
+function ShiftAndReportTab({ currency, businessName }: { currency: string; businessName: string }) {
+  const [view, setView] = useState<'shift' | 'report'>('shift');
+  return (
+    <div className="space-y-4">
+      <SegmentedSelector
+        options={[{ key: 'shift', label: 'Current shift' }, { key: 'report', label: 'Shift report' }]}
+        value={view}
+        onChange={v => setView(v)}
+      />
+      {view === 'shift'
+        ? <ShiftTab currency={currency} />
+        : <ZReportTab businessName={businessName} currency={currency} />}
+    </div>
+  );
+}
+
 function OrdersTab({ currency }: { currency: string }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1000,27 +1066,44 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   useEffect(() => {
     void (async () => {
       try {
-        const init = await posApi.pos.init();
-        const live = (init.stationRouting?.stations ?? [])
+        // The REAL station source is GET /api/stations (print_stations), the same
+        // one the Stations tab uses — so both tabs agree. This used to read
+        // pos.init().stationRouting, a field the server never actually emits, so
+        // the list always collapsed to the single synthetic receipt below and a
+        // venue's Kitchen/Dispatch stations vanished from the Printers tab (a
+        // configured station showed nowhere to bind a printer). (A89.)
+        const rows = await posApi.manage.listStations();
+        const live = (rows ?? [])
+          .filter(s => s.active !== false)
           .map(s => ({ id: s.id, name: s.name, kind: s.kind }));
 
-        // EVERY till needs somewhere to print the customer receipt.
-        //
-        // Kitchen and dispatch stations are per-venue — a retail shop has
-        // neither. A receipt station is not optional: if the business has not
-        // defined one, the till still has to be able to bind its own printer,
-        // or the installer is sent to the dashboard mid-setup for something
-        // that is purely a property of the machine in front of them. On a
-        // fully-offline branch the dashboard may not even be reachable.
-        //
-        // The id here matches the fallback escpos:canPrint checks when a
-        // business has no receipt station of its own, so binding a printer to
-        // it is what makes the receipt actually print.
+        if (live.length === 0) {
+          // No stations configured on the server yet. Seed the day-one defaults
+          // so the till works offline without a dashboard round-trip (A91). A
+          // restaurant gets all three — Kitchen, Dispatch, Till — matching
+          // shared/printing's kitchen/dispatch/receipt presets, the incumbent's
+          // three-station layout, and the escpos routing fallback
+          // (is_kitchen → ids.kitchen, else ids.dispatch), which recognises
+          // these built-in ids. A retail shop has no kitchen or dispatch, so it
+          // gets the receipt alone. Previously the loader pushed only a synthetic
+          // receipt here, collapsing a restaurant's Printers tab to one station
+          // and never reaching FALLBACK_STATIONS.
+          const seeded = flags.isRestaurant
+            ? FALLBACK_STATIONS.map(s => ({ ...s }))
+            : FALLBACK_STATIONS.filter(s => s.kind === 'receipt').map(s => ({ ...s }));
+          setEscposStations(seeded);
+          return;
+        }
+
+        // Configured stations exist. EVERY till still needs somewhere to print
+        // the customer receipt — if the business defined none, add the receipt
+        // fallback (its id matches the escpos:canPrint checks) so a printer can
+        // still be bound to it.
         if (!live.some(s => s.kind === 'receipt')) {
           live.push({ id: 'receipt', name: 'Till receipt', kind: 'receipt' });
         }
 
-        if (live.length) setEscposStations(live);
+        setEscposStations(live);
       } catch { /* fallback list stands */ }
     })();
   }, []);
@@ -1031,6 +1114,11 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   const canManageProducts = has('products.manage');
   const canManageStaff    = has('staff.manage');
   const canManageSettings = has('settings.manage');
+  // A59/A45 · Gate Receipt on the permission KEYS the cloud enforces, not the role.
+  // Cloud: business.ts POST /settings → requireAnyPermission('receipt.manage','settings.manage').
+  // receipt.manage is granted to manager roles by migration 78; settings.manage
+  // covers managers who already hold it, so no current manager loses the tab.
+  const canManageReceipt  = has('receipt.manage') || canManageSettings;
 
   // Closing the trading day is a CASH operation, not a settings one, so it must
   // not hide behind settings.manage. Gated on the same rule dayService.isManager()
@@ -1056,20 +1144,22 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   }, []);
 
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers' | 'settings';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
     { key: 'orders',   label: 'Orders',       icon: I.orders   },
     { key: 'shift',    label: 'Shift',        icon: I.shift    },
-    { key: 'zreport',  label: 'Shift Report', icon: I.zreport  },
+    // #6 (A105): the Shift Report is now a view INSIDE the Shift tab, not its own
+    // nav item.
     // Manager-only: this is the escape route for the trading-day gate. Without
     // it a till stays frozen the first morning nobody closed the day.
     ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
     // Phase 4. Registered for every manager; the tab itself explains when this
     // till is not the branch server, which beats an option that silently is not there.
     ...(isManagerRole ? [{ key: 'branchclose' as TabKey, label: 'Close Branch', icon: I.shift }] : []),
-    ...(flags.isRestaurant ? [{ key: 'items' as TabKey, label: 'Item Mix', icon: I.items }] : []),
+    // #7 (A105): Item Mix is now a view INSIDE the Orders tab (restaurant only),
+    // selected with a segmented control, not its own nav item.
     // Editing, not just viewing. Without these the owner has to phone us to add
     // a product or fix a price, which for fast food is a daily event.
     // ONE Menu tab. Prices, Combos and Import were three views of the same menu,
@@ -1080,14 +1170,25 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // screen rather than as a sibling nobody connects to the menu they are editing.
     ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
     ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
-    ...(isManagerRole ? [{ key: 'receipt' as TabKey, label: 'Receipt', icon: I.receipt   }] : []),
+    ...((canManageSettings || canManageProducts) ? [{ key: 'settings' as TabKey, label: 'Settings', icon: I.receipt }] : []),
     // Gated like the other configuration tabs. It was briefly left open on the
     // reasoning that printer bindings are per-device, so whoever stands at the
     // till is who needs them. That was wrong: re-pointing a printer mid-service
     // sends receipts to the wrong station and nobody notices until the queue
     // backs up. Cashiers keep the read-only view on the POS screen, where they
     // can see connection status and fire a test print.
-    ...(isManagerRole ? [{ key: 'printers' as TabKey, label: 'Printers', icon: I.printer }] : []),
+    //
+    // A59 / permission-model · Gated on stations.manage. NOT settings.manage,
+    // which migration 59 makes owner/admin-only — keying Printers there would
+    // hide it from every manager. Migration 79 grants stations.manage to the
+    // manager roles, so this is additive: everyone who reached Printers via the
+    // role gate still does. Ships in the same batch as 79; without that grant,
+    // managers would lose the tab.
+    // Now holds Receipt too (A90), so it shows for anyone who can manage EITHER
+    // stations OR the receipt text; PrintersScreen then shows only the sub-tabs
+    // each permission allows. A manager with only receipt.manage keeps Receipt.
+    ...((has('stations.manage') || canManageReceipt)
+      ? [{ key: 'printers' as TabKey, label: 'Printing', icon: I.printer }] : []),
     // Hidden when nothing is stock-tracked — an owner who turned stock off
     // shouldn't be shown an empty Stock screen and conclude it's broken.
     ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
@@ -1101,10 +1202,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         if (flags.isPetrol)     return <PetrolOverview     currency={currency} />;
         if (flags.isRestaurant) return <RestaurantOverview currency={currency} />;
         return <RetailOverview currency={currency} />;
-      case 'orders':  return <OrdersTab  currency={currency} />;
-      case 'shift':   return <ShiftTab   currency={currency} />;
+      case 'orders':  return <OrdersAndMixTab currency={currency} isRestaurant={flags.isRestaurant} />;
+      case 'shift':   return <ShiftAndReportTab currency={currency} businessName={businessName} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
+      // Reachable only as a fallback now — the nav folds these into Orders/Shift
+      // (A105). Kept so any direct setActive still resolves.
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
@@ -1112,13 +1215,15 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
-      case 'receipt': return <ReceiptTextTab />;
-      // PrinterSetupScreen supersedes PrintersTab: one screen, live preview
-      // rendered from the same Document the printer receives, and a test print
-      // that reports the real result. PrintersTab stays reachable until the
-      // thermal path is proven on site. PrintersTab.tsx remains in the tree,
-      // unrouted, until then.
-      case 'printers': return <PrinterSetupScreen stations={escposStations.length ? escposStations : FALLBACK_STATIONS} />;
+      case 'settings': return <SettingsPanel canEdit={canManageSettings || canManageProducts} />;
+      // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
+      // Stations, Printers, Exclusions (all stations.manage) and Receipt
+      // (receipt.manage/settings.manage). Per-tab gating passed in below.
+      case 'printers': return <PrintersScreen
+        stations={escposStations.length ? escposStations : FALLBACK_STATIONS}
+        canManageStations={has('stations.manage')}
+        canManageReceipt={canManageReceipt}
+      />;
       case 'stock':   return <StockTab   currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }

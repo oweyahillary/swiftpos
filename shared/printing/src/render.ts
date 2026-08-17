@@ -215,6 +215,14 @@ function renderReceipt(ctx: PrintContext): Document {
 
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
+  // Owner's custom header (address, phone, tagline…), one line per line, centred
+  // — matching the on-screen ReceiptView. Blank lines dropped so a stray return
+  // doesn't waste paper. This was shown on screen but never printed (register).
+  if (business.header) {
+    for (const ln of business.header.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) {
+      d.line(center(cols, ln));
+    }
+  }
   if (business.kraPin) d.line(center(cols, `PIN: ${business.kraPin}`));
   if (business.telephone) d.line(center(cols, `Tel: ${business.telephone}`));
   d.line(rule(cols));
@@ -318,6 +326,38 @@ function renderReceipt(ctx: PrintContext): Document {
     d.line(rule(cols));
   }
 
+  // ── The footer stack ───────────────────────────────────────────────────────
+  // Owner-approved arrangement, 04 Aug 2026, in this order:
+  //
+  //     the owner's footer box, verbatim line for line   (paybill, delivery no.)
+  //     a rule — only when that box has content, so there is no orphan separator
+  //     the CLOSING BLOCK: thank-you · TAX RECEIPT · Powered by SwiftPOS
+  //
+  // The box is the owner's; the closing block is not editable from it.
+  //
+  // ── WHY THE CLOSING BLOCK IS HERE AND NOT ONLY IN THE HTML RECEIPT ─────────
+  // It used to live at ReceiptView.tsx:266-269, and 0.5.27 removed the HTML
+  // SALE path (register D8). Two behaviours went with it and nobody noticed,
+  // because the thermal renderer had never had them:
+  //
+  //   * the DEFAULT thank-you when the owner's box is blank. Without it an
+  //     empty receipt_footer printed no thank-you AND no rule, so the receipt
+  //     ended on the payment line and then "Powered by SwiftPOS" with nothing
+  //     between them.
+  //   * "TAX RECEIPT UPON REQUEST" whenever VAT applies. The string did not
+  //     exist anywhere in this package — only in the deleted HTML component and
+  //     in wrapAuthored's docstring, which uses it as its example.
+  //
+  // Reported from the field on 0.5.27: both lines missing above the credit.
+  //
+  // The VAT line is deliberately NOT taken from receipt_footer. Making a line
+  // with legal meaning depend on somebody remembering to type it is how it goes
+  // missing — and on this build a manager cannot type it anyway, because the
+  // Receipt tab is shown on isManagerRole while the write demands
+  // settings.manage and refuses (register A45).
+  //
+  // wrapAuthored, not wrap: the owner's box is composed text and the line
+  // breaks they typed are meaning, not whitespace (P-15).
   if (business.thankYouMessage) {
     d.lines(wrapAuthored(business.thankYouMessage, cols).map(l => center(cols, l)));
   }
@@ -325,6 +365,16 @@ function renderReceipt(ctx: PrintContext): Document {
     d.lines(wrapAuthored(business.deliveryMessage, cols).map(l => center(cols, l)));
   }
   if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
+
+  // Closing block — fixed, always printed.
+  d.lines(wrap(business.closingMessage ?? 'Thank you for your business!', cols)
+    .map(l => center(cols, l)));
+
+  // Only when tax actually applies. A zero-rated business printing "TAX RECEIPT
+  // UPON REQUEST" is claiming something untrue on a document a customer keeps.
+  if (business.vatRate > 0) {
+    d.line(center(cols, 'TAX RECEIPT UPON REQUEST'));
+  }
 
   if (business.footerCredit) d.line(center(cols, business.footerCredit));
 

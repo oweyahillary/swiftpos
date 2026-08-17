@@ -61,12 +61,11 @@ export default function POSLoginScreen() {
     }
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Auto-submit at PIN_MIN digits when email is filled ───────────────────
-  useEffect(() => {
-    if (pin.length === PIN_MIN && email.trim()) {
-      handleLogin(email, pin);
-    }
-  }, [pin]); // eslint-disable-line react-hooks/exhaustive-deps
+  // No auto-submit. Submitting the instant length hit PIN_MIN (4) fired a login
+  // with a truncated PIN for every 5–6 digit user, and triggerError cleared the
+  // field, so longer PINs could never be completed — a hard lockout for managers
+  // on 6-digit PINs. The user completes their PIN (4–6) and presses Confirm,
+  // matching PinPage and the lock screen.
 
   // ── Core login ────────────────────────────────────────────────────────────
   async function handleLogin(emailVal: string, pinVal: string) {
@@ -303,7 +302,7 @@ export default function POSLoginScreen() {
             ))}
           </div>
 
-          {pin.length > PIN_MIN && !successName && (
+          {pin.length >= PIN_MIN && !successName && (
             <button style={st.confirmBtn} onClick={pressConfirm} disabled={loading || !pinReady}>
               ✓ Confirm PIN
             </button>

@@ -239,7 +239,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {rule(false)}
       {payments.map((p, i) => (
         <div key={i}>
-          {row(METHOD_LABEL[p.method] ?? p.method.toUpperCase(), moneyBig(p.amount))}
+          {row(METHOD_LABEL[p.method] ?? p.method.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), moneyBig(p.amount))}
           {p.method === 'cash' && p.amount_tendered > p.amount &&
             row('  Tendered', moneyBig(p.amount_tendered), {})}
           {p.reference && row('  Ref', p.reference, {})}

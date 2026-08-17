@@ -150,8 +150,23 @@ declare global {
         enabled:     () => Promise<boolean>;
         setEnabled:  (on: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
         canPrint:    (kind: 'kitchen' | 'dispatch' | 'receipt') => Promise<boolean>;
-        printProduction: (payload: unknown) => Promise<{ ok: boolean }>;
+        // `skipped` names the stations that produced NOTHING — no printer
+        // bound on this terminal. With the HTML fallback gone (0.5.27) this is
+        // the only way the cashier learns a ticket did not go. Register D8.
+        printProduction: (payload: unknown) => Promise<{ ok: boolean; skipped: string[] }>;
+        // The EFFECTIVE list, where it came from, and the cloud baseline. The
+        // setup screen previews with `terms`, so a preview never disagrees with
+        // the printer; `source`/`cloudTerms` drive the "local override vs
+        // business default" affordance.
+        kitchenExclusions: () => Promise<{ terms: string[]; source: 'local' | 'cloud'; cloudTerms: string[] }>;
+        // Set this terminal's local override. Allowed on any till; the override
+        // wins over the cloud default and is never overwritten by a sync.
+        setKitchenExclusions: (terms: string[]) => Promise<{ ok: boolean; error?: string; terms: string[] }>;
+        // Drop the override and follow the cloud baseline again. Returns the
+        // baseline now in force.
+        clearKitchenExclusions: () => Promise<{ ok: boolean; error?: string; terms: string[] }>;
         reprintReceipt: () => Promise<{ ok: boolean; error?: string }>;
+        reprintReceiptForOrder: (orderId: string) => Promise<{ ok: boolean; error?: string }>;
         printShiftReport: (data: unknown) => Promise<{ ok: boolean; error?: string; internal?: boolean }>;
         retry:       (id: string) => Promise<unknown>;
         preview:     (ctx: unknown) => Promise<unknown>;
@@ -162,12 +177,23 @@ declare global {
       platform: string;
       auth: {
         login: (email: string, password: string) => Promise<{ user: any; business: any }>;
+        redeemEnrolment: (business_id: string, code: string) => Promise<{ user: any; business: any; branchId: string | null }>;
         logout: () => Promise<boolean>;
         getSession: () => Promise<{ user: any; business: any } | null>;
         listBranches: () => Promise<{ id: string; name: string; desktop_licensed: boolean }[]>;
         verifyPin: (pin: string, branch_id: string) => Promise<StaffSession>;
         getStaffSession: () => Promise<StaffSession | null>;
         clearStaffSession: () => Promise<boolean>;
+      };
+      // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
+      // in the main process (OS idle cannot fire mid-sale; renderer activity
+      // tracking can).
+      idle: {
+        setSurface: (surface: 'manager' | 'pos' | null) => Promise<boolean>;
+        clear:      () => Promise<boolean>;
+        suppress:   () => Promise<number>;
+        release:    (token: number) => Promise<boolean>;
+        onLock:     (cb: () => void) => () => void;
       };
       pos: {
         init: () => Promise<{ products: any[]; categories: any[]; branchId: string | null; vatRate: number | null; ctlRate: number | null; maxDiscountPct: number | null;
@@ -182,6 +208,7 @@ declare global {
         getModifiers: (productId: string) => Promise<any[]>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
+        paymentMethods: () => Promise<{ code: string; name: string }[]>;
       };
       order: {
         create: (payload: any) => Promise<{ orderId: string }>;
@@ -302,6 +329,11 @@ declare global {
         listCategories: () => Promise<any[]>;
         createCategory: (payload: any) => Promise<any>;
         listStations:  () => Promise<PrintStation[]>;
+        listPaymentMethods: () => Promise<{ id: string; name: string; code: string; is_active: boolean; sort_order: number }[]>;
+        createPaymentMethod: (payload: { name: string; sort_order?: number }) => Promise<{ id: string; name: string; code: string; is_active: boolean; sort_order: number }>;
+        updatePaymentMethod: (id: string, patch: { name?: string; is_active?: boolean; sort_order?: number }) => Promise<any>;
+        deletePaymentMethod: (id: string) => Promise<{ success: boolean }>;
+        seedDefaultStations: () => Promise<{ created: boolean; stations: number; routed: { packing: number; kitchen: number } }>;
         unassignedCategories: () => Promise<{ id: string; name: string }[]>;
         createStation: (payload: { name: string; kind?: StationKind; sort_order?: number }) => Promise<PrintStation>;
         updateStation: (id: string, patch: Partial<{ name: string; kind: StationKind; sort_order: number; active: boolean }>) => Promise<PrintStation>;
@@ -330,6 +362,8 @@ declare global {
         updateStaff:    (id: string, patch: any) => Promise<any>;
         getReceiptText: () => Promise<{ header: string; footer: string }>;
         setReceiptText: (header: string, footer: string) => Promise<any>;
+        getContinuousOperation: () => Promise<{ enabled: boolean }>;
+        setContinuousOperation: (enabled: boolean) => Promise<any>;
       };
       manager: {
         reportScope: () => Promise<{

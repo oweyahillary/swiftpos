@@ -209,6 +209,10 @@ export interface PaymentLegInput {
   amount:    number | string;
   tendered?: number | string;
   reference?: string;
+  // A confirmed manual tender (desktop till: cash in drawer, M-Pesa seen on the
+  // cashier's phone) arrives status='completed'. Absent, an M-Pesa leg defaults
+  // to 'pending' for the STK-push flow, which the callback later completes (A93).
+  status?:   string;
   // Written to `payments` on every sale; all three columns exist. Verified
   // against the schema — the declaration was the only thing missing them.
   amount_tendered?:   number | string | null;

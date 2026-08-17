@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
 
   auth: {
     login:      (email: string, password: string) => ipcRenderer.invoke('auth:login', { email, password }),
+    redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
     logout:     ()                                 => ipcRenderer.invoke('auth:logout'),
     getSession: ()                                 => ipcRenderer.invoke('auth:getSession'),
     listBranches:      ()                                 => ipcRenderer.invoke('auth:listBranches'),
@@ -29,6 +30,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getModifiers: (productId: string) => ipcRenderer.invoke('pos:getModifiers', productId),
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
+    paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
   },
 
   order: {
@@ -156,6 +158,11 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // ("$.manage.createStation is not a function") and the kitchen could not
     // be routed at all. check-ipc-parity.mjs now fails CI on this class.
     listStations:         ()                             => ipcRenderer.invoke('manage:listStations'),
+    listPaymentMethods:   ()                             => ipcRenderer.invoke('manage:listPaymentMethods'),
+    createPaymentMethod:  (payload: any)                 => ipcRenderer.invoke('manage:createPaymentMethod', payload),
+    updatePaymentMethod:  (id: string, patch: any)       => ipcRenderer.invoke('manage:updatePaymentMethod', { id, patch }),
+    deletePaymentMethod:  (id: string)                   => ipcRenderer.invoke('manage:deletePaymentMethod', id),
+    seedDefaultStations:  ()                             => ipcRenderer.invoke('manage:seedDefaultStations'),
     unassignedCategories: ()                             => ipcRenderer.invoke('manage:unassignedCategories'),
     createStation:        (payload: any)                 => ipcRenderer.invoke('manage:createStation', payload),
     updateStation:        (id: string, patch: any)       => ipcRenderer.invoke('manage:updateStation', { id, patch }),
@@ -167,6 +174,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     updateStaff:    (id: string, patch: any)             => ipcRenderer.invoke('manage:updateStaff', { id, patch }),
     getReceiptText: ()                                   => ipcRenderer.invoke('manage:getReceiptText'),
     setReceiptText: (header: string, footer: string)     => ipcRenderer.invoke('manage:setReceiptText', { header, footer }),
+    getContinuousOperation: ()                           => ipcRenderer.invoke('manage:getContinuousOperation'),
+    setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
   },
 
   manager: {
@@ -208,7 +217,15 @@ contextBridge.exposeInMainWorld('swiftpos', {
     // it is paid. See main/escposBridge.ts.
     printProduction: (payload: unknown) =>
                    ipcRenderer.invoke('escpos:printProduction', payload),
+    // The effective list + where it came from (override vs synced cloud base).
+    kitchenExclusions: () => ipcRenderer.invoke('escpos:kitchenExclusions'),
+    // Set this terminal's local override — wins over cloud, survives every sync.
+    setKitchenExclusions: (terms: string[]) =>
+                   ipcRenderer.invoke('escpos:setKitchenExclusions', terms),
+    // Drop the override and follow the cloud baseline again.
+    clearKitchenExclusions: () => ipcRenderer.invoke('escpos:clearKitchenExclusions'),
     reprintReceipt: () => ipcRenderer.invoke('escpos:reprintReceipt'),
+    reprintReceiptForOrder: (orderId: string) => ipcRenderer.invoke('escpos:reprintReceiptForOrder', orderId),
     printShiftReport: (data: unknown) => ipcRenderer.invoke('escpos:printShiftReport', data),
     retry:       (id: string)        => ipcRenderer.invoke('escpos:retry', id),
     preview:     (ctx: unknown)      => ipcRenderer.invoke('escpos:preview', ctx),
@@ -219,6 +236,34 @@ contextBridge.exposeInMainWorld('swiftpos', {
       const h = () => cb();
       ipcRenderer.on('escpos:changed', h);
       return () => { ipcRenderer.removeListener('escpos:changed', h); };
+    },
+  },
+
+  // ── Idle lock (A52) ────────────────────────────────────────────────────────
+  // The main process owns the decision because powerMonitor.getSystemIdleTime()
+  // reports OS-level idle — the same signal Windows uses to blank a screen. A
+  // cashier mid-sale is touching the machine, so idle is 0 and the lock cannot
+  // fire; "never lock mid-transaction" is true by construction, not by a
+  // special case. Renderer mouse listeners would lock a till somebody is
+  // standing at, and staff answer that with trivial or shared PINs.
+  idle: {
+    // Which surface is showing, so the right threshold applies. null for the
+    // PIN pad, owner login, install and tech — locking a lock screen is
+    // meaningless.
+    setSurface: (surface: 'manager' | 'pos' | null) => ipcRenderer.invoke('idle:setSurface', surface),
+    // The user PINned back in.
+    clear:      ()                                  => ipcRenderer.invoke('idle:clear'),
+    // Hold the lock off while work is in flight and nobody is at the screen —
+    // an STK push awaiting its callback, a print job spooling. A curtain
+    // dropping over a payment the customer is completing on their phone would
+    // read as a crash. Resolves to a token the renderer passes back to release.
+    suppress:   ()                                  => ipcRenderer.invoke('idle:suppress'),
+    release:    (token: number)                     => ipcRenderer.invoke('idle:release', token),
+    // Push, not poll. Returns its own unsubscribe for a React effect.
+    onLock:     (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('idle:lock', h);
+      return () => { ipcRenderer.removeListener('idle:lock', h); };
     },
   },
 

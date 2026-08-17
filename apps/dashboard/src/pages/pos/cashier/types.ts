@@ -77,6 +77,8 @@ export interface POSInitResponse {
    *  paid less than the order stored. Optional for older servers; falls back to
    *  the shared default below. */
   maxDiscountPct?: number;
+  /** Custom payment methods (A96), per business. Optional for older servers. */
+  paymentMethods?: { code: string; name: string }[];
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };

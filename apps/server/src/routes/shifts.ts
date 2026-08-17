@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { branchScope, requirePermission } from '../middleware/rbac';
+import { branchScope, requirePermission, requireAnyPermission } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import { chunkIn, fetchAllIds } from '../lib/pgQuery';
 import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
-import { terminalKey, terminalKeyFromRequest } from '../lib/terminalKey';
+import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -95,8 +95,9 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
     return;
   }
 
-  const deviceId     = (req.headers['x-device-id'] as string | undefined)?.trim()
-                       || (req.body?.device_id as string | undefined)?.trim() || null;
+  // deviceIdFromRequest, not a raw header read — a duplicated header arrives
+  // comma-joined, and this value keys the one-open-drawer index. terminalKey.ts.
+  const deviceId     = deviceIdFromRequest(req) || null;
   const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || null;
 
   const { data, error } = await supabase
@@ -365,7 +366,10 @@ async function computeExpectedCash(shiftId: string, openingFloat: number): Promi
 // rights (see App.tsx hasManagerRights), so the two surfaces agree on who is a
 // manager rather than drifting apart.
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/:id/force-close', requirePermission('settings.manage'), async (req, res) => {
+// requireAnyPermission (A59): the dedicated `shifts.force_close` key OR the
+// broad `settings.manage` — additive, so anyone who could force-close before
+// (via settings.manage) still can, and the now-granted key (migration 83) works.
+router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'settings.manage'), async (req, res) => {
   const { id } = req.params;
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
 

@@ -7,6 +7,7 @@ import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
+import { startIdleMonitor } from './idleMonitor';
 import { getServerUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
@@ -15,6 +16,26 @@ import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 
 const isDev = !app.isPackaged;
+
+// D17: the window title reflects the CLOUD this till is enrolled against, so a
+// build can never lie about which environment it is selling to. getServerUrl()
+// returns the enrolled device_config.server_url (the cloud — rule 21). Fill
+// PROD_CLOUD_HOSTS with your production host(s); any other host is shown in the
+// title. An empty list is the safe default: it over-shows an environment and
+// never HIDES one, which is the failure mode this exists to prevent.
+const PROD_CLOUD_HOSTS: string[] = []; // e.g. ['api.swiftpos.co.ke']
+
+function cloudBadgeTitle(): string {
+  const base = 'SwiftPOS';
+  try {
+    const url = getServerUrl();
+    if (!url) return base; // not enrolled yet — nothing to badge
+    const host = new URL(url).host;
+    return PROD_CLOUD_HOSTS.includes(host) ? base : `${base} — ${host}`;
+  } catch {
+    return base;
+  }
+}
 
 /**
  * Moves the data folder from the old name to the new one, once.
@@ -97,12 +118,13 @@ function installMenu() {
 }
 
 function createWindow() {
+  const badgeTitle = cloudBadgeTitle(); // D17
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 600,
-    title: 'SwiftPOS',
+    title: badgeTitle,
     // Hidden, not absent — see installMenu(). Alt still reveals it if a
     // technician needs it.
     autoHideMenuBar: true,
@@ -114,6 +136,10 @@ function createWindow() {
   });
 
   win.setMenuBarVisibility(false);
+
+  // D17: hold the env-badged title even if the loaded page sets its own
+  // document.title, so the enrolled cloud stays visible in the title bar.
+  win.on('page-title-updated', (e) => { e.preventDefault(); win.setTitle(badgeTitle); });
 
   // Anything that would navigate away from the app opens in the real browser
   // instead. A till that has wandered off to a web page is a till that cannot
@@ -220,6 +246,11 @@ app.whenReady().then(() => {
   //   2. A full pull+push every 10 minutes to keep the catalogue fresh.
   // The renderer additionally notifies us the instant the OS reports
   // online/offline (see 'net:changed' in ipcHandlers) for immediate flushes.
+  // A52: lock the till when the MACHINE is idle, not when the app thinks it is.
+  // See idleMonitor.ts for why OS idle is the only signal that cannot fire
+  // mid-sale.
+  startIdleMonitor();
+
   setInterval(() => {
     if (getSyncStatus().pendingCount > 0) syncPush().catch(console.error);
   }, 60_000);

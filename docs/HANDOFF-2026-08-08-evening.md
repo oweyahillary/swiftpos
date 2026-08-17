@@ -108,6 +108,63 @@ and every manifest, and renumbering would silently break those references.
       (A25).
     - Additive beats clever. One file restorable, one rollback line.
 
+21. **Say "node" or "cloud". Never "server" on its own.** (added 2026-08-10,
+    owner) Two machines answer to "the server" and they are not the same thing,
+    which has already cost real time — including an afternoon diagnosing a
+    device-registration failure while "deploy the server" meant one thing to one
+    person and something else to the other.
+
+    The vocabulary is not new; it is what the code already says. `device_role`
+    has been `'till' | 'node' | 'office'` since Phase 3, and "the node" (105
+    uses) and "the cloud" (47) already outnumber every alternative. What is new
+    is banning the ambiguous term.
+
+    | Term | Means | Do not write |
+    |---|---|---|
+    | **node** | the branch machine that serves its tills | "local server", "branch server", "the server" |
+    | **cloud** | the hosted API | "the server", "remote", "backend" |
+    | **till** / **peer** | a selling terminal that is not the node | "client" |
+    | **office** | a node that cannot sell | — |
+
+    - Applies to code comments, commit messages, the register, handoffs, and
+      anything said to the owner.
+    - **`getServerUrl()` returns the CLOUD url.** It is the most misleading name
+      in the tree and it produced a wrong diagnosis on 2026-08-10. Rename it
+      `getCloudUrl()`. The `device_config.server_url` COLUMN keeps its name —
+      renaming a local-schema column is the class of change D6 warns about — but
+      it gains a comment saying what it holds.
+    - "The server is down" is not a usable sentence in a bug report. Which one?
+
+22. **A delivery zip carries the change, never the version.** (added 2026-08-10)
+    `apps/desktop/package.json` rode along in a cumulative zip at `0.5.25` and
+    overwrote a `0.5.26` bump that had already been built. The next
+    `release:patch` produced **a second, different binary with the same version
+    number** — and the first had already been installed on a till.
+
+    - Never include a file whose only change is a version bump, or which the
+      recipient's own tooling owns: `package.json` version fields, lockfiles,
+      `CHANGELOG`.
+    - If a file must ship for a real change AND carries a version, say so in the
+      manifest and give the version to restore.
+    - **Check the artefact filename against the intended version before
+      tagging.** The tag follows the build; so does trusting it.
+
+23. **Mutation-check the GATE, not only the fix.** (added 2026-08-10, extends
+    rule 10) Both gates written today failed their own first version, and one
+    failed silently:
+
+    - `check-header-keys` **missed the exact bug it was written for.** Its
+      literal-matching regex refused nested braces, so any headers bag containing
+      `` `Bearer ${token}` `` — every one that matters — was skipped. It scanned
+      23 literals, printed OK, and **passed its mutation test by not looking.**
+    - `check-test-registration` reported **22 false positives** on files a CI
+      shell glob runs perfectly well.
+
+    So: reintroduce the original defect and watch the gate go red **naming the
+    right file and line**. A gate that cannot fail is the thing it was built to
+    prevent, and a gate that cries wolf gets switched off — which is worse than
+    no gate, because everyone believes it is watching.
+
 
 
 The tills run **Windows, Node 20, Electron 35.7.5**. Three separate breakages in

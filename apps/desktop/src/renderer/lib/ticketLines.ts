@@ -38,10 +38,12 @@ export interface TicketLine {
   /**
    * Prep detail for the KITCHEN ticket, ITEMIZED: the product's description
    * split into one line per item, rendered in the same indented style as
-   * combo components (which the sample test ticket demonstrates). Exists for
-   * flat products whose composition lives in prose — honest limit: prose
-   * cannot be filtered, so a drink named in it stays. Structured
-   * kitchen-vs-packing separation is what COMBOS are for.
+   * combo components. Exists for flat products whose composition lives in prose
+   * (e.g. "20pc chicken + 4 sauces + 2 large fries + 1L soft drink"). These
+   * lines ARE filtered for the kitchen by kitchenPrepLines (built-in drinks/
+   * sauces rule + the owner's term list), so a drink named in the prose is
+   * dropped from the kitchen ticket while the dispatcher still prints it in
+   * full. Structured combos remain the richer path (per-component routing).
    */
   noteLines?: string[];
   /** Whether the line itself (not its components) is cooked. */
@@ -222,18 +224,41 @@ export const KITCHEN_NOTE_EXCLUDE =
   /\b(sauces?|dips?|soft\s*drinks?|sodas?|drinks?|juices?|water|coke|fanta|sprite|krest|stoney|minute\s*maid)\b/i;
 
 /**
+ * Human-readable version of the built-in rule above, for read-only display in
+ * the Printers → Exclusions tab so the owner can SEE what is already filtered
+ * and not re-add it. Kept in step with the regex by hand — if you change one,
+ * change the other. (Register A84.)
+ */
+export const KITCHEN_NOTE_EXCLUDE_LABELS = [
+  'sauces', 'dips', 'soft drinks', 'sodas', 'drinks', 'juices',
+  'water', 'coke', 'fanta', 'sprite', 'krest', 'stoney', 'minute maid',
+];
+
+/** Escape a user-typed term so it is matched literally inside a RegExp. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * The prep lines the KITCHEN sees: everything except the owner-excluded terms.
- * `extraTerms` is the owner's own list (Printers → Kitchen exclusions, one
- * term per line) — matched case-insensitively as substrings, ON TOP of the
- * built-in rule, never instead of it. This is how "some more items" get
- * excluded next month without a code change.
+ * `extraTerms` is the owner's own list (Printers → Exclusions, one term per
+ * line), ON TOP of the built-in rule, never instead of it. This is how "some
+ * more items" get excluded next month without a code change.
+ *
+ * Matched on WORD BOUNDARIES (A84), like the built-in rule — not raw substrings.
+ * The old substring check over-matched: an owner term of "water" clipped
+ * "watermelon juice", "ice" clipped a line only because it appeared mid-word.
+ * `\bwater\b` matches the drink and leaves the fruit. Multi-word terms ("soft
+ * drink") work unchanged. Building a few short regexes per ticket is negligible
+ * and never touches the bytes-to-printer path.
  */
 export function kitchenPrepLines(noteLines?: string[], extraTerms?: string): string[] {
   const extras = String(extraTerms ?? '')
-    .split(/\r?\n/).map(t => t.trim().toLowerCase()).filter(Boolean);
+    .split(/\r?\n/).map(t => t.trim()).filter(Boolean)
+    .map(t => new RegExp(`\\b${escapeRegex(t)}\\b`, 'i'));
   return (noteLines ?? []).filter(l =>
     !KITCHEN_NOTE_EXCLUDE.test(l)
-    && !extras.some(t => l.toLowerCase().includes(t)));
+    && !extras.some(re => re.test(l)));
 }
 
 /** Sum of top-level quantities — the "Total Qty" footer. */

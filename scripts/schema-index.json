@@ -245,6 +245,18 @@
     "credit_limit": "\"numeric\" NOT NULL",
     "credit_balance": "\"numeric\" NOT NULL"
   },
+  "device_enrolment_codes": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "code_hash": "\"text\" NOT NULL",
+    "created_by": "\"uuid\" NOT NULL",
+    "expires_at": "\"timestamp with time zone\" NOT NULL",
+    "redeemed_at": "\"timestamp with time zone\"",
+    "redeemed_device_id": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "discounts": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -704,6 +716,15 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "payment_methods": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"character varying\" NOT NULL",
+    "code": "\"character varying\" NOT NULL",
+    "is_active": "\"boolean\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "printer_stations": {
     "id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",
@@ -860,7 +881,8 @@
     "ip_address": "\"text\"",
     "expires_at": "\"timestamp with time zone\" NOT NULL",
     "revoked_at": "\"timestamp with time zone\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "replaced_by": "\"uuid\""
   },
   "reservations": {
     "id": "\"uuid\" NOT NULL",
@@ -1032,18 +1054,6 @@
     "records_pulled": "\"integer\" NOT NULL",
     "status": "\"character varying\" NOT NULL",
     "notes": "\"text\""
-  },
-  "sync_queue": {
-    "id": "\"uuid\" NOT NULL",
-    "branch_id": "\"uuid\" NOT NULL",
-    "table_name": "\"character varying\" NOT NULL",
-    "record_id": "\"uuid\" NOT NULL",
-    "operation": "\"character varying\" NOT NULL",
-    "payload": "\"jsonb\" NOT NULL",
-    "status": "\"character varying\" NOT NULL",
-    "retry_count": "\"integer\" NOT NULL",
-    "last_attempted_at": "\"timestamp with time zone\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "tables": {
     "id": "\"uuid\" NOT NULL",

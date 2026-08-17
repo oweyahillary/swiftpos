@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -b",
     "sample": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/sample.js",
-    "test": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/spooler.test.js && node test-dist/test/bridge-sim.js"
+    "test": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/spooler.test.js && node test-dist/test/bridge-sim.js && node test-dist/test/receipt-footer.test.js"
   },
   "types": "dist/index.d.ts",
   "files": [

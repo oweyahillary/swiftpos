@@ -117,6 +117,20 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
 
   // Same ping the cashier's modal uses. Prints nothing.
   const [probes, setProbes] = useState<Record<string, { ok: boolean; state: string } | 'checking'>>({});
+
+  // 0.5.27 — the exclusion list the PRINTER applies, not the per-till
+  // localStorage copy this screen used to preview with. The two could disagree,
+  // so a preview could show a drink dropped that the printer would send. It is
+  // read-only here: the value is owned by the cloud today, by the node under
+  // PHASE6, and this screen only shows what will happen.
+  const [liveExclusions, setLiveExclusions] = useState<string>('');
+  useEffect(() => {
+    let alive = true;
+    window.swiftpos.escpos.kitchenExclusions()
+      .then(r => { if (alive) setLiveExclusions((r?.terms ?? []).join('\n')); })
+      .catch(() => { /* preview falls back to the built-in rule alone */ });
+    return () => { alive = false; };
+  }, []);
   const probe = async (deviceName: string) => {
     if (!deviceName) return;
     setProbes(p => ({ ...p, [deviceName]: 'checking' }));
@@ -217,7 +231,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
       const r = await printKOT(kitchenSample, {
         orderNumber: 'TEST-KOT', orderType: 'takeaway',
         staffName: 'Test print', notes: 'This is a test ticket — do not cook.',
-      }, settings);
+      }, { ...settings, kitchenExcludeTerms: liveExclusions });
       setStat('kitchen', r.printed
         ? { kind: 'ok', msg: 'Sent. The drink lines should be absent.' }
         : { kind: 'warn', msg: r.reason ?? 'Kitchen printing is switched off.' });
@@ -356,15 +370,28 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
           one term per line. Sauces and soft drinks are already excluded by the built-in rule;
           add anything else here (e.g. <span className="font-mono">coleslaw</span>).
         </p>
+        {/*
+          READ-ONLY as of 0.5.27. This used to be an editable per-till box in
+          localStorage, and the live printer used a different, server-synced
+          list — so a term typed here changed the preview and nothing else. Two
+          lists, one screen, silently disagreeing.
+
+          Now it shows what the printer actually applies. Editing moves to the
+          branch under PHASE6; until then it is changed on the web dashboard.
+        */}
         <textarea
-          value={settings.kitchenExcludeTerms}
-          onChange={e => save({ kitchenExcludeTerms: e.target.value })}
-          placeholder={"coleslaw\nnapkins"}
+          value={liveExclusions}
+          readOnly
+          placeholder="(none — the built-in rule still applies)"
           spellCheck={false}
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono h-20 resize-y"
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-gray-300 text-sm font-mono h-20 resize-y cursor-default"
         />
         <p className="text-xs text-gray-400 mt-1">
-          Applies on top of the built-in rule, this till. The dispatcher ticket always prints everything.
+          Applies on top of the built-in rule, for <span className="font-medium text-gray-300">every till at this branch</span>.
+          The dispatcher ticket always prints everything.
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          Edited on the web dashboard. It reaches this till on the next sync.
         </p>
       </Card>
 
@@ -396,7 +423,8 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
         <Actions k="kitchen" deviceName={settings.kitchenPrinterName} onPrint={testKitchen}
           onPreview={() => preview(
             buildKOTHtml(kitchenSample, { orderNumber: "TEST-KOT", orderType: "takeaway",
-              staffName: "Test print", notes: "Test ticket — do not cook." }, settings.paperWidth),
+              staffName: "Test print", notes: "Test ticket — do not cook." },
+              settings.paperWidth, liveExclusions),
             "Kitchen ticket preview", "kitchen")} />
         <StatusLine k="kitchen" />
       </Card>

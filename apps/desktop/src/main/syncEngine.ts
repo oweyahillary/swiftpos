@@ -12,7 +12,8 @@ import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
-import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
+import { storeBranchStaff } from './branchStaff';
 import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
@@ -78,7 +79,13 @@ export function configureStaffSession(staffToken: string, staffRefresh = '') {
 function authHeaders() {
   return {
     'Content-Type': 'application/json',
-    'x-device-id': getDeviceConfig()?.device_id ?? '',
+    // Same spelling as pushAuthHeaders. These two builders disagreed —
+    // 'x-device-id' here, 'X-Device-Id' there — and when a copy-paste brought
+    // both spellings into ONE object, fetch sent the header twice and the
+    // server received them comma-joined. Header names are case-insensitive to
+    // HTTP but not to an object literal, so consistency here is what stops that
+    // recurring.
+    'X-Device-Id': getDeviceConfig()?.device_id ?? '',
     Authorization: `Bearer ${_accessToken}`,
   };
 }
@@ -207,7 +214,6 @@ function pushAuthHeaders() {
   const token = _staffToken || _accessToken;
   return {
     'Content-Type': 'application/json',
-    'x-device-id': getDeviceConfig()?.device_id ?? '',
     Authorization: `Bearer ${token}`,
     // Which local schema this build carries. Tills are updated by installing an
     // .exe by hand, so one is always behind; sending this lets the server say so
@@ -215,6 +221,19 @@ function pushAuthHeaders() {
     'X-Schema-Version': String(LOCAL_SCHEMA_VERSION),
     // Stable per-install identity, so the fleet view can attribute sync recency
     // to a specific terminal rather than to a User-Agent hash shared by all three.
+    //
+    // ONE key only. This object carried BOTH 'x-device-id' and 'X-Device-Id'.
+    // HTTP header names are case-insensitive, so fetch sent the pair and the
+    // server received them JOINED WITH A COMMA — then `.slice(0, 64)` chopped
+    // the result mid-uuid. Observed in production 2026-08-09:
+    //
+    //   [fleet] no user_devices row for device
+    //     24dbc289-ee7f-42b6-8fed-6e089095b719, 24dbc289-ee7f-42b6-8fed-6e
+    //
+    // `WHERE device_id = ?` could never match that, so fleet telemetry would
+    // have stayed broken even after registration started creating rows. Two
+    // independent faults producing one symptom, which is why the first fix
+    // appeared to do nothing.
     'X-Device-Id': getDeviceConfig()?.device_id ?? '',
     // What this terminal IS — 'till', 'node' or 'office'. The server had no way
     // to know: it saw a device id, a schema version and a build number, and every
@@ -239,7 +258,7 @@ function pushAuthHeaders() {
 // path all reach it, and a busy till runs them together.
 let _staffRefreshInFlight: Promise<boolean> | null = null;
 
-async function refreshStaffToken(): Promise<boolean> {
+export async function refreshStaffToken(): Promise<boolean> {
   if (_staffRefreshInFlight) return _staffRefreshInFlight;
   _staffRefreshInFlight = doRefreshStaffToken().finally(() => { _staffRefreshInFlight = null; });
   return _staffRefreshInFlight;
@@ -296,6 +315,12 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
   let pushed = 0;
 
   try {
+    // Refresh the DEVICE token before it expires rather than after (A51). The
+    // reactive branch below is untouched and stays the backstop — this only
+    // stops the 10-minute tick colliding with the 15-minute lifetime and
+    // 401'ing every second pull by construction.
+    await refreshDeviceTokenIfExpiring();
+
     pulled = await pullCatalogue();
     // If pull returns false it may be a 401 — try refreshing once
     if (!pulled && _refreshToken) {
@@ -480,6 +505,89 @@ function currentInboundFailure(): { message: string; since: string } | null {
   return null;
 }
 
+/**
+ * Seconds until this JWT expires, or null if it cannot be read.
+ *
+ * Payload only — no signature check. That is deliberate and safe here: this is
+ * used to decide WHEN TO REFRESH EARLY, never to decide whether a token is
+ * trusted. The server verifies every token on every request; a tampered `exp`
+ * would at worst make the till refresh sooner than needed. Same base64url
+ * decode as techService.ts:120.
+ */
+function secondsUntilExpiry(jwt: string): number | null {
+  try {
+    const payloadB64 = jwt.split('.')[1];
+    if (!payloadB64) return null;
+    const { exp } = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    if (typeof exp !== 'number') return null;
+    return exp - Math.floor(Date.now() / 1000);
+  } catch {
+    return null;   // unreadable → fall through to the reactive 401 path
+  }
+}
+
+/**
+ * Refresh the DEVICE token before it expires, rather than after.
+ *
+ * ── THE SAWTOOTH THIS ENDS (register A51) ────────────────────────────────────
+ * Beryl's till log was 90 lines and every one of them was the same pair, exactly
+ * twenty minutes apart, all day:
+ *
+ *     [sync] catalogue pull failed: HTTP 401 Unauthorized
+ *     [sync] recovered after: catalogue pull failed: HTTP 401 Unauthorized
+ *
+ * Deterministic, not intermittent. syncAll() runs every 10 minutes
+ * (index.ts:226); the access token lives 15 minutes (auth.ts:51); refresh was
+ * purely reactive. So after a refresh at T the pull at T+10 succeeded and the
+ * pull at T+20 COULD NOT — 20 > 15. Every other pull 401'd by construction.
+ *
+ * Three costs, and the third is why this is worth code rather than a shrug:
+ *   1. every other catalogue pull was 3-5 seconds slower than it needed to be;
+ *   2. ~72 refresh-token rotations per day per till, each one a chance for two
+ *      refreshes to race — and validateRefreshToken answers a REUSED refresh
+ *      token by revoking EVERY session for that user;
+ *   3. the till log stopped being usable. A revoked till, a rotated service key
+ *      or a genuine expiry all looked identical to routine noise. An error that
+ *      always fires is an error nobody reads — and this log is the first thing
+ *      we ask for when a till misbehaves (RUNBOOK §0.1).
+ *
+ * ── WHY THIS TOUCHES THE DEVICE TOKEN ONLY ───────────────────────────────────
+ * The catalogue pull uses authHeaders() → _accessToken. pushAuthHeaders()
+ * prefers _staffToken. Those are different tokens with different lifecycles,
+ * and the distinction is load-bearing:
+ *
+ * A GENERIC proactive refresh across both would have refreshed the staff token
+ * too — and the staff token expiring on an IDLE till is exactly the condition
+ * A47 was reported under. Refreshing it ahead of time would have made A47's
+ * field test pass whether or not manageFetch was fixed, in the same way a
+ * 3-minute auto-lock would. So this is scoped, and must stay scoped.
+ *
+ * ── WHY NOT JUST SHORTEN THE PULL INTERVAL ───────────────────────────────────
+ * A pull inside 15 minutes would hide the sawtooth without removing it: the
+ * token would still expire mid-gap whenever a pull was skipped for being
+ * offline, and the 401 would come back the moment anything perturbed the
+ * cadence. Refreshing against the token's OWN expiry is independent of how
+ * often anything happens to run.
+ *
+ * Returns true if a refresh was performed. The reactive 401 path in every
+ * caller is untouched and remains the backstop — an unreadable `exp`, a clock
+ * skew, or a token rotated elsewhere all still land there.
+ */
+const REFRESH_SKEW_SECONDS = 120;
+
+async function refreshDeviceTokenIfExpiring(): Promise<boolean> {
+  if (!_accessToken || !_serverUrl) return false;
+
+  const remaining = secondsUntilExpiry(_accessToken);
+  // null → cannot read the token; leave it to the 401 path rather than
+  // refreshing blindly on every tick and burning rotations for no reason.
+  if (remaining === null) return false;
+  if (remaining > REFRESH_SKEW_SECONDS) return false;
+
+  logLine('auth', `device token expires in ${remaining}s — refreshing ahead of the 401`);
+  return refreshAccessToken();
+}
+
 async function pullCatalogue(): Promise<boolean> {
   // Price for the branch this till is actually bound to (per-branch pricing).
   // Sent as ?branch_id so /api/pos/init returns branch_price per product.
@@ -505,7 +613,7 @@ async function pullCatalogue(): Promise<boolean> {
     return false;
   }
 
-  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions } = await res.json();
+  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions, paymentMethods, continuousOperation } = await res.json();
   clearInboundFailure('sync');
   const db = getLocalDb();
   const now = new Date().toISOString();
@@ -533,8 +641,16 @@ async function pullCatalogue(): Promise<boolean> {
   // Cached so an offline till still prints the owner's current header/footer.
   if (typeof receiptHeader === 'string') saveDeviceConfig({ receipt_header: receiptHeader });
   if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });
+  if (typeof continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: continuousOperation });
   // Cached for the same reason: a till that loses the internet mid-service must
   // keep excluding drinks from the kitchen ticket, not start printing them.
+  //
+  // This is the CLOUD BASELINE — business-wide, edited on the web dashboard. It
+  // is refreshed on every pull. A local edit does NOT live here; it lives in
+  // kitchen_exclusions_override, which this never touches, so "local is final"
+  // holds while the cloud default still updates underneath it. The reader
+  // (escposBridge.kitchenExclusions) returns the override when one is set and
+  // this baseline otherwise.
   if (Array.isArray(kitchenExclusions)) {
     saveDeviceConfig({ kitchen_exclusions: JSON.stringify(kitchenExclusions) });
   }
@@ -667,6 +783,16 @@ async function pullCatalogue(): Promise<boolean> {
     `);
     for (const c of categories) {
       upsertCat.run({ ...c, is_kitchen: c.is_kitchen ? 1 : 0, synced_at: now });
+    }
+
+    // Custom payment methods (A96). Replaced wholesale like stations: a method
+    // deactivated or deleted upstream must stop appearing at the till. Guarded on
+    // a defined list so a partial response can't wipe the tenders. The built-in
+    // Cash / M-Pesa / Card are not stored here — they live in the POS.
+    if (Array.isArray(paymentMethods)) {
+      db.prepare(`DELETE FROM payment_methods`).run();
+      const insPm = db.prepare(`INSERT OR REPLACE INTO payment_methods (code, name, sort_order) VALUES (?, ?, ?)`);
+      paymentMethods.forEach((m: { code: string; name: string }, i: number) => insPm.run(m.code, m.name, i));
     }
 
     // Stations and their routing. Replaced wholesale, not upserted: a station
@@ -815,6 +941,48 @@ async function pullCatalogue(): Promise<boolean> {
       });
     }
 
+    // Delta merge (A80). The upsert above set every level to the SERVER baseline,
+    // which reflects only the orders the server has ingested — i.e. our SYNCED
+    // orders. Orders still 'pending' here deducted stock locally in
+    // createLocalOrder but that deduction is NOT yet in the server baseline, so
+    // the plain overwrite just erased it — the till would show stale-high stock
+    // from reconnect until the next pull, and worse while a push keeps failing.
+    // Re-apply the pending deductions now, which is the "delta merge" the header
+    // and this block always claimed but never actually did. 'pending' covers
+    // failed-to-push orders too: the push failure branch never flips
+    // orders.sync_status, so it stays 'pending' until a push finally succeeds.
+    //
+    // Scoped to THIS till's own device_id: on a till acting as the branch node,
+    // `orders` also holds peer terminals' rows (nodeIngest replicates them), but
+    // nodeIngest never touches stock_levels — only this till's own
+    // createLocalOrder deducted local stock, so only its own pending orders may
+    // be re-applied. Summing peers' rows would over-subtract phantom stock.
+    const deviceId = getDeviceConfig()?.device_id ?? null;
+    const pendingDeltas = db.prepare(`
+      SELECT oi.product_id AS product_id, o.branch_id AS branch_id,
+             SUM(oi.quantity) AS deducted
+      FROM order_items oi
+      JOIN orders   o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      WHERE o.sync_status = 'pending' AND p.track_stock = 1
+        AND COALESCE(o.device_id,'') = COALESCE(@device_id,'')
+      GROUP BY oi.product_id, o.branch_id
+    `).all({ device_id: deviceId }) as Array<{ product_id: string; branch_id: string | null; deducted: number }>;
+
+    // quantity may go negative — that is the A74 "sold beyond stock" state and
+    // must survive the merge, so no floor here.
+    const applyDelta = db.prepare(`
+      UPDATE stock_levels SET quantity = quantity - @deducted
+      WHERE product_id = @product_id AND branch_id = @branch_id
+    `);
+    for (const d of pendingDeltas) {
+      applyDelta.run({
+        product_id: d.product_id,
+        branch_id:  d.branch_id ?? effectiveBranchId,
+        deducted:   Number(d.deducted) || 0,
+      });
+    }
+
     // Users — remote wins. roles is a to-one relation -> { name } from /api/staff.
     const upsertUser = db.prepare(`
       INSERT INTO users (id, name, role_name, status, synced_at)
@@ -879,6 +1047,21 @@ async function pullCatalogue(): Promise<boolean> {
       }
     }
   })();
+
+  // PHASE5 §4b (A17): a NODE also pulls the branch staff roster so it can
+  // authenticate cashiers offline. Node-only, best-effort, and AFTER the
+  // catalogue is safely stored — a failure here must never fail the catalogue
+  // pull. The endpoint 403s a non-node device, which is the correct outcome for
+  // a plain till and is simply ignored.
+  if (isNodeRole(getDeviceConfig()?.device_role)) {
+    try {
+      const rosterRes = await fetch(`${_serverUrl || getServerUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
+      if (rosterRes.ok) {
+        const { branch_id: rBranch, staff } = await rosterRes.json();
+        if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);
+      }
+    } catch { /* the node keeps its existing roster; next pull retries */ }
+  }
 
   return true;
 }
@@ -1147,6 +1330,17 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   let pushed = 0;
   let triedStaffRefresh = false;  // refresh once per sync pass
 
+  // S3: move BOTH rows to 'synced' in one transaction, so a crash between the
+  // two writes can never leave sync_queue and orders disagreeing (queue synced
+  // while the order still reads pending, or vice versa). Prepared once, reused
+  // per row; the same statements the two success branches ran inline before.
+  const _markQueueSynced = db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`);
+  const _markOrderSynced = db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`);
+  const markSynced = db.transaction((queueId: number, orderId: string) => {
+    _markQueueSynced.run(queueId);
+    _markOrderSynced.run(orderId);
+  });
+
   // Every till pushes its OWN orders to the cloud, including tills that have a
   // branch node.
   //
@@ -1189,14 +1383,12 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         // (200 with { duplicate: true }) — both mean the server has this order,
         // so the local row is safely marked synced. A lost first response that
         // caused this retry therefore resolves correctly instead of duplicating.
-        db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
-        db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`).run(row.order_id);
+        markSynced(row.id, row.order_id);
         pushed++;
       } else if (res.status === 409) {
         // Defensive: some deployments may signal an existing record with 409.
         // That still means the server holds the order — treat as synced.
-        db.prepare(`UPDATE sync_queue SET status='synced', attempts=attempts+1 WHERE id=?`).run(row.id);
-        db.prepare(`UPDATE orders SET sync_status='synced' WHERE id=?`).run(row.order_id);
+        markSynced(row.id, row.order_id);
         pushed++;
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -1534,7 +1726,12 @@ export function createLocalOrder(orderPayload: any): string {
         `).get(item.product.id, orderPayload.branch_id) as any;
 
         const currentQty = stock?.quantity ?? 0;
-        const newQty = Math.max(0, currentQty - item.quantity);
+        // No floor (A81). The server's adjust_product_stock lets quantity go
+        // negative — that is the A74 "sold beyond stock" state (a transfer
+        // arrived and was sold before being received in the system). Clamping to
+        // 0 here made the offline till disagree with the server until the next
+        // pull and hid the oversell locally.
+        const newQty = currentQty - item.quantity;
 
         db.prepare(`
           INSERT INTO stock_levels (product_id, branch_id, quantity, low_stock_threshold)
@@ -1582,9 +1779,25 @@ export function createLocalOrder(orderPayload: any): string {
       // have already been queued. It is not part of an order and the server has
       // no column for it, so it is dropped here rather than shipped and ignored.
       ...(() => { const { kot_sent: _kotSent, ...rest } = orderPayload; return rest; })(),
-      payments: legs, shift_id: shiftId, device_id: deviceId,
+      // The till is a manual-tender POS — no STK push. Every leg is a payment
+      // the cashier has already confirmed (cash in drawer, M-Pesa on the phone),
+      // so mark them 'completed' explicitly; otherwise the server writes M-Pesa
+      // 'pending' awaiting an STK callback that never comes, and it reports as
+      // "unaccounted" on the cloud (A93).
+      payments: (legs as any[]).map(l => ({ ...l, status: 'completed' })),
+      shift_id: shiftId, device_id: deviceId,
       _localOrderId: orderId, idempotency_key: orderId, created_at: now,
     }), now);
+
+    // Keep the exact payload for a faithful reprint from Order History (A94).
+    // Replayed through the same queueThermal path as the original, so the copy is
+    // byte-identical and marked "Duplicate Print". Local-only, pruned to 200.
+    db.prepare(`INSERT OR REPLACE INTO receipt_payloads (order_id, payload, created_at) VALUES (?, ?, ?)`)
+      .run(orderId, JSON.stringify(orderPayload), now);
+    db.prepare(`
+      DELETE FROM receipt_payloads WHERE order_id NOT IN (
+        SELECT order_id FROM receipt_payloads ORDER BY created_at DESC LIMIT 200
+      )`).run();
   })();
 
   return orderId;

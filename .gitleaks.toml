@@ -1,0 +1,25 @@
+# Gitleaks configuration (register A107).
+#
+# Keeps the FULL default ruleset — real secrets must still fail CI — and
+# allowlists confirmed false positives so benign internal strings can't block a
+# merge. Each was inspected; none is a credential:
+#   • escpos_default_on_0527                  — a maintenance_state feature-flag key
+#   • 23456789ABCDEFGHJKMNPQRSTVWXYZ          — Crockford base32 alphabet (enrolment codes)
+#   • refresh_token, logged_in_at=excluded…   — SQL column names in an UPSERT clause
+#   • eyJhbGciOiJub25lIi…                      — an alg:"none" TEST-FIXTURE JWT that a
+#                                               security test feeds in to prove it is REJECTED
+# Matched on the exact benign strings (regexTarget = match), so real secrets are
+# untouched and the suppression survives line/commit changes.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Confirmed false positives — internal constants, SQL identifiers, a test fixture."
+regexTarget = "match"
+regexes = [
+  '''escpos_default_on_0527''',
+  '''23456789ABCDEFGHJKMNPQRSTVWXYZ''',
+  '''refresh_token, logged_in_at=excluded''',
+  '''eyJhbGciOiJub25lIi''',
+]

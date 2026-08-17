@@ -51,6 +51,9 @@ interface Props {
    *  discount made the charged total and the stored total disagree, and now
    *  (with the atomic-order payment guard) would fail the sale outright. */
   maxDiscountPct?: number;
+  /** Custom tenders beyond the built-ins (A96), from /api/pos/init. Rendered as
+   *  extra method buttons; all are non-cash and settle immediately like a card. */
+  customMethods?: { code: string; name: string }[];
   /** If set, the order already exists in DB (order-first model) — use /pay instead of POST /orders */
   existingOrderId?: string;
   /**
@@ -76,11 +79,12 @@ export default function PaymentModal({
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId,
   pumpId,
+  customMethods = [],
 }: Props) {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [splitMode, setSplitMode]   = useState(false);
-  const [method, setMethod]         = useState<SingleMethod>('cash');
+  const [method, setMethod]         = useState<string>('cash');
   // Credit account for the attached customer (fetched when 'credit' is chosen).
   const [creditInfo, setCreditInfo] = useState<{ credit_limit: number; credit_balance: number; available_credit: number } | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
@@ -595,6 +599,18 @@ export default function PaymentModal({
                     }`}>
                     {m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
                     <span className="capitalize">{m === 'mpesa' ? 'M-Pesa' : m === 'credit' ? 'On Account' : m}</span>
+                  </button>
+                ))}
+                {/* Custom methods (A96) — settle immediately like a card. */}
+                {customMethods.map(cm => (
+                  <button key={cm.code} onClick={() => setMethod(cm.code)}
+                    className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
+                      method === cm.code
+                        ? 'bg-green-500/10 border-green-500 text-green-400'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                    }`}>
+                    🏦<br />
+                    <span>{cm.name}</span>
                   </button>
                 ))}
               </div>
