@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftPOS Admin — glass mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cyan:#38e1ff; --cyan-deep:#00a8cc;
+    --violet:#a78bfa; --violet-deep:#7c5cf0;
+    --green:#34e5a0; --amber:#fbbf24; --rose:#fb6f92; --red:#ff5c6c;
+    --text:#e8eef7; --muted:#8ea0bd; --faint:#5b6b86;
+    --glass: rgba(255,255,255,0.045);
+    --glass-2: rgba(255,255,255,0.065);
+    --edge: rgba(255,255,255,0.10);
+    --edge-soft: rgba(255,255,255,0.06);
+    --sheen: rgba(255,255,255,0.09);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html{-webkit-font-smoothing:antialiased}
+  body{
+    font-family:Inter,system-ui,sans-serif; color:var(--text); min-height:100vh;
+    background:#070b14; position:relative; overflow-x:hidden;
+  }
+  /* aurora backdrop the glass frosts over */
+  body::before{
+    content:""; position:fixed; inset:-20%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(40% 45% at 12% 8%,  rgba(56,225,255,0.22), transparent 60%),
+      radial-gradient(38% 42% at 88% 12%, rgba(167,139,250,0.20), transparent 62%),
+      radial-gradient(50% 50% at 78% 92%, rgba(52,229,160,0.10), transparent 60%),
+      linear-gradient(160deg,#080d18 0%, #0a1120 45%, #070a12 100%);
+    filter:saturate(115%);
+  }
+  body::after{ /* faint grain/vignette */
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 0%, transparent 55%, rgba(0,0,0,0.45) 100%);
+  }
+  .app{position:relative; z-index:1; display:flex; min-height:100vh}
+
+  /* ---- glass primitive ---- */
+  .glass{
+    background:var(--glass);
+    backdrop-filter:blur(22px) saturate(150%);
+    -webkit-backdrop-filter:blur(22px) saturate(150%);
+    border:1px solid var(--edge-soft);
+    border-top-color:var(--sheen);
+    border-radius:18px;
+    box-shadow:0 10px 34px rgba(2,6,16,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+
+  /* ---- sidebar ---- */
+  .side{
+    width:236px; flex-shrink:0; padding:20px 14px; margin:14px 0 14px 14px;
+    display:flex; flex-direction:column; gap:6px; position:sticky; top:14px; height:calc(100vh - 28px);
+  }
+  .brand{display:flex; align-items:center; gap:11px; padding:6px 10px 18px}
+  .brand .logo{
+    width:34px; height:34px; border-radius:10px; display:grid; place-items:center; font-weight:700; font-family:'Space Grotesk';
+    background:linear-gradient(135deg,var(--cyan),var(--violet)); color:#04121a;
+    box-shadow:0 4px 16px rgba(56,225,255,0.35);
+  }
+  .brand b{font-family:'Space Grotesk'; font-size:16px; letter-spacing:.2px}
+  .brand span{display:block; font-size:11px; color:var(--faint); font-weight:500; margin-top:-2px}
+  .nav{display:flex; flex-direction:column; gap:3px; margin-top:4px}
+  .nav a{
+    display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:11px;
+    color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:500; transition:.15s;
+  }
+  .nav a .ic{width:17px; text-align:center; opacity:.85}
+  .nav a:hover{color:var(--text); background:rgba(255,255,255,0.04)}
+  .nav a.on{
+    color:var(--text); background:linear-gradient(100deg, rgba(56,225,255,0.16), rgba(167,139,250,0.10));
+    border:1px solid rgba(56,225,255,0.22); box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .new-client{
+    margin-top:auto; padding:11px; border-radius:12px; text-align:center; font-weight:600; font-size:13px;
+    color:#04121a; background:linear-gradient(120deg,var(--cyan),var(--cyan-deep)); cursor:pointer; border:none;
+    box-shadow:0 6px 20px rgba(56,225,255,0.28);
+  }
+
+  /* ---- main ---- */
+  .main{flex:1; min-width:0; padding:14px 16px 40px}
+  .topbar{display:flex; align-items:center; gap:14px; padding:11px 18px; margin-bottom:16px}
+  .search{flex:1; display:flex; align-items:center; gap:9px; color:var(--faint); font-size:13px}
+  .search input{
+    flex:1; background:transparent; border:none; color:var(--text); font-family:inherit; font-size:13px; outline:none;
+  }
+  .who{display:flex; align-items:center; gap:9px; font-size:13px}
+  .who .av{width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--violet),var(--violet-deep)); display:grid; place-items:center; font-weight:700; font-size:12px; color:#0a0716}
+
+  .h1{font-family:'Space Grotesk'; font-size:22px; font-weight:600; letter-spacing:.2px}
+  .sub{color:var(--muted); font-size:13px; margin:3px 0 18px}
+
+  /* ---- KPI tiles ---- */
+  .kpis{display:grid; grid-template-columns:repeat(5,1fr); gap:13px; margin-bottom:16px}
+  .kpi{padding:17px 18px; position:relative; overflow:hidden}
+  .kpi .glow{position:absolute; width:120px; height:120px; right:-30px; top:-40px; border-radius:50%; filter:blur(34px); opacity:.5}
+  .kpi label{display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.09em; color:var(--faint); font-weight:600; margin-bottom:9px}
+  .kpi .val{font-family:'Space Grotesk'; font-size:29px; font-weight:600; line-height:1}
+  .kpi .val.mono{font-size:20px}
+  .kpi .delta{font-size:11px; margin-top:7px; color:var(--muted)}
+  .up{color:var(--green)} .down{color:var(--rose)}
+
+  /* ---- layout grids ---- */
+  .row{display:grid; gap:13px; margin-bottom:16px}
+  .row.two{grid-template-columns:1.35fr 1fr}
+  .row.two-b{grid-template-columns:1fr 1.6fr}
+  .card{padding:18px 20px}
+  .card h3{font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:space-between; margin-bottom:15px}
+  .card h3 .tag{font-size:10.5px; color:var(--faint); font-weight:500}
+
+  /* fleet health – corrected: bars ARE health buckets */
+  .health-nums{display:flex; gap:12px; margin-bottom:16px}
+  .hn{flex:1; padding:12px; border-radius:13px; text-align:center; background:rgba(255,255,255,0.03); border:1px solid var(--edge-soft)}
+  .hn .n{font-family:'Space Grotesk'; font-size:23px; font-weight:600}
+  .hn .l{font-size:10.5px; color:var(--muted); margin-top:2px}
+  .bars{display:flex; align-items:flex-end; gap:10px; height:110px; padding-top:6px}
+  .bar-wrap{flex:1; display:flex; flex-direction:column; align-items:center; gap:7px; height:100%; justify-content:flex-end}
+  .bar{width:100%; border-radius:7px 7px 3px 3px; position:relative}
+  .bar b{position:absolute; top:-19px; left:0; right:0; text-align:center; font-family:'Space Grotesk'; font-size:12px; color:var(--text)}
+  .bar-l{font-size:10.5px; color:var(--muted)}
+
+  /* recent signups */
+  .sig{display:flex; align-items:center; gap:11px; padding:11px 0; border-bottom:1px solid var(--edge-soft)}
+  .sig:last-child{border-bottom:none}
+  .dot{width:32px; height:32px; border-radius:9px; display:grid; place-items:center; font-size:14px; flex-shrink:0}
+  .sig .nm{font-size:13px; font-weight:500}
+  .sig .ty{font-size:11px; color:var(--faint)}
+  .badge{font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:20px}
+  .b-active{color:var(--green); background:rgba(52,229,160,0.12); border:1px solid rgba(52,229,160,0.25)}
+  .b-susp{color:var(--rose); background:rgba(251,111,146,0.12); border:1px solid rgba(251,111,146,0.25)}
+  .ago{font-size:10.5px; color:var(--faint); margin-top:2px; text-align:right}
+
+  /* clients-by-type mini */
+  .type-row{display:flex; align-items:center; gap:10px; padding:8px 0}
+  .type-row .tl{font-size:12.5px; width:104px; color:var(--muted)}
+  .type-row .track{flex:1; height:8px; border-radius:6px; background:rgba(255,255,255,0.05); overflow:hidden}
+  .type-row .fill{height:100%; border-radius:6px}
+  .type-row .tv{font-family:'Space Grotesk'; font-size:12.5px; width:24px; text-align:right}
+
+  /* fleet table */
+  table{width:100%; border-collapse:collapse}
+  th{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--faint); font-weight:600; text-align:left; padding:0 12px 12px}
+  td{padding:12px; border-top:1px solid var(--edge-soft); font-size:13px; vertical-align:middle}
+  .cli{display:flex; align-items:center; gap:11px}
+  .score{font-family:'Space Grotesk'; font-weight:600; font-size:14px}
+  .mini-track{width:72px; height:6px; border-radius:5px; background:rgba(255,255,255,0.06); overflow:hidden; display:inline-block; vertical-align:middle; margin-left:8px}
+  .mini-fill{height:100%}
+  .acts{display:flex; gap:6px; justify-content:flex-end}
+  .act{
+    font-size:11px; font-weight:600; padding:5px 10px; border-radius:8px; cursor:pointer; white-space:nowrap;
+    background:rgba(255,255,255,0.05); border:1px solid var(--edge-soft); color:var(--muted); transition:.15s;
+  }
+  .act:hover{color:var(--text); border-color:var(--edge); background:rgba(255,255,255,0.08)}
+  .act.warn:hover{color:var(--amber); border-color:rgba(251,191,36,0.4)}
+  .act.danger:hover{color:var(--red); border-color:rgba(255,92,108,0.45); background:rgba(255,92,108,0.08)}
+  .act.key:hover{color:var(--cyan); border-color:rgba(56,225,255,0.4)}
+
+  /* NEW-capability ribbon */
+  .newcaps{display:flex; gap:8px; flex-wrap:wrap; margin:-4px 0 16px}
+  .ncap{font-size:11px; padding:5px 11px; border-radius:20px; color:var(--cyan); background:rgba(56,225,255,0.09); border:1px solid rgba(56,225,255,0.22); display:flex; gap:6px; align-items:center}
+  .ncap.v{color:var(--violet); background:rgba(167,139,250,0.09); border-color:rgba(167,139,250,0.22)}
+  .ncap .plus{font-weight:700}
+
+  @media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,1fr)} .row.two,.row.two-b{grid-template-columns:1fr} .side{display:none} }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="side glass">
+    <div class="brand">
+      <div class="logo">S</div>
+      <div><b>SwiftPOS</b><span>Fleet Console</span></div>
+    </div>
+    <nav class="nav">
+      <a class="on"><span class="ic">▦</span> Dashboard</a>
+      <a><span class="ic">◈</span> Clients</a>
+      <a><span class="ic">◉</span> Billing</a>
+      <a><span class="ic">≡</span> Audit Log</a>
+      <a><span class="ic">◎</span> Team</a>
+      <a><span class="ic">⌘</span> Tech Access</a>
+      <a><span class="ic">⊙</span> Settings</a>
+    </nav>
+    <button class="new-client">+ New Client</button>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="topbar glass">
+      <div class="search"><span>⌕</span><input placeholder="Search clients, branches, tokens…"></div>
+      <div class="who"><span>Eugene H.</span><div class="av">EH</div></div>
+    </div>
+
+    <div class="h1">Fleet Dashboard</div>
+    <div class="sub">SwiftPOS client overview · 4 branches await setup</div>
+
+    <!-- new capabilities being added, previewed as affordances below -->
+    <div class="newcaps">
+      <div class="ncap"><span class="plus">+</span> Add branch</div>
+      <div class="ncap"><span class="plus">+</span> Close branch</div>
+      <div class="ncap key"><span class="plus">+</span> Rotate reveal code</div>
+      <div class="ncap danger" style="color:var(--rose);background:rgba(251,111,146,.09);border-color:rgba(251,111,146,.22)"><span class="plus">+</span> Revoke stolen till</div>
+      <div class="ncap v"><span class="plus">+</span> Edit business</div>
+      <div class="ncap v"><span class="plus">+</span> Change owner email</div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpis">
+      <div class="kpi glass"><div class="glow" style="background:var(--cyan)"></div><label>Total Clients</label><div class="val">128</div><div class="delta up">▲ 6 this month</div></div>
+      <div class="kpi glass"><div class="glow" style="background:var(--green)"></div><label>Active</label><div class="val">119</div><div class="delta">93% of fleet</div></div>
+      <div class="kpi glass"><div class="glow" style="background:var(--rose)"></div><label>Suspended</label><div class="val">9</div><div class="delta down">▲ 2 this month</div></div>
+      <div class="kpi glass"><div class="glow" style="background:var(--violet)"></div><label>New This Month</label><div class="val">6</div><div class="delta up">▲ vs 4 last</div></div>
+      <div class="kpi glass"><div class="glow" style="background:var(--amber)"></div><label>Revenue MTD</label><div class="val mono">KES 486k</div><div class="delta up">▲ 12%</div></div>
+    </div>
+
+    <!-- Fleet health (CORRECTED chart) + recent signups -->
+    <div class="row two">
+      <div class="card glass">
+        <h3>Fleet Health <span class="tag">health score distribution</span></h3>
+        <div class="health-nums">
+          <div class="hn"><div class="n" style="color:var(--green)">101</div><div class="l">Healthy · 70+</div></div>
+          <div class="hn"><div class="n" style="color:var(--amber)">19</div><div class="l">Attention · 40–69</div></div>
+          <div class="hn"><div class="n" style="color:var(--red)">8</div><div class="l">Critical · &lt;40</div></div>
+        </div>
+        <div class="bars">
+          <div class="bar-wrap"><div class="bar" style="height:82%;background:linear-gradient(180deg,var(--green),rgba(52,229,160,.25))"><b>101</b></div><div class="bar-l">Healthy</div></div>
+          <div class="bar-wrap"><div class="bar" style="height:26%;background:linear-gradient(180deg,var(--amber),rgba(251,191,36,.25))"><b>19</b></div><div class="bar-l">Attention</div></div>
+          <div class="bar-wrap"><div class="bar" style="height:14%;background:linear-gradient(180deg,var(--red),rgba(255,92,108,.25))"><b>8</b></div><div class="bar-l">Critical</div></div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <h3>Recent Signups</h3>
+        <div class="sig"><div class="dot" style="background:rgba(249,115,22,.16);color:#f97316">🍽</div><div style="flex:1"><div class="nm">Beryl Kitchen</div><div class="ty">Restaurant · Nairobi</div></div><div style="text-align:right"><span class="badge b-active">active</span><div class="ago">2h ago</div></div></div>
+        <div class="sig"><div class="dot" style="background:rgba(244,63,94,.16);color:#f43f5e">⛽</div><div style="flex:1"><div class="nm">Kobil Ruaka</div><div class="ty">Petrol Station · Kiambu</div></div><div style="text-align:right"><span class="badge b-active">active</span><div class="ago">1d ago</div></div></div>
+        <div class="sig"><div class="dot" style="background:rgba(167,139,250,.16);color:#a78bfa">☕</div><div style="flex:1"><div class="nm">Java Fringe</div><div class="ty">Café · Mombasa</div></div><div style="text-align:right"><span class="badge b-susp">suspended</span><div class="ago">3d ago</div></div></div>
+        <div class="sig"><div class="dot" style="background:rgba(52,211,153,.16);color:#34d399">🛒</div><div style="flex:1"><div class="nm">Quickmart Ngong</div><div class="ty">Minimart · Kajiado</div></div><div style="text-align:right"><span class="badge b-active">active</span><div class="ago">4d ago</div></div></div>
+      </div>
+    </div>
+
+    <!-- clients-by-type (own honest card) + fleet table -->
+    <div class="row two-b">
+      <div class="card glass">
+        <h3>Clients by Type <span class="tag">128 total</span></h3>
+        <div class="type-row"><div class="tl">Restaurant</div><div class="track"><div class="fill" style="width:44%;background:#f97316"></div></div><div class="tv">56</div></div>
+        <div class="type-row"><div class="tl">Café</div><div class="track"><div class="fill" style="width:22%;background:#a78bfa"></div></div><div class="tv">28</div></div>
+        <div class="type-row"><div class="tl">Petrol Station</div><div class="track"><div class="fill" style="width:15%;background:#f43f5e"></div></div><div class="tv">19</div></div>
+        <div class="type-row"><div class="tl">Minimart</div><div class="track"><div class="fill" style="width:11%;background:#34d399"></div></div><div class="tv">14</div></div>
+        <div class="type-row"><div class="tl">Retail</div><div class="track"><div class="fill" style="width:6%;background:#60a5fa"></div></div><div class="tv">8</div></div>
+        <div class="type-row"><div class="tl">Parking</div><div class="track"><div class="fill" style="width:2%;background:#fbbf24"></div></div><div class="tv">3</div></div>
+      </div>
+
+      <div class="card glass">
+        <h3>Fleet Health <span class="tag">action-ready · the new admin powers live here</span></h3>
+        <table>
+          <thead><tr><th>Client</th><th>Health</th><th>Branches</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="cli"><div class="dot" style="width:26px;height:26px;background:rgba(249,115,22,.16);color:#f97316">🍽</div>Beryl Kitchen</div></td>
+              <td><span class="score" style="color:var(--green)">86</span><span class="mini-track"><span class="mini-fill" style="width:86%;background:var(--green)"></span></span></td>
+              <td>1 <span style="color:var(--faint)">· Main</span></td>
+              <td><div class="acts"><span class="act key">↻ code</span><span class="act">+ branch</span><span class="act">✎ edit</span></div></td>
+            </tr>
+            <tr>
+              <td><div class="cli"><div class="dot" style="width:26px;height:26px;background:rgba(244,63,94,.16);color:#f43f5e">⛽</div>Kobil Ruaka</div></td>
+              <td><span class="score" style="color:var(--amber)">58</span><span class="mini-track"><span class="mini-fill" style="width:58%;background:var(--amber)"></span></span></td>
+              <td>3</td>
+              <td><div class="acts"><span class="act danger">⦸ revoke till</span><span class="act">+ branch</span><span class="act">✎ edit</span></div></td>
+            </tr>
+            <tr>
+              <td><div class="cli"><div class="dot" style="width:26px;height:26px;background:rgba(167,139,250,.16);color:#a78bfa">☕</div>Java Fringe</div></td>
+              <td><span class="score" style="color:var(--red)">31</span><span class="mini-track"><span class="mini-fill" style="width:31%;background:var(--red)"></span></span></td>
+              <td>2</td>
+              <td><div class="acts"><span class="act warn">⊘ close branch</span><span class="act">✎ edit</span><span class="act">✉ owner</span></div></td>
+            </tr>
+            <tr>
+              <td><div class="cli"><div class="dot" style="width:26px;height:26px;background:rgba(52,211,153,.16);color:#34d399">🛒</div>Quickmart Ngong</div></td>
+              <td><span class="score" style="color:var(--green)">78</span><span class="mini-track"><span class="mini-fill" style="width:78%;background:var(--green)"></span></span></td>
+              <td>1 <span style="color:var(--faint)">· Main</span></td>
+              <td><div class="acts"><span class="act key">↻ code</span><span class="act">+ branch</span><span class="act">✎ edit</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
