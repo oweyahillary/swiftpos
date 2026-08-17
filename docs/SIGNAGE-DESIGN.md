@@ -243,6 +243,68 @@ adapts it — these parts come along for free:
 
 ---
 
+## Security & integration notes (raised in review, 2026-08-17)
+
+Direction and the Phase 0 scope are sound. These are the items to write into the
+design **before any code is scheduled** — most are integration points this
+codebase enforces with gates, so they are not optional polish.
+
+### P0 — must be designed in, not bolted on
+
+1. **RLS on every `signage_*` table.** This platform enforces tenancy at the
+   database, not only in the API — there is a `check-rls-coverage` gate. Each new
+   table needs Row-Level Security policies scoping by `business_id` (and
+   `branch_id` where present) from the first migration, exactly like the POS
+   tables. "Carries `business_id`" is necessary but not sufficient.
+
+2. **The player path is the cross-tenant risk.** Player routes authenticate with a
+   per-screen token, not a user JWT, so they cannot ride user RLS. That means the
+   API serves player queries with the service-role key and **must** scope every
+   query by the screen's own `branch_id`. A single missed filter shows one
+   tenant's board on another's screen — the precise leak RLS normally backstops,
+   and here it will not. Treat `now-playing` (and media authorization) as a
+   security-critical path with its own tests.
+
+3. **Player-token revocation + rotation (learn from A113).** A113 retired a
+   symmetric HMAC tech-token path for asymmetric Ed25519 because a secret on a
+   device can be extracted and replayed. A TV in a public space is *more* exposed
+   than a till. The player token's scope is narrow (read-only: now-playing +
+   media), so HMAC is defensible — **but** the design must specify the kill
+   switch: de-pairing or deactivating a screen has to invalidate its token
+   immediately (server-side revocation list or short-lived + refresh), or a stolen
+   display keeps pulling content indefinitely. The existing `techToken.ts` Ed25519
+   signer is available if asymmetric player tokens are preferred later.
+
+4. **Transcode must not run on the POS API instance.** Open-decision #1 hedges;
+   make it firm. A 1080p ffmpeg job on the shared Render service will block or OOM
+   the same server the **tills** depend on to sync. Phase 1 video belongs on a
+   separate worker/service (or queue) from day one — not "split out only if load
+   justifies."
+
+### P1 — plan the integration cost
+
+5. **Permission keys are gated.** Adding `signage.view` / `signage.manage` is a
+   multi-file change enforced by `check-permission-parity` across client, server,
+   and DB — budget it as such, not a one-liner.
+
+6. **Migrations start at 88+, `public.`-qualified.** The tree is at migration 87.
+   New `signage_*` migrations must schema-qualify tables (`public.signage_screens`
+   …) per A62, or the schema-drift gate rejects them, and must ship their RLS
+   policies alongside the DDL.
+
+7. **Cost ties into the hosting tier.** Storage egress (screens re-pulling video)
+   and Render instance-hours (10 s polling per screen) both push toward paid
+   Supabase/Render — the same tiers weighed in RUNBOOK §6. One upside: live screen
+   polling keeps Render and Supabase warm on its own, so wherever signage runs it
+   removes the free-tier idle-pause problem for that deployment.
+
+### Confirm before porting
+
+8. **Content-Manager-Pro provenance/licensing.** The plan is to port a reviewed
+   system; confirm it is owned (or licence-compatible) before adopting its code.
+   Agreed on the two related calls already in the doc: single data layer (rewrite
+   Drizzle → Supabase client) and polling before Realtime.
+
 *Architecture proposal, 2026-08-17. Not scheduled for build; shared for review.
 Nothing in the SwiftPOS or Content-Manager-Pro codebases was changed to produce
-this document.*
+this document (the "Security & integration notes" section was appended in review).*

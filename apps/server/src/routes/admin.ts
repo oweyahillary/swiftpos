@@ -480,7 +480,7 @@ router.get('/clients', requireAdmin, async (req, res) => {
 
   let query = supabase
     .from('businesses')
-    .select('id, name, type, status, currency, phone, email, created_at', { count: 'exact' })
+    .select('id, name, type, status, currency, phone, email, created_at, suspended_at', { count: 'exact' })
     .order('created_at', { ascending: false })
     .limit(parseInt(limit))
     .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
@@ -541,6 +541,55 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
   });
 });
 
+// D2 grace window: normal (non-financial) user data is purged after this many
+// months of suspension. Financial/tax records are retained separately per the
+// accountant's retention policy. See docs/SUSPEND-PURGE-PLAN.md.
+const PURGE_GRACE_MONTHS = 6;
+
+/**
+ * GET /api/admin/clients/:id/export — pre-purge export (Stage 1, read-only).
+ * Hands back the client's NORMAL user data — the data due for deletion at the
+ * 6-month grace. Financial/tax records (orders, payments, invoices, eTIMS) are
+ * retained separately and are NOT included here. Secrets (password/PIN hashes)
+ * are stripped. Nothing is deleted.
+ */
+router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const { data: business } = await supabase.from('businesses').select('*').eq('id', id).single();
+  if (!business) { res.status(404).json({ error: 'Not found' }); return; }
+
+  const [branches, products, categories, customers, staffRaw] = await Promise.all([
+    supabase.from('branches').select('*').eq('business_id', id),
+    supabase.from('products').select('*').eq('business_id', id),
+    supabase.from('categories').select('*').eq('business_id', id),
+    supabase.from('customers').select('*').eq('business_id', id),
+    supabase.from('users').select('*').eq('business_id', id),
+  ]);
+
+  const staff = (staffRaw.data ?? []).map((u: any) => {
+    const { password_hash, pin_hash, pin, password, ...safe } = u;
+    return safe;
+  });
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'business.export', resource: 'business',
+    businessId: id, businessName: business.name,
+  });
+
+  res.setHeader('Content-Disposition', `attachment; filename="swiftpos-export-${id}.json"`);
+  res.json({
+    exported_at: new Date().toISOString(),
+    note: 'Normal user data due for purge at the 6-month grace. Financial/tax records (orders, payments, invoices, eTIMS) are retained separately per retention policy and are not included here.',
+    business,
+    branches:   branches.data ?? [],
+    products:   products.data ?? [],
+    categories: categories.data ?? [],
+    customers:  customers.data ?? [],
+    staff,
+  });
+});
+
 router.patch('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { name, type, phone, email, address, tax_pin, vat_rate, currency } = req.body;
@@ -578,7 +627,7 @@ router.post('/clients/:id/suspend', requireAdmin, async (req, res) => {
   if (biz.status === 'suspended') { res.status(409).json({ error: 'Already suspended' }); return; }
 
   await supabase.from('businesses')
-    .update({ status: 'suspended', updated_at: new Date().toISOString() })
+    .update({ status: 'suspended', suspended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', req.params.id);
 
   await writeAdminAudit({
@@ -596,7 +645,7 @@ router.post('/clients/:id/activate', requireAdmin, async (req, res) => {
   if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
 
   await supabase.from('businesses')
-    .update({ status: 'active', updated_at: new Date().toISOString() })
+    .update({ status: 'active', suspended_at: null, updated_at: new Date().toISOString() })
     .eq('id', req.params.id);
 
   await writeAdminAudit({
@@ -1081,6 +1130,44 @@ router.post('/clients/:id/branches', requireAdmin, async (req: any, res) => {
   });
 
   res.status(201).json(branch);
+});
+
+/**
+ * PATCH /api/admin/clients/:id/branches/:branchId — admin closes/reopens a branch (G2).
+ * Sets status active|inactive. The main branch cannot be closed. An inactive branch
+ * is hidden from the branch selector; to stop its tills + billing, revoke the desktop
+ * licence separately (kept explicit rather than auto-revoking here so the two
+ * operations — and their billing effect — stay visible).
+ */
+router.patch('/clients/:id/branches/:branchId', requireAdmin, async (req: any, res) => {
+  const { id: businessId, branchId } = req.params;
+  const status = req.body?.status;
+  if (status !== 'active' && status !== 'inactive') {
+    res.status(400).json({ error: "status must be 'active' or 'inactive'" }); return;
+  }
+
+  const { data: branch } = await supabase
+    .from('branches').select('id, name, is_main, status')
+    .eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (branch.is_main && status === 'inactive') {
+    res.status(400).json({ error: 'The main branch cannot be closed' }); return;
+  }
+
+  const { data: updated, error } = await supabase
+    .from('branches').update({ status, updated_at: new Date().toISOString() })
+    .eq('id', branchId).eq('business_id', businessId)
+    .select('id, name, is_main, status, city, desktop_licensed, desktop_licensed_at, desktop_licensed_by').single();
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: status === 'inactive' ? 'business.close_branch' : 'business.reopen_branch',
+    resource: 'branch', businessId, businessName: branch.name,
+    before: { status: branch.status }, after: { status },
+  });
+
+  res.json(updated);
 });
 
 /**

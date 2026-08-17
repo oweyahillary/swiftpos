@@ -86,6 +86,16 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-KE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// D2 purge detector (Stage 1). ~6-month grace; financial records retained separately.
+const PURGE_GRACE_DAYS = 180;
+function daysSince(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+function isPurgeDue(biz) {
+  return biz?.status === "suspended" && !!biz?.suspended_at && daysSince(biz.suspended_at) >= PURGE_GRACE_DAYS;
+}
+
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
   bg:       "#0a0e17",
@@ -568,7 +578,7 @@ function ClientsPage({ req, onSelectClient }) {
                   <div style={{ fontSize: 11, color: C.muted, fontFamily: "monospace" }}>{b.id.slice(0,8)}…</div>
                 </td>
                 <td style={S.td}><TypeIcon type={b.type} size={16} style={{ marginRight: 4, verticalAlign: "middle" }} /> <span style={{ fontSize: 12, color: TYPE_META[b.type]?.color }}>{TYPE_META[b.type]?.label}</span></td>
-                <td style={S.td}><StatusBadge status={b.status} /></td>
+                <td style={S.td}><StatusBadge status={b.status} />{isPurgeDue(b) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 20, padding: "2px 7px" }}>purge-due</span>}</td>
                 <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{b.currency}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{b.phone || "—"}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(b.created_at)}</td>
@@ -597,6 +607,7 @@ function ClientDetailPage({ client, req, onBack }) {
   const [enrolBranch, setEnrolBranch] = useState(null);   // A69: branch currently minting a code
   const [addingBranch, setAddingBranch] = useState(false);       // G1: add-branch form open
   const [branchForm, setBranchForm] = useState({ name: "", address: "", phone: "" });
+  const [closingBranch, setClosingBranch] = useState(null);      // G2: branch currently closing/reopening
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
   const [editing, setEditing] = useState(false);          // G5: business edit panel open
@@ -745,6 +756,18 @@ function ClientDetailPage({ client, req, onBack }) {
     finally { setEnrolBranch(null); }
   }
 
+  // Stage 1: pre-purge export — download the client's normal user data as JSON.
+  async function exportData() {
+    try {
+      const data = await req("GET", `/clients/${client.id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `swiftpos-export-${client.id}.json`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch (e) { setError(e?.message ?? "Export failed"); }
+  }
+
   // G1: admin creates a branch (owners are blocked — branches are billed separately).
   async function createBranch() {
     if (!branchForm.name.trim()) { await askConfirm("Branch name is required."); return; }
@@ -758,6 +781,21 @@ function ClientDetailPage({ client, req, onBack }) {
       setBranchForm({ name: "", address: "", phone: "" });
       setAddingBranch(false);
     } catch (e) { setError(e?.message ?? "Failed to create branch"); }
+  }
+
+  // G2: admin closes/reopens a branch (main branch can't be closed).
+  async function toggleBranchStatus(b) {
+    const closing = b.status !== "inactive";
+    const msg = closing
+      ? `Close "${b.name}"? It is deactivated and hidden from the branch selector.${b.desktop_licensed ? " It still holds an active desktop licence — click Revoke to stop its tills and billing." : ""}`
+      : `Reopen "${b.name}"? It becomes active again.`;
+    if (!(await askConfirm(msg))) return;
+    setClosingBranch(b.id);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/branches/${b.id}`, { status: closing ? "inactive" : "active" });
+      setBranches(prev => prev.map(x => x.id === b.id ? updated : x));
+    } catch (e) { setError(e?.message ?? "Failed to update branch"); }
+    finally { setClosingBranch(null); }
   }
 
   // G4: revoke a device (e.g. a lost/stolen till) straight from the fleet console.
@@ -832,6 +870,21 @@ function ClientDetailPage({ client, req, onBack }) {
       </div>
 
       {error && <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>{error}</div>}
+
+      {d.status === "suspended" && (
+        <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          background: isPurgeDue(d) ? "rgba(245,158,11,0.08)" : "rgba(148,163,184,0.06)",
+          border: `1px solid ${isPurgeDue(d) ? "rgba(245,158,11,0.35)" : C.border}` }}>
+          <div style={{ fontSize: 12.5 }}>
+            {d.suspended_at
+              ? <>Suspended {daysSince(d.suspended_at)} days ago ({fmtDate(d.suspended_at)}).{isPurgeDue(d)
+                  ? <b style={{ color: "#f59e0b" }}> Past the 6-month grace — normal user data is due for purge.</b>
+                  : ` Normal user data purge-eligible in ${Math.max(0, PURGE_GRACE_DAYS - daysSince(d.suspended_at))} days. Financial/tax records are retained separately.`}</>
+              : "Suspended (no timestamp recorded)."}
+          </div>
+          <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Export data</button>
+        </div>
+      )}
 
       {editing && (
         <div style={{ ...S.card, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -980,6 +1033,15 @@ function ClientDetailPage({ client, req, onBack }) {
                     style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>
                     {licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke" : "Activate"}
                   </button>
+                  {!b.is_main && (
+                    <button
+                      disabled={closingBranch === b.id}
+                      onClick={() => toggleBranchStatus(b)}
+                      style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}
+                      title={b.status === "inactive" ? "Reactivate this branch" : "Deactivate this branch"}>
+                      {closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}
+                    </button>
+                  )}
                 </div>
               ))}
 
