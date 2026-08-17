@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -392,13 +392,18 @@ function DashboardPage({ req }) {
     );
   }
 
-  const typeBreakdown = Object.entries(
-    health.reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {})
-  ).map(([type, count]) => ({ type: TYPE_META[type]?.label || type, count }));
-
   const critical    = health.filter(b => b.health_score < 40).length;
   const needsAttn   = health.filter(b => b.health_score >= 40 && b.health_score < 70).length;
   const healthy     = health.filter(b => b.health_score >= 70).length;
+
+  // G8: the "Fleet Health" card must chart HEALTH, not business type. These bars
+  // visualise the three bands shown as numbers above them. (Clients-by-Type gets
+  // its own card in the Phase 3 refresh — see docs/ADMIN-PORTAL-PLAN.md.)
+  const healthBuckets = [
+    { band: "Healthy",   count: healthy,   color: "#22c55e" },
+    { band: "Attention", count: needsAttn, color: "#f59e0b" },
+    { band: "Critical",  count: critical,  color: "#ef4444" },
+  ];
 
   return (
     <div style={S.content}>
@@ -436,12 +441,14 @@ function DashboardPage({ req }) {
             ))}
           </div>
           <ResponsiveContainer width="100%" height={120}>
-            <BarChart data={typeBreakdown} margin={{ left: -20 }}>
+            <BarChart data={healthBuckets} margin={{ left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="type" tick={{ fill: C.muted, fontSize: 10 }} />
-              <YAxis tick={{ fill: C.muted, fontSize: 10 }} />
+              <XAxis dataKey="band" tick={{ fill: C.muted, fontSize: 10 }} />
+              <YAxis tick={{ fill: C.muted, fontSize: 10 }} allowDecimals={false} />
               <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }} />
-              <Bar dataKey="count" fill={C.accent} radius={[4,4,0,0]} />
+              <Bar dataKey="count" radius={[4,4,0,0]}>
+                {healthBuckets.map((b, i) => <Cell key={i} fill={b.color} />)}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -734,6 +741,15 @@ function ClientDetailPage({ client, req, onBack }) {
     finally { setEnrolBranch(null); }
   }
 
+  // G4: revoke a device (e.g. a lost/stolen till) straight from the fleet console.
+  async function revokeDevice(dev) {
+    if (!(await askConfirm(`Revoke "${dev.label}"? It is removed from the fleet and blocked on its next sync — it must re-enrol with a new code. Use this for a lost or stolen till.`))) return;
+    try {
+      await req("DELETE", `/clients/${client.id}/devices/${dev.id}`);
+      setDevices(prev => prev.filter(x => x.id !== dev.id));
+    } catch (e) { setError(e?.message ?? "Failed to revoke device"); }
+  }
+
   if (loading) return <div style={{ padding: 24, color: C.muted }}>Loading client…</div>;
 
   const d = detail || client;
@@ -925,6 +941,7 @@ function ClientDetailPage({ client, req, onBack }) {
                       {d.appVersion ? `v${d.appVersion}` : "—"}{d.status !== "approved" ? ` · ${d.status}` : ""}
                     </div>
                   </div>
+                  <button onClick={() => revokeDevice(d)} style={{ ...S.btn, ...S.btnDanger, fontSize: 10, padding: "4px 9px", flexShrink: 0 }}>Revoke</button>
                 </div>
               ))}
             </div>
@@ -1361,7 +1378,7 @@ function TechPage({ req, admin }) {
   const [revealCode, setRevealCode] = useState(null);   // D18: the branch doorknock code, shown with the token
   const [generatedSwitch, setGeneratedSwitch] = useState(null);
   const [error, setError]           = useState("");
-  const { askPrompt, modal } = useModal();
+  const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
     Promise.all([
@@ -1395,6 +1412,18 @@ function TechPage({ req, admin }) {
         .catch(() => setRevealCode(null));
     } catch(e) { setError(e.message); }
     finally { setGenerating(false); }
+  }
+
+  // G3: rotate the branch reveal code (the A114 tech-access kill switch). The
+  // endpoint existed but had no UI. Rotating invalidates the old doorknock; tills
+  // pick up the new one on their next online sync.
+  async function rotateRevealCode() {
+    if (!genForm.branch_id) return;
+    if (!(await askConfirm("Rotate this branch's reveal code? The current code stops working immediately; tills refresh the new one on their next online sync. Do this when a tech's access should end."))) return;
+    try {
+      const r = await req("POST", `/branches/${genForm.branch_id}/reveal-code/regenerate`, {});
+      setRevealCode(r?.reveal_code ?? null);
+    } catch (e) { setError(e?.message ?? "Failed to rotate reveal code"); }
   }
 
   async function generateSwitch(e) {
@@ -1498,6 +1527,7 @@ function TechPage({ req, admin }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <code style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: C.accent }}>{revealCode}</code>
                     <button onClick={() => navigator.clipboard?.writeText(revealCode)} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px" }}>Copy</button>
+                    <button onClick={rotateRevealCode} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px" }}>Rotate</button>
                   </div>
                 </div>
               )}

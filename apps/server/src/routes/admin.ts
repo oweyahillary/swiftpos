@@ -1209,10 +1209,40 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
   });
 });
 
+// DELETE /clients/:id/devices/:deviceId — admin revokes a device (G4).
+// The stolen/compromised-till kill switch for a SwiftPOS agent: the owner can
+// already revoke via the dashboard, but in the field incident (RUNBOOK §0.2) the
+// owner may be locked out — the agent needs to act. Mirrors the owner revoke
+// (deletes the user_devices row so the device is unknown on its next sync and
+// must re-enrol with a fresh code) and records who did it.
+router.delete('/clients/:id/devices/:deviceId', requireAdmin, async (req: any, res) => {
+  const { id: businessId, deviceId } = req.params;
+
+  const { data: device } = await supabase
+    .from('user_devices')
+    .select('id, device_label, business_id')
+    .eq('id', deviceId)
+    .eq('business_id', businessId)
+    .maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  const { error } = await supabase.from('user_devices').delete().eq('id', deviceId);
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId:    req.adminId,
+    adminEmail: req.adminEmail,
+    action:     'business.revoke_device',
+    resource:   'device',
+    businessId,
+    reason:     `Revoked device ${device.device_label ?? deviceId}`,
+  });
+  res.status(204).send();
+});
+
 // ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────
 // The doorknock surfaced on the desktop POS (after long-pressing the logo) for a
 // branch. View or regenerate per branch. Delivered to a device at activation.
-
 router.get('/branches/:branchId/reveal-code', requireAdmin, async (req, res) => {
   const branchId = String(req.params.branchId);
   const { data: branch } = await supabase
