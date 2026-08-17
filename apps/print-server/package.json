@@ -8,5 +8,5 @@
     "build:win": "node --experimental-sea-config sea-config.json"
   },
   "dependencies": {},
-  "engines": { "node": ">=22" }
+  "engines": { "node": ">=24" }
 }
