@@ -18,7 +18,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM } from '../lib/techToken';
+import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM, generateRevealCode } from '../lib/techToken';
 import crypto        from 'crypto';
 import os            from 'os';
 import { execSync }  from 'child_process';
@@ -154,9 +154,19 @@ router.get('/branch-config/:branchId', requireAuth, async (req: any, res) => {
   if (!branch)                              { res.status(404).json({ error: 'Branch not found' }); return; }
   if (branch.business_id !== req.businessId) { res.status(403).json({ error: 'Branch not in your business' }); return; }
 
+  // A114: a branch must always expose a reveal code so the till caches a real one
+  // (a null cache is exactly why a since-enrolled/offline till can't be unlocked).
+  // Mint + persist one on first ask; stable thereafter — this endpoint never
+  // rotates it, so offline tills that cached it once keep working.
+  let revealCode = branch.tech_reveal_code as string | null;
+  if (!revealCode) {
+    revealCode = generateRevealCode();
+    await supabase.from('branches').update({ tech_reveal_code: revealCode }).eq('id', branch.id);
+  }
+
   res.json({
     branch_id:   branch.id,
-    reveal_code: branch.tech_reveal_code ?? null,
+    reveal_code: revealCode,
     public_key:  PUBLIC_KEY_PEM,
     algorithm:   'ed25519',
   });

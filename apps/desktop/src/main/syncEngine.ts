@@ -14,6 +14,7 @@ import { logLine, describeResponse, getLogPath } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
 import { storeBranchStaff } from './branchStaff';
+import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
@@ -327,6 +328,11 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
       const refreshed = await refreshAccessToken();
       if (refreshed) pulled = await pullCatalogue();
     }
+    // A114: refresh the branch reveal code + tech public key on every online
+    // sync, not just at owner login (which the till UI can't reach). This is what
+    // lets a cashier-only till pick up a freshly-generated/backfilled reveal code.
+    // Best-effort — a failure here must never affect the sync result.
+    try { await refreshTechConfig(_accessToken); } catch { /* non-fatal */ }
     await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
     await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
     pushed = await pushPendingOrders(errors);
