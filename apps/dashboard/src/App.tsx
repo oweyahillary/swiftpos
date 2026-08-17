@@ -3,7 +3,7 @@
  *
  * Providers + layout are eager (needed for the shell); every PAGE is loaded
  * lazily via React.lazy so each route ships as its own chunk. A visitor to /pos
- * downloads only the POS chunk — not the owner dashboard, reports, or recharts.
+ * downloads only the POS chunk — not the owner dashboard or reports.
  */
 
 import { lazy, Suspense } from 'react';
