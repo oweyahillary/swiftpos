@@ -543,12 +543,13 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
 
 router.patch('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { name, phone, email, address, tax_pin, vat_rate, currency } = req.body;
+  const { name, type, phone, email, address, tax_pin, vat_rate, currency } = req.body;
 
   const { data: before } = await supabase.from('businesses').select('name, status, type').eq('id', id).single();
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (name      !== undefined) updates.name      = name;
+  if (type      !== undefined) updates.type      = type;
   if (phone     !== undefined) updates.phone     = phone;
   if (email     !== undefined) updates.email     = email;
   if (address   !== undefined) updates.address   = address;
@@ -640,6 +641,44 @@ router.post('/clients/:id/reset-owner-password', requireAdmin, async (req, res) 
   });
 
   res.json({ success: true, email: biz.email });
+});
+
+// POST /clients/:id/change-owner-email — admin changes the owner's LOGIN email (G6).
+// Only reset-owner-password existed; a wrong owner email was unfixable. Updates the
+// auth email (auto-confirmed so it's usable immediately) and the business contact
+// email, audited. Does not reassign ownership — that stays a separate operation.
+router.post('/clients/:id/change-owner-email', requireAdmin, async (req: any, res) => {
+  const newEmail = String(req.body?.new_email ?? '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+    res.status(400).json({ error: 'A valid email is required' });
+    return;
+  }
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('name, owner_id, email')
+    .eq('id', req.params.id)
+    .single();
+  if (!biz)          { res.status(404).json({ error: 'Not found' }); return; }
+  if (!biz.owner_id) { res.status(400).json({ error: 'This client has no owner login account' }); return; }
+
+  const { error: authErr } = await supabase.auth.admin.updateUserById(biz.owner_id, {
+    email:         newEmail,
+    email_confirm: true,
+  });
+  if (authErr) { sendError(res, authErr, { message: 'Failed to change owner email' }); return; }
+
+  // Keep the business contact email in step with the login email.
+  await supabase.from('businesses').update({ email: newEmail }).eq('id', req.params.id);
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'business.change_owner_email', resource: 'business',
+    businessId: req.params.id, businessName: biz.name,
+    before: { email: biz.email }, after: { email: newEmail },
+  });
+
+  res.json({ success: true, email: newEmail });
 });
 
 // ─── FEATURES (feature_flags) ─────────────────────────────────────────────────

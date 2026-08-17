@@ -597,6 +597,8 @@ function ClientDetailPage({ client, req, onBack }) {
   const [enrolBranch, setEnrolBranch] = useState(null);   // A69: branch currently minting a code
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
+  const [editing, setEditing] = useState(false);          // G5: business edit panel open
+  const [editForm, setEditForm] = useState({ name: "", type: "", currency: "" });
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [error, setError] = useState("");
@@ -750,6 +752,35 @@ function ClientDetailPage({ client, req, onBack }) {
     } catch (e) { setError(e?.message ?? "Failed to revoke device"); }
   }
 
+  // G6: change the owner's login email (mirrors the password-reset flow).
+  async function changeOwnerEmail() {
+    const em = await askPrompt(`New login email for the owner of "${d.name}":`, d.email ?? "");
+    if (em === null) return;
+    const email = String(em).trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { await askConfirm("That doesn't look like a valid email — not changed."); return; }
+    try {
+      await req("POST", `/clients/${client.id}/change-owner-email`, { new_email: email });
+      setDetail(prev => ({ ...prev, email }));
+      await askConfirm(`Owner login email changed to ${email}.`);
+    } catch (e) { setError(e?.message ?? "Failed to change owner email"); }
+  }
+
+  // G5: edit the business's core details (wires the existing PATCH /clients/:id).
+  async function saveEdit() {
+    if (!editForm.name.trim()) { await askConfirm("Business name can't be empty."); return; }
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}`, {
+        name: editForm.name.trim(), type: editForm.type, currency: editForm.currency.trim() || undefined,
+      });
+      setDetail(prev => ({ ...prev,
+        name:     updated?.name     ?? editForm.name.trim(),
+        type:     updated?.type     ?? editForm.type,
+        currency: updated?.currency ?? editForm.currency,
+      }));
+      setEditing(false);
+    } catch (e) { setError(e?.message ?? "Failed to save changes"); }
+  }
+
   if (loading) return <div style={{ padding: 24, color: C.muted }}>Loading client…</div>;
 
   const d = detail || client;
@@ -773,6 +804,8 @@ function ClientDetailPage({ client, req, onBack }) {
           <div style={{ fontSize: 12, color: C.muted, fontFamily: "monospace", marginTop: 2 }}>{d.id}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setEditForm({ name: d.name ?? "", type: d.type ?? "", currency: d.currency ?? "" }); setEditing(true); }} style={{ ...S.btn, ...S.btnGhost }}>Edit</button>
+          <button onClick={changeOwnerEmail} style={{ ...S.btn, ...S.btnGhost }}>Change Email</button>
           <button onClick={resetOwnerPassword} style={{ ...S.btn, ...S.btnGhost }}>Reset Password</button>
           {d.status === "active"
             ? <button onClick={suspend} style={{ ...S.btn, ...S.btnDanger }}>Suspend</button>
@@ -782,6 +815,32 @@ function ClientDetailPage({ client, req, onBack }) {
       </div>
 
       {error && <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>{error}</div>}
+
+      {editing && (
+        <div style={{ ...S.card, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Edit business</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <label style={S.label}>Name</label>
+              <input style={S.input} value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label style={S.label}>Type</label>
+              <select style={S.input} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+                {Object.entries(TYPE_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div style={{ width: 120 }}>
+              <label style={S.label}>Currency</label>
+              <input style={S.input} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))} placeholder="KES" />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={saveEdit} style={{ ...S.btn, ...S.btnPrimary }}>Save</button>
+            <button onClick={() => setEditing(false)} style={{ ...S.btn, ...S.btnGhost }}>Cancel</button>
+          </div>
+        </div>
+      )}
 
 
       {/* ── Web Hosting status banner ── */}
