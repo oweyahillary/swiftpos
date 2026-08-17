@@ -608,6 +608,7 @@ function ClientDetailPage({ client, req, onBack }) {
   const [addingBranch, setAddingBranch] = useState(false);       // G1: add-branch form open
   const [branchForm, setBranchForm] = useState({ name: "", address: "", phone: "" });
   const [closingBranch, setClosingBranch] = useState(null);      // G2: branch currently closing/reopening
+  const [purgePreview, setPurgePreview] = useState(null);        // Stage 2: dry-run preview data
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
   const [editing, setEditing] = useState(false);          // G5: business edit panel open
@@ -768,6 +769,12 @@ function ClientDetailPage({ client, req, onBack }) {
     } catch (e) { setError(e?.message ?? "Export failed"); }
   }
 
+  // Stage 2: non-destructive purge preview — counts what a purge WOULD delete.
+  async function loadPurgePreview() {
+    try { setPurgePreview(await req("GET", `/clients/${client.id}/purge-preview`)); }
+    catch (e) { setError(e?.message ?? "Preview failed"); }
+  }
+
   // G1: admin creates a branch (owners are blocked — branches are billed separately).
   async function createBranch() {
     if (!branchForm.name.trim()) { await askConfirm("Branch name is required."); return; }
@@ -883,6 +890,35 @@ function ClientDetailPage({ client, req, onBack }) {
               : "Suspended (no timestamp recorded)."}
           </div>
           <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Export data</button>
+          {isPurgeDue(d) && <button onClick={loadPurgePreview} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Preview purge</button>}
+        </div>
+      )}
+
+      {purgePreview && (
+        <div style={{ ...S.card, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Purge preview — nothing is deleted</div>
+            <button onClick={() => setPurgePreview(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "3px 8px" }}>Close</button>
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>{purgePreview.note}</div>
+          {[
+            { key: "purge",  label: "Would be DELETED (normal user data)", color: "#f59e0b" },
+            { key: "review", label: "Needs accountant/DPO review before delete", color: "#a78bfa" },
+            { key: "retain", label: "Retained (financial / tax / referenced)",  color: "#22c55e" },
+          ].map(grp => (
+            <div key={grp.key} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{grp.label}</div>
+              {(purgePreview[grp.key] || []).length === 0
+                ? <div style={{ fontSize: 12, color: C.muted }}>— none —</div>
+                : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {purgePreview[grp.key].map(r => (
+                      <span key={r.table} style={{ fontSize: 11, fontFamily: "monospace", color: C.text, background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 8px" }}>
+                        {r.table} <b style={{ color: grp.color }}>{r.count}</b>
+                      </span>
+                    ))}
+                  </div>}
+            </div>
+          ))}
         </div>
       )}
 

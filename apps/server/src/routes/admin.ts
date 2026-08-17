@@ -590,6 +590,55 @@ router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
   });
 });
 
+// D2 purge classification (Stage 2). See docs/SUSPEND-PURGE-PLAN.md.
+//  RETAIN — never deleted at 6 months (financial / tax / audit, or retained by law).
+//  REVIEW — ambiguous; the accountant/DPO must classify before any delete.
+//  PURGE  — conservative set of clearly-operational data safe to delete at 6 months.
+// NOTE: `branches` is intentionally NOT purged — retained `orders.branch_id`
+// references it. The destructive execute is NOT built until this is signed off.
+const PURGE_RETAIN_TABLES = ['orders','order_items','payments','payment_exceptions','invoices','etims_invoices','etims_branch_config','float_transactions','customer_credit_transactions','loyalty_transactions','purchase_orders','expenses','shifts','parking_sessions','clock_events','goods_received_notes','audit_log','branches'];
+const PURGE_REVIEW_TABLES = ['customers','products','categories','stock','stock_movements','ingredients','suppliers','discounts','promotions','recipes'];
+const PURGE_TABLES        = ['refresh_tokens','api_keys','device_enrolment_codes','notifications','onboarding_progress','mode_switch_requests','kitchen_tickets','reservations','business_days','feature_flags','roles','branch_printers','printer_stations','modifier_groups','combo_items','product_attributes','attribute_groups'];
+
+async function countFor(table: string, businessId: string): Promise<number | null> {
+  try {
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+    return error ? null : (count ?? 0);
+  } catch { return null; }
+}
+
+/**
+ * GET /api/admin/clients/:id/purge-preview — non-destructive dry-run (Stage 2).
+ * Counts what a 6-month purge WOULD delete, grouped RETAIN / REVIEW / PURGE.
+ * Deletes nothing. This is the artifact for accountant/DPO sign-off.
+ */
+router.get('/clients/:id/purge-preview', requireAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const { data: biz } = await supabase.from('businesses').select('name, status, suspended_at').eq('id', id).single();
+  if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
+
+  const suspendedDays = biz.suspended_at
+    ? Math.floor((Date.now() - new Date(biz.suspended_at).getTime()) / 86400000) : null;
+
+  const group = async (tables: string[]) =>
+    (await Promise.all(tables.map(async t => ({ table: t, count: await countFor(t, id) }))))
+      .filter(r => r.count !== null && (r.count as number) > 0);
+
+  const [purge, review, retain] = await Promise.all([
+    group(PURGE_TABLES), group(PURGE_REVIEW_TABLES), group(PURGE_RETAIN_TABLES),
+  ]);
+
+  res.json({
+    business:       biz.name,
+    status:         biz.status,
+    suspended_days: suspendedDays,
+    grace_days:     180,
+    past_grace:     biz.status === 'suspended' && (suspendedDays ?? 0) >= 180,
+    purge, review, retain,
+    note: 'Preview only — deletes nothing. The destructive purge is not enabled until the RETAIN list, PII handling, and retention period are signed off (docs/SUSPEND-PURGE-PLAN.md).',
+  });
+});
+
 router.patch('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { name, type, phone, email, address, tax_pin, vat_rate, currency } = req.body;
