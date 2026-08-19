@@ -483,12 +483,16 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
         console.error('Recipe deduction error (non-fatal):', recipeErr?.message);
       }
 
-      // 6c. Takeaway packaging deduction (Track C).
-      // On a takeaway order, each line's product consumes its configured packaging
-      // (product_packaging → packaging ingredient). Deducted per-branch via the
-      // same atomic RPC as recipes. Dine-in never consumes takeaway packaging, and
-      // the cost is captured once at purchase — this is consumption, not an expense.
-      if (order_type === 'takeaway') {
+      // 6c. Packaging deduction (Track C).
+      // Takeaway AND delivery orders consume their configured packaging
+      // (product_packaging → packaging ingredient) — both leave the premises in a
+      // container, so both draw down packaging stock uniformly. Dine-in does not
+      // (eaten on a plate on-site). Deducted per-branch via the same atomic RPC as
+      // recipes; the cost is captured once at purchase — this is consumption, not
+      // an expense. (A131: delivery joined takeaway here. Before, only takeaway
+      // deducted packaging, so once delivery orders began reaching the cloud
+      // (A129) their packaging went uncounted — every to-go order now deducts it.)
+      if (order_type === 'takeaway' || order_type === 'delivery') {
         try {
           const { data: pkgRows } = await supabase
             .from('product_packaging')
