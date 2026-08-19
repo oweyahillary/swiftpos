@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). NOTE: register changelog still lacks rows for A125/A126/A127 (in git, rule-14 gap) — add on next reading. — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
-| Tree | `dev`, post-A111 (last pushed `d70fa0e`; this edit commits on top), desktop **v0.5.34**, `LOCAL_SCHEMA_VERSION` **52**, web/cloud runtime **Node 24**, desktop **Electron 43** |
-| Open | **A: 1 P0 · 9 P1 · 6 P2 · 5 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A24 A3 A4 A12 · A-P2: A22 A23 A53 A8 A69 A73 · A-P3: A13 A68 A70 A71 A72 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
+| Last updated | **2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry). **Next free ID A131.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
+| Tree | `dev`, post-A111 (last pushed `d70fa0e`; this edit commits on top), desktop **v0.5.35**, `LOCAL_SCHEMA_VERSION` **52**, migrations **→ 90** (A129 batch, prepared — pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
+| Open | **A: 1 P0 · 10 P1 · 7 P2 · 5 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 · A-P1: A54 A18 A19 A20 A50 A24 A3 A4 A12 A129 · A-P2: A22 A23 A53 A8 A69 A73 A130 · A-P3: A13 A68 A70 A71 A72 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
 | Reconciliation 2026-08-17 (A99–A111) | The **Open** and **Counts** rows derive from the §A/§D open-item sections (A1–A73 + D-items) and remain accurate: **A74–A111 are recorded in the Changelog and were near-all closures**, so they add no open items. The current authoritative open list is `HANDOFF-2026-08-17.md` §7. Specifics: the open **P0 A17** (offline-auth day-15 lockout) is now carried by its built-but-**hardware-pending** fix **A99–A101** (two-till sign-off per PHASE5 §8) — so the P0 is a *fix awaiting verification*, not an unstarted finding; **A19/A20/A24** stay P1, blocked on that sign-off. **A108/A110/A111** moved the web/cloud runtime Node 20→22→24 and brought all five apps to **0 npm vulnerabilities** (shipped, CI green); the **desktop Electron 35→43** upgrade is merged but pending the same two-till build before any prod till. |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
@@ -102,6 +102,106 @@ Agreed plan, in order:
 
 ---
 ## A. OPEN — carried into tomorrow
+
+### A129 · P1 · OPEN · Delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` (A128's twin)
+
+Same shape as A128, on a different column. Migration 58 ("universal business
+types") DROPped and re-ADDed `orders_order_type_check` with a narrowed five-value
+list — `dine_in | takeaway | retail | parking_session | fuel_sale` — silently
+dropping the baseline `delivery` (and `aggregator`, `other`). But **delivery is a
+live, shipping feature**: `POSPage.tsx` `chooseOrderType` offers it, the server's
+Zod validator accepts it (`schemas.ts` `order_type: z.enum([…,'delivery'])`), the
+create path sets a `delivery_person` specifically for it (`orders.ts`,
+`order_type === 'delivery'`), and the till prints delivery KOTs / a "Delivery Boy"
+receipt line. Migration 35's own header even asserts "'delivery' is already an
+accepted order_type" — true when written, falsified by 58.
+
+`create_order_atomic` (migration 69) inserts `p_order->>'order_type'` verbatim, so
+a delivery order fails INSERT with 23514 (check_violation): the RPC aborts,
+POST /api/orders errors, the till parks the order (`sync_queue` → 5 retries →
+`failed`). Silent, because the till's LOCAL `orders.order_type` is free TEXT — the
+cashier sees a completed sale that never reaches cloud/dashboard. P0-adjacent
+(false confidence over completed revenue); filed P1 as silent divergence.
+
+Found by sweeping the class A128 belongs to (rule 6): the existing
+`schema-parity.mjs` compares the SET OF COLUMNS but, by its own design note, not
+their DOMAINS — so a cloud CHECK tighter than the till's free-TEXT column is
+invisible to it. New gate `check-push-domain-parity.mjs` (+
+`push-domain-producers.json`) closes exactly that: it diffs every push-table
+value-list CHECK against the reviewed set of values the producers actually emit,
+and goes red naming `orders.order_type emits {delivery}` while correctly NOT
+flagging `payments.method` (A128 fixed it to a format check). Wired into `ci.yml`
+beside `schema-parity`.
+
+FIX: migration 90 re-admits `delivery` only (DROP + guarded ADD, idempotent,
+REVERT block). Existing rows can't hold `delivery`, so ADD CONSTRAINT can't fail
+on live data; parked orders drain via `retryFailedOrders()` (idempotent on
+`X-Idempotency-Key: order_id`). `aggregator`/`other` deliberately NOT re-admitted
+— nothing writes them (see A130). No desktop change.
+
+Verified against real Postgres (PGlite), `scripts/test-migration-90.mjs`, 9/9,
+mutation-checked (§0 proves delivery → 23514 without the fix): post-migration
+delivery accepted while '', 'aggregator', 'nonsense' still rejected; idempotent.
+All 18 gates + doc-refs green on the bench.
+
+**NEEDS PROD-MIGRATE** (86→90, on `main` via the DB-migrate Action). Delivery:
+MANIFEST-2026-08-19-a.md.
+
+### A130 · P2 · OPEN · Aggregators report is the display half of a never-wired feature
+
+`GET /api/reports/aggregator` (plus the dashboard Aggregators tab,
+`aggregator_commission_*` business settings, and the `orders.aggregator_name`
+column from baseline) is fully built to REPORT aggregator revenue net of
+commission — but **nothing anywhere creates an aggregator order.** Grep across
+server, dashboard and desktop finds `order_type = 'aggregator'` and
+`aggregator_name` ONLY in reads (the report, a `channelMap`, UI labels): no
+INSERT, no UPDATE, no assignment, and the server's Zod `order_type` enum never
+included `aggregator`. So the report can only ever return empty, and it renders as
+"zero aggregator revenue" rather than "not set up" — a control that silently
+misleads.
+
+**CORRECTION to this entry's first draft:** this is NOT a migration-58 regression.
+Migration 58 did drop `aggregator` from `orders_order_type_check`, but aggregator
+orders were never produced even before 58 — the ingestion half of the feature was
+never built. This is the repo's recurring "complete at every layer except one
+wire" shape (rule 17): report endpoint, commission settings, column and UI tab all
+exist; the writer does not. (Contrast A129/`delivery`, which WAS a live producer
+that 58 silently cut off — that one is a real regression and is fixed.)
+
+So re-admitting `aggregator` to the CHECK (as A129 does for `delivery`) would be
+wrong — it would let the column hold a value still nothing emits, which is why the
+A129 migration deliberately excludes it. The fix is a product decision on how
+aggregator sales should ENTER, then a build:
+- **(a)** tag an order as aggregator at creation (set `order_type` +
+  `aggregator_name` from POS or a dashboard entry), re-admit the value, and the
+  existing report lights up; or
+- **(b)** an import path — manual dashboard entry, or a Bolt/Glovo/UberEats API
+  pull — that writes aggregator orders; or
+- **(c)** if aggregator revenue is out of scope, retire the report tab + column
+  rather than ship a control that always reads zero.
+
+Filed for that decision; not built. No constraint change belongs in the A129
+batch.
+
+### A127 · P2 · CLOSED 2026-08-17 · Admin portal — Branches tab with tills + tech-audit drill-down (rule-14 catch-up)
+
+Register row was missing though the code shipped (commits `46ad3ae`, `0f39c40`) —
+the rule-14 gap the 08-18 header flagged. Adds a Branches tab to the admin portal
+listing each branch's tills, with a per-branch drill-down into the tech-audit
+log. Recorded here to close the gap; no code change in this batch.
+
+### A126 · P3 · CLOSED 2026-08-17 · Admin portal — Phase 3 glass UI refresh (rule-14 catch-up)
+
+Register row was missing though the code shipped (commit `97dbbb3`). Visual
+refresh of the admin portal to the "glass" styling used across the newer admin
+surfaces; presentation-only. Recorded to close the rule-14 gap.
+
+### A125 · P3 · CLOSED 2026-08-17 · Admin portal — suspend-purge Stage 2 dry-run preview (rule-14 catch-up)
+
+Register row was missing though the code shipped (commits `0f9e1dc`, `97dbbb3`).
+Non-destructive purge preview: an admin-only dry-run that lists exactly what a
+purge WOULD delete for a long-suspended client, deleting nothing. Follows
+A123/A124's staged suspend-purge design. Recorded to close the rule-14 gap.
 
 ### A1 · P0 · **CLOSED 2026-08-11 — packaging closed 08-10, rotation confirmed by owner**
 **Owner, 2026-08-11: the key was rotated long ago.** That was the only half
@@ -3440,6 +3540,9 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-19 | **A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery`, migration 90)** — A128's twin on a different column. Migration 58 ("universal business types") re-ADDed `orders_order_type_check` narrowed to `dine_in\|takeaway\|retail\|parking_session\|fuel_sale`, dropping the baseline `delivery` — but `delivery` is a live POS selectable (`POSPage.tsx chooseOrderType`), Zod-accepted (`schemas.ts`), and the create path sets `delivery_person` for it. `create_order_atomic` (migration 69) inserts `order_type` verbatim, so a delivery order fails 23514, POST /api/orders errors, and the till parks it (`sync_queue` → 5 retries → `failed`); the till's LOCAL `order_type` is free TEXT, so the cashier sees a completed sale that never reaches cloud/dashboard. Migration 35's header even claimed "'delivery' is already an accepted order_type" — falsified by 58. Found by sweeping A128's class (rule 6): `schema-parity.mjs` compares column PRESENCE, by design not DOMAINS, so this was invisible to it. NEW GATE `check-push-domain-parity.mjs` + `push-domain-producers.json` diffs each push-table value-list CHECK against the reviewed set of values producers emit, goes red naming `orders.order_type emits {delivery}`, correctly ignores `payments.method` (A128's format check), and is wired into `ci.yml` beside `schema-parity`. FIX: migration 90 re-admits `delivery` only (DROP + guarded ADD, idempotent, REVERT). `aggregator`/`other` NOT re-admitted — nothing writes them (A130). Existing rows can't hold `delivery` so ADD CONSTRAINT can't fail on live data; parked orders drain via `retryFailedOrders()` (idempotent on `X-Idempotency-Key`). No desktop change. Verified real Postgres (PGlite), `test-migration-90.mjs` 9/9, mutation-checked (delivery → 23514 without the fix; '', 'aggregator', 'nonsense' still rejected post-fix); all 18 gates + doc-refs green on the bench. **NEEDS PROD-MIGRATE 86→90** (on `main` via the DB-migrate Action). Delivery: MANIFEST-2026-08-19-a.md. |
+| 2026-08-19 | **A130 opened (Aggregators report is the display half of a never-wired feature)** — `GET /api/reports/aggregator` + the dashboard tab, `aggregator_commission_*` settings, and the baseline `orders.aggregator_name` column all exist to report aggregator revenue, but NOTHING writes an aggregator order: grep finds `order_type='aggregator'`/`aggregator_name` only in reads, no INSERT/UPDATE/assignment, and the Zod `order_type` enum never included `aggregator`. So the report always reads empty (looks like "zero", not "not set up"). NOT a migration-58 regression — aggregator orders were never produced even pre-58; this is the "complete at every layer except one wire" shape (rule 17), the missing wire being the writer. Re-admitting `aggregator` (as A129 does for `delivery`) would be wrong — nothing emits it. Decision needed: tag orders as aggregator at creation, build an import path, or retire the tab. Filed, not built. |
+| 2026-08-19 | **A125/A126/A127 rows added (rule-14 catch-up)** — these shipped in git with no register entry (the gap the 08-18 header flagged). A127 (P2, closed): admin-portal Branches tab with tills + tech-audit drill-down (`46ad3ae`, `0f39c40`). A126 (P3, closed): admin-portal Phase-3 glass UI refresh (`97dbbb3`). A125 (P3, closed): suspend-purge Stage-2 non-destructive dry-run preview (`0f9e1dc`, `97dbbb3`). Body entries added in §A; no code change. |
 | 2026-08-18 | **A128 closed (custom-method sales silently never sync — cloud `payments.method` domain, migration 89)** — Field report: a bill paid with a business's custom payment method (A95) stays on the till and never reaches cloud/dashboard. Root cause is NOT in the desktop app: the custom `code` (`coop_card`, `airtel_money`, …) is written to `payments.method`, but the CLOUD column is value-CHECK-constrained (`payments_method_check`: cash\|mpesa\|card\|credit\|glovo, baseline + migration 46) and only `varchar(20)`. `create_order_atomic` (migration 69) inserts `leg->>'method'`, so a custom code fails 23514 (unknown) or 22001 (>20 chars); the RPC aborts, POST /api/orders errors, the sync engine parks the order (`sync_queue` → 5 retries → `failed`). Silent because the till's LOCAL `payments.method` is free TEXT — cashier sees a completed sale. Same latent break hit `room_charge` (migration 07's "free text" note was also wrong). Migration 86's header claimed method is a "free string… never breaks" — half true (not an FK, but IS check-constrained); this is the register's recurring "two schemas disagree, nothing compares them" shape. FIX (matches the A95 free-text design): migration 89 widens method to varchar(40) (= `payment_methods.code`), drops the fixed-value check, adds a FORMAT check `^[a-z0-9_]{1,40}$` — a right-shaped gate (still rejects empty/whitespace/mixed-case/over-length), not a loosened one (rule 20). Also: the dead `PaymentSchema` z.enum in `schemas.ts` (a THIRD disagreeing list, unwired) rewritten to the same regex + comment so it can't lie if ever wired; migration 86 header gets a non-executable correction note. No desktop change: parked sales drain via existing `retryFailedOrders()`, idempotent on `X-Idempotency-Key: order_id`. Verified against real Postgres (PGlite), incl. the actual file applied twice with seeded rows and the gate mutation-checked (rule 23): pre-fix coop_card/room_charge → 23514, 24-char → 22001; post-fix all accepted, ''/`Bad Method`/41-char still rejected. `apps/server` tsc clean (deps installed + run on bench). **NEEDS PROD-MIGRATE** (89, on `main` via the DB-migrate Action — note `dev` is ahead of `main`), then each affected till taps "⟳ N failed". Delivery: MANIFEST-2026-08-18-a.md. |
 | 2026-08-17 | **A124 closed (purge Stage 1: detector + pre-purge export — non-destructive)** — deletes nothing. Server: suspended_at in GET /clients; new GET /clients/:id/export (read-only JSON of normal user data, hashes stripped, financials excluded, audited). UI: isPurgeDue (180-day grace), purge-due badge on clients list, suspension banner + Export button on client detail. Depends on A122/migration 88. Verified: server tsc clean, admin build clean, 0 new type errors, gates green. Stage 2 awaits sign-offs. Delivery: MANIFEST-2026-08-17-o.md. |
 | 2026-08-17 | **A123 opened (suspend-grace-period data purge plan — doc-only)** — filed docs/SUSPEND-PURGE-PLAN.md. Model: 6-month grace purges normal user data; financial/tax retained on accountant's schedule. Drafts RETAIN vs PURGE table classification; flags cascade-from-businesses FKs, order_items.product_id SET NULL, PII-in-retained-records (anonymise-vs-leave = accountant/DPO call). Staged: A122 clock done; Stage 1 detector+export; Stage 2 admin-confirmed purge after sign-off. Open Qs: retention number, PII anonymisation, RETAIN-list confirmation. |
