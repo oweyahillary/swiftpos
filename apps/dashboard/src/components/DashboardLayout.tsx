@@ -191,7 +191,7 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
         }`}>
         <div className="flex items-center gap-3">
           <NavIcon name={group.icon} className="flex-shrink-0" />
-          <span className="font-medium">{group.label}</span>
+          <span className="font-bold uppercase tracking-wider text-xs">{group.label}</span>
         </div>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
           className={`transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''} ${
@@ -290,7 +290,16 @@ export default function DashboardLayout() {
     // Food: drop the top-level Inventory tab (folded into the Inventory group below).
     .filter(e => !(isFood && !isGroup(e) && e.to === '/dashboard/inventory'))
     .map(e => {
-      if (!isGroup(e)) return allowed(e.verticals) ? relabel(e) : e;
+      if (!isGroup(e)) {
+        const item = allowed(e.verticals) ? relabel(e) : e;
+        // KDS is a standalone full-screen page keyed by branch; without a
+        // branch_id it shows "Missing branch ID". Carry the active branch so the
+        // link opens straight to this branch's board (A133 follow-up).
+        if (item.to === '/kds' && activeBranchId) {
+          return { ...item, to: `/kds?branch_id=${activeBranchId}` };
+        }
+        return item;
+      }
       let label = e.label;
       if (e.label === 'Menu')  label = isFood ? 'Menu' : 'Catalogue';
       if (e.label === 'Stock') label = isFood ? 'Inventory' : 'Purchasing';

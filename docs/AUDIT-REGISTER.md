@@ -282,6 +282,15 @@ context, so its grouped nav + Settings submenu is its own verified slice (rule 1
 Stays OPEN until browser-confirmed, signed off, and Slice 2 lands. Nothing merged or
 pushed. Delivery: MANIFEST-2026-08-20-a.md.
 
+**Follow-up 2026-08-20 (owner browser review, committed `439d141`+):** three fixes.
+(1) KDS opened to "Missing branch ID" — the top-level KDS link was bare `/kds` but
+`KDSPage` is keyed by `?branch_id=`; the link now carries the active branch. (2) Group
+headers restyled to a distinct uppercase section label (`font-bold uppercase
+tracking-wider text-xs`) so the sidebar reads as grouped menus, not a flat list. (3)
+`StationsPage` had no page padding (root was `space-y-6`, unlike its siblings' `p-6`)
+so Print stations rendered flush-left inside the Devices section — added `p-6`.
+Dashboard `tsc` + `npm run build` both green on-bench; browser recheck still owner's.
+
 ### A134 · P3 · OPEN · Business › Profile settings tab (deferred from A133)
 
 The consolidated **Business** section (A133) is designed to open with a **Profile**
