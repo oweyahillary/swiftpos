@@ -203,7 +203,9 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
       {isOpen && (
         <div className="mt-0.5 ml-3 pl-3 border-l border-gray-800 space-y-0.5">
           {group.items.map(item => (
-            <NavLink key={item.to} to={item.to} title={item.hint} end={item.end ?? item.to === '/dashboard'}
+            <NavLink key={item.to} to={item.to} title={item.hint}
+              end={item.end ?? (item.to === '/dashboard'
+                || group.items.some(s => s.to !== item.to && s.to.startsWith(item.to + '/')))}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                   isActive ? 'bg-green-500/10 text-green-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'

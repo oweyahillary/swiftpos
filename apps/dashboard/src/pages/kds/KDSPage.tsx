@@ -91,7 +91,9 @@ export default function KDSPage() {
   const fetchTickets = useCallback(async (bid: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${bid}`);
-      const data: Ticket[] = await res.json();
+      const body = await res.json();
+      const data: Ticket[] = Array.isArray(body) ? body : [];
+      if (!Array.isArray(body)) console.error('KDS tickets: unexpected response', body);
       setTickets(data);
       data.forEach(t => knownIds.current.add(t.id));
     } catch (err) {
