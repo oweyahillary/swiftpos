@@ -130,7 +130,8 @@ export default function KDSPage() {
           if (payload.eventType === 'INSERT') {
             // Fetch full ticket with order details
             const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${branchId}`);
-            const all: Ticket[] = await res.json();
+            const body = await res.json();
+            const all: Ticket[] = Array.isArray(body) ? body : [];
             const newTicket = all.find(t => t.id === payload.new.id);
             if (newTicket && !knownIds.current.has(newTicket.id)) {
               knownIds.current.add(newTicket.id);

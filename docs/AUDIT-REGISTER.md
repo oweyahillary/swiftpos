@@ -292,10 +292,26 @@ so Print stations rendered flush-left inside the Devices section — added `p-6`
 (4) Sidebar active-state: a grouped item that is a path-prefix of a sibling
 (`/dashboard/customers` vs `/dashboard/customers/credit`) matched active for the
 child route too, so both lit up — `NavGroupItem` now sets NavLink `end` when a
-sibling extends the item's path. (5) KDS hardened: the tickets fetch coerces a
-non-array response to `[]` so a display screen shows the empty board instead of
-white-screening. Dashboard `tsc` + `npm run build` both green on-bench; browser
-recheck still owner's.
+sibling extends the item's path. (5) KDS hardened: **both** tickets fetches (initial
+load + the realtime INSERT re-fetch) coerce a non-array response to `[]` so a display
+screen shows the empty board instead of white-screening.
+
+**Class sweep 2026-08-20 (owner asked "check for such errors" — rule 6).** Both bug
+classes swept dashboard-wide. (A) Nav prefix-collision: enumerated every nav path;
+the only pair where one is a strict prefix of another is `customers` → `customers/credit`
+(fixed above); Overview `/dashboard` is a prefix of all but is pinned `end: true`.
+Clean. (B) Non-array-response crash: the shared `api` client throws on non-2xx and
+every `api.get<…[]>` call site assigns to a var guarded with `?? []`, so the risk is
+confined to raw `fetch()`. Swept all raw fetches: `localPrintServer` guards
+(`data.printers ?? []` in try/catch); the KDS **realtime** re-fetch was the one
+genuine miss — the same class as the initial fetch, now guarded (this change). Also
+observed but OUT OF the owner-dashboard scope: `QRMenuPage` (public QR surface) does
+`data.categories.length` after only an `.error` check, so a malformed 2xx without a
+`categories` field would crash — flagged, not touched (separate surface; owner asked
+about the dashboard). (C) Section padding: every page rendered inside the three
+Settings sections carries its own `p-6` (StationsPage was the only gap, already
+fixed). Dashboard `tsc` + `npm run build` both green on-bench; browser recheck still
+owner's.
 
 ### A134 · P3 · OPEN · Business › Profile settings tab (deferred from A133)
 
