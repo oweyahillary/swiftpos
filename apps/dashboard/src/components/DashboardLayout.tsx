@@ -105,17 +105,11 @@ function isGroup(e: NavEntry): e is NavGroup { return 'items' in e; }
 // untagged entry shows for every vertical.
 const FOOD_VERTICALS = ['restaurant', 'cafe'];
 
-const TYPE_SETTINGS: Record<string, NavItem> = {
-  restaurant:     { to: '/dashboard/settings/restaurant', label: 'Restaurant Setup', icon: 'restaurant' },
-  cafe:           { to: '/dashboard/settings/restaurant', label: 'Café Setup',       icon: 'cafe' },
-  minimart:       { to: '/dashboard/settings/minimart',   label: 'Minimart Setup',   icon: 'minimart' },
-  parking:        { to: '/dashboard/settings/parking',    label: 'Parking Setup',    icon: 'parking' },
-  petrol_station: { to: '/dashboard/settings/petrol',     label: 'Petrol Setup',     icon: 'petrol' },
-};
-
 const NAV: NavEntry[] = [
   { to: '/dashboard',          label: 'Overview',  icon: 'overview', end: true },
   { to: '/dashboard/pos',      label: 'POS',      icon: 'till' },
+  // KDS moved out of Settings — it is a live operational screen, not a setting.
+  { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
   { to: '/dashboard/inventory',    label: 'Inventory',   icon: 'inventory', badgeKey: 'inventory' },
   { to: '/dashboard/reservations', label: 'Reservations', icon: 'reservations', verticals: FOOD_VERTICALS },
   {
@@ -124,7 +118,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/categories', label: 'Categories', icon: 'categories' },
       { to: '/dashboard/products',   label: 'Products',   icon: 'products' },
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: 'discounts' },
-      { to: '/dashboard/payment-methods', label: 'Payment methods', icon: 'payments' },
+      // Payment methods moved to Settings › Business › Payments (it is tender
+      // configuration, not catalogue).
       { to: '/dashboard/promotions', label: 'Promotions',   icon: 'promotions' },
       { to: '/dashboard/combos',     label: 'Combo Meals',  icon: 'combos', verticals: FOOD_VERTICALS },
     ],
@@ -143,6 +138,8 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/dashboard/expenses', label: 'Expenses', icon: 'expenses' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: 'reports' },
+      // Table Turnover moved out of Settings — it is a report, not configuration.
+      { to: '/dashboard/turnover', label: 'Table Turnover', icon: 'turnover', verticals: FOOD_VERTICALS },
       // Under Finance rather than Settings: it is a cash-custody action, and it is
       // the only route to a drawer stranded on a terminal that has died.
       { to: '/dashboard/open-drawers', label: 'Open Drawers', icon: 'drawers' },
@@ -158,14 +155,9 @@ const NAV: NavEntry[] = [
   {
     label: 'Settings', icon: 'settings',
     items: [
-      { to: '/dashboard/branches', label: 'Branches',         icon: 'branches' },
-      { to: '/dashboard/printers', label: 'Printers',         icon: 'printers' },
-      { to: '/dashboard/stations', label: 'Print stations',   icon: 'stations' },
-      { to: '/dashboard/terminals', label: 'Terminals',           icon: 'tills' },
-      { to: '/dashboard/turnover', label: 'Table Turnover',   icon: 'turnover', verticals: FOOD_VERTICALS },
-      { to: '/dashboard/settings/etims', label: 'KRA eTIMS',        icon: 'etims' },
-      { to: '/dashboard/settings', label: 'Staff Management', icon: 'staff', end: true },
-      { to: '/kds',                label: 'KDS',              icon: 'kds', verticals: FOOD_VERTICALS },
+      { to: '/dashboard/settings/users',    label: 'Users and access',     icon: 'staff' },
+      { to: '/dashboard/settings/devices',  label: 'Devices and printers', icon: 'printers' },
+      { to: '/dashboard/settings/business', label: 'Business',             icon: 'branches' },
     ],
   },
 ];
@@ -237,31 +229,12 @@ export default function DashboardLayout() {
   const { business } = useBusiness();
   const { activeBranchId } = useBranch();
 
-  // Build Setup group dynamically — inject business-type link
-  const setupGroup: NavGroup = {
-    label: 'Setup',
-    icon: 'settings',
-    items: [
-      { to: '/dashboard/branches', label: 'Branches',         icon: 'branches' },
-      { to: '/dashboard/printers', label: 'Printers',         icon: 'printers' },
-      { to: '/dashboard/stations', label: 'Print stations',   icon: 'stations' },
-      // Fleet health. Under Setup because it is estate management, not cash. A73:
-      // the static group above has always had this; the dynamic rebuild that
-      // replaces it dropped it, so the page was built + routed but unreachable.
-      { to: '/dashboard/terminals', label: 'Terminals',           icon: 'tills' },
-      { to: '/dashboard/turnover', label: 'Table Turnover',   icon: 'turnover', verticals: FOOD_VERTICALS },
-      { to: '/dashboard/settings/etims', label: 'KRA eTIMS',        icon: 'etims' },
-      { to: '/dashboard/settings', label: 'Staff Management', icon: 'staff', end: true },
-      ...(business?.type && TYPE_SETTINGS[business.type] ? [TYPE_SETTINGS[business.type]] : []),
-      { to: '/kds',                label: 'KDS',              icon: 'kds', verticals: FOOD_VERTICALS },
-    ],
-  };
-
-  // Replace the static 'Settings' group with the dynamic 'Setup' group, then
-  // tailor the menu to the business vertical: drop restaurant-only entries
+  // Tailor the menu to the business vertical: drop restaurant-only entries
   // (Reservations, Combo Meals, Ingredients, Table Turnover, KDS) for petrol /
   // retail / parking / minimart, and relabel the "Menu" group as "Catalogue"
-  // where "Menu" reads as restaurant jargon. Empty groups are dropped.
+  // where "Menu" reads as restaurant jargon. Empty groups are dropped. The
+  // Settings group is now static (three sections resolve their own vertical
+  // specifics internally), so no dynamic rebuild is needed here (A133).
   const vertical = business?.type ?? '';
   const known = vertical !== '';
   const allowed = (v?: string[]) => !v || !known || v.includes(vertical);
@@ -314,7 +287,6 @@ export default function DashboardLayout() {
   };
 
   const nav: NavEntry[] = NAV
-    .map(e => (isGroup(e) && e.label === 'Settings' ? setupGroup : e))
     // Food: drop the top-level Inventory tab (folded into the Inventory group below).
     .filter(e => !(isFood && !isGroup(e) && e.to === '/dashboard/inventory'))
     .map(e => {
