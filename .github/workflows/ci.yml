@@ -237,6 +237,19 @@ jobs:
             exit 1
           fi
 
+      # Every endpoint the dashboard calls must exist on the server with a
+      # matching method. A renamed route or GET-called-as-POST otherwise 404/405s
+      # only in the browser. (A133 review surfaced this class was unchecked.)
+      # No deps: pure file parsing, so it runs in this job. The DB-backed schema
+      # drift gate needs PGlite and runs in server-suites, after the root install.
+      - name: API route contract (dashboard vs server)
+        run: node scripts/check-api-routes.mjs
+
+      # Regex parser: assert it still detects an injected break rather than
+      # trusting a green that could mean "found nothing".
+      - name: Assert API route guard detects injected drift
+        run: node scripts/check-api-routes.mjs --self-test
+
   server-suites:
     # tests/*.test.mjs — 18 suites covering the money paths (atomic order, tip
     # reconciliation, /pay claim-and-loyalty, stock effects parity, discount
@@ -286,6 +299,15 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run test:migrations
+
+      # Server DB refs (supabase.from/.rpc/filter-columns) vs the schema the
+      # migrations build in PGlite. Runs here because it needs the root install
+      # above (@electric-sql/pglite). Found stock_movements.business_id and
+      # users.pin (A136); self-test asserts the guard still detects injected drift.
+      - name: API schema drift (server DB refs vs migrations)
+        run: |
+          node scripts/check-api-schema-drift.mjs
+          node scripts/check-api-schema-drift.mjs --self-test
 
       - name: Run offline suites
         run: |
