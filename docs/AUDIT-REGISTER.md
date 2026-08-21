@@ -352,6 +352,28 @@ Filed for a proper runtime session; not fixed here (rule 12 — logic debugging 
 live server is its own task, not a rider on the menu UI). Owner flagged both while
 explicitly deferring logic.
 
+**Follow-up 2026-08-20 (diagnosis + silent-failure fix).** Add-table root narrowed
+with the PGlite dummy DB + a code trace. RULED OUT: (a) column drift — the gate is
+clean; (b) NOT NULL / CHECK — `tables.slot_type` is NOT NULL but DEFAULTs to
+`'dining'`, the only hard-required columns (branch_id, business_id, name) are all
+supplied, and the CHECK set (status/slot_type/shape) passes; (c) owner permission —
+`auth.ts` sets `req.isOwner = true` on the Supabase-owner path and
+`requireAnyPermission` bypasses owners. So for an owner the insert is valid and should
+201; the remaining causes are a non-owner session (403), an empty branch_id/name
+(400), a handler 500, or it saves and only the list refresh is broken — and those are
+indistinguishable without the `POST /api/tables` Network response. What made the
+failure INVISIBLE is now fixed: `RestaurantSettingsPage` `saveTable`/`deleteTable`/
+`saveSetting` each fired a mutating `api.*` call inside `try … finally` with NO
+`catch`, so any rejection skipped the toast/close/reload silently — the "adding tables
+does nothing" symptom, a rule-6 class. All three now surface the error message
+(dashboard `tsc` + `npm run build` green). KDS blank: the array guards (2ff5de2) turn
+the likely non-array crash into the empty board, and the realtime callback is guarded
+and lives in a `useEffect` (can't blank the initial render), so if KDS is STILL blank
+after 2ff5de2 the browser console error is needed (Supabase realtime the prime
+suspect). Stays OPEN pending two one-shot runtime observations: (1) the `POST
+/api/tables` status+body, (2) the KDS console error. A broader catch-less-mutation
+class likely exists on other dashboard pages — worth a follow-up sweep.
+
 ### A136 · P2 · OPEN · Server queries columns absent from the schema (stock_movements.business_id, users.pin) + two new API gates
 
 Owner asked for a full API check of the dashboard. Route/method contract: clean

@@ -121,6 +121,11 @@ export default function RestaurantSettingsPage() {
       showToast(editTable.id ? 'Table updated' : 'Table created');
       setEditTable(null);
       if (selectedBranchId) await loadTables(selectedBranchId);
+    } catch (e) {
+      // Without this, api.post throwing on any non-2xx (403/400/500) skipped the
+      // toast + close + reload silently — the "adding tables does nothing" symptom
+      // (A135). Surface the real reason so the failure is visible and diagnosable.
+      showToast(e instanceof Error ? e.message : 'Could not save the table');
     } finally { setSaving(false); }
   }
 
@@ -131,17 +136,25 @@ export default function RestaurantSettingsPage() {
       intent: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(`/api/tables/${id}`);
-        showToast('Table deleted');
-        if (selectedBranchId) await loadTables(selectedBranchId);
+        try {
+          await api.delete(`/api/tables/${id}`);
+          showToast('Table deleted');
+          if (selectedBranchId) await loadTables(selectedBranchId);
+        } catch (e) {
+          showToast(e instanceof Error ? e.message : 'Could not delete the table');
+        }
       },
     });
   }
 
   async function saveSetting(key: string, value: string) {
-    await api.post('/api/business/settings', { key, value });
-    setSettings(prev => ({ ...prev, [key]: value }));
-    showToast('Saved');
+    try {
+      await api.post('/api/business/settings', { key, value });
+      setSettings(prev => ({ ...prev, [key]: value }));
+      showToast('Saved');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save');
+    }
   }
 
   const sections = [...new Set(tables.map(t => t.zone || 'Main Hall'))];
