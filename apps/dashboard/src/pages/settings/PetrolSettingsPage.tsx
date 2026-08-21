@@ -127,6 +127,8 @@ export default function PetrolSettingsPage() {
       else await api.post('/api/pumps', editPump);
       showToast(editPump.id ? 'Pump updated' : 'Pump created');
       setEditPump(null); loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save the pump');
     } finally { setSaving(false); }
   }
 
@@ -137,9 +139,13 @@ export default function PetrolSettingsPage() {
       intent: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(`/api/pumps/${id}`);
-        showToast('Pump deleted');
-        loadData();
+        try {
+          await api.delete(`/api/pumps/${id}`);
+          showToast('Pump deleted');
+          loadData();
+        } catch (e) {
+          showToast(e instanceof Error ? e.message : 'Could not delete the pump');
+        }
       },
     });
   }
@@ -152,6 +158,8 @@ export default function PetrolSettingsPage() {
       else await api.post('/api/fuel-tanks', editTank);
       showToast(editTank.id ? 'Tank updated' : 'Tank created');
       setEditTank(null); loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save the tank');
     } finally { setSaving(false); }
   }
 
@@ -159,15 +167,23 @@ export default function PetrolSettingsPage() {
     if (!stockEntry) return;
     const litres = parseFloat(stockEntry.litres);
     if (isNaN(litres) || litres <= 0) return;
-    await api.post(`/api/fuel-tanks/${stockEntry.tank.id}/delivery`, { litres });
-    showToast(`Added ${litres}L to ${stockEntry.tank.name}`);
-    setStockEntry(null); loadData();
+    try {
+      await api.post(`/api/fuel-tanks/${stockEntry.tank.id}/delivery`, { litres });
+      showToast(`Added ${litres}L to ${stockEntry.tank.name}`);
+      setStockEntry(null); loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not record the delivery');
+    }
   }
 
   async function saveSetting(key: string, value: string) {
-    await api.post('/api/business/settings', { key, value });
-    setSettings(prev => ({ ...prev, [key]: value }));
-    showToast('Saved');
+    try {
+      await api.post('/api/business/settings', { key, value });
+      setSettings(prev => ({ ...prev, [key]: value }));
+      showToast('Saved');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save');
+    }
   }
 
   const lowTanks = tanks.filter(t => t.current_level <= t.reorder_level);

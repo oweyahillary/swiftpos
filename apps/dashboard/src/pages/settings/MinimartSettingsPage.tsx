@@ -87,18 +87,24 @@ export default function MinimartSettingsPage() {
       await api.post('/api/business/settings', { key, value });
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast('Saved');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save');
     } finally { setSaving(false); }
   }
 
   async function saveProduct(product: Product) {
-    await api.patch(`/api/products/${product.id}`, {
-      barcode:  product.barcode || null,
-      plu_code: product.plu_code || null,
-      sold_by:  product.sold_by || 'each',
-    });
-    setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-    setEditProduct(null);
-    showToast('Product updated');
+    try {
+      await api.patch(`/api/products/${product.id}`, {
+        barcode:  product.barcode || null,
+        plu_code: product.plu_code || null,
+        sold_by:  product.sold_by || 'each',
+      });
+      setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+      setEditProduct(null);
+      showToast('Product updated');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not update the product');
+    }
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -134,6 +140,8 @@ export default function MinimartSettingsPage() {
       setImportResult(result);
       showToast(`Import complete: ${result.summary.created} created, ${result.summary.updated} updated`);
       loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Import failed');
     } finally { setImporting(false); }
   }
 

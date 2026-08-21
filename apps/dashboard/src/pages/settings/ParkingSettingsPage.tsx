@@ -99,6 +99,8 @@ export default function ParkingSettingsPage() {
       showToast(editBay.id ? 'Bay updated' : 'Bay created');
       setEditBay(null);
       loadData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save the bay');
     } finally { setSaving(false); }
   }
 
@@ -109,17 +111,25 @@ export default function ParkingSettingsPage() {
       intent: 'destructive',
       confirmLabel: 'Delete',
       onConfirm: async () => {
-        await api.delete(`/api/tables/${id}`);
-        showToast('Bay deleted');
-        loadData();
+        try {
+          await api.delete(`/api/tables/${id}`);
+          showToast('Bay deleted');
+          loadData();
+        } catch (e) {
+          showToast(e instanceof Error ? e.message : 'Could not delete the bay');
+        }
       },
     });
   }
 
   async function saveSetting(key: string, value: string) {
-    await api.post('/api/business/settings', { key, value });
-    setSettings(prev => ({ ...prev, [key]: value }));
-    showToast('Saved');
+    try {
+      await api.post('/api/business/settings', { key, value });
+      setSettings(prev => ({ ...prev, [key]: value }));
+      showToast('Saved');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save');
+    }
   }
 
   const zones = [...new Set(bays.map(b => b.zone || 'Main'))];
