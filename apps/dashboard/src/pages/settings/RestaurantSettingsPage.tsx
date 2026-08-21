@@ -70,6 +70,8 @@ export default function RestaurantSettingsPage() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [bulkOpen, setBulkOpen]   = useState(false);
+  const [bulkCount, setBulkCount] = useState(10);
 
   useEffect(() => { loadData(); }, []);
 
@@ -129,6 +131,35 @@ export default function RestaurantSettingsPage() {
     } finally { setSaving(false); }
   }
 
+  // Bulk create N tables named T{next}… continuing after any existing T-number,
+  // so a venue can be seeded in one go (A137). Reuses the single-create endpoint;
+  // individual failures are skipped, and if none succeed the real error surfaces.
+  async function bulkCreate() {
+    const n = Math.max(1, Math.min(100, Math.floor(bulkCount || 0)));
+    if (!selectedBranchId) { showToast('Pick a branch first'); return; }
+    setSaving(true);
+    const existing = new Set(tables.map(t => t.name));
+    let next = 0;
+    for (const t of tables) { const m = /^T(\d+)$/.exec(t.name); if (m) next = Math.max(next, Number(m[1])); }
+    let created = 0; let firstErr: unknown = null;
+    try {
+      for (let i = 0; i < n; i++) {
+        next += 1;
+        let name = `T${next}`;
+        while (existing.has(name)) { next += 1; name = `T${next}`; }
+        existing.add(name);
+        try {
+          await api.post('/api/tables', { name, capacity: 4, sort_order: tables.length + created, slot_type: 'dining', branch_id: selectedBranchId });
+          created += 1;
+        } catch (e) { if (!firstErr) firstErr = e; }
+      }
+      setBulkOpen(false);
+      if (selectedBranchId) await loadTables(selectedBranchId);
+      if (created === 0) showToast(firstErr instanceof Error ? firstErr.message : 'Could not create tables');
+      else showToast(created === n ? `Created ${created} tables` : `Created ${created} of ${n}`);
+    } finally { setSaving(false); }
+  }
+
   async function deleteTable(id: string) {
     showConfirm({
       title: 'Delete table?',
@@ -185,12 +216,20 @@ export default function RestaurantSettingsPage() {
           <p className="text-sm text-gray-500 mt-1">Tables, service configuration and menu periods</p>
         </div>
         {tab === 'tables' && (
-          <button
-            onClick={() => setEditTable({ name: '', capacity: 4, sort_order: tables.length, slot_type: 'dining', zone: 'Main Hall', shape: 'rect' })}
-            className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
-          >
-            + Add Table
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBulkOpen(true)}
+              className="px-4 py-2 border border-gray-700 hover:border-blue-500/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
+            >
+              + Add multiple
+            </button>
+            <button
+              onClick={() => setEditTable({ name: '', capacity: 4, sort_order: tables.length, slot_type: 'dining', zone: 'Main Hall', shape: 'rect' })}
+              className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+            >
+              + Add Table
+            </button>
+          </div>
         )}
       </div>
 
@@ -247,12 +286,20 @@ export default function RestaurantSettingsPage() {
             <div className="text-center py-16">
               <div className="text-4xl mb-3">🪑</div>
               <div className="text-gray-500 text-sm">No tables yet</div>
-              <button
-                onClick={() => setEditTable({ name: '', capacity: 4, sort_order: 0, slot_type: 'dining', zone: 'Main Hall' })}
-                className="mt-4 px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
-              >
-                + Add first table
-              </button>
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <button
+                  onClick={() => setEditTable({ name: '', capacity: 4, sort_order: 0, slot_type: 'dining', zone: 'Main Hall' })}
+                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+                >
+                  + Add first table
+                </button>
+                <button
+                  onClick={() => setBulkOpen(true)}
+                  className="px-4 py-2 border border-gray-700 hover:border-blue-500/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
+                >
+                  Create several at once
+                </button>
+              </div>
             </div>
           ) : sections.map(section => {
             const dot  = SECTION_DOT[section] ?? DEFAULT_DOT;
@@ -415,6 +462,34 @@ export default function RestaurantSettingsPage() {
       )}
 
       {/* ── EDIT TABLE MODAL ── */}
+      {bulkOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white">Add multiple tables</h3>
+              <button onClick={() => setBulkOpen(false)} className="w-7 h-7 bg-gray-800 hover:bg-gray-700 border-none rounded-md text-gray-400 text-sm cursor-pointer">✕</button>
+            </div>
+            <p className="text-sm text-gray-500">
+              Creates T-numbered tables (T1, T2, …), continuing after any that already exist. Seats 4 each — edit or rename individually afterwards.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">How many?</label>
+              <input
+                type="number" min={1} max={100} value={bulkCount}
+                onChange={e => setBulkCount(Number(e.target.value))}
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div className="flex gap-2.5 pt-1">
+              <button onClick={() => setBulkOpen(false)} className="flex-1 py-2.5 border border-gray-700 rounded-lg text-gray-400 text-sm hover:border-gray-600 transition-colors">Cancel</button>
+              <button onClick={bulkCreate} disabled={saving} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
+                {saving ? 'Creating…' : `Create ${Math.max(1, Math.min(100, Math.floor(bulkCount || 0)))}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editTable && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
