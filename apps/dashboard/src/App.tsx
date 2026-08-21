@@ -38,6 +38,7 @@ const RolesRoute          = lazy(() => import('./pages/settings/UsersAccessPage'
 const DevicesPrintersPage = lazy(() => import('./pages/settings/DevicesPrintersPage'));
 const DevicesRoute        = lazy(() => import('./pages/settings/DevicesPrintersPage').then(m => ({ default: m.DevicesRoute })));
 const BusinessPage        = lazy(() => import('./pages/settings/BusinessPage'));
+const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileTab'));
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
@@ -153,7 +154,8 @@ export default function App() {
                       </Route>
 
                       <Route path="settings/business" element={<BusinessPage />}>
-                        <Route index               element={<Navigate to="branches" replace />} />
+                        <Route index               element={<Navigate to="profile" replace />} />
+                        <Route path="profile"      element={<BusinessProfileTab />} />
                         <Route path="branches"     element={<BranchesPage />} />
                         <Route path="tax"          element={<EtimsSettingsPage />} />
                         <Route path="payments"     element={<PaymentMethodsPage />} />

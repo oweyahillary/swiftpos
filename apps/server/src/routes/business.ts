@@ -97,6 +97,54 @@ router.get('/', requireAuth, async (req, res) => {
   res.json(data);
 });
 
+// PATCH /api/business — owner-editable business profile (A134).
+// The business record is otherwise admin-only; an owner with settings access may
+// edit their own profile here. Guardrails: the whitelist below is the ONLY set of
+// fields this route will touch (owner login email, owner_id, type, status, plan
+// dates etc. stay admin-controlled); currency is locked once any sale exists,
+// because historical amounts are denominated in it; `email` here is the business
+// CONTACT email, not a login credential.
+router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'currency'] as const;
+  const updates: Record<string, unknown> = {};
+  for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: 'No editable fields provided' });
+    return;
+  }
+  if ('name' in updates && !String(updates.name ?? '').trim()) {
+    res.status(400).json({ error: 'Business name is required' });
+    return;
+  }
+  if ('vat_rate' in updates) {
+    const v = Number(updates.vat_rate);
+    if (Number.isNaN(v) || v < 0 || v > 100) {
+      res.status(400).json({ error: 'VAT rate must be between 0 and 100' });
+      return;
+    }
+    updates.vat_rate = v;
+  }
+  if ('currency' in updates) {
+    const { data: current } = await supabase
+      .from('businesses').select('currency').eq('id', req.businessId).single();
+    if (current && updates.currency !== current.currency) {
+      const { count } = await supabase
+        .from('orders').select('id', { count: 'exact', head: true }).eq('business_id', req.businessId);
+      if ((count ?? 0) > 0) {
+        res.status(400).json({ error: 'Currency cannot be changed once you have recorded sales' });
+        return;
+      }
+    }
+  }
+  updates.updated_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('businesses').update(updates).eq('id', req.businessId).select().single();
+  if (error) { sendError(res, error); return; }
+  res.json(data);
+});
+
 // GET /api/business/settings
 // Returns all key/value settings for this business.
 router.get('/settings', requireAuth, async (req, res) => {
