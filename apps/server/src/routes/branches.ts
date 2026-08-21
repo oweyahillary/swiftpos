@@ -3,6 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requireAnyPermission } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 
@@ -197,6 +198,71 @@ router.delete('/:id/remove-user/:userId', requireAuth, async (req, res) => {
 
   if (error) { sendError(res, error); return; }
   res.json({ success: true });
+});
+
+// A139: per-branch setting overrides (receipt text + hours) that supersede the
+// business default. Only these three keys are overridable; the resolution
+// (branch → business default) happens server-side in GET /pos/init, so the
+// branch-bound till just receives its own values.
+const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operation'];
+
+// Confirms :id is a branch of THIS business — never let an owner read or write
+// overrides on another tenant's branch (the till resolves by branch_id alone).
+async function assertOwnBranch(businessId: string | undefined, branchId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('branches').select('id').eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  return !!data;
+}
+
+// GET /api/branches/:id/settings — this branch's overrides as a { key: value } map.
+router.get('/:id/settings', requireAuth, async (req, res) => {
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) {
+    res.status(404).json({ error: 'Branch not found' });
+    return;
+  }
+  const { data, error } = await supabase
+    .from('branch_settings')
+    .select('key, value')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', req.params.id);
+  if (error) { sendError(res, error); return; }
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) map[(row as any).key] = (row as any).value;
+  res.json(map);
+});
+
+// POST /api/branches/:id/settings — set or clear one override.
+//   { key, value }        → upsert the override (branch value wins over default)
+//   { key, value: null }  → delete the override (branch reverts to the default)
+router.post('/:id/settings', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+  const { key, value } = req.body ?? {};
+  if (!OVERRIDABLE_KEYS.includes(key)) {
+    res.status(400).json({ error: 'That setting cannot be overridden per branch' });
+    return;
+  }
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) {
+    res.status(404).json({ error: 'Branch not found' });
+    return;
+  }
+  if (value === null || value === undefined) {
+    const { error } = await supabase
+      .from('branch_settings')
+      .delete()
+      .eq('business_id', req.businessId)
+      .eq('branch_id', req.params.id)
+      .eq('key', key);
+    if (error) { sendError(res, error); return; }
+    res.json({ key, inherited: true });
+    return;
+  }
+  const { error } = await supabase
+    .from('branch_settings')
+    .upsert(
+      { business_id: req.businessId, branch_id: req.params.id, key, value: String(value), updated_at: new Date().toISOString() },
+      { onConflict: 'branch_id,key' },
+    );
+  if (error) { sendError(res, error); return; }
+  res.json({ key, value: String(value) });
 });
 
 export default router;

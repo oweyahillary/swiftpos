@@ -509,6 +509,25 @@ path, which must sync and resolve the per-branch value and CANNOT be verified on
 bench (no Electron; receipts print on the physical till); (d) dashboard — a per-branch
 override editor. Its own verified slice, built with the migration and a till in the loop.
 
+**BUILT 2026-08-20 (server-side resolution — desktop unchanged).** The key lever: the
+till already sends `?branch_id` to `GET /pos/init` (used for per-branch pricing) and
+consumes the `receiptHeader`/`receiptFooter`/`continuousOperation` it returns — so the
+override is resolved SERVER-SIDE and the desktop needs NO change. Delivered: (a)
+`migrations/91_branch_settings.sql` — `branch_settings(business_id, branch_id, key,
+value)` unique(branch_id,key), RLS + grants mirroring business_settings, ON DELETE
+CASCADE (PGlite-verified, 86/86, 100 tables); (b) `/pos/init` fetches this branch's
+overrides in the same round-trip (same tenant guard as the bound branch) and overlays
+them onto the business defaults — branch row wins, absent → inherit; (c)
+`GET/POST /api/branches/:id/settings` (upsert, or clear→inherit on null value), keys
+allow-listed to receipt_header/footer/continuous_operation, with an `assertOwnBranch`
+tenant guard so no one writes overrides onto another business's branch; (d)
+`BranchReceiptOverrides.tsx` on the branch detail page — inherit-or-override per field,
+revert-to-default clears the row. Verified: server `tsc`, dashboard `tsc` + build,
+drift gate (0, self-test 11/11), route gate 279/279 all green. Stays OPEN on two owner
+steps: **NEEDS PROD-MIGRATE 90→91**, then confirm on a real till that a branch with an
+override prints its own header while others inherit. No desktop code changed, so that
+confirm is a read-through of existing sync, not new till logic.
+
 ### A127 · P2 · CLOSED 2026-08-17 · Admin portal — Branches tab with tills + tech-audit drill-down (rule-14 catch-up)
 
 Register row was missing though the code shipped (commits `46ad3ae`, `0f39c40`) —
@@ -3866,6 +3885,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-08-20 | **A139 built (server-side; desktop unchanged).** Per-branch receipt header/footer + 24h overrides for franchises. Migration 91 `branch_settings` (PGlite-verified); `/pos/init` overlays this branch's overrides onto the business default (branch wins, absent→inherit) — the till already sends `?branch_id` so no desktop change; `GET/POST /api/branches/:id/settings` (upsert/clear) with tenant guard; per-branch editor on the branch detail page. Server+dashboard tsc/build, drift + route gates green. Stays OPEN: **NEEDS PROD-MIGRATE 90→91** + one till confirm. |
 | 2026-08-20 | **A134 closed — Business Profile tab (Slice 1).** Owner-editable identity via new `PATCH /api/business` (whitelisted fields; currency locked once sales exist; login email stays admin), plus business-wide receipt header/footer + 24h toggle. New `BusinessProfileTab.tsx`, wired as the Business landing tab. Server + dashboard tsc/build green; route gate 278/278; drift gate clean; browser confirm pending. Per-branch franchise overrides split out to **A139** (cross-stack incl. desktop till + a migration). |
 | 2026-08-20 | **A138 closed — catch-less mutation sweep.** Swept 124 mutating api calls / 39 dashboard files; only the vertical settings pages swallowed errors (siblings of the A135-fixed Restaurant page). Parking (saveBay/deleteBay/saveSetting), Minimart (saveSetting/saveProduct/runImport), Petrol (savePump/deletePump/saveTank/recordDelivery/saveSetting) now surface the real error via toast. FloorPlan/StockTransfers mutations already handled. 0 swallowers remain; tsc + build green. |
 | 2026-08-20 | **A136 closed — both server↔schema drifts fixed.** `stock_movements.business_id` (fueltanks.ts, reports.ts) → scope by business via the `products!inner(business_id)` join (matches inventory.ts). `users.pin` (staff.ts /clock) → verify against `pin_hash` with the canonical `verifyPin` (bcrypt+legacy), now exported from auth.ts and reused (no duplicate security logic). Allowlist emptied; drift gate green with 0 allowlisted (self-test 11/11); server tsc clean. Runtime confirm pending (clock-in identifies staff; fuel movements + deliveries report return data). |
