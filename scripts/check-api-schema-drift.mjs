@@ -50,10 +50,9 @@ const SELF_TEST = process.argv.includes('--self-test');
 
 // Known, tracked drifts. Each entry MUST cite a register ID. Removing an entry
 // is how you "fix" it — the gate then enforces the corrected code stays correct.
-const ALLOWLIST = new Set([
-  'stock_movements.business_id', // A136 — fueltanks.ts, reports.ts (scopes by branch_id)
-  'users.pin',                   // A136 — staff.ts PIN lookup (column is pin_hash)
-]);
+// A136's two drifts (stock_movements.business_id, users.pin) are fixed, so the
+// allowlist is empty: any drift now fails the gate outright.
+const ALLOWLIST = new Set([]);
 
 // ── build the schema in PGlite from migrations ───────────────────────────────
 async function buildSchema() {

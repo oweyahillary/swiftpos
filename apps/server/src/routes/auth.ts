@@ -368,7 +368,7 @@ async function hashPinBcrypt(pin: string): Promise<string> {
   return bcrypt.hash(pin, BCRYPT_ROUNDS);
 }
 
-async function verifyPin(
+export async function verifyPin(
   pin: string,
   storedHash: string,
   businessId: string,

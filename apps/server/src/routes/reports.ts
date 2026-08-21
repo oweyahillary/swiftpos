@@ -1750,8 +1750,8 @@ router.get('/wet-stock', async (req, res) => {
   // Deliveries in period (stock_movements with movement_type = restock, reference_type = delivery)
   let movQuery = supabase
     .from('stock_movements')
-    .select('product_id, quantity_change, quantity_after, notes, created_at')
-    .eq('business_id', req.businessId)
+    .select('product_id, quantity_change, quantity_after, notes, created_at, products!inner ( business_id )')
+    .eq('products.business_id', req.businessId)
     .eq('movement_type', 'restock')
     .gte('created_at', start)
     .lte('created_at', end);
