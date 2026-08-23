@@ -1762,6 +1762,39 @@ authorise. Specification in **`docs/PHASE5-NODE-AUTHORITY.md`**. Expiry is
 redefined there as "days since ANY authority was reached", so a peer that sees
 its node daily never expires and a node never expires at all.
 
+IMPLEMENTATION FOUND 2026-08-23 (source pass — the entry above is STALE; PHASE5
+§4 was built and never recorded here, rule 14). The A17 lockout is fixed IN CODE:
+  • §4c node auth route — `POST /node/verify-pin` exists (`nodeServer.ts:160`,
+    handler `verifyPinAtNode` in `branchStaff.ts`), `X-Node-Secret`-guarded.
+  • §4a/§4b node roster — `branch_staff` table + `branchStaff.ts`, pulled from
+    `GET /api/pos/branch-staff` (`pos.ts:21`) on every catalogue sync. That
+    endpoint carries the full four-condition guard the spec demanded (surface=
+    desktop, own business, `isNodeRole(device_role)`, device's own branch).
+  • §4d peer authority chain — `ipcHandlers.ts:487-534`: node (LAN) → cloud →
+    last resort, falling back ONLY on transport failure; a rejection from either
+    authority is final. A node authenticates against its own roster (never
+    expires); a peer uses the cache.
+  • §4e expiry — `pinCache.ts:148`: a node-configured peer's cache is not
+    subject to the 14-day cutoff. So "day-15 lockout" no longer occurs for a
+    node-attached till. Prerequisites are in place: D14 (registration) CLOSED,
+    D4 (enrolment) implemented-pending-verify, `isNodeRole` built server-side.
+
+So this is no longer an "unstarted design gap" — it is built and additive. WHY IT
+STAYS OPEN P0: (1) **not yet on the tills** — desktop has no auto-update (D3 open)
+and `main` lags `dev`, so the running terminals likely predate this fix; the P0
+is live in production until the fix is installed. (2) **No live proof** (rule 16):
+needs a real node + peer over 15+ offline days to confirm a node-attached peer
+keeps selling. (3) **A19 is NOT closed by this** — the node still does not forward
+peer sales to cloud (`nodeServer.ts:10-23` says so plainly); a permanently-offline
+peer can now SELL indefinitely (A17) but its sales still do not BACK UP to cloud
+(A19, separate P1). Two caveats to weigh, not necessarily bugs: §4e is implemented
+as "has a `node_url` → never expires" (broader than the spec's "days since any
+authority reached" — a node-configured peer that hasn't reached its node in weeks
+still never expires); and the node-verify path does not call `cacheStaffCredential`,
+so the last-resort cache is populated only by cloud verifies (fine while the node
+is the daily authority). TO CLOSE: ship to tills + a live two-till offline test.
+Delivery of this correction: MANIFEST-2026-08-23-s.md.
+
 ### A18 · P1 · OPEN · `nodeServer.ts` documents an architecture that no longer exists
 Its header states the node is *"the SOLE uplink to the cloud: peer tills never
 push to the cloud directly, so an order reaches the cloud by exactly one path
