@@ -40,22 +40,38 @@ closed on bench evidence alone.
 ## Verification (what was run, what it printed)
 - `check-register-consistency` → `OK — no duplicate IDs, and the header agrees with the body.`
 - `check-doc-refs` → `OK — every cited document is in the tree.`
-- `check-schema-drift` → still the single pre-existing `branch_settings` finding
-  (migration 91); **adding migration 68 introduced no new drift** — the loyalty
-  function already matches the index.
+- `check-schema-drift` → **now green** (`OK — the migrations and the database agree`,
+  87 migrations / 100 tables / 17 functions). Was red at the start of the session
+  (stale index missing `branch_settings`); regenerated — see below.
+- `check-api-schema-drift`, `check-package` → green.
+
+## Schema-index regeneration
+`scripts/schema-index.json` was stale — `branch_settings` (migration 91, A139) was
+absent, so `schema-audit.py` validated against a schema that no longer matched.
+Regenerated with `node scripts/build-schema-index.mjs --merge-migrations` (added
+`branch_settings` + 14 columns; removed nothing). This is the tool's sanctioned
+best-effort mode for when the DB is unreachable. **Follow-up:** re-run
+`--from-db` against the live cloud DB when reachable, per the tool's guidance.
+
+## Handoff
+`docs/HANDOFF-2026-08-22.md` — the missing catch-up handoff for **A112→A139**,
+reconstructed from the commit log, interim manifests and the register changelog.
+Leads with the `dev`/`main` divergence and the three pending prod migrates (89,
+90, 91), which are the session's most important operational finding.
 
 ## Rollback
 ```
-git checkout HEAD -- docs/AUDIT-REGISTER.md
-git rm migrations/68_loyalty_rpc_parameter_name.sql
-rm docs/MANIFEST-2026-08-22-a.md
+git checkout HEAD -- docs/AUDIT-REGISTER.md scripts/schema-index.json
+git rm migrations/68_loyalty_rpc_parameter_name.sql docs/HANDOFF-2026-08-22.md docs/MANIFEST-2026-08-22-a.md
 ```
 DB-side: the pre-seeded `schema_migrations` row is harmless to leave; remove with
 `delete from public.schema_migrations where version='68_loyalty_rpc_parameter_name';`
 only if you also drop the file.
 
 ## Still outstanding at the process level (not addressed here)
-- No handoff covers **A112→A139** — the highest-value doc gap.
-- `scripts/schema-index.json` is **stale** (missing `branch_settings`) — regenerate
-  to clear `check-schema-drift`.
+- **`dev`/`main` divergence** — production is 28 commits (A112→A139) behind, and
+  migrations 89/90/91 are unapplied to prod. This is the top operational item;
+  see `HANDOFF-2026-08-22.md` §0.
 - Two migration files share number **90** (both the A129 delivery fix) — one is redundant.
+- `schema-index.json` is green but was regenerated `--merge-migrations`; re-run
+  `--from-db` when the cloud DB is reachable.
