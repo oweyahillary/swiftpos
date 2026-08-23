@@ -275,6 +275,20 @@ map to products — by SKU/barcode/filename — since no matcher exists today. A
 multi-select + a filename-mapping rule that loops `uploadImage` and patches each
 product's `image_url`. Blocked on the matching-convention decision.
 
+DECISION 2026-08-23 (owner): preview & confirm — auto-match, user fixes mismatches.
+SHIPPED 2026-08-23 (dev; OPEN pending browser). New `BulkImageUpload.tsx`
+(dashboard-only): multi-select images → each file's name (sans extension) is
+auto-matched to a product by **barcode → plu_code → name** (case-insensitive) →
+every row shows a product dropdown (default the match, or "skip") the user can
+correct → on confirm it loops the existing `uploadImage` (Cloudinary, same as the
+single-image path) and PATCHes each product's `image_url` via `/api/products/:id`.
+No server change; no rigid filename convention (matching is best-effort and
+per-import confirmable). Surfaced behind a "Bulk images" button on `ProductsPage`.
+Inherits `lib/upload.ts`'s cloud-only limitation (its local/VPS branch is still a
+TODO) — works wherever single-image upload does. Verified: dashboard `tsc`/`vite`
+green. Pending: browser test (choose a few files, confirm matches, upload, see
+images land). Delivery: MANIFEST-2026-08-23-v.md.
+
 ### A143 · P2 · OPEN · Report exports & inventory report — endpoints live, no UI caller
 
 From the endpoint↔caller sweep (rule 6; same class as A8/A73/A130). Of the seven
