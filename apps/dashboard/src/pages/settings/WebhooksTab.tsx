@@ -10,6 +10,13 @@ interface Webhook {
   created_at: string; secret?: string;
 }
 
+// A146: a single delivery attempt, from GET /api/webhooks/:id/deliveries.
+interface Delivery {
+  id: string; event: string; response_status: number | null;
+  response_body: string | null; attempt_count: number;
+  delivered_at: string | null; created_at: string;
+}
+
 export default function WebhooksTab() {
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [hooks,     setHooks]     = useState<Webhook[]>([]);
@@ -20,6 +27,47 @@ export default function WebhooksTab() {
   const [saving,    setSaving]    = useState(false);
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [error,     setError]     = useState('');
+
+  // A146: webhook observability — test-send + per-hook delivery log.
+  const [testBusy,    setTestBusy]    = useState<string | null>(null);
+  const [testResult,  setTestResult]  = useState<Record<string, { ok: boolean; msg: string }>>({});
+  const [openLog,     setOpenLog]     = useState<string | null>(null);
+  const [logs,        setLogs]        = useState<Record<string, Delivery[]>>({});
+  const [logBusy,     setLogBusy]     = useState<string | null>(null);
+
+  const sendTest = async (wh: Webhook) => {
+    setTestBusy(wh.id);
+    setTestResult(r => { const { [wh.id]: _drop, ...rest } = r; return rest; });
+    try {
+      const res = await api.post<{ success?: boolean; error?: string; response_status?: number }>(`/api/webhooks/${wh.id}/test`, {});
+      const ok = res?.success !== false;
+      setTestResult(r => ({ ...r, [wh.id]: {
+        ok,
+        msg: ok
+          ? `Test ping sent${res?.response_status ? ` (HTTP ${res.response_status})` : ''}`
+          : (res?.error ?? 'Test failed'),
+      } }));
+      if (openLog === wh.id) loadLog(wh);   // refresh the log if it's open
+    } catch (e: any) {
+      setTestResult(r => ({ ...r, [wh.id]: { ok: false, msg: e?.message ?? 'Test failed' } }));
+    } finally { setTestBusy(null); }
+  };
+
+  const loadLog = async (wh: Webhook) => {
+    setLogBusy(wh.id);
+    try {
+      const data = await api.get<Delivery[]>(`/api/webhooks/${wh.id}/deliveries`) ?? [];
+      setLogs(l => ({ ...l, [wh.id]: data }));
+    }
+    catch (e: any) { setError(e?.message ?? 'Could not load deliveries'); }
+    finally { setLogBusy(null); }
+  };
+
+  const toggleLog = (wh: Webhook) => {
+    if (openLog === wh.id) { setOpenLog(null); return; }
+    setOpenLog(wh.id);
+    if (!logs[wh.id]) loadLog(wh);
+  };
 
   const ALL_EVENTS = ['order.completed', 'order.voided'];
 
@@ -105,6 +153,14 @@ export default function WebhooksTab() {
               <span className={`text-xs font-semibold ${wh.status === 'active' ? 'text-green-400' : 'text-gray-600'}`}>
                 {wh.status === 'active' ? '● Active' : '○ Inactive'}
               </span>
+              <button onClick={() => sendTest(wh)} disabled={testBusy === wh.id}
+                className="text-xs px-2.5 py-1 border border-gray-700 text-gray-400 hover:border-gray-600 disabled:opacity-40 rounded-lg transition-colors">
+                {testBusy === wh.id ? 'Sending…' : 'Send test'}
+              </button>
+              <button onClick={() => toggleLog(wh)}
+                className="text-xs px-2.5 py-1 border border-gray-700 text-gray-400 hover:border-gray-600 rounded-lg transition-colors">
+                {openLog === wh.id ? 'Hide log' : 'Deliveries'}
+              </button>
               <button onClick={() => toggle(wh)}
                 className="text-xs px-2.5 py-1 border border-gray-700 text-gray-400 hover:border-gray-600 rounded-lg transition-colors">
                 {wh.status === 'active' ? 'Disable' : 'Enable'}
@@ -115,6 +171,50 @@ export default function WebhooksTab() {
               </button>
             </div>
           </div>
+
+          {testResult[wh.id] && (
+            <p className={`text-xs mt-2 ${testResult[wh.id].ok ? 'text-green-400' : 'text-red-400'}`}>
+              {testResult[wh.id].ok ? '✓ ' : '✗ '}{testResult[wh.id].msg}
+            </p>
+          )}
+
+          {openLog === wh.id && (
+            <div className="mt-3 border-t border-gray-700 pt-3">
+              {logBusy === wh.id ? (
+                <p className="text-gray-500 text-xs">Loading deliveries…</p>
+              ) : (logs[wh.id]?.length ?? 0) === 0 ? (
+                <p className="text-gray-500 text-xs">No deliveries recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500 uppercase tracking-wide text-left">
+                        <th className="pb-1.5 pr-3">When</th>
+                        <th className="pb-1.5 pr-3">Event</th>
+                        <th className="pb-1.5 pr-3">Status</th>
+                        <th className="pb-1.5">Tries</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs[wh.id].map(d => {
+                        const ok = d.response_status != null && d.response_status >= 200 && d.response_status < 300;
+                        return (
+                          <tr key={d.id} className="border-t border-gray-800/60">
+                            <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{new Date(d.created_at).toLocaleString('en-KE')}</td>
+                            <td className="py-1.5 pr-3 text-gray-300">{d.event}</td>
+                            <td className={`py-1.5 pr-3 font-medium ${ok ? 'text-green-400' : 'text-red-400'}`}>
+                              {d.response_status ?? 'no response'}
+                            </td>
+                            <td className="py-1.5 text-gray-400 tabular-nums">{d.attempt_count}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ))}
 

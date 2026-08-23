@@ -270,6 +270,19 @@ A50/A54 mailer thread: there is a way to test delivery, just no way to trigger i
 the test-email button and the webhook delivery log + test-send to their settings
 pages.
 
+PROGRESS 2026-08-23 (still OPEN): the webhook half is wired. `WebhooksTab` now has,
+per endpoint, a "Send test" button (`POST /api/webhooks/:id/test`, result shown
+inline) and a "Deliveries" toggle that loads `GET /api/webhooks/:id/deliveries` into
+a per-hook log table (time, event, HTTP status colour-coded, attempt count; test
+sends refresh an open log). `tsc --noEmit` + `vite build` green. STILL OPEN: the
+`test-email` button (`POST /api/notifications/test-email`) is deliberately NOT wired
+in this pass — it's the mail piece the owner asked to leave last (and its value is
+gated on the A50/A54 mailer being configured); and `GET /api/loyalty/settings`
+(returns `{ earnRate }`) has no settings home yet — a small decision on where it
+lives. Browser pass pending (rule 16): add a webhook pointing at a request-bin,
+send a test, confirm the ping arrives and the delivery row appears with its status.
+Delivery: MANIFEST-2026-08-23-j.md.
+
 ### A147 · P2 · OPEN · Admin-portal endpoints — live, no caller in the admin app
 
 `PATCH /api/admin/clients/:id/web-access` (web-access expiry), `GET /api/admin/audit`
