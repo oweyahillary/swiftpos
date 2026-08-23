@@ -33,6 +33,7 @@ jobs:
           cache-dependency-path: |
             apps/server/package-lock.json
             apps/dashboard/package-lock.json
+            apps/admin/package-lock.json
 
       # Each app has its own lockfile — there is no workspace root, so install
       # them separately. (See REVIEW: consolidating these into one pnpm/npm
@@ -45,8 +46,12 @@ jobs:
         working-directory: apps/dashboard
         run: npm ci
 
+      - name: Install admin deps
+        working-directory: apps/admin
+        run: npm ci
+
       - name: Type-check ratchet
-        run: node scripts/typecheck-ratchet.mjs server dashboard
+        run: node scripts/typecheck-ratchet.mjs server dashboard admin
 
   build:
     name: Build
@@ -61,6 +66,7 @@ jobs:
           cache-dependency-path: |
             apps/server/package-lock.json
             apps/dashboard/package-lock.json
+            apps/admin/package-lock.json
 
       - name: Install server deps
         working-directory: apps/server
@@ -85,6 +91,14 @@ jobs:
 
       - name: Build dashboard
         working-directory: apps/dashboard
+        run: npm run build
+
+      - name: Install admin deps
+        working-directory: apps/admin
+        run: npm ci
+
+      - name: Build admin
+        working-directory: apps/admin
         run: npm run build
 
   secrets:

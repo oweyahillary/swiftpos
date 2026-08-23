@@ -336,6 +336,20 @@ path the static scan cannot see): `GET /api/credit/customers`,
 `POST /api/auth/set-pin`, `GET /api/products/barcode/:code` (the last smells like a
 POS scan path). Delivery: MANIFEST-2026-08-23-a.md.
 
+VERIFIED 2026-08-23 (still OPEN, P3 — each sub-item's true status, none a clean
+build): `POST /api/modifiers/options` is NOT redundant but is a minor asymmetry —
+`VariantsDrawer` writes options at group-create (`POST /modifiers/groups` with an
+`options[]`) and can DELETE an option from a saved group, but has no "add one
+option to an existing group" control, which is what this endpoint would power; low
+value, needs a small UX decision (where the add-control sits). `PUT /api/flags/:key`
+overlaps the admin feature-flag toggle (`PATCH /clients/:id/features/:key`) and has
+no owner-dashboard home — needs a decision on whether owners self-manage flags at
+all. `GET`/`PATCH /api/qr/settings` and `GET /api/loyalty/settings` (`{ earnRate }`)
+each have no settings home in the dashboard, so wiring them means building a small
+settings section, not a wire. Recommendation: leave A148 parked at P3 unless a
+specific one of these is wanted; say which and it becomes a scoped build. Delivery
+of this verification: MANIFEST-2026-08-23-l.md.
+
 ### A149 · P3 · OPEN · Admin app has no CI type-check or build — 68 type errors accrued unseen
 
 Found while doing A147 (rule 5). `apps/admin` — a ~2,300-line React portal used by
@@ -364,6 +378,17 @@ objects (`… satisfies Record<string, CSSProperties>` or per-object casts). Add
 to the CI build job too, so a build break is caught. P3: no runtime impact, but it is
 a real hole in the gate discipline the rest of the repo relies on. Docs-only finding;
 no code changed here. Delivery: MANIFEST-2026-08-23-f.md.
+
+FIX SHIPPED 2026-08-23 (dev; still OPEN pending first green CI run): admin wired
+into CI. `ci.yml` typecheck job now installs `apps/admin` deps and runs
+`typecheck-ratchet.mjs server dashboard admin`; the build job now builds admin too;
+`scripts/typecheck-baseline.json` gains `"admin": 68`, making 68 a one-way
+downward ratchet (new admin type errors now fail CI). Verified on the bench: ran
+`node scripts/typecheck-ratchet.mjs server dashboard admin` → green (server 0,
+dashboard 0, admin 68 held); `ci.yml` re-validated as YAML; admin `vite build`
+green. The 68-error burndown is deliberately NOT attempted here (its own task).
+Closes on the first CI run that exercises the new steps. Delivery:
+MANIFEST-2026-08-23-l.md.
 
 ### A150 · P3 · CLOSED 2026-08-23 · Server `.env.example` refreshed — was stale (retired var + missing production set)
 
@@ -468,6 +493,14 @@ aggregator sales should ENTER, then a build:
 
 Filed for that decision; not built. No constraint change belongs in the A129
 batch.
+
+RE-CONFIRMED 2026-08-23: still a dead report. Fresh grep across server, dashboard
+and shared finds no writer of `order_type = 'aggregator'` or `aggregator_name`
+(only the `aggregator_commission_` settings prefix and read-side report/label use).
+So the Aggregators tab can still only ever read zero. Binary decision unchanged and
+still yours: build an aggregator-order channel (a writer) so the report has data,
+or retire the report + tab. No new work here — flagging that re-verification agrees
+with the original finding.
 
 ### A131 · P3 · CLOSED 2026-08-19 · Delivery orders now deduct packaging (uniform with takeaway)
 
