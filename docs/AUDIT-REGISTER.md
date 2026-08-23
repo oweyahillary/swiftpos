@@ -245,6 +245,25 @@ must also carry opening stock** — an initial quantity per ingredient that writ
 stock, not just the ingredient master list. Confirm the opening-stock movement
 reason/attribution matches existing adjustments before build.
 
+SHIPPED 2026-08-23 (dev; OPEN pending browser + a live stock check). New
+`POST /api/stock/ingredients/bulk` (`stock.ts`, gated `ingredients.manage`, ≤500
+rows) mirrors `/api/products/bulk` — re-import UPDATES by lower-cased name, never
+duplicates — and, per the 08-23 scope note, seeds OPENING STOCK through the
+existing `applyIngredientStockIn` helper (the same `adjust_ingredient_stock` RPC +
+`ingredient_stock_movements` with `movement_type='opening'` a manual adjustment
+uses), so bulk-seeded and hand-entered stock are attributed identically. Opening
+stock is applied ONLY to ingredients the import CREATES, so a re-import to fix a
+name/cost cannot double-add stock; per-branch `reorder_level` is an idempotent
+upsert. `branch_id` is required and scope-checked (opening stock is per-branch).
+Dashboard: new `BulkIngredientImport.tsx` (mirrors `BulkProductImport`, template
+name,category,unit,unit_cost,reorder_level,opening_stock,notes,is_packaging) behind
+an "Import CSV" button on `IngredientsPage`, gated on a specific branch being
+selected (same rule as the adjust flow). Verified: server `tsc`/`build`, dashboard
+`tsc`/`vite`, permission-parity + table-usage green. NOT verified on the bench: the
+`adjust_ingredient_stock` RPC + stock write (needs a live DB, rule 16) — live-test
+a small import and confirm the ingredients appear and opening stock lands in the
+chosen branch with an 'opening' movement. Delivery: MANIFEST-2026-08-23-u.md.
+
 ### A142 · P3 · OPEN · No bulk product-image upload
 
 Single-image upload works: `lib/upload.ts` → Cloudinary (unsigned preset), wired

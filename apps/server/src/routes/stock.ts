@@ -38,7 +38,7 @@ async function applyIngredientStockIn(
   items: { ingredient_id: string; quantity: number; unit_cost?: number | null }[],
   businessId: string,
   branchId: string,
-  createdBy: string,
+  createdBy: string | null,
   movementType: 'restock' | 'adjustment' | 'opening',
   referenceNote: string,
 ) {
@@ -204,6 +204,100 @@ router.post('/ingredients', requirePermission('ingredients.manage'), async (req,
 // the quantity door (POST /:id/adjust below) was gated and logged, this one
 // wasn't. ingredients.manage is already owner-only (defaultRolePermissions.ts),
 // so gating the whole endpoint with it closes every field, not just unit_cost.
+// POST /api/stock/ingredients/bulk — CSV bulk import of ingredients WITH opening
+// stock (A141). Mirrors POST /api/products/bulk: ≤500 rows; a re-import UPDATES by
+// (lower-cased) name rather than duplicating. Per the owner's 08-23 scope note the
+// import also seeds OPENING STOCK — but only for ingredients it CREATES, written
+// through the same `adjust_ingredient_stock` RPC + 'opening' ingredient_stock_movement
+// a manual adjustment uses, so bulk-seeded and hand-entered stock are attributed
+// identically. Opening stock is deliberately NOT re-applied on the update path, so
+// re-importing to fix a name or cost cannot double-add stock.
+router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async (req, res) => {
+  const { rows, branch_id } = req.body as { rows: any[]; branch_id: string };
+  if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: 'rows array is required' }); return; }
+  if (rows.length > 500) { res.status(400).json({ error: 'Maximum 500 rows per import' }); return; }
+  // Opening stock and reorder levels are per-branch, so a branch is required and
+  // scope-checked even when a row carries no opening quantity.
+  if (!branch_id) { res.status(400).json({ error: 'branch_id is required (opening stock is per-branch)' }); return; }
+  if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
+
+  // Existing ingredients by lower-cased name → re-import updates, never duplicates.
+  const { data: existing } = await supabase
+    .from('ingredients').select('id, name').eq('business_id', req.businessId);
+  const byName: Record<string, string> = {};
+  for (const ing of (existing ?? []) as { id: string; name: string }[]) {
+    const key = String(ing.name ?? '').trim().toLowerCase();
+    if (key && !(key in byName)) byName[key] = ing.id;   // first wins
+  }
+
+  const createdBy = req.isOwner ? null : req.userId ?? null;
+  const results = { created: 0, updated: 0, stocked: 0, errors: [] as { row: number; error: string }[] };
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    try {
+      if (!row.name?.trim()) { results.errors.push({ row: i + 1, error: 'name is required' }); continue; }
+      if (!row.unit?.trim()) { results.errors.push({ row: i + 1, error: 'unit is required' }); continue; }
+
+      const unitCost = row.unit_cost != null && row.unit_cost !== '' ? Number(row.unit_cost) : null;
+      if (unitCost != null && (isNaN(unitCost) || unitCost < 0)) { results.errors.push({ row: i + 1, error: `Invalid unit_cost: ${row.unit_cost}` }); continue; }
+      const opening = row.opening_stock != null && row.opening_stock !== '' ? Number(row.opening_stock) : 0;
+      if (isNaN(opening) || opening < 0) { results.errors.push({ row: i + 1, error: `Invalid opening_stock: ${row.opening_stock}` }); continue; }
+      const reorder = row.reorder_level != null && row.reorder_level !== '' ? Number(row.reorder_level) : null;
+      if (reorder != null && (isNaN(reorder) || reorder < 0)) { results.errors.push({ row: i + 1, error: `Invalid reorder_level: ${row.reorder_level}` }); continue; }
+
+      const key = row.name.trim().toLowerCase();
+      const fields = {
+        business_id:  req.businessId,
+        name:         row.name.trim(),
+        category:     row.category?.trim() || null,
+        unit:         row.unit.trim(),
+        unit_cost:    unitCost,
+        notes:        row.notes?.trim() || null,
+        is_packaging: row.is_packaging === 'true' || row.is_packaging === true,
+      };
+
+      let ingredientId = byName[key];
+      let isNew = false;
+      if (ingredientId) {
+        await supabase.from('ingredients')
+          .update({ ...fields, updated_at: new Date().toISOString() })
+          .eq('id', ingredientId).eq('business_id', req.businessId);
+        results.updated++;
+      } else {
+        const { data: ins, error: insErr } = await supabase.from('ingredients').insert(fields).select('id').single();
+        if (insErr) { results.errors.push({ row: i + 1, error: insErr.message }); continue; }
+        ingredientId = (ins as { id: string }).id;
+        byName[key] = ingredientId;   // a duplicate name later in the same file updates this one
+        results.created++;
+        isNew = true;
+      }
+
+      // Opening stock: only on CREATE, so a re-import can't double-add. Same path
+      // as a manual adjustment (movement_type 'opening').
+      if (isNew && opening > 0) {
+        await applyIngredientStockIn(
+          [{ ingredient_id: ingredientId, quantity: opening, unit_cost: unitCost }],
+          req.businessId, branch_id, createdBy, 'opening', 'Bulk import opening stock',
+        );
+        results.stocked++;
+      }
+
+      // Per-branch reorder level (idempotent upsert; safe on create or update).
+      if (reorder != null) {
+        await supabase.from('ingredient_stock_levels').upsert(
+          { business_id: req.businessId, ingredient_id: ingredientId, branch_id, reorder_level: reorder, updated_at: new Date().toISOString() },
+          { onConflict: 'ingredient_id,branch_id' },
+        );
+      }
+    } catch (e: any) {
+      results.errors.push({ row: i + 1, error: e?.message ?? 'row failed' });
+    }
+  }
+
+  res.json(results);
+});
+
 router.patch('/ingredients/:id', requirePermission('ingredients.manage'), async (req, res) => {
   const { name, category, unit, unit_cost, reorder_level, notes, status, is_packaging } = req.body;
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
