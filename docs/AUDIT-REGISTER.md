@@ -141,6 +141,36 @@ FIX — two shapes, pick one:
 Related: A8 (dead `SplitBillModal`/`/split`/`sub_bill`) is NOT the fix — retire it.
 Delivery of this finding: MANIFEST-2026-08-23-m.md.
 
+INVESTIGATED 2026-08-23 (source read of `/pay`, `PaymentModal`, `SplitPaymentPanel`
+— severity refined, fix plan corrected):
+  • **Server guards against the worst case.** `POST /:id/pay` recomputes `amountDue`
+    from the order's own `subtotal` and REJECTS any leg set that doesn't reconcile
+    (`|legSum − amountDue| > 0.01` → 400, "no partial write, order stays open"). So
+    paying a guest's partial share against a *sent* order does NOT silently close it
+    — it errors. Silent under-collection is therefore the **pay-first** case only:
+    there `PaymentModal` creates a NEW order from guest 0's sub-cart (legs match →
+    accepted), then `onSuccess` frees the table and drops the rest. Order-first just
+    fails at payment. Either way broken; P0 avoided (no silent close of a sent
+    order). Severity stays **P1**.
+  • **Split-tender already works.** `PaymentModal` has a `splitMode` toggle →
+    `SplitPaymentPanel` (legs must sum to total) → `handleSplitCharge` → `/pay` with
+    N legs. So "collect N payments for one bill, paid in full, one order" is a solved,
+    proven path.
+  • **But `SplitPaymentPanel` can't do people-splits.** It filters out already-used
+    methods (`availableMethods`), so it's one-leg-per-method, capped at 4 — fine for
+    "part cash / part card," wrong for "3 people all paying cash." So the original
+    "reuse SplitPaymentPanel for even-split" does NOT fit.
+
+CORRECTED FIX (Option B, refined): add a small **even-split collector** — pick N,
+it builds N equal legs (total/N, remainder on leg 1), each leg method-selectable,
+summing to the FULL total — and reuse the proven `handleSplitCharge` → `/pay`
+(N legs, one order, paid in full). Do NOT touch `SplitPaymentPanel` (its
+method-unique cap is correct for tender-splitting). Separately, neutralise the
+broken by-guest sub-cart pay (repoint it at the even-split collector, or fix it as
+Option A later). Money-critical + no live test on the bench, so this lands as its
+own patch with a build-green + a required live test before close. Delivery of this
+investigation: MANIFEST-2026-08-23-n.md.
+
 ### A140 · P2 · OPEN · Product/menu bulk CSV import unreachable outside Minimart
 
 `POST /api/products/bulk` (CSV, ≤500 rows, `products.manage`) is fully built, and
