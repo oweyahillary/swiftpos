@@ -349,6 +349,16 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <button
+          onClick={() => {
+            const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
+            if (branchId) p.set('branch_id', branchId);
+            window.open(`${API_URL}/api/reports/export/hourly?${p}`);
+          }}
+          className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
+        >↓ Export Excel</button>
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <KpiCard label="Peak Hour" value={data.peakHour != null ? `${String(data.peakHour).padStart(2,'0')}:00` : '—'} sub={fmtShort(data.peakRevenue, currency)} accent />
         <KpiCard label="Active Hours" value={activeHours.length.toString()} sub="hours with sales" />
@@ -457,6 +467,14 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
             </button>
           ))}
         </div>
+        <button
+          onClick={() => {
+            const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
+            if (branchId) p.set('branch_id', branchId);
+            window.open(`${API_URL}/api/reports/export/products?${p}`);
+          }}
+          className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
+        >↓ Export Excel</button>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

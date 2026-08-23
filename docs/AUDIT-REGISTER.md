@@ -151,6 +151,17 @@ report exactly like A130's aggregator. FIX (delta): surface the six remaining
 export formats and the inventory report. No server work. Static scan only; no
 browser pass (rule 16).
 
+PROGRESS 2026-08-23 (still OPEN): the two clean 1:1 matches are wired —
+`HourlyTab` → `/api/reports/export/hourly` and `ItemMixTab` → `/api/reports/export/products`,
+each an exact copy of `MasterTab`'s existing xlsx button (same `from/to/branch_id`
+params, same `requireWebSurface` + `reports.financial` gate, no permission-gating
+added that the shipped button lacks). `tsc --noEmit` and `vite build` both green on
+the Linux bench (Node, dashboard Vite build); the file actually downloading is a
+browser check, not closed here (rule 16). STILL OPEN: the remaining export formats
+(`daily`, `audit`, `shifts`, `pnl`, `expenses`) have no clean tab home, and
+`GET /api/reports/inventory` still has no caller — both deferred, not done.
+Delivery: MANIFEST-2026-08-23-b.md.
+
 ### A144 · P2 · OPEN · Inventory/stock write-actions — endpoints live, no UI caller
 
 `PATCH /api/inventory/:id/threshold` (reorder threshold is displayed but not
