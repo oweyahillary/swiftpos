@@ -620,6 +620,8 @@ function ClientDetailPage({ client, req, onBack }) {
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [error, setError] = useState("");
+  const [expiryDraft, setExpiryDraft] = useState("");   // A147: web-access expiry setter
+  const [savingExpiry, setSavingExpiry] = useState(false);
   const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
@@ -691,6 +693,18 @@ function ClientDetailPage({ client, req, onBack }) {
 
   const webHostingFlag = features.find(f => f.key === 'web_hosting');
   const hasWebHosting  = webHostingFlag?.enabled === true;
+
+  // A147: set businesses.web_access_expires_at — the date the renewal ladder is
+  // measured against (distinct from the legacy web_hosting on/off boolean above).
+  async function setWebAccessExpiry(expires_at) {
+    setSavingExpiry(true);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/web-access`, { expires_at });
+      setDetail(prev => prev ? { ...prev, web_access_expires_at: updated?.web_access_expires_at ?? null } : prev);
+      setExpiryDraft("");
+    } catch (e) { setError(e.message); }
+    finally { setSavingExpiry(false); }
+  }
 
   async function toggleWebHosting(enable) {
     const confirmMsg = enable
@@ -979,6 +993,38 @@ function ClientDetailPage({ client, req, onBack }) {
           style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
           {hasWebHosting ? "Disable web access" : "Enable web access"}
         </button>
+      </div>
+
+      {/* ── Web access expiry (A147) ── */}
+      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Web access expiry</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {detail?.web_access_expires_at
+              ? `Renewal ladder is measured against ${fmtDate(detail.web_access_expires_at)}.`
+              : "No expiry set — the renewal ladder has no date to measure against."}
+          </div>
+        </div>
+        <input
+          type="date"
+          value={expiryDraft}
+          onChange={e => setExpiryDraft(e.target.value)}
+          style={{ ...S.input, width: "auto" } as React.CSSProperties}
+        />
+        <button
+          disabled={savingExpiry || !expiryDraft}
+          onClick={() => setWebAccessExpiry(expiryDraft)}
+          style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingExpiry || !expiryDraft) ? 0.4 : 1 }}>
+          {savingExpiry ? "Saving…" : "Set expiry"}
+        </button>
+        {detail?.web_access_expires_at && (
+          <button
+            disabled={savingExpiry}
+            onClick={() => setWebAccessExpiry(null)}
+            style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Tab bar */}

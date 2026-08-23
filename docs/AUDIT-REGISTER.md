@@ -229,6 +229,30 @@ pages.
 live but called nowhere in the (thin, 5-file) `apps/admin` app. FIX (delta):
 surface each in the admin portal.
 
+PROGRESS 2026-08-23 (still OPEN): mostly a correction. On reading the source
+(`apps/admin/src/AdminPortal.tsx` is one ~2,300-line file, not "5 files"), **two of
+the three were already wired** — the sweep's suffix-matcher had missed them because
+their call literals carry a query string: `AuditPage` calls `req("GET",
+"/audit?limit=100")` and `TechPage` calls `req("GET", "/tech/tokens?limit=30")`.
+So `GET /audit` and `GET /tech/tokens` were false positives (both have sidebar nav
++ working pages). Only `PATCH /clients/:id/web-access` was genuinely unwired — and
+it is NOT the same thing as the existing `web_hosting` on/off toggle: per its own
+handler comment it sets `businesses.web_access_expires_at`, the date the renewal
+ladder measures against. Wired now: the client Overview (`ClientDetailPage`) gained
+a "Web access expiry" row showing the current date and a date-picker with Set/Clear
+→ `PATCH /clients/:id/web-access`, updating local state on success (`GET /clients/:id`
+already returns `web_access_expires_at` via `select('*')`, so no server change).
+`vite build` green; admin `tsc` type-check adds **zero** new errors (stays at its
+pre-existing baseline of 68 — see observation). STILL OPEN pending a browser pass
+(rule 16): set/clear an expiry on a client and confirm it persists.
+
+OBSERVATION (not A147, not fixed here): the admin app's `npm run type-check`
+(`tsc --noEmit`) is already red — 68 pre-existing errors, almost all the same class
+(`S.input`/inline-style objects widened to `string` vs `CSSProperties`, e.g. every
+`style={S.input}`). CI's gate set should be checked against this; if admin
+type-check is meant to be a gate it is currently failing independently of A147.
+Candidate for its own ID. Delivery: MANIFEST-2026-08-23-e.md.
+
 ### A148 · P3 · OPEN · Miscellaneous live-but-unwired endpoints
 
 Lower-value tail of the same sweep: `POST /api/modifiers/options` (create a
