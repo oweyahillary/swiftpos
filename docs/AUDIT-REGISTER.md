@@ -616,6 +616,18 @@ still yours: build an aggregator-order channel (a writer) so the report has data
 or retire the report + tab. No new work here — flagging that re-verification agrees
 with the original finding.
 
+RETIRED 2026-08-23 (owner said retire; dev, OPEN pending promote + prod 404 check):
+removed the dead Aggregators report end-to-end. Dashboard `ReportsPage` — deleted
+the `AggregatorTab` component, its `AggregatorReport` interface + `PLATFORM_LABELS`/
+`PLATFORM_COLORS` helpers, the `{ id: 'aggregator' }` tab entry, and its render line
+(~201 lines). Server `reports.ts` — removed `GET /api/reports/aggregator`, left a
+tombstone. DELIBERATELY KEPT: the `aggregator` bucket in the order-type MIX report
+(a category label, always-zero today, auto-populates if aggregator orders are ever
+created) — that is not the dead standalone report A130 flagged. dashboard `tsc`/`vite`
++ server `tsc`/`build` green; `check-permission-parity` + `check-table-usage` green.
+Closes on promote + confirming `/api/reports/aggregator` 404s in prod. Delivery:
+MANIFEST-2026-08-23-r.md.
+
 ### A131 · P3 · CLOSED 2026-08-19 · Delivery orders now deduct packaging (uniform with takeaway)
 
 Follow-on from A129. `applyStockEffects` (cloud) Track C deducted `product_packaging`
