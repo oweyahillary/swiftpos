@@ -1837,6 +1837,46 @@ right about the mechanism and wrong about the routing. See
 backup rather than losing sales, and why idempotency makes a mixed-version
 rollout safe.
 
+STATUS + FIX MAP 2026-08-23 (source pass — design agreed, §3 NOT yet built;
+this is the remaining half of the node-authority rollout, A17 being the built
+half): confirmed current state, self-documented in code —
+  • Every till enqueues its own sale to the cloud queue at
+    `syncEngine.ts:1780` (`INSERT INTO sync_queue`, `idempotency_key = orderId`),
+    peer or not.
+  • The node ingests peer rows via `nodeIngest.applyPeerRows` and stamps them
+    `sync_status = 'peer'` (`PEER_SYNC_STATUS`) **specifically to keep them out of
+    its own cloud push** — the node is a replica, not a relay (its header at
+    `nodeServer.ts:14-30` says so). The node outbox (`nodeIngest.ts:410+`) is the
+    peer→node direction only; there is no node→cloud forward of peer rows.
+  So an offline peer's `sync_queue` never drains and nothing else drains it →
+  cloud never sees peer sales. A19 = unbuilt, exactly as filed.
+
+Concrete §3 change points (for whoever implements — money path, ship last):
+  1. **Peer stops double-pushing** — `syncEngine.ts:1780`: when the till has a
+     `node_url`, don't enqueue to `sync_queue`; push node-only. Rollout safety:
+     if the node returns 404 to the new forward-capable ingest (old node build),
+     fall back to enqueuing `sync_queue` so sales are never parked (§3).
+  2. **Node forwards** — in `applyPeerRows`, for peer ORDER rows also create a
+     row in the NODE's own `sync_queue`, preserving the peer's original order id
+     and `idempotency_key`, so the node's existing cloud push relays them. Keep
+     the two-queue separation intact (this bridges, it doesn't merge).
+
+Hardest part (flag): the node must produce the cloud `/api/orders` payload for a
+forwarded peer sale. `applyPeerRows` writes the peer order into the node's tables
+but does not retain the peer's original push payload; forwarding must either stash
+that payload at ingest or reconstruct it from the node's tables exactly as the
+peer would have sent it. Idempotency (`orders.ts` short-circuits duplicates on
+`idempotency_key`) makes a mixed-version window safe — a peer on the old build
+pushing straight to cloud and a new node forwarding the same row both dedupe.
+
+Dependencies: PHASE5 §8 sequences §3 LAST (it moves money paths); ideally after
+D3 auto-update (a bad routing build is a site visit). Pairs with A17's deployment
+— A17 lets a remote peer keep SELLING offline; A19 is what makes those sales
+reach cloud (web dashboard, eTIMS, cloud loyalty, backup). Target-only: closing
+needs a live node + peer + cloud, verifying a peer sale reaches cloud once, with
+the peer's original id and no duplicate. Not built on the bench (rule 16/20).
+Delivery of this status note: MANIFEST-2026-08-23-t.md.
+
 ### A20 · P1 · OPEN · Failover cannot open the shop — the staff roster does not replicate
 Follows from the owner's failover requirement (08-09) plus PHASE5 §4a. Promotion
 already works well — `tech:promoteToNode` (`ipcHandlers.ts:1746`) is
