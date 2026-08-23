@@ -10,6 +10,7 @@ import ReceiptView from './ReceiptView';
 import MpesaStkPanel from './MpesaStkPanel';
 import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
 import EvenSplitPanel from './EvenSplitPanel';
+import ByItemSplitPanel from './ByItemSplitPanel';
 import { printReceipt } from '../../lib/printReceipt';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 
@@ -89,6 +90,7 @@ export default function PaymentModal({
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [splitMode, setSplitMode]   = useState(false);
   const [evenSplitMode, setEvenSplitMode] = useState(!!initialEvenSplit);
+  const [byItemMode, setByItemMode] = useState(false);
   const [method, setMethod]         = useState<string>('cash');
   // Credit account for the attached customer (fetched when 'credit' is chosen).
   const [creditInfo, setCreditInfo] = useState<{ credit_limit: number; credit_balance: number; available_credit: number } | null>(null);
@@ -573,7 +575,7 @@ export default function PaymentModal({
           <div className="flex items-center justify-between">
             <p className="text-gray-400 text-sm">Split payment (by method)</p>
             <button
-              onClick={() => { setSplitMode(s => !s); setEvenSplitMode(false); }}
+              onClick={() => { setSplitMode(s => !s); setEvenSplitMode(false); setByItemMode(false); }}
               className={`relative w-10 h-5 rounded-full transition-colors ${splitMode ? 'bg-green-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${splitMode ? 'translate-x-5' : ''}`} />
@@ -582,7 +584,7 @@ export default function PaymentModal({
           <div className="flex items-center justify-between">
             <p className="text-gray-400 text-sm">Split evenly (per person)</p>
             <button
-              onClick={() => { setEvenSplitMode(s => !s); setSplitMode(false); }}
+              onClick={() => { setEvenSplitMode(s => !s); setSplitMode(false); setByItemMode(false); }}
               className={`relative w-10 h-5 rounded-full transition-colors ${evenSplitMode ? 'bg-green-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${evenSplitMode ? 'translate-x-5' : ''}`} />
@@ -598,9 +600,29 @@ export default function PaymentModal({
               onCancel={() => setEvenSplitMode(false)}
             />
           )}
+          <div className="flex items-center justify-between">
+            <p className="text-gray-400 text-sm">Split by item (per guest)</p>
+            <button
+              onClick={() => { setByItemMode(s => !s); setSplitMode(false); setEvenSplitMode(false); }}
+              className={`relative w-10 h-5 rounded-full transition-colors ${byItemMode ? 'bg-green-500' : 'bg-gray-700'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${byItemMode ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+
+          {/* ── BY-ITEM SPLIT (per guest) ── */}
+          {byItemMode && (
+            <ByItemSplitPanel
+              items={cart.map(c => ({ name: c.product.name, qty: c.quantity, amount: c.lineTotal }))}
+              total={grandTotal}
+              currency={currency}
+              onConfirm={handleSplitCharge}
+              onCancel={() => setByItemMode(false)}
+            />
+          )}
 
           {/* ── SPLIT PAYMENT (by method) ── */}
-          {splitMode && !evenSplitMode && (
+          {splitMode && !evenSplitMode && !byItemMode && (
             <SplitPaymentPanel
               total={grandTotal}
               currency={currency}
@@ -610,7 +632,7 @@ export default function PaymentModal({
           )}
 
           {/* ── SINGLE PAYMENT ── */}
-          {!splitMode && !evenSplitMode && (
+          {!splitMode && !evenSplitMode && !byItemMode && (
             <>
               {/* Method tabs */}
               <div className="grid grid-cols-4 gap-2">
@@ -791,7 +813,7 @@ export default function PaymentModal({
         </div>
 
         {/* Fixed footer — charge button */}
-        {!splitMode && !evenSplitMode && (
+        {!splitMode && !evenSplitMode && !byItemMode && (
           <div className="px-6 pb-6 pt-4 border-t border-gray-800 flex-shrink-0">
             {method === 'mpesa' ? (
               <button

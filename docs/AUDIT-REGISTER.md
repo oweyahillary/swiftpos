@@ -188,6 +188,22 @@ close: open a dine-in check, Split Bill → even split N ways with mixed methods
 confirm one order is paid in full and the table frees only after full payment.
 Delivery: MANIFEST-2026-08-23-o.md.
 
+OPTION A SHIPPED + CLEANUP 2026-08-23 (dev; OPEN pending live test). Added
+`ByItemSplitPanel.tsx` (assign each line to a guest 2–6, per-guest totals scaled
+proportionally to reconcile to the FULL order total, one method per guest → N legs
+summing to total → the same `handleSplitCharge` → `/pay`). Wired into `PaymentModal`
+as a third split mode ("Split by item (per guest)") beside by-method and evenly; all
+three collect N legs against one order (no sub-orders). The now-dead by-guest UI
+block + its state (`showSplitBill`/`splitGuests`/`splitStep`/`splitPayingGuest`,
+~130 lines) were removed from `CashierScreen`. Allocation safety: per-guest legs are
+scaled so they sum to the total exactly, and the server rejects any set that
+doesn't (400, no partial write), so a mis-allocation fails safe (errors) rather than
+under-collecting. dashboard `tsc`/`vite` green. STILL OPEN — live test now covers
+all three modes; for by-item specifically, verify a bill WITH VAT/discount/tip
+splits so the legs reconcile and the sale is accepted. NOTE the VAT/tip allocation
+choice is "proportional to each guest's line-item value" — flag if a different
+policy is wanted. Delivery: MANIFEST-2026-08-23-p.md.
+
 ### A140 · P2 · OPEN · Product/menu bulk CSV import unreachable outside Minimart
 
 `POST /api/products/bulk` (CSV, ≤500 rows, `products.manage`) is fully built, and
@@ -3534,6 +3550,14 @@ DECISION NEEDED (pick one):
     (no persistence) — marginal, since the guest-split already divides a check.
 Priority left at P2 (inert half-feature, no security angle). Delivery of this
 re-scope: MANIFEST-2026-08-23-k.md.
+
+RETIRED 2026-08-23 (dev; OPEN pending promote + a prod 404 check): `SplitBillModal.tsx`
+deleted; `PATCH /api/orders/:id/split` removed from `orders.ts` and replaced with a
+tombstone. Confirmed `/split` had no caller but the deleted modal, and `sub_bill`
+has no reader (left in the schema; drop via a migration if desired). Bill splitting
+now lives entirely in `PaymentModal` (by method / evenly / by item — see A151).
+server `tsc`/`build` green, `check-permission-parity` + `check-table-usage` green.
+Closes on promote + confirming `/split` 404s in prod. Delivery: MANIFEST-2026-08-23-p.md.
 
 **ID COLLISION, and it is the register's own rule being broken.** `A9` is used
 TWICE — this entry and *"A9 · RESOLVED 08-10 — `npm audit`, split by workspace"*

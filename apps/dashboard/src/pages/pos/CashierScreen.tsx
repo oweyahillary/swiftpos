@@ -277,15 +277,8 @@ export default function CashierScreen() {
   const [showPayment,      setShowPayment]      = useState(false);
   const [showZReport,      setShowZReport]      = useState(false);
   const [showTransfer,     setShowTransfer]      = useState(false);
-  const [showSplitBill,    setShowSplitBill]     = useState(false);
   const [showRoomCharge,   setShowRoomCharge]    = useState(false);
   const [transferTarget,   setTransferTarget]    = useState<string | null>(null);
-  const [splitGuests,      setSplitGuests]       = useState<{ name: string; itemIndexes: number[] }[]>([
-    { name: 'Guest 1', itemIndexes: [] },
-    { name: 'Guest 2', itemIndexes: [] },
-  ]);
-  const [splitStep,        setSplitStep]         = useState<'assign' | 'pay'>('assign');
-  const [splitPayingGuest, setSplitPayingGuest]  = useState(0);
   const [paymentEvenSplit, setPaymentEvenSplit]  = useState(false); // A151: open PaymentModal in even-split mode
   const [roomNumber,       setRoomNumber]        = useState('');
   const [roomGuestName,    setRoomGuestName]      = useState('');
@@ -2127,129 +2120,6 @@ export default function CashierScreen() {
       )}
 
       {/* ── Split Bill by Items Modal ─────────────────────────────────────── */}
-      {showSplitBill && isRestaurant && (() => {
-        const assignedAll = cart.every((_, idx) => splitGuests.some(g => g.itemIndexes.includes(idx)));
-        const guestTotals = splitGuests.map(g => ({
-          ...g,
-          total: g.itemIndexes.reduce((s, idx) => s + (cart[idx]?.lineTotal ?? 0), 0),
-        }));
-
-        return (
-          <div style={s.overlay}>
-            <div style={{ background: 'var(--pos-modal)', border: '1px solid var(--pos-border)', borderRadius: 16, padding: '24px 28px', width: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.4)', maxHeight: '85vh', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--pos-text)', margin: 0 }}>Split Bill by Items</p>
-                <button onClick={() => setShowSplitBill(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 18, cursor: 'pointer' }}>✕</button>
-              </div>
-
-              {splitStep === 'assign' ? (
-                <>
-                  {/* Guest name inputs */}
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                    {splitGuests.map((g, gi) => (
-                      <input key={gi} value={g.name}
-                        onChange={e => setSplitGuests(prev => prev.map((x, i) => i === gi ? { ...x, name: e.target.value } : x))}
-                        style={{ flex: 1, background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)', borderRadius: 8, padding: '6px 10px', color: 'var(--pos-text)', fontSize: 12 }} />
-                    ))}
-                    {splitGuests.length < 6 && (
-                      <button onClick={() => setSplitGuests(prev => [...prev, { name: `Guest ${prev.length + 1}`, itemIndexes: [] }])}
-                        style={{ padding: '6px 12px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', borderRadius: 8, color: '#60a5fa', fontSize: 12, cursor: 'pointer' }}>
-                        + Guest
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Item assignment */}
-                  <div style={{ marginBottom: 16 }}>
-                    {cart.map((item, idx) => {
-                      const assignedTo = splitGuests.findIndex(g => g.itemIndexes.includes(idx));
-                      return (
-                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--pos-border)' }}>
-                          <div style={{ flex: 1, fontSize: 13, color: 'var(--pos-text)' }}>
-                            {item.product.name}
-                            <span style={{ color: '#64748b', marginLeft: 6 }}>{item.quantity}× {fmt(item.lineTotal, currency)}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            {splitGuests.map((g, gi) => (
-                              <button key={gi} onClick={() => setSplitGuests(prev => prev.map((x, i) => ({
-                                  ...x,
-                                  itemIndexes: i === gi
-                                    ? x.itemIndexes.includes(idx) ? x.itemIndexes.filter(n => n !== idx) : [...x.itemIndexes, idx]
-                                    : x.itemIndexes.filter(n => n !== idx),
-                                })))}
-                                style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: assignedTo === gi ? 'none' : '1px solid var(--pos-border)', background: assignedTo === gi ? '#3b82f6' : 'var(--pos-surface)', color: assignedTo === gi ? '#fff' : '#64748b' }}>
-                                {g.name.slice(0, 6)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Guest totals preview */}
-                  <div style={{ background: 'var(--pos-surface)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                    {guestTotals.map((g, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                        <span style={{ color: '#94a3b8' }}>{g.name}</span>
-                        <span style={{ color: '#f1f5f9', fontWeight: 600 }}>{fmt(g.total, currency)}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setShowSplitBill(false)}
-                      style={{ flex: 1, padding: '11px 0', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', borderRadius: 10, color: 'var(--pos-text3)', fontSize: 13, cursor: 'pointer' }}>
-                      Cancel
-                    </button>
-                    <button disabled={!assignedAll}
-                      onClick={() => { setSplitPayingGuest(0); setSplitStep('pay'); }}
-                      style={{ flex: 1, padding: '11px 0', background: assignedAll ? '#22c55e' : '#334155', border: 'none', borderRadius: 10, color: assignedAll ? '#000' : '#64748b', fontSize: 13, fontWeight: 700, cursor: assignedAll ? 'pointer' : 'default' }}>
-                      {assignedAll ? 'Proceed to Payment →' : 'Assign all items first'}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Payment step — pay each guest one at a time */}
-                  <div style={{ marginBottom: 16, background: 'var(--pos-surface)', borderRadius: 10, padding: '12px 14px' }}>
-                    {guestTotals.map((g, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < guestTotals.length - 1 ? '1px solid var(--pos-border)' : 'none' }}>
-                        <span style={{ fontSize: 13, color: i < splitPayingGuest ? '#22c55e' : i === splitPayingGuest ? '#f1f5f9' : '#64748b', fontWeight: i === splitPayingGuest ? 700 : 400 }}>
-                          {i < splitPayingGuest ? '✓ ' : i === splitPayingGuest ? '▶ ' : ''}{g.name}
-                        </span>
-                        <span style={{ fontSize: 13, color: i === splitPayingGuest ? '#22c55e' : '#64748b', fontWeight: 600 }}>{fmt(g.total, currency)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
-                    Now collecting payment from <strong style={{ color: '#f1f5f9' }}>{splitGuests[splitPayingGuest]?.name}</strong> — {fmt(guestTotals[splitPayingGuest]?.total ?? 0, currency)}
-                  </p>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setSplitStep('assign')}
-                      style={{ flex: 1, padding: '11px 0', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', borderRadius: 10, color: 'var(--pos-text3)', fontSize: 13, cursor: 'pointer' }}>
-                      ← Back
-                    </button>
-                    <button onClick={() => {
-                      // Build a sub-cart for this guest and open PaymentModal
-                      const guest = splitGuests[splitPayingGuest];
-                      const guestCart = guest.itemIndexes.map(idx => cart[idx]).filter(Boolean);
-                      // Temporarily replace cart for payment
-                      setCart(guestCart);
-                      setShowSplitBill(false);
-                      setShowPayment(true);
-                      // After payment, restore remaining items (handled in onSuccess via splitPayingGuest)
-                    }}
-                      style={{ flex: 2, padding: '11px 0', background: '#22c55e', border: 'none', borderRadius: 10, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      Charge {fmt(guestTotals[splitPayingGuest]?.total ?? 0, currency)} →
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ── Room Charge Modal ─────────────────────────────────────────────── */}
       {showRoomCharge && isRestaurant && (

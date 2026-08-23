@@ -1947,31 +1947,13 @@ router.post('/:id/fire-course', async (req, res) => {
   res.json({ fired: fired?.length ?? 0 });
 });
 
-// PATCH /api/orders/:id/split
-// Body: { assignments: [{ order_item_id, sub_bill }] } — assigns items to
-// numbered sub-bills (by-item split). sub_bill null clears the assignment.
-router.patch('/:id/split', async (req, res) => {
-  const { id } = req.params;
-  const { assignments } = req.body;
-  if (!Array.isArray(assignments)) { res.status(400).json({ error: 'assignments array required' }); return; }
-
-  const { data: order } = await supabase
-    .from('orders').select('id').eq('id', id).eq('business_id', req.businessId).single();
-  if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
-
-  // Only touch items that belong to this order.
-  const { data: ownItems } = await supabase
-    .from('order_items').select('id').eq('order_id', id);
-  const ownSet = new Set((ownItems ?? [] as { id: string }[]).map(i => i.id));
-
-  for (const a of assignments) {
-    if (!ownSet.has(a.order_item_id)) continue;
-    await supabase.from('order_items')
-      .update({ sub_bill: a.sub_bill ?? null })
-      .eq('id', a.order_item_id).eq('order_id', id);
-  }
-  res.json({ ok: true });
-});
+// A8: PATCH /api/orders/:id/split was RETIRED. It wrote order_items.sub_bill for a
+// by-item split, but sub_bill was read nowhere (dead column) and its only caller,
+// SplitBillModal, was never mounted. Bill splitting is handled at payment time by
+// PaymentModal's split modes (by method / evenly / by item), which collect N legs
+// summing to the total against one order via POST /:id/pay. Do not re-add a
+// sub_bill writer without a consumer. (sub_bill column left in place; drop via a
+// migration if desired.)
 
 // GET /api/orders/turnover?branch_id=  — live dwell time for open dine-in orders.
 // Returns each open dine-in order with minutes seated and an `over` flag against
