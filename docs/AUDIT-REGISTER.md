@@ -3386,6 +3386,37 @@ references anywhere in `apps/dashboard/src`.
 The finding read *"Empty `apps/desktop/src/renderer/{lib,pages,components}/`"*.
 Measured: **12, 12 and 14 files.** Not empty, and no history of being so.
 
+RE-SCOPED 2026-08-23 (rule 17 — "wire the modal" was wrong): mounting
+`SplitBillModal` is NOT the fix. Two things surfaced on re-verification:
+  (1) **The pay-split need is already met.** `CashierScreen` has a working
+  split-by-guest flow (`showSplitBill`/`splitGuests`, lines ~1592/2128): assign
+  items to guests → build a per-guest sub-cart → open `PaymentModal` → charge each.
+  It never touches `SplitBillModal`.
+  (2) **`SplitBillModal` + `/split` + `order_items.sub_bill` are a dead triad — no
+  consumer.** `sub_bill` is WRITTEN only (by `PATCH /:id/split`) and READ NOWHERE:
+  grep across server, dashboard, shared, receipts, KDS, kitchen tickets and reports
+  finds no reader. So persisting a by-item split changes nothing observable.
+  `SplitBillModal`'s even-split mode is a pure calculator (no persistence). This is
+  A130's shape (a half-built feature whose visible half does nothing), not A145's
+  (there the capability existed elsewhere and the dup was a security risk — here the
+  endpoint is merely inert, guard aside).
+
+Mounting it would add a "Save split" button that writes to a column nothing reads —
+a control that silently does nothing (rule 20). Not built.
+
+DECISION NEEDED (pick one):
+  • **Retire** the dead triad — delete `SplitBillModal`, retire `PATCH /:id/split`,
+    optionally drop the `sub_bill` column. Cleanest; matches A145's retire pattern.
+    (Default recommendation.)
+  • **Complete** it — decide what a persisted per-item split should DO (e.g. print
+    separate itemised receipts per sub-bill, or group kitchen tickets), build that
+    consumer, then mount the modal and reconcile with CashierScreen's guest-split.
+    A real feature with a spec, not a wire.
+  • **Salvage** only the even-split calculator as a quick "how much each" helper
+    (no persistence) — marginal, since the guest-split already divides a check.
+Priority left at P2 (inert half-feature, no security angle). Delivery of this
+re-scope: MANIFEST-2026-08-23-k.md.
+
 **ID COLLISION, and it is the register's own rule being broken.** `A9` is used
 TWICE — this entry and *"A9 · RESOLVED 08-10 — `npm audit`, split by workspace"*
 above. The header of this file says *"IDs are stable and never reused."* Reusing
