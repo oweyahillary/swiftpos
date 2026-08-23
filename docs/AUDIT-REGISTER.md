@@ -491,6 +491,19 @@ green. The 68-error burndown is deliberately NOT attempted here (its own task).
 Closes on the first CI run that exercises the new steps. Delivery:
 MANIFEST-2026-08-23-l.md.
 
+BURNDOWN COMPLETE 2026-08-23 (dev; still OPEN pending first green CI run): admin
+`tsc --noEmit` driven **68 → 0**. Root cause was style-token widening — typing
+`const S: Record<string, CSSProperties>` (one annotation) cleared 57; the remaining
+11 were contained fixes: mixed-tuple arrays cast to real tuple types (Fleet-Health
+stats + the change-password field loop), `askPrompt` results cast to string at 3
+sites, a `Date − Date` swapped to `.getTime()`, and a stale `meta.icon` (removed
+when TYPE_META icons became SVGs) swapped to `<TypeIcon>`. `scripts/typecheck-
+baseline.json` admin lowered 68 → **0**, so the ratchet now holds admin at zero and
+any new admin type error fails CI. Verified: `typecheck-ratchet.mjs server dashboard
+admin` → green (all three at 0); admin `vite build` green. All three workspaces are
+now type-clean — `strict:true` is the natural next step if wanted. Delivery:
+MANIFEST-2026-08-23-q.md.
+
 ### A150 · P3 · CLOSED 2026-08-23 · Server `.env.example` refreshed — was stale (retired var + missing production set)
 
 Found while producing a hosting/secrets template for a backend server move

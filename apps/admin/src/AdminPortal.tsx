@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 
@@ -112,7 +112,7 @@ const C = {
 
 const SIDEBAR_W = 220;
 
-const S = {
+const S: Record<string, CSSProperties> = {
   // Sidebar — CSS class handles responsive visibility
   sidebar: { width: SIDEBAR_W, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "fixed", top: 0, left: 0, zIndex: 100, transition: "transform 0.25s ease" },
   // Main — CSS class handles the responsive margin
@@ -444,7 +444,7 @@ function DashboardPage({ req }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Fleet Health</div>
           <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
-            {[["Healthy", healthy, "#22c55e"], ["Attention", needsAttn, "#f59e0b"], ["Critical", critical, C.danger]].map(([l, v, c]) => (
+            {([["Healthy", healthy, "#22c55e"], ["Attention", needsAttn, "#f59e0b"], ["Critical", critical, C.danger]] as [string, number, string][]).map(([l, v, c]) => (
               <div key={l} style={{ textAlign: "center", flex: 1 }}>
                 <div style={{ fontSize: 24, fontWeight: 700, color: c }}>{v}</div>
                 <div style={{ fontSize: 11, color: C.muted }}>{l}</div>
@@ -668,7 +668,7 @@ function ClientDetailPage({ client, req, onBack }) {
   async function resetOwnerPassword() {
     const pw = await askPrompt(`New password for the owner of "${d.name}" (min 8 characters):`);
     if (pw === null) return;               // cancelled
-    if (pw.length < 8) { await askConfirm("Password must be at least 8 characters — not changed."); return; }
+    if ((pw as string).length < 8) { await askConfirm("Password must be at least 8 characters — not changed."); return; }
     try {
       const r = await req("POST", `/clients/${client.id}/reset-owner-password`, { new_password: pw });
       await askConfirm(`Password reset for ${r?.email ?? "the owner"}. Share it securely — they can change it after signing in.`);
@@ -748,7 +748,7 @@ function ClientDetailPage({ client, req, onBack }) {
     try {
       await req("POST", `/clients/${client.id}/branches/${branch.id}/licence`, {
         licensed,
-        invoice_amount: price ? parseInt(price) : null,
+        invoice_amount: price ? parseInt(price as string) : null,
         invoice_ref:    ref || null,
       });
       setBranches(prev => prev.map(b =>
@@ -766,7 +766,7 @@ function ClientDetailPage({ client, req, onBack }) {
   async function generateEnrolCode(branch) {
     const ans = await askPrompt(`How many tills for ${branch.name}? (1–20)`, "1");
     if (ans === null) return;                                   // cancelled
-    const count = Math.max(1, Math.min(20, parseInt(ans, 10) || 1));
+    const count = Math.max(1, Math.min(20, parseInt(ans as string, 10) || 1));
     setEnrolBranch(branch.id); setEnrolResult(null);
     try {
       const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/enrol-code`, { count });
@@ -1463,7 +1463,7 @@ function BillingPage({ req }) {
             .catch(() => [])
         )
       );
-      const flat = all.flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const flat = all.flat().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setInvoices(flat);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
@@ -1668,7 +1668,7 @@ function SettingsPage({ req, apiUrl, setApiUrl }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Change Password</div>
           <form onSubmit={changePw} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {[["Current password", current, setCurrent], ["New password", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]].map(([l, v, s]) => (
+            {([["Current password", current, setCurrent], ["New password", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]] as [string, string, (v: string) => void][]).map(([l, v, s]) => (
               <div key={l}>
                 <label style={S.label}>{l}</label>
                 <input style={S.input} type="password" value={v} required onChange={e => s(e.target.value)} />
@@ -2076,7 +2076,7 @@ function NewClientPage({ req, onCreated }) {
                     cursor: "pointer", display: "flex", flexDirection: "column",
                     alignItems: "center", gap: 6, transition: "all 0.15s",
                   }}>
-                  <span style={{ fontSize: 22 }}>{meta.icon}</span>
+                  <TypeIcon type={val} size={22} />
                   <span style={{ fontSize: 12, fontWeight: 600, color: form.businessType === val ? meta.color : C.muted }}>{meta.label}</span>
                 </button>
               ))}
