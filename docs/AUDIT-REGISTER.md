@@ -186,6 +186,27 @@ FIELD, not calls to this endpoint), `PATCH /api/stock/transfers/:id/status`
 client call site. FIX (delta): wire the controls; before surfacing the branch-stock
 PUT, confirm it is not superseded by the stock-adjustment path (avoid two writers).
 
+PROGRESS 2026-08-23 (still OPEN): two of the three wired on the bench.
+(1) `PATCH /api/inventory/:product_id/threshold` — the reorder threshold on
+`InventoryPage` is now click-to-edit (Enter/blur saves, Esc cancels), upserting
+`stock_levels.low_stock_threshold` for the active branch; offered only when a
+specific branch is selected (same guard as the Adjust modal). (2)
+`PATCH /api/stock/transfers/:id/status` — `StockTransfersPage` gained per-row
+actions driven by the server's state machine (`pending → in_transit → received`,
+or `→ cancelled`); it shows only valid next moves and surfaces both 409s verbatim —
+the invalid-transition message and the separation-of-duty self-receipt block (with
+a confirm to resend `allow_same_user`, which the server records). (3) The
+branch-stock `PUT /api/branches/:id/stock/:productId` was investigated and
+**deliberately NOT wired**: it upserts `stock_levels.quantity` AND inserts a
+`stock_movements` row, i.e. it is a second writer overlapping the already-wired
+`POST /api/inventory/adjust` (the Adjust modal). Wiring it would create two paths
+that mutate the same stock — it should be retired or left unused, not surfaced
+(rule 17). `tsc --noEmit` + `vite build` green. STILL OPEN pending a browser pass
+(rule 16): edit a threshold and confirm it persists + reclassifies low-stock; run a
+transfer pending→in_transit→received across two users and confirm stock moves and
+the self-receipt block fires; plus the retire-or-keep decision on the branch PUT.
+Delivery: MANIFEST-2026-08-23-d.md.
+
 ### A145 · P2 · OPEN · Branch↔user assignment — endpoints live, no UI caller
 
 `POST /api/branches/:id/assign-user` and `DELETE /api/branches/:id/remove-user/:uid`

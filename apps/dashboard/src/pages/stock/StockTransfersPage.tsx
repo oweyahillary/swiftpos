@@ -51,6 +51,10 @@ export default function StockTransfersPage() {
   const [createError, setCreateError] = useState('');
   const [creating, setCreating]       = useState(false);
 
+  // Row status actions (A144)
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [actionErr, setActionErr]     = useState<{ id: string; msg: string } | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -68,6 +72,35 @@ export default function StockTransfersPage() {
   }, [activeBranchId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Advance a transfer along its state machine (pending → in_transit → received,
+  // or → cancelled). The server owns the allowed transitions and the stock
+  // effects; the UI only offers valid next moves and surfaces the two 409s:
+  // an out-of-state move, and the separation-of-duty block on self-receipt.
+  async function advance(
+    t: Transfer,
+    status: 'in_transit' | 'received' | 'cancelled',
+    allowSameUser = false,
+  ) {
+    setActioningId(t.id);
+    setActionErr(null);
+    try {
+      await api.patch(`/api/stock/transfers/${t.id}/status`,
+        allowSameUser ? { status, allow_same_user: true } : { status });
+      await load();
+    } catch (e: any) {
+      if (e?.code === 'same_user_receipt' && !allowSameUser) {
+        if (window.confirm(`${e.message}\n\nProceed and record that you confirmed your own despatch?`)) {
+          await advance(t, status, true);
+          return;
+        }
+      } else {
+        setActionErr({ id: t.id, msg: e?.message ?? 'Could not update the transfer' });
+      }
+    } finally {
+      setActioningId(null);
+    }
+  }
 
   const addLine = () => setLines(l => [...l, { product_id: '', quantity: '' }]);
   const removeLine = (i: number) => setLines(l => l.filter((_, idx) => idx !== i));
@@ -175,6 +208,33 @@ export default function StockTransfersPage() {
                     </tbody>
                   </table>
                   {t.notes && <p className="text-gray-500 text-xs mt-3 italic">Note: {t.notes}</p>}
+
+                  {(t.status === 'pending' || t.status === 'in_transit') && (
+                    <div className="flex items-center gap-2 mt-4">
+                      {t.status === 'pending' && (
+                        <button
+                          disabled={actioningId === t.id}
+                          onClick={() => advance(t, 'in_transit')}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors"
+                        >Mark in transit</button>
+                      )}
+                      {t.status === 'in_transit' && (
+                        <button
+                          disabled={actioningId === t.id}
+                          onClick={() => advance(t, 'received')}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors"
+                        >Mark received</button>
+                      )}
+                      <button
+                        disabled={actioningId === t.id}
+                        onClick={() => { if (window.confirm('Cancel this transfer? Nothing is moved back — reverse settled stock with an adjustment instead.')) advance(t, 'cancelled'); }}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200 disabled:opacity-40 transition-colors"
+                      >Cancel</button>
+                    </div>
+                  )}
+                  {actionErr?.id === t.id && (
+                    <p className="text-red-400 text-xs mt-2">{actionErr.msg}</p>
+                  )}
                 </div>
               )}
             </div>
