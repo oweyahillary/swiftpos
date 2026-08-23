@@ -118,6 +118,20 @@ one wire. FIX (delta): surface the existing importer (template + `.csv` picker �
 types. No new endpoint. Bench-verified by source read; no browser pass yet
 (rule 16).
 
+PROGRESS 2026-08-23 (still OPEN): done on the bench. The importer was extracted
+verbatim into a self-contained `apps/dashboard/src/pages/products/BulkProductImport.tsx`
+(own parse/validate/POST state; optional `onImported`/`onToast` callbacks) — no
+logic duplicated (rule 17). `MinimartSettingsPage` now renders
+`<BulkProductImport onImported={loadData} onToast={showToast} />` in its Import tab,
+behaviour-identical to before (both couplings preserved). `ProductsPage` gained an
+"Import CSV" toolbar button opening the same component in a modal, refreshing via
+`fetchAll` on success — so every product-carrying type can now reach it. Both pages
+are hardcoded-dark, so the extracted panel fits unchanged. `tsc --noEmit` + `vite
+build` green; no dangling refs to the removed minimart state. STILL OPEN pending a
+browser pass (rule 16): confirm the button shows and an import runs end-to-end on a
+non-minimart business, and that minimart's Import tab is unchanged. Delivery:
+MANIFEST-2026-08-23-c.md.
+
 ### A141 · P2 · OPEN · No bulk ingredient import (must seed opening stock)
 
 `stock/IngredientsPage.tsx` is single-row-add only — no client CSV path — and
