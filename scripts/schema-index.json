@@ -100,6 +100,15 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "branch_settings": {
+    "id": "\"uuid\"",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "key": "\"text\" NOT NULL",
+    "value": "\"text\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "branches": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -167,7 +176,8 @@
     "qr_ordering": "\"boolean\" NOT NULL",
     "etims_onboarded": "\"boolean\" NOT NULL",
     "web_access_expires_at": "\"timestamp with time zone\"",
-    "ctl_rate": "\"numeric\" NOT NULL"
+    "ctl_rate": "\"numeric\" NOT NULL",
+    "suspended_at": "\"timestamp with time zone\""
   },
   "categories": {
     "id": "\"uuid\" NOT NULL",
@@ -185,7 +195,8 @@
   "category_stations": {
     "category_id": "\"uuid\" NOT NULL",
     "station_id": "\"uuid\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL"
   },
   "clock_events": {
     "id": "\"uuid\" NOT NULL",
@@ -359,7 +370,9 @@
     "current_level": "\"numeric\" NOT NULL",
     "reorder_level": "\"numeric\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "product_id": "\"uuid\" NOT NULL",
+    "tank_name": "\"character varying\" NOT NULL"
   },
   "goods_received_notes": {
     "id": "\"uuid\" NOT NULL",
@@ -634,7 +647,10 @@
     "opened_by": "\"uuid\"",
     "closed_by": "\"uuid\"",
     "synced_at": "\"timestamp with time zone\"",
-    "clock_skew_seconds": "\"integer\""
+    "clock_skew_seconds": "\"integer\"",
+    "billed_amount": "\"numeric\"",
+    "cashier_id": "\"uuid\"",
+    "notes": "\"text\""
   },
   "parking_tariffs": {
     "id": "\"uuid\" NOT NULL",
@@ -667,6 +683,15 @@
     "resolved_at": "\"timestamp with time zone\"",
     "resolved_by": "\"uuid\"",
     "resolution_notes": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "payment_methods": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"character varying\" NOT NULL",
+    "code": "\"character varying\" NOT NULL",
+    "is_active": "\"boolean\" NOT NULL",
+    "sort_order": "\"integer\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "payments": {
@@ -715,15 +740,6 @@
     "active": "\"boolean\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
-  },
-  "payment_methods": {
-    "id": "\"uuid\" NOT NULL",
-    "business_id": "\"uuid\" NOT NULL",
-    "name": "\"character varying\" NOT NULL",
-    "code": "\"character varying\" NOT NULL",
-    "is_active": "\"boolean\" NOT NULL",
-    "sort_order": "\"integer\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "printer_stations": {
     "id": "\"uuid\" NOT NULL",

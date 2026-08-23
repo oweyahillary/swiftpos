@@ -1,3 +1,14 @@
+-- NOTE (migration 68): this file says p_points. Some databases were created
+-- with p_delta instead, and PostgreSQL will NOT rename a parameter through
+-- CREATE OR REPLACE — re-running this file against such a database fails with
+--
+--     ERROR: cannot change name of input parameter "p_delta"
+--
+-- which is how the repo and production drifted apart unnoticed. PostgREST
+-- resolves an RPC by its NAMED ARGUMENT SET, so the name IS the call signature.
+-- migrations/68_loyalty_rpc_parameter_name.sql does the DROP + CREATE that
+-- settles every database on p_points. Run 68 if this file errors.
+--
 -- Migration: atomic loyalty points increment
 -- Run this in Supabase SQL editor before deploying the updated orders.ts
 --
