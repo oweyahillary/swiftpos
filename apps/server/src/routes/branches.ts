@@ -173,32 +173,16 @@ router.put('/:id/stock/:productId', requireAuth, async (req, res) => {
   res.json(data);
 });
 
-// POST /api/branches/:id/assign-user
-router.post('/:id/assign-user', requireAuth, async (req, res) => {
-  const { user_id } = req.body;
-  if (!user_id) { res.status(400).json({ error: 'user_id is required' }); return; }
-
-  const { data, error } = await supabase
-    .from('user_branches')
-    .upsert({ user_id, branch_id: req.params.id }, { onConflict: 'user_id,branch_id' })
-    .select()
-    .single();
-
-  if (error) { sendError(res, error); return; }
-  res.status(201).json(data);
-});
-
-// DELETE /api/branches/:id/remove-user/:userId
-router.delete('/:id/remove-user/:userId', requireAuth, async (req, res) => {
-  const { error } = await supabase
-    .from('user_branches')
-    .delete()
-    .eq('branch_id', req.params.id)
-    .eq('user_id', req.params.userId);
-
-  if (error) { sendError(res, error); return; }
-  res.json({ success: true });
-});
+// A145: the branch-centric user-assignment routes were RETIRED here —
+//   POST   /api/branches/:id/assign-user
+//   DELETE /api/branches/:id/remove-user/:userId
+// They were redundant with the staff flow (POST/PATCH /api/staff write
+// user_branches, gated by requirePermission('staff.manage') + business/branch
+// scoping) and, unlike that flow, were guarded by requireAuth ONLY — no
+// permission, no business/branch scoping, service-role client — which allowed
+// within-tenant privilege escalation and cross-tenant user_branches writes.
+// Zero callers (dashboard/admin/desktop). Do NOT re-add a branch-centric writer
+// without those guards; assign branches via the staff endpoints instead.
 
 // A139: per-branch setting overrides (receipt text + hours) that supersede the
 // business default. Only these three keys are overridable; the resolution

@@ -248,6 +248,19 @@ security-adjacent server change, holding for owner go-ahead (rule 12). Priority
 raised P2→P1 (silent authz/isolation hole); downgrade if you read the blast radius
 as smaller. Delivery of this re-scope: MANIFEST-2026-08-23-h.md.
 
+RETIREMENT SHIPPED 2026-08-23 (dev; still OPEN pending promote): both routes
+deleted from `apps/server/src/routes/branches.ts`, replaced with a tombstone
+comment so they aren't re-added without guards. Confirmed safe first: zero callers
+in dev AND in the deployed `origin/main` (the routes exist on main but nothing
+calls them, so removal is safe across the promote window — rule 13). Verified:
+server `tsc --noEmit` 0 errors, server `npm run build` exit 0,
+`check-permission-parity` green, `check-table-usage` green (`user_branches` still
+written by the staff path). `check-api-schema-drift` needs PGlite and can't run on
+the bench (fails identically on the untouched baseline — CI-only, rule 9). No
+prod-migrate; ships with the next server promote to `main`. Closes on promote +
+a quick check that the two endpoints now 404 in production (rule 16). Delivery:
+MANIFEST-2026-08-23-i.md.
+
 ### A146 · P2 · OPEN · Notifications & webhook observability — endpoints live, no UI caller
 
 `POST /api/notifications/test-email` — no "send test" button (ties directly to the
