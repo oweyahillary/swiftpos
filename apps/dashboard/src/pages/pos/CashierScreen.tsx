@@ -286,6 +286,7 @@ export default function CashierScreen() {
   ]);
   const [splitStep,        setSplitStep]         = useState<'assign' | 'pay'>('assign');
   const [splitPayingGuest, setSplitPayingGuest]  = useState(0);
+  const [paymentEvenSplit, setPaymentEvenSplit]  = useState(false); // A151: open PaymentModal in even-split mode
   const [roomNumber,       setRoomNumber]        = useState('');
   const [roomGuestName,    setRoomGuestName]      = useState('');
   const [roomCharging,     setRoomCharging]       = useState(false);
@@ -1570,7 +1571,7 @@ export default function CashierScreen() {
                   <button
                     data-testid="charge-button"
                     style={s.chargeBtn}
-                    onClick={() => setShowPayment(true)}
+                    onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}
                   >
                     Charge {fmt(orderTotal, currency)}
                   </button>
@@ -1589,7 +1590,7 @@ export default function CashierScreen() {
                         ↔ Transfer
                       </button>
                       <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setSplitStep('assign'); setSplitGuests([{name:'Guest 1',itemIndexes:[]},{name:'Guest 2',itemIndexes:[]}]); setShowSplitBill(true); }}>
+                        onClick={() => { setPaymentEvenSplit(true); setShowPayment(true); }}>
                         👥 Split Bill
                       </button>
                       <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
@@ -1598,7 +1599,7 @@ export default function CashierScreen() {
                       </button>
                     </div>
                   )}
-                  <button data-testid="charge-button" style={s.chargeBtn} onClick={() => setShowPayment(true)}>
+                  <button data-testid="charge-button" style={s.chargeBtn} onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}>
                     Charge {fmt(orderTotal, currency)}
                   </button>
                 </div>
@@ -1972,7 +1973,8 @@ export default function CashierScreen() {
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
-          onClose={() => setShowPayment(false)}
+          initialEvenSplit={paymentEvenSplit}
+          onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
             // Free the table immediately on payment (independent of the receipt's
             // New Sale button), so a paid table never stays stuck "Occupied".

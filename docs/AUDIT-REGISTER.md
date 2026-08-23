@@ -171,6 +171,23 @@ Option A later). Money-critical + no live test on the bench, so this lands as it
 own patch with a build-green + a required live test before close. Delivery of this
 investigation: MANIFEST-2026-08-23-n.md.
 
+FIX SHIPPED 2026-08-23 (Option B; dev; still OPEN pending a LIVE split-payment
+test — rule 16). New `EvenSplitPanel.tsx` (per-person even split: pick N=2–12 →
+N equal legs, remainder on person 1, each leg cash/M-Pesa/card, summing to the full
+total) wired into `PaymentModal` behind a "Split evenly (per person)" toggle and an
+`initialEvenSplit` prop; it calls the existing `handleSplitCharge` → `/pay` with N
+legs (one order, paid in full, no sub-orders). `CashierScreen`'s restaurant
+"Split Bill" button is **repointed** to open `PaymentModal` in even-split mode, so
+the broken by-guest sub-cart pay path (the under-collection bug) is now
+**unreachable** — closing the revenue hole. Deliberately excluded: credit legs (tied
+to one customer account); `SplitPaymentPanel` untouched. Verified: dashboard
+`tsc --noEmit` 0 errors, `vite build` exit 0. NOT done (follow-ups): true by-item
+split (Option A), and removing the now-dead `showSplitBill` by-guest UI block in
+`CashierScreen` (left inert to keep this money patch minimal). MUST live-test before
+close: open a dine-in check, Split Bill → even split N ways with mixed methods →
+confirm one order is paid in full and the table frees only after full payment.
+Delivery: MANIFEST-2026-08-23-o.md.
+
 ### A140 · P2 · OPEN · Product/menu bulk CSV import unreachable outside Minimart
 
 `POST /api/products/bulk` (CSV, ≤500 rows, `products.manage`) is fully built, and
