@@ -132,7 +132,3 @@ export async function deleteHeldOrder(id: string): Promise<void> {
     await bridge().remove(id);
   } catch { /* the list refresh that follows will show the truth */ }
 }
-
-export async function heldOrderCount(): Promise<number> {
-  return (await listHeldOrders()).length;
-}

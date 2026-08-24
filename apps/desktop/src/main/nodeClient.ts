@@ -12,6 +12,7 @@
 // till keeps selling and its orders stay queued locally until the node returns.
 
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
+import { isUnreachableStatus } from './authTransport';
 
 function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
@@ -312,8 +313,10 @@ export async function verifyPinAtNodeClient(pin: string, branchId: string, timeo
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body:    JSON.stringify({ pin, branch_id: branchId }),
     });
-    // 503 = the node cannot read its own roster: transport-like, retry elsewhere.
-    if (res.status === 503) return { status: 'transport' };
+    // Any 5xx = the node answered but cannot serve (roster unreadable, its own
+    // proxy/DB down): transport-like, retry elsewhere. Was 503-only, which let a
+    // 500/502/504 read as a final rejection — the A152 class, on the node leg.
+    if (isUnreachableStatus(res.status)) return { status: 'transport' };
     const data = await res.json().catch(() => ({} as any));
     if (res.ok && data?.ok) return { status: 'ok', staff: data.staff };
     // Any other answer (401 bad/ambiguous PIN) is FINAL.

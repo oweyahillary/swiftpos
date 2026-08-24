@@ -42,6 +42,7 @@ import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFu
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient } from './nodeClient';
+import { isUnreachableStatus } from './authTransport';
 import { verifyPinAtNode } from './branchStaff';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 
@@ -85,7 +86,14 @@ export function registerIpcHandlers() {
       body: JSON.stringify({ email, password, device_id: getDeviceConfig()?.device_id ?? undefined }),
     });
 
-    const data = await res.json();
+    // A152: a first owner login has nothing to fall back to (no cached owner
+    // credential exists yet), but a 5xx must still not read as "Login failed" or
+    // crash on a non-JSON gateway page. Surface it as what it is — a transient
+    // cloud outage — so the technician retries instead of chasing a wrong password.
+    if (isUnreachableStatus(res.status)) {
+      throw new Error(`The cloud is unreachable right now (it answered ${res.status}). This is a server/connection problem, not your password — wait a moment and try again.`);
+    }
+    const data = await res.json().catch(() => ({} as any));
     if (!res.ok) throw new Error(data.error ?? 'Login failed');
 
     const db = getLocalDb();
@@ -496,6 +504,22 @@ export function registerIpcHandlers() {
       // transport failure → fall through to the cloud
     }
 
+    // 3. Last resort. A NODE verifies against its OWN roster (never expires); a
+    //    peer or standalone till uses the offline cache (which no longer expires
+    //    on a node-configured peer — see pinCache, A17). Shared by BOTH the
+    //    thrown-transport path and the 5xx path (A152) so a "down-but-answering"
+    //    cloud rescues identically to an unreachable one.
+    const fallbackToLocalAuthority = () => {
+      if (amNode) {
+        const v = verifyPinAtNode(String(pin), branch_id);
+        if (!v.ok) throw new Error(v.message);
+        return signInLocal(v.staff);
+      }
+      const verdict = verifyPinOffline(String(pin), branch_id);
+      if (!verdict.ok) throw new Error(verdict.message);
+      return signInLocal(verdict.staff);
+    };
+
     // 2. The cloud, exactly as before.
     let res: Awaited<ReturnType<typeof ownerFetch>>;
     try {
@@ -514,20 +538,21 @@ export function registerIpcHandlers() {
       });
     } catch (netErr: any) {
       logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
-      // 3. Last resort. A NODE verifies against its OWN roster (never expires); a
-      //    peer or standalone till uses the offline cache (which no longer expires
-      //    on a node-configured peer — see pinCache, A17).
-      if (amNode) {
-        const v = verifyPinAtNode(String(pin), branch_id);
-        if (!v.ok) throw new Error(v.message);
-        return signInLocal(v.staff);
-      }
-      const verdict = verifyPinOffline(String(pin), branch_id);
-      if (!verdict.ok) throw new Error(verdict.message);
-      return signInLocal(verdict.staff);
+      return fallbackToLocalAuthority();
     }
 
-    const data = await res.json();
+    // A152: a cloud that ANSWERS with a 5xx is UNREACHABLE, not a rejection.
+    // Render process down behind a live edge returns 502/503; without this the
+    // next two lines either threw an unhandled parse error on the gateway's HTML
+    // body or read !res.ok as "Invalid PIN" — and the offline cache/node never
+    // rescued a login it should have. A clean 4xx below stays FINAL.
+    if (isUnreachableStatus(res.status)) {
+      logLine('pin', `cloud answered ${res.status} at sign-in - treating as unreachable, trying the local authority`);
+      return fallbackToLocalAuthority();
+    }
+
+    // Guard the body: a non-JSON error page must not throw here (A152).
+    const data = await res.json().catch(() => ({} as any));
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
 
     // Online sign-in succeeded, so the server has just confirmed this PIN and

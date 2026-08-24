@@ -123,9 +123,7 @@ export function getWhatsAppProvider(): WhatsAppProvider {
   return _provider;
 }
 
-export function whatsAppEnabledGlobally(): boolean {
-  return (process.env.WHATSAPP_PROVIDER ?? 'none').toLowerCase() !== 'none';
-}
+
 
 // High-level: send a receipt for an order and log the attempt. Never throws to
 // the caller — a delivery failure must not affect the sale. `supabase` is passed

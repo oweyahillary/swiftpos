@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
+| Last updated | **2026-08-24 (batch -e) — A20 + A24 source passes (docs-only, no code per rule 18): confirmed at source that the node replicates only the six sales tables (`REPLICATED_TABLES`, origin-device/seq fan-out) and serves NO reference data downstream (`nodeClient` pulls `/node/since` only) — so a promoted peer has no roster (A20) and an offline peer's catalogue/prices/staff/settings go stale (A24). Key finding: the filed "extend `collectDistribution`" one-liner is wrong at source — reference data is cloud-authoritative/mutable/no-seq and needs a distinct node-authoritative SNAPSHOT channel; A20 is a special case of it. Concrete change maps + the `business_settings.branch_id` / dual-exclusion sub-bugs recorded in each entry. Both stay OPEN P1 (target-only to build). Delivery: MANIFEST-2026-08-24-e.md.** — 2026-08-24 (batch -d) — A152 FIX BUILT (bench, still OPEN P0 pending real-till test): offline PIN sign-in now falls through to node/cache when the cloud is DOWN-but-answering (5xx), not only on a thrown error; node leg widened 503→all-5xx; owner login gives a clear cloud-outage message instead of "Login failed"/crash. New `apps/desktop/src/main/authTransport.ts` + mutation-checked `tests/offline-auth-fallback.test.mjs` (20 assertions). Desktop version bump due at build (rule 15). Delivery: MANIFEST-2026-08-24-d.md.** — 2026-08-24 (batch -c) — A156 CLOSED (retired 12 orphaned helper value-exports across dashboard/desktop/server; 2 doc-coupled ones — `getLocalSchemaVersion`, `isTerminalCodeTaken` — excluded and flagged; deletions-only, full suite 40/0) · A157 opened (P2, input-validation schemas written but unwired — NOT auto-wired because the strip-on-parse middleware would drop live fields incl. login `device_id`; safe path needs per-route reconciliation + live test). Delivery: MANIFEST-2026-08-24-c.md. Next free ID A158.** — 2026-08-24 (batch -b) — A155 CLOSED (greened `check-doc-refs` — reworded `HANDOFF-2026-08-23`'s two dangling references to the outputs-only live-test checklist; branch-tip gate suite now fully green) · A153 follow-up done (pruned the two orphaned `computeUnitPrice`/`computeLineTotal` exports from dashboard `lib/cart.ts`; desktop copy live, untouched). Delivery: MANIFEST-2026-08-24-b.md. Next free ID A156.** — 2026-08-24 (batch -a) — A153 CLOSED (retired four superseded/orphaned dashboard-POS prototypes — `OrderHistoryTab`, `VoidModal`, `BranchSelectScreen`, dashboard `VariantModal`; deletions-only, bench tsc+build+gates green, rule 9) · A154 opened (P3, build the admin DB-migrations panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built; kept-and-to-build per owner). Delivery: MANIFEST-2026-08-24-a.md. Next free ID A155.** — 2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
 | Tree | `dev`, post-A111 (last pushed `d70fa0e`; this edit commits on top), desktop **v0.5.35**, `LOCAL_SCHEMA_VERSION` **52**, migrations **→ 90** (A129 batch, prepared — pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
-| Open | **A: 2 P0 · 11 P1 · 14 P2 · 6 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 A152 · A-P1: A151 A54 A18 A19 A20 A50 A24 A3 A12 A129 A145 · A-P2: A22 A23 A53 A8 A69 A73 A130 A133 A140 A141 A143 A144 A146 A147 · A-P3: A13 A70 A139 A142 A148 A149 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
+| Open | **A: 2 P0 · 11 P1 · 15 P2 · 7 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 A152 · A-P1: A151 A54 A18 A19 A20 A50 A24 A3 A12 A129 A145 · A-P2: A22 A23 A53 A8 A69 A73 A130 A133 A140 A141 A143 A144 A146 A147 A157 · A-P3: A13 A70 A139 A142 A148 A149 A154 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
 | Reconciliation 2026-08-17 (A99–A111) | The **Open** and **Counts** rows derive from the §A/§D open-item sections (A1–A73 + D-items) and remain accurate: **A74–A111 are recorded in the Changelog and were near-all closures**, so they add no open items. The current authoritative open list is `HANDOFF-2026-08-17.md` §7. Specifics: the open **P0 A17** (offline-auth day-15 lockout) is now carried by its built-but-**hardware-pending** fix **A99–A101** (two-till sign-off per PHASE5 §8) — so the P0 is a *fix awaiting verification*, not an unstarted finding; **A19/A20/A24** stay P1, blocked on that sign-off. **A108/A110/A111** moved the web/cloud runtime Node 20→22→24 and brought all five apps to **0 npm vulnerabilities** (shipped, CI green); the **desktop Electron 35→43** upgrade is merged but pending the same two-till build before any prod till. |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
@@ -241,6 +241,154 @@ expiry (here login fails *immediately* the moment the cloud 5xxs).
 Reproduce: point a till at a URL that returns 502, or stub `ownerFetch` to resolve a
 503, and confirm a previously-cached cashier can still sign in. Filed 2026-08-23.
 Delivery: MANIFEST-2026-08-23-w.md.
+
+**FIX BUILT 2026-08-24 (batch -d, bench) — STILL OPEN P0 pending the target test
+(rule 16).** New `apps/desktop/src/main/authTransport.ts::isUnreachableStatus(status)`
+(`5xx` ⇒ unreachable), used as the single source of truth at all three sites of
+the class:
+  1. **Cloud PIN verify** (`ipcHandlers.ts` `auth:verifyPin`): the offline fallback
+     was extracted to a local `fallbackToLocalAuthority()` and is now taken on BOTH
+     a thrown transport error AND a 5xx response — so a down-but-answering cloud
+     rescues from node/cache identically to an unreachable one. `res.json()` is now
+     `.catch(() => ({}))`-guarded so a gateway HTML body cannot throw. A clean 4xx
+     still throws — a real rejection stays FINAL.
+  2. **Node PIN verify** (`nodeClient.ts` `verifyPinAtNodeClient`): the transport
+     test widened from `=== 503` to all 5xx (a node 500/502/504 was being read as a
+     final rejection — the same class on the LAN leg).
+  3. **Owner desktop-login** (`ipcHandlers.ts` `auth:login`): a first owner login has
+     no cached credential to fall back to, but a 5xx no longer reads as "Login
+     failed" or crashes on a non-JSON page — it surfaces a clear "cloud unreachable,
+     retry" message distinct from a wrong password.
+Test: `tests/offline-auth-fallback.test.mjs` (20 assertions, models the authority
+decision + the node leg; mutation-checked — narrowing the predicate back to `=== 503`
+reddens the 502/500/504 cases by name). Bench green (Linux/Node 22). **NOT verified on
+a till (rule 16):** point a real till at a 502/503 and confirm a previously-cached
+cashier signs in and a wrong PIN is still refused. Desktop change → version bump at
+build time (rule 15). Also confirm the affected tills actually carry this build (D3 —
+no auto-update). Delivery: MANIFEST-2026-08-24-d.md.
+
+### A153 · P2 · CLOSED 2026-08-24 · Retire four superseded/orphaned dashboard-POS prototypes (dead code)
+Four dashboard files were unreachable at runtime — unrouted and imported by
+nothing — each with a live sibling that already does the job. Confirmed at source
+(per-file import scan across all apps, plus a test/gate/e2e sweep that found zero
+dependents):
+  - **`pages/pos/OrderHistoryTab.tsx` (361)** — original-commit prototype, never
+    edited since 2026-07-13. Superseded by `POSOrderHistoryTab.tsx`, which is the
+    live one wired into `ManagerDashboard` and `POSDrawer`.
+  - **`pages/pos/VoidModal.tsx` (165)** — dead **by association**: its only importer
+    was `OrderHistoryTab`; the live `POSOrderHistoryTab` does not use it. No scan
+    flagged it because it *looked* imported. (If void-from-dashboard-POS is ever
+    wanted, its only UI was already unrouted — a separate feature gap, not a
+    regression from this deletion.)
+  - **`pages/pos/BranchSelectScreen.tsx` (353)** — original-commit prototype. Its
+    whole `SELECTED_BRANCH_KEY` / `swiftpos_selected_branch` sessionStorage contract
+    is read/written **nowhere** in any app. Live branch selection is
+    `components/BranchSelector.tsx`.
+  - **`pages/pos/VariantModal.tsx` (258)** — dead in the dashboard (name-collides
+    with the *live* desktop `renderer/components/VariantModal.tsx`, which stays,
+    wired in `POSPage.tsx`). This was the `VariantModal` in the 08-10 A8 sweep.
+
+All four are the exact set the 08-10 A8 "unreferenced sweep" listed but never gave
+an owning item; A8's 08-23 re-scope deleted `SplitBillModal` and left these behind.
+Pure deletion of unreachable code — **no runtime behaviour changes** (nothing could
+reach it), which is why this is bench-closeable without a target pass (rule 16 does
+not bite: there is no on-target behaviour to verify). **Evidence:** after deletion,
+`apps/dashboard` `tsc --noEmit` 0 errors + `npm run build` (vite) green; full gate
+suite + unit/migration tests green on the bench (Linux/Node 22, rule 9).
+**Left in place (additive, rule 13):** deleting the dashboard `VariantModal` orphans
+`computeUnitPrice` / `computeLineTotal` in `lib/cart.ts` (now zero consumers) —
+kept, flagged for removal, so this delivery is deletions-only and reverts by
+restoring four files. Delivery: MANIFEST-2026-08-24-a.md (rollback: `git apply -R`).
+**Follow-up done 2026-08-24 (batch -b):** the two orphaned exports were pruned from
+`apps/dashboard/src/lib/cart.ts` — the DESKTOP copy (`renderer/lib/cart.ts`) keeps
+both (live: desktop `VariantModal` + `POSPage`); `cart.ts` is not a shared-synced
+file, so the copies legitimately differ. Dashboard `tsc` 0 + build green after.
+Delivery: MANIFEST-2026-08-24-b.md.
+
+### A154 · P3 · OPEN · Build the admin "DB migrations" panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built
+`apps/admin/src/MigrationsPage.tsx` (213) is a **finished-but-unwired** read-only
+panel (rule 17): it lists schema-migration runs + applied migrations for the admin
+portal, and its own header documents the one backend route it needs
+(`GET /api/admin/migrations`, service-role read of `schema_migration_runs` +
+`schema_migrations`, mounted under the admin router so it inherits admin auth). That
+route **does not exist** — no `routes/admin/migrations*`, no `schema_migration_runs`
+reference anywhere in `apps/server/src` — and the page is imported nowhere in
+`AdminPortal`, so it renders only its built-in mock data. **Kept deliberately**
+(owner, 2026-08-24) rather than deleted: given the recurring "what is actually
+applied to prod" pain (the 89/90/91 migrate saga, the twin-`90` filename collision),
+a live migrations-status panel is worth finishing. **To build:** (1) add the
+service-role read route under the admin router; (2) replace the mock `req` with the
+real admin fetch helper; (3) route/link it into `AdminPortal`. Backend touches meta
+tables only (no schema change, no prod-migrate). Filed 2026-08-24.
+
+### A155 · P3 · CLOSED 2026-08-24 · Branch-tip gate red — `check-doc-refs` failed on `HANDOFF-2026-08-23`'s citation of an outputs-only checklist
+The 08-23 handoff (§2) claimed "all gates green," but committing that handoff broke
+`check-doc-refs`: batch -x cited a money-path live-test checklist as a followable
+`docs/` markdown reference, when the file was delivered to the session outputs
+directory (never committed to `docs/`, by design — it is an ops artifact, not repo
+doc). So the very act of committing the "all green" handoff turned a gate red — the
+rule-20 miss the register keeps catching ("a header/claim disagreeing with the tree
+is the failure the register exists to catch"). **Fix (this batch):** reworded the two
+references in `HANDOFF-2026-08-23.md` (lines 74, 162) to describe the checklist
+without a dangling `.md` citation — the gate's own sanctioned option ("add the
+document to docs/, or remove the reference"). `check-doc-refs` now green (546
+citations, all resolve). Verified: `node scripts/check-doc-refs.mjs` OK. This closes
+the "Finding 1" raised in the 2026-08-24 audit discussion. Delivery:
+MANIFEST-2026-08-24-b.md.
+
+### A156 · P3 · CLOSED 2026-08-24 · Retire orphaned helper exports (dead value-exports across dashboard/desktop/server)
+A repo-wide sweep for value exports (function/const) referenced nowhere — the same
+class as the A153 cart follow-up. A whole-tree scan (`git grep -w`, all tracked
+files incl. `migrations/`, `scripts/`, `docs/`, `tests/`, `.github/`) found 14
+declaration-only candidates; **12 removed**, **2 excluded** because they are cited in
+docs and want a decision, not a silent delete:
+  - **Removed (elsewhere-refs = 0):** `clearSwiftPOSToken` (dashboard `lib/api.ts`;
+    `clearAllTokens` is the real logout path), `localDateStrDaysAgo`
+    (`lib/localDate.ts`), `getAvailablePrinters` + `disconnectQZ`
+    (`lib/localPrintServer.ts` — QZ module stays; these two getters/teardown unused),
+    `SkeletonLine` + `PageSkeleton` (`pos/cashier/POSSkeletons.tsx` — the 4 live
+    skeletons + `SkeletonTable`/`SkeletonKpiCard` stay), `stopIdleMonitor`
+    (desktop `main/idleMonitor.ts`; monitor was already never stopped — no behaviour
+    change), `getPrinterSettings` (`renderer/hooks/usePrinterSettings.ts`),
+    `heldOrderCount` (`renderer/lib/heldOrders.ts`), `metaRow` (`renderer/lib/thermal.ts`),
+    `DISABLED_ADMIN_HASH` (server `lib/adminSeedGuard.ts`; `SEEDED_ADMIN_HASH` +
+    `isSeededAdminHash` stay), `whatsAppEnabledGlobally` (server `lib/whatsapp.ts`).
+  - **Excluded — flagged, NOT deleted (doc-coupled, need a decision):**
+    `getLocalSchemaVersion` (`desktop/main/localDb.ts`) is described in
+    `docs/LOCAL-SCHEMA-VERSIONS.md` as the mechanism for knowing which schema a till
+    reached — it may want *wiring* (a diagnostic), not deletion. `isTerminalCodeTaken`
+    (`server/lib/deviceBinding.ts`) appears in `docs/history/applied/WIRING.md` as
+    once-wired example code; the "applied" history conflicts with it being uncalled
+    now — resolve before removing.
+  No behaviour changed — every removed symbol had zero callers tree-wide. **Evidence:**
+  typecheck-ratchet server/dashboard/admin all 0; desktop renderer tsc clean; desktop
+  main tsc unchanged (its 4 pre-existing implicit-any errors exist at the -b baseline
+  too, untouched here); dashboard `npm run build` green; full `run-all` suite 40/0
+  (Linux/Node 22, rule 9). Deletions-only; reverts by restoring 10 files. Delivery:
+  MANIFEST-2026-08-24-c.md (rollback `git apply -R`).
+
+### A157 · P2 · OPEN · Input-validation schemas written but never wired — `LoginSchema`, `CreateProductSchema`, `UpdateProductSchema`, `CreateCategorySchema`
+`apps/server/src/lib/schemas.ts` defines Zod schemas for these endpoints, but no
+route uses them (0 importers). The routes read `req.body` raw — e.g. `/login`
+(`auth.ts:556`) does `const { email, password, business_id } = req.body` with no
+`.parse()`. So validation was authored and left unconnected (rule 17), and the
+endpoints accept unvalidated input. **Why this is NOT a mechanical wire (and was
+deliberately not auto-fixed under the 2026-08-24 "no breakage" instruction):** the
+`validate()` middleware does `req.body = result.data`, and Zod `z.object()` (no
+`.strict()`) **strips unknown keys**. Each schema is *incomplete* relative to what its
+route reads, so wiring as-is would silently DROP live fields:
+  - `LoginSchema` has only `email`/`password`/`business_id`, but `/login` +
+    `/desktop-login` also read `device_id`, `app_version`, `terminal_code`,
+    `device_role`, `device_hint` — wiring would strip them and **break device
+    binding, version reporting, and terminal enrolment on sign-in.** (It also does not
+    fit the other auth handlers — `pos-login`, refresh, etc.)
+  - `CreateProductSchema`/`UpdateProductSchema` cover 8 fields; the product handlers
+    read more (tax fields, etc.) — stripping would break product create/update.
+  - `CreateCategorySchema` (name/color/icon/sort_order) needs the same per-handler check.
+**Safe path (needs a target/live pass, rule 16):** for each route, enumerate the FULL
+accepted field set, extend the schema to match (or add `.passthrough()` to validate
+known fields without stripping), wire `validate(Schema)`, then live-test the money/auth
+path before closing. Filed 2026-08-24 (surfaced during the A156 dead-export sweep).
 
 ### A140 · P2 · OPEN · Product/menu bulk CSV import unreachable outside Minimart
 
@@ -1966,6 +2114,44 @@ peer yields the branch's PIN hashes. Recommendation, tradeoff table and the
 Includes a runbook item that does not exist today: **rotate PINs when a terminal
 goes missing.**
 
+**SOURCE PASS 2026-08-24 (batch -e) — confirmed at source; unbuilt; change map.**
+Current state, verified in the tree:
+  • The roster lives in a node-local table `branch_staff` (`localDb.ts:95`), written
+    by `storeBranchStaff` (`branchStaff.ts:43`) during the node's OWN cloud sync
+    (`syncEngine.ts`, from `/api/staff`) and read by `verifyPinAtNode`
+    (`branchStaff.ts:83`) to serve `/node/verify-pin`. It is A17's built half.
+  • `branch_staff` is **not** in `REPLICATED_TABLES` (`nodeIngest.ts:32` = the six
+    sales tables) and there is **no `/node/roster` endpoint** (`nodeServer.ts` serves
+    since/report/time/tech-session/verify-pin/health/sync/cursors only). The roster
+    never leaves the node.
+  • `tech:promoteToNode` (`ipcHandlers.ts:2081`) starts a peer serving at once; via
+    distribution it holds every sale, but an empty `branch_staff` authenticates no
+    one — the shop stays shut at the moment failover exists to prevent.
+
+Why this is NOT a one-line `REPLICATED_TABLES` add (the structural finding): the six
+replicated tables are device-originated, append-mostly, per-origin `seq`-numbered, and
+`collectDistribution` (`nodeIngest.ts:648`) fans them keyed on `device_id`+`seq`. The
+roster is the opposite — a single branch-authoritative, cloud-sourced, MUTABLE
+snapshot (staff added/removed, PINs changed) with no per-device seq. It cannot ride
+the origin/seq fan-out; it needs a **node-authoritative snapshot channel** (node serves
+the current roster + a version, peer replaces `branch_staff` wholesale on change) — the
+SAME channel A24 needs, so **A20 is a special case of A24's downstream snapshot**.
+
+Change points (target-only to build/verify):
+  1. `nodeServer.ts` — new `POST /node/roster` (branch-gated like `/node/since`):
+     return `branch_staff` rows for the node's branch + a `roster_version`.
+  2. `nodeClient.ts` + `syncEngine.ts` — a peer with a `node_url` pulls `/node/roster`
+     on sync and calls `storeBranchStaff` to replace its copy (reuse the existing
+     DELETE+INSERT writer). Peers only; a node keeps sourcing from the cloud.
+  3. `tech:promoteToNode` — pull-on-promote as a backstop so a freshly promoted peer
+     is guaranteed a current roster before it serves.
+
+DECISION (owner), now sharper: this puts the branch's **bcrypt PIN hashes on every
+peer, not just the node** — a stolen peer yields them. §10.1 "a branch is one trust
+domain". Missing mitigation: the **PIN-rotation-on-missing-terminal runbook**. Ship
+with A24's channel; sequence after A19, ideally after D3 (a bad build is a site visit).
+Delivery of this note: MANIFEST-2026-08-24-e.md.
+
 ### A21 · P1 · CLOSED 08-09 · `outbox_cursors` is not keyed by node — rows strand on repoint
 `localDb.ts:854` — `PRIMARY KEY (table_name)`. A peer records how far it has
 offered its own rows as one number per table, with **no record of which node it
@@ -3493,6 +3679,43 @@ and `local_price_edits` exist to control.
 **Fix:** extend `collectDistribution` downstream to carry `users` and the
 catalogue tables. That closes A17, A20 and A24 together and is an extension of an
 existing mechanism rather than a new one. See `PHASE5-NODE-AUTHORITY.md` §11.
+
+**SOURCE PASS 2026-08-24 (batch -e) — confirmed at source; unbuilt; unifying map.**
+Current state, verified in `syncEngine.ts` — every till READS reference data straight
+from the CLOUD (all against `_serverUrl`): catalogue + `branch_price` `/api/pos/init`
+(`:602`), variants `/api/variants` (`:679`), modifiers `/api/modifiers` (`:690`),
+inventory `/api/inventory` (`:703`), roster `/api/staff` (`:715`), tables `/api/tables`
+(`:728`), pumps `/api/pumps` (`:750`). `nodeClient` pulls only `/node/since` (sales
+distribution), `/node/report`, `/node/time` — **no reference data**, and there is no
+`/node/reference` endpoint. So an offline peer never receives catalogue/price/staff/
+settings changes; a price edit reaches the node when IT has internet and never reaches
+the peers, and two tills at one branch can sell an item at different prices.
+
+Correction to the filed one-liner: "extend `collectDistribution`" reads as trivial but
+is not (same mismatch as A20). `collectDistribution` is origin-device/`seq`-based for
+append-mostly sales; reference tables are cloud-authoritative, MUTABLE, not
+device-originated, no per-device seq — they cannot ride that fan-out. They need a
+distinct **node-authoritative snapshot channel**, versioned per table.
+
+Change points (target-only):
+  1. Node persists the reference snapshot it ALREADY pulls when online (it runs the
+     same `/api/pos/init` etc.), keyed by table + version/updated_at.
+  2. `nodeServer.ts` — new `POST /node/reference`: peer sends known versions, node
+     returns only what changed.
+  3. `syncEngine.ts` peer reads — when a `node_url` exists, read reference **node-first**
+     (fall back to cloud only when the node is unreachable), inverting the always-cloud
+     reads at `:602/:679/:690/:703/:715/:728/:750`.
+  4. Fix the two sub-bugs this exposes, first or alongside: `business_settings` has **no
+     `branch_id`** (editing one branch's exclusions changes both), and there are **two**
+     kitchen-exclusion sources (cloud-backed + per-till `localStorage`) feeding the two
+     print paths — unify them, or the snapshot distributes an ambiguous truth
+     (`PHASE6-BRANCH-SETTINGS.md`).
+
+This one channel is the unifying fix: a node-authoritative downstream snapshot closes
+**A20 (roster)** and **A24 (catalogue/settings)** together and complements **A19**
+(upstream forward) and **A17** (auth). "Nothing flows downward through the node"
+(`nodeClient` pulls only sales) is the one sentence; this is the fix. Sequence after
+A19, ideally after D3. Delivery: MANIFEST-2026-08-24-e.md.
 
 ### CORRECTION 08-09 — the register under-credits what is built
 Owner's push-back, checked and upheld. Verified present and sound: bidirectional
