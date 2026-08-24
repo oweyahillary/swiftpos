@@ -71,26 +71,33 @@ function mintedSurface(src, name) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n1. /desktop-login mints a DESKTOP surface');
+console.log('\n1. /enrol/redeem mints a DESKTOP surface (the sole desktop entry — A158)');
 
 ok('it does not mint web — this is the bug that hid four features', () => {
-  const s = mintedSurface(AUTH, '/desktop-login');
+  const s = mintedSurface(AUTH, '/enrol/redeem');
   assert.notEqual(s, "'web'",
-    "surface: 'web' on /desktop-login disables offlineAuth, device registration, " +
+    "surface: 'web' on the desktop entry disables offlineAuth, device registration, " +
     'the desktop licence gate and requireWebSurface, all silently');
 });
 
 ok('it mints desktop', () => {
-  assert.equal(mintedSurface(AUTH, '/desktop-login'), "'desktop'");
+  assert.equal(mintedSurface(AUTH, '/enrol/redeem'), "'desktop'");
+});
+
+ok('owner login on a till is retired (A158): /desktop-login mints no surface', () => {
+  // The credential path was removed so the owner password never touches a till.
+  // The route is tombstoned (410), so it assigns no token surface at all.
+  assert.equal(mintedSurface(AUTH, '/desktop-login'), null,
+    '/desktop-login still mints a session surface — the owner-login path was not fully retired');
 });
 
 ok('the file header and the code agree', () => {
-  // The header claimed surface='desktop' while the code said 'web'. Whichever
-  // is changed next, they must move together.
+  // The header documents the desktop entry's surface; whichever is changed next,
+  // they must move together.
   const header = AUTH.slice(0, AUTH.indexOf('*/'));
-  const claimed = /desktop-login[^\n]*surface='(\w+)'/.exec(header);
-  assert.ok(claimed, 'the header no longer documents desktop-login\'s surface');
-  assert.equal(`'${claimed[1]}'`, mintedSurface(AUTH, '/desktop-login'),
+  const claimed = /enrol\/redeem[^\n]*surface='(\w+)'/.exec(header);
+  assert.ok(claimed, 'the header no longer documents the desktop entry\'s surface');
+  assert.equal(`'${claimed[1]}'`, mintedSurface(AUTH, '/enrol/redeem'),
     'the header and the payload disagree — that is exactly how this bug survived');
 });
 

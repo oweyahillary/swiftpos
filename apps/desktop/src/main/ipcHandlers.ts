@@ -1,7 +1,8 @@
 // IPC Handlers — registered in main process, called from renderer via preload.ts
 //
 // Channels:
-//   auth:login        → POST /api/auth/login, store session in SQLite
+//   auth:enrolDevice   → POST /api/auth/enrol/redeem, store session in SQLite
+//                        (owner email/password login RETIRED — A158)
 //   auth:logout       → clear session + all catalogue from SQLite
 //   auth:getSession   → return current session row
 //   pos:init          → return products + categories + branchId from SQLite
@@ -68,84 +69,17 @@ export function registerIpcHandlers() {
 
   // ── Auth ────────────────────────────────────────────────
 
-  ipcMain.handle('auth:login', async (_event, { email, password }) => {
-    // Desktop terminals authenticate via /desktop-login, which skips the
-    // web_hosting gate (desktop is entitled by its per-branch licence, enforced
-    // at verify-pin) instead of the web portal's /login route.
-    const res = await fetch(`${getServerUrl()}/api/auth/desktop-login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // device_id is generated once at install and never changes. Sending it
-      // lets the server tell this till apart from the others.
-      //
-      // Without it the server fell back to the User-Agent, which is identical on
-      // every till — same Electron build, same Windows — so signing in on till 2
-      // revoked till 1's session and till 3 revoked till 2's. Each new install
-      // silently signed out the one before it, and the till only found out on its
-      // next refresh.
-      body: JSON.stringify({ email, password, device_id: getDeviceConfig()?.device_id ?? undefined }),
-    });
-
-    // A152: a first owner login has nothing to fall back to (no cached owner
-    // credential exists yet), but a 5xx must still not read as "Login failed" or
-    // crash on a non-JSON gateway page. Surface it as what it is — a transient
-    // cloud outage — so the technician retries instead of chasing a wrong password.
-    if (isUnreachableStatus(res.status)) {
-      throw new Error(`The cloud is unreachable right now (it answered ${res.status}). This is a server/connection problem, not your password — wait a moment and try again.`);
-    }
-    const data = await res.json().catch(() => ({} as any));
-    if (!res.ok) throw new Error(data.error ?? 'Login failed');
-
-    const db = getLocalDb();
-
-    // Clear any catalogue from a previous session before writing new one
-    clearCatalogue(db);
-
-    // Persist session (singleton row)
-    db.prepare(`
-      INSERT INTO session (id, token, refresh_token, user_id, business_id, business_name, currency, logged_in_at)
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        token=excluded.token, refresh_token=excluded.refresh_token, user_id=excluded.user_id, business_id=excluded.business_id,
-        business_name=excluded.business_name, currency=excluded.currency, logged_in_at=excluded.logged_in_at
-    `).run(
-      data.token,
-      data.refreshToken ?? null,
-      data.user.id,
-      data.business.id,
-      data.business.name,
-      data.business.currency ?? 'KES',
-      new Date().toISOString(),
-    );
-
-    // D5: the row exists now; re-write the credentials through the store so they
-    // are wrapped at rest instead of sitting in the clear in swiftpos.db.
-    writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
-
-    // The business type is decided when the business is created, and the server
-    // returns it here. Persist it rather than asking the technician — the
-    // install wizard used to offer a picker, which meant a till could be set to
-    // "retail" for a restaurant and quietly lose tables, dine-in and the whole
-    // kitchen flow, with nothing on screen to say why.
-    if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
-
-    // Configure sync engine with new credentials (incl. refresh token)
-    configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
-
-    // Cache the branch's tech reveal code + token-verification public key so the
-    // tech panel can be unlocked offline later. Best-effort (online at login).
-    refreshTechConfig(data.token).catch(() => {});
-
-    // Wait for initial sync before returning — renderer gets fresh data immediately
-    await syncAll().catch(console.error);
-
-    return { user: data.user, business: data.business };
-  });
+  // A158: owner email/password login on the till was RETIRED. A terminal is now
+  // provisioned ONLY by a one-time enrolment code (auth:enrolDevice below), so the
+  // owner's reusable dashboard credentials are never typed or stored on a shared
+  // till. The server /desktop-login route is tombstoned to match. Web dashboard
+  // login (/api/auth/login) is unaffected.
 
   // D4 — provision this till with a single-use enrolment code instead of an owner
   // login (closes D1: the business is chosen by id, so a two-business owner is no
-  // longer a dead end). A near-mirror of auth:login — the ONLY difference is the
-  // credential (business_id + code, not email + password) and the endpoint. The
+  // longer a dead end). This is now the ONLY way a till is provisioned (owner
+  // email/password login was retired — A158). The credential is a one-time
+  // business_id + code, redeemed against /enrol/redeem. The
   // server returns the same { token, refreshToken, user, business } shape, so the
   // session is stored identically.
   ipcMain.handle('auth:enrolDevice', async (_event, payload) => {

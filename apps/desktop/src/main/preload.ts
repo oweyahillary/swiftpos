@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('swiftpos', {
   platform: process.platform,
 
   auth: {
-    login:      (email: string, password: string) => ipcRenderer.invoke('auth:login', { email, password }),
     redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
     logout:     ()                                 => ipcRenderer.invoke('auth:logout'),
     getSession: ()                                 => ipcRenderer.invoke('auth:getSession'),

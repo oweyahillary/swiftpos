@@ -176,7 +176,6 @@ declare global {
       version: string;
       platform: string;
       auth: {
-        login: (email: string, password: string) => Promise<{ user: any; business: any }>;
         redeemEnrolment: (business_id: string, code: string) => Promise<{ user: any; business: any; branchId: string | null }>;
         logout: () => Promise<boolean>;
         getSession: () => Promise<{ user: any; business: any } | null>;
@@ -423,7 +422,7 @@ const FRIENDLY: Array<[RegExp, string]> = [
   // had never been signed in — and sent an hour into the wrong problem.
   [/bad or missing x-node-secret|node.?secret/i,
                                          'That address is a branch server, not the main server. Branch servers relay sales between tills and cannot sign anyone in.'],
-  [/desktop-login|activate/i,            'The server did not accept that sign-in. Check the email, the password, and the server address.'],
+  [/enrol|activate/i,                    'The server did not accept that enrolment. Check the business ID, the enrolment code, and the server address.'],
   [/invalid or expired token|jwt expired|unauthor/i,
                                          'This till was signed out. Ask a manager to sign in again.'],
   [/not signed in/i,                     'This till is not signed in. Ask a manager to sign in.'],
