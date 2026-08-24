@@ -176,6 +176,31 @@ export function startNodeServer(): void {
         return json(res, status, { ok: false, reason: verdict.reason, error: verdict.message });
       }
 
+      // A160: broker a token refresh for a peer that can't reach the cloud but can
+      // reach this node. Proxy the peer's refresh token upstream and pass the
+      // cloud's verdict straight back (200 = new pair, 401 = revoked). If THIS
+      // node can't reach the cloud either, 503 so the peer keeps trading offline
+      // and retries. Authenticated by X-Node-Secret (checked above). Only the
+      // node needs the internet.
+      if (req.method === 'POST' && url === '/node/refresh') {
+        const body = await readBody(req);
+        const token = body?.refreshToken;
+        if (!token) return json(res, 400, { error: 'refreshToken is required' });
+        const serverUrl = getDeviceConfig()?.server_url;
+        if (!serverUrl) return json(res, 503, { error: 'node has no cloud URL configured' });
+        try {
+          const up = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: token }),
+          });
+          const data = await up.json().catch(() => ({}));
+          return json(res, up.status, data);
+        } catch {
+          return json(res, 503, { error: 'node cannot reach the cloud right now' });
+        }
+      }
+
       if (req.method === 'POST' && url === '/node/sync') {
         const body = await readBody(req);
         const c = getDeviceConfig();

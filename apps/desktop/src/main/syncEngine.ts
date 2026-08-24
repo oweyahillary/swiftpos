@@ -15,7 +15,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
-import { hasNode, pushRowsToNode, measureNodeDrift } from './nodeClient';
+import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode } from './nodeClient';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth,
@@ -134,6 +134,23 @@ async function doRefreshAccessToken(): Promise<boolean> {
   let refresh = _refreshToken || persistedRefresh();
   if (!refresh) return false;
 
+  // A160: when the cloud can't be reached (thrown) or answers a 5xx (down but
+  // responding), a peer refreshes THROUGH its node instead of falling to a login.
+  // The node brokers the refresh upstream and hands back a fresh pair — so an
+  // offline peer keeps its session as long as the node has internet. A clean 401
+  // (revoked) is NOT retried here: the node returns null and the session ends.
+  const tryNodeRefresh = async (): Promise<boolean> => {
+    if (!hasNode()) return false;
+    const pair = await refreshViaNode(refresh);
+    if (!pair) return false;
+    _accessToken  = pair.accessToken;
+    _refreshToken = pair.refreshToken;
+    writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
+    clearInboundFailure('auth');
+    logLine('auth', 'access token refreshed via the branch node (cloud unreachable)');
+    return true;
+  };
+
   const attempt = async (token: string) => {
     const res = await fetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
       method: 'POST',
@@ -160,6 +177,9 @@ async function doRefreshAccessToken(): Promise<boolean> {
     }
 
     if (!res.ok) {
+      // A160: a 5xx means the cloud answered but can't serve — treat it like
+      // unreachable and let the node broker the refresh before giving up.
+      if (res.status >= 500 && await tryNodeRefresh()) return true;
       // Rotation means a revoked token can never be recovered: the owner must
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
@@ -179,6 +199,9 @@ async function doRefreshAccessToken(): Promise<boolean> {
     clearInboundFailure('auth');
     return true;
   } catch (err: any) {
+    // A160: the cloud is unreachable (DNS/refused/timeout). Before giving up,
+    // ask the node to broker the refresh — only the node needs internet.
+    if (await tryNodeRefresh()) return true;
     noteInboundFailure('auth', `owner token refresh error: ${err?.message ?? err}`);
     return false;
   }

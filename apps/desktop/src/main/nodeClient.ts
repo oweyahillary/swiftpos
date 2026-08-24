@@ -31,6 +31,31 @@ function nodeHeaders(extra: Record<string, string> = {}): Record<string, string>
 }
 
 /** Is this till configured to push to a branch node? */
+// A160: a peer that can't reach the cloud asks its NODE to refresh its session.
+// The node (which has internet) proxies the refresh token upstream and hands the
+// new pair back — so only the node needs internet. Returns null on any failure
+// (node unreachable, cloud unreachable from the node, or a revoked token), which
+// the caller treats as "couldn't refresh — keep trading offline".
+export async function refreshViaNode(refreshToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const base = nodeUrl();
+  if (!base || !refreshToken) return null;
+  try {
+    const res = await fetch(`${base}/node/refresh`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (res.status !== 200) return null; // 401 revoked · 503 node offline — nothing usable
+    const data = await res.json().catch(() => null);
+    if (data?.accessToken && data?.refreshToken) {
+      return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function hasNode(): boolean {
   return nodeUrl() !== null;
 }
