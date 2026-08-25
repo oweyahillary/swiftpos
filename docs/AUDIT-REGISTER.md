@@ -8,8 +8,8 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | Opened | 2026-08-07 |
 | Last updated | **2026-08-24 (batch -i) — A160 Phase-b FIX BUILT: the branch node now BROKERS a session refresh for an offline peer. New POST /node/refresh (X-Node-Secret auth) proxies the peer's refresh token to the cloud; syncEngine falls back to the node when the cloud is unreachable/5xx (A152 pattern), never on a 401. Refresh token is the device credential — no new secret, no migration. New node-token-refresh.test.mjs (9, mutation-checked). OPEN P1 pending two-till verification. Delivery: MANIFEST-2026-08-24-i.md.** — 2026-08-24 (batch -h) — A159 DRY-RUN SHIPPED: terminal write guard in requireAuth denies a desktop-surface token from writing dashboard data (products/prices/users/settings) — closes the stolen-token gap left by A158's credential removal. Default-deny by surface + a 5-entry till allowlist. Log-only until TERMINAL_WRITE_ENFORCE=true, so it can't break sync. New terminal-write-guard.test.mjs (19, mutation-checked). OPEN P2 pending enforce-flip. Delivery: MANIFEST-2026-08-24-h.md.** — 2026-08-24 (batch -g) — A158 FIX BUILT (bench): owner email/password login on a till RETIRED at every layer (App.tsx enrol-state + EnrolPage, auth:login IPC/preload/posApi removed, /desktop-login tombstoned 410); enrolment code is the sole activation; sign-out clears staff only (device stays enrolled); web /login untouched. New terminal-activation.test.mjs (mutation-checked) + auth-surface repointed. OPEN P1 pending amber-build verification (rule 16); rollout = tills-first before the server tombstone. Delivery: MANIFEST-2026-08-24-g.md.** — 2026-08-24 (batch -f) — A157 reconciliation map (docs-only, no code per rule 18): confirmed at PAYLOAD level that force-wiring the four validation schemas would 400 currently-valid production requests — product create sends `description:null` + `image_url:''` which the schema rejects, and 13 handler fields would be stripped; `/login` also reads `device_id` (stripped → device binding breaks). NOT wired (the "nothing broken" instruction). Per-schema safe-wiring recipe recorded; lowest-risk first step = category POST with `.passthrough()` after a DB-column length check. Stays OPEN P2 (per-route reconciliation + target test to close). Delivery: MANIFEST-2026-08-24-f.md.** — 2026-08-24 (batch -e) — A20 + A24 source passes (docs-only, no code per rule 18): confirmed at source that the node replicates only the six sales tables (`REPLICATED_TABLES`, origin-device/seq fan-out) and serves NO reference data downstream (`nodeClient` pulls `/node/since` only) — so a promoted peer has no roster (A20) and an offline peer's catalogue/prices/staff/settings go stale (A24). Key finding: the filed "extend `collectDistribution`" one-liner is wrong at source — reference data is cloud-authoritative/mutable/no-seq and needs a distinct node-authoritative SNAPSHOT channel; A20 is a special case of it. Concrete change maps + the `business_settings.branch_id` / dual-exclusion sub-bugs recorded in each entry. Both stay OPEN P1 (target-only to build). Delivery: MANIFEST-2026-08-24-e.md.** — 2026-08-24 (batch -d) — A152 FIX BUILT (bench, still OPEN P0 pending real-till test): offline PIN sign-in now falls through to node/cache when the cloud is DOWN-but-answering (5xx), not only on a thrown error; node leg widened 503→all-5xx; owner login gives a clear cloud-outage message instead of "Login failed"/crash. New `apps/desktop/src/main/authTransport.ts` + mutation-checked `tests/offline-auth-fallback.test.mjs` (20 assertions). Desktop version bump due at build (rule 15). Delivery: MANIFEST-2026-08-24-d.md.** — 2026-08-24 (batch -c) — A156 CLOSED (retired 12 orphaned helper value-exports across dashboard/desktop/server; 2 doc-coupled ones — `getLocalSchemaVersion`, `isTerminalCodeTaken` — excluded and flagged; deletions-only, full suite 40/0) · A157 opened (P2, input-validation schemas written but unwired — NOT auto-wired because the strip-on-parse middleware would drop live fields incl. login `device_id`; safe path needs per-route reconciliation + live test). Delivery: MANIFEST-2026-08-24-c.md. Next free ID A158.** — 2026-08-24 (batch -b) — A155 CLOSED (greened `check-doc-refs` — reworded `HANDOFF-2026-08-23`'s two dangling references to the outputs-only live-test checklist; branch-tip gate suite now fully green) · A153 follow-up done (pruned the two orphaned `computeUnitPrice`/`computeLineTotal` exports from dashboard `lib/cart.ts`; desktop copy live, untouched). Delivery: MANIFEST-2026-08-24-b.md. Next free ID A156.** — 2026-08-24 (batch -a) — A153 CLOSED (retired four superseded/orphaned dashboard-POS prototypes — `OrderHistoryTab`, `VoidModal`, `BranchSelectScreen`, dashboard `VariantModal`; deletions-only, bench tsc+build+gates green, rule 9) · A154 opened (P3, build the admin DB-migrations panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built; kept-and-to-build per owner). Delivery: MANIFEST-2026-08-24-a.md. Next free ID A155.** — 2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
 | Tree | `dev`, post-A111 (last pushed `d70fa0e`; this edit commits on top), desktop **v0.5.35**, `LOCAL_SCHEMA_VERSION` **52**, migrations **→ 90** (A129 batch, prepared — pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
-| Open | **A: 2 P0 · 13 P1 · 16 P2 · 7 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 A152 · A-P1: A151 A54 A18 A19 A20 A50 A24 A3 A12 A129 A145 A158 A160 · A-P2: A22 A23 A53 A8 A69 A73 A130 A133 A140 A141 A143 A144 A146 A147 A159 A157 · A-P3: A13 A70 A139 A142 A148 A149 A154 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
+| Open | **A: 2 P0 · 17 P1 · 16 P2 · 7 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: A17 A152 · A-P1: A151 A54 A18 A19 A20 A50 A24 A3 A12 A129 A145 A158 A160 A161 A162 A163 A164 · A-P2: A22 A23 A53 A8 A69 A73 A130 A133 A140 A141 A143 A144 A146 A147 A159 A157 · A-P3: A13 A70 A139 A142 A148 A149 A154 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
 | Reconciliation 2026-08-17 (A99–A111) | The **Open** and **Counts** rows derive from the §A/§D open-item sections (A1–A73 + D-items) and remain accurate: **A74–A111 are recorded in the Changelog and were near-all closures**, so they add no open items. The current authoritative open list is `HANDOFF-2026-08-17.md` §7. Specifics: the open **P0 A17** (offline-auth day-15 lockout) is now carried by its built-but-**hardware-pending** fix **A99–A101** (two-till sign-off per PHASE5 §8) — so the P0 is a *fix awaiting verification*, not an unstarted finding; **A19/A20/A24** stay P1, blocked on that sign-off. **A108/A110/A111** moved the web/cloud runtime Node 20→22→24 and brought all five apps to **0 npm vulnerabilities** (shipped, CI green); the **desktop Electron 35→43** upgrade is merged but pending the same two-till build before any prod till. |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
@@ -435,6 +435,263 @@ that a revoked token still ends the session.
 touch the cloud) stays future work; it needs A19 (node uplink) + A24 (reference down) +
 A20 (roster). Full scope: `SCOPE-node-authority-A160.md`. Delivery: MANIFEST-2026-08-24-i.md.
 
+### A161 · P1 · OPEN · Node serves no reference data downstream — the A24 snapshot channel (node-serve half built)
+The first leg of Phase (c) node-authority. Implements the **downstream reference snapshot
+channel** that closes **A24** (catalogue/prices/variants/modifiers/stock/tables/pumps/print
+routing go stale on an offline peer) and, on the same channel later, **A20** (roster). A161
+tracks the channel's own build lifecycle across batches; A24/A20 remain the findings it closes.
+
+Verified at source first (rule 5, 17): the node already holds the whole branch's reference
+data in its OWN local tables — its cloud sync (`syncEngine.pullCatalogue`) writes categories,
+products, variants, modifiers, stock, tables, pumps, stations, payment methods and caches the
+config fields on `device_config`. It just never served any of it (`nodeServer` had no
+reference route; `nodeClient` pulled `/node/since` only). So this is "serve what the node
+already has", not new node-side persistence — the register's hoped-for "extend an existing
+mechanism".
+
+**BATCH -a 2026-08-25 — NODE-SERVE HALF BUILT (bench, Linux/Node 22 — a WEAKER green than the
+Windows/Node 20/Electron target, rule 9). Inert until batch -b wires the peer read, so it
+changes no running till.**
+  - `apps/desktop/src/main/referenceBundle.ts` (NEW) — `buildReferenceBundle(db, cfg)` reads
+    the node's local tables and returns a bundle in the EXACT shapes `pullCatalogue` consumes
+    from the cloud, so the peer's write path is unchanged whether the source is cloud or node.
+    The reshape is a PURE function `mapReferenceBundle(rows)` (no SQLite/Electron) so the
+    mappings that corrupt a catalogue silently are mutation-testable: **products.is_kitchen is
+    a tri-state** (null|0|1 → boolean|null; the writer only stores it when `typeof==='boolean'`,
+    so a raw number becomes null on every product), users `role_name` → cloud `roles:{name}`,
+    `print_stations`+`category_stations` → `station.category_ids[]`, flat `combo_items` →
+    `Record<combo_id, component[]>`.
+  - `nodeServer.ts` — new `POST /node/reference` (branch-scoped, `X-Node-Secret`, matches
+    `/node/since`), returns `buildReferenceBundle(getLocalDb(), cfg)`. Full snapshot, applied
+    wholesale (delta-by-version is a later A24 step).
+  - `nodeClient.ts` — `fetchReferenceFromNode()` (mirrors `pullNodeDistribution`): null on
+    unreachable/refused/malformed so the peer falls back to the cloud. **Unused until -b.**
+  - Test `apps/desktop/test/node-reference-bundle.test.mjs` (NEW, 25 assertions) drives the
+    REAL compiled `mapReferenceBundle`; **mutation-checked** — breaking the tri-state turns 3
+    named asserts red. Wired into `test:desktop` + a CI step (`check-test-registration` green).
+
+**Scope held deliberately (named, not dropped):** the roster (A20) rides this same channel in
+a later slice, behind the owner's trust-domain go-ahead (given) + the PIN-rotation runbook —
+reference-first proves the channel on harmless data before credentials (the register's own
+PHASE6 reasoning). `business_settings`/kitchen-exclusion distribution is also held: A24 step 4
+(`business_settings` has no `branch_id`) must land first or the snapshot hands down an
+ambiguous truth.
+
+**NEXT — batch -b (peer-read half, money-adjacent):** refactor `pullCatalogue` to be
+node-first — when a `node_url` is set and `fetchReferenceFromNode()` answers, feed the bundle
+to the existing write transaction and skip the 7+N cloud calls; on any node problem, fall
+through to today's cloud path unchanged (additive by construction). Then A19 (upstream), then
+the node-mint.
+
+**BATCH -b 2026-08-25 — PEER-READ HALF BUILT (bench, same Linux/Node-22 ceiling, rule 9). The
+feature is now end-to-end on the bench; closes on the two-till target.**
+  - `referenceBundle.ts` — added pure `unpackNodeBundle(bundle)` + `AcquiredReference`: turns a
+    node bundle into exactly what `pullCatalogue` writes. The DON'T-WIPE guards live here —
+    a partial/old-build bundle (a missing array) reads as "not fetched" (`tablesFetched=false`,
+    `stations=null`, `paymentMethods=null`), never as an empty fetch that would clear good
+    local data. Numeric config coerced (`numOrNull`) so junk can't overwrite a good VAT/ceiling.
+  - `syncEngine.ts` `pullCatalogue` refactored **node-first**: `fetchReferenceFromNode()` → if a
+    bundle, `unpackNodeBundle` feeds the SAME write transaction and skips the cloud's 7+N calls;
+    else the cloud path runs **unchanged**. Additive by construction — `fetchReferenceFromNode`
+    returns null for a node, a till with no `node_url`, or any node problem, so only a peer with
+    a live node behaves differently; every other device is byte-for-byte as before. Config
+    persistence hoisted into `applyReferenceConfig` (shared by both paths) so a node-fed peer
+    updates VAT/receipt/etc. too. Write transaction untouched.
+  - New `apps/desktop/test/node-reference-unpack.test.mjs` (19, mutation-checked): breaking the
+    `tablesFetched` don't-wipe guard turns the named assert red. Wired into `test:desktop` + CI.
+
+**Bench green (both batches):** desktop `tsc -b` clean; `test:refbundle` 25/0 + `test:refunpack`
+19/0, both mutation-checked; `check-test-registration` + `check-register-consistency` OK. **Still
+target-only (rule 16):** the SQL reads, the real node↔peer exchange, a peer actually re-pointing
+its catalogue to the node with the cloud cut. **To CLOSE A24:** on two tills + a node, edit a
+price on the dashboard, let the node sync, cut the peer's cloud, confirm the peer picks up the
+new price FROM the node and two tills never sell one item at two prices; and that a peer whose
+node is unreachable still falls back to the cloud. Desktop version bump due at the next build
+(rule 15). Delivery: MANIFEST-2026-08-25-b.md (supersedes -a).
+
+### A162 · P1 · OPEN · Node now forwards peer sales to the cloud — the A19 relay (node-side half built)
+Builds A19 §3 (the money-path leg, owner-agreed 08-09; see A19). A peer with no internet reaches
+the branch node over the LAN, so branch reports are right, but its own cloud `sync_queue` never
+drains and nothing forwards it — the cloud (web dashboard, eTIMS, cloud loyalty, backup) never
+sees those sales. This slice makes the node forward them.
+
+**Key source finding that shaped the design (rule 5).** The register left "stash vs reconstruct"
+open. Reading the cloud ingest settles it: `apps/server/src/routes/orders.ts:467` ALWAYS re-prices
+an order from its `items` against the current catalogue and stores THAT as authoritative — it does
+not trust a client total ("Finding #19", :478-487). Re-pricing needs each line's variant/modifier
+selections, but the node's replicated order lines (`ORDER_ITEM_COLUMNS`, `nodeIngest.ts`) carry
+none — those tables don't cross the LAN. So a payload REBUILT from the node's tables would be
+re-priced without the paid modifiers and stored SHORT by every modifier charge, silently. **Stash
+is therefore mandatory, not optional:** the node must forward the peer's ORIGINAL payload verbatim.
+
+**BATCH -c 2026-08-25 — NODE-SIDE HALF BUILT (bench, Linux/Node-22 ceiling, rule 9).**
+  - NEW `apps/desktop/src/main/peerRelay.ts` — pure `buildPeerRelay(orderRow)`: decides whether a
+    freshly-applied peer order can be forwarded and returns the payload if so. Refuses (order still
+    lands for branch reports, just isn't forwarded — the pre-A19 status quo) when it can't be done
+    faithfully: no `_relayPayload` (old peer — NOT reconstructed lossily), no items/payments (would
+    400 on the cloud forever and park the sale), or an idempotency_key/device_id that disagrees with
+    the row it rode in on (would collapse two sales onto one cloud order). Guarantees
+    `idempotency_key === orderId`.
+  - `nodeIngest.ts` — new `enqueuePeerRelay` writes the payload into the node's own `sync_queue`
+    (`INSERT OR IGNORE`, `order_id` is UNIQUE); wired into `applyPeerRows` inside the SAME
+    transaction as the order insert, in the new-order branch only (a re-offered duplicate never
+    re-enqueues). The node's existing `pushPendingOrders` then relays it with
+    `X-Idempotency-Key = order_id`. `IngestResult.relayed` counts forwards.
+  - **Three independent guards against double-counting:** `sync_queue.order_id` UNIQUE + INSERT OR
+    IGNORE; the peer's stable id as the idempotency key; the cloud's `(business, idempotency_key)`
+    short-circuit. A peer on the old build pushing straight to cloud AND this node forwarding the
+    same order converge on ONE cloud row — the mixed-version window is safe.
+  - NEW `apps/desktop/test/peer-relay.test.mjs` (18, mutation-checked): breaking the empty-items
+    guard or the idempotency-mismatch guard turns the named asserts red. Wired into `test:desktop`
+    + CI.
+
+**Bench green:** desktop `tsc -b` clean; `test:peerrelay` 18/0, mutation-checked (empty items → 2
+named FAILs; idempotency mismatch → 1 named FAIL); `check-test-registration` + `check-register-
+consistency` OK.
+
+**STILL TO BUILD — peer-side half (next slice, money path):** in `fillNodeOutbox` attach the peer's
+original cloud payload to the order row as `_relayPayload` (faithful source: `receipt_payloads`,
+which holds the full items incl. variants/modifiers), and stop the peer double-pushing to its own
+cloud `sync_queue` when it has a `node_url` — with the register's 404 fallback (an old node that
+doesn't accept the forward → the peer keeps enqueuing `sync_queue` so a sale is never parked).
+
+**BATCH -d 2026-08-25 — PEER-SIDE CARRY BUILT (bench, Linux/Node-22 ceiling, rule 9). The relay is
+now end-to-end on the bench; closes on the two-till+cloud target.**
+  - NEW shared `peerRelay.buildCloudOrderPayload(orderPayload, ctx)` — the single source for the
+    cloud /api/orders payload. `createLocalOrder` (syncEngine) now builds its own `sync_queue`
+    payload through it too (output-identical refactor of the former inline object), so the till's
+    DIRECT push and the node's FORWARD of the same order are byte-for-byte the same shape. This
+    matters because the cloud dedupes by returning the existing row unchanged — whichever arrives
+    first wins, so the two must not diverge.
+  - `fillNodeOutbox` (nodeIngest) now attaches `row._relayPayload` for orders, rebuilt via the
+    shared builder from the till's stored raw payload (`receipt_payloads` — the faithful items with
+    variants/modifiers) plus the row's own envelope (device_id/shift_id/created_at). It rides to the
+    node in the existing node_queue row; slice -c's `buildPeerRelay` then accepts it and forwards it.
+  - **Deliberately NOT done this slice (money-path caution): the peer still double-pushes** — it
+    keeps enqueuing to its own `sync_queue` as before. Idempotency makes that safe (the cloud
+    dedupes on the peer id), so correctness never depends on the relay working — the relay is a pure
+    ADDITIVE accelerator, and if a payload is ever missing/imperfect the order still reaches the
+    cloud the old way. If `receipt_payloads` is pruned/unparseable, `_relayPayload` is simply left
+    unset (order lands on the node, reaches cloud via the till's own push) — no stranding. Stopping
+    the double-push (register change-point #1, with its 404 fallback + a cached node-capability
+    flag) is its own later slice, once the relay is proven on real hardware.
+  - Tests: `peer-relay.test.mjs` extended to 28 (mutation-checked) — the shared builder's guards
+    (drop kot_sent; mark legs 'completed' or the cloud reports M-Pesa unaccounted, A93) each turn a
+    named assert red when broken, plus a round-trip proving a modifier price survives build →
+    forward (the under-total the stash design exists to prevent).
+
+**Bench green (node-side + peer-side):** desktop `tsc -b` clean; `test:peerrelay` 28/0,
+mutation-checked; `check-test-registration` + `check-register-consistency` OK.
+
+**Target-only to CLOSE A19 (rule 16):** a live node + peer + cloud — a peer sale reaches the cloud
+exactly ONCE, attributed to the peer's device, with no duplicate; and a modifier order's cloud
+total matches the receipt (proving the stash prevents the under-total). Sequenced LAST per PHASE5
+§8, ideally after D3 auto-update. Desktop version bump due at the stop-double-push slice (rule 15).
+Delivery: MANIFEST-2026-08-25-d.md.
+
+### A163 · P1 · OPEN · Node now replicates the staff roster to peers — the A20 failover channel (built on bench)
+Builds A20 (owner-gated; the owner accepted replicating the branch's bcrypt PIN hashes to every
+peer, PHASE5 §10.1 "a branch is one trust domain", with the PIN-rotation-on-missing-terminal
+runbook as mitigation). A promoted till already holds every sale via distribution but an empty
+`branch_staff` authenticates no one — so failover can't open the shop, the moment it exists to
+prevent. This replicates the roster down the SAME snapshot channel A24 established (A20 is a special
+case of it), kept as a SEPARATE endpoint because it carries credentials.
+
+**Key source constraint that shaped the design (rule 5).** `branch_staff.pin_hash_enc` is bcrypt
+wrapped with `safeStorage`, which is bound to the machine/OS account that wrapped it — a peer cannot
+decrypt the node's wrapped form (`verifyPinAtNode` already handles "wrapped under another OS
+account"). So the channel ships RAW bcrypt: the node unwraps to serve, each peer re-wraps with its
+own safeStorage via the existing `storeBranchStaff`. This mirrors exactly how the node itself
+sources the roster from the cloud (raw in, wrapped locally).
+
+**BATCH -e 2026-08-25 — BUILT (bench, Linux/Node-22 ceiling, rule 9). End-to-end on the bench;
+closes on the two-till failover target.**
+  - NEW pure `apps/desktop/src/main/rosterSnapshot.ts` — `buildRosterSnapshot` (node reshape, keeps
+    only offline-usable bcrypt staff + a content version) and `unpackRosterSnapshot` (peer's
+    apply-decision). THE LOCKOUT GUARD lives here: an empty or all-pinless snapshot is refused
+    (`apply:false`) — a branch always has staff, so that is always a failed pull, and applying it
+    through the wholesale DELETE+INSERT would leave a peer that authenticates no one. Unlike dining
+    tables (legitimately empty), the roster is never legitimately empty.
+  - `branchStaff.ts` — `readBranchStaffForServe` unwraps `pin_hash_enc`/`override_pin_hash_enc` back
+    to raw bcrypt for the node to serve (skips any row it can't unwrap).
+  - `nodeServer.ts` — new `POST /node/roster` (branch-gated + X-Node-Secret, after /node/reference).
+  - `nodeClient.ts` — `fetchRosterFromNode` (peers only; null on any node problem → keep local).
+  - `syncEngine.ts` — `pullCatalogue` tail: a PEER pulls `/node/roster` and, if the guard permits and
+    the version changed, replaces its roster via `storeBranchStaff`. Guarded twice (null pull + the
+    lockout guard); in-memory version-skip avoids re-wrapping an unchanged roster each sync. Nodes
+    keep sourcing from the cloud unchanged.
+  - `ipcHandlers.ts` — `tech:promoteToNode` pulls a fresh roster from the current node BEFORE the
+    role flip (a node has no node_url to pull from), so a freshly promoted peer authenticates at once.
+  - NEW `apps/desktop/test/roster-snapshot.test.mjs` (16, mutation-checked): breaking the lockout
+    guard (apply an empty/pinless roster) or the bcrypt filter turns named asserts red. Wired into
+    `test:desktop` + CI.
+
+**Bench green:** desktop `tsc -b` clean; `test:roster` 16/0, mutation-checked (empty/pinless apply →
+2 named FAILs; keep non-bcrypt → 1 named FAIL); `check-test-registration` + `check-register-
+consistency` OK.
+
+**Target-only to CLOSE A20 (rule 16):** two tills + a node — the node's roster reaches a peer; that
+peer, cut from the cloud, authenticates a cashier by PIN against the replicated roster; a
+deactivated staff member disappears on the peer after the next pull; and `tech:promoteToNode` on a
+peer yields a node that can immediately sign staff in. Sequenced after A19 per PHASE5 §8, ideally
+after D3. Desktop version bump due at the next build (rule 15). PIN-rotation-on-missing-terminal
+runbook to be added to ops docs (owner mitigation). Delivery: MANIFEST-2026-08-25-e.md.
+
+### A164 · P1 · OPEN · Till runs as the owner and bypasses the write-guard — the cloud device-grant (Phase 1, server half built)
+Builds SCOPE-node-authority **Phase 1 (cloud device-grant)** — the foundation the node-broker
+(Phase 2) and node-mint (Phase 3) build on, and a real security fix in its own right.
+
+**The security issue, found at source (rule 5).** A till runs on the OWNER token minted at
+`/enrol/redeem` (`isOwner:true`, `['*']`). Minting the device-grant `isOwner:false` is a real
+reduction for three reasons: it can no longer reach web-only features (`requireWebSurface`'s
+`isOwner` bypass at `auth.ts:226` no longer applies to it); rbac branch-locks it to its own branch
+(an owner token may read any branch); and it becomes subject to the per-request account-status +
+permissions-version recheck (`auth.ts:111` runs only for `!isOwner`), so revoking the owner stops
+the device.
+
+**CORRECTION (2026-08-25, during the A159 audit — rule 7).** An earlier version of this entry, and
+of the code comments/test labels shipped in batch -f, said the A159 terminal write-guard "skips
+owner tokens (`auth.ts:226`)" and that `isOwner:false` is "what makes the write-guard apply." That
+was wrong: `auth.ts:226` is `requireWebSurface` (a different guard). The terminal write-guard
+(`terminalWriteDenied`, `auth.ts:256`, wired at `:152`) gates on `surface === 'desktop'` ALONE and
+does NOT check `isOwner` — so it already bounds today's owner till by surface. The A164 code
+(`isOwner:false`) is unchanged and still correct for the three reasons above; only the write-guard
+attribution was wrong and is corrected here and in `deviceGrant.ts` / `device-token.test.mjs`
+(batch -g).
+
+**BATCH -f 2026-08-25 — SERVER HALF BUILT + BENCH-VERIFIED (real server tsc + real Postgres via
+PGlite, a STRONGER green than the desktop legs — rule 9). Inert: nothing calls it yet.**
+  - `migrations/92_device_grant_secret.sql` — adds nullable `user_devices.device_secret_hash` +
+    `device_secret_set_at`. Additive, idempotent, self-records. **PROD-MIGRATE.**
+  - NEW `apps/server/src/lib/deviceGrant.ts` — pure `generateDeviceSecret` / `hashDeviceSecret`
+    (sha256; high-entropy secret, matches the enrolment-code discipline) / constant-time
+    `verifyDeviceSecret` / `isDeviceGrantable` (approved|active only — how a revoked/pending
+    terminal is refused) / `buildDeviceTokenPayload` (the `isOwner:false`, branch-bound claims).
+  - `auth.ts` `/enrol/redeem` — now also mints a per-device secret, stores the hash, returns the
+    raw once. Best-effort + additive: enrolment never fails over it; an old device just has none.
+  - `auth.ts` — new `POST /api/auth/device-token`: device_id + secret → verify (uniform failure) +
+    grantable-status + not-suspended → mint an `isOwner:false`, branch-bound, `surface:desktop`
+    session for the device's owner principal.
+  - Tests: NEW `tests/device-token.test.mjs` (21, mutation-checked — minting `isOwner:true` or a
+    verify that accepts any secret turns named asserts red) + `scripts/test-migration-92.mjs`
+    (9, real PGlite, additive + idempotent + self-record).
+
+**Bench green:** server `tsc` clean; `device-token` 21/0 (mutation-checked); migration 92 9/0 on
+real Postgres; schema-drift / api-schema-drift / table-usage / sql-binds / supabase-catch /
+api-routes / test-registration / rls-coverage / register-consistency all OK.
+
+**STILL TO BUILD — the desktop cutover (next slice, the risky half):** the till stores its returned
+`deviceSecret` (safeStorage) and, on refresh failure, calls `/device-token` BEFORE dropping to the
+enrol screen. That switches the till to a NON-OWNER principal, so it must be verified on real
+hardware that the till still sells and reads branch data as `isOwner:false` (branch-locked by rbac),
+and it MUST ship only after `TERMINAL_WRITE_ENFORCE=true` (else the reduced token is unbounded — the
+guard only logs in dry-run). A revocation path at the node is required before Phase 3.
+
+**Target-only to CLOSE (rule 16):** prod-migrate 91→92; the endpoint end-to-end against a real DB;
+the desktop cutover on two tills (recover a lapsed session without owner re-login; till still sells
+and pulls catalogue as a device principal). Sequence A159-enforce before the cutover. Delivery:
+MANIFEST-2026-08-25-f.md.
+
 ### A159 · P2 · OPEN · A stolen till token could write dashboard data — device-surface write guard (dry-run shipped, enforce pending)
 Phase 2 of the terminal-credential hardening (A158 removed the owner *password* from
 tills; this addresses a *stolen token*). The enrolment/desktop token is owner-scoped
@@ -466,6 +723,22 @@ unaffected (dry-run is transparent).
 appears to the allowlist; (2) once the logs are clean, set `TERMINAL_WRITE_ENFORCE=true`;
 (3) confirm on a till that sales/sync still work and a crafted desktop-surface POST to
 `/api/products` returns 403. Delivery: MANIFEST-2026-08-24-h.md.
+
+**ENFORCE-READINESS AUDIT 2026-08-25 (batch -g) — one allowlist GAP found + closed.**
+Static-traced every desktop→cloud write in the current tree (`method:'POST'|PUT|PATCH|DELETE`,
+excluding `/node/*` LAN calls) and cross-referenced each against the allowlist. All matched EXCEPT
+**`/api/shifts/:id/close` and `/api/shifts/:id/force-close`** (`syncEngine.ts:1655`) — the till's own
+shift-close writes, missed by the original literal trace because they go through a `fetch(url)`
+variable, not a literal path. Because the guard gates on `surface` (not `isOwner`), this gap would
+have 403'd shift close on EVERY live till the moment enforce flipped — not just post-A164-cutover.
+Closed by adding a TIGHT allowlist entry `^/api/shifts/[^/]+/(close|force-close)` (a shift
+DELETE/create from a till stays denied). `terminal-write-guard.test.mjs` extended 19→23
+(mutation-checked: dropping the shift entry reddens the source assertion). Server tsc + gates green.
+**Verdict:** with this gap closed, the allowlist covers every cloud write in the current desktop
+tree. Before flipping `TERMINAL_WRITE_ENFORCE=true` in production, still confirm the dry-run logs
+show no `would block` for a legitimate write (catches older field builds and anything static
+analysis can't see) — that empirical check remains the close condition. Delivery:
+MANIFEST-2026-08-25-g.md.
 
 ### A157 · P2 · OPEN · Input-validation schemas written but never wired — `LoginSchema`, `CreateProductSchema`, `UpdateProductSchema`, `CreateCategorySchema`
 `apps/server/src/lib/schemas.ts` defines Zod schemas for these endpoints, but no

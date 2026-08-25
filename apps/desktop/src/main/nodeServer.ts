@@ -43,8 +43,10 @@ import { getLocalDb } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents } from './nodeIngest';
-import { verifyPinAtNode } from './branchStaff';
+import { verifyPinAtNode, readBranchStaffForServe } from './branchStaff';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
+import { buildReferenceBundle } from './referenceBundle';
+import { buildRosterSnapshot } from './rosterSnapshot';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -286,6 +288,44 @@ export function startNodeServer(): void {
         }
         const out = collectDistribution(deviceId, body?.cursors ?? {}, Number(body?.limit) || 500);
         return json(res, 200, out);
+      }
+
+      // A24 — DOWNSTREAM reference snapshot. A peer pulls the branch's catalogue,
+      // prices, variants, modifiers, stock, tables, pumps and print routing from
+      // the node instead of the cloud, so an offline peer stays current. Served
+      // from THIS node's own local tables (populated by its cloud sync) in the
+      // shapes pullCatalogue already consumes — so the peer's write path is
+      // unchanged whether the source is cloud or node. Non-credential only: the
+      // roster (A20) rides the same channel in a later change, behind the owner's
+      // trust-domain decision. Branch-scoped like every /node/* route.
+      //
+      // No cursors yet — a full snapshot the peer applies wholesale (same as the
+      // roster and stations already are). Delta-by-version is a later optimisation
+      // (A24 step 2); a full pull is correct, just chattier.
+      if (req.method === 'POST' && url === '/node/reference') {
+        const body = await readBody(req);
+        const c = getDeviceConfig();
+        if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
+          return json(res, 403, { error: 'branch mismatch' });
+        }
+        return json(res, 200, buildReferenceBundle(getLocalDb(), c));
+      }
+
+      // A20: serve this node's staff roster so a peer can authenticate cashiers
+      // and open the shop on failover. Branch-gated + X-Node-Secret like every
+      // /node/* route. PIN hashes are unwrapped to raw bcrypt for transport (the
+      // node's safeStorage wrapping is machine-bound); the peer re-wraps with its
+      // own. The owner has accepted that this puts the branch's hashes on every
+      // peer (PHASE5 §10.1) with the PIN-rotation runbook as mitigation.
+      if (req.method === 'POST' && url === '/node/roster') {
+        const body = await readBody(req);
+        const c = getDeviceConfig();
+        if (c?.branch_id && body.branch_id && body.branch_id !== c.branch_id) {
+          return json(res, 403, { error: 'branch mismatch' });
+        }
+        const branchId = String(body?.branch_id ?? c?.branch_id ?? '');
+        if (!branchId) return json(res, 400, { error: 'branch_id is required' });
+        return json(res, 200, buildRosterSnapshot(branchId, readBranchStaffForServe(branchId)));
       }
 
       // Node-served time.

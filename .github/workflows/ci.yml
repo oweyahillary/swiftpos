@@ -548,6 +548,36 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/syncEngine-failures.test.mjs
 
+      # A161 — the node's downstream reference snapshot (A24). Pure reshape of
+      # local rows into the cloud shapes pullCatalogue consumes; the tri-state
+      # products.is_kitchen and the users->roles mapping corrupt a catalogue
+      # silently if wrong, so they are mutation-checked. Plain node — no Electron,
+      # no SQLite (the SQL reads + HTTP wiring are target-only, rule 16).
+      - name: Desktop reference-bundle reshape
+        working-directory: apps/desktop
+        run: node --no-warnings test/node-reference-bundle.test.mjs
+
+      # A161 batch -b — the peer's unpack of a node bundle. The risk of the peer
+      # read is data loss from a partial/old-build bundle, so the DON'T-WIPE
+      # guards (missing tables → keep the local map, etc.) are mutation-checked.
+      - name: Desktop reference-bundle unpack
+        working-directory: apps/desktop
+        run: node --no-warnings test/node-reference-unpack.test.mjs
+
+      # A162 (A19) — the node's decision to forward a peer sale to the cloud. The
+      # failure modes are money (parked sales, misattributed orders, under-totals
+      # from a rebuilt payload), so the refusal guards are mutation-checked.
+      - name: Desktop peer-relay forward guards
+        working-directory: apps/desktop
+        run: node --no-warnings test/peer-relay.test.mjs
+
+      # A163 (A20) — the branch roster snapshot a peer applies on failover. The
+      # failure mode is a locked-out shop (wiping the roster to nothing), so the
+      # don't-wipe / lockout guard is mutation-checked.
+      - name: Desktop roster snapshot guards
+        working-directory: apps/desktop
+        run: node --no-warnings test/roster-snapshot.test.mjs
+
       # Runs here on node:sqlite — a STAND-IN, and the suite says so in its own
       # output rather than implying a hardware-equivalent green. It still catches
       # a broken cursor reset, which is the point. The real ABI run is

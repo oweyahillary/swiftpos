@@ -30,6 +30,7 @@ const ALLOW = [
   /^\/api\/orders(\/|$|\?)/,
   /^\/api\/sync\/push(\/|$|\?)/,
   /^\/api\/branch-prices\/sync(\/|$|\?)/,
+  /^\/api\/shifts\/[^/]+\/(close|force-close)(\/|$|\?)/,
   /^\/api\/auth\//,
   /^\/api\/tech\//,
 ];
@@ -52,6 +53,12 @@ ok('till sync push is allowed',  () => assert.equal(denied('desktop','POST','/ap
 ok('till price sync is allowed', () => assert.equal(denied('desktop','POST','/api/branch-prices/sync'), false));
 ok('till verify-pin is allowed', () => assert.equal(denied('desktop','POST','/api/auth/verify-pin'), false));
 ok('till tech audit is allowed', () => assert.equal(denied('desktop','POST','/api/tech/audit'), false));
+// A164 audit: shift close/force-close are the till's own server-reconciled writes.
+ok('till shift close is allowed',       () => assert.equal(denied('desktop','POST','/api/shifts/abc123/close'), false));
+ok('till shift force-close is allowed', () => assert.equal(denied('desktop','POST','/api/shifts/abc123/force-close'), false));
+// ...but the allowance is TIGHT — a shift delete/edit from a till is still denied.
+ok('till shift DELETE is still DENIED', () => assert.equal(denied('desktop','DELETE','/api/shifts/abc123'), true));
+ok('till shift create is still DENIED',  () => assert.equal(denied('desktop','POST','/api/shifts'), true));
 
 // ── Reads and web-surface are never gated ─────────────────────────────────────
 ok('desktop GET /api/products is allowed (read)', () => assert.equal(denied('desktop','GET','/api/products'), false));
@@ -69,7 +76,7 @@ ok('dry-run is the default (enforce is opt-in via env)', () => {
 });
 ok('the real allowlist covers the till write set', () => {
   const src = AUTH.replace(/\\/g, '');   // unescape regex slashes: \/api\/orders -> /api/orders
-  for (const frag of ['/api/orders', '/api/sync/push', '/api/branch-prices/sync', '/api/auth/', '/api/tech/']) {
+  for (const frag of ['/api/orders', '/api/sync/push', '/api/branch-prices/sync', '/api/shifts/', '/api/auth/', '/api/tech/']) {
     assert.ok(src.includes(frag), `allowlist missing ${frag} — a till write would be denied`);
   }
 });

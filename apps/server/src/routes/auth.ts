@@ -36,6 +36,7 @@
 
 import { Router }   from 'express';
 import { registerDesktopTerminal } from '../lib/deviceRegistry';
+import { generateDeviceSecret, hashDeviceSecret, verifyDeviceSecret, isDeviceGrantable, buildDeviceTokenPayload } from '../lib/deviceGrant';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
@@ -794,6 +795,23 @@ router.post('/enrol/redeem', async (req, res) => {
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
 
+  // A164 (Phase 1): mint a per-device grant secret so this till can later recover
+  // its own session without an owner re-login. Best-effort and additive — the
+  // enrolment must not fail over it, and a device that doesn't get one simply
+  // keeps using the refresh/enrol paths. Store only the hash; hand the raw secret
+  // back once, here. (Nothing consumes it yet — the desktop stores + uses it in a
+  // later, hardware-verified slice.)
+  let deviceSecret: string | null = null;
+  try {
+    const raw = generateDeviceSecret();
+    const { error: secErr } = await supabase
+      .from('user_devices')
+      .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: nowIso })
+      .eq('business_id', businessId)
+      .eq('device_id', deviceId);
+    if (!secErr) deviceSecret = raw;
+  } catch { /* additive; enrolment succeeds without a grant secret */ }
+
   res.json({
     accessToken,
     refreshToken,
@@ -802,6 +820,77 @@ router.post('/enrol/redeem', async (req, res) => {
     business: biz,                       // id, name, currency, type, status
     businessId,
     branchId: (burned as any).branch_id ?? null,
+    deviceSecret,                        // A164 — store this on the device; null if not issued
+  });
+});
+
+// A164 — SCOPE-node-authority Phase 1: cloud device-grant.
+//
+// A till whose refresh has lapsed presents its device_id + per-device secret and
+// gets a fresh session, instead of dropping to an owner re-login. The token is
+// minted isOwner:false (device-scoped) ON PURPOSE — that is the mode the A159
+// write-guard actually bounds (an owner token bypasses it), so this is a security
+// reduction over the enrolment owner-token, not just a convenience. branchId is
+// bound to the device's registered branch (an isOwner:false token is branch-
+// locked by rbac).
+//
+// INERT for now: the desktop does not call this yet. The cutover — the till
+// storing its secret and preferring this over re-login — ships in a later slice,
+// AFTER TERMINAL_WRITE_ENFORCE is on (so the reduced token is actually bounded)
+// and is verified on real hardware (the till must still sell/read as a non-owner).
+router.post('/device-token', async (req, res) => {
+  const businessId = String(req.body?.business_id ?? '').trim();
+  const deviceId   = String(req.body?.device_id ?? '').trim();
+  const secret     = String(req.body?.device_secret ?? '').trim();
+  if (!businessId || !deviceId || !secret) {
+    res.status(400).json({ error: 'business_id, device_id and device_secret are required' });
+    return;
+  }
+
+  const { data: dev, error: devErr } = await supabase
+    .from('user_devices')
+    .select('id, user_id, business_id, branch_id, status, device_secret_hash')
+    .eq('business_id', businessId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+  if (devErr) { sendError(res, devErr); return; }
+
+  // Uniform failure — never reveal which check failed (unknown device, wrong
+  // secret, or a revoked/pending status all look identical to a caller).
+  if (!dev || !isDeviceGrantable((dev as any).status) || !verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
+    res.status(401).json({ error: 'Device grant refused', code: 'DEVICE_GRANT_INVALID' });
+    return;
+  }
+
+  // A suspended business must not bring a session online, same as the other paths.
+  const { data: biz } = await supabase
+    .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
+  if (!biz) { res.status(500).json({ error: 'Business not found for a valid device', code: 'DEVICE_GRANT_STATE' }); return; }
+  if ((biz as any).status === 'suspended') {
+    res.status(403).json({ error: 'Your account has been suspended. Please contact SwiftPOS support.', code: 'ACCOUNT_SUSPENDED' });
+    return;
+  }
+
+  const ownerId = (dev as any).user_id as string;   // the principal the till acts as, exactly as enrolment
+  const pv = await getPermissionsVersion(ownerId);
+  const sessionId = newSessionId();
+  const payload: TokenPayload = buildDeviceTokenPayload({
+    userId:             ownerId,
+    businessId,
+    branchId:           (dev as any).branch_id ?? null,
+    permissionsVersion: pv,
+    sessionId,
+  });
+  const { accessToken, refreshToken } = issueTokenPair(payload);
+  await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
+
+  res.json({
+    accessToken,
+    refreshToken,
+    token: accessToken,
+    businessId,
+    branchId: (dev as any).branch_id ?? null,
+    business: biz,
   });
 });
 

@@ -42,9 +42,10 @@ import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
-import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient } from './nodeClient';
+import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode } from './nodeClient';
 import { isUnreachableStatus } from './authTransport';
-import { verifyPinAtNode } from './branchStaff';
+import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
+import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
@@ -2015,6 +2016,19 @@ export function registerIpcHandlers() {
   ipcMain.handle('tech:promoteToNode', async () => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const before = getDeviceConfig()?.device_role ?? 'till';
+    // A20 backstop: pull a fresh roster from the CURRENT node before we stop being
+    // a peer, so the promoted node can authenticate cashiers the instant it serves.
+    // Best-effort and guarded (unpackRosterSnapshot refuses an empty/pinless pull,
+    // so this can only ever ADD a current roster, never wipe one). Must run BEFORE
+    // the role flip — a node has no node_url to pull from. A peer that was
+    // replicating already holds the roster via sync; this guarantees it's current.
+    try {
+      const snapshot = await fetchRosterFromNode();
+      if (snapshot) {
+        const d = unpackRosterSnapshot(snapshot);
+        if (d.apply) storeBranchStaff(d.branchId, d.roster);
+      }
+    } catch { /* promotion proceeds; the node refreshes the roster on its own cloud sync */ }
     logTechAction('role.promote', { from: before, to: 'node' });
     saveDeviceConfig({ device_role: 'node', node_url: null });
     startNodeServer();

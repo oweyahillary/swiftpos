@@ -243,9 +243,12 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
 // Set TERMINAL_WRITE_ENFORCE=true to enforce (403) once the logs are clean.
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const TILL_WRITE_ALLOWLIST: RegExp[] = [
-  /^\/api\/orders(\/|$|\?)/,              // sales push
+  /^\/api\/orders(\/|$|\?)/,              // sales push (incl. /:id/void, /:id/refund)
   /^\/api\/sync\/push(\/|$|\?)/,          // business_days / shifts / floats / expenses
   /^\/api\/branch-prices\/sync(\/|$|\?)/, // price reconciliation
+  /^\/api\/shifts\/[^/]+\/(close|force-close)(\/|$|\?)/, // shift close / force-close — the till's own,
+                                          // server-reconciled action (expected_cash/variance); NOT a
+                                          // blanket /api/shifts open, so a shift DELETE from a till stays denied
   /^\/api\/auth\//,                       // verify-pin, set-pin, refresh, logout (no dashboard mutations live here)
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];

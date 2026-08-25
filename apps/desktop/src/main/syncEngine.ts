@@ -15,7 +15,10 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
-import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode } from './nodeClient';
+import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
+import { unpackRosterSnapshot } from './rosterSnapshot';
+import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
+import { buildCloudOrderPayload } from './peerRelay';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth,
@@ -64,6 +67,9 @@ let _refreshToken = '';
 let _staffToken   = '';   // per-shift staff token — used for order push
 let _staffRefresh = '';
 let _isSyncing    = false;
+// A20: last roster version this peer applied, in-memory. Skips re-wrapping an
+// unchanged roster every pull; on restart it re-applies once, which is harmless.
+let _lastRosterVersion = '';
 
 export function configureSyncEngine(serverUrl: string, accessToken: string, refreshToken = '') {
   _serverUrl    = serverUrl;
@@ -617,187 +623,211 @@ async function refreshDeviceTokenIfExpiring(): Promise<boolean> {
   return refreshAccessToken();
 }
 
-async function pullCatalogue(): Promise<boolean> {
-  // Price for the branch this till is actually bound to (per-branch pricing).
-  // Sent as ?branch_id so /api/pos/init returns branch_price per product.
-  const boundBranchForPricing: string | null = getDeviceConfig()?.branch_id ?? null;
-  const initUrl = boundBranchForPricing
-    ? `${_serverUrl}/api/pos/init?branch_id=${encodeURIComponent(boundBranchForPricing)}`
-    : `${_serverUrl}/api/pos/init`;
-  // The status and body used to be discarded here. /api/pos/init fails closed
-  // on several conditions that look identical from the till — an unlicensed
-  // branch (403 BRANCH_NOT_LICENSED), no branch flagged is_main, an expired
-  // token — and all of them presented as "sync isn't working" with nothing to
-  // go on. The server's `ref` travels in the body; it keys the full detail in
-  // the server log.
-  let res: Awaited<ReturnType<typeof fetch>>;
-  try {
-    res = await fetch(initUrl, { headers: authHeaders() });
-  } catch (err: any) {
-    noteInboundFailure('sync', `catalogue pull unreachable: ${err?.message ?? err}`);
-    return false;
-  }
-  if (!res.ok) {
-    noteInboundFailure('sync', `catalogue pull failed: ${await describeResponse(res)}`);
-    return false;
-  }
+// Persist the business-wide config the reference source carries — VAT, CTL,
+// discount ceiling, business type, receipt header/footer, kitchen-exclusion
+// baseline and the 24h flag. Applied for BOTH the node and cloud paths so a
+// node-fed peer updates these too (a stale VAT prints a receipt the database
+// disagrees with — the exact bug the inline cloud version existed to prevent).
+// Each field is guarded so a missing value leaves the last-known-good untouched;
+// numeric fields arrive pre-coerced (numOrNull), so `!== null` is enough here.
+function applyReferenceConfig(c: AcquiredReference['config']): void {
+  if (c.vatRate !== null) saveDeviceConfig({ vat_rate: c.vatRate });
+  if (c.ctlRate !== null) saveDeviceConfig({ ctl_rate: c.ctlRate });
+  if (c.maxDiscountPct !== null) saveDeviceConfig({ max_discount_pct: c.maxDiscountPct });
+  if (c.businessType) saveDeviceConfig({ business_type: c.businessType });
+  if (typeof c.receiptHeader === 'string') saveDeviceConfig({ receipt_header: c.receiptHeader });
+  if (typeof c.receiptFooter === 'string') saveDeviceConfig({ receipt_footer: c.receiptFooter });
+  if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
+  if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
+}
 
-  const { products, categories, branchId, vatRate, ctlRate, maxDiscountPct, businessType, comboItems, receiptHeader, receiptFooter, kitchenExclusions, paymentMethods, continuousOperation } = await res.json();
-  clearInboundFailure('sync');
+async function pullCatalogue(): Promise<boolean> {
   const db = getLocalDb();
   const now = new Date().toISOString();
 
-  // Persist the business VAT rate on every pull. POSPage used to hardcode 16,
-  // which meant a business on any other rate had the wrong tax computed at the
-  // till, shown in the payment modal and printed on the customer's receipt —
-  // while the server recomputed the correct figure on push, so the receipt and
-  // the database disagreed with nothing to flag it.
-  const pulledVat = Number(vatRate);
-  if (Number.isFinite(pulledVat)) saveDeviceConfig({ vat_rate: pulledVat });
-  const pulledCtl = Number(ctlRate);
-  if (Number.isFinite(pulledCtl)) saveDeviceConfig({ ctl_rate: pulledCtl });
-  // Same reasoning as VAT: the server caps discounts on write and stores the
-  // capped figure, so a till clamping to a different ceiling prints a receipt
-  // the database will not agree with. Pull the real policy and clamp to it.
-  const pulledMaxDiscount = Number(maxDiscountPct);
-  if (Number.isFinite(pulledMaxDiscount)) saveDeviceConfig({ max_discount_pct: pulledMaxDiscount });
-
-  // Business type comes from the server too. Set at activation, refreshed here,
-  // so a change made centrally reaches every till without anyone visiting them.
-  if (typeof businessType === 'string' && businessType) {
-    saveDeviceConfig({ business_type: businessType });
-  }
-  // Cached so an offline till still prints the owner's current header/footer.
-  if (typeof receiptHeader === 'string') saveDeviceConfig({ receipt_header: receiptHeader });
-  if (typeof receiptFooter === 'string') saveDeviceConfig({ receipt_footer: receiptFooter });
-  if (typeof continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: continuousOperation });
-  // Cached for the same reason: a till that loses the internet mid-service must
-  // keep excluding drinks from the kitchen ticket, not start printing them.
-  //
-  // This is the CLOUD BASELINE — business-wide, edited on the web dashboard. It
-  // is refreshed on every pull. A local edit does NOT live here; it lives in
-  // kitchen_exclusions_override, which this never touches, so "local is final"
-  // holds while the cloud default still updates underneath it. The reader
-  // (escposBridge.kitchenExclusions) returns the override when one is set and
-  // this baseline otherwise.
-  if (Array.isArray(kitchenExclusions)) {
-    saveDeviceConfig({ kitchen_exclusions: JSON.stringify(kitchenExclusions) });
-  }
-
-  // The branch this till actually operates on. The device is BOUND to a
-  // branch (written at first PIN login / install); /api/pos/init's branchId
-  // is the business's main branch and only a fallback. Pulling stock/tables
-  // for the wrong branch was exactly the "tables on web but not on the till"
-  // bug — staff select branch X at the PIN pad while sync pulled for main.
+  // The branch this till operates on. The device is BOUND to a branch at
+  // install / first PIN login; /api/pos/init's branchId is only a fallback.
+  // Pulling stock/tables for the wrong branch was the "tables on web but not on
+  // the till" bug — staff pick branch X at the PIN pad while sync pulled main.
   const boundBranchId: string | null = getDeviceConfig()?.branch_id ?? null;
-  const effectiveBranchId: string | null = boundBranchId || branchId || null;
 
-  // Fetch variants + modifiers
-  const variantGroups: any[] = [];
-  const variantOptions: any[] = [];
-  const modifierGroups: any[] = [];
-  const modifierOptions: any[] = [];
-
-  for (const p of products.filter((p: any) => p.has_variants)) {
-    const vRes = await fetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
-    if (vRes.ok) {
-      const groups = await vRes.json();
-      for (const g of groups) {
-        variantGroups.push(g);
-        variantOptions.push(...(g.variant_options ?? []));
-      }
-    }
-  }
-
-  for (const p of products.filter((p: any) => p.has_modifiers)) {
-    const mRes = await fetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
-    if (mRes.ok) {
-      const groups = await mRes.json();
-      for (const g of groups) {
-        modifierGroups.push(g);
-        modifierOptions.push(...(g.modifier_options ?? []));
-      }
-    }
-  }
-
-  // Pull stock levels for this branch
-  let stockLevels: any[] = [];
-  if (effectiveBranchId) {
-    const sRes = await fetch(`${_serverUrl}/api/inventory?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
-    if (sRes.ok) {
-      const data = await sRes.json();
-      stockLevels = data.filter((s: any) => s.id !== null); // exclude unstocked placeholder rows
-    }
-  }
-
-  // Pull staff/users — reference data for offline cashier attribution (names on
-  // shift/EOD reports). PULL-DOWN, remote wins. Wrapped so a 403/offline here
-  // never aborts the catalogue sync that already succeeded above.
-  let users: any[] = [];
-  try {
-    const uRes = await fetch(`${_serverUrl}/api/staff`, { headers: authHeaders() });
-    if (uRes.ok) users = await uRes.json();
-  } catch { /* non-fatal — attribution falls back to id only */ }
-
-  // Pull dining tables — reference data for the restaurant table map.
-  // PULL-DOWN, remote wins. Non-restaurant businesses simply get an empty
-  // list and the till keeps its product-grid behaviour. `fetched` is tracked
-  // separately from emptiness so a failed request never wipes a good local
-  // table map (an empty successful response legitimately clears it).
-  let diningTables: any[] = [];
-  let tablesFetched = false;
-  if (effectiveBranchId) {
-    try {
-      const tRes = await fetch(`${_serverUrl}/api/tables?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
-      if (tRes.ok) {
-        diningTables = await tRes.json();
-        tablesFetched = true;
-        console.log(`[sync] tables: pulled ${diningTables.length}`);
-      } else {
-        console.warn(`[sync] tables fetch failed: HTTP ${tRes.status}`);
-      }
-    } catch (err: any) {
-      console.warn('[sync] tables fetch error:', err?.message ?? err);
-    }
-  } else {
-    console.warn('[sync] tables skipped: no bound branch and no branchId from /api/pos/init');
-  }
-
-  // Pull fuel pumps — reference data for the petrol pump grid. Same guard shape
-  // as tables: a failed request must never wipe a good local pump list, but an
-  // empty successful response legitimately clears it.
-  let pumps: any[] = [];
-  let pumpsFetched = false;
-  if (effectiveBranchId) {
-    try {
-      const puRes = await fetch(`${_serverUrl}/api/pumps?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
-      if (puRes.ok) {
-        pumps = await puRes.json();
-        pumpsFetched = true;
-        console.log(`[sync] pumps: pulled ${pumps.length}`);
-      } else {
-        console.warn(`[sync] pumps fetch failed: HTTP ${puRes.status}`);
-      }
-    } catch (err: any) {
-      console.warn('[sync] pumps fetch error:', err?.message ?? err);
-    }
-  }
-
-  // Print stations. Best-effort and non-fatal: a till that cannot fetch them keeps
-  // whatever routing it already holds and carries on selling. Losing the catalogue
-  // refresh must never take the till down — and until migration 44 is applied this
-  // endpoint simply 404s, which is expected rather than an error.
+  // Reference data, populated from the branch NODE (a peer with a reachable
+  // node) or, failing that, the CLOUD exactly as before — then written by the
+  // SINGLE transaction below, fed identically by either source. Hoisted here so
+  // both paths assign the same variables. `tablesFetched`/`pumpsFetched` and a
+  // nullable `stations`/`paymentMethods` are the DON'T-WIPE guards: a source
+  // that did not supply them must never clear good local data.
+  let products: any[] = [], categories: any[] = [];
+  let comboItems: Record<string, any[]> | undefined;
+  let paymentMethods: Array<{ code: string; name: string }> | null = null;
   let stations: any[] | null = null;
-  try {
-    const stRes = await fetch(`${_serverUrl}/api/stations`, { headers: authHeaders() });
-    if (stRes.ok) {
-      stations = await stRes.json();
-      console.log(`[sync] print stations: pulled ${stations?.length ?? 0}`);
-    } else if (stRes.status !== 404) {
-      console.warn(`[sync] stations fetch failed: HTTP ${stRes.status}`);
+  let variantGroups: any[] = [], variantOptions: any[] = [];
+  let modifierGroups: any[] = [], modifierOptions: any[] = [];
+  let stockLevels: any[] = [], users: any[] = [];
+  let diningTables: any[] = [], pumps: any[] = [];
+  let tablesFetched = false, pumpsFetched = false;
+  let branchId: string | null = null;
+  let effectiveBranchId: string | null = null;
+
+  // ── A24 (batch -b): read reference from the NODE first ─────────────────────
+  // A peer whose node answers takes the node's snapshot and skips the cloud's
+  // 7 + N calls, so an offline peer stays current. fetchReferenceFromNode()
+  // returns null for a node device, a till with no node_url, or ANY node problem
+  // (unreachable / refused / malformed) — and then we fall through to the cloud
+  // path below, unchanged. So this is additive: only a peer with a live node
+  // behaves any differently than it did before.
+  const nodeBundle = await fetchReferenceFromNode();
+  if (nodeBundle) {
+    const r: AcquiredReference = unpackNodeBundle(nodeBundle);
+    ({ products, categories, comboItems, paymentMethods, stations,
+       variantGroups, variantOptions, modifierGroups, modifierOptions,
+       stockLevels, users, diningTables, tablesFetched, pumps, pumpsFetched } = r);
+    branchId = r.config.branchId;
+    effectiveBranchId = boundBranchId || branchId || null;
+    applyReferenceConfig(r.config);
+    clearInboundFailure('sync');
+    logLine('sync', `catalogue pulled from node — ${products.length} products`);
+  } else {
+    // ── CLOUD path — behaviour unchanged from before batch -b ────────────────
+    // Per-branch pricing: ?branch_id makes /api/pos/init return branch_price.
+    const initUrl = boundBranchId
+      ? `${_serverUrl}/api/pos/init?branch_id=${encodeURIComponent(boundBranchId)}`
+      : `${_serverUrl}/api/pos/init`;
+    // /api/pos/init fails closed on conditions that look identical from the till
+    // — an unlicensed branch (403 BRANCH_NOT_LICENSED), no branch flagged
+    // is_main, an expired token. The server's `ref` travels in the body and
+    // keys the full detail in the server log.
+    let res: Awaited<ReturnType<typeof fetch>>;
+    try {
+      res = await fetch(initUrl, { headers: authHeaders() });
+    } catch (err: any) {
+      noteInboundFailure('sync', `catalogue pull unreachable: ${err?.message ?? err}`);
+      return false;
     }
-  } catch (err: any) {
-    console.warn('[sync] stations fetch error:', err?.message ?? err);
+    if (!res.ok) {
+      noteInboundFailure('sync', `catalogue pull failed: ${await describeResponse(res)}`);
+      return false;
+    }
+
+    const _j = await res.json();
+    clearInboundFailure('sync');
+    products = _j.products; categories = _j.categories;
+    comboItems = _j.comboItems; paymentMethods = _j.paymentMethods ?? null;
+    branchId = _j.branchId ?? null;
+    effectiveBranchId = boundBranchId || branchId || null;
+    // Business-wide config (VAT, CTL, discount ceiling, business type, receipt
+    // header/footer, kitchen-exclusion CLOUD BASELINE, 24h flag) — persisted for
+    // BOTH paths by applyReferenceConfig; the per-field guards that were inline
+    // here now live there (each leaves the last-known-good on a missing value).
+    // The kitchen-exclusion baseline is business-wide and never touches
+    // kitchen_exclusions_override, so "local is final" still holds under it.
+    applyReferenceConfig({
+      branchId,
+      vatRate: numOrNull(_j.vatRate),
+      ctlRate: numOrNull(_j.ctlRate),
+      maxDiscountPct: numOrNull(_j.maxDiscountPct),
+      businessType: typeof _j.businessType === 'string' && _j.businessType ? _j.businessType : null,
+      receiptHeader: typeof _j.receiptHeader === 'string' ? _j.receiptHeader : null,
+      receiptFooter: typeof _j.receiptFooter === 'string' ? _j.receiptFooter : null,
+      kitchenExclusions: Array.isArray(_j.kitchenExclusions) ? _j.kitchenExclusions : null,
+      continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
+    });
+
+    // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
+    for (const p of products.filter((p: any) => p.has_variants)) {
+      const vRes = await fetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
+      if (vRes.ok) {
+        const groups = await vRes.json();
+        for (const g of groups) {
+          variantGroups.push(g);
+          variantOptions.push(...(g.variant_options ?? []));
+        }
+      }
+    }
+
+    for (const p of products.filter((p: any) => p.has_modifiers)) {
+      const mRes = await fetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
+      if (mRes.ok) {
+        const groups = await mRes.json();
+        for (const g of groups) {
+          modifierGroups.push(g);
+          modifierOptions.push(...(g.modifier_options ?? []));
+        }
+      }
+    }
+
+    // Pull stock levels for this branch
+    if (effectiveBranchId) {
+      const sRes = await fetch(`${_serverUrl}/api/inventory?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
+      if (sRes.ok) {
+        const data = await sRes.json();
+        stockLevels = data.filter((s: any) => s.id !== null); // exclude unstocked placeholder rows
+      }
+    }
+
+    // Pull staff/users — reference data for offline cashier attribution (names on
+    // shift/EOD reports). PULL-DOWN, remote wins. Wrapped so a 403/offline here
+    // never aborts the catalogue sync that already succeeded above.
+    try {
+      const uRes = await fetch(`${_serverUrl}/api/staff`, { headers: authHeaders() });
+      if (uRes.ok) users = await uRes.json();
+    } catch { /* non-fatal — attribution falls back to id only */ }
+
+    // Pull dining tables — reference data for the restaurant table map.
+    // PULL-DOWN, remote wins. Non-restaurant businesses simply get an empty
+    // list and the till keeps its product-grid behaviour. `fetched` is tracked
+    // separately from emptiness so a failed request never wipes a good local
+    // table map (an empty successful response legitimately clears it).
+    if (effectiveBranchId) {
+      try {
+        const tRes = await fetch(`${_serverUrl}/api/tables?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
+        if (tRes.ok) {
+          diningTables = await tRes.json();
+          tablesFetched = true;
+          console.log(`[sync] tables: pulled ${diningTables.length}`);
+        } else {
+          console.warn(`[sync] tables fetch failed: HTTP ${tRes.status}`);
+        }
+      } catch (err: any) {
+        console.warn('[sync] tables fetch error:', err?.message ?? err);
+      }
+    } else {
+      console.warn('[sync] tables skipped: no bound branch and no branchId from /api/pos/init');
+    }
+
+    // Pull fuel pumps — reference data for the petrol pump grid. Same guard shape
+    // as tables: a failed request must never wipe a good local pump list, but an
+    // empty successful response legitimately clears it.
+    if (effectiveBranchId) {
+      try {
+        const puRes = await fetch(`${_serverUrl}/api/pumps?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
+        if (puRes.ok) {
+          pumps = await puRes.json();
+          pumpsFetched = true;
+          console.log(`[sync] pumps: pulled ${pumps.length}`);
+        } else {
+          console.warn(`[sync] pumps fetch failed: HTTP ${puRes.status}`);
+        }
+      } catch (err: any) {
+        console.warn('[sync] pumps fetch error:', err?.message ?? err);
+      }
+    }
+
+    // Print stations. Best-effort and non-fatal: a till that cannot fetch them keeps
+    // whatever routing it already holds and carries on selling. Losing the catalogue
+    // refresh must never take the till down — and until migration 44 is applied this
+    // endpoint simply 404s, which is expected rather than an error.
+    try {
+      const stRes = await fetch(`${_serverUrl}/api/stations`, { headers: authHeaders() });
+      if (stRes.ok) {
+        stations = await stRes.json();
+        console.log(`[sync] print stations: pulled ${stations?.length ?? 0}`);
+      } else if (stRes.status !== 404) {
+        console.warn(`[sync] stations fetch failed: HTTP ${stRes.status}`);
+      }
+    } catch (err: any) {
+      console.warn('[sync] stations fetch error:', err?.message ?? err);
+    }
   }
 
   // Write everything in a single transaction
@@ -1090,6 +1120,23 @@ async function pullCatalogue(): Promise<boolean> {
         if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);
       }
     } catch { /* the node keeps its existing roster; next pull retries */ }
+  } else if (hasNode()) {
+    // A20: a PEER pulls the roster from its NODE so a promotion can open the shop.
+    // Best-effort, after the catalogue, and guarded twice: fetchRosterFromNode
+    // returns null on any node problem (keep the local roster), and
+    // unpackRosterSnapshot refuses an empty/pinless snapshot (never wipe → never
+    // lock the shop out). Version-skip avoids re-wrapping the roster every pull.
+    try {
+      const snapshot = await fetchRosterFromNode();
+      if (snapshot) {
+        const decision = unpackRosterSnapshot(snapshot);
+        if (decision.apply && decision.version !== _lastRosterVersion) {
+          storeBranchStaff(decision.branchId, decision.roster);
+          _lastRosterVersion = decision.version;
+          logLine('sync', `roster pulled from node — ${decision.roster.length} staff`);
+        }
+      }
+    } catch { /* keep the current roster; next pull retries */ }
   }
 
   return true;
@@ -1803,20 +1850,12 @@ export function createLocalOrder(orderPayload: any): string {
     db.prepare(`
       INSERT INTO sync_queue (order_id, payload, created_at, status)
       VALUES (?, ?, ?, 'pending')
-    `).run(orderId, JSON.stringify({
-      // kot_sent is a RENDERER-TO-MAIN hint about whether the kitchen tickets
-      // have already been queued. It is not part of an order and the server has
-      // no column for it, so it is dropped here rather than shipped and ignored.
-      ...(() => { const { kot_sent: _kotSent, ...rest } = orderPayload; return rest; })(),
-      // The till is a manual-tender POS — no STK push. Every leg is a payment
-      // the cashier has already confirmed (cash in drawer, M-Pesa on the phone),
-      // so mark them 'completed' explicitly; otherwise the server writes M-Pesa
-      // 'pending' awaiting an STK callback that never comes, and it reports as
-      // "unaccounted" on the cloud (A93).
-      payments: (legs as any[]).map(l => ({ ...l, status: 'completed' })),
-      shift_id: shiftId, device_id: deviceId,
-      _localOrderId: orderId, idempotency_key: orderId, created_at: now,
-    }), now);
+    `).run(orderId, JSON.stringify(
+      // Built by the SHARED builder so this direct-to-cloud payload and the one
+      // the branch node forwards for the same order (A19 relay) are identical —
+      // the cloud keeps whichever arrives first, so they must not diverge.
+      buildCloudOrderPayload(orderPayload, { shiftId, deviceId, orderId, createdAt: now }),
+    ), now);
 
     // Keep the exact payload for a faithful reprint from Order History (A94).
     // Replayed through the same queueThermal path as the original, so the copy is

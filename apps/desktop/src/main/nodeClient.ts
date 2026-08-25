@@ -294,8 +294,76 @@ export async function pullNodeDistribution(
   }
 }
 
-// ── Phase 3 — promotion support ──────────────────────────────────────────────
+// ── A24 — downstream reference snapshot pull ─────────────────────────────────
 
+/** Pull the branch reference snapshot (catalogue, prices, variants, modifiers,
+ *  stock, tables, pumps, print routing) from the node. Non-credential only.
+ *
+ *  Null = the node did not answer (unreachable, refused, or malformed): the
+ *  caller falls back to the cloud, exactly as it does today, so a missing or old
+ *  node never blocks a reference refresh. A peer with no node_url gets null too. */
+export async function fetchReferenceFromNode(timeoutMs = 8000): Promise<any | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  const cfg = getDeviceConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/reference`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        device_id: cfg?.device_id ?? null,
+        branch_id: cfg?.branch_id ?? null,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    // A well-formed bundle always carries source:'node' and a posInit object.
+    return (data && data.source === 'node' && data.posInit) ? data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * A20: pull the branch staff roster from the node (peers only). Mirrors
+ * fetchReferenceFromNode — null for a node device, no node_url, or any node
+ * problem, so the caller keeps its existing roster. A well-formed snapshot
+ * carries source:'node' and a roster array; the caller validates further
+ * (unpackRosterSnapshot) before replacing anything, so an empty/failed pull can
+ * never wipe the local roster.
+ */
+export async function fetchRosterFromNode(timeoutMs = 6000): Promise<any | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  const cfg = getDeviceConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/roster`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        device_id: cfg?.device_id ?? null,
+        branch_id: cfg?.branch_id ?? null,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    return (data && data.source === 'node' && Array.isArray(data.roster)) ? data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── Phase 3 — promotion support ──────────────────────────────────────────────
 /** Probe a CANDIDATE node address (not the configured one) with this till's
  *  branch secret. Used by the repoint flow: test before save, because writing
  *  a wrong address is a till that silently stops replicating. */
