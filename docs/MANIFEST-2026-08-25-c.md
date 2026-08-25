@@ -32,7 +32,7 @@ node-side machinery in place to relay that payload; the peer starts sending it i
 
 Also in this cumulative zip (unchanged from -b, the A24 channel): `referenceBundle.ts`,
 `nodeServer.ts`, `nodeClient.ts`, `syncEngine.ts`, `node-reference-bundle.test.mjs`,
-`node-reference-unpack.test.mjs`, and MANIFEST-2026-08-25-a/-b.md.
+`node-reference-unpack.test.mjs`, and MANIFEST-2026-08-25-a.md + MANIFEST-2026-08-25-b.md.
 Not shipped: `apps/desktop/package-lock.json` (bench artifact, no dependency changed — rule 22).
 
 ## Idempotency — three independent guards against double-counting a sale
