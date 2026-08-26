@@ -404,14 +404,22 @@ export function registerIpcHandlers() {
     // when the line returns. Shared by the node, node-own-roster and cache paths.
     const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
       const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
+      // A167: token is TEXT NOT NULL (localDb.ts). An offline session has no
+      // server JWT, but writing NULL here throws `NOT NULL constraint failed:
+      // staff_session.token` and defeats the whole offline-auth fallback at its
+      // last step. Write '' — the reader already coerces it (tokenStore.read:
+      // `unwrap(token_enc) || token || ''`) and configureStaffSession('','')
+      // already represents an offline staff session as empty in memory, so ''
+      // is the value the rest of the code expects, not a sentinel. No migration
+      // (rule 13): the column and its readers are unchanged.
       db.prepare(`
         INSERT INTO staff_session
           (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
-        VALUES (1, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        VALUES (1, ?, ?, ?, ?, ?, ?, '', NULL, ?)
         ON CONFLICT(id) DO UPDATE SET
           staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
           branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
-          token=NULL, refresh_token=NULL, logged_in_at=excluded.logged_in_at
+          token='', refresh_token=NULL, logged_in_at=excluded.logged_in_at
       `).run(
         staff.staffId, staff.name, staff.roleName, branch_id,
         branchRowOff?.name ?? null, JSON.stringify(staff.permissions ?? {}),
