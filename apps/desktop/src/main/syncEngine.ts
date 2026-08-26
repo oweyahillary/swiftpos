@@ -13,6 +13,7 @@ import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
+import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
@@ -1404,7 +1405,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
   `).all() as any[];
 
   let pushed = 0;
-  let triedStaffRefresh = false;  // refresh once per sync pass
+  let triedAuthRefresh = false;  // refresh once per sync pass (A168)
 
   // S3: move BOTH rows to 'synced' in one transaction, so a crash between the
   // two writes can never leave sync_queue and orders disagreeing (queue synced
@@ -1447,10 +1448,23 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 
       let res = await doPost();
 
-      // Staff token expired mid-shift → refresh once and retry this same order.
-      if (res.status === 401 && !triedStaffRefresh) {
-        triedStaffRefresh = true;
-        const refreshed = await refreshStaffToken();
+      // A168: on a 401, refresh the token THIS push is actually sending, and
+      // only that one. pushAuthHeaders() sends `_staffToken || _accessToken`, so
+      // an online shift pushes under the staff token and an offline shift (no
+      // staff token) pushes under the owner token. The server sets
+      // `cashier_id = req.userId` (the token subject, orders.ts), so re-pushing a
+      // STAFF order under the owner token would reattribute the sale to the owner
+      // — never fall through. Mirror the selection instead: refresh whichever
+      // token was sent. This closes the gap where an offline order's owner-token
+      // 401 was met with refreshStaffToken() (nothing to refresh) and the order
+      // sat pending; the price path recovers via refreshAccessToken() but that
+      // path isn't cashier-attributed, so its `staff || owner` fallthrough is
+      // safe there and would NOT be safe here.
+      if (res.status === 401 && !triedAuthRefresh) {
+        triedAuthRefresh = true;
+        const refreshed = selectPushRefresh(_staffToken) === 'staff'
+          ? await refreshStaffToken()
+          : await refreshAccessToken();
         if (refreshed) res = await doPost();
       }
 

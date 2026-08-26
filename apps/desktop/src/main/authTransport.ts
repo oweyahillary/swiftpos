@@ -22,3 +22,22 @@
 export function isUnreachableStatus(status: number): boolean {
   return status >= 500 && status <= 599;
 }
+
+/**
+ * A168 — which token an order-push 401 must refresh.
+ *
+ * It MUST match the token pushAuthHeaders() actually sends (`_staffToken ||
+ * _accessToken`), because the server attributes `cashier_id = req.userId` — the
+ * token subject (apps/server/src/routes/orders.ts). Refreshing, and therefore
+ * re-pushing under, the OTHER token would reattribute the sale: an online staff
+ * order re-pushed on the owner token would be credited to the owner.
+ *
+ * So: a real staff token → refresh 'staff' (stay on the cashier's identity); no
+ * staff token (an offline shift, where signInLocal sets it to '') → refresh
+ * 'owner', the token the push is already using. Lives here beside the other pure
+ * auth-transport decision so it is testable without Electron, and so it cannot
+ * drift from `pushAuthHeaders` unnoticed.
+ */
+export function selectPushRefresh(staffToken: string): 'staff' | 'owner' {
+  return staffToken ? 'staff' : 'owner';
+}
