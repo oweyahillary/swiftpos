@@ -622,6 +622,9 @@ export function fillNodeOutbox(): number {
                 deviceId: row.device_id ?? null,
                 orderId: String(row.id),
                 createdAt: row.created_at,
+                // A169 — the peer stored the real cashier on its order row; forward
+                // that same value so the relay and the peer's direct push match.
+                cashierId: row.cashier_id ?? null,
               });
             } catch { /* leave _relayPayload unset — see note above */ }
           }

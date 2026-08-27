@@ -44,6 +44,11 @@ export interface CloudOrderCtx {
   deviceId: string | null;
   orderId: string;
   createdAt: string;
+  /** A169 — the cashier who rang the sale (the signed-in staff's users.id, or
+   *  the owner when no cashier is signed in). Carried so the cloud can credit
+   *  the real cashier on an offline sale instead of the owner-token subject.
+   *  MUST be the same value on the peer's direct push and the node's relay. */
+  cashierId: string | null;
 }
 
 /**
@@ -73,6 +78,9 @@ export function buildCloudOrderPayload(orderPayload: any, ctx: CloudOrderCtx): R
     payments: (legs as any[]).map(l => ({ ...l, status: 'completed' })),
     shift_id: ctx.shiftId ?? null,
     device_id: ctx.deviceId ?? null,
+    // A169 — the real cashier. The server trusts this over the owner-token
+    // subject only when it validates against the branch roster (see cashier.ts).
+    cashier_id: ctx.cashierId ?? null,
     _localOrderId: ctx.orderId,
     idempotency_key: ctx.orderId,
     created_at: ctx.createdAt,

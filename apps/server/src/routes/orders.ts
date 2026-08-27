@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { classifyOrderCreateError } from '../lib/orderErrors';
+import { pickCashier, claimNeedsValidation } from '../lib/cashier';
 import { sendError } from '../lib/sendError';
 import { capDiscount } from '../lib/discountPolicy';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -614,6 +615,34 @@ router.post('/', async (req, res) => {
         : 'completed',
     }));
 
+    // A169 — credit the sale to the real cashier, not the owner. Offline sales
+    // push under the owner token (isOwner), so req.userId is the owner; the till
+    // sends the actual cashier as `cashier_id`. Trust that claim only when it
+    // validates like verify-pin (active user in this business with access to
+    // this branch). A staff-PIN token (isOwner:false) stays authoritative.
+    const claimedCashier = req.body?.cashier_id ? String(req.body.cashier_id) : null;
+    let claimValid = false;
+    if (claimNeedsValidation({ isOwner: !!req.isOwner, subject: req.userId ?? null, claimed: claimedCashier })) {
+      const { data: claimRow, error: claimErr } = await supabase
+        .from('users')
+        .select('id, user_branches ( branch_id )')
+        .eq('id', claimedCashier)
+        .eq('business_id', req.businessId)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (!claimErr && claimRow) {
+        const access = ((claimRow as any).user_branches ?? []) as Array<{ branch_id: string }>;
+        // Empty access = all branches (same rule verify-pin applies).
+        claimValid = access.length === 0 || access.some(b => b.branch_id === branch_id);
+      }
+      if (!claimValid) {
+        console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting token subject ${req.userId}`);
+      }
+    }
+    const resolvedCashierId = pickCashier({
+      isOwner: !!req.isOwner, subject: req.userId ?? null, claimed: claimedCashier, claimValid,
+    });
+
     const orderPayload = {
       business_id: req.businessId,
       branch_id,
@@ -636,7 +665,7 @@ router.post('/', async (req, res) => {
       shift_id: resolvedShiftId,
       seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
       idempotency_key: idempotencyKey || crypto.randomUUID(),
-      cashier_id: req.userId ?? null,
+      cashier_id: resolvedCashierId,
       device_id: req.body?.device_id ?? null,
       pump_id:         req.body?.pump_id ? String(req.body.pump_id) : null,
       // Offline sales carry their original timestamp so they book on the day they
@@ -824,7 +853,7 @@ router.post('/', async (req, res) => {
     // 10. Fire webhook — non-blocking
     fireWebhook(req.businessId, 'order.completed', {
       order_id: order.id, order_number: order.order_number,
-      order_type, total: authTotal, branch_id, cashier_id: req.userId,
+      order_type, total: authTotal, branch_id, cashier_id: resolvedCashierId,
     }).catch(() => {});
 
     // Credit sale: post the charge to the customer's account ledger. Limit was

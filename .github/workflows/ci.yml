@@ -503,6 +503,22 @@ jobs:
       - name: Register agrees with itself
         run: node scripts/check-register-consistency.mjs
 
+      # A170: a literal NULL written into a NOT NULL local column throws at
+      # runtime and is invisible to tsc — the A167 class (offline sign-in locked
+      # the till out). The gate parses localDb.ts and flags any such write; the
+      # self-test proves it fires on A167's shape and not on a nullable NULL.
+      - name: No literal NULL into a NOT NULL local column
+        run: |
+          node scripts/check-notnull-writes.mjs
+          node scripts/check-notnull-writes.mjs --self-test
+
+      # A172: rule 19 — the repo root holds no documents/archives but README.md.
+      # The ~140-stray-zips failure mode, made a gate. Config/code in root is fine.
+      - name: Repo root is clean (rule 19)
+        run: |
+          node scripts/check-root-clean.mjs
+          node scripts/check-root-clean.mjs --self-test
+
       # ── Desktop suites that do NOT need Electron ────────────────────────────
       # 92 desktop tests were added on 2026-08-08 and none of them ran here, so
       # the newest and riskiest code on the till — offline sign-in, credentials

@@ -1868,7 +1868,7 @@ export function createLocalOrder(orderPayload: any): string {
       // Built by the SHARED builder so this direct-to-cloud payload and the one
       // the branch node forwards for the same order (A19 relay) are identical —
       // the cloud keeps whichever arrives first, so they must not diverge.
-      buildCloudOrderPayload(orderPayload, { shiftId, deviceId, orderId, createdAt: now }),
+      buildCloudOrderPayload(orderPayload, { shiftId, deviceId, orderId, createdAt: now, cashierId }),
     ), now);
 
     // Keep the exact payload for a faithful reprint from Order History (A94).
