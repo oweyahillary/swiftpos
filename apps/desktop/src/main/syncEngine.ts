@@ -68,6 +68,29 @@ let _refreshToken = '';
 let _staffToken   = '';   // per-shift staff token — used for order push
 let _staffRefresh = '';
 let _isSyncing    = false;
+// A177: when the current sync started, so a wedged _isSyncing can't block forever.
+let _syncStartedAt = 0;
+// A sync running longer than this is presumed wedged and no longer blocks a new
+// pass. Generous: a legitimate pass of many timed-out fetches must not trip it.
+const SYNC_STALE_MS = 3 * 60_000;
+
+// A177: every sync fetch gets a hard timeout. Without one, a connection that
+// opens but never responds — a black-holed socket, a cold-starting host, a proxy
+// that drops the stream — hangs the await forever. Because _isSyncing is cleared
+// only in `finally`, that finally never runs, so EVERY later sync (the 60s flush,
+// the post-sale flush, reconnect, and Force sync) returns "Sync already in
+// progress" and the queue never drains: orders sit pending, 0 attempts, 0 failed,
+// invisible, until the app restarts. A timed-out fetch REJECTS instead, which the
+// existing per-call catch already handles (attempts++, escalate to failed).
+// Env-overridable so tests can use a short timeout.
+const SYNC_FETCH_TIMEOUT_MS = Number(process.env.SYNC_FETCH_TIMEOUT_MS) || 20_000;
+function syncFetch(url: string, opts: any = {}): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(
+    () => ctrl.abort(new Error(`sync fetch timed out after ${SYNC_FETCH_TIMEOUT_MS}ms`)),
+    SYNC_FETCH_TIMEOUT_MS);
+  return globalThis.fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
 // A20: last roster version this peer applied, in-memory. Skips re-wrapping an
 // unchanged roster every pull; on restart it re-applies once, which is harmless.
 let _lastRosterVersion = '';
@@ -159,7 +182,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
   };
 
   const attempt = async (token: string) => {
-    const res = await fetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
+    const res = await syncFetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: token }),
@@ -302,7 +325,7 @@ function persistedStaffRefresh(): string {
 async function doRefreshStaffToken(): Promise<boolean> {
   let refresh = _staffRefresh || persistedStaffRefresh();
   if (!refresh) return false;
-  const attempt = (token: string) => fetch(`${_serverUrl}/api/auth/refresh`, {
+  const attempt = (token: string) => syncFetch(`${_serverUrl}/api/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken: token }),
@@ -338,9 +361,10 @@ async function doRefreshStaffToken(): Promise<boolean> {
 export async function syncAll(): Promise<{ pulled: boolean; pushed: number; errors: string[] }> {
   if (!_accessToken || !_serverUrl) return { pulled: false, pushed: 0, errors: ['Not configured'] };
   if (!isOnline()) return { pulled: false, pushed: 0, errors: ['Offline'] };
-  if (_isSyncing) return { pulled: false, pushed: 0, errors: ['Sync already in progress'] };
+  if (_isSyncing && Date.now() - _syncStartedAt < SYNC_STALE_MS) return { pulled: false, pushed: 0, errors: ['Sync already in progress'] };
 
   _isSyncing = true;
+  _syncStartedAt = Date.now();
   const errors: string[] = [];
   let pulled = false;
   let pushed = 0;
@@ -382,9 +406,10 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
 export async function syncPush(): Promise<{ pushed: number; errors: string[] }> {
   if (!_accessToken || !_serverUrl) return { pushed: 0, errors: ['Not configured'] };
   if (!isOnline()) return { pushed: 0, errors: ['Offline'] };
-  if (_isSyncing) return { pushed: 0, errors: ['Sync already in progress'] };
+  if (_isSyncing && Date.now() - _syncStartedAt < SYNC_STALE_MS) return { pushed: 0, errors: ['Sync already in progress'] };
 
   _isSyncing = true;
+  _syncStartedAt = Date.now();
   const errors: string[] = [];
   let pushed = 0;
   try {
@@ -700,7 +725,7 @@ async function pullCatalogue(): Promise<boolean> {
     // keys the full detail in the server log.
     let res: Awaited<ReturnType<typeof fetch>>;
     try {
-      res = await fetch(initUrl, { headers: authHeaders() });
+      res = await syncFetch(initUrl, { headers: authHeaders() });
     } catch (err: any) {
       noteInboundFailure('sync', `catalogue pull unreachable: ${err?.message ?? err}`);
       return false;
@@ -736,7 +761,7 @@ async function pullCatalogue(): Promise<boolean> {
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
     for (const p of products.filter((p: any) => p.has_variants)) {
-      const vRes = await fetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
+      const vRes = await syncFetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
       if (vRes.ok) {
         const groups = await vRes.json();
         for (const g of groups) {
@@ -747,7 +772,7 @@ async function pullCatalogue(): Promise<boolean> {
     }
 
     for (const p of products.filter((p: any) => p.has_modifiers)) {
-      const mRes = await fetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
+      const mRes = await syncFetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
       if (mRes.ok) {
         const groups = await mRes.json();
         for (const g of groups) {
@@ -759,7 +784,7 @@ async function pullCatalogue(): Promise<boolean> {
 
     // Pull stock levels for this branch
     if (effectiveBranchId) {
-      const sRes = await fetch(`${_serverUrl}/api/inventory?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
+      const sRes = await syncFetch(`${_serverUrl}/api/inventory?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
       if (sRes.ok) {
         const data = await sRes.json();
         stockLevels = data.filter((s: any) => s.id !== null); // exclude unstocked placeholder rows
@@ -770,7 +795,7 @@ async function pullCatalogue(): Promise<boolean> {
     // shift/EOD reports). PULL-DOWN, remote wins. Wrapped so a 403/offline here
     // never aborts the catalogue sync that already succeeded above.
     try {
-      const uRes = await fetch(`${_serverUrl}/api/staff`, { headers: authHeaders() });
+      const uRes = await syncFetch(`${_serverUrl}/api/staff`, { headers: authHeaders() });
       if (uRes.ok) users = await uRes.json();
     } catch { /* non-fatal — attribution falls back to id only */ }
 
@@ -781,7 +806,7 @@ async function pullCatalogue(): Promise<boolean> {
     // table map (an empty successful response legitimately clears it).
     if (effectiveBranchId) {
       try {
-        const tRes = await fetch(`${_serverUrl}/api/tables?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
+        const tRes = await syncFetch(`${_serverUrl}/api/tables?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
         if (tRes.ok) {
           diningTables = await tRes.json();
           tablesFetched = true;
@@ -801,7 +826,7 @@ async function pullCatalogue(): Promise<boolean> {
     // empty successful response legitimately clears it.
     if (effectiveBranchId) {
       try {
-        const puRes = await fetch(`${_serverUrl}/api/pumps?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
+        const puRes = await syncFetch(`${_serverUrl}/api/pumps?branch_id=${effectiveBranchId}`, { headers: authHeaders() });
         if (puRes.ok) {
           pumps = await puRes.json();
           pumpsFetched = true;
@@ -819,7 +844,7 @@ async function pullCatalogue(): Promise<boolean> {
     // refresh must never take the till down — and until migration 44 is applied this
     // endpoint simply 404s, which is expected rather than an error.
     try {
-      const stRes = await fetch(`${_serverUrl}/api/stations`, { headers: authHeaders() });
+      const stRes = await syncFetch(`${_serverUrl}/api/stations`, { headers: authHeaders() });
       if (stRes.ok) {
         stations = await stRes.json();
         console.log(`[sync] print stations: pulled ${stations?.length ?? 0}`);
@@ -1115,7 +1140,7 @@ async function pullCatalogue(): Promise<boolean> {
   // a plain till and is simply ignored.
   if (isNodeRole(getDeviceConfig()?.device_role)) {
     try {
-      const rosterRes = await fetch(`${_serverUrl || getServerUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
+      const rosterRes = await syncFetch(`${_serverUrl || getServerUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
       if (rosterRes.ok) {
         const { branch_id: rBranch, staff } = await rosterRes.json();
         if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);
@@ -1202,7 +1227,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
 
   if (!shifts.length && !floats.length && !expenses.length && !business_days.length) return 0;
 
-  const doPost = () => fetch(`${_serverUrl}/api/sync/push`, {
+  const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
     headers: pushAuthHeaders(),
     body: JSON.stringify({ shifts, floats, expenses, business_days }),
@@ -1371,7 +1396,7 @@ async function pushBranchPriceEdits(errors: string[]): Promise<number> {
   `).all() as { product_id: string; price: number | null; updated_at: string }[];
   if (!edits.length) return 0;
 
-  const doPost = () => fetch(`${_serverUrl}/api/branch-prices/sync`, {
+  const doPost = () => syncFetch(`${_serverUrl}/api/branch-prices/sync`, {
     method: 'POST',
     headers: pushAuthHeaders(),
     body: JSON.stringify({ branch_id: branchId, edits }),
@@ -1435,7 +1460,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 
   for (const row of pending) {
     try {
-      const doPost = () => fetch(`${_serverUrl}/api/orders`, {
+      const doPost = () => syncFetch(`${_serverUrl}/api/orders`, {
         method: 'POST',
         headers: {
           ...pushAuthHeaders(),
@@ -1500,6 +1525,11 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?
       `).run(err.message ?? 'Push failed', row.id);
       errors.push(`Order ${row.order_id}: ${err.message}`);
+      logLine('sync', `order push failed: ${err.message ?? err}`); // A177: push failures now reach the durable log too (were DB-only)
+      // A177: a thrown fetch means the server is unreachable/timed out — the rest
+      // of this batch will fail identically. Stop now rather than burn one full
+      // timeout per remaining order; they retry next pass.
+      break;
     }
   }
 
@@ -1665,7 +1695,7 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
       ? { reason: shift.notes?.trim() || 'Force-closed on terminal; no cash count was taken' }
       : { closing_float: shift.closing_float, notes: shift.notes };
 
-    const doPost = () => fetch(url, {
+    const doPost = () => syncFetch(url, {
       method: 'POST',
       headers: pushAuthHeaders(),
       body: JSON.stringify(body),
