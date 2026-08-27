@@ -1,6 +1,7 @@
 // Local SQLite database — offline-first POS terminal
 import Database from 'better-sqlite3';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 
 // Resolved lazily, NOT at import time.
@@ -621,6 +622,23 @@ function initSchema(db: Database.Database) {
     INSERT INTO schema_version (id, version, applied_at) VALUES (1, ?, ?)
     ON CONFLICT(id) DO UPDATE SET version=excluded.version, applied_at=excluded.applied_at
   `).run(LOCAL_SCHEMA_VERSION, new Date().toISOString());
+
+  // A179: repair expenses minted before the id-generation fix. A prefixed id
+  // (exp_…) is not a valid UUID, so the cloud rejects it (22P02); batched with
+  // shifts/days/floats, one such row blocks ALL of them from syncing. These rows
+  // never synced (the push always 500'd) and nothing references expenses.id, so
+  // regenerating to a UUID is safe and lets the record — and its batch-mates —
+  // finally push. Idempotent: after the fix there are no non-UUID ids to match.
+  try {
+    const bad = db.prepare(
+      `SELECT id FROM expenses WHERE sync_status='pending' AND id NOT GLOB '*-*-*-*-*'`
+    ).all() as { id: string }[];
+    if (bad.length) {
+      const fix = db.prepare(`UPDATE expenses SET id=? WHERE id=?`);
+      for (const r of bad) fix.run(randomUUID(), r.id);
+      console.log(`[localDb] A179: regenerated ${bad.length} non-UUID expense id(s) so the sync batch can push`);
+    }
+  } catch (e) { /* non-fatal — never block startup on a repair */ }
 
   migrateColumns(db, 'orders', [
     // Diners on the bill, for Average Per Cover. Postgres has had this since the

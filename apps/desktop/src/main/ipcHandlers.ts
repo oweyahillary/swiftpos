@@ -1823,7 +1823,9 @@ export function registerIpcHandlers() {
     if (!session?.business_id) throw new Error('No active session');
     if (!staff?.branch_id)     throw new Error('No staff session');
 
-    const id = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const id = uuid();   // A179: MUST be a UUID — the cloud expenses.id is uuid; a
+                         // prefixed id (exp_…) fails 22P02 and, batched with shifts/
+                         // days/floats, blocks ALL of them from syncing.
     const now = new Date().toISOString();
 
     db.prepare(`
