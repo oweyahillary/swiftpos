@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     status:       ()              => ipcRenderer.invoke('tech:status'),
     adoptFromNode:()              => ipcRenderer.invoke('tech:adoptFromNode'),
     query:        (sql: string)   => ipcRenderer.invoke('tech:query', { sql }),
+    testConnection: ()            => ipcRenderer.invoke('tech:testConnection'),
+    logTail:      (lines?: number)=> ipcRenderer.invoke('tech:logTail', { lines }),
     backupNow:    ()              => ipcRenderer.invoke('tech:backupNow'),
     maintenance:  ()              => ipcRenderer.invoke('tech:maintenance'),
     promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),

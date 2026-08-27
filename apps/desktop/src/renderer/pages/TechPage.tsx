@@ -142,6 +142,24 @@ export default function TechPage({ onExit }: Props) {
     setStatus(await posApi.tech.status().catch(() => null));
   });
 
+  // A178: a REAL reachability probe (reaches the server), not the net.isOnline() badge.
+  const [conn, setConn] = useState<{ ok: boolean; status: number | null; ms: number; error?: string } | null>(null);
+  const testConn = () => runDiag('Connection test', async () => {
+    setConn(null);
+    const r = await posApi.tech.testConnection();
+    await posApi.tech.logAction('tech.connection.test', { ok: r.ok, status: r.status, ms: r.ms });
+    setConn(r);
+    setMsg(r.ok ? `Reachable — HTTP ${r.status ?? '—'} in ${r.ms}ms` : `Unreachable in ${r.ms}ms: ${r.error ?? 'no response'}`);
+  });
+
+  // A178: read the durable log on the device instead of hunting for %APPDATA%.
+  const [log, setLog] = useState<string | null>(null);
+  const viewLog = () => runDiag('Read log', async () => {
+    const r = await posApi.tech.logTail(200);
+    setLog(r.text || '(log is empty)');
+  });
+  const copyLog = async () => { try { await navigator.clipboard.writeText(log ?? ''); setMsg('Log copied'); } catch { setMsg('Copy failed'); } };
+
   const remaining = session ? session.expiresAt - now : 0;
   const dev = status?.device;
   const sync = status?.sync;
@@ -193,6 +211,17 @@ export default function TechPage({ onExit }: Props) {
               <div className="text-[10px] text-gray-300 uppercase tracking-wide">Online</div>
             </div>
           </div>
+          {(sync?.pending ?? 0) > 0 && sync?.breakdown && (
+            <p className="text-[11px] text-gray-400 -mt-2 mb-3">
+              {[
+                sync.breakdown.orders   ? `${sync.breakdown.orders} order` : '',
+                sync.breakdown.shifts   ? `${sync.breakdown.shifts} shift` : '',
+                sync.breakdown.days     ? `${sync.breakdown.days} day` : '',
+                sync.breakdown.floats   ? `${sync.breakdown.floats} float` : '',
+                sync.breakdown.expenses ? `${sync.breakdown.expenses} expense` : '',
+              ].filter(Boolean).join(' · ')} waiting to push
+            </p>
+          )}
           <div className="flex gap-2">
             <button onClick={forceSync} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Force sync</button>
             <button onClick={retryFailed} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Retry failed</button>
@@ -204,7 +233,26 @@ export default function TechPage({ onExit }: Props) {
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Diagnostics</h2>
           <div className="flex gap-2">
             <button onClick={testPrinters} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Scan printers</button>
+            <button onClick={testConn} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Test connection</button>
+            <button onClick={viewLog} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">View log</button>
           </div>
+          {conn && (
+            <p className={`text-[11px] mt-3 ${conn.ok ? 'text-green-400' : 'text-red-400'}`}>
+              {conn.ok ? `Server reachable — HTTP ${conn.status ?? '—'} in ${conn.ms}ms` : `Server UNREACHABLE in ${conn.ms}ms — ${conn.error ?? 'no response'} (the "Online" badge only means this machine has a network, not that it can reach the server)`}
+            </p>
+          )}
+          {log !== null && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] text-gray-400">Last 200 log lines</span>
+                <div className="flex gap-2">
+                  <button onClick={copyLog} className="text-[11px] text-gray-300 hover:text-white underline">Copy</button>
+                  <button onClick={() => setLog(null)} className="text-[11px] text-gray-300 hover:text-white underline">Hide</button>
+                </div>
+              </div>
+              <pre className="bg-[#0a0f1a] border border-[#1e293b] rounded-lg p-2 text-[10px] text-gray-300 max-h-64 overflow-auto whitespace-pre-wrap">{log}</pre>
+            </div>
+          )}
           {/* Mode switch (offline<->web) lands in step 5 — placeholder so the slot is visible. */}
           <p className="text-[11px] text-gray-400 mt-3">Mode switch (offline ↔ web) arrives with the sync bridge.</p>
         </section>

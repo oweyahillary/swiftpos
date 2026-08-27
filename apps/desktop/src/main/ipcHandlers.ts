@@ -26,7 +26,7 @@ import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCach
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
@@ -2120,8 +2120,29 @@ export function registerIpcHandlers() {
         deploy_mode: cfg?.deploy_mode ?? null, server_url: cfg?.server_url ?? null,
         node_url: cfg?.node_url ?? null,
       },
-      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder },
+      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder, breakdown: sync.pendingBreakdown },
     };
+  });
+
+  // A178: a REAL reachability probe — reaches the configured server and reports
+  // the round-trip, unlike the "ONLINE" badge which is only net.isOnline().
+  ipcMain.handle('tech:testConnection', async () => {
+    return testConnection();
+  });
+
+  // A178: tail the durable log so a tech can read it on the device without
+  // hunting for %APPDATA%. Read-only; last N lines; never exposes tokens because
+  // the log itself never records them.
+  ipcMain.handle('tech:logTail', async (_event, arg?: { lines?: number }) => {
+    const lines = Math.min(Math.max(arg?.lines ?? 200, 1), 2000);
+    try {
+      const p = getSyncStatus().logPath;
+      if (!p || !fs.existsSync(p)) return { path: p ?? null, text: '' };
+      const all = fs.readFileSync(p, 'utf8').split(/\r?\n/);
+      return { path: p, text: all.slice(-lines).join('\n') };
+    } catch (err: any) {
+      return { path: null, text: `could not read log: ${err?.message ?? err}` };
+    }
   });
 
   // ── Manager branch-wide report ──────────────────────────────────────────────

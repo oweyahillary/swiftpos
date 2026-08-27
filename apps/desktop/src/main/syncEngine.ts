@@ -358,6 +358,48 @@ async function doRefreshStaffToken(): Promise<boolean> {
 
 // ── Public API ───────────────────────────────────────────────
 
+// A178: run each push stage independently so a throw in one — a schema error in a
+// SELECT, a node timeout — can NEVER skip the others. The order push in particular
+// must not be gated behind the shift push (that coupling is how 6 cash records
+// could sit pending while orders were fine, or vice versa). Each stage already
+// handles its own expected failures; this is the backstop for an unexpected throw.
+async function runPushStages(errors: string[]): Promise<number> {
+  let orders = 0;
+  const stage = async <T>(name: string, fn: () => Promise<T>): Promise<T | 0> => {
+    try { return await fn(); }
+    catch (err: any) {
+      errors.push(`${name}: ${err?.message ?? err}`);
+      logLine('sync', `${name} stage threw: ${err?.message ?? err}`);
+      return 0;
+    }
+  };
+  await stage('shift push', () => pushLocalRecords(errors));
+  await stage('price push', () => pushBranchPriceEdits(errors));
+  orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
+  await stage('reconcile', () => reconcileClosedShifts(errors));
+  await stage('node push', () => pushToNode(errors));
+  return orders;
+}
+
+// A178: a REAL reachability probe the tech screen can run. Unlike the "ONLINE"
+// badge (which is only net.isOnline() — "this machine has a network"), this
+// actually reaches the configured server and reports the round-trip. Uses the
+// same timeout as every other sync fetch.
+export async function testConnection(): Promise<{ ok: boolean; status: number | null; ms: number; error?: string }> {
+  const url = `${_serverUrl || getServerUrl()}/api/health`;
+  const t0 = Date.now();
+  try {
+    const res = await syncFetch(url, { method: 'GET' });
+    const ms = Date.now() - t0;
+    logLine('sync', `connection test: HTTP ${res.status} in ${ms}ms`);
+    return { ok: res.ok || res.status === 401 || res.status === 404, status: res.status, ms };
+  } catch (err: any) {
+    const ms = Date.now() - t0;
+    logLine('sync', `connection test FAILED in ${ms}ms: ${err?.message ?? err}`);
+    return { ok: false, status: null, ms, error: err?.message ?? String(err) };
+  }
+}
+
 export async function syncAll(): Promise<{ pulled: boolean; pushed: number; errors: string[] }> {
   if (!_accessToken || !_serverUrl) return { pulled: false, pushed: 0, errors: ['Not configured'] };
   if (!isOnline()) return { pulled: false, pushed: 0, errors: ['Offline'] };
@@ -387,11 +429,7 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     // lets a cashier-only till pick up a freshly-generated/backfilled reveal code.
     // Best-effort — a failure here must never affect the sync result.
     try { await refreshTechConfig(_accessToken); } catch { /* non-fatal */ }
-    await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
-    await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
-    pushed = await pushPendingOrders(errors);
-    await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
-    await pushToNode(errors);            // branch LAN replica — independent destination
+    pushed = await runPushStages(errors);
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -413,11 +451,7 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
   const errors: string[] = [];
   let pushed = 0;
   try {
-    await pushLocalRecords(errors);     // shifts/floats/expenses first (FK parents)
-    await pushBranchPriceEdits(errors); // manager's branch-price edits (independent)
-    pushed = await pushPendingOrders(errors);
-    await reconcileClosedShifts(errors); // close server-side now this shift's orders are in (C6)
-    await pushToNode(errors);            // branch LAN replica — independent destination
+    pushed = await runPushStages(errors);
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -428,6 +462,8 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
 
 export function getSyncStatus(): {
   online: boolean; pendingCount: number; failedCount: number;
+  /** A178: the pending count split by table, so the tech screen shows what's stuck. */
+  pendingBreakdown?: { orders: number; shifts: number; floats: number; expenses: number; days: number };
   /** Why the failed ones failed. A count alone gives the cashier nothing to act on. */
   failedReason?: string;
   failedSince?: string;
@@ -478,17 +514,21 @@ export function getSyncStatus(): {
   // placeholders in one statement is how the wrong value ends up in the wrong
   // subquery.
   const ownDevice = getDeviceConfig()?.device_id ?? null;
-  const localPending = db.prepare(`
+  // A178: break the count down by table, so the tech screen can show WHAT is
+  // pending ("2 shifts, 2 days, 1 float, 1 expense") instead of a bare "6".
+  const bd = db.prepare(`
     SELECT
-      (SELECT COUNT(*) FROM shifts             WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
-      (SELECT COUNT(*) FROM float_transactions WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
-      (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
-      (SELECT COUNT(*) FROM business_days      WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS count
-  `).get({ dev: ownDevice }) as { count: number };
+      (SELECT COUNT(*) FROM shifts             WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS shifts,
+      (SELECT COUNT(*) FROM float_transactions WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS floats,
+      (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS expenses,
+      (SELECT COUNT(*) FROM business_days      WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS days
+  `).get({ dev: ownDevice }) as { shifts: number; floats: number; expenses: number; days: number };
+  const localPending = { count: bd.shifts + bd.floats + bd.expenses + bd.days };
   return {
     online: isOnline(),
     pendingCount: pending.count + localPending.count,
     failedCount: failed.count,
+    pendingBreakdown: { orders: pending.count, shifts: bd.shifts, floats: bd.floats, expenses: bd.expenses, days: bd.days },
     failedReason: failureRow?.last_error ?? undefined,
     failedSince: failureRow?.since ?? undefined,
     pullError: currentInboundFailure()?.message ?? undefined,
@@ -1241,7 +1281,9 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      errors.push(`Shift sync: ${describeServerError(err, res.status)}`);
+      const msg = describeServerError(err, res.status);
+      errors.push(`Shift sync: ${msg}`);
+      logLine('sync', `shift push rejected (HTTP ${res.status}): ${msg}`); // A178: was DB/errors-only — invisible in the log
       return 0;   // leave rows pending — they retry next pass
     }
     const body = await res.json().catch(() => ({} as any));
@@ -1374,9 +1416,12 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       for (const e of expenses)      if (!rejectedByTable.expenses.has(e.id))           markExp.run(e.id);
       for (const d of business_days) if (!rejectedByTable.business_days.has(d.id))      markDay.run(d.id);
     })();
-    return shifts.length + floats.length + expenses.length + business_days.length;
+    const pushedCount = shifts.length + floats.length + expenses.length + business_days.length;
+    if (pushedCount) logLine('sync', `pushed ${pushedCount} cash record(s): ${shifts.length} shift, ${floats.length} float, ${expenses.length} expense, ${business_days.length} day`); // A178
+    return pushedCount;
   } catch (err: any) {
     errors.push(`Shift sync: ${err.message}`);
+    logLine('sync', `shift push failed: ${err?.message ?? err}`); // A178: network/schema throw was invisible in the log
     return 0;
   }
 }
@@ -1410,16 +1455,20 @@ async function pushBranchPriceEdits(errors: string[]): Promise<number> {
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      errors.push(`Price sync: ${describeServerError(err, res.status)}`);
+      const msg = describeServerError(err, res.status);
+      errors.push(`Price sync: ${msg}`);
+      logLine('sync', `price push rejected (HTTP ${res.status}): ${msg}`); // A178
       return 0;   // leave rows unsynced — they retry next pass
     }
     const { applied } = await res.json() as { applied: string[] };
     // Only mark the products the server actually applied.
     const mark = db.prepare(`UPDATE local_price_edits SET synced = 1 WHERE product_id = ? AND synced = 0`);
     db.transaction(() => { for (const pid of (applied ?? [])) mark.run(pid); })();
+    if ((applied ?? []).length) logLine('sync', `pushed ${(applied ?? []).length} price edit(s)`); // A178
     return (applied ?? []).length;
   } catch (err: any) {
     errors.push(`Price sync: ${err.message}`);
+    logLine('sync', `price push failed: ${err?.message ?? err}`); // A178
     return 0;
   }
 }
@@ -1533,6 +1582,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
     }
   }
 
+  if (pushed) logLine('sync', `pushed ${pushed} order(s) to the cloud`); // A178: confirms the queue is draining
   return pushed;
 }
 

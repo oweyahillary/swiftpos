@@ -304,6 +304,8 @@ declare global {
           | { ok: true; result: { columns: string[]; rows: unknown[][]; rowCount: number;
                                   truncated: boolean; maskedColumns: string[] } }
           | { ok: false; error: string }>;
+        testConnection: () => Promise<{ ok: boolean; status: number | null; ms: number; error?: string }>;
+        logTail: (lines?: number) => Promise<{ path: string | null; text: string }>;
       };
       shift: {
         // A shift left open past ~18 hours. Null when there is none, or when
