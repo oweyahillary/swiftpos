@@ -86,9 +86,16 @@ const localDbShim = w('localDb.cjs', `module.exports = { getLocalDb: () => globa
 const logFileShim = w('logFile.cjs', `
   global.__logs = [];
   module.exports = { logLine: (s, m) => global.__logs.push('[' + s + '] ' + m), getLogPath: () => 'x', describeResponse: async () => '' };`);
+// A17 — pinCache reads getDeviceConfig()?.node_url to decide whether the cache
+// time-expires (standalone) or never expires (node-configured). This shim was
+// missing, so the real deviceConfig ran against a DB with no device_config table
+// and every offline-verify test threw "no such table". Default: standalone.
+const deviceConfigShim = w('deviceConfig.cjs',
+  `module.exports = { getDeviceConfig: () => (global.__deviceConfig ?? { node_url: null }) };`);
+global.__deviceConfig = { node_url: null };
 
 global.__db = db;
-const map = { electron: electronShim, './localDb': localDbShim, './logFile': logFileShim };
+const map = { electron: electronShim, './localDb': localDbShim, './logFile': logFileShim, './deviceConfig': deviceConfigShim };
 const origResolve = Module._resolveFilename;
 Module._resolveFilename = function (req, parent, ...rest) {
   if (req === 'electron') return map.electron;
@@ -194,6 +201,20 @@ check('an EXPIRED cache refuses even with the correct PIN', () => {
   assert.strictEqual(v.ok, false);
   assert.strictEqual(v.reason, 'expired',
     'a till off the network for a fortnight must stop being a way in');
+  db.prepare(`UPDATE staff_pin_cache SET cached_at = ?`).run(new Date().toISOString());
+});
+
+check('a NODE-configured till does NOT expire the cache (A17)', () => {
+  // Same fortnight-old credential that was refused above; with a node_url set,
+  // the TTL must not apply — a remote site on its node is revoked by the roster,
+  // not by a clock ("an expiry date is a time bomb").
+  global.__deviceConfig = { node_url: 'http://node.local:4000' };
+  const old = new Date(Date.now() - (pin.PIN_CACHE_TTL_DAYS + 30) * 86400000).toISOString();
+  db.prepare(`UPDATE staff_pin_cache SET cached_at = ?`).run(old);
+  const v = pin.verifyPinOffline('1234', BR);
+  assert.strictEqual(v.ok, true, 'a node-configured till must not be locked out by the TTL');
+  // restore standalone + freshness for the remaining tests
+  global.__deviceConfig = { node_url: null };
   db.prepare(`UPDATE staff_pin_cache SET cached_at = ?`).run(new Date().toISOString());
 });
 
