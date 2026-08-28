@@ -44,14 +44,16 @@
     "test:devicetoken": "node test/device-token-refresh.test.mjs",
     "test:idlelock": "node test/idle-lock.test.mjs",
     "test:failover:electron": "node test/run-under-electron.mjs test/failover-cursors.test.mjs",
-    "test:desktop": "npx tsc -b tsconfig.main.json --force && npm run test:log && npm run test:sync && npm run test:synctimeout && npm run test:syncdecouple && npm run test:expenseid && npm run test:refbundle && npm run test:refunpack && npm run test:peerrelay && npm run test:roster && npm run test:held:electron && npm run test:pin:electron && npm run test:token:electron && npm run test:failover:electron && npm run test:managefetch && npm run test:devicetoken && npm run test:idlelock",
+    "test:desktop": "npx tsc -b tsconfig.main.json --force && npm run test:log && npm run test:sync && npm run test:synctimeout && npm run test:syncdecouple && npm run test:expenseid && npm run test:order409 && npm run test:macfp && npm run test:refbundle && npm run test:refunpack && npm run test:peerrelay && npm run test:roster && npm run test:held:electron && npm run test:pin:electron && npm run test:token:electron && npm run test:failover:electron && npm run test:managefetch && npm run test:devicetoken && npm run test:idlelock",
     "test:pin": "node test/pinCache.test.mjs",
     "test:pin:electron": "node test/run-under-electron.mjs test/pinCache.test.mjs",
     "test:token": "node test/tokenStore.test.mjs",
     "test:token:electron": "node test/run-under-electron.mjs test/tokenStore.test.mjs",
     "test:synctimeout": "node test/sync-timeout.test.mjs",
     "test:syncdecouple": "node test/sync-decouple.test.mjs",
-    "test:expenseid": "node test/expense-id-repair.test.mjs"
+    "test:expenseid": "node test/expense-id-repair.test.mjs",
+    "test:order409": "node test/order-409-not-synced.test.mjs",
+    "test:macfp": "node test/machine-fingerprint.test.mjs"
   },
   "dependencies": {
     "@swiftpos/printing": "file:../../shared/printing",

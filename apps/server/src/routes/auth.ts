@@ -35,7 +35,7 @@
  */
 
 import { Router }   from 'express';
-import { registerDesktopTerminal } from '../lib/deviceRegistry';
+import { registerDesktopTerminal, findPriorTerminalByMac } from '../lib/deviceRegistry';
 import { generateDeviceSecret, hashDeviceSecret, verifyDeviceSecret, isDeviceGrantable, buildDeviceTokenPayload } from '../lib/deviceGrant';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -778,6 +778,7 @@ router.post('/enrol/redeem', async (req, res) => {
     terminalCode: req.body?.terminal_code ?? null,
     ipAddress:    req.ip ?? null,
     role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+    macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
   });
 
   const pv = await getPermissionsVersion(ownerId);
@@ -812,6 +813,16 @@ router.post('/enrol/redeem', async (req, res) => {
     if (!secErr) deviceSecret = raw;
   } catch { /* additive; enrolment succeeds without a grant secret */ }
 
+  // A182: if this machine's MAC was seen before at this business (a reinstall),
+  // hand back the previous terminal code/name so the till can restore its identity
+  // instead of being re-named "T1" and colliding (A181). Best-effort hint only.
+  let restore: { terminal_code: string | null; device_label: string | null } | null = null;
+  try {
+    const mac = String(req.headers['x-device-mac'] ?? req.body?.mac_address ?? '');
+    const prior = mac ? await findPriorTerminalByMac(businessId, mac, deviceId) : null;
+    if (prior) restore = { terminal_code: prior.terminal_code, device_label: prior.device_label };
+  } catch { /* additive — enrolment must not fail over the hint */ }
+
   res.json({
     accessToken,
     refreshToken,
@@ -821,6 +832,7 @@ router.post('/enrol/redeem', async (req, res) => {
     businessId,
     branchId: (burned as any).branch_id ?? null,
     deviceSecret,                        // A164 — store this on the device; null if not issued
+    restore,                             // A182 — { terminal_code, device_label } to reuse, or null
   });
 });
 
@@ -1438,6 +1450,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
       terminalCode: req.body?.terminal_code ?? null,
       ipAddress:    req.ip ?? null,
       role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+      macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
     });
   }
   const pv = matchedUser.permissions_version ?? 1;

@@ -12,6 +12,7 @@
 //   sync:trigger      → run syncAll()
 //   sync:status       → return { online, pendingCount }
 
+import { getMacAddressCached } from './machineFingerprint';
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
@@ -96,6 +97,9 @@ export function registerIpcHandlers() {
         // Same stable per-install device_id the login path sends, so the server
         // records THIS terminal and tells it apart from the rest of the fleet.
         device_id:   getDeviceConfig()?.device_id ?? undefined,
+        // A182: the machine's stable MAC, so if this box was enrolled before (a
+        // reinstall) the server can hand back its previous terminal code/name.
+        mac_address: getMacAddressCached() ?? undefined,
       }),
     });
 
@@ -125,6 +129,18 @@ export function registerIpcHandlers() {
     writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
 
     if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
+
+    // A182: if the server recognised this machine (same MAC as a prior install),
+    // restore its previous terminal code + name so a reinstalled till comes back
+    // as itself instead of a blank "new till" that gets re-named T1 and collides
+    // (A181). Only fills gaps — never overwrites a code the operator has set here.
+    if (data.restore && (data.restore.terminal_code || data.restore.device_label)) {
+      const cfg = getDeviceConfig();
+      const patch: Record<string, unknown> = {};
+      if (data.restore.terminal_code && !cfg?.terminal_code) patch.terminal_code = String(data.restore.terminal_code);
+      if (data.restore.device_label && !cfg?.device_name)   patch.device_name   = String(data.restore.device_label);
+      if (Object.keys(patch).length) { saveDeviceConfig(patch); logLine('enrol', `restored identity from a prior install: ${JSON.stringify(patch)}`); }
+    }
 
     configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
     refreshTechConfig(data.token).catch(() => {});

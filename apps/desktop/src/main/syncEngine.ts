@@ -11,6 +11,7 @@
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
+import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
@@ -301,6 +302,11 @@ function pushAuthHeaders() {
     // was a claim until migration 52 gave the server something to check it
     // against.
     'X-Device-Role': getDeviceConfig()?.device_role ?? '',
+    // A182: a stable machine MAC so the cloud can bind terminal identity to the
+    // physical box, and hand a reinstalled till its old terminal code/name back
+    // instead of a blank slate that gets re-named "T1" and collides (A181). A
+    // hint, never a credential — device_id stays the hard key.
+    ...(getMacAddressCached() ? { 'X-Device-Mac': getMacAddressCached() as string } : {}),
   };
 }
 
@@ -1550,10 +1556,23 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         markSynced(row.id, row.order_id);
         pushed++;
       } else if (res.status === 409) {
-        // Defensive: some deployments may signal an existing record with 409.
-        // That still means the server holds the order — treat as synced.
-        markSynced(row.id, row.order_id);
-        pushed++;
+        // A181: a 409 is the server refusing an order-NUMBER collision — a
+        // DIFFERENT order already holds this (business, branch, order_number)
+        // (orders.ts). It does NOT mean the server has THIS order. The old
+        // "treat as synced" here SILENTLY LOST every order whose number collided
+        // — e.g. a second till/install reusing T1--N over numbers an earlier till
+        // already put on the cloud. Surface it (escalate to 'failed', log it) so
+        // it is visible and can be recovered with a non-colliding number, instead
+        // of a sale that reads synced on the till and is absent from the cloud.
+        const err = await res.json().catch(() => ({} as any));
+        const message = (err as any)?.error
+          || 'order number already exists on the cloud (another till/session) — NOT stored';
+        db.prepare(`
+          UPDATE sync_queue SET attempts=attempts+1, last_error=?,
+          status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?
+        `).run(message, row.id);
+        errors.push(`Order ${row.order_id}: ${message}`);
+        logLine('sync', `order push rejected (409): ${message}`);
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         const message = describeServerError(err, res.status);
