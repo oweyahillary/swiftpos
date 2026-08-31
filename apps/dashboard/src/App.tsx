@@ -42,6 +42,7 @@ const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileT
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
+const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
 const CustomersPage           = lazy(() => import('./pages/crm/CustomersPage'));
 const CreditAccountsPage      = lazy(() => import('./pages/customers/CreditAccountsPage'));
@@ -123,6 +124,7 @@ export default function App() {
                       <Route path="pos"                       element={<POSPage />} />
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
+                      <Route path="orders"                    element={<OrdersPage />} />
                       <Route path="open-drawers"              element={<OpenShiftsPage />} />
                       <Route path="terminals"                 element={<Navigate to="/dashboard/settings/devices/terminals" replace />} />
                       <Route path="customers"                 element={<CustomersPage currency="KES" />} />

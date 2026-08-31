@@ -136,6 +136,7 @@ const NAV: NavEntry[] = [
   {
     label: 'Finance', icon: 'finance',
     items: [
+      { to: '/dashboard/orders',   label: 'Orders',   icon: 'reports' },
       { to: '/dashboard/expenses', label: 'Expenses', icon: 'expenses' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: 'reports' },
       // Table Turnover moved out of Settings — it is a report, not configuration.
