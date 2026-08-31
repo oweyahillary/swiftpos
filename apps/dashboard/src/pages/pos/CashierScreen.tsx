@@ -895,11 +895,12 @@ export default function CashierScreen() {
         }
       ` : `
         [data-pos-theme="dark"] {
-          --pos-bg: #0f172a; --pos-panel: #1e293b; --pos-surface: #0f172a;
-          --pos-border: #334155; --pos-border-l: #1e293b;
-          --pos-text: #f1f5f9; --pos-text2: #e2e8f0; --pos-text3: #94a3b8; --pos-text4: #64748b;
-          --pos-input: #0f172a; --pos-input-border: #334155;
-          --pos-card: #1e293b; --pos-modal: #1e293b;
+          /* A185: desktop-till palette — gray-950/900/800 (was slate). */
+          --pos-bg: #030712; --pos-panel: #111827; --pos-surface: #1f2937;
+          --pos-border: #1f2937; --pos-border-l: #111827;
+          --pos-text: #ffffff; --pos-text2: #e5e7eb; --pos-text3: #9ca3af; --pos-text4: #6b7280;
+          --pos-input: #1f2937; --pos-input-border: #374151;
+          --pos-card: #111827; --pos-modal: #111827;
           --pos-free-bg: linear-gradient(160deg,#0d2d1a 0%,#0a2016 100%);
           --pos-free-border: rgba(34,197,94,0.35);
           --pos-free-shadow: 0 4px 0 rgba(0,0,0,0.5),0 8px 20px rgba(0,0,0,0.3),inset 0 1px 0 rgba(34,197,94,0.15);
@@ -1281,7 +1282,7 @@ export default function CashierScreen() {
                       ...s.catBtn,
                       ...(activeCategory === cat.id
                         ? {
-                            background: (cat as Category).color ?? '#3b82f6',
+                            background: (cat as Category).color ?? '#22c55e',
                             color: '#fff',
                             borderColor: 'transparent',
                           }
@@ -2315,14 +2316,14 @@ const s: Record<string, React.CSSProperties> = {
   },
   spinnerLg: {
     width: 36, height: 36, border: '3px solid var(--pos-border)',
-    borderTopColor: '#3b82f6', borderRadius: '50%',
+    borderTopColor: '#22c55e', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   // Header — always dark for POS readability
   header: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '0 20px', height: 56, background: '#1e293b',
-    borderBottom: '1px solid #334155', flexShrink: 0, gap: 16,
+    padding: '0 20px', height: 56, background: '#111827',
+    borderBottom: '1px solid #1f2937', flexShrink: 0, gap: 16,
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 },
   logoMark: { fontSize: 20 },
@@ -2333,9 +2334,9 @@ const s: Record<string, React.CSSProperties> = {
     gap: 8, overflowX: 'auto' as const,
   },
   modeBadge: {
-    padding: '3px 10px', background: 'rgba(59,130,246,0.15)',
-    border: '1px solid rgba(59,130,246,0.3)', borderRadius: 20,
-    color: '#93c5fd', fontSize: 11, fontWeight: 600, flexShrink: 0,
+    padding: '3px 10px', background: 'rgba(34,197,94,0.12)',
+    border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20,
+    color: '#4ade80', fontSize: 11, fontWeight: 600, flexShrink: 0,
   },
   parkedBadge: {
     display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px',
@@ -2343,7 +2344,7 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8', fontSize: 12, cursor: 'pointer', flexShrink: 0,
   },
   parkedBadgeActive: {
-    background: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6', color: '#60a5fa',
+    background: 'rgba(34,197,94,0.12)', borderColor: '#22c55e', color: '#4ade80',
   },
   parkedCount: {
     background: '#475569', borderRadius: 10, padding: '0 5px',
@@ -2423,10 +2424,10 @@ const s: Record<string, React.CSSProperties> = {
   },
   activeTablePill: {
     display: 'flex', alignItems: 'center', gap: 8,
-    background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)',
-    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: '#93c5fd', fontWeight: 600,
+    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
+    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: '#4ade80', fontWeight: 600,
   },
-  coversPill: { fontSize: 11, color: '#60a5fa' },
+  coversPill: { fontSize: 11, color: '#4ade80' },
   productHeader: { padding: '10px 16px 8px', flexShrink: 0, background: 'var(--pos-panel)' },
   searchInput: {
     width: '100%', background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)',
@@ -2445,20 +2446,20 @@ const s: Record<string, React.CSSProperties> = {
   },
   productGrid: {
     flex: 1, overflowY: 'auto' as const, padding: 12,
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-    gap: 10, alignContent: 'start', background: 'var(--pos-bg)',
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+    gap: 12, alignContent: 'start', background: 'var(--pos-bg)',
   },
   productCard: {
     position: 'relative' as const, background: 'var(--pos-panel)', border: '1px solid var(--pos-border)',
-    borderRadius: 12, padding: 10, cursor: 'pointer', textAlign: 'center' as const,
+    borderRadius: 12, padding: 10, cursor: 'pointer', textAlign: 'left' as const,
     transition: 'all 0.15s ease', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', gap: 5,
+    alignItems: 'stretch', gap: 5,
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
-  productCardActive: { border: '1px solid rgba(59,130,246,0.5)', background: 'rgba(59,130,246,0.06)' },
+  productCardActive: { border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.06)' },
   cartBadge: {
-    position: 'absolute' as const, top: 6, right: 6, background: '#3b82f6',
-    color: '#fff', fontSize: 10, fontWeight: 700, width: 18, height: 18,
+    position: 'absolute' as const, top: 6, right: 6, background: '#22c55e',
+    color: '#030712', fontSize: 10, fontWeight: 700, width: 18, height: 18,
     borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   variantBadge: {
@@ -2469,7 +2470,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   fuelBadge: { position: 'absolute' as const, top: 6, left: 6, fontSize: 12 },
   productImage: {
-    width: 64, height: 64, borderRadius: 8, background: 'var(--pos-surface)',
+    width: '100%', height: 76, borderRadius: 8, background: 'var(--pos-surface)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   productName: { fontSize: 12, fontWeight: 600, color: 'var(--pos-text)', lineHeight: 1.3 },
@@ -2480,7 +2481,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   // Right panel
   rightPanel: {
-    width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column',
+    width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column',
     background: 'var(--pos-panel)', borderLeft: '1px solid var(--pos-border)',
     transition: 'width 0.2s ease',
   },
@@ -2609,7 +2610,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '7px 14px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)',
     borderRadius: 8, cursor: 'pointer', transition: 'all 0.12s ease',
   },
-  variantOptionSelected: { background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6' },
+  variantOptionSelected: { background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e' },
   variantOptionName: { fontSize: 13, color: 'var(--pos-text)', fontWeight: 500 },
   variantOptionPrice: { fontSize: 11, color: '#22c55e', fontWeight: 600 },
   variantTotal: {
