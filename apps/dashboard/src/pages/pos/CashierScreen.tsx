@@ -298,6 +298,10 @@ export default function CashierScreen() {
   const [discountState, setDiscountState] = useState<DiscountState | null>(null);
   const [activePromos, setActivePromos]   = useState<ActivePromo[]>([]);
   const [floorMode, setFloorMode]         = useState(true);
+  // A188: only use the absolute-positioned floor plan when tables actually carry a
+  // saved layout. Without it every tile falls back to (40,40) and stacks into one
+  // box — the desktop TablesView guards this the same way (hasLayout → grid).
+  const hasLayout = tables.some((t: Table) => t.pos_x != null && t.pos_y != null);
   const [loyaltyState, setLoyaltyState] = useState<LoyaltyState | null>(null);
 
   // ── Theme — light is default for POS ──────────────────────────────────────
@@ -1048,7 +1052,7 @@ export default function CashierScreen() {
                     <span style={{ ...s.legendDot, background: '#22c55e' }} /> Free
                     <span style={{ ...s.legendDot, background: '#f59e0b' }} /> Occupied
                   </span>
-                  <div style={{ display: 'flex', background: 'var(--pos-surface)', borderRadius: 8, padding: 2, gap: 2, border: '1px solid var(--pos-border)' }}>
+                  <div style={{ display: 'flex', background: 'var(--pos-surface)', borderRadius: 8, padding: 2, gap: 2, border: '1px solid var(--pos-border)', visibility: hasLayout ? 'visible' : 'hidden' }}>
                     {[{ id: true, label: '⊞ Floor' }, { id: false, label: '▦ Grid' }].map(v => (
                       <button key={String(v.id)} onClick={() => setFloorMode(v.id)}
                         style={{
@@ -1065,8 +1069,8 @@ export default function CashierScreen() {
               </div>
               {tables.length === 0 ? (
                 <div style={s.emptySlots}>No tables configured. Add tables in Setup → Restaurant Setup.</div>
-              ) : floorMode ? (
-                /* Floor plan view */
+              ) : floorMode && hasLayout ? (
+                /* Floor plan view — only when tables carry a saved layout */
                 <div style={{ overflowX: 'auto', overflowY: 'auto', flex: 1 }}>
                   <div style={{ position: 'relative', width: FLOOR_W, height: FLOOR_H, background: '#0a0f1a', borderRadius: 12, flexShrink: 0 }}>
                     {tables.map(table => {
