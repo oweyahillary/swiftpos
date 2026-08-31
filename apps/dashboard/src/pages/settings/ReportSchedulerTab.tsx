@@ -24,6 +24,8 @@ export default function ReportSchedulerTab() {
   const [saving,  setSaving]      = useState(false);
   const [saved,   setSaved]       = useState(false);
   const [error,   setError]       = useState('');
+  const [testing, setTesting]     = useState(false);
+  const [testMsg, setTestMsg]     = useState('');
 
   useEffect(() => {
     api.get<Schedule>('/api/business/settings/report-schedule')
@@ -52,6 +54,18 @@ export default function ReportSchedulerTab() {
     setNewEmail('');
   };
 
+  const sendTest = async () => {
+    setTesting(true); setTestMsg('');
+    try {
+      await api.post('/api/notifications/test-email', {});
+      setTestMsg('✓ Test email sent to your account address. Check your inbox (and spam).');
+    } catch (e: any) {
+      setTestMsg(e?.message ?? 'Could not send the test email.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   if (loading) return <div className="py-8 text-gray-500 text-sm">Loading…</div>;
 
   return (
@@ -59,6 +73,18 @@ export default function ReportSchedulerTab() {
       <div>
         <h3 className="text-white font-semibold mb-1">Daily Report Email</h3>
         <p className="text-gray-500 text-sm">Automatically email a full DSR to your inbox every night.</p>
+      </div>
+
+      <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
+        <div>
+          <p className="text-white text-sm font-medium">Test email delivery</p>
+          <p className="text-gray-500 text-xs">Send a test to your account email to confirm the mail pipeline works.</p>
+          {testMsg && <p className="text-xs mt-1 text-gray-300">{testMsg}</p>}
+        </div>
+        <button onClick={sendTest} disabled={testing}
+          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-xl transition-colors disabled:opacity-40 flex-shrink-0">
+          {testing ? 'Sending…' : 'Send test email'}
+        </button>
       </div>
 
       <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">

@@ -54,6 +54,17 @@ export default function POSInventoryTab() {
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const updateThreshold = async (productId: string, value: number) => {
+    setRows(prev => prev.map(r => r.product_id === productId ? { ...r, low_stock_threshold: value } : r));
+    try {
+      await posApi.patch(`/api/inventory/${productId}/threshold`, {
+        branch_id: session?.branchId, low_stock_threshold: value,
+      });
+    } catch (e) {
+      setError((e as any)?.message ?? 'Could not update threshold');
+    }
+  };
+
   // Only show tracked products
   const tracked = rows.filter(r => r.products.track_stock && r.products.status === 'active');
 
@@ -118,6 +129,17 @@ export default function POSInventoryTab() {
               <div style={s.itemRight}>
                 <span style={{ ...s.qty, color }}>{row.quantity}</span>
                 <span style={{ ...s.badge, background: `${color}22`, color }}>{label}</span>
+                <span style={{ fontSize: 10, color: '#6b7280' }}>min</span>
+                <input
+                  type="number" min={0}
+                  defaultValue={row.low_stock_threshold}
+                  onBlur={e => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!isNaN(v) && v !== row.low_stock_threshold) updateThreshold(row.product_id, v);
+                  }}
+                  title="Low-stock threshold"
+                  style={{ width: 48, background: '#1f2937', border: '1px solid #374151', borderRadius: 6, color: '#e5e7eb', fontSize: 12, padding: '3px 6px', textAlign: 'center' }}
+                />
               </div>
             </div>
           );

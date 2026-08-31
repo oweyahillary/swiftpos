@@ -1769,6 +1769,14 @@ Delivery: MANIFEST-2026-08-23-b.md.
 (Transfer warns "Stock is transferred immediately"); nothing submitted. Row-level
 receive/resend could NOT be exercised — no existing PO/transfer rows to act on.
 Stays OPEN pending a re-test once real rows exist. Agent report 2026-08-31.
+**THRESHOLD WIRED 2026-08-31.** Product low-stock threshold is now editable in the POS
+Inventory tab (`POSInventoryTab`): an inline number input per row →
+`PATCH /api/inventory/:product_id/threshold` ({ branch_id, low_stock_threshold },
+optimistic update). vite build exit 0; check-api-routes OK. **The other two endpoints —
+`PATCH /api/stock/transfers/:id/status` (approve/complete a transfer) and
+`PUT /api/branches/:id/stock/:pid` (direct branch-stock set) — remain unwired**, so A144
+stays OPEN (1 of 3 done). Threshold closes on browser confirm (edit → the low-stock badge
+recomputes).
 
 `PATCH /api/inventory/:id/threshold` (reorder threshold is displayed but not
 settable — the many "threshold" hits in the client are the `low_stock_threshold`
@@ -1868,6 +1876,13 @@ delivered_at) — so a test ping shows in the Deliveries log, matching real even
 already log via `deliverOne`). Guard test `tests/webhook-test-logs.test.mjs`
 (mutation-checked); server tsc exit 0. Browser-confirm: send a test → it appears in the
 log. A146 stays OPEN pending that re-test + the notifications half (the test-email button).
+**NOTIFICATIONS HALF WIRED 2026-08-31.** Added a "Send test email" button to Settings →
+Business → Report scheduler (`ReportSchedulerTab`) → `POST /api/notifications/test-email`
+(owner-only; sends to the owner's account email). **Both halves of A146 are now wired**
+(webhook delivery logging + the test-email button); vite build exit 0, check-api-routes
+OK (286). A146 closes on the next browser pass: send a test webhook → it appears in the
+Deliveries log; Send test email → it arrives. The email button doubles as a live
+diagnostic for the A50/A54 mail-not-delivered issue.
 
 `POST /api/notifications/test-email` — no "send test" button (ties directly to the
 A50/A54 mailer thread: there is a way to test delivery, just no way to trigger it).
