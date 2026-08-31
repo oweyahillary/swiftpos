@@ -1862,6 +1862,12 @@ deliveries recorded yet" even after reload. Cause: `POST /api/webhooks/:id/test`
 via `deliverWebhook`. Fix candidate: have the test route write a `webhook_deliveries`
 row (or make the UI state that only real events are logged). The notifications half
 is still not built. Stays OPEN. Agent report 2026-08-31.
+**FIXED 2026-08-31 (test-ping logging).** `POST /webhooks/:id/test` now inserts a
+`webhook_deliveries` row on both success and failure (event 'ping', response_status,
+delivered_at) — so a test ping shows in the Deliveries log, matching real events (which
+already log via `deliverOne`). Guard test `tests/webhook-test-logs.test.mjs`
+(mutation-checked); server tsc exit 0. Browser-confirm: send a test → it appears in the
+log. A146 stays OPEN pending that re-test + the notifications half (the test-email button).
 
 `POST /api/notifications/test-email` — no "send test" button (ties directly to the
 A50/A54 mailer thread: there is a way to test delivery, just no way to trigger it).
