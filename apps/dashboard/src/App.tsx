@@ -37,6 +37,7 @@ const StaffMembersRoute   = lazy(() => import('./pages/settings/UsersAccessPage'
 const RolesRoute          = lazy(() => import('./pages/settings/UsersAccessPage').then(m => ({ default: m.RolesRoute })));
 const DevicesPrintersPage = lazy(() => import('./pages/settings/DevicesPrintersPage'));
 const DevicesRoute        = lazy(() => import('./pages/settings/DevicesPrintersPage').then(m => ({ default: m.DevicesRoute })));
+const KitchenDisplayRoute = lazy(() => import('./pages/settings/KitchenDisplayTab'));
 const BusinessPage        = lazy(() => import('./pages/settings/BusinessPage'));
 const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileTab'));
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
@@ -153,6 +154,7 @@ export default function App() {
                         <Route path="devices"   element={<DevicesRoute />} />
                         <Route path="printers"  element={<PrintersPage />} />
                         <Route path="stations"  element={<StationsPage />} />
+                        <Route path="kitchen-display" element={<KitchenDisplayRoute />} />
                       </Route>
 
                       <Route path="settings/business" element={<BusinessPage />}>

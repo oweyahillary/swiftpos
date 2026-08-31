@@ -15,6 +15,7 @@ const TABS = [
   { to: 'devices',   label: 'Devices' },
   { to: 'printers',  label: 'Printers' },
   { to: 'stations',  label: 'Print stations' },
+  { to: 'kitchen-display', label: 'Kitchen display' },
 ];
 
 export default function DevicesPrintersPage() {

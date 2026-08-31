@@ -5122,6 +5122,14 @@ tickets. Guard test `tests/kds-token.test.mjs` (3/3, mutation-checked); server t
 0. **Slice 2 (client):** the `/kds` display must send the token as `Authorization:
 Bearer` on its fetches, plus a "Generate KDS link" UI for the owner. Until slice 2, the
 display still can't load; realtime (fault 3) is live-verified after migration 95.
+**FAULT 1 — CLIENT DONE 2026-08-31 (option ii; dev — OPEN pending browser).** `/kds` now
+reads a stored KDS token (one-time paste setup, kept in localStorage, never in the URL),
+derives its branch from the token, and sends `Authorization: Bearer` on the load/poll/
+status calls; an "Unlink" control resets it. Owner generator: Settings → Devices and
+printers → **Kitchen display** (branch → Generate → copy), calling the mint endpoint.
+`vite build` exit 0; check-api-routes OK (285). **Fault 1 (server+client) done.** A3
+stays OPEN pending: browser-verify the board (generate → paste → tickets load → status
+advances), and the fault-3 realtime live-check after migration 95.
 
 ### A4 · P1 · CLOSED 2026-08-22 · Migration 68 exists only in production
 
