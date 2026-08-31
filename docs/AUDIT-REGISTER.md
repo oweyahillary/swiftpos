@@ -134,6 +134,19 @@ owner sees all orders incl. `ORD-MTH76LLB-001WV`. **Phase 2 — the Void action
 (`orders.void` + supervisor/authorizer PIN + shift/tax handling) — is NOT built**;
 it needs a design decision on the owner-void auth flow. Phase 1 gives visibility,
 not reversal: the stranded order still needs the manager POS void today.
+**PHASE 2a DELIVERED 2026-08-31 (server — dev; additive, cashier path unchanged).**
+`POST /orders/:id/void` and `/refund` now let an owner (`req.isOwner`) self-authorise:
+no supervisor PIN, but the audit trail is preserved — `voided_by`/`refunded_by =
+req.userId`, a required reason, and `authorized_by`/`refund_authorized_by` = the same
+owner. Non-owner (cashier/till) still requires the override PIN, unchanged. Void stays
+inside the 30-min window; past that it's a refund (agreed — the window subsumes "no
+void after shift close"). New guard test `tests/owner-void-refund.test.mjs` (6/6,
+mutation-checked: breaking the bypass fails it). Server `tsc` exit 0;
+check-test-registration / check-api-routes green. **Correction to the ops note above:**
+`ORD-MTH76LLB-001WV` is now past the 30-min void window, so in-app it can only be
+REFUNDED (leaves a sale+refund trail) or removed by a backend void — a plain in-app
+void now 403s for anyone. **Phase 2b (client — Void/Refund buttons + reason modal on
+the Orders page) is next.**
 **Next free ID A188.**
 
 ### A186 · P2 · OPEN · run-all migration suite reports a false FAIL on Windows — libuv teardown crash after the assertions pass

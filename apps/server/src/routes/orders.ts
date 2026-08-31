@@ -1033,24 +1033,31 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
 
   // Supervisor authorisation, exactly as for a void. Money leaving the drawer is
   // the event worth gating, and it is the same event in both cases.
-  const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
   let authorizedBy: string | null = null;
 
-  if (ov.result === 'ok') {
-    authorizedBy = ov.userId ?? null;
-  } else if (ov.result === 'no_authorizers') {
-    const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
-    if (legacy === 'not_configured') {
-      res.status(400).json({
-        error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
-        code:  'NO_OVERRIDE_CONFIGURED',
-      });
+  if (req.isOwner) {
+    // A187: an owner refunding from the dashboard self-authorises — no
+    // second-signature PIN. The audit trail is preserved: refunded_by = req.userId
+    // and refund_authorized_by = the same owner (set below).
+    authorizedBy = req.userId ?? null;
+  } else {
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
+    if (ov.result === 'ok') {
+      authorizedBy = ov.userId ?? null;
+    } else if (ov.result === 'no_authorizers') {
+      const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
+      if (legacy === 'not_configured') {
+        res.status(400).json({
+          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
+          code:  'NO_OVERRIDE_CONFIGURED',
+        });
+        return;
+      }
+      if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
+    } else {
+      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
       return;
     }
-    if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
-  } else {
-    res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
-    return;
   }
 
   try {
@@ -1202,7 +1209,12 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   const isPaid = completedPayments.length > 0;
 
   let authorizedBy: string | null = null;
-  if (isPaid) {
+  if (isPaid && req.isOwner) {
+    // A187: an owner voiding from the dashboard self-authorises — no
+    // second-signature PIN. Audit trail preserved: voided_by = req.userId
+    // and authorized_by = the same owner (set below).
+    authorizedBy = req.userId ?? null;
+  } else if (isPaid) {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
 
