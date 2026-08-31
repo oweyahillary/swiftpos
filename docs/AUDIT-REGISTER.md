@@ -5113,6 +5113,15 @@ faults in the `/kds` board:
 **So:** migration 95 removes one blocker; KDS still won't work until the display-auth
 decision (fault 1) is made and built — one fix then covers faults 1+3. Browser-verify
 the whole board after.
+**FAULT 1 — SERVER DONE 2026-08-31 (option a, per-branch token; dev; client next).**
+`POST /api/kitchen/kds-token` (owner-only, branch-validated) mints a long-lived (365d),
+branch-scoped SwiftPOS JWT with `surface:'kds'`. The kitchen router accepts it (branch
+derived from the token, never the query) and `requireAuth` REJECTS `surface:'kds'`
+everywhere else — a leaked kitchen-screen token can only read/advance its own branch's
+tickets. Guard test `tests/kds-token.test.mjs` (3/3, mutation-checked); server tsc exit
+0. **Slice 2 (client):** the `/kds` display must send the token as `Authorization:
+Bearer` on its fetches, plus a "Generate KDS link" UI for the owner. Until slice 2, the
+display still can't load; realtime (fault 3) is live-verified after migration 95.
 
 ### A4 · P1 · CLOSED 2026-08-22 · Migration 68 exists only in production
 

@@ -103,6 +103,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.sessionId          = payload.sessionId ?? null;
     req.permissionsVersion = payload.permissionsVersion ?? 0;
 
+    // A KDS display token (surface:'kds') is a long-lived, branch-scoped capability
+    // that the kitchen router accepts BEFORE this middleware. Reject it everywhere
+    // else so a leaked kitchen-screen token can read nothing but its branch's tickets.
+    if (req.surface === 'kds') {
+      res.status(403).json({ error: 'This token is limited to kitchen display endpoints' });
+      return;
+    }
+
     // ── Fix 3 + M1: status & permissions_version check ───────────────────
     // One indexed PK read per non-owner request (users PK, ~1ms). Covers two
     // things: (a) the account is still active — closes the window where a
