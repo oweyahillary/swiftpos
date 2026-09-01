@@ -105,6 +105,18 @@ export default function ProductsPage() {
   });
   const clearSelection = () => setSelectedIds(new Set());
 
+  const bulkTrack = async (track: boolean) => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    try {
+      await api.patch('/api/products/bulk-track/by-ids', { ids, track_stock: track });
+      clearSelection();
+      await fetchAll();
+    } catch (e: any) {
+      alert(e?.message ?? 'Could not update stock tracking');
+    }
+  };
+
   const fetchAll = async () => {
     if (!business) return;
     const [prods, cats] = await Promise.all([
@@ -307,6 +319,16 @@ export default function ProductsPage() {
             onClick={() => { setBulkPriceIds(Array.from(selectedIds)); setShowBulkPrice(true); }}
             className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
             Change price
+          </button>
+          <button
+            onClick={() => bulkTrack(true)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Track stock
+          </button>
+          <button
+            onClick={() => bulkTrack(false)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Untrack
           </button>
           <button onClick={clearSelection} className="text-sm text-gray-400 hover:text-white ml-auto">Clear</button>
         </div>

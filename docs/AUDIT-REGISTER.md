@@ -1823,6 +1823,15 @@ optimistic update). vite build exit 0; check-api-routes OK. **The other two endp
 `PUT /api/branches/:id/stock/:pid` (direct branch-stock set) — remain unwired**, so A144
 stays OPEN (1 of 3 done). Threshold closes on browser confirm (edit → the low-stock badge
 recomputes).
+**TRACKING FIXED 2026-09-01.** The 2026-09-01 re-test said existing products can't be
+tracked — but the per-product path already existed (row **Edit** → the same "Track stock"
+toggle as New product → `PATCH /api/products/:id`, which accepts `track_stock`); the agent
+missed the Edit button. Added the discoverable/bulk path it was really after: select
+products → **Track stock / Untrack** in the selection bar → new
+`PATCH /api/products/bulk-track/by-ids` ({ ids, track_stock }, business-scoped, single
+UPDATE…IN). Now: bulk-enable tracking on the 67 products, then set thresholds in the
+Inventory tab. dashboard + server builds exit 0; check-api-routes OK (288). The two
+remaining A144 endpoints (transfer status, direct branch-stock set) are still unwired.
 
 `PATCH /api/inventory/:id/threshold` (reorder threshold is displayed but not
 settable — the many "threshold" hits in the client are the `low_stock_threshold`

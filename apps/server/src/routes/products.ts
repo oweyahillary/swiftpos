@@ -382,7 +382,25 @@ router.patch('/bulk-cost/by-ids', requirePermission('products.manage'), async (r
   res.json(results);
 });
 
-// POST /api/products/bulk-price
+// PATCH /api/products/bulk-track/by-ids
+// Body: { ids: string[], track_stock: boolean }
+// Turn stock tracking on/off for many existing products at once — the retro path the
+// "+ New product" toggle alone did not provide (A144). Scoped to the caller's business.
+router.patch('/bulk-track/by-ids', requirePermission('products.manage'), async (req, res) => {
+  const { ids, track_stock } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: 'ids array is required' }); return;
+  }
+  if (ids.length > 1000) {
+    res.status(400).json({ error: 'Maximum 1000 rows per update' }); return;
+  }
+  const { error, count } = await supabase
+    .from('products')
+    .update({ track_stock: track_stock === true, updated_at: new Date().toISOString() }, { count: 'exact' })
+    .eq('business_id', req.businessId).in('id', ids);
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json({ updated: count ?? 0 });
+});
 // Body: { ids?: string[], category_id?: string|null, op: {type,value}, dry_run?: boolean }
 // One endpoint, two modes. dry_run returns the old→new preview WITHOUT writing;
 // otherwise it applies. Both compute with the same applyPriceOp, so the preview a
