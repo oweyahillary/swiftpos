@@ -31,6 +31,16 @@ interface Order {
 interface OrdersResponse { orders: Order[]; total: number; }
 
 const PAGE_SIZE = 25;
+const VOID_WINDOW_MINUTES = 30;
+
+const ageMin = (iso: string) => (Date.now() - new Date(iso).getTime()) / 60000;
+
+/** Mirrors the server: void within the window, refund after (completed sales only). */
+function actionFor(o: Order): 'void' | 'refund' | null {
+  if (o.status === 'voided' || o.status === 'refunded') return null;
+  if (ageMin(o.created_at) <= VOID_WINDOW_MINUTES) return 'void';
+  return o.status === 'completed' ? 'refund' : null;
+}
 
 const STATUS_COLOR: Record<string, string> = {
   completed: 'text-green-400', voided: 'text-red-400', pending: 'text-amber-400',
@@ -45,6 +55,8 @@ const fmtTime = (iso: string) =>
 export default function OrdersPage({ currency = 'KES' }: { currency?: string }) {
   const { can } = usePermissions();
   const allowed = can('orders.view_all');
+  const canAct = can('orders.void');
+  const cols = canAct ? 7 : 6;
 
   const [orders, setOrders]   = useState<Order[]>([]);
   const [total, setTotal]     = useState(0);
@@ -54,6 +66,12 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Void / refund action (owner self-authorises server-side; reason required).
+  const [action, setAction]       = useState<{ order: Order; type: 'void' | 'refund' } | null>(null);
+  const [reason, setReason]       = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const load = useCallback(async (p = 1, q = search, s = status) => {
     setLoading(true);
@@ -75,6 +93,22 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
       setLoading(false);
     }
   }, [search, status]);
+
+  const submitAction = async () => {
+    if (!action || !reason.trim()) return;
+    setSubmitting(true);
+    setActionError('');
+    try {
+      await api.post(`/api/orders/${action.order.id}/${action.type}`, { reason: reason.trim() });
+      setAction(null);
+      setReason('');
+      load(page);
+    } catch (e: any) {
+      setActionError(e?.message ?? `Could not ${action.type} the order`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => { if (allowed) load(1); }, [allowed, load]);
 
@@ -132,14 +166,15 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
               <th className="px-4 py-2 font-medium text-right">Total</th>
               <th className="px-4 py-2 font-medium">When</th>
               <th className="px-4 py-2 font-medium">Customer</th>
+              {canAct && <th className="px-4 py-2 font-medium text-right">Action</th>}
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
+              <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
             )}
             {!loading && orders.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No orders found.</td></tr>
+              <tr><td colSpan={cols} className="px-4 py-8 text-center text-gray-500">No orders found.</td></tr>
             )}
             {!loading && orders.map((o) => (
               <Fragment key={o.id}>
@@ -153,10 +188,26 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                   <td className="px-4 py-2 text-right text-gray-200">{fmt(o.total, currency)}</td>
                   <td className="px-4 py-2 text-gray-400">{fmtTime(o.created_at)}</td>
                   <td className="px-4 py-2 text-gray-400">{o.customer_name ?? '—'}</td>
+                  {canAct && (
+                    <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                      {actionFor(o) === 'void' && (
+                        <button
+                          onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setActionError(''); }}
+                          className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
+                        >Void</button>
+                      )}
+                      {actionFor(o) === 'refund' && (
+                        <button
+                          onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setActionError(''); }}
+                          className="px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                        >Refund</button>
+                      )}
+                    </td>
+                  )}
                 </tr>
                 {expanded === o.id && (
                   <tr className="bg-gray-900/40 border-t border-gray-800">
-                    <td colSpan={6} className="px-4 py-3">
+                    <td colSpan={cols} className="px-4 py-3">
                       <div className="text-xs text-gray-400 space-y-1">
                         <div>Subtotal: {fmt(o.subtotal, currency)}
                           {o.discount_amount > 0 && <> · Discount: {fmt(o.discount_amount, currency)}</>}
@@ -193,6 +244,48 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
             onClick={() => load(page + 1)}
             className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg disabled:opacity-40 hover:bg-gray-700 transition-colors"
           >Next</button>
+        </div>
+      )}
+
+      {action && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !submitting && setAction(null)}
+        >
+          <div
+            className="bg-gray-900 border border-gray-800 rounded-2xl p-5 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-white mb-1 capitalize">
+              {action.type} order {action.order.order_number}
+            </h2>
+            <p className="text-sm text-gray-400 mb-4">
+              {action.type === 'void'
+                ? 'Voiding removes this sale entirely (allowed within 30 minutes of the sale).'
+                : 'Refunding returns the money; the sale stays on the books with a reversal recorded.'}
+              {' '}A reason is required and is recorded against your name.
+            </p>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason…"
+              rows={3}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-green-500 focus:outline-none mb-3"
+            />
+            {actionError && <div className="text-sm text-red-400 mb-3">{actionError}</div>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setAction(null)}
+                disabled={submitting}
+                className="px-4 py-2 text-sm text-gray-300 hover:text-white disabled:opacity-40"
+              >Cancel</button>
+              <button
+                onClick={submitAction}
+                disabled={submitting || !reason.trim()}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg text-gray-950 disabled:opacity-40 ${action.type === 'void' ? 'bg-red-500 hover:bg-red-400' : 'bg-amber-500 hover:bg-amber-400'}`}
+              >{submitting ? 'Working…' : (action.type === 'void' ? 'Void order' : 'Refund order')}</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
