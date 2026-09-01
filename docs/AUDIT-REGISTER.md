@@ -124,6 +124,15 @@ app-wide. **FIXED:** KDS realtime now uses a DEDICATED session-less client
 (`lib/kdsRealtime.ts`, `persistSession:false, autoRefreshToken:false`); KDSPage subscribes
 via it, so its realtime activity can no longer touch the owner session. `vite build` exit
 0. Browser-confirm: use /kds, return to a dashboard tab → still logged in.
+**REAL FIX 2026-09-02 (the isolated-client fix above DID NOT work — 6th reproduction).**
+`ProtectedRoute` gates on the Supabase GoTrue `session` (via `AuthContext.onAuthStateChange`),
+and the ONLY thing /kds touches on any Supabase client is the realtime subscription — which
+also never delivered under RLS. So the fix is to **remove the realtime subscription from /kds
+entirely**: KDSPage now runs on the (fixed) 10s poll alone, with the new-ticket beep/flash
+driven by the poll. No Supabase client is touched on /kds → it cannot invalidate the owner
+session. `kdsRealtime.ts` deleted (git rm). dashboard build exit 0. Browser-confirm: use
+/kds, return to the dashboard → still logged in. (True instant realtime is a separate future
+feature needing a Supabase-compatible token; the 10s poll is functional meanwhile.)
 
 **DEPLOY-GAP NOTE (2026-09-01).** The test ran against a **stale dashboard build** (~the
 `-d`/`-g` zips): A185/A188 and the Orders *view* + the webhook *log* were present, but
@@ -266,6 +275,13 @@ Server: the void handler's window check is now `orderAge > VOID_WINDOW_MINUTES &
 their choice); a void of an order older than the window shows a closed-period warning
 ("may be reconciled / filed to eTIMS; a Refund is usually safer"). Reason still required
 and recorded either way. dashboard + server builds exit 0. Browser-confirm on an old order.
+**VOID 500 FIXED 2026-09-02 (re-test: the void UI/warning worked but POST /:id/void 500'd
+on every order; refund worked).** Root cause: `orders.voided_by` FKs to `auth.users(id)`
+while `refunded_by`/`authorized_by` FK to `public.users(id)`; the handler writes
+`req.userId` (a public.users id — which is why refund succeeded), so the void UPDATE
+violated the auth.users FK → 500. Latent since void was never live-tested. Fix: migration
+`96_orders_voided_by_fk.sql` re-points `voided_by` → `public.users(id)` (guarded, nulls
+stray values first). **PROD-MIGRATE.** schema-drift green. After migrating, void works.
 
 ### A186 · P3 · OPEN · run-all migration suite reports a false FAIL on Windows — libuv teardown crash after the assertions pass
 **MITIGATED 2026-08-31 — downgraded P2→P3.** CI (`.github/workflows/ci.yml`,

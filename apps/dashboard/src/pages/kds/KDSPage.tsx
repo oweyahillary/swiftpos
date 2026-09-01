@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { kdsRealtime } from '../../lib/kdsRealtime';
 
 import { API_URL } from '../../lib/config';
 const API_BASE = API_URL;
@@ -108,67 +107,35 @@ export default function KDSPage() {
       const body = await res.json();
       const data: Ticket[] = Array.isArray(body) ? body : [];
       if (!Array.isArray(body)) console.error('KDS tickets: unexpected response', body);
+      // New-ticket alert is poll-driven now (realtime removed — A191): beep + flash any
+      // ticket we haven't seen, but not on the very first load.
+      const known = knownIds.current;
+      const isFirst = known.size === 0;
+      const fresh = data.filter(t => !known.has(t.id));
       setTickets(data);
-      data.forEach(t => knownIds.current.add(t.id));
+      data.forEach(t => known.add(t.id));
+      if (!isFirst && fresh.length) {
+        playBeep();
+        fresh.forEach(t => flashTicket(t.id));
+      }
     } catch (err) {
       console.error('KDS fetch failed:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [playBeep, flashTicket]);
 
   useEffect(() => {
     if (!branchId) return;
     fetchTickets(branchId);
 
-    // Auto-refresh every 30s as fallback alongside realtime
-    const interval = setInterval(() => fetchTickets(branchId), 30000);
+    // KDS refreshes on a 10s poll. Realtime was removed (A191): subscribing through a
+    // Supabase client on /kds invalidated the owner's dashboard session app-wide, and
+    // the anon realtime channel never delivered under RLS anyway. The poll (with the
+    // fixed tickets query) is the single, reliable path.
+    const interval = setInterval(() => fetchTickets(branchId), 10000);
     return () => clearInterval(interval);
-  }, [branchId]);
-
-  // Supabase realtime subscription
-  useEffect(() => {
-    if (!branchId) return;
-
-    const channel = kdsRealtime
-      .channel(`kds-${branchId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'kitchen_tickets',
-          filter: `branch_id=eq.${branchId}`,
-        },
-        async (payload) => {
-          if (payload.eventType === 'INSERT') {
-            // Fetch full ticket with order details
-            const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${branchId}`, { headers: kdsAuthHeaders() });
-            const body = await res.json();
-            const all: Ticket[] = Array.isArray(body) ? body : [];
-            const newTicket = all.find(t => t.id === payload.new.id);
-            if (newTicket && !knownIds.current.has(newTicket.id)) {
-              knownIds.current.add(newTicket.id);
-              setTickets(prev => [newTicket, ...prev]);
-              playBeep();
-              flashTicket(newTicket.id);
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as Ticket;
-            setTickets(prev =>
-              updated.status === 'collected'
-                ? prev.filter(t => t.id !== updated.id)
-                : prev.map(t => t.id === updated.id ? { ...t, ...updated } : t)
-            );
-          } else if (payload.eventType === 'DELETE') {
-            setTickets(prev => prev.filter(t => t.id !== payload.old.id));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => { kdsRealtime.removeChannel(channel); };
-  }, [branchId, playBeep, flashTicket]);
+  }, [branchId, fetchTickets]);
 
   const advanceStatus = async (ticket: Ticket) => {
     const cfg = STATUS_CONFIG[ticket.status];
