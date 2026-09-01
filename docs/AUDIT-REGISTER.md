@@ -115,6 +115,15 @@ branch tokens on "session expiry", not just the failing surface. **A3's client r
 localStorage key and never touches the owner session — so deploying A3 most likely fixes
 this. Verify after deploy; if it persists, guard `clearAllTokens()` so a `/kds` 401 cannot
 wipe the owner session.
+**ROOT CAUSE + FIX 2026-09-01 (the 2026-09-01 re-test proved the A3-rewrite hypothesis
+WRONG — it reproduced a 5th time with the new /kds deployed).** Real cause: the shared
+`supabase` client persists a GoTrue session and `AuthContext.onAuthStateChange` sets the
+app session from it; KDS realtime subscribing through that SAME client triggers a GoTrue
+sign-out / refresh-failure → the callback nulls the session → the owner is logged out
+app-wide. **FIXED:** KDS realtime now uses a DEDICATED session-less client
+(`lib/kdsRealtime.ts`, `persistSession:false, autoRefreshToken:false`); KDSPage subscribes
+via it, so its realtime activity can no longer touch the owner session. `vite build` exit
+0. Browser-confirm: use /kds, return to a dashboard tab → still logged in.
 
 **DEPLOY-GAP NOTE (2026-09-01).** The test ran against a **stale dashboard build** (~the
 `-d`/`-g` zips): A185/A188 and the Orders *view* + the webhook *log* were present, but
@@ -129,6 +138,8 @@ were fixed 220px wide × 190px tall (name 24px) → ~5 per row. Shrunk to ~7-8: 
 → `repeat(auto-fill, minmax(140px, 1fr))` gap 8 (responsive, fills the row); `s.slotCard`
 height 190→130, padding/radius reduced; `slotName` 24→18, `slotSub` 15→13. Dashboard-
 only, values-only, no logic. `vite build` exit 0. Browser-confirm count + legibility.
+**DENSITY ADJUSTED 2026-09-01.** Re-test showed 5/row with 140px (tables view runs at
+~740px with the cart open), so `slotGrid` minmax 140→100px to reach ~7-8. Browser-confirm.
 **Next free ID A191.**
 
 ### A189 · P2 · OPEN · E2E / integration suites exist but run nowhere — no CI-reachable environment

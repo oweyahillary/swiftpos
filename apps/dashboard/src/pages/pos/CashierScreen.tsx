@@ -2379,7 +2379,7 @@ const s: Record<string, React.CSSProperties> = {
   slotViewTitle: { fontSize: 12, fontWeight: 700, color: 'var(--pos-text3)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
   slotLegend: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--pos-text3)' },
   legendDot: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 4 },
-  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 },
+  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 },
   slotCard: {
     height: 130,
     padding: '14px 10px 12px',

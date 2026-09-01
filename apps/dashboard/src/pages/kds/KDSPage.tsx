@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { kdsRealtime } from '../../lib/kdsRealtime';
 
 import { API_URL } from '../../lib/config';
 const API_BASE = API_URL;
@@ -130,7 +130,7 @@ export default function KDSPage() {
   useEffect(() => {
     if (!branchId) return;
 
-    const channel = supabase
+    const channel = kdsRealtime
       .channel(`kds-${branchId}`)
       .on(
         'postgres_changes',
@@ -167,7 +167,7 @@ export default function KDSPage() {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { kdsRealtime.removeChannel(channel); };
   }, [branchId, playBeep, flashTicket]);
 
   const advanceStatus = async (ticket: Ticket) => {
