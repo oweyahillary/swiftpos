@@ -35,11 +35,25 @@ const VOID_WINDOW_MINUTES = 30;
 
 const ageMin = (iso: string) => (Date.now() - new Date(iso).getTime()) / 60000;
 
-/** Mirrors the server: void within the window, refund after (completed sales only). */
-function actionFor(o: Order): 'void' | 'refund' | null {
-  if (o.status === 'voided' || o.status === 'refunded') return null;
-  if (ageMin(o.created_at) <= VOID_WINDOW_MINUTES) return 'void';
-  return o.status === 'completed' ? 'refund' : null;
+/** Owner login carries isOwner in the token; owners may void at any age. */
+function currentUserIsOwner(): boolean {
+  try {
+    const t = localStorage.getItem('swiftpos_access_token');
+    return t ? JSON.parse(atob(t.split('.')[1])).isOwner === true : false;
+  } catch { return false; }
+}
+
+/**
+ * Which actions to offer. Owner: Void anytime + Refund on completed sales (their
+ * choice). Staff/manager: Void only within the 30-min window, Refund after — the
+ * server enforces the same rule via req.isOwner.
+ */
+function actionsFor(o: Order, isOwner: boolean): ('void' | 'refund')[] {
+  if (o.status === 'voided' || o.status === 'refunded') return [];
+  if (o.status !== 'completed' && o.status !== 'pending') return [];
+  if (isOwner) return o.status === 'completed' ? ['void', 'refund'] : ['void'];
+  if (ageMin(o.created_at) <= VOID_WINDOW_MINUTES) return ['void'];
+  return o.status === 'completed' ? ['refund'] : [];
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -56,6 +70,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const { can } = usePermissions();
   const allowed = can('orders.view_all');
   const canAct = can('orders.void');
+  const isOwner = currentUserIsOwner();
   const cols = canAct ? 7 : 6;
 
   const [orders, setOrders]   = useState<Order[]>([]);
@@ -189,17 +204,17 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                   <td className="px-4 py-2 text-gray-400">{fmtTime(o.created_at)}</td>
                   <td className="px-4 py-2 text-gray-400">{o.customer_name ?? '—'}</td>
                   {canAct && (
-                    <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                      {actionFor(o) === 'void' && (
+                    <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {actionsFor(o, isOwner).includes('void') && (
                         <button
                           onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setActionError(''); }}
                           className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
                         >Void</button>
                       )}
-                      {actionFor(o) === 'refund' && (
+                      {actionsFor(o, isOwner).includes('refund') && (
                         <button
                           onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setActionError(''); }}
-                          className="px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                          className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
                         >Refund</button>
                       )}
                     </td>
@@ -259,9 +274,11 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
             <h2 className="text-lg font-semibold text-white mb-1 capitalize">
               {action.type} order {action.order.order_number}
             </h2>
-            <p className="text-sm text-gray-400 mb-4">
+            <p className={`text-sm mb-4 ${action.type === 'void' && ageMin(action.order.created_at) > VOID_WINDOW_MINUTES ? 'text-amber-400' : 'text-gray-400'}`}>
               {action.type === 'void'
-                ? 'Voiding removes this sale entirely (allowed within 30 minutes of the sale).'
+                ? (ageMin(action.order.created_at) > VOID_WINDOW_MINUTES
+                    ? '⚠️ This order is older than the 30-minute window — it may be from a closed, reconciled period (drawer balanced, Z-report run, possibly filed to eTIMS). Voiding removes the sale entirely and changes already-counted figures. A Refund keeps the sale on the books with a reversal — usually the safer choice for an old order.'
+                    : 'Voiding removes this sale entirely.')
                 : 'Refunding returns the money; the sale stays on the books with a reversal recorded.'}
               {' '}A reason is required and is recorded against your name.
             </p>

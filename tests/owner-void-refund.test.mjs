@@ -59,6 +59,13 @@ ok('void: cashier/till path still requires the override PIN', () => {
   assert.match(voidBody, /verifyOverrideAuthorizer/, 'non-owner path must still verify the override authoriser');
 });
 
+ok('void: owner voids at any age; staff stay window-limited', () => {
+  // owners bypass the 30-min window; non-owners still hit VOID_WINDOW_EXPIRED
+  assert.match(voidBody, /orderAge > VOID_WINDOW_MINUTES && !req\.isOwner/,
+    'window check must exempt owners (orderAge > window && !req.isOwner)');
+  assert.match(voidBody, /VOID_WINDOW_EXPIRED/, 'the window rejection must still exist for non-owners');
+});
+
 // ── REFUND ────────────────────────────────────────────────────────────────────
 ok('refund: owner self-authorises (skips PIN)', () => {
   assert.match(refundBody, /if \(req\.isOwner\)[\s\S]*?authorizedBy\s*=\s*req\.userId/,

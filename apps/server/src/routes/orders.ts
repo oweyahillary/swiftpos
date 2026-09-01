@@ -1189,7 +1189,10 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   if (order.status === 'voided') { res.status(400).json({ error: 'Order is already voided' }); return; }
 
   const orderAge = (Date.now() - new Date(order.created_at).getTime()) / 60000;
-  if (orderAge > VOID_WINDOW_MINUTES) {
+  // Owners may void at any age — the books are theirs, a reason is still required and
+  // recorded (voided_by + reason). Staff/supervisor voids stay window-limited: that
+  // window is a shrinkage control against a cashier quietly erasing an old sale.
+  if (orderAge > VOID_WINDOW_MINUTES && !req.isOwner) {
     res.status(403).json({
       error: `Orders can only be voided within ${VOID_WINDOW_MINUTES} minutes of creation`,
       code: 'VOID_WINDOW_EXPIRED',

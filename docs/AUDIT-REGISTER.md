@@ -258,6 +258,14 @@ as owner — void a fresh order (reason required, no PIN) → it drops from sale
 refund an older completed order → the sale stays with a reversal; confirm the reason
 + your name are recorded; confirm the buttons hide without `orders.void`. This is
 also the in-app path to clear `ORD-MTH76LLB-001WV` — refund it (past the void window).
+**OWNER-VOID-ANYTIME 2026-09-01 (owner request).** Owners may now void at ANY age, not
+just within 30 min; staff/supervisor voids stay window-limited (shrinkage control).
+Server: the void handler's window check is now `orderAge > VOID_WINDOW_MINUTES &&
+!req.isOwner` (guard test extended, mutation-checked). Dashboard: `OrdersPage` reads
+`isOwner` from the token and offers Void on any order (plus Refund on completed sales —
+their choice); a void of an order older than the window shows a closed-period warning
+("may be reconciled / filed to eTIMS; a Refund is usually safer"). Reason still required
+and recorded either way. dashboard + server builds exit 0. Browser-confirm on an old order.
 
 ### A186 · P3 · OPEN · run-all migration suite reports a false FAIL on Windows — libuv teardown crash after the assertions pass
 **MITIGATED 2026-08-31 — downgraded P2→P3.** CI (`.github/workflows/ci.yml`,
