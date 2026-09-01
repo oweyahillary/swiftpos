@@ -110,13 +110,27 @@ router.get('/tickets', async (req, res) => {
       )
     `)
     .eq('branch_id', scope.branchId)
-    .eq('orders.order_items.fire_status', 'fired')
     .neq('status', 'collected')
     .gte('created_at', todayStart.toISOString())
     .order('created_at', { ascending: true });
 
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+
+  // Hide 'held' (unfired course) items in JS rather than with a two-levels-deep
+  // embedded filter, which is fragile in PostgREST (it can error or drop the whole
+  // ticket). Quick-sale items are 'fired' by default, so they always show; a ticket
+  // left with nothing fired to cook is hidden until its course is fired.
+  const tickets = (data ?? [])
+    .map((t: any) => {
+      const o = t.orders;
+      if (o && Array.isArray(o.order_items)) {
+        o.order_items = o.order_items.filter((oi: any) => oi.fire_status !== 'held');
+      }
+      return t;
+    })
+    .filter((t: any) => (t.orders?.order_items?.length ?? 0) > 0);
+
+  res.json(tickets);
 });
 
 // PATCH /api/kitchen/tickets/:id/status

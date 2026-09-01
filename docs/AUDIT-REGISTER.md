@@ -5206,6 +5206,18 @@ printers → **Kitchen display** (branch → Generate → copy), calling the min
 `vite build` exit 0; check-api-routes OK (285). **Fault 1 (server+client) done.** A3
 stays OPEN pending: browser-verify the board (generate → paste → tickets load → status
 advances), and the fault-3 realtime live-check after migration 95.
+**TICKET-DELIVERY FIX 2026-09-01 (re-test: tickets never appeared even for a valid
+order).** Diagnosis flipped my earlier "wrong test order" guess: tickets ARE created for
+EVERY order (unconditionally in both /pay and dine-in paths; `order_items.fire_status`
+defaults to 'fired'), so the agent's order did make a ticket — the bug is the READ query.
+`GET /kitchen/tickets` filtered with a two-levels-deep embed
+`.eq('orders.order_items.fire_status', 'fired')`, which is fragile in PostgREST (it can
+error or drop the whole ticket); on an error the KDS client's non-array path renders 0.
+**Fixed:** dropped the nested filter — the query now fetches tickets reliably and hides
+'held' items in JS (a ticket with nothing fired is hidden). server tsc exit 0.
+Browser-confirm after redeploy: ring an order → the ticket appears on /kds within ≤30s
+(the poll). Realtime instant-update (anon subscriber + RLS) is still a separate follow-up;
+the poll makes KDS functional either way.
 
 ### A4 · P1 · CLOSED 2026-08-22 · Migration 68 exists only in production
 
