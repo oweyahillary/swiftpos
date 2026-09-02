@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import MigrationsPage from "./MigrationsPage";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -322,6 +323,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
     { id: "audit",     icon: "≡", label: "Audit Log" },
     { id: "team",      icon: "◎", label: "Team", superOnly: true },
     { id: "tech",      icon: "⌘", label: "Tech Access" },
+    { id: "migrations", icon: "⛃", label: "Migrations" },
     { id: "settings",  icon: "⊙", label: "Settings" },
   ];
 
@@ -2223,6 +2225,7 @@ export default function AdminPortal() {
     if (page === "team")      return <TeamPage req={req} admin={admin} />;
     if (page === "settings")  return <SettingsPage req={req} apiUrl={apiUrl} setApiUrl={setApiUrl} />;
     if (page === "tech")      return <TechPage req={req} admin={admin} />;
+    if (page === "migrations") return <MigrationsPage req={(p: string) => req("GET", p, undefined)} />;
     return <DashboardPage req={req} />;
   })();
 
