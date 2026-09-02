@@ -1253,6 +1253,18 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
       .eq('id', orderId);
     if (vErr) throw vErr;
 
+    // 1b. Pull the order's kitchen ticket(s) off the KDS (A196). A voided order
+    // is cancelled, so its ticket must not stay live on the board — otherwise the
+    // kitchen keeps cooking food nobody is paying for. Deleted by order_id so a
+    // multi-station order (>1 ticket) is fully cleared. Best-effort and logged,
+    // not thrown: the void already succeeded (M7 — no surrounding txn), so a
+    // ticket-cleanup failure must not tell the client the void failed.
+    const { error: ktErr } = await supabase
+      .from('kitchen_tickets')
+      .delete()
+      .eq('order_id', orderId);
+    if (ktErr) console.error(`Failed to remove kitchen ticket(s) for voided order ${orderId}:`, ktErr.message);
+
     // 2. Refund EVERY completed leg — one reversal row per leg, same method and
     // amount, so a split tender comes back in the same shape it went out and the
     // drawer reconciles per tender type rather than only in aggregate.
