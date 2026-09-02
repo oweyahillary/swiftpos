@@ -1153,6 +1153,19 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
       }
     }
 
+    // 5. Pull the kitchen ticket ONLY if the kitchen hasn't started it (A196).
+    // A refund keeps the sale on the books (status stays 'completed'), so a dish
+    // already being made — 'preparing'/'ready' — is left to finish and be
+    // collected. But a refund on a not-yet-started ticket ('new') means don't
+    // cook it, so that one is pulled. Best-effort + logged, not thrown: the
+    // refund already succeeded and must not be reported as failed.
+    const { error: ktErr } = await supabase
+      .from('kitchen_tickets')
+      .delete()
+      .eq('order_id', orderId)
+      .eq('status', 'new');
+    if (ktErr) console.error(`Failed to pull unstarted kitchen ticket(s) for refunded order ${orderId}:`, ktErr.message);
+
     res.json({
       ok: true,
       orderNumber: order.order_number,
