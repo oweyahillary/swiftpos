@@ -44,12 +44,6 @@ function refreshKey(): string { return onPosSurface() ? TOKEN_KEYS.posRefresh : 
 export function storeSwiftPOSToken(token: string)  { localStorage.setItem(accessKey(),  token); }
 export function storeRefreshToken(token: string)   { localStorage.setItem(refreshKey(), token); }
 
-/** Clears only the current surface's tokens. */
-export function clearSwiftPOSToken() {
-  localStorage.removeItem(accessKey());
-  localStorage.removeItem(refreshKey());
-}
-
 /**
  * Full wipe — call this on owner logout or session expiry.
  * Clears ALL SwiftPOS tokens, branch selection, and cashier session

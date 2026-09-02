@@ -74,7 +74,11 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      canSell: () => true };`);
 
 const nodeClientShim = w('nodeClient.cjs', `
-  module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}) };`);
+  module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),
+    // A24: pullCatalogue() calls this unconditionally and falls through to the
+    // cloud when it returns null. The shim omitted it, so the pull threw before
+    // ever reaching the cloud 403 — which is what these tests exercise.
+    fetchReferenceFromNode: async () => null };`);
 
 const nodeIngestShim = w('nodeIngest.cjs', `module.exports = new Proxy({}, { get: () => () => {} });`);
 

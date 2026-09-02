@@ -70,6 +70,45 @@ export function storeBranchStaff(branchId: string, roster: BranchStaffRow[]): vo
   try { tx(); } catch (err: any) { logLine('node', `could not store branch roster: ${err?.message ?? err}`); }
 }
 
+/**
+ * A20: read this node's roster for SERVING to peers, unwrapping each PIN hash back
+ * to raw bcrypt.
+ *
+ * The stored `pin_hash_enc` is safeStorage-wrapped, and safeStorage is bound to
+ * the machine/OS account that wrapped it — a peer could not decrypt the node's
+ * wrapped form. So the node unwraps to the raw bcrypt here, the peer re-wraps with
+ * its own safeStorage via storeBranchStaff. A row this node itself cannot unwrap
+ * (wrapped under another OS account) is skipped, not served half-formed. Returns
+ * the shape rosterSnapshot.buildRosterSnapshot expects.
+ */
+export function readBranchStaffForServe(branchId: string): Array<{
+  staff_id: string; name: string; role_name: string | null; permissions: unknown;
+  pin_hash: string | null; override_pin_hash: string | null; status: string;
+}> {
+  if (!canWrap()) { logLine('node', 'safeStorage unavailable — cannot serve branch roster'); return []; }
+  const unwrap = (enc: string | null | undefined): string | null => {
+    if (!enc) return null;
+    try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
+  };
+  let rows: any[];
+  try {
+    rows = getLocalDb().prepare(`SELECT * FROM branch_staff WHERE branch_id = ?`).all(branchId) as any[];
+  } catch { return []; }
+
+  const out: any[] = [];
+  for (const r of rows) {
+    const pin = unwrap(r.pin_hash_enc);
+    if (!pin) continue;                       // unusable here — don't serve a PIN-less row
+    let permissions: unknown = {};
+    try { permissions = JSON.parse(r.permissions ?? '{}'); } catch { /* default */ }
+    out.push({
+      staff_id: r.staff_id, name: r.name, role_name: r.role_name ?? null, permissions,
+      pin_hash: pin, override_pin_hash: unwrap(r.override_pin_hash_enc), status: r.status ?? 'active',
+    });
+  }
+  return out;
+}
+
 export type NodeVerdict =
   | { ok: true; staff: { staffId: string; name: string; roleName: string | null; permissions: unknown } }
   | { ok: false; reason: 'no_roster' | 'no_match' | 'ambiguous' | 'unavailable'; message: string };

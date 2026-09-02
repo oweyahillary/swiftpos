@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
+import { partitionByValidId } from '../lib/syncPush';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -462,28 +463,42 @@ router.post('/push', async (req, res) => {
 
     // ── Expenses (business-scoped) ───────────────────────────────────────────
     if (expenses.length) {
-      const ids = expenses.map((e: any) => e.id);
-      const { data: existing } = await supabase
-        .from('expenses').select('id, business_id').in('id', ids);
-      if ((existing ?? []).some(r => r.business_id !== businessId)) {
-        res.status(409).json({ error: 'expense id belongs to another business' });
-        return;
-      }
+      // A180: a non-UUID id (A179) used to 500 the WHOLE push here — the pre-check
+      // `.in('id', ids)` and the batch upsert both choke on 22P02. Reject bad ids
+      // individually and per-row-upsert the rest, exactly like floats/shifts, so
+      // one malformed expense can never again strand a shop's shifts/days/floats.
+      const { valid: validExpenses, rejected: badIdExpenses } = partitionByValidId(expenses as { id: unknown }[], 'expenses');
+      for (const r of badIdExpenses) rejected.push(r);
 
-      const rows = expenses.map((e: any) => ({
-        id:                  e.id,
-        business_id:         businessId,           // forced from token
-        branch_id:           e.branch_id,
-        expense_category_id: e.expense_category_id ?? null,
-        description:         e.description,
-        amount:              Number(e.amount),
-        paid_by:             e.paid_by ?? null,
-        expense_date:        e.expense_date,
-        shift_id:            e.shift_id ?? null,
-      }));
-      const { error } = await supabase.from('expenses').upsert(rows, { onConflict: 'id' });
-      if (error) { sendError(res, error); return; }
-      upserted.expenses = rows.length;
+      if (validExpenses.length) {
+        const ids = validExpenses.map((e: any) => e.id);
+        const { data: existing } = await supabase
+          .from('expenses').select('id, business_id').in('id', ids);
+        if ((existing ?? []).some(r => r.business_id !== businessId)) {
+          res.status(409).json({ error: 'expense id belongs to another business' });
+          return;
+        }
+
+        const results = await Promise.all(validExpenses.map(async (e: any) => {
+          const row = {
+            id:                  e.id,
+            business_id:         businessId,           // forced from token
+            branch_id:           e.branch_id,
+            expense_category_id: e.expense_category_id ?? null,
+            description:         e.description,
+            amount:              Number(e.amount),
+            paid_by:             e.paid_by ?? null,
+            expense_date:        e.expense_date,
+            shift_id:            e.shift_id ?? null,
+          };
+          const { error } = await supabase.from('expenses').upsert(row, { onConflict: 'id' });
+          return { id: e.id, code: (error as { code?: string })?.code, error: error?.message };
+        }));
+        for (const r of results) {
+          if (!r.error) { upserted.expenses++; continue; }
+          rejected.push({ id: r.id, code: r.code ?? 'error', table: 'expenses', error: r.error });
+        }
+      }
     }
 
     // `rejected` is deliberately part of a 200, not an error status. These rows

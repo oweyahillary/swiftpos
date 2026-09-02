@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { posApi, StaffSession } from './lib/posApi';
 import InstallPage from './pages/InstallPage';
-import LoginPage from './pages/LoginPage';
+import EnrolPage from './pages/EnrolPage';
 import PinPage from './pages/PinPage';
 import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
 import TechPage from './pages/TechPage';
 
-type AppState = 'loading' | 'install' | 'owner-login' | 'pin' | 'pos' | 'manager' | 'tech';
+type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
 
 const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
@@ -22,7 +22,7 @@ export default function App() {
 
   // On boot — first decide whether the device has been configured at all.
   // No config -> install screen (open, because there's nothing to protect yet).
-  // Config present -> the normal owner/PIN flow against the configured server.
+  // Config present -> the normal enrol/PIN flow against the configured server.
   //
   // owner/device session persists; staff must always re-enter PIN. We
   // deliberately do NOT auto-resume a staff session after a restart, so an
@@ -33,14 +33,16 @@ export default function App() {
       if (!configured) { setState('install'); return; }
 
       const owner = await posApi.auth.getSession();
-      if (!owner) { setState('owner-login'); return; }
+      // A158: a configured-but-session-less till re-provisions via a one-time
+      // enrolment code — never the owner's email/password.
+      if (!owner) { setState('enrol'); return; }
       setSession(owner);
 
       // Discard any persisted staff session from a previous run.
       await posApi.auth.clearStaffSession();
       setState('pin');
     } catch {
-      setState('owner-login');
+      setState('enrol');
     }
   };
 
@@ -52,11 +54,11 @@ export default function App() {
     boot();
   };
 
-  // Owner email/password succeeded -> go to PIN pad for staff.
-  const handleOwnerLogin = (s: { user: any; business: any }) => {
-    setSession(s);
-    setStaff(null);
-    setState('pin');
+  // Enrolment succeeded (session written) -> re-run boot: it finds the session
+  // and lands on the PIN pad. A158.
+  const handleEnrolComplete = () => {
+    setState('loading');
+    boot();
   };
 
   // Does this staff member get the manager tools? Used both to route after PIN
@@ -103,14 +105,15 @@ export default function App() {
     setState('pin');
   };
 
-  // Full sign-out -> clears owner + staff, back to email login.
+  // Sign out the cashier -> clears the STAFF session only and returns to the PIN
+  // pad. A158: the device stays enrolled — its session is the terminal identity,
+  // and de-enrolling a till is a deliberate act, not a routine sign-out button.
   const handleSignOut = async () => {
-    await posApi.auth.logout();
-    setSession(null);
+    await posApi.auth.clearStaffSession();
     setStaff(null);
     setLocked(false);
     await posApi.idle.clear();
-    setState('owner-login');
+    setState('pin');
   };
 
   if (state === 'loading') {
@@ -125,8 +128,8 @@ export default function App() {
     return <InstallPage onComplete={handleInstallComplete} />;
   }
 
-  if (state === 'owner-login') {
-    return <LoginPage onLogin={handleOwnerLogin} />;
+  if (state === 'enrol') {
+    return <EnrolPage onComplete={handleEnrolComplete} />;
   }
 
   if (state === 'pin') {

@@ -37,7 +37,17 @@ const OrderItemSchema = z.object({
 });
 
 const PaymentSchema = z.object({
-  method: z.enum(['cash', 'card', 'mpesa', 'loyalty', 'split', 'other']),
+  // NOTE (A128): `method` is a per-business tender code, not a fixed list. Built-ins
+  // (cash/mpesa/card/credit/glovo/room_charge) plus any custom `payment_methods.code`
+  // (A95) are written here, so this MUST match the cloud column domain — the
+  // `payments_method_format_check` added by migration 89 (`^[a-z0-9_]{1,40}$`). It is
+  // deliberately NOT a `z.enum([...])`: the previous enum (cash/card/mpesa/loyalty/
+  // split/other) disagreed with both the DB and reality (no 'credit'/'glovo'; 'split'
+  // is a UI concept, never a leg) and would silently reject every custom-method order
+  // the day anyone wired `validate(CreateOrderSchema)` — the exact class of divergence
+  // this schema exists to prevent. This schema is currently illustrative (no route
+  // applies it); keeping it truthful means it is safe to wire later.
+  method: z.string().regex(/^[a-z0-9_]{1,40}$/, 'method must be a lowercase tender code'),
   amount: z.number().nonnegative(),
   amount_tendered: z.number().nonnegative().optional(),
   change_given: z.number().nonnegative().optional().default(0),

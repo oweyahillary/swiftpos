@@ -13,6 +13,8 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { branchScope } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
+import { buildRecipeImport } from '../lib/productImport';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -76,6 +78,68 @@ router.get('/:productId', async (req, res) => {
 // POST /api/recipes/:productId
 // Full replace — saves the entire recipe for a product in one call.
 // Body: { lines: [{ ingredient_id, quantity_per_serving, unit? }] }
+// POST /api/recipes/bulk — A165 slice 2. Import the Recipe tab.
+// Body: { rows: [{ product, ingredient, quantity_per_serving, unit?, notes? }] }
+// A product that appears has its recipe REPLACED by the listed lines; a product
+// not in the file is left alone. Products matched by name/plu, ingredients by name
+// (import the Ingredients tab first so they exist).
+router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
+  const { rows } = req.body ?? {};
+  if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: 'rows array is required' }); return; }
+  if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }
+
+  const { products: recipeProducts, errors } = buildRecipeImport(rows);
+  const results = { updated: 0, cleared: 0, errors: [...errors] as { row: number; error: string }[] };
+
+  const { data: prods } = await supabase
+    .from('products').select('id, name, plu_code').eq('business_id', req.businessId);
+  const { data: ings } = await supabase
+    .from('ingredients').select('id, name').eq('business_id', req.businessId);
+  const pByName: Record<string, string> = {}, pByPlu: Record<string, string> = {}, iByName: Record<string, string> = {};
+  for (const p of (prods ?? []) as any[]) {
+    const n = String(p.name ?? '').trim().toLowerCase(); const pl = String(p.plu_code ?? '').trim().toLowerCase();
+    if (n && !(n in pByName)) pByName[n] = p.id;
+    if (pl && !(pl in pByPlu)) pByPlu[pl] = p.id;
+  }
+  for (const ing of (ings ?? []) as any[]) {
+    const n = String(ing.name ?? '').trim().toLowerCase();
+    if (n && !(n in iByName)) iByName[n] = ing.id;
+  }
+
+  for (const rp of recipeProducts) {
+    const productId = pByPlu[rp.product.toLowerCase()] || pByName[rp.product.toLowerCase()];
+    if (!productId) { results.errors.push({ row: 0, error: `unknown product: ${rp.product}` }); continue; }
+
+    // Resolve ingredient names; a single unknown fails the whole product so its
+    // recipe isn't silently saved half-right.
+    const lines: { ingredient_id: string; quantity_per_serving: number; unit: string | null }[] = [];
+    let bad = '';
+    for (const l of rp.lines) {
+      const id = iByName[l.ingredient.toLowerCase()];
+      if (!id) { bad = l.ingredient; break; }
+      lines.push({ ingredient_id: id, quantity_per_serving: l.quantity_per_serving, unit: l.unit });
+    }
+    if (bad) { results.errors.push({ row: 0, error: `${rp.product}: unknown ingredient "${bad}" (add it on the Ingredients tab first)` }); continue; }
+
+    const { error: delErr } = await supabase
+      .from('recipes').delete().eq('product_id', productId).eq('business_id', req.businessId);
+    if (delErr) { results.errors.push({ row: 0, error: `${rp.product}: ${delErr.message}` }); continue; }
+
+    if (lines.length > 0) {
+      const { error: insErr } = await supabase.from('recipes').insert(
+        lines.map(l => ({ business_id: req.businessId, product_id: productId, ingredient_id: l.ingredient_id, quantity_per_serving: l.quantity_per_serving, unit: l.unit })),
+      );
+      if (insErr) { results.errors.push({ row: 0, error: `${rp.product}: ${insErr.message}` }); continue; }
+      results.updated++;
+    } else {
+      results.cleared++;
+    }
+  }
+
+  res.json(results);
+});
+
+// POST /api/recipes/:productId  — save/replace a single product's recipe
 router.post('/:productId', async (req, res) => {
   const { productId } = req.params;
   const { lines = [] } = req.body as {

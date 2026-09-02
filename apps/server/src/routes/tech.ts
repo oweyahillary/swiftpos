@@ -18,20 +18,19 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase }  from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
-import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM } from '../lib/techToken';
+import { verifyTechToken as verifyEd25519Token, PUBLIC_KEY_PEM, generateRevealCode } from '../lib/techToken';
 import crypto        from 'crypto';
 import os            from 'os';
 import { execSync }  from 'child_process';
 
 const router = safeRouter();
 
-// No fallback: an unset secret must stop the server booting, never silently
-// fall back to a value that is published in source control (which would let
-// anyone forge a v1 tech token). Mirrors JWT_SECRET / ADMIN_JWT_SECRET handling.
-const TECH_HMAC_SECRET = process.env.TECH_HMAC_SECRET;
-if (!TECH_HMAC_SECRET) {
-  throw new Error('[server] Missing TECH_HMAC_SECRET in environment');
-}
+// Tech tokens are v2 Ed25519 only (st2.*). The legacy v1 HMAC path was retired
+// (A113): nothing minted v1 tokens any more and any that existed expired within
+// their 48h window, so accepting them was pure forgery surface gated on a shared
+// secret — exactly what the asymmetric v2 design removed. TECH_HMAC_SECRET is no
+// longer read here; mode-switch tokens are random codes looked up by hash, not
+// HMAC, so they are unaffected.
 
 // ── In-memory revocation cache ─────────────────────────────────────────────
 // Refreshed from DB every 5 minutes so revocations propagate to offline machines
@@ -56,31 +55,16 @@ async function refreshRevocations() {
 // ── Token helpers ──────────────────────────────────────────────────────────
 
 /** Verify a raw tech token. Returns decoded payload or null.
- *  Supports v2 Ed25519 tokens (st2.*, offline-verifiable) and legacy v1 HMAC. */
+ *  v2 Ed25519 only (st2.*, offline-verifiable). v1 HMAC retired — see A113. */
 function verifyTechToken(rawToken: string): {
   techId: string; techName: string; branchId: string;
   businessId: string; scope: string; exp: number;
 } | null {
-  // v2 — Ed25519 (asymmetric). Same verifier the desktop uses offline.
-  if (rawToken.startsWith('st2.')) {
-    const p = verifyEd25519Token(rawToken);
-    return p ? { techId: p.techId, techName: p.techName, branchId: p.branchId, businessId: p.businessId, scope: p.scope, exp: p.exp } : null;
-  }
-  // v1 — legacy HMAC (online-only). Format: base64(payload).signature
-  try {
-    const lastDot  = rawToken.lastIndexOf('.');
-    const payload  = rawToken.slice(0, lastDot);
-    const sig      = rawToken.slice(lastDot + 1);
-    const expected = crypto.createHmac('sha256', TECH_HMAC_SECRET).update(payload).digest('hex');
-    const sigBuf      = Buffer.from(sig, 'hex');
-    const expectedBuf = Buffer.from(expected, 'hex');
-    // Length guard: timingSafeEqual throws RangeError on unequal-length buffers,
-    // which a malformed/attacker-supplied signature can trigger. Compare lengths
-    // first so a bad signature is a clean reject, not an exception.
-    if (sigBuf.length !== expectedBuf.length) return null;
-    if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
-    return JSON.parse(Buffer.from(payload, 'base64url').toString());
-  } catch { return null; }
+  // Ed25519 (asymmetric): the private key is server-only, so a leaked or cached
+  // public key can verify but never mint. Same verifier the desktop uses offline.
+  if (!rawToken.startsWith('st2.')) return null;
+  const p = verifyEd25519Token(rawToken);
+  return p ? { techId: p.techId, techName: p.techName, branchId: p.branchId, businessId: p.businessId, scope: p.scope, exp: p.exp } : null;
 }
 
 // ── Middleware ─────────────────────────────────────────────────────────────
@@ -170,9 +154,19 @@ router.get('/branch-config/:branchId', requireAuth, async (req: any, res) => {
   if (!branch)                              { res.status(404).json({ error: 'Branch not found' }); return; }
   if (branch.business_id !== req.businessId) { res.status(403).json({ error: 'Branch not in your business' }); return; }
 
+  // A114: a branch must always expose a reveal code so the till caches a real one
+  // (a null cache is exactly why a since-enrolled/offline till can't be unlocked).
+  // Mint + persist one on first ask; stable thereafter — this endpoint never
+  // rotates it, so offline tills that cached it once keep working.
+  let revealCode = branch.tech_reveal_code as string | null;
+  if (!revealCode) {
+    revealCode = generateRevealCode();
+    await supabase.from('branches').update({ tech_reveal_code: revealCode }).eq('id', branch.id);
+  }
+
   res.json({
     branch_id:   branch.id,
-    reveal_code: branch.tech_reveal_code ?? null,
+    reveal_code: revealCode,
     public_key:  PUBLIC_KEY_PEM,
     algorithm:   'ed25519',
   });

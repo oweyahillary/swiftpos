@@ -29,8 +29,21 @@ const POSPage                 = lazy(() => import('./pages/pos/POSPage'));
 const POSEntryPage            = lazy(() => import('./pages/pos/POSEntryPage'));
 const ManagerDashboard        = lazy(() => import('./pages/manager/ManagerDashboard'));
 const InventoryPage           = lazy(() => import('./pages/inventory/InventoryPage'));
-const SettingsPage            = lazy(() => import('./pages/SettingsPage'));
+// Settings › three sections (register A133). Container pages default-export;
+// their child route wrappers are named exports pulled via the {default} shim so
+// each still ships as its own lazy chunk.
+const UsersAccessPage     = lazy(() => import('./pages/settings/UsersAccessPage'));
+const StaffMembersRoute   = lazy(() => import('./pages/settings/UsersAccessPage').then(m => ({ default: m.StaffMembersRoute })));
+const RolesRoute          = lazy(() => import('./pages/settings/UsersAccessPage').then(m => ({ default: m.RolesRoute })));
+const DevicesPrintersPage = lazy(() => import('./pages/settings/DevicesPrintersPage'));
+const DevicesRoute        = lazy(() => import('./pages/settings/DevicesPrintersPage').then(m => ({ default: m.DevicesRoute })));
+const KitchenDisplayRoute = lazy(() => import('./pages/settings/KitchenDisplayTab'));
+const BusinessPage        = lazy(() => import('./pages/settings/BusinessPage'));
+const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileTab'));
+const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
+const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
+const OrdersPage              = lazy(() => import('./pages/OrdersPage'));
 const KDSPage                 = lazy(() => import('./pages/kds/KDSPage'));
 const CustomersPage           = lazy(() => import('./pages/crm/CustomersPage'));
 const CreditAccountsPage      = lazy(() => import('./pages/customers/CreditAccountsPage'));
@@ -50,11 +63,7 @@ const IngredientsPage         = lazy(() => import('./pages/stock/IngredientsPage
 const PrintersPage            = lazy(() => import('./pages/settings/PrintersPage'));
 const StationsPage            = lazy(() => import('./pages/settings/StationsPage'));
 const ExpensesPage            = lazy(() => import('./pages/expenses/ExpensesPage'));
-const MinimartSettingsPage    = lazy(() => import('./pages/settings/MinimartSettingsPage'));
-const ParkingSettingsPage     = lazy(() => import('./pages/settings/ParkingSettingsPage'));
-const PetrolSettingsPage      = lazy(() => import('./pages/settings/PetrolSettingsPage'));
 const EtimsSettingsPage       = lazy(() => import('./pages/settings/EtimsSettingsPage'));
-const RestaurantSettingsPage  = lazy(() => import('./pages/settings/RestaurantSettingsPage'));
 const DashboardLayout         = lazy(() => import('./components/DashboardLayout'));
 
 function PageLoader() {
@@ -116,27 +125,56 @@ export default function App() {
                       <Route path="pos"                       element={<POSPage />} />
                       <Route path="inventory"                 element={<InventoryPage />} />
                       <Route path="reports"                   element={<ReportsPage />} />
+                      <Route path="orders"                    element={<OrdersPage />} />
                       <Route path="open-drawers"              element={<OpenShiftsPage />} />
-                      <Route path="terminals"                 element={<FleetPage />} />
+                      <Route path="terminals"                 element={<Navigate to="/dashboard/settings/devices/terminals" replace />} />
                       <Route path="customers"                 element={<CustomersPage currency="KES" />} />
                       <Route path="customers/credit"          element={<CreditAccountsPage />} />
                       <Route path="turnover"                  element={<TableTurnoverPage />} />
                       <Route path="discounts"                 element={<DiscountsPage />} />
-                      <Route path="payment-methods"           element={<PaymentMethodsPage />} />
+                      <Route path="payment-methods"           element={<Navigate to="/dashboard/settings/business/payments" replace />} />
                       <Route path="promotions"                element={<PromotionsPage />} />
                       <Route path="combos"                    element={<CombosPage />} />
                       <Route path="reservations"              element={<ReservationsPage />} />
                       <Route path="expenses"                  element={<ExpensesPage />} />
-                      <Route path="branches"                  element={<BranchesPage />} />
+                      <Route path="branches"                  element={<Navigate to="/dashboard/settings/business/branches" replace />} />
                       <Route path="branches/:id"              element={<BranchDetailPage />} />
-                      <Route path="settings"                  element={<SettingsPage />} />
-                      <Route path="settings/restaurant"       element={<RestaurantSettingsPage />} />
-                      <Route path="settings/minimart"         element={<MinimartSettingsPage />} />
-                      <Route path="settings/parking"          element={<ParkingSettingsPage />} />
-                      <Route path="settings/petrol"           element={<PetrolSettingsPage />} />
-                      <Route path="settings/etims"            element={<EtimsSettingsPage />} />
-                      <Route path="printers"                  element={<PrintersPage />} />
-                      <Route path="stations"                  element={<StationsPage />} />
+                      {/* ── Settings — three sections, each a tabbed page (A133) ── */}
+                      <Route path="settings" element={<Navigate to="/dashboard/settings/users/staff" replace />} />
+
+                      <Route path="settings/users" element={<UsersAccessPage />}>
+                        <Route index          element={<Navigate to="staff" replace />} />
+                        <Route path="staff"   element={<StaffMembersRoute />} />
+                        <Route path="roles"   element={<RolesRoute />} />
+                      </Route>
+
+                      <Route path="settings/devices" element={<DevicesPrintersPage />}>
+                        <Route index            element={<Navigate to="terminals" replace />} />
+                        <Route path="terminals" element={<FleetPage />} />
+                        <Route path="devices"   element={<DevicesRoute />} />
+                        <Route path="printers"  element={<PrintersPage />} />
+                        <Route path="stations"  element={<StationsPage />} />
+                        <Route path="kitchen-display" element={<KitchenDisplayRoute />} />
+                      </Route>
+
+                      <Route path="settings/business" element={<BusinessPage />}>
+                        <Route index               element={<Navigate to="profile" replace />} />
+                        <Route path="profile"      element={<BusinessProfileTab />} />
+                        <Route path="branches"     element={<BranchesPage />} />
+                        <Route path="tax"          element={<EtimsSettingsPage />} />
+                        <Route path="payments"     element={<PaymentMethodsPage />} />
+                        <Route path="setup"        element={<VerticalSetupRoute />} />
+                        <Route path="integrations" element={<IntegrationsRoute />} />
+                      </Route>
+
+                      {/* back-compat: old deep links redirect into the new sections */}
+                      <Route path="settings/restaurant" element={<Navigate to="/dashboard/settings/business/setup" replace />} />
+                      <Route path="settings/minimart"   element={<Navigate to="/dashboard/settings/business/setup" replace />} />
+                      <Route path="settings/parking"    element={<Navigate to="/dashboard/settings/business/setup" replace />} />
+                      <Route path="settings/petrol"     element={<Navigate to="/dashboard/settings/business/setup" replace />} />
+                      <Route path="settings/etims"      element={<Navigate to="/dashboard/settings/business/tax" replace />} />
+                      <Route path="printers"            element={<Navigate to="/dashboard/settings/devices/printers" replace />} />
+                      <Route path="stations"            element={<Navigate to="/dashboard/settings/devices/stations" replace />} />
                       <Route path="stock/ingredients"         element={<IngredientsPage />} />
                       <Route path="stock/purchase-orders"     element={<PurchaseOrdersPage />} />
                       <Route path="stock/transfers"           element={<StockTransfersPage />} />

@@ -17,6 +17,8 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase }  from '../lib/supabase';
+import { buildProductPatch, rowMatchKeys } from '../lib/productImport';
+import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -380,6 +382,78 @@ router.patch('/bulk-cost/by-ids', requirePermission('products.manage'), async (r
   res.json(results);
 });
 
+// PATCH /api/products/bulk-track/by-ids
+// Body: { ids: string[], track_stock: boolean }
+// Turn stock tracking on/off for many existing products at once — the retro path the
+// "+ New product" toggle alone did not provide (A144). Scoped to the caller's business.
+router.patch('/bulk-track/by-ids', requirePermission('products.manage'), async (req, res) => {
+  const { ids, track_stock } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: 'ids array is required' }); return;
+  }
+  if (ids.length > 1000) {
+    res.status(400).json({ error: 'Maximum 1000 rows per update' }); return;
+  }
+  const { error, count } = await supabase
+    .from('products')
+    .update({ track_stock: track_stock === true, updated_at: new Date().toISOString() }, { count: 'exact' })
+    .eq('business_id', req.businessId).in('id', ids);
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json({ updated: count ?? 0 });
+});
+// Body: { ids?: string[], category_id?: string|null, op: {type,value}, dry_run?: boolean }
+// One endpoint, two modes. dry_run returns the old→new preview WITHOUT writing;
+// otherwise it applies. Both compute with the same applyPriceOp, so the preview a
+// user confirms is exactly what gets written. Selection is by explicit ids or one
+// category — never the whole catalogue by accident.
+router.post('/bulk-price', requirePermission('products.manage'), async (req, res) => {
+  const { ids, category_id, op: rawOp, dry_run } = req.body ?? {};
+  const op = parsePriceOp(rawOp);
+  if ('error' in op) { res.status(400).json({ error: op.error }); return; }
+
+  const hasIds = Array.isArray(ids) && ids.length > 0;
+  const hasCat = category_id !== undefined;
+  if (!hasIds && !hasCat) { res.status(400).json({ error: 'select products by ids or a category_id' }); return; }
+
+  let q = supabase.from('products').select('id, name, base_price').eq('business_id', req.businessId);
+  if (hasIds)                    q = q.in('id', (ids as string[]).slice(0, 2000));
+  else if (category_id === null) q = q.is('category_id', null);
+  else                           q = q.eq('category_id', category_id);
+  const { data: targets, error: selErr } = await q;
+  if (selErr) { sendError(res, selErr); return; }
+
+  const preview: { id: string; name: string; current: number; next?: number; error?: string }[] = [];
+  for (const p of (targets ?? []) as any[]) {
+    const cur = Number(p.base_price);
+    const r = applyPriceOp(cur, op);
+    if ('error' in r) preview.push({ id: p.id, name: p.name, current: cur, error: r.error });
+    else              preview.push({ id: p.id, name: p.name, current: cur, next: r.next });
+  }
+
+  if (dry_run) {
+    res.json({
+      preview,
+      would_update: preview.filter(r => r.next !== undefined && r.next !== r.current).length,
+      errors:       preview.filter(r => r.error).length,
+    });
+    return;
+  }
+
+  let updated = 0;
+  const errors: { id: string; error: string }[] = [];
+  for (const r of preview) {
+    if (r.error) { errors.push({ id: r.id, error: r.error }); continue; }
+    if (r.next === undefined || r.next === r.current) continue; // no-op, don't touch
+    const { error } = await supabase
+      .from('products')
+      .update({ base_price: r.next, updated_at: new Date().toISOString() })
+      .eq('id', r.id).eq('business_id', req.businessId);
+    if (error) errors.push({ id: r.id, error: error.message });
+    else updated++;
+  }
+  res.json({ updated, errors, preview });
+});
+
 router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   const { rows } = req.body;
 
@@ -402,107 +476,88 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   const catMap: Record<string, string> = {};
   (categories ?? []).forEach(c => { catMap[c.name.toLowerCase()] = c.id; });
 
-  // Existing products by lower-cased name, so a re-import UPDATES rather than
-  // duplicating. Matching was previously on barcode only, and a restaurant menu
-  // has no barcodes — so importing a corrected price list produced a second copy
-  // of every item. Product deletion is deliberately not offered (hide and
-  // deactivate only), which made that unrecoverable except by hiding a hundred
-  // rows by hand.
+  // Existing products for THIS business, with the keys we can match on: barcode,
+  // a stable plu_code, and name. A re-import UPDATES the matched row rather than
+  // duplicating — deletion isn't offered, so a dupe was unrecoverable by hand.
   const { data: existingProducts } = await supabase
     .from('products')
-    .select('id, name')
+    .select('id, name, plu_code, barcode')
     .eq('business_id', req.businessId);
 
   const byName: Record<string, string> = {};
+  const byPlu: Record<string, string> = {};
+  const byBarcode: Record<string, string> = {};
   for (const pr of (existingProducts ?? []) as any[]) {
-    // First wins: if the catalogue already holds two products with the same
-    // name, an import must not pick a different one on each run.
-    const key = String(pr.name ?? '').trim().toLowerCase();
-    if (key && !(key in byName)) byName[key] = pr.id;
+    // First wins: if the catalogue already holds two rows with the same key,
+    // an import must not pick a different one on each run.
+    const n = String(pr.name ?? '').trim().toLowerCase();
+    const p = String(pr.plu_code ?? '').trim().toLowerCase();
+    const b = String(pr.barcode ?? '').trim().toLowerCase();
+    if (n && !(n in byName)) byName[n] = pr.id;
+    if (p && !(p in byPlu)) byPlu[p] = pr.id;
+    if (b && !(b in byBarcode)) byBarcode[b] = pr.id;
+  }
+
+  // Auto-create any category named in the file that doesn't exist yet, so a menu
+  // import can introduce new sections without a separate step.
+  const wantedCats = new Set<string>();
+  for (const row of rows) {
+    const c = (row.category_name ?? row.category ?? '').toString().trim();
+    if (c && !(c.toLowerCase() in catMap)) wantedCats.add(c);
+  }
+  for (const name of wantedCats) {
+    const { data: created } = await supabase
+      .from('categories').insert({ business_id: req.businessId, name }).select('id').single();
+    if (created?.id) catMap[name.toLowerCase()] = created.id;
   }
 
   const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[] };
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
+    const keys = rowMatchKeys(row);
 
-    if (!row.name?.trim()) {
-      results.errors.push({ row: i + 1, error: 'name is required' });
-      continue;
-    }
+    // Match an existing product: barcode, then a stable plu_code, then name.
+    const existingId =
+      (keys.barcode && byBarcode[keys.barcode.toLowerCase()]) ||
+      (keys.plu     && byPlu[keys.plu.toLowerCase()]) ||
+      (keys.name    && byName[keys.name.toLowerCase()]) ||
+      null;
+    const isCreate = !existingId;
 
-    const price = parseFloat(row.base_price);
-    if (isNaN(price) || price < 0) {
-      results.errors.push({ row: i + 1, error: `Invalid price: ${row.base_price}` });
-      continue;
-    }
+    // Category is only touched when the row actually carries one.
+    const catRaw = (row.category_name ?? row.category ?? '').toString().trim();
+    const categoryProvided = catRaw !== '';
+    const categoryId = categoryProvided ? (catMap[catRaw.toLowerCase()] ?? null) : null;
 
-    const categoryId = row.category_name
-      ? (catMap[row.category_name.toLowerCase()] ?? null)
-      : null;
+    const built = buildProductPatch(row, { isCreate, categoryProvided, categoryId });
+    if ('error' in built) { results.errors.push({ row: i + 1, error: built.error }); continue; }
+    const patch = built.patch;
 
-    const productData = {
-      business_id:  req.businessId,
-      name:         row.name.trim(),
-      description:  row.description?.trim() ?? null,
-      base_price:   price,
-      cost_price:   row.cost_price ? parseFloat(row.cost_price) : null,
-      category_id:  categoryId,
-      barcode:      row.barcode?.trim() ?? null,
-      plu_code:     row.plu_code?.trim() ?? null,
-      sold_by:      row.sold_by ?? 'each',
-      is_fuel:      row.is_fuel === 'true' || row.is_fuel === true,
-      track_stock:  row.track_stock !== 'false' && row.track_stock !== false,
-      status:       'active',
-    };
-
-    // Upsert on barcode if present, otherwise create new
-    if (row.barcode?.trim()) {
-      const { data: existing } = await supabase
+    if (isCreate) {
+      const { data: inserted, error } = await supabase
         .from('products')
+        .insert({ business_id: req.businessId, status: 'active', ...patch })
         .select('id')
-        .eq('business_id', req.businessId)
-        .eq('barcode', row.barcode.trim())
         .single();
-
-      if (existing) {
-        const { error } = await supabase
-          .from('products')
-          .update(productData)
-          .eq('id', existing.id);
-
-        if (error) { results.errors.push({ row: i + 1, error: error.message }); }
-        else { results.updated++; }
-        continue;
+      if (error) { results.errors.push({ row: i + 1, error: error.message }); continue; }
+      results.created++;
+      // Register so a file that repeats a key WITHIN ITSELF updates the row it
+      // just created rather than inserting a second one.
+      const id = inserted?.id;
+      if (id) {
+        if (keys.name)    byName[keys.name.toLowerCase()] = id;
+        if (keys.plu)     byPlu[keys.plu.toLowerCase()] = id;
+        if (keys.barcode) byBarcode[keys.barcode.toLowerCase()] = id;
       }
-    }
-
-    // No barcode match — fall back to name within this business.
-    const nameKey = productData.name.toLowerCase();
-    const existingByName = byName[nameKey];
-    if (existingByName) {
+    } else {
       const { error } = await supabase
         .from('products')
-        .update(productData)
-        .eq('id', existingByName)
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', existingId)
         .eq('business_id', req.businessId);
-
-      if (error) { results.errors.push({ row: i + 1, error: error.message }); }
-      else { results.updated++; }
-      continue;
-    }
-
-    const { data: inserted, error } = await supabase
-      .from('products')
-      .insert(productData)
-      .select('id')
-      .single();
-    if (error) { results.errors.push({ row: i + 1, error: error.message }); }
-    else {
-      results.created++;
-      // Register it, so a file that repeats a name within ITSELF updates the row
-      // it just created rather than inserting a second one.
-      if (inserted?.id) byName[nameKey] = inserted.id;
+      if (error) { results.errors.push({ row: i + 1, error: error.message }); continue; }
+      results.updated++;
     }
   }
 

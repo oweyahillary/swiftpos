@@ -480,7 +480,7 @@ router.get('/clients', requireAdmin, async (req, res) => {
 
   let query = supabase
     .from('businesses')
-    .select('id, name, type, status, currency, phone, email, created_at', { count: 'exact' })
+    .select('id, name, type, status, currency, phone, email, created_at, suspended_at', { count: 'exact' })
     .order('created_at', { ascending: false })
     .limit(parseInt(limit))
     .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
@@ -541,14 +541,113 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
   });
 });
 
+// D2 grace window: normal (non-financial) user data is purged after this many
+// months of suspension. Financial/tax records are retained separately per the
+// accountant's retention policy. See docs/SUSPEND-PURGE-PLAN.md.
+const PURGE_GRACE_MONTHS = 6;
+
+/**
+ * GET /api/admin/clients/:id/export — pre-purge export (Stage 1, read-only).
+ * Hands back the client's NORMAL user data — the data due for deletion at the
+ * 6-month grace. Financial/tax records (orders, payments, invoices, eTIMS) are
+ * retained separately and are NOT included here. Secrets (password/PIN hashes)
+ * are stripped. Nothing is deleted.
+ */
+router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const { data: business } = await supabase.from('businesses').select('*').eq('id', id).single();
+  if (!business) { res.status(404).json({ error: 'Not found' }); return; }
+
+  const [branches, products, categories, customers, staffRaw] = await Promise.all([
+    supabase.from('branches').select('*').eq('business_id', id),
+    supabase.from('products').select('*').eq('business_id', id),
+    supabase.from('categories').select('*').eq('business_id', id),
+    supabase.from('customers').select('*').eq('business_id', id),
+    supabase.from('users').select('*').eq('business_id', id),
+  ]);
+
+  const staff = (staffRaw.data ?? []).map((u: any) => {
+    const { password_hash, pin_hash, pin, password, ...safe } = u;
+    return safe;
+  });
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'business.export', resource: 'business',
+    businessId: id, businessName: business.name,
+  });
+
+  res.setHeader('Content-Disposition', `attachment; filename="swiftpos-export-${id}.json"`);
+  res.json({
+    exported_at: new Date().toISOString(),
+    note: 'Normal user data due for purge at the 6-month grace. Financial/tax records (orders, payments, invoices, eTIMS) are retained separately per retention policy and are not included here.',
+    business,
+    branches:   branches.data ?? [],
+    products:   products.data ?? [],
+    categories: categories.data ?? [],
+    customers:  customers.data ?? [],
+    staff,
+  });
+});
+
+// D2 purge classification (Stage 2). See docs/SUSPEND-PURGE-PLAN.md.
+//  RETAIN — never deleted at 6 months (financial / tax / audit, or retained by law).
+//  REVIEW — ambiguous; the accountant/DPO must classify before any delete.
+//  PURGE  — conservative set of clearly-operational data safe to delete at 6 months.
+// NOTE: `branches` is intentionally NOT purged — retained `orders.branch_id`
+// references it. The destructive execute is NOT built until this is signed off.
+const PURGE_RETAIN_TABLES = ['orders','order_items','payments','payment_exceptions','invoices','etims_invoices','etims_branch_config','float_transactions','customer_credit_transactions','loyalty_transactions','purchase_orders','expenses','shifts','parking_sessions','clock_events','goods_received_notes','audit_log','branches'];
+const PURGE_REVIEW_TABLES = ['customers','products','categories','stock','stock_movements','ingredients','suppliers','discounts','promotions','recipes'];
+const PURGE_TABLES        = ['refresh_tokens','api_keys','device_enrolment_codes','notifications','onboarding_progress','mode_switch_requests','kitchen_tickets','reservations','business_days','feature_flags','roles','branch_printers','printer_stations','modifier_groups','combo_items','product_attributes','attribute_groups'];
+
+async function countFor(table: string, businessId: string): Promise<number | null> {
+  try {
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+    return error ? null : (count ?? 0);
+  } catch { return null; }
+}
+
+/**
+ * GET /api/admin/clients/:id/purge-preview — non-destructive dry-run (Stage 2).
+ * Counts what a 6-month purge WOULD delete, grouped RETAIN / REVIEW / PURGE.
+ * Deletes nothing. This is the artifact for accountant/DPO sign-off.
+ */
+router.get('/clients/:id/purge-preview', requireAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const { data: biz } = await supabase.from('businesses').select('name, status, suspended_at').eq('id', id).single();
+  if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
+
+  const suspendedDays = biz.suspended_at
+    ? Math.floor((Date.now() - new Date(biz.suspended_at).getTime()) / 86400000) : null;
+
+  const group = async (tables: string[]) =>
+    (await Promise.all(tables.map(async t => ({ table: t, count: await countFor(t, id) }))))
+      .filter(r => r.count !== null && (r.count as number) > 0);
+
+  const [purge, review, retain] = await Promise.all([
+    group(PURGE_TABLES), group(PURGE_REVIEW_TABLES), group(PURGE_RETAIN_TABLES),
+  ]);
+
+  res.json({
+    business:       biz.name,
+    status:         biz.status,
+    suspended_days: suspendedDays,
+    grace_days:     180,
+    past_grace:     biz.status === 'suspended' && (suspendedDays ?? 0) >= 180,
+    purge, review, retain,
+    note: 'Preview only — deletes nothing. The destructive purge is not enabled until the RETAIN list, PII handling, and retention period are signed off (docs/SUSPEND-PURGE-PLAN.md).',
+  });
+});
+
 router.patch('/clients/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { name, phone, email, address, tax_pin, vat_rate, currency } = req.body;
+  const { name, type, phone, email, address, tax_pin, vat_rate, currency } = req.body;
 
   const { data: before } = await supabase.from('businesses').select('name, status, type').eq('id', id).single();
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (name      !== undefined) updates.name      = name;
+  if (type      !== undefined) updates.type      = type;
   if (phone     !== undefined) updates.phone     = phone;
   if (email     !== undefined) updates.email     = email;
   if (address   !== undefined) updates.address   = address;
@@ -577,7 +676,7 @@ router.post('/clients/:id/suspend', requireAdmin, async (req, res) => {
   if (biz.status === 'suspended') { res.status(409).json({ error: 'Already suspended' }); return; }
 
   await supabase.from('businesses')
-    .update({ status: 'suspended', updated_at: new Date().toISOString() })
+    .update({ status: 'suspended', suspended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', req.params.id);
 
   await writeAdminAudit({
@@ -595,7 +694,7 @@ router.post('/clients/:id/activate', requireAdmin, async (req, res) => {
   if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
 
   await supabase.from('businesses')
-    .update({ status: 'active', updated_at: new Date().toISOString() })
+    .update({ status: 'active', suspended_at: null, updated_at: new Date().toISOString() })
     .eq('id', req.params.id);
 
   await writeAdminAudit({
@@ -640,6 +739,44 @@ router.post('/clients/:id/reset-owner-password', requireAdmin, async (req, res) 
   });
 
   res.json({ success: true, email: biz.email });
+});
+
+// POST /clients/:id/change-owner-email — admin changes the owner's LOGIN email (G6).
+// Only reset-owner-password existed; a wrong owner email was unfixable. Updates the
+// auth email (auto-confirmed so it's usable immediately) and the business contact
+// email, audited. Does not reassign ownership — that stays a separate operation.
+router.post('/clients/:id/change-owner-email', requireAdmin, async (req: any, res) => {
+  const newEmail = String(req.body?.new_email ?? '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+    res.status(400).json({ error: 'A valid email is required' });
+    return;
+  }
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('name, owner_id, email')
+    .eq('id', req.params.id)
+    .single();
+  if (!biz)          { res.status(404).json({ error: 'Not found' }); return; }
+  if (!biz.owner_id) { res.status(400).json({ error: 'This client has no owner login account' }); return; }
+
+  const { error: authErr } = await supabase.auth.admin.updateUserById(biz.owner_id, {
+    email:         newEmail,
+    email_confirm: true,
+  });
+  if (authErr) { sendError(res, authErr, { message: 'Failed to change owner email' }); return; }
+
+  // Keep the business contact email in step with the login email.
+  await supabase.from('businesses').update({ email: newEmail }).eq('id', req.params.id);
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'business.change_owner_email', resource: 'business',
+    businessId: req.params.id, businessName: biz.name,
+    before: { email: biz.email }, after: { email: newEmail },
+  });
+
+  res.json({ success: true, email: newEmail });
 });
 
 // ─── FEATURES (feature_flags) ─────────────────────────────────────────────────
@@ -1011,6 +1148,78 @@ router.get('/clients/:id/branches', requireAdmin, async (req, res) => {
 });
 
 /**
+ * POST /api/admin/clients/:id/branches — admin creates a branch (G1).
+ * Owner self-serve stays blocked (branches are billed separately), so creation is
+ * a SwiftPOS-agent operation. The new branch is inert until an admin licenses a
+ * till for it — this creates the record + audit only; billing follows via the
+ * existing per-branch licence flow.
+ */
+router.post('/clients/:id/branches', requireAdmin, async (req: any, res) => {
+  const businessId = req.params.id;
+  const name    = String(req.body?.name ?? '').trim();
+  const address = req.body?.address ? String(req.body.address).trim() : null;
+  const phone   = req.body?.phone   ? String(req.body.phone).trim()   : null;
+  if (!name)             { res.status(400).json({ error: 'Branch name is required' }); return; }
+  if (name.length > 100) { res.status(400).json({ error: 'Branch name is too long (max 100)' }); return; }
+
+  const { data: biz } = await supabase.from('businesses').select('id, name').eq('id', businessId).single();
+  if (!biz) { res.status(404).json({ error: 'Client not found' }); return; }
+
+  const { data: branch, error } = await supabase
+    .from('branches')
+    .insert({ business_id: businessId, name, address, phone, is_main: false, status: 'active' })
+    .select('id, name, is_main, status, city, desktop_licensed, desktop_licensed_at, desktop_licensed_by')
+    .single();
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: 'business.create_branch', resource: 'branch',
+    businessId, businessName: biz.name, after: { name, address, phone },
+  });
+
+  res.status(201).json(branch);
+});
+
+/**
+ * PATCH /api/admin/clients/:id/branches/:branchId — admin closes/reopens a branch (G2).
+ * Sets status active|inactive. The main branch cannot be closed. An inactive branch
+ * is hidden from the branch selector; to stop its tills + billing, revoke the desktop
+ * licence separately (kept explicit rather than auto-revoking here so the two
+ * operations — and their billing effect — stay visible).
+ */
+router.patch('/clients/:id/branches/:branchId', requireAdmin, async (req: any, res) => {
+  const { id: businessId, branchId } = req.params;
+  const status = req.body?.status;
+  if (status !== 'active' && status !== 'inactive') {
+    res.status(400).json({ error: "status must be 'active' or 'inactive'" }); return;
+  }
+
+  const { data: branch } = await supabase
+    .from('branches').select('id, name, is_main, status')
+    .eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (branch.is_main && status === 'inactive') {
+    res.status(400).json({ error: 'The main branch cannot be closed' }); return;
+  }
+
+  const { data: updated, error } = await supabase
+    .from('branches').update({ status, updated_at: new Date().toISOString() })
+    .eq('id', branchId).eq('business_id', businessId)
+    .select('id, name, is_main, status, city, desktop_licensed, desktop_licensed_at, desktop_licensed_by').single();
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: status === 'inactive' ? 'business.close_branch' : 'business.reopen_branch',
+    resource: 'branch', businessId, businessName: branch.name,
+    before: { status: branch.status }, after: { status },
+  });
+
+  res.json(updated);
+});
+
+/**
  * POST /api/admin/clients/:id/branches/:branchId/licence
  * Enable or disable desktop licence for a specific branch.
  * Body: { licensed: boolean, invoice_ref?: string, notes?: string }
@@ -1201,6 +1410,7 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
       label:      d.device_label ?? '—',
       role:       d.device_role ?? null,          // 'till' | 'node' | 'office' | null
       status:     d.status,                        // pending | approved | rejected
+      branchId:   d.branch_id ?? null,
       branch:     d.branch_id ? (branchName[d.branch_id] ?? '—') : '— (unbound)',
       lastSeenAt: d.last_seen_at,
       enrolledAt: d.created_at,
@@ -1209,10 +1419,55 @@ router.get('/clients/:id/devices', requireAdmin, async (req, res) => {
   });
 });
 
+// DELETE /clients/:id/devices/:deviceId — admin revokes a device (G4).
+// The stolen/compromised-till kill switch for a SwiftPOS agent: the owner can
+// already revoke via the dashboard, but in the field incident (RUNBOOK §0.2) the
+// owner may be locked out — the agent needs to act. Mirrors the owner revoke
+// (deletes the user_devices row so the device is unknown on its next sync and
+// must re-enrol with a fresh code) and records who did it.
+router.delete('/clients/:id/devices/:deviceId', requireAdmin, async (req: any, res) => {
+  const { id: businessId, deviceId } = req.params;
+
+  const { data: device } = await supabase
+    .from('user_devices')
+    .select('id, device_label, business_id')
+    .eq('id', deviceId)
+    .eq('business_id', businessId)
+    .maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  const { error } = await supabase.from('user_devices').delete().eq('id', deviceId);
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId:    req.adminId,
+    adminEmail: req.adminEmail,
+    action:     'business.revoke_device',
+    resource:   'device',
+    businessId,
+    reason:     `Revoked device ${device.device_label ?? deviceId}`,
+  });
+  res.status(204).send();
+});
+
+// GET /clients/:id/devices/:deviceId/tech-audit — tech actions logged on a till
+// (from the desktop tech console via POST /api/tech/audit). Read-only, scoped.
+router.get('/clients/:id/devices/:deviceId/tech-audit', requireAdmin, async (req: any, res) => {
+  const { id: businessId, deviceId } = req.params;
+  const { data, error } = await supabase
+    .from('tech_audit_log')
+    .select('id, action, tech_name, detail, occurred_at, branch_id')
+    .eq('business_id', businessId)
+    .eq('device_id', deviceId)
+    .order('occurred_at', { ascending: false })
+    .limit(100);
+  if (error) { sendError(res, error); return; }
+  res.json(data ?? []);
+});
+
 // ─── BRANCH TECH REVEAL CODE ──────────────────────────────────────────────────
 // The doorknock surfaced on the desktop POS (after long-pressing the logo) for a
 // branch. View or regenerate per branch. Delivered to a device at activation.
-
 router.get('/branches/:branchId/reveal-code', requireAdmin, async (req, res) => {
   const branchId = String(req.params.branchId);
   const { data: branch } = await supabase
@@ -1249,18 +1504,9 @@ router.post('/branches/:branchId/reveal-code/regenerate', requireAdmin, async (r
 });
 
 // ─── TECH ACCESS TOKENS ───────────────────────────────────────────────────────
-
-const TECH_HMAC_SECRET = process.env.TECH_HMAC_SECRET ?? 'swiftpos-tech-dev-secret-change-at-install';
-
-function generateTechToken(payload: {
-  techId: string; techName: string;
-  branchId: string; businessId: string;
-}): string {
-  const exp     = Math.floor(Date.now() / 1000) + 48 * 3600; // 48h
-  const body    = Buffer.from(JSON.stringify({ ...payload, scope: 'tech_access', exp })).toString('base64url');
-  const sig     = crypto.createHmac('sha256', TECH_HMAC_SECRET).update(body).digest('hex');
-  return `${body}.${sig}`;
-}
+// Tokens are minted by signTechToken (v2 Ed25519, lib/techToken). The old v1 HMAC
+// minter and its hardcoded-default secret were removed (A113) — dead since v2
+// landed, and the default was a forgeable-token risk for the destructive paths.
 
 /**
  * POST /api/admin/tech/generate-token

@@ -57,6 +57,7 @@
  * Never throws. A telemetry row must not stop a shop trading.
  */
 
+import { pickPriorTerminal, isMac, PriorTerminal } from './deviceRestore';
 import { supabase } from './supabase';
 
 export interface TerminalIdentity {
@@ -71,6 +72,9 @@ export interface TerminalIdentity {
    * anything. Migration 73.
    */
   role?:        string | null;
+  /** A182: stable machine MAC (X-Device-Mac). A hint for identity restoration on
+   *  reinstall, never a credential. */
+  macAddress?:  string | null;
 }
 
 /** The three roles a desktop terminal may report (deviceConfig.ts:26). */
@@ -130,7 +134,9 @@ function isMissingColumn(err: { code?: string; message?: string }): boolean {
 
 /** The same patch with migration 73's columns removed. */
 function withoutRoleColumns(patch: Record<string, unknown>): Record<string, unknown> {
-  const { device_role: _r, role_reported_at: _t, ...rest } = patch;
+  // Also drops mac_address (migration 93) — an older DB has neither, and the
+  // registration must still land without the newest optional columns (A182).
+  const { device_role: _r, role_reported_at: _t, mac_address: _m, ...rest } = patch;
   return rest;
 }
 
@@ -192,6 +198,12 @@ export async function registerDesktopTerminal(
     if (identity.appVersion)   patch.app_version   = String(identity.appVersion).slice(0, 32);
     if (identity.terminalCode) patch.terminal_code = String(identity.terminalCode).slice(0, 32);
     if (identity.ipAddress)    patch.ip_address    = identity.ipAddress;
+    // A182: bind the machine MAC so a reinstall can be recognised and re-named
+    // to its old terminal code. Normalised lower-case; only written when sent.
+    if (identity.macAddress) {
+      const mac = String(identity.macAddress).toLowerCase().trim().slice(0, 32);
+      if (/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) patch.mac_address = mac;
+    }
     // Migration 73. Only written when the terminal actually reported one — an
     // older build sends nothing, and overwriting a known role with NULL would
     // make a branch server look like a counter till until its next upgrade.
@@ -270,6 +282,35 @@ export async function registerDesktopTerminal(
   } catch (err: any) {
     // Never let this stop a sign-in.
     console.warn('[deviceRegistry] unexpected failure:', err?.message ?? err);
+    return null;
+  }
+}
+
+// ── A182: identity restoration by MAC ────────────────────────────────────────
+
+/**
+ * Find the terminal code/name a reinstalled machine should get back. Given the
+ * business and the machine's MAC, returns the most-recently-seen OTHER device that
+ * shares that MAC, or null. Never throws.
+ */
+export async function findPriorTerminalByMac(
+  businessId: string, macAddress: string, currentDeviceId: string,
+): Promise<PriorTerminal | null> {
+  const mac = String(macAddress || '').toLowerCase().trim();
+  if (!businessId || !isMac(mac)) return null;
+  try {
+    const { data, error } = await supabase
+      .from('user_devices')
+      .select('terminal_code, device_label, device_id, last_seen_at')
+      .eq('business_id', businessId)
+      .eq('mac_address', mac);
+    if (error) {                           // e.g. migration 93 not applied → column missing
+      if (!isMissingColumn(error)) console.warn('[deviceRegistry] mac lookup failed:', error.message);
+      return null;
+    }
+    return pickPriorTerminal((data ?? []) as PriorTerminal[], String(currentDeviceId ?? ''));
+  } catch (err: any) {
+    console.warn('[deviceRegistry] mac lookup error:', err?.message ?? err);
     return null;
   }
 }

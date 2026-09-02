@@ -1,6 +1,15 @@
 -- =============================================================================
 -- 86_payment_methods.sql
 --
+-- CORRECTION (A128, 2026-08-18): the notes below say `payments.method` is "a free
+-- string on the order, never an FK, so nothing breaks either way." That is only
+-- half true and it cost us the "custom-method sales don't sync" bug. method is not
+-- an FK, but it WAS value-CHECK-constrained (`payments_method_check`: cash | mpesa |
+-- card | credit | glovo) and only varchar(20), so a custom code failed the cloud
+-- INSERT (23514 / 22001) and the till parked the order forever. Migration 89 makes
+-- this claim true — free-text `code`, format-checked, varchar(40). This SQL is
+-- unchanged (it is applied); the note stands only so the next reader is not misled.
+--
 -- Custom payment methods, per business (register A95 / #4).
 --
 -- The built-in tenders (cash, M-Pesa, card) stay in code; this table holds the

@@ -20,23 +20,6 @@ export interface CartItem {
   fire_status?: 'held' | 'fired';
 }
 
-export function computeUnitPrice(
-  product: Product,
-  selectedVariants: SelectedVariant[],
-): number {
-  const variantAdjustment = selectedVariants.reduce((sum, v) => sum + Number(v.priceAdjustment), 0);
-  return Number(product.base_price) + variantAdjustment;
-}
-
-export function computeLineTotal(
-  unitPrice: number,
-  quantity: number,
-  selectedModifiers: SelectedModifier[],
-): number {
-  const modifierTotal = selectedModifiers.reduce((sum, m) => sum + Number(m.price), 0);
-  return (Number(unitPrice) + modifierTotal) * quantity;
-}
-
 export function cartSubtotal(items: CartItem[]): number {
   return items.reduce((sum, i) => sum + i.lineTotal, 0);
 }

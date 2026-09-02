@@ -128,7 +128,3 @@ export function startIdleMonitor(): void {
     }
   }, POLL_MS);
 }
-
-export function stopIdleMonitor(): void {
-  if (_timer) { clearInterval(_timer); _timer = null; }
-}

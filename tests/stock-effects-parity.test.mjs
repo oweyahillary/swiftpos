@@ -20,6 +20,7 @@
  * This models both implementations and asserts they now agree.
  */
 import assert from 'node:assert';
+import fs from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (t, c, x = '') => { c ? (pass++, console.log(`PASS  ${t}`)) : (fail++, console.log(`FAIL  ${t}${x ? ' — ' + x : ''}`)); };
@@ -62,7 +63,7 @@ function effects({ lines, orderType }) {
     for (const r of RECIPES.filter(r => r.product_id === l.productId)) {
       ing[r.ingredient_id] = (ing[r.ingredient_id] ?? 0) + r.quantity_per_serving * l.quantity;
     }
-    if (orderType === 'takeaway') {
+    if (orderType === 'takeaway' || orderType === 'delivery') {
       for (const r of PACKAGING.filter(r => r.product_id === l.productId)) {
         ing[r.ingredient_id] = (ing[r.ingredient_id] ?? 0) + Number(r.quantity) * l.quantity;
       }
@@ -126,14 +127,17 @@ const CART = [
   }
 }
 
-// ── 4. packaging is takeaway-only ───────────────────────────────────────────
+// ── 4. packaging is for to-go orders (takeaway + delivery), not dine-in ──────
 {
-  const dine = effects({ lines: CART, orderType: 'dine_in' });
-  const take = effects({ lines: CART, orderType: 'takeaway' });
+  const dine  = effects({ lines: CART, orderType: 'dine_in' });
+  const take  = effects({ lines: CART, orderType: 'takeaway' });
+  const deliv = effects({ lines: CART, orderType: 'delivery' });
   ok('dine-in consumes no packaging',
      !dine.ingredients.some(i => i.ingredient_id === 'box'));
   ok('takeaway consumes packaging',
      take.ingredients.find(i => i.ingredient_id === 'box')?.delta === -2);
+  ok('delivery consumes packaging (A131 — uniform with takeaway)',
+     deliv.ingredients.find(i => i.ingredient_id === 'box')?.delta === -2);
 }
 
 // ── 5. the regression that started it ───────────────────────────────────────
@@ -142,6 +146,21 @@ const CART = [
   const after  = effects({ lines: CART, orderType: 'dine_in' }).ingredients.length;
   ok('a dine-in sale used to deduct 0 ingredients and now deducts 2',
      before === 0 && after === 2, `${before} -> ${after}`);
+}
+
+// ── 6. pin the REAL applyStockEffects packaging gate (A131) ─────────────────
+// §1-5 model the logic; because the model is a copy, it could agree with itself
+// while the real code drifts. This reads the actual source and asserts the
+// packaging (Track C) gate admits both to-go types and still excludes dine-in —
+// so reverting the code to takeaway-only turns this red, naming the gate.
+{
+  const src = fs.readFileSync(new URL('../apps/server/src/lib/stockEffects.ts', import.meta.url), 'utf8');
+  const m = src.match(/6c\.[\s\S]*?if\s*\(([^)]*order_type[^)]*)\)/);
+  const cond = m ? m[1].trim() : '';
+  ok('real code: packaging gate found', cond.length > 0, 'could not locate the Track C gate');
+  ok('real code: packaging gate includes takeaway', /['"]takeaway['"]/.test(cond), cond);
+  ok('real code: packaging gate includes delivery (A131)', /['"]delivery['"]/.test(cond), cond);
+  ok('real code: packaging gate excludes dine_in', !/dine_in/.test(cond), cond);
 }
 
 console.log(`\n${fail === 0 ? 'All checks passed. Both order paths apply the same stock effects.' : fail + ' FAILED'}`);

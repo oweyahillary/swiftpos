@@ -13,13 +13,6 @@ import React from 'react';
 // ── Shared pulse animation ────────────────────────────────────────────────────
 const PULSE = 'animate-pulse bg-gray-800 rounded';
 
-// ── Generic skeleton line ─────────────────────────────────────────────────────
-export function SkeletonLine({ w = 'w-full', h = 'h-4', cls = '' }: {
-  w?: string; h?: string; cls?: string;
-}) {
-  return <div className={`${PULSE} ${w} ${h} ${cls}`} />;
-}
-
 // ── Table skeleton (for Inventory, Products, Reports tables) ─────────────────
 export function SkeletonTable({ rows = 8, cols = 4 }: { rows?: number; cols?: number }) {
   return (
@@ -161,20 +154,6 @@ export function POSLoadingSkeleton() {
           <div className={`${PULSE} h-12 w-full rounded-xl`} />
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Generic page content skeleton ─────────────────────────────────────────────
-// Use this as a drop-in for any page that doesn't have a specific skeleton
-export function PageSkeleton({ rows = 8 }: { rows?: number }) {
-  return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-4">
-      <div className="flex justify-between items-center">
-        <div className={`${PULSE} h-7 w-40`} />
-        <div className={`${PULSE} h-9 w-28 rounded-lg`} />
-      </div>
-      <SkeletonTable rows={rows} cols={4} />
     </div>
   );
 }

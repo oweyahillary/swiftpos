@@ -217,9 +217,7 @@ const esc = (v: unknown) =>
   String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
 /** A left label and a right value on one line, aligned to the column edges. */
-export function metaRow(label: string, value: string): string {
-  return `<table class="rows"><tr><td>${esc(label)}</td><td class="right">${esc(value)}</td></tr></table>`;
-}
+
 
 /**
  * Calibration ticket — makes the geometry measurable instead of arguable.

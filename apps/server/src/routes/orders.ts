@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { classifyOrderCreateError } from '../lib/orderErrors';
+import { pickCashier, claimNeedsValidation } from '../lib/cashier';
 import { sendError } from '../lib/sendError';
 import { capDiscount } from '../lib/discountPolicy';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -614,6 +615,34 @@ router.post('/', async (req, res) => {
         : 'completed',
     }));
 
+    // A169 — credit the sale to the real cashier, not the owner. Offline sales
+    // push under the owner token (isOwner), so req.userId is the owner; the till
+    // sends the actual cashier as `cashier_id`. Trust that claim only when it
+    // validates like verify-pin (active user in this business with access to
+    // this branch). A staff-PIN token (isOwner:false) stays authoritative.
+    const claimedCashier = req.body?.cashier_id ? String(req.body.cashier_id) : null;
+    let claimValid = false;
+    if (claimNeedsValidation({ isOwner: !!req.isOwner, subject: req.userId ?? null, claimed: claimedCashier })) {
+      const { data: claimRow, error: claimErr } = await supabase
+        .from('users')
+        .select('id, user_branches ( branch_id )')
+        .eq('id', claimedCashier)
+        .eq('business_id', req.businessId)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (!claimErr && claimRow) {
+        const access = ((claimRow as any).user_branches ?? []) as Array<{ branch_id: string }>;
+        // Empty access = all branches (same rule verify-pin applies).
+        claimValid = access.length === 0 || access.some(b => b.branch_id === branch_id);
+      }
+      if (!claimValid) {
+        console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting token subject ${req.userId}`);
+      }
+    }
+    const resolvedCashierId = pickCashier({
+      isOwner: !!req.isOwner, subject: req.userId ?? null, claimed: claimedCashier, claimValid,
+    });
+
     const orderPayload = {
       business_id: req.businessId,
       branch_id,
@@ -636,7 +665,7 @@ router.post('/', async (req, res) => {
       shift_id: resolvedShiftId,
       seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
       idempotency_key: idempotencyKey || crypto.randomUUID(),
-      cashier_id: req.userId ?? null,
+      cashier_id: resolvedCashierId,
       device_id: req.body?.device_id ?? null,
       pump_id:         req.body?.pump_id ? String(req.body.pump_id) : null,
       // Offline sales carry their original timestamp so they book on the day they
@@ -824,7 +853,7 @@ router.post('/', async (req, res) => {
     // 10. Fire webhook — non-blocking
     fireWebhook(req.businessId, 'order.completed', {
       order_id: order.id, order_number: order.order_number,
-      order_type, total: authTotal, branch_id, cashier_id: req.userId,
+      order_type, total: authTotal, branch_id, cashier_id: resolvedCashierId,
     }).catch(() => {});
 
     // Credit sale: post the charge to the customer's account ledger. Limit was
@@ -1004,24 +1033,31 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
 
   // Supervisor authorisation, exactly as for a void. Money leaving the drawer is
   // the event worth gating, and it is the same event in both cases.
-  const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
   let authorizedBy: string | null = null;
 
-  if (ov.result === 'ok') {
-    authorizedBy = ov.userId ?? null;
-  } else if (ov.result === 'no_authorizers') {
-    const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
-    if (legacy === 'not_configured') {
-      res.status(400).json({
-        error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
-        code:  'NO_OVERRIDE_CONFIGURED',
-      });
+  if (req.isOwner) {
+    // A187: an owner refunding from the dashboard self-authorises — no
+    // second-signature PIN. The audit trail is preserved: refunded_by = req.userId
+    // and refund_authorized_by = the same owner (set below).
+    authorizedBy = req.userId ?? null;
+  } else {
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
+    if (ov.result === 'ok') {
+      authorizedBy = ov.userId ?? null;
+    } else if (ov.result === 'no_authorizers') {
+      const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
+      if (legacy === 'not_configured') {
+        res.status(400).json({
+          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
+          code:  'NO_OVERRIDE_CONFIGURED',
+        });
+        return;
+      }
+      if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
+    } else {
+      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
       return;
     }
-    if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
-  } else {
-    res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
-    return;
   }
 
   try {
@@ -1153,7 +1189,10 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   if (order.status === 'voided') { res.status(400).json({ error: 'Order is already voided' }); return; }
 
   const orderAge = (Date.now() - new Date(order.created_at).getTime()) / 60000;
-  if (orderAge > VOID_WINDOW_MINUTES) {
+  // Owners may void at any age — the books are theirs, a reason is still required and
+  // recorded (voided_by + reason). Staff/supervisor voids stay window-limited: that
+  // window is a shrinkage control against a cashier quietly erasing an old sale.
+  if (orderAge > VOID_WINDOW_MINUTES && !req.isOwner) {
     res.status(403).json({
       error: `Orders can only be voided within ${VOID_WINDOW_MINUTES} minutes of creation`,
       code: 'VOID_WINDOW_EXPIRED',
@@ -1173,7 +1212,12 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   const isPaid = completedPayments.length > 0;
 
   let authorizedBy: string | null = null;
-  if (isPaid) {
+  if (isPaid && req.isOwner) {
+    // A187: an owner voiding from the dashboard self-authorises — no
+    // second-signature PIN. Audit trail preserved: voided_by = req.userId
+    // and authorized_by = the same owner (set below).
+    authorizedBy = req.userId ?? null;
+  } else if (isPaid) {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
 
@@ -1947,31 +1991,13 @@ router.post('/:id/fire-course', async (req, res) => {
   res.json({ fired: fired?.length ?? 0 });
 });
 
-// PATCH /api/orders/:id/split
-// Body: { assignments: [{ order_item_id, sub_bill }] } — assigns items to
-// numbered sub-bills (by-item split). sub_bill null clears the assignment.
-router.patch('/:id/split', async (req, res) => {
-  const { id } = req.params;
-  const { assignments } = req.body;
-  if (!Array.isArray(assignments)) { res.status(400).json({ error: 'assignments array required' }); return; }
-
-  const { data: order } = await supabase
-    .from('orders').select('id').eq('id', id).eq('business_id', req.businessId).single();
-  if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
-
-  // Only touch items that belong to this order.
-  const { data: ownItems } = await supabase
-    .from('order_items').select('id').eq('order_id', id);
-  const ownSet = new Set((ownItems ?? [] as { id: string }[]).map(i => i.id));
-
-  for (const a of assignments) {
-    if (!ownSet.has(a.order_item_id)) continue;
-    await supabase.from('order_items')
-      .update({ sub_bill: a.sub_bill ?? null })
-      .eq('id', a.order_item_id).eq('order_id', id);
-  }
-  res.json({ ok: true });
-});
+// A8: PATCH /api/orders/:id/split was RETIRED. It wrote order_items.sub_bill for a
+// by-item split, but sub_bill was read nowhere (dead column) and its only caller,
+// SplitBillModal, was never mounted. Bill splitting is handled at payment time by
+// PaymentModal's split modes (by method / evenly / by item), which collect N legs
+// summing to the total against one order via POST /:id/pay. Do not re-add a
+// sub_bill writer without a consumer. (sub_bill column left in place; drop via a
+// migration if desired.)
 
 // GET /api/orders/turnover?branch_id=  — live dwell time for open dine-in orders.
 // Returns each open dine-in order with minutes seated and an `over` flag against

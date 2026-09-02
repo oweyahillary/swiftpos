@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import BranchReceiptOverrides from "./settings/BranchReceiptOverrides";
 import { api } from "../lib/api";
 
 interface Branch {
@@ -110,6 +111,9 @@ export default function BranchDetailPage() {
           <p className="text-gray-500 text-xs mt-1">Low Stock</p>
         </div>
       </div>
+
+      {/* A139: per-branch receipt/hours overrides */}
+      {id && <div className="mb-6"><BranchReceiptOverrides branchId={id} /></div>}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 bg-gray-900 border border-gray-800 rounded-lg p-1 w-fit">

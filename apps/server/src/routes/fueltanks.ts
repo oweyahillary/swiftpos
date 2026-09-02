@@ -110,9 +110,9 @@ fuelTanksRouter.get('/movements', async (req, res) => {
     .select(`
       id, movement_type, quantity_change, quantity_after,
       notes, reference_type, created_at,
-      products ( name )
+      products!inner ( name, business_id )
     `)
-    .eq('business_id', req.businessId)
+    .eq('products.business_id', req.businessId)
     .in('movement_type', ['sale', 'restock'])
     .order('created_at', { ascending: false })
     .limit(limit);

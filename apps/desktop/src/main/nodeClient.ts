@@ -12,6 +12,7 @@
 // till keeps selling and its orders stay queued locally until the node returns.
 
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
+import { isUnreachableStatus } from './authTransport';
 
 function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
@@ -30,6 +31,31 @@ function nodeHeaders(extra: Record<string, string> = {}): Record<string, string>
 }
 
 /** Is this till configured to push to a branch node? */
+// A160: a peer that can't reach the cloud asks its NODE to refresh its session.
+// The node (which has internet) proxies the refresh token upstream and hands the
+// new pair back — so only the node needs internet. Returns null on any failure
+// (node unreachable, cloud unreachable from the node, or a revoked token), which
+// the caller treats as "couldn't refresh — keep trading offline".
+export async function refreshViaNode(refreshToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const base = nodeUrl();
+  if (!base || !refreshToken) return null;
+  try {
+    const res = await fetch(`${base}/node/refresh`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (res.status !== 200) return null; // 401 revoked · 503 node offline — nothing usable
+    const data = await res.json().catch(() => null);
+    if (data?.accessToken && data?.refreshToken) {
+      return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function hasNode(): boolean {
   return nodeUrl() !== null;
 }
@@ -268,8 +294,76 @@ export async function pullNodeDistribution(
   }
 }
 
-// ── Phase 3 — promotion support ──────────────────────────────────────────────
+// ── A24 — downstream reference snapshot pull ─────────────────────────────────
 
+/** Pull the branch reference snapshot (catalogue, prices, variants, modifiers,
+ *  stock, tables, pumps, print routing) from the node. Non-credential only.
+ *
+ *  Null = the node did not answer (unreachable, refused, or malformed): the
+ *  caller falls back to the cloud, exactly as it does today, so a missing or old
+ *  node never blocks a reference refresh. A peer with no node_url gets null too. */
+export async function fetchReferenceFromNode(timeoutMs = 8000): Promise<any | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  const cfg = getDeviceConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/reference`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        device_id: cfg?.device_id ?? null,
+        branch_id: cfg?.branch_id ?? null,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    // A well-formed bundle always carries source:'node' and a posInit object.
+    return (data && data.source === 'node' && data.posInit) ? data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * A20: pull the branch staff roster from the node (peers only). Mirrors
+ * fetchReferenceFromNode — null for a node device, no node_url, or any node
+ * problem, so the caller keeps its existing roster. A well-formed snapshot
+ * carries source:'node' and a roster array; the caller validates further
+ * (unpackRosterSnapshot) before replacing anything, so an empty/failed pull can
+ * never wipe the local roster.
+ */
+export async function fetchRosterFromNode(timeoutMs = 6000): Promise<any | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  const cfg = getDeviceConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/node/roster`, {
+      method: 'POST',
+      headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        device_id: cfg?.device_id ?? null,
+        branch_id: cfg?.branch_id ?? null,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    return (data && data.source === 'node' && Array.isArray(data.roster)) ? data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── Phase 3 — promotion support ──────────────────────────────────────────────
 /** Probe a CANDIDATE node address (not the configured one) with this till's
  *  branch secret. Used by the repoint flow: test before save, because writing
  *  a wrong address is a till that silently stops replicating. */
@@ -312,8 +406,10 @@ export async function verifyPinAtNodeClient(pin: string, branchId: string, timeo
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body:    JSON.stringify({ pin, branch_id: branchId }),
     });
-    // 503 = the node cannot read its own roster: transport-like, retry elsewhere.
-    if (res.status === 503) return { status: 'transport' };
+    // Any 5xx = the node answered but cannot serve (roster unreadable, its own
+    // proxy/DB down): transport-like, retry elsewhere. Was 503-only, which let a
+    // 500/502/504 read as a final rejection — the A152 class, on the node leg.
+    if (isUnreachableStatus(res.status)) return { status: 'transport' };
     const data = await res.json().catch(() => ({} as any));
     if (res.ok && data?.ok) return { status: 'ok', staff: data.staff };
     // Any other answer (401 bad/ambiguous PIN) is FINAL.

@@ -27,6 +27,7 @@
 import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
+import { buildPeerRelay, buildCloudOrderPayload } from './peerRelay';
 
 /** The tables that replicate across the branch LAN. */
 export const REPLICATED_TABLES = [
@@ -201,6 +202,10 @@ export interface IngestResult {
   rejected: Array<{ id: string; table: string; reason: string }>;
   /** Highest seq now held per (device, table), for the peer to checkpoint against. */
   cursor: number;
+  /** A19: peer orders forwarded into this node's cloud sync_queue this pass. Not
+   *  every applied order relays — an old peer that sends no payload, or one that
+   *  can't be relayed faithfully, is applied for branch reports but not forwarded. */
+  relayed?: number;
 }
 
 /**
@@ -241,6 +246,29 @@ function insertOrderChildren(db: ReturnType<typeof getLocalDb>, row: any): void 
   }
 }
 
+/**
+ * A19: forward a peer order to the cloud by putting its ORIGINAL payload into
+ * this node's own `sync_queue`. The node's existing push (pushPendingOrders)
+ * then POSTs it with `X-Idempotency-Key = sync_queue.order_id`, so the cloud
+ * attributes it to the peer's device and dedupes on the peer's id.
+ *
+ * Three independent guards against double-counting a sale: `sync_queue.order_id`
+ * is UNIQUE and this is INSERT OR IGNORE (a re-offered order never enqueues
+ * twice); the push carries the peer's stable id as the idempotency key; and the
+ * cloud short-circuits duplicates on (business, idempotency_key). A peer on the
+ * old build pushing straight to cloud AND this node forwarding the same order
+ * therefore converge on ONE cloud row.
+ *
+ * This BRIDGES the two queues without merging them: the peer→node queue
+ * (node_queue) is untouched; this only adds a peer-origin row to the cloud queue.
+ */
+function enqueuePeerRelay(db: ReturnType<typeof getLocalDb>, orderId: string, payload: Record<string, any>): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO sync_queue (order_id, payload, created_at, status)
+     VALUES (?, ?, datetime('now'), 'pending')`,
+  ).run(orderId, JSON.stringify(payload));
+}
+
 export function applyPeerRows(
   table: ReplicatedTable,
   peerDeviceId: string,
@@ -248,7 +276,7 @@ export function applyPeerRows(
 ): IngestResult {
   const db = getLocalDb();
   const cfg = getDeviceConfig();
-  const result: IngestResult = { applied: 0, duplicate: 0, rejected: [], cursor: 0 };
+  const result: IngestResult = { applied: 0, duplicate: 0, rejected: [], cursor: 0, relayed: 0 };
 
   // A peer that presents no device_id cannot be attributed, and NULL is not
   // neutral here: "mine" is COALESCE(device_id,'') = COALESCE(own,''), so a NULL
@@ -350,6 +378,7 @@ export function applyPeerRows(
     }
 
     try {
+      let relayedThisRow = false;
       db.transaction(() => {
         insert.run(...cols.map(c => (c === 'device_id' ? peerDeviceId : row[c] ?? null)));
         // Same transaction as the order. An order without its lines on the node
@@ -357,9 +386,19 @@ export function applyPeerRows(
         // top-products breakdown silently under-reports, so the two disagree and
         // nothing says why. Payments identically: without them the branch
         // method split omits this terminal and stops summing to revenue.
-        if (table === 'orders') insertOrderChildren(db, row);
+        if (table === 'orders') {
+          insertOrderChildren(db, row);
+          // A19: also forward this order to the cloud, atomically with applying
+          // it. buildPeerRelay refuses anything that can't be relayed faithfully
+          // (no payload / no items / no payments / mis-attributed) — that order
+          // still lands here for branch reports, it just isn't forwarded, which
+          // is the pre-A19 status quo rather than a regression.
+          const relay = buildPeerRelay(row);
+          if (relay.ok) { enqueuePeerRelay(db, relay.orderId, relay.payload); relayedThisRow = true; }
+        }
       })();
       result.applied++;
+      if (relayedThisRow) result.relayed = (result.relayed ?? 0) + 1;
       if (seq > result.cursor) result.cursor = seq;
     } catch (err: any) {
       // Stop at the first genuine failure rather than continuing past it. The
@@ -549,6 +588,13 @@ export function fillNodeOutbox(): number {
     const readPays = table === 'orders'
       ? db.prepare(`SELECT ${PAYMENT_COLUMNS.join(', ')} FROM payments WHERE order_id = ?`)
       : null;
+    // A19: the ORIGINAL cloud payload the till stored at sale time (receipt_payloads,
+    // written for every order since A94). It holds the full items WITH their variant
+    // and modifier selections — which the replicated order_items above do NOT — so it
+    // is the only faithful source for a forward the cloud will re-price correctly.
+    const readReceipt = table === 'orders'
+      ? db.prepare(`SELECT payload FROM receipt_payloads WHERE order_id = ?`)
+      : null;
     db.transaction(() => {
       for (const row of rows) {
         // branch-wide: keyed by order_id to the row above, which is already
@@ -558,6 +604,31 @@ export function fillNodeOutbox(): number {
         // and without them a peer sale reaches the node with no way to say
         // whether it was cash in a drawer or money that never touched one.
         if (readPays) row._payments = readPays.all(String(row.id));
+        // A19: carry the original payload so the node can forward this sale to the
+        // cloud verbatim. Rebuilt through the SHARED builder from the stored raw
+        // payload (faithful items) plus this row's own envelope (device_id/shift_id/
+        // created_at), so the node's forward and the till's own direct push are the
+        // same payload. If the receipt was pruned or is unparseable, we leave it
+        // unset: the order is not forwarded but still reaches the cloud by the till's
+        // own sync_queue — the forward is a best-effort accelerator, never the only
+        // path, so a missing payload loses nothing.
+        if (readReceipt) {
+          const rp = readReceipt.get(String(row.id)) as { payload: string } | undefined;
+          if (rp?.payload) {
+            try {
+              const raw = JSON.parse(rp.payload);
+              row._relayPayload = buildCloudOrderPayload(raw, {
+                shiftId: row.shift_id ?? null,
+                deviceId: row.device_id ?? null,
+                orderId: String(row.id),
+                createdAt: row.created_at,
+                // A169 — the peer stored the real cashier on its order row; forward
+                // that same value so the relay and the peer's direct push match.
+                cashierId: row.cashier_id ?? null,
+              });
+            } catch { /* leave _relayPayload unset — see note above */ }
+          }
+        }
         enqueueForNode(table, String(row.id), row);
         if (Number(row.seq) > high) high = Number(row.seq);
       }

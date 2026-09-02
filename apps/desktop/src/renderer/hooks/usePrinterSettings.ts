@@ -101,7 +101,7 @@ function load(): PrinterSettings {
 }
 
 // Non-hook accessor for code outside React (print helpers).
-export function getPrinterSettings(): PrinterSettings { return load(); }
+
 
 export function usePrinterSettings() {
   const [settings, setSettings] = useState<PrinterSettings>(load);

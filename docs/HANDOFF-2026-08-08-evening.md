@@ -165,6 +165,20 @@ and every manifest, and renumbering would silently break those references.
     prevent, and a gate that cries wolf gets switched off — which is worse than
     no gate, because everyone believes it is watching.
 
+24. **A mutation check proves an assertion NOTICES a change; it cannot prove the
+    assertion measures the RIGHT thing.** (added 2026-08-10, formalised here
+    2026-08-27 — A171. This rule was stated in `HANDOFF-2026-08-10-evening.md`
+    and cited by ID across the register, but had no home in §0 until now.) A
+    `family: 4` option that does nothing was removed and the test passed either
+    way: mutated and unmutated behaved identically because the removed thing had
+    no effect, so the mutation check could not see it. Mutation-checking (rule
+    10, rule 23) remains necessary and is not weakened by this — but after it
+    passes, still ask whether the assertion is pointed at the behaviour that
+    matters. A167 is the standing example: `offline-auth-fallback.test.mjs`
+    mutation-checked its ROUTING correctly and stayed green while the WRITE the
+    routing led to threw in production. The gate that would have caught it
+    (`check-notnull-writes`, A170) tests a different thing entirely.
+
 
 
 The tills run **Windows, Node 20, Electron 35.7.5**. Three separate breakages in

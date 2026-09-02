@@ -103,6 +103,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.sessionId          = payload.sessionId ?? null;
     req.permissionsVersion = payload.permissionsVersion ?? 0;
 
+    // A KDS display token (surface:'kds') is a long-lived, branch-scoped capability
+    // that the kitchen router accepts BEFORE this middleware. Reject it everywhere
+    // else so a leaked kitchen-screen token can read nothing but its branch's tickets.
+    if (req.surface === 'kds') {
+      res.status(403).json({ error: 'This token is limited to kitchen display endpoints' });
+      return;
+    }
+
     // ── Fix 3 + M1: status & permissions_version check ───────────────────
     // One indexed PK read per non-owner request (users PK, ~1ms). Covers two
     // things: (a) the account is still active — closes the window where a
@@ -149,6 +157,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
+    if (terminalWriteBlocked(req, res)) return;
     next();
     return;
   }
@@ -227,4 +236,54 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
     error: 'This feature requires web portal access. Please contact SwiftPOS to upgrade.',
     code:  'WEB_SURFACE_REQUIRED',
   });
+}
+
+// ── terminal write guard (A159) ───────────────────────────────────────────────
+// A stolen till token (surface='desktop') must not be able to WRITE dashboard
+// data — products, prices, users, settings. The till token is owner-scoped, so
+// requireWebSurface's `isOwner` bypass lets it through; this closes that gap by
+// gating on the surface claim directly, independent of owner-scope. The till's
+// OWN writes are a short, known allowlist; every other write from a desktop
+// surface is denied.
+//
+// Ships DRY-RUN by default (log-only) so a missed allowlist entry cannot break
+// sync on a money system: it logs "would block" and lets the request through.
+// Set TERMINAL_WRITE_ENFORCE=true to enforce (403) once the logs are clean.
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const TILL_WRITE_ALLOWLIST: RegExp[] = [
+  /^\/api\/orders(\/|$|\?)/,              // sales push (incl. /:id/void, /:id/refund)
+  /^\/api\/sync\/push(\/|$|\?)/,          // business_days / shifts / floats / expenses
+  /^\/api\/branch-prices\/sync(\/|$|\?)/, // price reconciliation
+  /^\/api\/shifts\/[^/]+\/(close|force-close)(\/|$|\?)/, // shift close / force-close — the till's own,
+                                          // server-reconciled action (expected_cash/variance); NOT a
+                                          // blanket /api/shifts open, so a shift DELETE from a till stays denied
+  /^\/api\/auth\//,                       // verify-pin, set-pin, refresh, logout (no dashboard mutations live here)
+  /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
+];
+export const TERMINAL_WRITE_ENFORCE =
+  String(process.env.TERMINAL_WRITE_ENFORCE || '').toLowerCase() === 'true';
+
+/** Pure decision: should a desktop-surface write to `path` be denied? */
+export function terminalWriteDenied(surface: string | null | undefined, method: string, path: string): boolean {
+  if (surface !== 'desktop') return false;           // only till tokens are gated
+  if (!WRITE_METHODS.has(method)) return false;       // reads are always allowed
+  const p = (path || '').split('?')[0];
+  return !TILL_WRITE_ALLOWLIST.some((re) => re.test(p));
+}
+
+/** Guard wrapper. Returns true if the request was BLOCKED (response sent). */
+function terminalWriteBlocked(req: Request, res: Response): boolean {
+  const path = req.originalUrl || req.url || '';
+  if (!terminalWriteDenied(req.surface, req.method, path)) return false;
+  console.warn(
+    `[terminal-write-guard]${TERMINAL_WRITE_ENFORCE ? '' : ' DRY-RUN'} ` +
+    `desktop-surface ${req.method} ${path.split('?')[0]} — ` +
+    `${TERMINAL_WRITE_ENFORCE ? 'BLOCKED' : 'would block'}`,
+  );
+  if (!TERMINAL_WRITE_ENFORCE) return false;          // dry-run: observe, don't break
+  res.status(403).json({
+    error: 'This terminal cannot make that change. Use the web dashboard.',
+    code:  'TERMINAL_WRITE_FORBIDDEN',
+  });
+  return true;
 }

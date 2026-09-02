@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { useState, useEffect, useCallback, type CSSProperties } from "react";
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -86,39 +86,50 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-KE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// D2 purge detector (Stage 1). ~6-month grace; financial records retained separately.
+const PURGE_GRACE_DAYS = 180;
+function daysSince(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+function isPurgeDue(biz) {
+  return biz?.status === "suspended" && !!biz?.suspended_at && daysSince(biz.suspended_at) >= PURGE_GRACE_DAYS;
+}
+
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  bg:       "#0a0e17",
-  surface:  "#111827",
-  card:     "#1a2234",
-  border:   "#1e2d45",
-  accent:   "#00d4ff",
-  green:    "#00ff88",
-  text:     "#e2e8f0",
-  muted:    "#64748b",
-  danger:   "#ef4444",
+  bg:       "#070b14",
+  surface:  "rgba(15,23,40,0.55)",     // dark glass — sidebar / topbar / modal
+  card:     "rgba(255,255,255,0.045)", // frosted glass — cards / panels
+  border:   "rgba(255,255,255,0.09)",  // glass edge (top-highlight)
+  accent:   "#38e1ff",
+  violet:   "#a78bfa",
+  green:    "#34e5a0",
+  text:     "#e8eef7",
+  muted:    "#8ea0bd",
+  danger:   "#ff5c6c",
 };
 
 const SIDEBAR_W = 220;
 
-const S = {
+const S: Record<string, CSSProperties> = {
   // Sidebar — CSS class handles responsive visibility
-  sidebar: { width: SIDEBAR_W, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "fixed", top: 0, left: 0, zIndex: 100, transition: "transform 0.25s ease" },
+  sidebar: { width: SIDEBAR_W, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "fixed", top: 0, left: 0, zIndex: 100, transition: "transform 0.25s ease" },
   // Main — CSS class handles the responsive margin
-  main:    { minHeight: "100vh", background: C.bg, color: C.text, display: "flex", flexDirection: "column", flex: 1, minWidth: 0, overflow: "hidden" },
-  topbar:  { height: 52, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 12, flexShrink: 0 },
+  main:    { minHeight: "100vh", background: "transparent", color: C.text, display: "flex", flexDirection: "column", flex: 1, minWidth: 0, overflow: "hidden" },
+  topbar:  { height: 52, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 12, flexShrink: 0 },
   content: { padding: "24px", flex: 1 },
-  card:    { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 16 },
-  kpiCard: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", flex: 1, minWidth: 0 },
-  btn:     { padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", flexShrink: 0 },
-  btnPrimary: { background: C.accent, color: "#0a0e17" },
-  btnGhost:   { background: "transparent", color: C.muted, border: `1px solid ${C.border}` },
-  btnDanger:  { background: "rgba(239,68,68,0.1)", color: C.danger, border: `1px solid rgba(239,68,68,0.3)` },
-  input:   { background: "#0f1929", border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", width: "100%", fontFamily: "inherit", boxSizing: "border-box" },
+  card:    { background: C.card, backdropFilter: "blur(22px) saturate(150%)", WebkitBackdropFilter: "blur(22px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: "16px 20px", marginBottom: 16, boxShadow: "0 10px 34px rgba(2,6,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05)" },
+  kpiCard: { background: C.card, backdropFilter: "blur(22px) saturate(150%)", WebkitBackdropFilter: "blur(22px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px 24px", flex: 1, minWidth: 0, boxShadow: "0 10px 34px rgba(2,6,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05)" },
+  btn:     { padding: "8px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", flexShrink: 0 },
+  btnPrimary: { background: C.accent, color: "#04121a" },
+  btnGhost:   { background: "rgba(255,255,255,0.05)", color: C.muted, border: `1px solid ${C.border}` },
+  btnDanger:  { background: "rgba(255,92,108,0.12)", color: C.danger, border: `1px solid rgba(255,92,108,0.3)` },
+  input:   { background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", width: "100%", fontFamily: "inherit", boxSizing: "border-box" },
   label:   { fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 },
   badge:   { fontSize: 11, padding: "2px 8px", borderRadius: 20, fontWeight: 600 },
   table:   { width: "100%", borderCollapse: "collapse", minWidth: 600 },
-  th:      { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${C.border}`, background: "#0f1929", whiteSpace: "nowrap" },
+  th:      { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.03)", whiteSpace: "nowrap" },
   td:      { padding: "12px 14px", fontSize: 13, borderBottom: `1px solid ${C.border}` },
   tab:     { padding: "8px 16px", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", color: C.muted, borderBottom: "2px solid transparent", whiteSpace: "nowrap" },
   tabActive: { color: C.accent, borderBottom: `2px solid ${C.accent}` },
@@ -140,9 +151,9 @@ function useModal() {
   const modal = state && (
     <div
       onClick={() => resolve(state.kind === 'confirm' ? false : null)}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      style={{ position: "fixed", inset: 0, background: "rgba(3,6,16,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, width: "min(420px, 92vw)", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+        style={{ background: C.surface, backdropFilter: "blur(24px) saturate(150%)", WebkitBackdropFilter: "blur(24px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: 20, width: "min(420px, 92vw)", boxShadow: "0 24px 70px rgba(2,6,16,0.55), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
         <div style={{ fontSize: 13, color: C.text, marginBottom: 14, lineHeight: 1.5 }}>{state.message}</div>
         {state.kind === 'prompt' && (
           <input
@@ -268,7 +279,7 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 380, padding: 40, background: C.surface, borderRadius: 16, border: `1px solid ${C.border}` }}>
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", color: C.accent }}>SwiftPOS</div>
+          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: C.accent, fontFamily: "'Space Grotesk', sans-serif" }}>SwiftPOS</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Admin Command Centre</div>
         </div>
 
@@ -331,7 +342,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
         className={`sp-sidebar${isOpen ? " sp-sidebar-open" : ""}`}>
         <div style={{ padding: "20px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: C.accent, letterSpacing: "-0.01em" }}>SwiftPOS</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: C.accent, letterSpacing: "-0.01em", fontFamily: "'Space Grotesk', sans-serif" }}>SwiftPOS</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Admin Portal</div>
           </div>
           {/* Close button — mobile only */}
@@ -392,13 +403,18 @@ function DashboardPage({ req }) {
     );
   }
 
-  const typeBreakdown = Object.entries(
-    health.reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {})
-  ).map(([type, count]) => ({ type: TYPE_META[type]?.label || type, count }));
-
   const critical    = health.filter(b => b.health_score < 40).length;
   const needsAttn   = health.filter(b => b.health_score >= 40 && b.health_score < 70).length;
   const healthy     = health.filter(b => b.health_score >= 70).length;
+
+  // G8: the "Fleet Health" card must chart HEALTH, not business type. These bars
+  // visualise the three bands shown as numbers above them. (Clients-by-Type gets
+  // its own card in the Phase 3 refresh — see docs/ADMIN-PORTAL-PLAN.md.)
+  const healthBuckets = [
+    { band: "Healthy",   count: healthy,   color: "#22c55e" },
+    { band: "Attention", count: needsAttn, color: "#f59e0b" },
+    { band: "Critical",  count: critical,  color: "#ef4444" },
+  ];
 
   return (
     <div style={S.content}>
@@ -418,7 +434,7 @@ function DashboardPage({ req }) {
         ].map(k => (
           <div key={k.label} style={S.kpiCard}>
             <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{k.label}</div>
-            <div style={{ fontSize: k.mono ? 18 : 28, fontWeight: 700, color: k.color, fontFamily: k.mono ? "monospace" : "inherit" }}>{k.value}</div>
+            <div style={{ fontSize: k.mono ? 18 : 28, fontWeight: 700, color: k.color, fontFamily: k.mono ? "monospace" : "'Space Grotesk', sans-serif" }}>{k.value}</div>
           </div>
         ))}
       </div>
@@ -428,7 +444,7 @@ function DashboardPage({ req }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Fleet Health</div>
           <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
-            {[["Healthy", healthy, "#22c55e"], ["Attention", needsAttn, "#f59e0b"], ["Critical", critical, C.danger]].map(([l, v, c]) => (
+            {([["Healthy", healthy, "#22c55e"], ["Attention", needsAttn, "#f59e0b"], ["Critical", critical, C.danger]] as [string, number, string][]).map(([l, v, c]) => (
               <div key={l} style={{ textAlign: "center", flex: 1 }}>
                 <div style={{ fontSize: 24, fontWeight: 700, color: c }}>{v}</div>
                 <div style={{ fontSize: 11, color: C.muted }}>{l}</div>
@@ -436,12 +452,14 @@ function DashboardPage({ req }) {
             ))}
           </div>
           <ResponsiveContainer width="100%" height={120}>
-            <BarChart data={typeBreakdown} margin={{ left: -20 }}>
+            <BarChart data={healthBuckets} margin={{ left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="type" tick={{ fill: C.muted, fontSize: 10 }} />
-              <YAxis tick={{ fill: C.muted, fontSize: 10 }} />
+              <XAxis dataKey="band" tick={{ fill: C.muted, fontSize: 10 }} />
+              <YAxis tick={{ fill: C.muted, fontSize: 10 }} allowDecimals={false} />
               <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }} />
-              <Bar dataKey="count" fill={C.accent} radius={[4,4,0,0]} />
+              <Bar dataKey="count" radius={[4,4,0,0]}>
+                {healthBuckets.map((b, i) => <Cell key={i} fill={b.color} />)}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -561,7 +579,7 @@ function ClientsPage({ req, onSelectClient }) {
                   <div style={{ fontSize: 11, color: C.muted, fontFamily: "monospace" }}>{b.id.slice(0,8)}…</div>
                 </td>
                 <td style={S.td}><TypeIcon type={b.type} size={16} style={{ marginRight: 4, verticalAlign: "middle" }} /> <span style={{ fontSize: 12, color: TYPE_META[b.type]?.color }}>{TYPE_META[b.type]?.label}</span></td>
-                <td style={S.td}><StatusBadge status={b.status} /></td>
+                <td style={S.td}><StatusBadge status={b.status} />{isPurgeDue(b) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 20, padding: "2px 7px" }}>purge-due</span>}</td>
                 <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12 }}>{b.currency}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{b.phone || "—"}</td>
                 <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(b.created_at)}</td>
@@ -588,11 +606,22 @@ function ClientDetailPage({ client, req, onBack }) {
   const [branches, setBranches] = useState([]);
   const [licencingBranch, setLicencingBranch] = useState(null);
   const [enrolBranch, setEnrolBranch] = useState(null);   // A69: branch currently minting a code
+  const [addingBranch, setAddingBranch] = useState(false);       // G1: add-branch form open
+  const [branchForm, setBranchForm] = useState({ name: "", address: "", phone: "" });
+  const [closingBranch, setClosingBranch] = useState(null);      // G2: branch currently closing/reopening
+  const [purgePreview, setPurgePreview] = useState(null);        // Stage 2: dry-run preview data
+  const [branchView, setBranchView] = useState(null);           // Branches tab: selected branch (drill-down)
+  const [deviceView, setDeviceView] = useState(null);           // Branches tab: selected till
+  const [techAudit, setTechAudit] = useState(null);             // Branches tab: tech audit log for the till
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
+  const [editing, setEditing] = useState(false);          // G5: business edit panel open
+  const [editForm, setEditForm] = useState({ name: "", type: "", currency: "" });
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState("");
   const [error, setError] = useState("");
+  const [expiryDraft, setExpiryDraft] = useState("");   // A147: web-access expiry setter
+  const [savingExpiry, setSavingExpiry] = useState(false);
   const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
@@ -639,7 +668,7 @@ function ClientDetailPage({ client, req, onBack }) {
   async function resetOwnerPassword() {
     const pw = await askPrompt(`New password for the owner of "${d.name}" (min 8 characters):`);
     if (pw === null) return;               // cancelled
-    if (pw.length < 8) { await askConfirm("Password must be at least 8 characters — not changed."); return; }
+    if ((pw as string).length < 8) { await askConfirm("Password must be at least 8 characters — not changed."); return; }
     try {
       const r = await req("POST", `/clients/${client.id}/reset-owner-password`, { new_password: pw });
       await askConfirm(`Password reset for ${r?.email ?? "the owner"}. Share it securely — they can change it after signing in.`);
@@ -664,6 +693,18 @@ function ClientDetailPage({ client, req, onBack }) {
 
   const webHostingFlag = features.find(f => f.key === 'web_hosting');
   const hasWebHosting  = webHostingFlag?.enabled === true;
+
+  // A147: set businesses.web_access_expires_at — the date the renewal ladder is
+  // measured against (distinct from the legacy web_hosting on/off boolean above).
+  async function setWebAccessExpiry(expires_at) {
+    setSavingExpiry(true);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/web-access`, { expires_at });
+      setDetail(prev => prev ? { ...prev, web_access_expires_at: updated?.web_access_expires_at ?? null } : prev);
+      setExpiryDraft("");
+    } catch (e) { setError(e.message); }
+    finally { setSavingExpiry(false); }
+  }
 
   async function toggleWebHosting(enable) {
     const confirmMsg = enable
@@ -707,7 +748,7 @@ function ClientDetailPage({ client, req, onBack }) {
     try {
       await req("POST", `/clients/${client.id}/branches/${branch.id}/licence`, {
         licensed,
-        invoice_amount: price ? parseInt(price) : null,
+        invoice_amount: price ? parseInt(price as string) : null,
         invoice_ref:    ref || null,
       });
       setBranches(prev => prev.map(b =>
@@ -725,7 +766,7 @@ function ClientDetailPage({ client, req, onBack }) {
   async function generateEnrolCode(branch) {
     const ans = await askPrompt(`How many tills for ${branch.name}? (1–20)`, "1");
     if (ans === null) return;                                   // cancelled
-    const count = Math.max(1, Math.min(20, parseInt(ans, 10) || 1));
+    const count = Math.max(1, Math.min(20, parseInt(ans as string, 10) || 1));
     setEnrolBranch(branch.id); setEnrolResult(null);
     try {
       const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/enrol-code`, { count });
@@ -734,13 +775,107 @@ function ClientDetailPage({ client, req, onBack }) {
     finally { setEnrolBranch(null); }
   }
 
+  // Stage 1: pre-purge export — download the client's normal user data as JSON.
+  async function exportData() {
+    try {
+      const data = await req("GET", `/clients/${client.id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `swiftpos-export-${client.id}.json`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch (e) { setError(e?.message ?? "Export failed"); }
+  }
+
+  // Stage 2: non-destructive purge preview — counts what a purge WOULD delete.
+  async function loadPurgePreview() {
+    try { setPurgePreview(await req("GET", `/clients/${client.id}/purge-preview`)); }
+    catch (e) { setError(e?.message ?? "Preview failed"); }
+  }
+
+  // Branches tab: drill from branch → tills → tech audit log.
+  function openTills(b) { setBranchView(b); setDeviceView(null); setTechAudit(null); }
+  async function openDeviceLog(dev) {
+    setDeviceView(dev); setTechAudit(null);
+    try { setTechAudit(await req("GET", `/clients/${client.id}/devices/${dev.id}/tech-audit`)); }
+    catch (e) { setError(e?.message ?? "Failed to load tech log"); setTechAudit([]); }
+  }
+
+  // G1: admin creates a branch (owners are blocked — branches are billed separately).
+  async function createBranch() {
+    if (!branchForm.name.trim()) { await askConfirm("Branch name is required."); return; }
+    try {
+      const created = await req("POST", `/clients/${client.id}/branches`, {
+        name:    branchForm.name.trim(),
+        address: branchForm.address.trim() || undefined,
+        phone:   branchForm.phone.trim() || undefined,
+      });
+      setBranches(prev => [...prev, created]);
+      setBranchForm({ name: "", address: "", phone: "" });
+      setAddingBranch(false);
+    } catch (e) { setError(e?.message ?? "Failed to create branch"); }
+  }
+
+  // G2: admin closes/reopens a branch (main branch can't be closed).
+  async function toggleBranchStatus(b) {
+    const closing = b.status !== "inactive";
+    const msg = closing
+      ? `Close "${b.name}"? It is deactivated and hidden from the branch selector.${b.desktop_licensed ? " It still holds an active desktop licence — click Revoke to stop its tills and billing." : ""}`
+      : `Reopen "${b.name}"? It becomes active again.`;
+    if (!(await askConfirm(msg))) return;
+    setClosingBranch(b.id);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/branches/${b.id}`, { status: closing ? "inactive" : "active" });
+      setBranches(prev => prev.map(x => x.id === b.id ? updated : x));
+    } catch (e) { setError(e?.message ?? "Failed to update branch"); }
+    finally { setClosingBranch(null); }
+  }
+
+  // G4: revoke a device (e.g. a lost/stolen till) straight from the fleet console.
+  async function revokeDevice(dev) {
+    if (!(await askConfirm(`Revoke "${dev.label}"? It is removed from the fleet and blocked on its next sync — it must re-enrol with a new code. Use this for a lost or stolen till.`))) return;
+    try {
+      await req("DELETE", `/clients/${client.id}/devices/${dev.id}`);
+      setDevices(prev => prev.filter(x => x.id !== dev.id));
+    } catch (e) { setError(e?.message ?? "Failed to revoke device"); }
+  }
+
+  // G6: change the owner's login email (mirrors the password-reset flow).
+  async function changeOwnerEmail() {
+    const em = await askPrompt(`New login email for the owner of "${d.name}":`, d.email ?? "");
+    if (em === null) return;
+    const email = String(em).trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { await askConfirm("That doesn't look like a valid email — not changed."); return; }
+    try {
+      await req("POST", `/clients/${client.id}/change-owner-email`, { new_email: email });
+      setDetail(prev => ({ ...prev, email }));
+      await askConfirm(`Owner login email changed to ${email}.`);
+    } catch (e) { setError(e?.message ?? "Failed to change owner email"); }
+  }
+
+  // G5: edit the business's core details (wires the existing PATCH /clients/:id).
+  async function saveEdit() {
+    if (!editForm.name.trim()) { await askConfirm("Business name can't be empty."); return; }
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}`, {
+        name: editForm.name.trim(), type: editForm.type, currency: editForm.currency.trim() || undefined,
+      });
+      setDetail(prev => ({ ...prev,
+        name:     updated?.name     ?? editForm.name.trim(),
+        type:     updated?.type     ?? editForm.type,
+        currency: updated?.currency ?? editForm.currency,
+      }));
+      setEditing(false);
+    } catch (e) { setError(e?.message ?? "Failed to save changes"); }
+  }
+
   if (loading) return <div style={{ padding: 24, color: C.muted }}>Loading client…</div>;
 
   const d = detail || client;
   const activeSub = subs.find(s => s.status === "active");
   const TYPE = TYPE_META[d.type] || TYPE_META.other;
 
-  const TABS = ["overview", "features", "subscription", "billing", "notes"];
+  const TABS = ["overview", "branches", "features", "subscription", "billing", "notes"];
 
   return (
     <div style={S.content}>
@@ -757,6 +892,8 @@ function ClientDetailPage({ client, req, onBack }) {
           <div style={{ fontSize: 12, color: C.muted, fontFamily: "monospace", marginTop: 2 }}>{d.id}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setEditForm({ name: d.name ?? "", type: d.type ?? "", currency: d.currency ?? "" }); setEditing(true); }} style={{ ...S.btn, ...S.btnGhost }}>Edit</button>
+          <button onClick={changeOwnerEmail} style={{ ...S.btn, ...S.btnGhost }}>Change Email</button>
           <button onClick={resetOwnerPassword} style={{ ...S.btn, ...S.btnGhost }}>Reset Password</button>
           {d.status === "active"
             ? <button onClick={suspend} style={{ ...S.btn, ...S.btnDanger }}>Suspend</button>
@@ -766,6 +903,76 @@ function ClientDetailPage({ client, req, onBack }) {
       </div>
 
       {error && <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>{error}</div>}
+
+      {d.status === "suspended" && (
+        <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          background: isPurgeDue(d) ? "rgba(245,158,11,0.08)" : "rgba(148,163,184,0.06)",
+          border: `1px solid ${isPurgeDue(d) ? "rgba(245,158,11,0.35)" : C.border}` }}>
+          <div style={{ fontSize: 12.5 }}>
+            {d.suspended_at
+              ? <>Suspended {daysSince(d.suspended_at)} days ago ({fmtDate(d.suspended_at)}).{isPurgeDue(d)
+                  ? <b style={{ color: "#f59e0b" }}> Past the 6-month grace — normal user data is due for purge.</b>
+                  : ` Normal user data purge-eligible in ${Math.max(0, PURGE_GRACE_DAYS - daysSince(d.suspended_at))} days. Financial/tax records are retained separately.`}</>
+              : "Suspended (no timestamp recorded)."}
+          </div>
+          <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Export data</button>
+          {isPurgeDue(d) && <button onClick={loadPurgePreview} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Preview purge</button>}
+        </div>
+      )}
+
+      {purgePreview && (
+        <div style={{ ...S.card, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Purge preview — nothing is deleted</div>
+            <button onClick={() => setPurgePreview(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "3px 8px" }}>Close</button>
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>{purgePreview.note}</div>
+          {[
+            { key: "purge",  label: "Would be DELETED (normal user data)", color: "#f59e0b" },
+            { key: "review", label: "Needs accountant/DPO review before delete", color: "#a78bfa" },
+            { key: "retain", label: "Retained (financial / tax / referenced)",  color: "#22c55e" },
+          ].map(grp => (
+            <div key={grp.key} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{grp.label}</div>
+              {(purgePreview[grp.key] || []).length === 0
+                ? <div style={{ fontSize: 12, color: C.muted }}>— none —</div>
+                : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {purgePreview[grp.key].map(r => (
+                      <span key={r.table} style={{ fontSize: 11, fontFamily: "monospace", color: C.text, background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 8px" }}>
+                        {r.table} <b style={{ color: grp.color }}>{r.count}</b>
+                      </span>
+                    ))}
+                  </div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing && (
+        <div style={{ ...S.card, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Edit business</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <label style={S.label}>Name</label>
+              <input style={S.input} value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label style={S.label}>Type</label>
+              <select style={S.input} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+                {Object.entries(TYPE_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div style={{ width: 120 }}>
+              <label style={S.label}>Currency</label>
+              <input style={S.input} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))} placeholder="KES" />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={saveEdit} style={{ ...S.btn, ...S.btnPrimary }}>Save</button>
+            <button onClick={() => setEditing(false)} style={{ ...S.btn, ...S.btnGhost }}>Cancel</button>
+          </div>
+        </div>
+      )}
 
 
       {/* ── Web Hosting status banner ── */}
@@ -786,6 +993,38 @@ function ClientDetailPage({ client, req, onBack }) {
           style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
           {hasWebHosting ? "Disable web access" : "Enable web access"}
         </button>
+      </div>
+
+      {/* ── Web access expiry (A147) ── */}
+      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Web access expiry</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {detail?.web_access_expires_at
+              ? `Renewal ladder is measured against ${fmtDate(detail.web_access_expires_at)}.`
+              : "No expiry set — the renewal ladder has no date to measure against."}
+          </div>
+        </div>
+        <input
+          type="date"
+          value={expiryDraft}
+          onChange={e => setExpiryDraft(e.target.value)}
+          style={{ ...S.input, width: "auto" } as React.CSSProperties}
+        />
+        <button
+          disabled={savingExpiry || !expiryDraft}
+          onClick={() => setWebAccessExpiry(expiryDraft)}
+          style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingExpiry || !expiryDraft) ? 0.4 : 1 }}>
+          {savingExpiry ? "Saving…" : "Set expiry"}
+        </button>
+        {detail?.web_access_expires_at && (
+          <button
+            disabled={savingExpiry}
+            onClick={() => setWebAccessExpiry(null)}
+            style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Tab bar */}
@@ -840,8 +1079,25 @@ function ClientDetailPage({ client, req, onBack }) {
             <div style={S.card}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Branch Licences</div>
-                <span style={{ fontSize: 11, color: C.muted }}>Desktop = one-off per branch</span>
+                <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
               </div>
+              {addingBranch && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", padding: "12px", background: "#0f1929", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <label style={S.label}>Name *</label>
+                    <input style={S.input} value={branchForm.name} onChange={e => setBranchForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Westlands" autoFocus />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <label style={S.label}>Address</label>
+                    <input style={S.input} value={branchForm.address} onChange={e => setBranchForm(f => ({ ...f, address: e.target.value }))} />
+                  </div>
+                  <div style={{ width: 130 }}>
+                    <label style={S.label}>Phone</label>
+                    <input style={S.input} value={branchForm.phone} onChange={e => setBranchForm(f => ({ ...f, phone: e.target.value }))} />
+                  </div>
+                  <button onClick={createBranch} style={{ ...S.btn, ...S.btnPrimary, flexShrink: 0 }}>Create</button>
+                </div>
+              )}
               {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No branches yet.</p>}
               {branches.map(b => (
                 <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -871,6 +1127,15 @@ function ClientDetailPage({ client, req, onBack }) {
                     style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>
                     {licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke" : "Activate"}
                   </button>
+                  {!b.is_main && (
+                    <button
+                      disabled={closingBranch === b.id}
+                      onClick={() => toggleBranchStatus(b)}
+                      style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}
+                      title={b.status === "inactive" ? "Reactivate this branch" : "Deactivate this branch"}>
+                      {closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}
+                    </button>
+                  )}
                 </div>
               ))}
 
@@ -925,6 +1190,7 @@ function ClientDetailPage({ client, req, onBack }) {
                       {d.appVersion ? `v${d.appVersion}` : "—"}{d.status !== "approved" ? ` · ${d.status}` : ""}
                     </div>
                   </div>
+                  <button onClick={() => revokeDevice(d)} style={{ ...S.btn, ...S.btnDanger, fontSize: 10, padding: "4px 9px", flexShrink: 0 }}>Revoke</button>
                 </div>
               ))}
             </div>
@@ -934,6 +1200,77 @@ function ClientDetailPage({ client, req, onBack }) {
       )}
 
       {/* FEATURES */}
+      {tab === "branches" && (
+        <div style={S.card}>
+          {!branchView ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Branches</div>
+                <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
+              </div>
+              {addingBranch && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", padding: "12px", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
+                  <div style={{ flex: 1, minWidth: 140 }}><label style={S.label}>Name *</label><input style={S.input} value={branchForm.name} onChange={e => setBranchForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Westlands" autoFocus /></div>
+                  <div style={{ flex: 1, minWidth: 120 }}><label style={S.label}>Address</label><input style={S.input} value={branchForm.address} onChange={e => setBranchForm(f => ({ ...f, address: e.target.value }))} /></div>
+                  <div style={{ width: 130 }}><label style={S.label}>Phone</label><input style={S.input} value={branchForm.phone} onChange={e => setBranchForm(f => ({ ...f, phone: e.target.value }))} /></div>
+                  <button onClick={createBranch} style={{ ...S.btn, ...S.btnPrimary, flexShrink: 0 }}>Create</button>
+                </div>
+              )}
+              {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No branches yet.</p>}
+              {branches.map(b => {
+                const tills = devices.filter(x => x.branchId === b.id);
+                return (
+                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ flex: 1, cursor: "pointer" }} onClick={() => openTills(b)}>
+                      <div style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>{b.name}{b.is_main && <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>MAIN</span>}</div>
+                      <div style={{ fontSize: 11, color: b.desktop_licensed ? "#34e5a0" : C.danger, marginTop: 2 }}>{b.desktop_licensed ? "✓ Licensed" : "✗ Not licensed"} · {tills.length} till{tills.length === 1 ? "" : "s"}</div>
+                    </div>
+                    <StatusBadge status={b.status} />
+                    <button onClick={() => openTills(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tills →</button>
+                    {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol till"}</button>}
+                    <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke" : "Activate"}</button>
+                    {!b.is_main && <button disabled={closingBranch === b.id} onClick={() => toggleBranchStatus(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>{closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}</button>}
+                  </div>
+                );
+              })}
+            </>
+          ) : !deviceView ? (
+            <>
+              <button onClick={() => setBranchView(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, marginBottom: 12 }}>← Branches</button>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{branchView.name} — tills</div>
+              {devices.filter(x => x.branchId === branchView.id).length === 0
+                ? <p style={{ fontSize: 12, color: C.muted }}>No tills enrolled on this branch.</p>
+                : devices.filter(x => x.branchId === branchView.id).map(dev => (
+                    <div key={dev.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{dev.label}{dev.role && <span style={{ fontSize: 10, color: C.muted, marginLeft: 6, textTransform: "uppercase" }}>{dev.role}</span>}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dev.lastSeenAt ? `seen ${new Date(dev.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}{dev.appVersion ? ` · v${dev.appVersion}` : ""}{dev.status !== "approved" ? ` · ${dev.status}` : ""}</div>
+                      </div>
+                      <button onClick={() => openDeviceLog(dev)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tech log →</button>
+                      <button onClick={() => revokeDevice(dev)} style={{ ...S.btn, ...S.btnDanger, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Revoke</button>
+                    </div>
+                  ))}
+            </>
+          ) : (
+            <>
+              <button onClick={() => { setDeviceView(null); setTechAudit(null); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, marginBottom: 12 }}>← Tills</button>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{deviceView.label} — tech audit log</div>
+              {techAudit === null
+                ? <p style={{ fontSize: 12, color: C.muted }}>Loading…</p>
+                : techAudit.length === 0
+                  ? <p style={{ fontSize: 12, color: C.muted }}>No tech actions logged on this till.</p>
+                  : techAudit.map(e => (
+                      <div key={e.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 13 }}><b style={{ color: C.accent }}>{e.action}</b>{e.tech_name ? ` · ${e.tech_name}` : ""}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{new Date(e.occurred_at).toLocaleString("en-KE")}</div>
+                        {e.detail && <pre style={{ fontSize: 10.5, color: C.muted, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "monospace" }}>{typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail)}</pre>}
+                      </div>
+                    ))}
+            </>
+          )}
+        </div>
+      )}
+
       {tab === "features" && (
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Feature Flags</div>
@@ -1126,7 +1463,7 @@ function BillingPage({ req }) {
             .catch(() => [])
         )
       );
-      const flat = all.flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const flat = all.flat().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setInvoices(flat);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
@@ -1331,7 +1668,7 @@ function SettingsPage({ req, apiUrl, setApiUrl }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Change Password</div>
           <form onSubmit={changePw} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {[["Current password", current, setCurrent], ["New password", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]].map(([l, v, s]) => (
+            {([["Current password", current, setCurrent], ["New password", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]] as [string, string, (v: string) => void][]).map(([l, v, s]) => (
               <div key={l}>
                 <label style={S.label}>{l}</label>
                 <input style={S.input} type="password" value={v} required onChange={e => s(e.target.value)} />
@@ -1361,7 +1698,7 @@ function TechPage({ req, admin }) {
   const [revealCode, setRevealCode] = useState(null);   // D18: the branch doorknock code, shown with the token
   const [generatedSwitch, setGeneratedSwitch] = useState(null);
   const [error, setError]           = useState("");
-  const { askPrompt, modal } = useModal();
+  const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
     Promise.all([
@@ -1395,6 +1732,18 @@ function TechPage({ req, admin }) {
         .catch(() => setRevealCode(null));
     } catch(e) { setError(e.message); }
     finally { setGenerating(false); }
+  }
+
+  // G3: rotate the branch reveal code (the A114 tech-access kill switch). The
+  // endpoint existed but had no UI. Rotating invalidates the old doorknock; tills
+  // pick up the new one on their next online sync.
+  async function rotateRevealCode() {
+    if (!genForm.branch_id) return;
+    if (!(await askConfirm("Rotate this branch's reveal code? The current code stops working immediately; tills refresh the new one on their next online sync. Do this when a tech's access should end."))) return;
+    try {
+      const r = await req("POST", `/branches/${genForm.branch_id}/reveal-code/regenerate`, {});
+      setRevealCode(r?.reveal_code ?? null);
+    } catch (e) { setError(e?.message ?? "Failed to rotate reveal code"); }
   }
 
   async function generateSwitch(e) {
@@ -1498,6 +1847,7 @@ function TechPage({ req, admin }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <code style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: C.accent }}>{revealCode}</code>
                     <button onClick={() => navigator.clipboard?.writeText(revealCode)} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px" }}>Copy</button>
+                    <button onClick={rotateRevealCode} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px" }}>Rotate</button>
                   </div>
                 </div>
               )}
@@ -1726,7 +2076,7 @@ function NewClientPage({ req, onCreated }) {
                     cursor: "pointer", display: "flex", flexDirection: "column",
                     alignItems: "center", gap: 6, transition: "all 0.15s",
                   }}>
-                  <span style={{ fontSize: 22 }}>{meta.icon}</span>
+                  <TypeIcon type={val} size={22} />
                   <span style={{ fontSize: 12, fontWeight: 600, color: form.businessType === val ? meta.color : C.muted }}>{meta.label}</span>
                 </button>
               ))}
@@ -1886,7 +2236,7 @@ export default function AdminPortal() {
         ::-webkit-scrollbar-track { background: ${C.bg}; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-        select option { background: ${C.surface}; }
+        select option { background: #0d1526; }
 
         /* ── Sidebar: desktop always visible, mobile hidden by default ── */
         .sp-sidebar {

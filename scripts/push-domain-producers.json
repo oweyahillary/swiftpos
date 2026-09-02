@@ -1,0 +1,57 @@
+{
+  "_comment": "Reviewed set of values each PUSH-table column can actually be given by a producer (till or cloud order-create), with the source that proves it. check-push-domain-parity.mjs diffs 'emits' against the FINAL cloud CHECK value-list; any emit the cloud rejects fails the gate (silent sync loss, the A128/A129 shape). Keep emits grounded in code — add a value only when a producer really writes it, and cite where.",
+  "producers": {
+    "orders.order_type": {
+      "emits": ["dine_in", "takeaway", "retail", "delivery", "parking_session", "fuel_sale"],
+      "source": "apps/desktop/.../POSPage.tsx chooseOrderType('dine_in'|'takeaway'|'delivery') + useState union incl. 'delivery'; apps/server/src/lib/schemas.ts order_type z.enum([...,'delivery']); parking_session/fuel_sale from parking & petrol flows"
+    },
+    "orders.source": {
+      "emits": ["pos"],
+      "source": "till originates POS sales; qr/aggregator/online are cloud-side channels, never pushed from a till"
+    },
+    "orders.status": {
+      "emits": ["open", "held", "completed", "voided"],
+      "source": "apps/desktop/src/main/*.ts status literals (open/held/completed/voided); 'refunded' is cloud-side"
+    },
+    "orders.sync_status": {
+      "emits": ["pending", "synced"],
+      "source": "syncEngine sets pending on create, synced after push; 'conflict' is cloud-resolved"
+    },
+    "payments.status": {
+      "emits": ["pending", "completed", "failed"],
+      "source": "apps/desktop/src/main/*.ts payment status literals; 'refunded' is cloud-side"
+    },
+    "payments.sync_status": {
+      "emits": ["pending", "synced"],
+      "source": "syncEngine; 'conflict' is cloud-resolved"
+    },
+    "shifts.status": {
+      "emits": ["open", "closed"],
+      "source": "apps/desktop shift lifecycle; 'closed_unreconciled' set cloud-side on forced close (migration 41)"
+    },
+    "shifts.close_method": {
+      "emits": ["counted", "forced"],
+      "source": "apps/desktop shift close path (counted | forced); NULL while open"
+    },
+    "float_transactions.type": {
+      "emits": ["float_in", "float_out"],
+      "source": "apps/desktop float drawer in/out"
+    },
+    "expenses.sync_status": {
+      "emits": ["pending", "synced"],
+      "source": "syncEngine; 'conflict' is cloud-resolved"
+    },
+    "customer_credit_transactions.type": {
+      "emits": ["charge", "payment"],
+      "source": "till charges credit on order and records repayment; 'adjustment' is cloud/admin-side"
+    },
+    "business_days.status": {
+      "emits": ["open", "closed"],
+      "source": "apps/desktop business-day open/close lifecycle (migration 41 adds closed_unreconciled cloud-side on forced close)"
+    },
+    "order_items.fire_status": {
+      "emits": ["held", "fired"],
+      "source": "apps/desktop KDS fire path"
+    }
+  }
+}

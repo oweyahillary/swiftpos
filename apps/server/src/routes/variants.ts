@@ -4,6 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { buildChoiceImport } from '../lib/productImport';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -30,6 +31,76 @@ function stockFields(o: any): {
 }
 
 // ── Variant Groups ──────────────────────────────────────────
+
+// POST /api/variants/bulk — A165 slice 2. Import the Upgrades & Spices tab.
+// Body: { rows: [{ product, group, type(free|upgrade), option, price_added }] }
+// Name-keyed by product; an uploaded (product, group) REPLACES that group's
+// options wholesale and sets its kind from `type`. option=DELETE removes the group.
+router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
+  const { rows } = req.body ?? {};
+  if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: 'rows array is required' }); return; }
+  if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }
+
+  const { groups, errors } = buildChoiceImport(rows);
+  const results = { created: 0, updated: 0, deleted: 0, errors: [...errors] as { row: number; error: string }[] };
+
+  // Resolve products (name or plu) within this business only — variant_groups
+  // have no business_id, so scoping is via the owning product.
+  const { data: prods } = await supabase
+    .from('products').select('id, name, plu_code').eq('business_id', req.businessId);
+  const byName: Record<string, string> = {};
+  const byPlu: Record<string, string> = {};
+  for (const p of (prods ?? []) as any[]) {
+    const n = String(p.name ?? '').trim().toLowerCase();
+    const pl = String(p.plu_code ?? '').trim().toLowerCase();
+    if (n && !(n in byName)) byName[n] = p.id;
+    if (pl && !(pl in byPlu)) byPlu[pl] = p.id;
+  }
+
+  for (const g of groups) {
+    const productId = byPlu[g.product.toLowerCase()] || byName[g.product.toLowerCase()];
+    if (!productId) { results.errors.push({ row: 0, error: `unknown product: ${g.product}` }); continue; }
+
+    const { data: existing } = await supabase
+      .from('variant_groups').select('id').eq('product_id', productId).eq('name', g.group).maybeSingle();
+
+    if (g.del) {
+      if (existing) {
+        await supabase.from('variant_options').delete().eq('variant_group_id', existing.id);
+        await supabase.from('variant_groups').delete().eq('id', existing.id);
+        results.deleted++;
+      }
+      continue;
+    }
+
+    let groupId: string;
+    if (existing) {
+      await supabase.from('variant_groups').update({ kind: g.kind, required: g.required }).eq('id', existing.id);
+      await supabase.from('variant_options').delete().eq('variant_group_id', existing.id); // replace options wholesale
+      groupId = existing.id;
+      results.updated++;
+    } else {
+      const { data: created, error } = await supabase
+        .from('variant_groups').insert({ product_id: productId, name: g.group, kind: g.kind, required: g.required, sort_order: 0 })
+        .select('id').single();
+      if (error || !created) { results.errors.push({ row: 0, error: `${g.product}/${g.group}: ${error?.message ?? 'insert failed'}` }); continue; }
+      groupId = created.id;
+      results.created++;
+    }
+
+    if (g.options.length > 0) {
+      const { error: optErr } = await supabase.from('variant_options').insert(
+        g.options.map(o => ({ variant_group_id: groupId, name: o.name, price_adjustment: o.price_adjustment, sort_order: o.sort_order })),
+      );
+      if (optErr) { results.errors.push({ row: 0, error: `${g.product}/${g.group} options: ${optErr.message}` }); continue; }
+    }
+
+    // The till only pulls variants for products flagged has_variants.
+    await supabase.from('products').update({ has_variants: true }).eq('id', productId).eq('business_id', req.businessId);
+  }
+
+  res.json(results);
+});
 
 // GET /api/variants/groups?product_id=xxx
 router.get('/groups', async (req, res) => {

@@ -277,15 +277,9 @@ export default function CashierScreen() {
   const [showPayment,      setShowPayment]      = useState(false);
   const [showZReport,      setShowZReport]      = useState(false);
   const [showTransfer,     setShowTransfer]      = useState(false);
-  const [showSplitBill,    setShowSplitBill]     = useState(false);
   const [showRoomCharge,   setShowRoomCharge]    = useState(false);
   const [transferTarget,   setTransferTarget]    = useState<string | null>(null);
-  const [splitGuests,      setSplitGuests]       = useState<{ name: string; itemIndexes: number[] }[]>([
-    { name: 'Guest 1', itemIndexes: [] },
-    { name: 'Guest 2', itemIndexes: [] },
-  ]);
-  const [splitStep,        setSplitStep]         = useState<'assign' | 'pay'>('assign');
-  const [splitPayingGuest, setSplitPayingGuest]  = useState(0);
+  const [paymentEvenSplit, setPaymentEvenSplit]  = useState(false); // A151: open PaymentModal in even-split mode
   const [roomNumber,       setRoomNumber]        = useState('');
   const [roomGuestName,    setRoomGuestName]      = useState('');
   const [roomCharging,     setRoomCharging]       = useState(false);
@@ -304,6 +298,10 @@ export default function CashierScreen() {
   const [discountState, setDiscountState] = useState<DiscountState | null>(null);
   const [activePromos, setActivePromos]   = useState<ActivePromo[]>([]);
   const [floorMode, setFloorMode]         = useState(true);
+  // A188: only use the absolute-positioned floor plan when tables actually carry a
+  // saved layout. Without it every tile falls back to (40,40) and stacks into one
+  // box — the desktop TablesView guards this the same way (hasLayout → grid).
+  const hasLayout = tables.some((t: Table) => t.pos_x != null && t.pos_y != null);
   const [loyaltyState, setLoyaltyState] = useState<LoyaltyState | null>(null);
 
   // ── Theme — light is default for POS ──────────────────────────────────────
@@ -901,11 +899,12 @@ export default function CashierScreen() {
         }
       ` : `
         [data-pos-theme="dark"] {
-          --pos-bg: #0f172a; --pos-panel: #1e293b; --pos-surface: #0f172a;
-          --pos-border: #334155; --pos-border-l: #1e293b;
-          --pos-text: #f1f5f9; --pos-text2: #e2e8f0; --pos-text3: #94a3b8; --pos-text4: #64748b;
-          --pos-input: #0f172a; --pos-input-border: #334155;
-          --pos-card: #1e293b; --pos-modal: #1e293b;
+          /* A185: desktop-till palette — gray-950/900/800 (was slate). */
+          --pos-bg: #030712; --pos-panel: #111827; --pos-surface: #1f2937;
+          --pos-border: #1f2937; --pos-border-l: #111827;
+          --pos-text: #ffffff; --pos-text2: #e5e7eb; --pos-text3: #9ca3af; --pos-text4: #6b7280;
+          --pos-input: #1f2937; --pos-input-border: #374151;
+          --pos-card: #111827; --pos-modal: #111827;
           --pos-free-bg: linear-gradient(160deg,#0d2d1a 0%,#0a2016 100%);
           --pos-free-border: rgba(34,197,94,0.35);
           --pos-free-shadow: 0 4px 0 rgba(0,0,0,0.5),0 8px 20px rgba(0,0,0,0.3),inset 0 1px 0 rgba(34,197,94,0.15);
@@ -1053,7 +1052,7 @@ export default function CashierScreen() {
                     <span style={{ ...s.legendDot, background: '#22c55e' }} /> Free
                     <span style={{ ...s.legendDot, background: '#f59e0b' }} /> Occupied
                   </span>
-                  <div style={{ display: 'flex', background: 'var(--pos-surface)', borderRadius: 8, padding: 2, gap: 2, border: '1px solid var(--pos-border)' }}>
+                  <div style={{ display: 'flex', background: 'var(--pos-surface)', borderRadius: 8, padding: 2, gap: 2, border: '1px solid var(--pos-border)', visibility: hasLayout ? 'visible' : 'hidden' }}>
                     {[{ id: true, label: '⊞ Floor' }, { id: false, label: '▦ Grid' }].map(v => (
                       <button key={String(v.id)} onClick={() => setFloorMode(v.id)}
                         style={{
@@ -1070,8 +1069,8 @@ export default function CashierScreen() {
               </div>
               {tables.length === 0 ? (
                 <div style={s.emptySlots}>No tables configured. Add tables in Setup → Restaurant Setup.</div>
-              ) : floorMode ? (
-                /* Floor plan view */
+              ) : floorMode && hasLayout ? (
+                /* Floor plan view — only when tables carry a saved layout */
                 <div style={{ overflowX: 'auto', overflowY: 'auto', flex: 1 }}>
                   <div style={{ position: 'relative', width: FLOOR_W, height: FLOOR_H, background: '#0a0f1a', borderRadius: 12, flexShrink: 0 }}>
                     {tables.map(table => {
@@ -1287,7 +1286,7 @@ export default function CashierScreen() {
                       ...s.catBtn,
                       ...(activeCategory === cat.id
                         ? {
-                            background: (cat as Category).color ?? '#3b82f6',
+                            background: (cat as Category).color ?? '#22c55e',
                             color: '#fff',
                             borderColor: 'transparent',
                           }
@@ -1570,7 +1569,7 @@ export default function CashierScreen() {
                   <button
                     data-testid="charge-button"
                     style={s.chargeBtn}
-                    onClick={() => setShowPayment(true)}
+                    onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}
                   >
                     Charge {fmt(orderTotal, currency)}
                   </button>
@@ -1589,7 +1588,7 @@ export default function CashierScreen() {
                         ↔ Transfer
                       </button>
                       <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setSplitStep('assign'); setSplitGuests([{name:'Guest 1',itemIndexes:[]},{name:'Guest 2',itemIndexes:[]}]); setShowSplitBill(true); }}>
+                        onClick={() => { setPaymentEvenSplit(true); setShowPayment(true); }}>
                         👥 Split Bill
                       </button>
                       <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
@@ -1598,7 +1597,7 @@ export default function CashierScreen() {
                       </button>
                     </div>
                   )}
-                  <button data-testid="charge-button" style={s.chargeBtn} onClick={() => setShowPayment(true)}>
+                  <button data-testid="charge-button" style={s.chargeBtn} onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}>
                     Charge {fmt(orderTotal, currency)}
                   </button>
                 </div>
@@ -1972,7 +1971,8 @@ export default function CashierScreen() {
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
-          onClose={() => setShowPayment(false)}
+          initialEvenSplit={paymentEvenSplit}
+          onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
             // Free the table immediately on payment (independent of the receipt's
             // New Sale button), so a paid table never stays stuck "Occupied".
@@ -2125,129 +2125,6 @@ export default function CashierScreen() {
       )}
 
       {/* ── Split Bill by Items Modal ─────────────────────────────────────── */}
-      {showSplitBill && isRestaurant && (() => {
-        const assignedAll = cart.every((_, idx) => splitGuests.some(g => g.itemIndexes.includes(idx)));
-        const guestTotals = splitGuests.map(g => ({
-          ...g,
-          total: g.itemIndexes.reduce((s, idx) => s + (cart[idx]?.lineTotal ?? 0), 0),
-        }));
-
-        return (
-          <div style={s.overlay}>
-            <div style={{ background: 'var(--pos-modal)', border: '1px solid var(--pos-border)', borderRadius: 16, padding: '24px 28px', width: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.4)', maxHeight: '85vh', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--pos-text)', margin: 0 }}>Split Bill by Items</p>
-                <button onClick={() => setShowSplitBill(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 18, cursor: 'pointer' }}>✕</button>
-              </div>
-
-              {splitStep === 'assign' ? (
-                <>
-                  {/* Guest name inputs */}
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                    {splitGuests.map((g, gi) => (
-                      <input key={gi} value={g.name}
-                        onChange={e => setSplitGuests(prev => prev.map((x, i) => i === gi ? { ...x, name: e.target.value } : x))}
-                        style={{ flex: 1, background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)', borderRadius: 8, padding: '6px 10px', color: 'var(--pos-text)', fontSize: 12 }} />
-                    ))}
-                    {splitGuests.length < 6 && (
-                      <button onClick={() => setSplitGuests(prev => [...prev, { name: `Guest ${prev.length + 1}`, itemIndexes: [] }])}
-                        style={{ padding: '6px 12px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', borderRadius: 8, color: '#60a5fa', fontSize: 12, cursor: 'pointer' }}>
-                        + Guest
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Item assignment */}
-                  <div style={{ marginBottom: 16 }}>
-                    {cart.map((item, idx) => {
-                      const assignedTo = splitGuests.findIndex(g => g.itemIndexes.includes(idx));
-                      return (
-                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--pos-border)' }}>
-                          <div style={{ flex: 1, fontSize: 13, color: 'var(--pos-text)' }}>
-                            {item.product.name}
-                            <span style={{ color: '#64748b', marginLeft: 6 }}>{item.quantity}× {fmt(item.lineTotal, currency)}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            {splitGuests.map((g, gi) => (
-                              <button key={gi} onClick={() => setSplitGuests(prev => prev.map((x, i) => ({
-                                  ...x,
-                                  itemIndexes: i === gi
-                                    ? x.itemIndexes.includes(idx) ? x.itemIndexes.filter(n => n !== idx) : [...x.itemIndexes, idx]
-                                    : x.itemIndexes.filter(n => n !== idx),
-                                })))}
-                                style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: assignedTo === gi ? 'none' : '1px solid var(--pos-border)', background: assignedTo === gi ? '#3b82f6' : 'var(--pos-surface)', color: assignedTo === gi ? '#fff' : '#64748b' }}>
-                                {g.name.slice(0, 6)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Guest totals preview */}
-                  <div style={{ background: 'var(--pos-surface)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                    {guestTotals.map((g, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                        <span style={{ color: '#94a3b8' }}>{g.name}</span>
-                        <span style={{ color: '#f1f5f9', fontWeight: 600 }}>{fmt(g.total, currency)}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setShowSplitBill(false)}
-                      style={{ flex: 1, padding: '11px 0', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', borderRadius: 10, color: 'var(--pos-text3)', fontSize: 13, cursor: 'pointer' }}>
-                      Cancel
-                    </button>
-                    <button disabled={!assignedAll}
-                      onClick={() => { setSplitPayingGuest(0); setSplitStep('pay'); }}
-                      style={{ flex: 1, padding: '11px 0', background: assignedAll ? '#22c55e' : '#334155', border: 'none', borderRadius: 10, color: assignedAll ? '#000' : '#64748b', fontSize: 13, fontWeight: 700, cursor: assignedAll ? 'pointer' : 'default' }}>
-                      {assignedAll ? 'Proceed to Payment →' : 'Assign all items first'}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Payment step — pay each guest one at a time */}
-                  <div style={{ marginBottom: 16, background: 'var(--pos-surface)', borderRadius: 10, padding: '12px 14px' }}>
-                    {guestTotals.map((g, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < guestTotals.length - 1 ? '1px solid var(--pos-border)' : 'none' }}>
-                        <span style={{ fontSize: 13, color: i < splitPayingGuest ? '#22c55e' : i === splitPayingGuest ? '#f1f5f9' : '#64748b', fontWeight: i === splitPayingGuest ? 700 : 400 }}>
-                          {i < splitPayingGuest ? '✓ ' : i === splitPayingGuest ? '▶ ' : ''}{g.name}
-                        </span>
-                        <span style={{ fontSize: 13, color: i === splitPayingGuest ? '#22c55e' : '#64748b', fontWeight: 600 }}>{fmt(g.total, currency)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
-                    Now collecting payment from <strong style={{ color: '#f1f5f9' }}>{splitGuests[splitPayingGuest]?.name}</strong> — {fmt(guestTotals[splitPayingGuest]?.total ?? 0, currency)}
-                  </p>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setSplitStep('assign')}
-                      style={{ flex: 1, padding: '11px 0', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', borderRadius: 10, color: 'var(--pos-text3)', fontSize: 13, cursor: 'pointer' }}>
-                      ← Back
-                    </button>
-                    <button onClick={() => {
-                      // Build a sub-cart for this guest and open PaymentModal
-                      const guest = splitGuests[splitPayingGuest];
-                      const guestCart = guest.itemIndexes.map(idx => cart[idx]).filter(Boolean);
-                      // Temporarily replace cart for payment
-                      setCart(guestCart);
-                      setShowSplitBill(false);
-                      setShowPayment(true);
-                      // After payment, restore remaining items (handled in onSuccess via splitPayingGuest)
-                    }}
-                      style={{ flex: 2, padding: '11px 0', background: '#22c55e', border: 'none', borderRadius: 10, color: '#000', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      Charge {fmt(guestTotals[splitPayingGuest]?.total ?? 0, currency)} →
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ── Room Charge Modal ─────────────────────────────────────────────── */}
       {showRoomCharge && isRestaurant && (
@@ -2443,14 +2320,14 @@ const s: Record<string, React.CSSProperties> = {
   },
   spinnerLg: {
     width: 36, height: 36, border: '3px solid var(--pos-border)',
-    borderTopColor: '#3b82f6', borderRadius: '50%',
+    borderTopColor: '#22c55e', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   // Header — always dark for POS readability
   header: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '0 20px', height: 56, background: '#1e293b',
-    borderBottom: '1px solid #334155', flexShrink: 0, gap: 16,
+    padding: '0 20px', height: 56, background: '#111827',
+    borderBottom: '1px solid #1f2937', flexShrink: 0, gap: 16,
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 },
   logoMark: { fontSize: 20 },
@@ -2461,9 +2338,9 @@ const s: Record<string, React.CSSProperties> = {
     gap: 8, overflowX: 'auto' as const,
   },
   modeBadge: {
-    padding: '3px 10px', background: 'rgba(59,130,246,0.15)',
-    border: '1px solid rgba(59,130,246,0.3)', borderRadius: 20,
-    color: '#93c5fd', fontSize: 11, fontWeight: 600, flexShrink: 0,
+    padding: '3px 10px', background: 'rgba(34,197,94,0.12)',
+    border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20,
+    color: '#4ade80', fontSize: 11, fontWeight: 600, flexShrink: 0,
   },
   parkedBadge: {
     display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px',
@@ -2471,7 +2348,7 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8', fontSize: 12, cursor: 'pointer', flexShrink: 0,
   },
   parkedBadgeActive: {
-    background: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6', color: '#60a5fa',
+    background: 'rgba(34,197,94,0.12)', borderColor: '#22c55e', color: '#4ade80',
   },
   parkedCount: {
     background: '#475569', borderRadius: 10, padding: '0 5px',
@@ -2502,11 +2379,11 @@ const s: Record<string, React.CSSProperties> = {
   slotViewTitle: { fontSize: 12, fontWeight: 700, color: 'var(--pos-text3)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
   slotLegend: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--pos-text3)' },
   legendDot: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 4 },
-  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 220px)', gap: 10 },
+  slotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 },
   slotCard: {
-    height: 190,
-    padding: '22px 18px 20px',
-    borderRadius: 16,
+    height: 130,
+    padding: '14px 10px 12px',
+    borderRadius: 12,
     border: '1px solid transparent',
     cursor: 'pointer',
     textAlign: 'center' as const,
@@ -2528,8 +2405,8 @@ const s: Record<string, React.CSSProperties> = {
     background: 'var(--pos-surface)', border: '1px solid var(--pos-border)', opacity: 0.45,
     boxShadow: 'none',
   },
-  slotName: { fontSize: 24, fontWeight: 800, color: 'var(--pos-text)', letterSpacing: '-0.3px' },
-  slotSub: { fontSize: 15, color: 'var(--pos-text4)' },
+  slotName: { fontSize: 18, fontWeight: 800, color: 'var(--pos-text)', letterSpacing: '-0.3px' },
+  slotSub: { fontSize: 13, color: 'var(--pos-text4)' },
   slotOrderInfo: { display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2, marginTop: 4 },
   slotItemCount: { fontSize: 12, color: '#f59e0b', fontWeight: 700 },
   slotTime: { fontSize: 10, color: 'var(--pos-text4)' },
@@ -2551,10 +2428,10 @@ const s: Record<string, React.CSSProperties> = {
   },
   activeTablePill: {
     display: 'flex', alignItems: 'center', gap: 8,
-    background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)',
-    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: '#93c5fd', fontWeight: 600,
+    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
+    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: '#4ade80', fontWeight: 600,
   },
-  coversPill: { fontSize: 11, color: '#60a5fa' },
+  coversPill: { fontSize: 11, color: '#4ade80' },
   productHeader: { padding: '10px 16px 8px', flexShrink: 0, background: 'var(--pos-panel)' },
   searchInput: {
     width: '100%', background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)',
@@ -2573,20 +2450,20 @@ const s: Record<string, React.CSSProperties> = {
   },
   productGrid: {
     flex: 1, overflowY: 'auto' as const, padding: 12,
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-    gap: 10, alignContent: 'start', background: 'var(--pos-bg)',
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+    gap: 12, alignContent: 'start', background: 'var(--pos-bg)',
   },
   productCard: {
     position: 'relative' as const, background: 'var(--pos-panel)', border: '1px solid var(--pos-border)',
-    borderRadius: 12, padding: 10, cursor: 'pointer', textAlign: 'center' as const,
+    borderRadius: 12, padding: 10, cursor: 'pointer', textAlign: 'left' as const,
     transition: 'all 0.15s ease', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', gap: 5,
+    alignItems: 'stretch', gap: 5,
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
-  productCardActive: { border: '1px solid rgba(59,130,246,0.5)', background: 'rgba(59,130,246,0.06)' },
+  productCardActive: { border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.06)' },
   cartBadge: {
-    position: 'absolute' as const, top: 6, right: 6, background: '#3b82f6',
-    color: '#fff', fontSize: 10, fontWeight: 700, width: 18, height: 18,
+    position: 'absolute' as const, top: 6, right: 6, background: '#22c55e',
+    color: '#030712', fontSize: 10, fontWeight: 700, width: 18, height: 18,
     borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   variantBadge: {
@@ -2597,7 +2474,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   fuelBadge: { position: 'absolute' as const, top: 6, left: 6, fontSize: 12 },
   productImage: {
-    width: 64, height: 64, borderRadius: 8, background: 'var(--pos-surface)',
+    width: '100%', height: 76, borderRadius: 8, background: 'var(--pos-surface)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   productName: { fontSize: 12, fontWeight: 600, color: 'var(--pos-text)', lineHeight: 1.3 },
@@ -2608,7 +2485,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   // Right panel
   rightPanel: {
-    width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column',
+    width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column',
     background: 'var(--pos-panel)', borderLeft: '1px solid var(--pos-border)',
     transition: 'width 0.2s ease',
   },
@@ -2737,7 +2614,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '7px 14px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)',
     borderRadius: 8, cursor: 'pointer', transition: 'all 0.12s ease',
   },
-  variantOptionSelected: { background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6' },
+  variantOptionSelected: { background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e' },
   variantOptionName: { fontSize: 13, color: 'var(--pos-text)', fontWeight: 500 },
   variantOptionPrice: { fontSize: 11, color: '#22c55e', fontWeight: 600 },
   variantTotal: {

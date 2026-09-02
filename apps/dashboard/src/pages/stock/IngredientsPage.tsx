@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import BulkIngredientImport from './BulkIngredientImport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ function stockStatus(i: Ingredient): 'ok' | 'low' | 'out' {
 export default function IngredientsPage() {
   const { can } = usePermissions();
   const { business } = useBusiness();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, branches } = useBranch();
   const currency = business?.currency ?? 'KES';
   const { toast, showToast } = useToast();
   const canManage = can('ingredients.manage');
@@ -80,6 +81,7 @@ export default function IngredientsPage() {
 
   // Ingredient modal
   const [modal, setModal]       = useState<'add' | Ingredient | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [form, setForm]         = useState<IngredientForm>(EMPTY_FORM);
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState('');
@@ -238,6 +240,12 @@ export default function IngredientsPage() {
             <span className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-xs font-medium">
               ⚠ {lowCount} low/out of stock
             </span>
+          )}
+          {canManage && (
+            <button
+              onClick={() => { if (!activeBranchId) { showToast('Select a specific branch (top bar) before importing — opening stock is per-branch', 'warning'); return; } setShowImport(true); }}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-sm font-semibold rounded-lg transition-colors"
+            >Import CSV</button>
           )}
           {canManage && (
             <button
@@ -568,6 +576,23 @@ export default function IngredientsPage() {
         </div>
       )}
     </div>
+
+      {showImport && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowImport(false)}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold">Bulk import ingredients</h2>
+              <button onClick={() => setShowImport(false)} className="text-gray-500 hover:text-gray-300 text-xl leading-none">×</button>
+            </div>
+            <BulkIngredientImport
+              branchId={activeBranchId!}
+              branchLabel={branches.find(b => b.id === activeBranchId)?.name}
+              onImported={load}
+              onToast={showToast}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

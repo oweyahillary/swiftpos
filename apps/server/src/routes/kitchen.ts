@@ -1,9 +1,12 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 const router = safeRouter();
 
@@ -17,7 +20,49 @@ const router = safeRouter();
 //   • Owner tokens: may target any branch THEY own via ?branch_id=...
 //
 // Every branch is additionally verified to belong to the caller's business.
-router.use(requireAuth);
+router.use((req: any, res, next) => {
+  // KDS displays present a long-lived, branch-scoped 'kds' SwiftPOS JWT; every other
+  // caller uses a normal token. Accept a kds token HERE (kitchen routes only) and
+  // derive its branch; delegate everyone else to requireAuth (which rejects kds
+  // tokens, so a leaked KDS token is useless outside these endpoints).
+  const authHeader = req.headers.authorization as string | undefined;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const p = jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] }) as any;
+      if (p.surface === 'kds') {
+        req.userId         = null;
+        req.businessId     = p.businessId;
+        req.branchId       = p.branchId ?? null;
+        req.isOwner        = false;
+        req.permissionKeys = [];
+        req.surface        = 'kds';
+        return next();
+      }
+    } catch {
+      // not a kds token (or invalid) — fall through to normal auth
+    }
+  }
+  return requireAuth(req, res, next);
+});
+
+// POST /api/kitchen/kds-token — an owner mints a long-lived, branch-scoped display
+// token for a headless kitchen screen. It can read + advance ONLY that branch's
+// kitchen tickets (confined by requireAuth rejecting surface:'kds' elsewhere).
+router.post('/kds-token', async (req: any, res) => {
+  if (!req.isOwner) { res.status(403).json({ error: 'Only an owner can create a KDS token' }); return; }
+  const branchId = req.body?.branch_id;
+  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  const { data: branch } = await supabase
+    .from('branches').select('id, name')
+    .eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  const token = jwt.sign(
+    { businessId: req.businessId, branchId, isOwner: false, surface: 'kds', permissionKeys: [] },
+    JWT_SECRET,
+    { expiresIn: '365d' },
+  );
+  res.json({ token, branchId, branchName: branch.name });
+});
 
 // Resolve the branch to operate on and prove it belongs to the caller's business.
 async function resolveScopedBranch(
@@ -65,13 +110,27 @@ router.get('/tickets', async (req, res) => {
       )
     `)
     .eq('branch_id', scope.branchId)
-    .eq('orders.order_items.fire_status', 'fired')
     .neq('status', 'collected')
     .gte('created_at', todayStart.toISOString())
     .order('created_at', { ascending: true });
 
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+
+  // Hide 'held' (unfired course) items in JS rather than with a two-levels-deep
+  // embedded filter, which is fragile in PostgREST (it can error or drop the whole
+  // ticket). Quick-sale items are 'fired' by default, so they always show; a ticket
+  // left with nothing fired to cook is hidden until its course is fired.
+  const tickets = (data ?? [])
+    .map((t: any) => {
+      const o = t.orders;
+      if (o && Array.isArray(o.order_items)) {
+        o.order_items = o.order_items.filter((oi: any) => oi.fire_status !== 'held');
+      }
+      return t;
+    })
+    .filter((t: any) => (t.orders?.order_items?.length ?? 0) > 0);
+
+  res.json(tickets);
 });
 
 // PATCH /api/kitchen/tickets/:id/status

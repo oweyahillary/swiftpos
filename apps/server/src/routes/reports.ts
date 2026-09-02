@@ -1286,88 +1286,10 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reports/aggregator
-// Revenue by aggregator platform with commission deduction.
-// Commission % stored in business_settings as aggregator_commission_<platform>
-// Query: from, to, branch_id
-
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/aggregator', requirePermission('reports.financial'), async (req, res) => {
-  const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
-  const scopedBranch = branchScope(req);
-
-  // 1. Fetch aggregator orders
-  let ordersQ = supabase
-    .from('orders')
-    .select('id, order_type, aggregator_name, total, subtotal, vat_amount, refunded_amount, refunded_at, created_at, branch_id')
-    .eq('business_id', req.businessId)
-    .eq('status', 'completed')
-    .eq('order_type', 'aggregator')
-    .gte('created_at', start)
-    .lte('created_at', end);
-
-  if (scopedBranch) ordersQ = ordersQ.eq('branch_id', scopedBranch);
-  const { data: orders, error } = await ordersQ;
-  if (error) { res.status(500).json({ error: error.message }); return; }
-
-  // 2. Fetch commission settings
-  const { data: settings } = await supabase
-    .from('business_settings')
-    .select('key, value')
-    .eq('business_id', req.businessId)
-    .like('key', 'aggregator_commission_%');
-
-  const commissions: Record<string, number> = {};
-  (settings ?? [] as Array<{ key: string; value: string }>).forEach(s => {
-    const platform = s.key.replace('aggregator_commission_', '');
-    commissions[platform] = parseFloat(s.value) || 0;
-  });
-
-  // 3. Group by platform
-  const platformMap: Record<string, {
-    platform: string; orders: number; grossRevenue: number;
-    commissionPct: number; commissionAmount: number; netRevenue: number;
-  }> = {};
-
-  for (const o of orders ?? []) {
-    const platform = (o.aggregator_name ?? 'unknown').toLowerCase();
-    if (!platformMap[platform]) {
-      const commPct = commissions[platform] ?? 0;
-      platformMap[platform] = {
-        platform,
-        orders: 0,
-        grossRevenue: 0,
-        commissionPct: commPct,
-        commissionAmount: 0,
-        netRevenue: 0,
-      };
-    }
-    // Refund-adjusted: a refunded aggregator order should not count toward the
-    // platform's gross, and commission is on money actually retained. `keep` is
-    // the fraction not refunded.
-    const keep  = keptFraction(o as any);
-    const gross = Number(o.total) * keep;
-    const comm  = gross * (platformMap[platform].commissionPct / 100);
-    platformMap[platform].orders++;
-    platformMap[platform].grossRevenue  += gross;
-    platformMap[platform].commissionAmount += comm;
-    platformMap[platform].netRevenue    += gross - comm;
-  }
-
-  const platforms = Object.values(platformMap).sort((a, b) => b.grossRevenue - a.grossRevenue);
-  const totalGross  = platforms.reduce((s, p) => s + p.grossRevenue, 0);
-  const totalComm   = platforms.reduce((s, p) => s + p.commissionAmount, 0);
-  const totalNet    = platforms.reduce((s, p) => s + p.netRevenue, 0);
-  const totalOrders = platforms.reduce((s, p) => s + p.orders, 0);
-
-  res.json({
-    period: { from: start, to: end },
-    summary: { totalGross, totalComm, totalNet, totalOrders },
-    platforms,
-    commissions, // so frontend can show/edit them
-  });
-});
+// A130: GET /api/reports/aggregator was RETIRED (2026-08-23). It read
+// order_type='aggregator', which no code path writes — a dead report. Its only
+// consumer, the dashboard Aggregators tab, was removed too. Re-add only
+// alongside an aggregator-order writer (channel integration).
 
 
 
@@ -1750,8 +1672,8 @@ router.get('/wet-stock', async (req, res) => {
   // Deliveries in period (stock_movements with movement_type = restock, reference_type = delivery)
   let movQuery = supabase
     .from('stock_movements')
-    .select('product_id, quantity_change, quantity_after, notes, created_at')
-    .eq('business_id', req.businessId)
+    .select('product_id, quantity_change, quantity_after, notes, created_at, products!inner ( business_id )')
+    .eq('products.business_id', req.businessId)
     .eq('movement_type', 'restock')
     .gte('created_at', start)
     .lte('created_at', end);

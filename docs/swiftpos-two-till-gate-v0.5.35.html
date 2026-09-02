@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftPOS — Two-Till Gate Checklist (v0.5.35)</title>
+<style>
+  :root{
+    --ink:#1a1f2b; --muted:#5b6472; --line:#d4d9e0; --box:#f6f8fa;
+    --pass:#1a7f37; --fail:#b3261e; --accent:#0b62d6; --amber:#9a6700;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body{
+    font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); margin:0; padding:28px 32px; max-width:900px;
+  }
+  h1{font-size:22px; margin:0 0 2px}
+  h2{font-size:15px; margin:26px 0 8px; padding-bottom:5px; border-bottom:2px solid var(--ink);
+     text-transform:uppercase; letter-spacing:.04em}
+  .sub{color:var(--muted); margin:0 0 14px}
+  .meta{display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin:14px 0 6px;
+    border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:var(--box)}
+  .meta div{display:flex; align-items:baseline; gap:8px}
+  .meta label{color:var(--muted); font-size:12px; min-width:96px}
+  .fill{flex:1; border-bottom:1px solid var(--line); min-height:18px}
+  .note{background:#fff8e6; border:1px solid #f0d98a; border-radius:8px; padding:10px 12px; margin:10px 0;
+    color:var(--amber); font-size:13px}
+  .note b{color:#7a5200}
+  table{width:100%; border-collapse:collapse; margin:4px 0 8px}
+  th,td{border:1px solid var(--line); padding:8px 10px; vertical-align:top; text-align:left}
+  th{background:var(--box); font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted)}
+  td.id{font-weight:700; white-space:nowrap; width:40px}
+  .exp{color:var(--muted); font-size:13px; margin-top:3px}
+  .chk{width:18px; height:18px; border:2px solid var(--ink); border-radius:4px; display:inline-block; vertical-align:middle}
+  .pf{white-space:nowrap; width:96px; text-align:center; font-size:12px; color:var(--muted)}
+  .pf .chk{margin:0 3px 0 0}
+  .pf .p{color:var(--pass); font-weight:700}
+  .pf .f{color:var(--fail); font-weight:700}
+  .notes-col{width:150px}
+  code{background:var(--box); border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:12.5px}
+  .role{display:inline-block; border:1px solid var(--line); border-radius:20px; padding:2px 10px; font-size:12px; background:var(--box)}
+  .signoff{margin-top:22px; border:2px solid var(--ink); border-radius:8px; padding:14px 16px}
+  .signoff .row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:10px}
+  .decision{display:flex; gap:26px; margin:8px 0 2px; font-weight:600}
+  .foot{color:var(--muted); font-size:11.5px; margin-top:18px; border-top:1px solid var(--line); padding-top:8px}
+  @media print{ body{padding:0} h2{break-after:avoid} table,tr,.signoff{break-inside:avoid} }
+</style>
+</head>
+<body>
+
+<h1>SwiftPOS — Two-Till Gate</h1>
+<p class="sub">Offline-auth chain (A99–A101) + Electron 43 upgrade (A108) · build <b>v0.5.35</b> · PHASE5 §8 sign-off before any prod-fleet roll-out</p>
+
+<div class="meta">
+  <div><label>Build / version</label><span class="fill"></span></div>
+  <div><label>Date</label><span class="fill"></span></div>
+  <div><label>Tester</label><span class="fill"></span></div>
+  <div><label>Branch / site</label><span class="fill"></span></div>
+  <div><label>Till A</label><span class="fill"></span> <span class="role">NODE</span></div>
+  <div><label>Till B</label><span class="fill"></span> <span class="role">PEER</span></div>
+</div>
+
+<div class="note"><b>Before you start.</b> This is the <b>prod</b> 0.5.35 build (your single-base choice), so trading during this test writes to the <b>real</b> <code>swiftpos.db</code> on each terminal — only run it on tills with <b>no live data</b>. Confirm the installed artifact really reads <code>SwiftPOS-0.5.35-x64.exe</code> (rule 22). No prod-fleet install until every row below is PASS.</div>
+
+<h2>0 · Pre-flight (both tills)</h2>
+<table>
+  <tr><th class="id">#</th><th>Step</th><th class="pf">Done</th></tr>
+  <tr><td class="id">0.1</td><td>Install <code>SwiftPOS-0.5.35-x64.exe</code> on <b>both</b> tills. App version in-app / About reads <b>0.5.35</b>.</td><td class="pf"><span class="chk"></span></td></tr>
+  <tr><td class="id">0.2</td><td>App launches cleanly on both — no white screen, no native-module error (this is the first real Electron-43 / better-sqlite3-13 run).</td><td class="pf"><span class="chk"></span></td></tr>
+  <tr><td class="id">0.3</td><td>Enrol <b>Till A as NODE</b>, <b>Till B as PEER</b> pointed at A over the LAN.</td><td class="pf"><span class="chk"></span></td></tr>
+  <tr><td class="id">0.4</td><td>Let them sync once online so the NODE pulls the branch staff roster (bcrypt PIN hashes cached on the node).</td><td class="pf"><span class="chk"></span></td></tr>
+  <tr><td class="id">0.5</td><td>Have ready: one valid cashier PIN, one deliberately wrong PIN, and dashboard access to deactivate a cashier.</td><td class="pf"><span class="chk"></span></td></tr>
+</table>
+
+<h2>1 · Offline-auth chain — the A101 gate (5 checks)</h2>
+<p class="exp">Run on the <b>PEER</b> (Till B) unless noted. The core rule: fall back only on a <i>transport failure</i>, never on a <i>rejection</i>. Watch the log for the <code>node sign-in:</code> line as proof the peer authenticated via the node.</p>
+<table>
+  <tr><th class="id">#</th><th>Check &amp; expected result</th><th class="pf">Pass / Fail</th><th class="notes-col">Notes (log line, etc.)</th></tr>
+
+  <tr><td class="id">1.1</td>
+    <td><b>Both online → peer signs in via the node.</b>
+      <div class="exp">On the peer, sign in with the valid PIN. Expected: sign-in succeeds and the log shows <code>node sign-in: &lt;name&gt;</code> (not a cloud sign-in).</div></td>
+    <td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+
+  <tr><td class="id">1.2</td>
+    <td><b>Cloud down + node up → peer still signs in.</b>
+      <div class="exp">Disconnect the site from the internet (node LAN stays up). Sign in on the peer. Expected: still succeeds, via the node.</div></td>
+    <td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+
+  <tr><td class="id">1.3</td>
+    <td><b>Wrong PIN → refused immediately, no fall-through.</b>
+      <div class="exp">Enter the wrong PIN on the peer. Expected: refused at once (401-final). It must <b>not</b> silently fall back to cache and let them in. A sacked cashier can't unplug a cable to get in.</div></td>
+    <td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+
+  <tr><td class="id">1.4</td>
+    <td><b>Node + cloud both down → cached cashier signs in; node-till never time-expires.</b>
+      <div class="exp">Take the node offline too. A cashier who has signed in before still gets in from the peer's local cache. Then confirm a node-configured till still signs in at <b>30+ days</b> (advance the clock or use a stale cache) — no 14-day time-bomb.</div></td>
+    <td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+
+  <tr><td class="id">1.5</td>
+    <td><b>Deactivate a cashier on the dashboard → refused at the peer after the node re-syncs.</b>
+      <div class="exp">Deactivate a cashier in the owner dashboard, bring the node back online, let it re-pull the roster. That cashier is now refused at the peer via the node (revocation is the node roster, not a clock).</div></td>
+    <td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+</table>
+
+<h2>2 · Electron 43 smoke (run on both tills)</h2>
+<p class="exp">The upgrade the bench could not verify: native runtime, the DB driver, and the one code change (printer <code>isDefault</code>).</p>
+<table>
+  <tr><th class="id">#</th><th>Check &amp; expected result</th><th class="pf">Pass / Fail</th><th class="notes-col">Notes</th></tr>
+  <tr><td class="id">2.1</td><td><b>Local DB opens (better-sqlite3 13 / N-API).</b> App reaches the till screen; <code>swiftpos.db</code> opens in WAL mode; no "native module / NODE_MODULE_VERSION" error in the log.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">2.2</td><td><b>PIN sign-in + open shift.</b> Cashier signs in, opening-float modal appears, shift opens.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">2.3</td><td><b>Thermal ticket prints.</b> Complete a sale → the receipt prints on the thermal printer, including the custom header lines (A102) and footer.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">2.4</td><td><b>Printer list shows "(default)".</b> Open the printer settings — the Windows default printer is still tagged "(default)". <span class="exp">(This is the one behaviour that could cosmetically regress from the Electron-43 <code>PrinterInfo.isDefault</code> change — if the tag is missing but printing works, note it; not a blocker.)</span></td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">2.5</td><td><b>Kitchen ticket / prep lines</b> (if this branch uses a KDS/kitchen printer) print with exclusions applied.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+</table>
+
+<h2>3 · Trade a full service (PHASE5 §8)</h2>
+<p class="exp">The gate is a real trading period, not just the checks above. Run a full shift's worth of the normal flow across both tills.</p>
+<table>
+  <tr><th class="id">#</th><th>Step</th><th class="pf">Pass / Fail</th><th class="notes-col">Notes</th></tr>
+  <tr><td class="id">3.1</td><td>Sell across both tills (dine-in/table + counter/takeaway as relevant), incl. a split payment and an M-Pesa/cash mix.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">3.2</td><td>Hold an order on one till, retrieve it, complete it. Void one order with a manager PIN.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">3.3</td><td>Manager screens load (Settings tab, 24-hour toggle A104, merged Shift/Orders nav A105); custom payment methods appear as tenders (A103 offline fallback if server unreachable).</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">3.4</td><td>Close the shift and close the day — drawer counts reconcile; sales reach the cloud/dashboard when back online.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+  <tr><td class="id">3.5</td><td>No crashes, freezes, or data loss across the whole session on either till.</td><td class="pf"><span class="chk"></span><span class="p">PASS</span> &nbsp;<span class="chk"></span><span class="f">FAIL</span></td><td></td></tr>
+</table>
+
+<div class="signoff">
+  <div class="decision">
+    <span><span class="chk"></span> &nbsp;GATE PASSED — clear to tag <code>v0.5.35</code> &amp; roll to fleet</span>
+    <span><span class="chk"></span> &nbsp;FAILED — fix, rebuild to next patch, re-test</span>
+  </div>
+  <div class="row">
+    <div><label>Signed</label> <span class="fill" style="display:inline-block;min-width:180px"></span></div>
+    <div><label>Date / time</label> <span class="fill" style="display:inline-block;min-width:160px"></span></div>
+  </div>
+  <div style="margin-top:10px"><label>Failures / follow-ups (ID + note):</label>
+    <div class="fill" style="min-height:44px; margin-top:4px"></div>
+  </div>
+</div>
+
+<p class="foot">Ref: HANDOFF-2026-08-17 §6 · AUDIT-REGISTER A99–A101 (offline-auth), A102/A104 (receipt/24-hr), A108 (Electron 43). Only after this sheet is fully PASS: <code>release:patch</code> → read artifact filename → <code>git tag v0.5.35</code> (tag follows the build, rule 22) → hand-install to one till → full shift → roll to the rest. No auto-update (D3): every install is a site visit.</p>
+
+</body>
+</html>

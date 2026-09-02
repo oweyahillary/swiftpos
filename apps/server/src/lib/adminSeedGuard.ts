@@ -33,9 +33,6 @@ import { supabase } from './supabase';
 export const SEEDED_ADMIN_HASH =
   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/Lewm8mCWhBiQF7zO2';
 
-/** Value migration 48 writes over the hash. Cannot match any password. */
-export const DISABLED_ADMIN_HASH = 'DISABLED-BY-MIGRATION-48-run-reset-admin';
-
 export function isSeededAdminHash(hash: string | null | undefined): boolean {
   return typeof hash === 'string' && hash === SEEDED_ADMIN_HASH;
 }

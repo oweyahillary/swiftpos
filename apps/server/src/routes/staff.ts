@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import { verifyPin } from './auth';
 import { requirePermission, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import crypto from 'crypto';
@@ -541,16 +542,27 @@ router.post('/clock', async (req, res) => {
   }
 
   try {
-    // Look up staff member by PIN
-    const { data: staff, error: staffErr } = await supabase
+    // Look up staff member by PIN. PINs are stored bcrypt-hashed in pin_hash (with
+    // a legacy SHA256 fallback), so we fetch active staff and verify each with the
+    // canonical verifier — the old `.eq('pin', pin)` hit a column that does not
+    // exist (there is no plaintext `pin`), so every clock-in returned Invalid PIN
+    // (A136). Same verification path as POS login.
+    const { data: candidates, error: staffErr } = await supabase
       .from('users')
-      .select('id, name, role_id, roles ( name )')
+      .select('id, name, role_id, pin_hash, roles ( name )')
       .eq('business_id', req.businessId)
-      .eq('pin', pin)
-      .eq('status', 'active')
-      .maybeSingle();
+      .eq('status', 'active');
 
-    if (staffErr || !staff) {
+    let staff: { id: string; name: string; role_id: string | null } | null = null;
+    if (!staffErr && candidates) {
+      for (const u of candidates as Array<{ id: string; name: string; role_id: string | null; pin_hash: string | null }>) {
+        if (!u.pin_hash) continue;
+        const { valid } = await verifyPin(pin, u.pin_hash, req.businessId as string);
+        if (valid) { staff = { id: u.id, name: u.name, role_id: u.role_id }; break; }
+      }
+    }
+
+    if (!staff) {
       res.status(401).json({ error: 'Invalid PIN' });
       return;
     }

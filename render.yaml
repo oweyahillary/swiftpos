@@ -33,10 +33,6 @@ services:
       - key: ADMIN_JWT_SECRET
         sync: false
 
-      # routes/tech.ts:33 — throw new Error('Missing TECH_HMAC_SECRET')
-      - key: TECH_HMAC_SECRET
-        sync: false
-
       # lib/techToken.ts:56 — const _keys = loadSigningKeys() runs at import.
       # With NODE_ENV=production and either key missing it throws
       # "Refusing to start without an explicitly provisioned Ed25519 keypair."

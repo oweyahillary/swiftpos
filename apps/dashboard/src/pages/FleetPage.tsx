@@ -75,6 +75,21 @@ export default function FleetPage() {
   const [data, setData] = useState<FleetResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState('');
+
+  const saveLabel = useCallback(async (id: string) => {
+    const label = draftLabel.trim();
+    try {
+      await api.patch(`/api/devices/${id}/label`, { label });
+      setData(prev => prev
+        ? { ...prev, fleet: prev.fleet.map(f => f.id === id ? { ...f, label: label || null } : f) }
+        : prev);
+      setEditingId(null);
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not rename the terminal');
+    }
+  }, [draftLabel]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,9 +192,34 @@ export default function FleetPage() {
                 return (
                   <tr key={d.id} className="bg-white dark:bg-gray-900">
                     <td className="px-4 py-3">
-                      <div className="text-gray-900 dark:text-white">
-                        {d.label ?? <span className="italic text-gray-400">unlabelled</span>}
-                      </div>
+                      {editingId === d.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            value={draftLabel}
+                            onChange={e => setDraftLabel(e.target.value)}
+                            autoFocus
+                            placeholder="e.g. Front counter"
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') void saveLabel(d.id);
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-green-500 w-40"
+                          />
+                          <button onClick={() => void saveLabel(d.id)} className="text-green-500 hover:text-green-400 text-sm" title="Save">✓</button>
+                          <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-200 text-sm" title="Cancel">✕</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 group">
+                          <span className="text-gray-900 dark:text-white">
+                            {d.label ?? <span className="italic text-gray-400">unlabelled</span>}
+                          </span>
+                          <button
+                            onClick={() => { setEditingId(d.id); setDraftLabel(d.label ?? ''); }}
+                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs transition-opacity"
+                            title="Rename terminal"
+                          >✎</button>
+                        </div>
+                      )}
                       <div className="text-xs text-gray-400 font-mono">
                         {/* Truncated: the full id is a uuid and would push every
                             other column off screen. Enough to tell tills apart. */}

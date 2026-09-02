@@ -92,6 +92,7 @@ router.get('/init', async (req, res) => {
     { data: receiptTextRows },
     { data: mainBranch, error: brErr },
     { data: boundBranch },
+    { data: branchTextRows },
     { data: business },
   ] = await Promise.all([
     supabase
@@ -148,6 +149,17 @@ router.get('/init', async (req, res) => {
           .eq('business_id', req.businessId)   // tenant guard — never resolve another business's branch
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    // A139: this branch's setting overrides (receipt text + hours), same tenant
+    // guard as the bound branch; merged over the business defaults below so a
+    // franchise branch's own header/footer/hours win. Absent → inherit default.
+    requestedBranchId
+      ? supabase
+          .from('branch_settings')
+          .select('key, value')
+          .eq('business_id', req.businessId)
+          .eq('branch_id', requestedBranchId)
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation'])
+      : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
       .select('type, name, currency, vat_rate, ctl_rate')
@@ -264,6 +276,12 @@ router.get('/init', async (req, res) => {
   // JSONB: a plain string arrives unwrapped, anything else is coerced.
   const receiptText: Record<string, string> = {};
   for (const r of (receiptTextRows ?? []) as any[]) {
+    receiptText[r.key] = typeof r.value === 'string' ? r.value : String(r.value ?? '');
+  }
+  // A139: a branch override, when present, wins over the business default. The
+  // till is branch-bound and sent ?branch_id, so it receives its own values with
+  // no client change; a branch with no override row inherits the business default.
+  for (const r of (branchTextRows ?? []) as any[]) {
     receiptText[r.key] = typeof r.value === 'string' ? r.value : String(r.value ?? '');
   }
 

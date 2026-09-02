@@ -51,8 +51,6 @@ function setStatus(s: QZStatus) {
 
 export function getQZStatus(): QZStatus { return status; }
 
-export function getAvailablePrinters(): string[] { return availablePrinters; }
-
 export function onQZStatusChange(fn: (s: QZStatus) => void): () => void {
   statusListeners.push(fn);
   fn(status); // emit immediately
@@ -87,11 +85,6 @@ export async function connectQZ(): Promise<boolean> {
     scheduleReconnect();
     return false;
   }
-}
-
-export async function disconnectQZ(): Promise<void> {
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  setStatus('disconnected');
 }
 
 // ─── Periodic health check (keep status accurate) ─────────────────────────────

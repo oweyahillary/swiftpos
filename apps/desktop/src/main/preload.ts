@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('swiftpos', {
   platform: process.platform,
 
   auth: {
-    login:      (email: string, password: string) => ipcRenderer.invoke('auth:login', { email, password }),
     redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
     logout:     ()                                 => ipcRenderer.invoke('auth:logout'),
     getSession: ()                                 => ipcRenderer.invoke('auth:getSession'),
@@ -101,6 +100,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     status:       ()              => ipcRenderer.invoke('tech:status'),
     adoptFromNode:()              => ipcRenderer.invoke('tech:adoptFromNode'),
     query:        (sql: string)   => ipcRenderer.invoke('tech:query', { sql }),
+    testConnection: ()            => ipcRenderer.invoke('tech:testConnection'),
+    logTail:      (lines?: number)=> ipcRenderer.invoke('tech:logTail', { lines }),
     backupNow:    ()              => ipcRenderer.invoke('tech:backupNow'),
     maintenance:  ()              => ipcRenderer.invoke('tech:maintenance'),
     promoteToNode:()              => ipcRenderer.invoke('tech:promoteToNode'),

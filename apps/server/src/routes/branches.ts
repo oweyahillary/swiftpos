@@ -3,6 +3,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { requireAnyPermission } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 
@@ -172,31 +173,80 @@ router.put('/:id/stock/:productId', requireAuth, async (req, res) => {
   res.json(data);
 });
 
-// POST /api/branches/:id/assign-user
-router.post('/:id/assign-user', requireAuth, async (req, res) => {
-  const { user_id } = req.body;
-  if (!user_id) { res.status(400).json({ error: 'user_id is required' }); return; }
+// A145: the branch-centric user-assignment routes were RETIRED here —
+//   POST   /api/branches/:id/assign-user
+//   DELETE /api/branches/:id/remove-user/:userId
+// They were redundant with the staff flow (POST/PATCH /api/staff write
+// user_branches, gated by requirePermission('staff.manage') + business/branch
+// scoping) and, unlike that flow, were guarded by requireAuth ONLY — no
+// permission, no business/branch scoping, service-role client — which allowed
+// within-tenant privilege escalation and cross-tenant user_branches writes.
+// Zero callers (dashboard/admin/desktop). Do NOT re-add a branch-centric writer
+// without those guards; assign branches via the staff endpoints instead.
 
+// A139: per-branch setting overrides (receipt text + hours) that supersede the
+// business default. Only these three keys are overridable; the resolution
+// (branch → business default) happens server-side in GET /pos/init, so the
+// branch-bound till just receives its own values.
+const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operation'];
+
+// Confirms :id is a branch of THIS business — never let an owner read or write
+// overrides on another tenant's branch (the till resolves by branch_id alone).
+async function assertOwnBranch(businessId: string | undefined, branchId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('branches').select('id').eq('id', branchId).eq('business_id', businessId).maybeSingle();
+  return !!data;
+}
+
+// GET /api/branches/:id/settings — this branch's overrides as a { key: value } map.
+router.get('/:id/settings', requireAuth, async (req, res) => {
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) {
+    res.status(404).json({ error: 'Branch not found' });
+    return;
+  }
   const { data, error } = await supabase
-    .from('user_branches')
-    .upsert({ user_id, branch_id: req.params.id }, { onConflict: 'user_id,branch_id' })
-    .select()
-    .single();
-
+    .from('branch_settings')
+    .select('key, value')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', req.params.id);
   if (error) { sendError(res, error); return; }
-  res.status(201).json(data);
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) map[(row as any).key] = (row as any).value;
+  res.json(map);
 });
 
-// DELETE /api/branches/:id/remove-user/:userId
-router.delete('/:id/remove-user/:userId', requireAuth, async (req, res) => {
+// POST /api/branches/:id/settings — set or clear one override.
+//   { key, value }        → upsert the override (branch value wins over default)
+//   { key, value: null }  → delete the override (branch reverts to the default)
+router.post('/:id/settings', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
+  const { key, value } = req.body ?? {};
+  if (!OVERRIDABLE_KEYS.includes(key)) {
+    res.status(400).json({ error: 'That setting cannot be overridden per branch' });
+    return;
+  }
+  if (!(await assertOwnBranch(req.businessId, req.params.id))) {
+    res.status(404).json({ error: 'Branch not found' });
+    return;
+  }
+  if (value === null || value === undefined) {
+    const { error } = await supabase
+      .from('branch_settings')
+      .delete()
+      .eq('business_id', req.businessId)
+      .eq('branch_id', req.params.id)
+      .eq('key', key);
+    if (error) { sendError(res, error); return; }
+    res.json({ key, inherited: true });
+    return;
+  }
   const { error } = await supabase
-    .from('user_branches')
-    .delete()
-    .eq('branch_id', req.params.id)
-    .eq('user_id', req.params.userId);
-
+    .from('branch_settings')
+    .upsert(
+      { business_id: req.businessId, branch_id: req.params.id, key, value: String(value), updated_at: new Date().toISOString() },
+      { onConflict: 'branch_id,key' },
+    );
   if (error) { sendError(res, error); return; }
-  res.json({ success: true });
+  res.json({ key, value: String(value) });
 });
 
 export default router;

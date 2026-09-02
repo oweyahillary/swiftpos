@@ -5,6 +5,9 @@ import { useBusiness } from '../../context/BusinessContext';
 import { uploadImage } from '../../lib/upload';
 import type { Product, Category } from '../../types';
 import VariantsDrawer from './VariantsDrawer';
+import MenuUpload from './MenuUpload';
+import BulkImageUpload from './BulkImageUpload';
+import BulkPriceEditor from './BulkPriceEditor';
 import RecipeDrawer from './RecipeDrawer';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
@@ -48,6 +51,15 @@ export default function ProductsPage() {
 
   // ── Bulk cost editor ────────────────────────────────────────────────────────
   const [showBulkCost, setShowBulkCost] = useState(false);
+  const [showBulkPrice, setShowBulkPrice] = useState(false);
+  const [bulkPriceIds, setBulkPriceIds] = useState<string[] | null>(null); // null = category mode
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editPriceId, setEditPriceId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState('');
+  const [flash, setFlash] = useState('');
+  const priceCancel = useRef(false);
+  const [showMenuUpload, setShowMenuUpload] = useState(false);
+  const [showBulkImages, setShowBulkImages] = useState(false);
   const [bulkCosts, setBulkCosts] = useState<Record<string, string>>({});
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkResult, setBulkResult] = useState('');
@@ -82,6 +94,26 @@ export default function ProductsPage() {
       setBulkResult(e.message ?? 'Save failed');
     } finally {
       setBulkSaving(false);
+    }
+  };
+
+  // ── Row selection (for row-level bulk price) ────────────────────────────────
+  const toggleRow = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const bulkTrack = async (track: boolean) => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    try {
+      await api.patch('/api/products/bulk-track/by-ids', { ids, track_stock: track });
+      clearSelection();
+      await fetchAll();
+    } catch (e: any) {
+      alert(e?.message ?? 'Could not update stock tracking');
     }
   };
 
@@ -193,6 +225,33 @@ export default function ProductsPage() {
     }
   };
 
+  // Transient toast for inline edits.
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(''), 2500);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  // Inline price edit: optimistic, reverts on failure. Partial PATCH — touches
+  // base_price only, leaving every other field alone.
+  const savePrice = async (p: Product) => {
+    if (priceCancel.current) { priceCancel.current = false; setEditPriceId(null); return; }
+    const raw = priceDraft.trim();
+    setEditPriceId(null);
+    const n = Number(raw);
+    if (raw === '' || !Number.isFinite(n) || n < 0) { setFlash('Enter a valid price'); return; }
+    if (n === Number(p.base_price)) return;
+    const prev = p.base_price;
+    setProducts(cur => cur.map(x => x.id === p.id ? { ...x, base_price: n } : x));
+    try {
+      await api.patch(`/api/products/${p.id}`, { base_price: n });
+      setFlash(`${p.name} → ${currency} ${n.toLocaleString()}`);
+    } catch (e: any) {
+      setProducts(cur => cur.map(x => x.id === p.id ? { ...x, base_price: prev } : x));
+      setFlash(e?.message ?? 'Price update failed');
+    }
+  };
+
   const toggleStatus = async (p: Product) => {
     await api.patch(`/api/products/${p.id}`, {
       status: p.status === 'active' ? 'inactive' : 'active',
@@ -235,6 +294,15 @@ export default function ProductsPage() {
           <p className="text-gray-400 text-sm mt-0.5">{products.length} product{products.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowMenuUpload(true)} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
+            Menu upload
+          </button>
+          <button onClick={() => setShowBulkImages(true)} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
+            Bulk images
+          </button>
+          <button onClick={() => { setBulkPriceIds(null); setShowBulkPrice(true); }} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
+            Bulk price
+          </button>
           <button onClick={openBulkCost} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
             Set costs
           </button>
@@ -243,6 +311,28 @@ export default function ProductsPage() {
           </button>
         </div>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-2">
+          <span className="text-sm text-green-300 font-medium">{selectedIds.size} selected</span>
+          <button
+            onClick={() => { setBulkPriceIds(Array.from(selectedIds)); setShowBulkPrice(true); }}
+            className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Change price
+          </button>
+          <button
+            onClick={() => bulkTrack(true)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Track stock
+          </button>
+          <button
+            onClick={() => bulkTrack(false)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Untrack
+          </button>
+          <button onClick={clearSelection} className="text-sm text-gray-400 hover:text-white ml-auto">Clear</button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-3 mb-6">
@@ -275,6 +365,15 @@ export default function ProductsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-800 text-left">
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all"
+                    checked={filtered.length > 0 && filtered.every(p => selectedIds.has(p.id))}
+                    ref={el => { if (el) el.indeterminate = filtered.some(p => selectedIds.has(p.id)) && !filtered.every(p => selectedIds.has(p.id)); }}
+                    onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(p => p.id)) : new Set())}
+                  />
+                </th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Product</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Category</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Price</th>
@@ -285,7 +384,10 @@ export default function ProductsPage() {
             </thead>
             <tbody className="divide-y divide-gray-800">
               {filtered.map(p => (
-                <tr key={p.id} className="hover:bg-gray-800/50 transition-colors">
+                <tr key={p.id} className={`hover:bg-gray-800/50 transition-colors ${selectedIds.has(p.id) ? 'bg-gray-800/40' : ''}`}>
+                  <td className="px-4 py-3">
+                    <input type="checkbox" aria-label={`Select ${p.name}`} checked={selectedIds.has(p.id)} onChange={() => toggleRow(p.id)} />
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       {p.image_url ? (
@@ -314,7 +416,30 @@ export default function ProductsPage() {
                       <span className="text-xs text-gray-600">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-white">{currency} {Number(p.base_price).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {editPriceId === p.id ? (
+                      <input
+                        type="number"
+                        autoFocus
+                        value={priceDraft}
+                        onChange={e => setPriceDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') { priceCancel.current = true; e.currentTarget.blur(); }
+                        }}
+                        onBlur={() => savePrice(p)}
+                        className="w-24 bg-gray-800 border border-green-500 rounded px-2 py-1 text-white text-sm focus:outline-none"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => { setEditPriceId(p.id); setPriceDraft(String(p.base_price)); }}
+                        title="Click to edit price"
+                        className="text-white hover:text-green-400 decoration-dotted hover:underline"
+                      >
+                        {currency} {Number(p.base_price).toLocaleString()}
+                      </button>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm">
                     {(p as any).cost_price != null
                       ? <span className="text-gray-300">{currency} {Number((p as any).cost_price).toLocaleString()}</span>
@@ -556,6 +681,20 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
+      {flash && (
+        <div className="fixed bottom-6 right-6 z-50 bg-gray-800 border border-gray-700 text-sm text-white px-4 py-2 rounded-lg shadow-lg">
+          {flash}
+        </div>
+      )}
+      {showBulkPrice && (
+        <BulkPriceEditor
+          categories={categories}
+          productIds={bulkPriceIds ?? undefined}
+          onApplied={() => { fetchAll(); clearSelection(); }}
+          onClose={() => setShowBulkPrice(false)}
+          onToast={(m) => setBulkResult(m)}
+        />
+      )}
       {showBulkCost && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
           <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
@@ -613,6 +752,23 @@ export default function ProductsPage() {
                 {bulkSaving ? 'Saving…' : 'Save costs'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showMenuUpload && (
+        <MenuUpload
+          onDone={() => fetchAll()}
+          onClose={() => setShowMenuUpload(false)}
+          onToast={(m) => setFlash(m)}
+        />
+      )}
+      {showBulkImages && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4" onClick={() => setShowBulkImages(false)}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-end mb-2">
+              <button onClick={() => setShowBulkImages(false)} className="text-gray-400 hover:text-white text-sm px-2 py-1">✕ Close</button>
+            </div>
+            <BulkImageUpload products={products} onDone={() => fetchAll()} />
           </div>
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
@@ -50,6 +50,13 @@ export default function InventoryPage() {
   const [adjusting, setAdjusting] = useState<StockRow | null>(null);
   const [viewing, setViewing] = useState<StockRow | null>(null);
 
+  // Inline reorder-threshold editing (A144)
+  const [editThreshId, setEditThreshId] = useState<string | null>(null);
+  const [threshDraft, setThreshDraft]   = useState('');
+  const [savingThresh, setSavingThresh] = useState(false);
+  const [threshErr, setThreshErr]       = useState('');
+  const escRef = useRef(false);
+
   // activeBranchId from context — null means all branches selected
   const branchId = activeBranchId;
 
@@ -83,6 +90,30 @@ export default function InventoryPage() {
   rows.forEach(r => counts[getStatus(r)]++);
 
   const currency = business?.currency ?? 'KES';
+
+  // Persist a row's reorder threshold for the active branch. Threshold is
+  // per product+branch, so this is only offered when a specific branch is
+  // selected (branchId set) — same guard the Adjust modal uses.
+  async function saveThreshold(row: StockRow) {
+    if (editThreshId !== row.product_id || !branchId) return;   // already closed / all-branches
+    const val = Number(threshDraft);
+    if (threshDraft.trim() === '' || isNaN(val) || val < 0) { setEditThreshId(null); setThreshErr(''); return; }
+    if (val === row.low_stock_threshold) { setEditThreshId(null); setThreshErr(''); return; }
+    setSavingThresh(true);
+    setThreshErr('');
+    try {
+      await api.patch(`/api/inventory/${row.product_id}/threshold`, {
+        branch_id: branchId,
+        low_stock_threshold: val,
+      });
+      setEditThreshId(null);
+      fetchAll();
+    } catch (e) {
+      setThreshErr(e instanceof Error ? e.message : 'Could not update threshold');
+    } finally {
+      setSavingThresh(false);
+    }
+  }
 
   // Inventory is per-branch — require a branch selection
   if (!activeBranchId) {
@@ -199,6 +230,30 @@ export default function InventoryPage() {
                     <td className="px-4 py-3">
                       {isUntracked ? (
                         <span className="text-gray-600 text-sm">—</span>
+                      ) : editThreshId === row.product_id ? (
+                        <div className="flex flex-col gap-0.5">
+                          <input
+                            type="number" min="0" autoFocus disabled={savingThresh}
+                            value={threshDraft}
+                            onChange={e => setThreshDraft(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                              else if (e.key === 'Escape') { escRef.current = true; e.currentTarget.blur(); }
+                            }}
+                            onBlur={() => {
+                              if (escRef.current) { escRef.current = false; setEditThreshId(null); setThreshErr(''); return; }
+                              saveThreshold(row);
+                            }}
+                            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-green-500"
+                          />
+                          {threshErr && <span className="text-red-400 text-[10px] max-w-[8rem]">{threshErr}</span>}
+                        </div>
+                      ) : branchId ? (
+                        <button
+                          onClick={() => { setEditThreshId(row.product_id); setThreshDraft(String(row.low_stock_threshold)); setThreshErr(''); }}
+                          title="Click to edit reorder threshold"
+                          className="text-gray-400 text-sm hover:text-white underline decoration-dotted decoration-gray-600 underline-offset-4"
+                        >{row.low_stock_threshold}</button>
                       ) : (
                         <span className="text-gray-400 text-sm">{row.low_stock_threshold}</span>
                       )}

@@ -1,7 +1,8 @@
 // IPC Handlers — registered in main process, called from renderer via preload.ts
 //
 // Channels:
-//   auth:login        → POST /api/auth/login, store session in SQLite
+//   auth:enrolDevice   → POST /api/auth/enrol/redeem, store session in SQLite
+//                        (owner email/password login RETIRED — A158)
 //   auth:logout       → clear session + all catalogue from SQLite
 //   auth:getSession   → return current session row
 //   pos:init          → return products + categories + branchId from SQLite
@@ -11,6 +12,7 @@
 //   sync:trigger      → run syncAll()
 //   sync:status       → return { online, pendingCount }
 
+import { getMacAddressCached } from './machineFingerprint';
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
@@ -25,7 +27,7 @@ import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCach
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection } from './syncEngine';
 import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
@@ -41,8 +43,10 @@ import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
-import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient } from './nodeClient';
-import { verifyPinAtNode } from './branchStaff';
+import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode } from './nodeClient';
+import { isUnreachableStatus } from './authTransport';
+import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
+import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
@@ -67,77 +71,17 @@ export function registerIpcHandlers() {
 
   // ── Auth ────────────────────────────────────────────────
 
-  ipcMain.handle('auth:login', async (_event, { email, password }) => {
-    // Desktop terminals authenticate via /desktop-login, which skips the
-    // web_hosting gate (desktop is entitled by its per-branch licence, enforced
-    // at verify-pin) instead of the web portal's /login route.
-    const res = await fetch(`${getServerUrl()}/api/auth/desktop-login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // device_id is generated once at install and never changes. Sending it
-      // lets the server tell this till apart from the others.
-      //
-      // Without it the server fell back to the User-Agent, which is identical on
-      // every till — same Electron build, same Windows — so signing in on till 2
-      // revoked till 1's session and till 3 revoked till 2's. Each new install
-      // silently signed out the one before it, and the till only found out on its
-      // next refresh.
-      body: JSON.stringify({ email, password, device_id: getDeviceConfig()?.device_id ?? undefined }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Login failed');
-
-    const db = getLocalDb();
-
-    // Clear any catalogue from a previous session before writing new one
-    clearCatalogue(db);
-
-    // Persist session (singleton row)
-    db.prepare(`
-      INSERT INTO session (id, token, refresh_token, user_id, business_id, business_name, currency, logged_in_at)
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        token=excluded.token, refresh_token=excluded.refresh_token, user_id=excluded.user_id, business_id=excluded.business_id,
-        business_name=excluded.business_name, currency=excluded.currency, logged_in_at=excluded.logged_in_at
-    `).run(
-      data.token,
-      data.refreshToken ?? null,
-      data.user.id,
-      data.business.id,
-      data.business.name,
-      data.business.currency ?? 'KES',
-      new Date().toISOString(),
-    );
-
-    // D5: the row exists now; re-write the credentials through the store so they
-    // are wrapped at rest instead of sitting in the clear in swiftpos.db.
-    writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
-
-    // The business type is decided when the business is created, and the server
-    // returns it here. Persist it rather than asking the technician — the
-    // install wizard used to offer a picker, which meant a till could be set to
-    // "retail" for a restaurant and quietly lose tables, dine-in and the whole
-    // kitchen flow, with nothing on screen to say why.
-    if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
-
-    // Configure sync engine with new credentials (incl. refresh token)
-    configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
-
-    // Cache the branch's tech reveal code + token-verification public key so the
-    // tech panel can be unlocked offline later. Best-effort (online at login).
-    refreshTechConfig(data.token).catch(() => {});
-
-    // Wait for initial sync before returning — renderer gets fresh data immediately
-    await syncAll().catch(console.error);
-
-    return { user: data.user, business: data.business };
-  });
+  // A158: owner email/password login on the till was RETIRED. A terminal is now
+  // provisioned ONLY by a one-time enrolment code (auth:enrolDevice below), so the
+  // owner's reusable dashboard credentials are never typed or stored on a shared
+  // till. The server /desktop-login route is tombstoned to match. Web dashboard
+  // login (/api/auth/login) is unaffected.
 
   // D4 — provision this till with a single-use enrolment code instead of an owner
   // login (closes D1: the business is chosen by id, so a two-business owner is no
-  // longer a dead end). A near-mirror of auth:login — the ONLY difference is the
-  // credential (business_id + code, not email + password) and the endpoint. The
+  // longer a dead end). This is now the ONLY way a till is provisioned (owner
+  // email/password login was retired — A158). The credential is a one-time
+  // business_id + code, redeemed against /enrol/redeem. The
   // server returns the same { token, refreshToken, user, business } shape, so the
   // session is stored identically.
   ipcMain.handle('auth:enrolDevice', async (_event, payload) => {
@@ -153,6 +97,9 @@ export function registerIpcHandlers() {
         // Same stable per-install device_id the login path sends, so the server
         // records THIS terminal and tells it apart from the rest of the fleet.
         device_id:   getDeviceConfig()?.device_id ?? undefined,
+        // A182: the machine's stable MAC, so if this box was enrolled before (a
+        // reinstall) the server can hand back its previous terminal code/name.
+        mac_address: getMacAddressCached() ?? undefined,
       }),
     });
 
@@ -182,6 +129,18 @@ export function registerIpcHandlers() {
     writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
 
     if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
+
+    // A182: if the server recognised this machine (same MAC as a prior install),
+    // restore its previous terminal code + name so a reinstalled till comes back
+    // as itself instead of a blank "new till" that gets re-named T1 and collides
+    // (A181). Only fills gaps — never overwrites a code the operator has set here.
+    if (data.restore && (data.restore.terminal_code || data.restore.device_label)) {
+      const cfg = getDeviceConfig();
+      const patch: Record<string, unknown> = {};
+      if (data.restore.terminal_code && !cfg?.terminal_code) patch.terminal_code = String(data.restore.terminal_code);
+      if (data.restore.device_label && !cfg?.device_name)   patch.device_name   = String(data.restore.device_label);
+      if (Object.keys(patch).length) { saveDeviceConfig(patch); logLine('enrol', `restored identity from a prior install: ${JSON.stringify(patch)}`); }
+    }
 
     configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
     refreshTechConfig(data.token).catch(() => {});
@@ -461,14 +420,22 @@ export function registerIpcHandlers() {
     // when the line returns. Shared by the node, node-own-roster and cache paths.
     const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
       const branchRowOff = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
+      // A167: token is TEXT NOT NULL (localDb.ts). An offline session has no
+      // server JWT, but writing NULL here throws `NOT NULL constraint failed:
+      // staff_session.token` and defeats the whole offline-auth fallback at its
+      // last step. Write '' — the reader already coerces it (tokenStore.read:
+      // `unwrap(token_enc) || token || ''`) and configureStaffSession('','')
+      // already represents an offline staff session as empty in memory, so ''
+      // is the value the rest of the code expects, not a sentinel. No migration
+      // (rule 13): the column and its readers are unchanged.
       db.prepare(`
         INSERT INTO staff_session
           (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
-        VALUES (1, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        VALUES (1, ?, ?, ?, ?, ?, ?, '', NULL, ?)
         ON CONFLICT(id) DO UPDATE SET
           staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
           branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
-          token=NULL, refresh_token=NULL, logged_in_at=excluded.logged_in_at
+          token='', refresh_token=NULL, logged_in_at=excluded.logged_in_at
       `).run(
         staff.staffId, staff.name, staff.roleName, branch_id,
         branchRowOff?.name ?? null, JSON.stringify(staff.permissions ?? {}),
@@ -496,6 +463,22 @@ export function registerIpcHandlers() {
       // transport failure → fall through to the cloud
     }
 
+    // 3. Last resort. A NODE verifies against its OWN roster (never expires); a
+    //    peer or standalone till uses the offline cache (which no longer expires
+    //    on a node-configured peer — see pinCache, A17). Shared by BOTH the
+    //    thrown-transport path and the 5xx path (A152) so a "down-but-answering"
+    //    cloud rescues identically to an unreachable one.
+    const fallbackToLocalAuthority = () => {
+      if (amNode) {
+        const v = verifyPinAtNode(String(pin), branch_id);
+        if (!v.ok) throw new Error(v.message);
+        return signInLocal(v.staff);
+      }
+      const verdict = verifyPinOffline(String(pin), branch_id);
+      if (!verdict.ok) throw new Error(verdict.message);
+      return signInLocal(verdict.staff);
+    };
+
     // 2. The cloud, exactly as before.
     let res: Awaited<ReturnType<typeof ownerFetch>>;
     try {
@@ -514,20 +497,21 @@ export function registerIpcHandlers() {
       });
     } catch (netErr: any) {
       logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
-      // 3. Last resort. A NODE verifies against its OWN roster (never expires); a
-      //    peer or standalone till uses the offline cache (which no longer expires
-      //    on a node-configured peer — see pinCache, A17).
-      if (amNode) {
-        const v = verifyPinAtNode(String(pin), branch_id);
-        if (!v.ok) throw new Error(v.message);
-        return signInLocal(v.staff);
-      }
-      const verdict = verifyPinOffline(String(pin), branch_id);
-      if (!verdict.ok) throw new Error(verdict.message);
-      return signInLocal(verdict.staff);
+      return fallbackToLocalAuthority();
     }
 
-    const data = await res.json();
+    // A152: a cloud that ANSWERS with a 5xx is UNREACHABLE, not a rejection.
+    // Render process down behind a live edge returns 502/503; without this the
+    // next two lines either threw an unhandled parse error on the gateway's HTML
+    // body or read !res.ok as "Invalid PIN" — and the offline cache/node never
+    // rescued a login it should have. A clean 4xx below stays FINAL.
+    if (isUnreachableStatus(res.status)) {
+      logLine('pin', `cloud answered ${res.status} at sign-in - treating as unreachable, trying the local authority`);
+      return fallbackToLocalAuthority();
+    }
+
+    // Guard the body: a non-JSON error page must not throw here (A152).
+    const data = await res.json().catch(() => ({} as any));
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
 
     // Online sign-in succeeded, so the server has just confirmed this PIN and
@@ -1855,7 +1839,9 @@ export function registerIpcHandlers() {
     if (!session?.business_id) throw new Error('No active session');
     if (!staff?.branch_id)     throw new Error('No staff session');
 
-    const id = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const id = uuid();   // A179: MUST be a UUID — the cloud expenses.id is uuid; a
+                         // prefixed id (exp_…) fails 22P02 and, batched with shifts/
+                         // days/floats, blocks ALL of them from syncing.
     const now = new Date().toISOString();
 
     db.prepare(`
@@ -2056,6 +2042,19 @@ export function registerIpcHandlers() {
   ipcMain.handle('tech:promoteToNode', async () => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const before = getDeviceConfig()?.device_role ?? 'till';
+    // A20 backstop: pull a fresh roster from the CURRENT node before we stop being
+    // a peer, so the promoted node can authenticate cashiers the instant it serves.
+    // Best-effort and guarded (unpackRosterSnapshot refuses an empty/pinless pull,
+    // so this can only ever ADD a current roster, never wipe one). Must run BEFORE
+    // the role flip — a node has no node_url to pull from. A peer that was
+    // replicating already holds the roster via sync; this guarantees it's current.
+    try {
+      const snapshot = await fetchRosterFromNode();
+      if (snapshot) {
+        const d = unpackRosterSnapshot(snapshot);
+        if (d.apply) storeBranchStaff(d.branchId, d.roster);
+      }
+    } catch { /* promotion proceeds; the node refreshes the roster on its own cloud sync */ }
     logTechAction('role.promote', { from: before, to: 'node' });
     saveDeviceConfig({ device_role: 'node', node_url: null });
     startNodeServer();
@@ -2139,8 +2138,29 @@ export function registerIpcHandlers() {
         deploy_mode: cfg?.deploy_mode ?? null, server_url: cfg?.server_url ?? null,
         node_url: cfg?.node_url ?? null,
       },
-      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder },
+      sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder, breakdown: sync.pendingBreakdown },
     };
+  });
+
+  // A178: a REAL reachability probe — reaches the configured server and reports
+  // the round-trip, unlike the "ONLINE" badge which is only net.isOnline().
+  ipcMain.handle('tech:testConnection', async () => {
+    return testConnection();
+  });
+
+  // A178: tail the durable log so a tech can read it on the device without
+  // hunting for %APPDATA%. Read-only; last N lines; never exposes tokens because
+  // the log itself never records them.
+  ipcMain.handle('tech:logTail', async (_event, arg?: { lines?: number }) => {
+    const lines = Math.min(Math.max(arg?.lines ?? 200, 1), 2000);
+    try {
+      const p = getSyncStatus().logPath;
+      if (!p || !fs.existsSync(p)) return { path: p ?? null, text: '' };
+      const all = fs.readFileSync(p, 'utf8').split(/\r?\n/);
+      return { path: p, text: all.slice(-lines).join('\n') };
+    } catch (err: any) {
+      return { path: null, text: `could not read log: ${err?.message ?? err}` };
+    }
   });
 
   // ── Manager branch-wide report ──────────────────────────────────────────────

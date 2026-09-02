@@ -23,8 +23,9 @@
  *            Replay of a stolen refresh token is detected (jti already revoked → 401).
  *
  * Routes:
- *   POST /api/auth/login           — email + password → token pair
- *   POST /api/auth/desktop-login   — same, no web_hosting gate, surface='desktop'
+ *   POST /api/auth/login           — email + password → token pair (web dashboard)
+ *   POST /api/auth/desktop-login   — RETIRED (A158): owner login on a till removed; returns 410
+ *   POST /api/auth/enrol/redeem    — business_id + one-time code → session, surface='desktop' (the desktop entry)
  *   POST /api/auth/refresh         — refresh token → new token pair (rotation)
  *   POST /api/auth/logout          — revoke refresh token (server-side)
  *   POST /api/auth/pos-login       — email + PIN → branch-scoped token pair
@@ -34,7 +35,8 @@
  */
 
 import { Router }   from 'express';
-import { registerDesktopTerminal } from '../lib/deviceRegistry';
+import { registerDesktopTerminal, findPriorTerminalByMac } from '../lib/deviceRegistry';
+import { generateDeviceSecret, hashDeviceSecret, verifyDeviceSecret, isDeviceGrantable, buildDeviceTokenPayload } from '../lib/deviceGrant';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
@@ -368,7 +370,7 @@ async function hashPinBcrypt(pin: string): Promise<string> {
   return bcrypt.hash(pin, BCRYPT_ROUNDS);
 }
 
-async function verifyPin(
+export async function verifyPin(
   pin: string,
   storedHash: string,
   businessId: string,
@@ -689,171 +691,23 @@ router.post('/login', async (req, res) => {
 
 // ── POST /api/auth/desktop-login ──────────────────────────────────────────────
 
-router.post('/desktop-login', async (req, res) => {
-  const { email, password, business_id } = req.body;
-
-  if (!email || !password) {
-    res.status(400).json({ error: 'email and password are required' });
-    return;
-  }
-
-  const { data, error } = await authClient.auth.signInWithPassword({ email, password });
-  if (error || !data.user) {
-    res.status(401).json({ error: 'Invalid email or password' });
-    return;
-  }
-
-  // BUG-18: was .single(), which raises PGRST116 on more than one row. An owner
-  // with two businesses got "No business found for this account" — the opposite
-  // of what happened — and could not log in to either. Same class as BUG-05.
-  //
-  // Login is the one place that CAN ask, so it asks. business_id in the body
-  // picks one; without it, a second business produces a 409 naming both rather
-  // than a silent guess about which shop's till you are opening.
-  const owned = await resolveOwnerBusinesses(
-    data.user.id, 'id, name, currency, type, status', business_id ?? null);
-
-  if (owned.kind === 'error') {
-    res.status(503).json({ error: 'Could not sign you in right now — please try again' });
-    return;
-  }
-  if (owned.kind === 'none') {
-    res.status(403).json({ error: 'No business found for this account' });
-    return;
-  }
-  if (owned.kind === 'many') {
-    res.status(409).json({
-      error: 'This account owns more than one business. Choose which one to open.',
-      code:  'MULTIPLE_BUSINESSES',
-      businesses: owned.businesses.map(b => ({ id: b.id, name: b.name })),
-    });
-    return;
-  }
-  const business = owned.business;
-
-  if (business.status === 'suspended') {
-    res.status(403).json({
-      error: 'Your account has been suspended. Please contact SwiftPOS support.',
-      code:  'ACCOUNT_SUSPENDED',
-    });
-    return;
-  }
-
-  // Case-insensitive, pattern-safe. A miss here used to fall through to
-  // data.user.id (an auth.users id) and poison every order push — see
-  // resolveOwnerUserRow.
-  const ownerUser = await resolveOwnerUserRow(business.id, data.user.email);
-
-  let mustChangePassword = (ownerUser as any)?.must_change_password ?? false;
-  if (mustChangePassword) {
-    const passwordWasUpdated =
-      data.user.updated_at &&
-      data.user.created_at &&
-      new Date(data.user.updated_at) > new Date(data.user.created_at);
-    if (passwordWasUpdated) {
-      await supabase
-        .from('users')
-        .update({ must_change_password: false, updated_at: new Date().toISOString() })
-        .eq('id', (ownerUser as any).id);
-      mustChangePassword = false;
-    }
-  }
-
-  const pv = ownerUser ? await getPermissionsVersion((ownerUser as any).id) : 1;
-
-  // D14 — record this terminal. /desktop-login registered NOTHING before, and
-  // /pos-login only registered when the business had opted into
-  // `require_device_registration` (and never for an owner, who is exempt). So a
-  // till like Beryl's had no user_devices row at all, which silently disabled
-  // migration 52's branch binding and threw away every telemetry write.
-  //
-  // Unconditional and independent of that setting: a desktop till is a
-  // registered terminal by nature, whereas the setting is about approving
-  // BROWSER sign-ins. Registration is not authorisation — see deviceRegistry.ts.
-  //
-  // Awaited, but it returns null rather than throwing: a sign-in must never
-  // fail over a telemetry row.
-  if (ownerUser) {
-    await registerDesktopTerminal(business.id, (ownerUser as any).id, {
-      deviceId:     String(req.body?.device_id ?? ''),
-      appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
-      terminalCode: req.body?.terminal_code ?? null,
-      ipAddress:    req.ip ?? null,
-      // Migration 73 — what this terminal IS. An office machine serves the
-      // branch and cannot sell; it must not be recorded, labelled or (later)
-      // seat-counted as a till.
-      role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
-    });
-  }
-
-  if (!ownerUser) {
-    console.error(
-      '[auth] no public.users row for this owner — issuing a token whose userId ' +
-      'is an auth.users id. Every order pushed under it will fail 23503 on ' +
-      'orders_cashier_id_fkey until a users row exists and the owner signs in again.',
-      { businessId: business.id, email: data.user.email },
-    );
-  }
-
-  const sessionId = newSessionId();
-  const payload: TokenPayload = {
-    // FALLBACK OF LAST RESORT. data.user.id is an auth.users id, and
-    // orders.cashier_id REFERENCES public.users(id) — so a token built from
-    // this branch makes every order push fail 23503 until the owner signs in
-    // again, because /refresh reuses userId and never re-resolves it.
-    // Login is NOT refused here: a release is in flight and an owner who works
-    // today must still work tomorrow. But it is no longer silent.
-    userId:             ownerUser ? (ownerUser as any).id : data.user.id,
-    businessId:         business.id,
-    branchId:           null,
-    isOwner:            true,
-    permissionKeys:     ['*'],
-    permissionsVersion: pv,
-    sessionId,
-    // 'desktop', not 'web'. This route exists to mint a DESKTOP session — the
-    // header of this file has said `surface='desktop'` since it was written —
-    // and it minted 'web'. One word, and four things silently did nothing on
-    // every till that used it:
-    //
-    //   1. offlineAuth (verify-pin) is gated on surface === 'desktop', so the
-    //      PIN hash was never returned and `staff_pin_cache` stayed EMPTY. The
-    //      entire offline sign-in feature — register D16, shipped 2026-08-08
-    //      with 16 passing tests — has never worked in the field. Confirmed on
-    //      Beryl's till 2026-08-10: two PINs entered ONLINE, then
-    //      `select count(*) from staff_pin_cache` = 0.
-    //   2. Desktop terminal registration (D14) never ran, so `user_devices`
-    //      stayed empty, which kept migration 52's branch binding and all fleet
-    //      telemetry inert.
-    //   3. The desktop_licensed gate (pos.ts:87, and pos-login) was never
-    //      applied — a till signing in this way trades unlicensed.
-    //   4. requireWebSurface let a till reach web-portal-only features.
-    //
-    // It PROPAGATES: /verify-pin issues `surface: req.surface ?? 'web'`, so the
-    // owner token's value flows into every staff token minted from it.
-    //
-    // Nothing caught it because /pos-login derives surface from the request
-    // body and CAN be 'desktop', so the fixtures and the licence errors seen in
-    // the field both looked right. Two login routes, two different answers.
-    surface:            'desktop',
-  };
-
-  const { accessToken, refreshToken } = issueTokenPair(payload);
-
-  await storeRefreshToken(refreshToken, payload,
-    req.ip ?? undefined,
-    // device_id first: the User-Agent is identical across the whole fleet, so
-    // storing it made every row look like every other row (BUG-22).
-    (req.body?.device_id as string | undefined)
-      ?? req.headers['user-agent'] ?? undefined,
-  );
-
-  res.json({
-    accessToken,
-    refreshToken,
-    token: accessToken,
-    user: { id: data.user.id, email: data.user.email },
-    business,
-    mustChangePassword,
+/*
+ * POST /api/auth/desktop-login — RETIRED (A158, 2026-08-24).
+ *
+ * Owner email/password login on a till exposed the owner's reusable dashboard
+ * credentials on shared hardware. A terminal is now provisioned ONLY by a
+ * one-time enrolment code (POST /api/auth/enrol/redeem), which mints the same
+ * owner-scoped desktop session without a password ever touching the till.
+ * Tombstoned rather than deleted so an un-updated old build gets a clear 410,
+ * not a confusing 404. Web dashboard login (POST /api/auth/login) is unaffected.
+ *
+ * ROLLOUT: update every client till to the enrolment-only build BEFORE this
+ * reaches their server, or old tills lose their only sign-in path.
+ */
+router.post('/desktop-login', (_req, res) => {
+  res.status(410).json({
+    error: 'Owner login on a terminal has been retired. Activate this till with a one-time enrolment code from the owner portal.',
+    code:  'DESKTOP_LOGIN_RETIRED',
   });
 });
 
@@ -924,6 +778,7 @@ router.post('/enrol/redeem', async (req, res) => {
     terminalCode: req.body?.terminal_code ?? null,
     ipAddress:    req.ip ?? null,
     role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+    macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
   });
 
   const pv = await getPermissionsVersion(ownerId);
@@ -941,6 +796,33 @@ router.post('/enrol/redeem', async (req, res) => {
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
 
+  // A164 (Phase 1): mint a per-device grant secret so this till can later recover
+  // its own session without an owner re-login. Best-effort and additive — the
+  // enrolment must not fail over it, and a device that doesn't get one simply
+  // keeps using the refresh/enrol paths. Store only the hash; hand the raw secret
+  // back once, here. (Nothing consumes it yet — the desktop stores + uses it in a
+  // later, hardware-verified slice.)
+  let deviceSecret: string | null = null;
+  try {
+    const raw = generateDeviceSecret();
+    const { error: secErr } = await supabase
+      .from('user_devices')
+      .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: nowIso })
+      .eq('business_id', businessId)
+      .eq('device_id', deviceId);
+    if (!secErr) deviceSecret = raw;
+  } catch { /* additive; enrolment succeeds without a grant secret */ }
+
+  // A182: if this machine's MAC was seen before at this business (a reinstall),
+  // hand back the previous terminal code/name so the till can restore its identity
+  // instead of being re-named "T1" and colliding (A181). Best-effort hint only.
+  let restore: { terminal_code: string | null; device_label: string | null } | null = null;
+  try {
+    const mac = String(req.headers['x-device-mac'] ?? req.body?.mac_address ?? '');
+    const prior = mac ? await findPriorTerminalByMac(businessId, mac, deviceId) : null;
+    if (prior) restore = { terminal_code: prior.terminal_code, device_label: prior.device_label };
+  } catch { /* additive — enrolment must not fail over the hint */ }
+
   res.json({
     accessToken,
     refreshToken,
@@ -949,6 +831,78 @@ router.post('/enrol/redeem', async (req, res) => {
     business: biz,                       // id, name, currency, type, status
     businessId,
     branchId: (burned as any).branch_id ?? null,
+    deviceSecret,                        // A164 — store this on the device; null if not issued
+    restore,                             // A182 — { terminal_code, device_label } to reuse, or null
+  });
+});
+
+// A164 — SCOPE-node-authority Phase 1: cloud device-grant.
+//
+// A till whose refresh has lapsed presents its device_id + per-device secret and
+// gets a fresh session, instead of dropping to an owner re-login. The token is
+// minted isOwner:false (device-scoped) ON PURPOSE — that is the mode the A159
+// write-guard actually bounds (an owner token bypasses it), so this is a security
+// reduction over the enrolment owner-token, not just a convenience. branchId is
+// bound to the device's registered branch (an isOwner:false token is branch-
+// locked by rbac).
+//
+// INERT for now: the desktop does not call this yet. The cutover — the till
+// storing its secret and preferring this over re-login — ships in a later slice,
+// AFTER TERMINAL_WRITE_ENFORCE is on (so the reduced token is actually bounded)
+// and is verified on real hardware (the till must still sell/read as a non-owner).
+router.post('/device-token', async (req, res) => {
+  const businessId = String(req.body?.business_id ?? '').trim();
+  const deviceId   = String(req.body?.device_id ?? '').trim();
+  const secret     = String(req.body?.device_secret ?? '').trim();
+  if (!businessId || !deviceId || !secret) {
+    res.status(400).json({ error: 'business_id, device_id and device_secret are required' });
+    return;
+  }
+
+  const { data: dev, error: devErr } = await supabase
+    .from('user_devices')
+    .select('id, user_id, business_id, branch_id, status, device_secret_hash')
+    .eq('business_id', businessId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+  if (devErr) { sendError(res, devErr); return; }
+
+  // Uniform failure — never reveal which check failed (unknown device, wrong
+  // secret, or a revoked/pending status all look identical to a caller).
+  if (!dev || !isDeviceGrantable((dev as any).status) || !verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
+    res.status(401).json({ error: 'Device grant refused', code: 'DEVICE_GRANT_INVALID' });
+    return;
+  }
+
+  // A suspended business must not bring a session online, same as the other paths.
+  const { data: biz } = await supabase
+    .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
+  if (!biz) { res.status(500).json({ error: 'Business not found for a valid device', code: 'DEVICE_GRANT_STATE' }); return; }
+  if ((biz as any).status === 'suspended') {
+    res.status(403).json({ error: 'Your account has been suspended. Please contact SwiftPOS support.', code: 'ACCOUNT_SUSPENDED' });
+    return;
+  }
+
+  const ownerId = (dev as any).user_id as string;   // the principal the till acts as, exactly as enrolment
+  const pv = await getPermissionsVersion(ownerId);
+  const sessionId = newSessionId();
+  const payload: TokenPayload = buildDeviceTokenPayload({
+    userId:             ownerId,
+    businessId,
+    branchId:           (dev as any).branch_id ?? null,
+    permissionsVersion: pv,
+    sessionId,
+  });
+  const { accessToken, refreshToken } = issueTokenPair(payload);
+  await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
+
+  res.json({
+    accessToken,
+    refreshToken,
+    token: accessToken,
+    businessId,
+    branchId: (dev as any).branch_id ?? null,
+    business: biz,
   });
 });
 
@@ -1496,6 +1450,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
       terminalCode: req.body?.terminal_code ?? null,
       ipAddress:    req.ip ?? null,
       role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
+      macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
     });
   }
   const pv = matchedUser.permissions_version ?? 1;

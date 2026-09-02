@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftPOS — Production Surfaces (what's live)</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --line:#1e2a36;
+    --text:#e6edf3; --muted:#8aa0b2; --dim:#5f7385;
+    --green:#22c55e; --greendim:#16351f; --amber:#f59e0b; --red:#ef4444; --sky:#38bdf8; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:24px 16px 72px}
+  .wrap{max-width:860px;margin:0 auto}
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  h1{font-size:20px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:13px}
+  .badge{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .intro{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:16px 0 8px;font-size:13.5px;color:var(--muted)}
+  .intro b{color:var(--text)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:14px 0;border-left:3px solid var(--sky)}
+  .card .tag{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
+  .card h2{font-size:16px;margin:2px 0 2px;display:flex;align-items:center;gap:8px}
+  .card .what{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .field{display:flex;flex-direction:column;gap:5px;margin:10px 0}
+  .field label{font-size:12px;color:var(--dim);font-weight:600}
+  .field input{background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--text);
+    padding:9px 11px;font:13.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+  .field input::placeholder{color:var(--dim)}
+  .field input:focus{outline:none;border-color:var(--sky)}
+  .verify{margin-top:10px;padding:10px 12px;background:var(--panel2);border-radius:8px;font-size:13px}
+  .verify .h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:5px}
+  .verify ul{margin:0;padding-left:18px}
+  .verify li{margin:3px 0;color:var(--muted)}
+  .confirm{display:flex;align-items:center;gap:9px;margin-top:12px;cursor:pointer}
+  .confirm input{width:17px;height:17px;accent-color:var(--green)}
+  .confirm span{font-size:13px;color:var(--muted)}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px;color:#cbd5e1;white-space:nowrap}
+  .server{border-left-color:var(--green)}
+  .db{border-left-color:var(--amber)}
+  .admin{border-left-color:var(--violet)}
+  .till{border-left-color:var(--dim)}
+  .callout{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:12px 14px;margin:18px 0;font-size:13.5px}
+  .callout b{color:#fca5a5}
+  .rule{color:var(--dim);font-size:12px;margin:18px 0 6px;border-top:1px solid var(--line);padding-top:14px}
+  .bar{position:sticky;bottom:0;margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;
+    background:linear-gradient(transparent,var(--bg) 40%);padding-top:16px}
+  .bar button{border:0;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+  .bar .primary{background:var(--green);color:#04140a}
+  .bar .ghost{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+  #copied{color:var(--green);font-size:13px;align-self:center;opacity:0;transition:opacity .2s}
+  #copied.show{opacity:1}
+  a{color:var(--sky)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>SwiftPOS — Production Surfaces</h1>
+      <div class="sub">Your single source of truth for what's live · fill it once, keep it</div>
+    </div>
+    <div class="badge">prod only</div>
+  </header>
+
+  <div class="intro">
+    <b>How to know what's actually live:</b> ignore the GitHub "Environments" names — most are auto-created by Vercel/Render.
+    The truth for a running URL is the <b>Vercel</b> dashboard (project → Deployments → the one tagged <b>"Current / Production"</b>; Domains tab shows the URL)
+    and the <b>Render</b> dashboard (service URL + latest deploy). Fill each live value below and tick it once verified.
+  </div>
+
+  <!-- SERVER -->
+  <div class="card server">
+    <div class="tag">API · Render</div>
+    <h2>Prod Server (Render)</h2>
+    <div class="what">The Express API the dashboard, admin and tills all talk to.</div>
+    <div class="field">
+      <label>Live URL</label>
+      <input data-k="server_url" placeholder="https://swiftpos-server.onrender.com">
+    </div>
+    <div class="verify">
+      <div class="h">Verify it's prod &amp; live</div>
+      <ul>
+        <li>Open <code>&lt;URL&gt;/health</code> → returns ok / 200.</li>
+        <li>Render dashboard → this service is the <b>non-dev</b> one, latest deploy = <b>Live</b>, on branch <code>main</code>.</li>
+      </ul>
+    </div>
+    <label class="confirm"><input type="checkbox" data-c="server"><span>Confirmed — this is the live prod API</span></label>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="card">
+    <div class="tag">Web · Vercel</div>
+    <h2>Prod Dashboard (Vercel)</h2>
+    <div class="what">The manager/owner web app (payment methods, reports, settings).</div>
+    <div class="field">
+      <label>Live URL</label>
+      <input data-k="dash_url" placeholder="https://swiftpos-dashboard.vercel.app  (or your custom domain)">
+    </div>
+    <div class="field">
+      <label>Its API base env var → must equal the Prod Server URL above</label>
+      <input data-k="dash_api" placeholder="VITE_API_URL / NEXT_PUBLIC_API_URL value">
+    </div>
+    <div class="verify">
+      <div class="h">Verify it's prod &amp; wired right</div>
+      <ul>
+        <li>Vercel → the <b>non-development</b> dashboard project → Deployments → deploy tagged <b>Production / Current</b>; Domains tab = this URL.</li>
+        <li>Settings → Environment Variables: the API base points at the <b>Prod Server</b> (not the dev Render). This is the one real cross-wire risk.</li>
+        <li>Load it, open Payment methods, add + delete one → proves it hits prod + migration 86 is live.</li>
+      </ul>
+    </div>
+    <label class="confirm"><input type="checkbox" data-c="dash"><span>Confirmed — live, and API points at prod</span></label>
+  </div>
+
+  <!-- ADMIN -->
+  <div class="card admin">
+    <div class="tag">Web · Vercel</div>
+    <h2>Prod Admin (Vercel)</h2>
+    <div class="what">The internal admin app (separate Vercel project from the dashboard).</div>
+    <div class="field">
+      <label>Live URL</label>
+      <input data-k="admin_url" placeholder="https://swiftpos-admin.vercel.app  (or your custom domain)">
+    </div>
+    <div class="field">
+      <label>Its API base env var → must equal the Prod Server URL</label>
+      <input data-k="admin_api" placeholder="VITE_API_URL / NEXT_PUBLIC_API_URL value">
+    </div>
+    <div class="verify">
+      <div class="h">Verify it's prod &amp; wired right</div>
+      <ul>
+        <li>Vercel → the <b>non-development</b> admin project → Production deploy; Domains tab = this URL.</li>
+        <li>Env vars: API base = <b>Prod Server</b>, not dev.</li>
+      </ul>
+    </div>
+    <label class="confirm"><input type="checkbox" data-c="admin"><span>Confirmed — live, and API points at prod</span></label>
+  </div>
+
+  <!-- DB -->
+  <div class="card db">
+    <div class="tag">Database · Supabase</div>
+    <h2>Prod Database (Supabase)</h2>
+    <div class="what">The prod Postgres. Migrated only by the <code>DB migrate (production)</code> GitHub Action.</div>
+    <div class="field">
+      <label>Project ref (the <code>&lt;ref&gt;</code> in the pooler host)</label>
+      <input data-k="db_ref" placeholder="e.g. abcdxyz  (from postgres.&lt;ref&gt;@aws-0-…pooler.supabase.com)">
+    </div>
+    <div class="verify">
+      <div class="h">Verify it's prod &amp; current</div>
+      <ul>
+        <li>This ref is the one inside the <code>DATABASE_URL</code> secret on the plain <b>Production</b> GitHub Environment.</li>
+        <li>Actions → <b>DB migrate (production)</b> → latest run <b>green</b>, Plan shows <code>pending: 0</code>, Verify = <b>PASS</b>.</li>
+        <li>Supabase → this project → Table editor has <code>payment_methods</code> (migration 86).</li>
+      </ul>
+    </div>
+    <label class="confirm"><input type="checkbox" data-c="db"><span>Confirmed — prod DB migrated (83→86) &amp; verified</span></label>
+  </div>
+
+  <!-- TILLS -->
+  <div class="card till">
+    <div class="tag">Desktop · hand-installed</div>
+    <h2>Prod Tills</h2>
+    <div class="what">Electron tills in the field. They do NOT auto-update — they change only when you build &amp; install.</div>
+    <div class="field">
+      <label>Server URL they enrol against → must equal the Prod Server URL</label>
+      <input data-k="till_server" placeholder="same as Prod Server (Render) above">
+    </div>
+    <div class="verify">
+      <div class="h">Verify</div>
+      <ul>
+        <li>On a till: it points at the <b>Prod Server</b>, not dev.</li>
+        <li><b>Hold</b> new prod builds off live tills until the A101 offline-auth checklist passes (a bad auth build = a site visit).</li>
+      </ul>
+    </div>
+    <label class="confirm"><input type="checkbox" data-c="till"><span>Confirmed — tills on prod server; A101 build held until tested</span></label>
+  </div>
+
+  <div class="callout">
+    <b>The one real cross-wire risk:</b> a prod web app (dashboard or admin) whose API base still points at the <b>dev</b> Render.
+    You deployed them on separate days to avoid this — the two API-base fields above are where you prove it. If both equal the Prod Server URL, you're clean.
+  </div>
+
+  <div class="rule">Don't rename the <code>– swiftpos-…</code> GitHub environments — Vercel/Render recreate them on the next deploy. Only the plain <code>Production</code> is yours (the migrate workflow). Stale <code>Preview – …</code> entries are safe to delete.</div>
+
+  <div class="bar">
+    <button class="primary" onclick="copyOut()">Copy sheet</button>
+    <button class="ghost" onclick="resetAll()">Reset</button>
+    <span id="copied">Copied</span>
+  </div>
+</div>
+
+<script>
+  const KEY = 'swiftpos_prod_surfaces_v1';
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} }
+
+  document.querySelectorAll('input[data-k]').forEach(inp => {
+    const k = inp.dataset.k;
+    if (state[k]) inp.value = state[k];
+    inp.addEventListener('input', () => { state[k] = inp.value; save(); });
+  });
+  document.querySelectorAll('input[data-c]').forEach(cb => {
+    const c = 'c_' + cb.dataset.c;
+    cb.checked = !!state[c];
+    cb.addEventListener('change', () => { state[c] = cb.checked; save(); });
+  });
+
+  function copyOut(){
+    const g = k => state[k] || '(blank)';
+    const y = c => state['c_' + c] ? '✓' : '—';
+    const txt = [
+      'SwiftPOS — Production surfaces',
+      '',
+      `[${y('server')}] Prod Server (Render):   ${g('server_url')}`,
+      `[${y('dash')}] Prod Dashboard (Vercel): ${g('dash_url')}`,
+      `        └ API base: ${g('dash_api')}`,
+      `[${y('admin')}] Prod Admin (Vercel):     ${g('admin_url')}`,
+      `        └ API base: ${g('admin_api')}`,
+      `[${y('db')}] Prod DB (Supabase ref):  ${g('db_ref')}`,
+      `[${y('till')}] Tills → server:          ${g('till_server')}`,
+    ].join('\n');
+    navigator.clipboard.writeText(txt).then(() => {
+      const c = document.getElementById('copied'); c.classList.add('show'); setTimeout(() => c.classList.remove('show'), 2000);
+    }, () => window.prompt('Copy:', txt));
+  }
+  function resetAll(){ if (confirm('Clear everything?')) { state = {}; save();
+    document.querySelectorAll('input[data-k]').forEach(i => i.value = '');
+    document.querySelectorAll('input[data-c]').forEach(c => c.checked = false); } }
+</script>
+</body>
+</html>

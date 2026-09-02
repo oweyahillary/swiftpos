@@ -134,7 +134,7 @@ export default function StationsPage() {
   if (loading) return <p className="text-sm text-gray-500">Loading stations…</p>;
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Print stations</h1>
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">

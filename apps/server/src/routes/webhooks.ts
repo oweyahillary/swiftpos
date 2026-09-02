@@ -178,12 +178,29 @@ router.post('/:id/test', async (req, res) => {
       redirect: 'error', // don't follow a redirect to an internal target
       signal: controller.signal,
     });
+    await supabase.from('webhook_deliveries').insert({
+      webhook_id:      hook.id,
+      event:           'ping',
+      payload:         JSON.parse(body),
+      response_status: response.status,
+      delivered_at:    new Date().toISOString(),
+      attempt_count:   1,
+    });
     res.json({ success: response.ok, status: response.status });
   } catch (err: any) {
     // This error describes the OWNER'S OWN endpoint (connection refused, TLS,
     // timeout) — it's the point of a test ping and contains no SwiftPOS
     // internals, so it's safe (and useful) to surface here.
     console.error('[webhooks] test ping failed:', err?.message ?? err);
+    await supabase.from('webhook_deliveries').insert({
+      webhook_id:      hook.id,
+      event:           'ping',
+      payload:         JSON.parse(body),
+      response_status: null,
+      response_body:   String(err?.message ?? 'Delivery failed').slice(0, 500),
+      delivered_at:    new Date().toISOString(),
+      attempt_count:   1,
+    });
     res.json({ success: false, error: err?.message ?? 'Delivery failed' });
   }
 });

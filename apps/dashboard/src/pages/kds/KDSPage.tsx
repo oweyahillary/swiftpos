@@ -1,8 +1,21 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
 
 import { API_URL } from '../../lib/config';
 const API_BASE = API_URL;
+
+// A KDS display authenticates with a one-time, branch-scoped token (A3). The owner
+// generates it in the dashboard and pastes it into this screen once; it is kept in
+// localStorage (never in the URL) and sent as a Bearer header on every request. The
+// branch is embedded in the token, so it is never taken from the URL.
+const KDS_TOKEN_KEY = 'swiftpos_kds_token';
+const kdsAuthHeaders = (): Record<string, string> => {
+  const t = localStorage.getItem(KDS_TOKEN_KEY);
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
+function decodeBranchId(token: string): string | null {
+  try { return JSON.parse(atob(token.split('.')[1])).branchId ?? null; }
+  catch { return null; }
+}
 
 // Status config — maps DB values to display labels and actions
 const STATUS_CONFIG = {
@@ -55,15 +68,15 @@ export default function KDSPage() {
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const [branchId, setBranchId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
+  const [kdsToken, setKdsToken] = useState<string | null>(() => localStorage.getItem(KDS_TOKEN_KEY));
+  const [tokenDraft, setTokenDraft] = useState('');
   const audioCtx = useRef<AudioContext | null>(null);
   const knownIds = useRef<Set<string>>(new Set());
 
-  // Get branch_id from URL ?branch_id=xxx
+  // The branch is derived from the KDS token, never the URL.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const bid = params.get('branch_id');
-    if (bid) setBranchId(bid);
-  }, []);
+    setBranchId(kdsToken ? decodeBranchId(kdsToken) : null);
+  }, [kdsToken]);
 
   // Play a short beep using Web Audio API (no file needed)
   const playBeep = useCallback(() => {
@@ -90,68 +103,39 @@ export default function KDSPage() {
   // Initial fetch
   const fetchTickets = useCallback(async (bid: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${bid}`);
-      const data: Ticket[] = await res.json();
+      const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${bid}`, { headers: kdsAuthHeaders() });
+      const body = await res.json();
+      const data: Ticket[] = Array.isArray(body) ? body : [];
+      if (!Array.isArray(body)) console.error('KDS tickets: unexpected response', body);
+      // New-ticket alert is poll-driven now (realtime removed — A191): beep + flash any
+      // ticket we haven't seen, but not on the very first load.
+      const known = knownIds.current;
+      const isFirst = known.size === 0;
+      const fresh = data.filter(t => !known.has(t.id));
       setTickets(data);
-      data.forEach(t => knownIds.current.add(t.id));
+      data.forEach(t => known.add(t.id));
+      if (!isFirst && fresh.length) {
+        playBeep();
+        fresh.forEach(t => flashTicket(t.id));
+      }
     } catch (err) {
       console.error('KDS fetch failed:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [playBeep, flashTicket]);
 
   useEffect(() => {
     if (!branchId) return;
     fetchTickets(branchId);
 
-    // Auto-refresh every 30s as fallback alongside realtime
-    const interval = setInterval(() => fetchTickets(branchId), 30000);
+    // KDS refreshes on a 10s poll. Realtime was removed (A191): subscribing through a
+    // Supabase client on /kds invalidated the owner's dashboard session app-wide, and
+    // the anon realtime channel never delivered under RLS anyway. The poll (with the
+    // fixed tickets query) is the single, reliable path.
+    const interval = setInterval(() => fetchTickets(branchId), 10000);
     return () => clearInterval(interval);
-  }, [branchId]);
-
-  // Supabase realtime subscription
-  useEffect(() => {
-    if (!branchId) return;
-
-    const channel = supabase
-      .channel(`kds-${branchId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'kitchen_tickets',
-          filter: `branch_id=eq.${branchId}`,
-        },
-        async (payload) => {
-          if (payload.eventType === 'INSERT') {
-            // Fetch full ticket with order details
-            const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${branchId}`);
-            const all: Ticket[] = await res.json();
-            const newTicket = all.find(t => t.id === payload.new.id);
-            if (newTicket && !knownIds.current.has(newTicket.id)) {
-              knownIds.current.add(newTicket.id);
-              setTickets(prev => [newTicket, ...prev]);
-              playBeep();
-              flashTicket(newTicket.id);
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as Ticket;
-            setTickets(prev =>
-              updated.status === 'collected'
-                ? prev.filter(t => t.id !== updated.id)
-                : prev.map(t => t.id === updated.id ? { ...t, ...updated } : t)
-            );
-          } else if (payload.eventType === 'DELETE') {
-            setTickets(prev => prev.filter(t => t.id !== payload.old.id));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [branchId, playBeep, flashTicket]);
+  }, [branchId, fetchTickets]);
 
   const advanceStatus = async (ticket: Ticket) => {
     const cfg = STATUS_CONFIG[ticket.status];
@@ -169,7 +153,7 @@ export default function KDSPage() {
     try {
       await fetch(`${API_BASE}/api/kitchen/tickets/${ticket.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...kdsAuthHeaders() },
         body: JSON.stringify({ status: cfg.next }),
       });
     } catch (err) {
@@ -189,12 +173,45 @@ export default function KDSPage() {
     ready:     tickets.filter(t => t.status === 'ready').length,
   };
 
+  if (!kdsToken) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-4">
+          <div className="text-center space-y-1">
+            <p className="text-white text-xl font-semibold">Set up this kitchen display</p>
+            <p className="text-gray-400 text-sm">Paste the KDS token from the dashboard (Settings → Devices and printers → Kitchen display).</p>
+          </div>
+          <textarea
+            value={tokenDraft}
+            onChange={e => setTokenDraft(e.target.value)}
+            placeholder="Paste KDS token…"
+            rows={4}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-green-500 focus:outline-none font-mono break-all"
+          />
+          <button
+            onClick={() => {
+              const t = tokenDraft.trim();
+              if (!t || !decodeBranchId(t)) { alert('That does not look like a valid KDS token.'); return; }
+              localStorage.setItem(KDS_TOKEN_KEY, t);
+              setKdsToken(t);
+              setTokenDraft('');
+            }}
+            className="w-full bg-green-500 hover:bg-green-400 text-gray-950 font-semibold py-2.5 rounded-lg transition-colors"
+          >Save &amp; start</button>
+        </div>
+      </div>
+    );
+  }
+
   if (!branchId) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="text-center space-y-3">
-          <p className="text-white text-xl font-semibold">Missing branch ID</p>
-          <p className="text-gray-400 text-sm">Open this page as: <code className="text-green-400">/kds?branch_id=YOUR_BRANCH_ID</code></p>
+          <p className="text-white text-xl font-semibold">Invalid KDS token</p>
+          <button
+            onClick={() => { localStorage.removeItem(KDS_TOKEN_KEY); setKdsToken(null); }}
+            className="text-green-400 text-sm underline"
+          >Re-enter token</button>
         </div>
       </div>
     );
@@ -208,6 +225,11 @@ export default function KDSPage() {
         <div className="flex items-center gap-3">
           <span className="text-white font-bold text-xl tracking-tight">Kitchen Display</span>
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live" />
+          <button
+            onClick={() => { if (confirm('Unlink this kitchen display?')) { localStorage.removeItem(KDS_TOKEN_KEY); setKdsToken(null); } }}
+            className="text-gray-600 hover:text-gray-400 text-xs"
+            title="Unlink display"
+          >⎋</button>
         </div>
 
         {/* Status counts */}
