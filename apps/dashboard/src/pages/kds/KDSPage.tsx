@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 
 import { API_URL } from '../../lib/config';
+import { classifyKdsFetch, type KdsConn } from './kdsConn';
 const API_BASE = API_URL;
 
 // A KDS display authenticates with a one-time, branch-scoped token (A3). The owner
@@ -65,6 +66,9 @@ function ElapsedTimer({ since }: { since: string }) {
 export default function KDSPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  // A192: the display's real connection state, set from the LAST fetch outcome —
+  // not from "the poll ran". A 401 becomes 'auth' (re-pair), never a silent empty board.
+  const [conn, setConn] = useState<KdsConn>('ok');
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const [branchId, setBranchId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
@@ -104,9 +108,22 @@ export default function KDSPage() {
   const fetchTickets = useCallback(async (bid: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/kitchen/tickets?branch_id=${bid}`, { headers: kdsAuthHeaders() });
-      const body = await res.json();
-      const data: Ticket[] = Array.isArray(body) ? body : [];
-      if (!Array.isArray(body)) console.error('KDS tickets: unexpected response', body);
+      const body = await res.json().catch(() => null);
+      const isArr = Array.isArray(body);
+      // A192: derive the connection state from the actual HTTP outcome. A 401/403
+      // is an auth failure (re-pair needed), NOT an empty queue.
+      const state = classifyKdsFetch(res.ok, res.status, isArr);
+      setConn(state);
+
+      if (state !== 'ok') {
+        // Do NOT overwrite the board with [] — that is exactly what made a 401
+        // read as "all clear". On 'auth' we render the re-pair panel; on 'error'
+        // we keep the last known tickets and show a connection warning.
+        if (!isArr) console.error('KDS tickets: non-ok response', res.status, body);
+        return;
+      }
+
+      const data = body as Ticket[];
       // New-ticket alert is poll-driven now (realtime removed — A191): beep + flash any
       // ticket we haven't seen, but not on the very first load.
       const known = knownIds.current;
@@ -119,7 +136,10 @@ export default function KDSPage() {
         fresh.forEach(t => flashTicket(t.id));
       }
     } catch (err) {
+      // A network failure (cloud unreachable) is a connection problem, not "all
+      // clear": flag it and keep the last tickets on screen.
       console.error('KDS fetch failed:', err);
+      setConn('error');
     } finally {
       setLoading(false);
     }
@@ -224,7 +244,15 @@ export default function KDSPage() {
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-white font-bold text-xl tracking-tight">Kitchen Display</span>
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live" />
+          {/* A192: dot reflects the last fetch — green=live, red=not paired (401), amber=connection problem */}
+          <span
+            className={`w-2 h-2 rounded-full ${
+              conn === 'ok' ? 'bg-green-500 animate-pulse'
+              : conn === 'auth' ? 'bg-red-500'
+              : 'bg-amber-500 animate-pulse'
+            }`}
+            title={conn === 'ok' ? 'Live' : conn === 'auth' ? 'Not paired — re-pair this display' : 'Connection problem'}
+          />
           <button
             onClick={() => { if (confirm('Unlink this kitchen display?')) { localStorage.removeItem(KDS_TOKEN_KEY); setKdsToken(null); } }}
             className="text-gray-600 hover:text-gray-400 text-xs"
@@ -263,14 +291,46 @@ export default function KDSPage() {
         <Clock />
       </div>
 
+      {/* A192: connection warning strip — shown when the cloud is unreachable/erroring
+          but we still have last-known tickets on screen, so stale data is never silent. */}
+      {conn === 'error' && (
+        <div className="flex-shrink-0 bg-amber-500/15 border-b border-amber-500/30 text-amber-300 text-sm px-6 py-2 text-center">
+          Connection problem — showing last known tickets. Retrying…
+        </div>
+      )}
+
       {/* Ticket grid */}
       <div className="flex-1 overflow-y-auto p-4">
-        {loading ? (
+        {conn === 'auth' ? (
+          // A192: a 401/403 means the display token is missing or expired. This must
+          // read as "not paired", never as an empty ("all clear") board.
+          <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+            <span className="text-5xl">🔒</span>
+            <span className="text-lg text-red-400 font-semibold">This display isn’t paired</span>
+            <span className="text-sm text-gray-400 max-w-sm">
+              The KDS token is missing or has expired, so orders can’t load. Generate a new token in
+              the dashboard (Settings → Devices and printers → Kitchen display) and re-pair.
+            </span>
+            <button
+              onClick={() => { localStorage.removeItem(KDS_TOKEN_KEY); setKdsToken(null); }}
+              className="mt-1 bg-red-500 hover:bg-red-400 text-gray-950 font-semibold px-4 py-2 rounded-lg transition-colors"
+            >Re-pair display</button>
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center h-64 text-gray-500">Loading tickets…</div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-600">
-            <span className="text-5xl">🍳</span>
-            <span className="text-lg">All clear — no pending tickets</span>
+            {conn === 'error' ? (
+              <>
+                <span className="text-5xl">📡</span>
+                <span className="text-lg text-amber-400">Can’t reach the kitchen server — retrying…</span>
+              </>
+            ) : (
+              <>
+                <span className="text-5xl">🍳</span>
+                <span className="text-lg">All clear — no pending tickets</span>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-max">
