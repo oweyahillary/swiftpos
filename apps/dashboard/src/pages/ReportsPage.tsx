@@ -63,6 +63,29 @@ interface VoidsReport {
   };
 }
 
+interface RefundsReport {
+  period: { from: string; to: string };
+  refunds: {
+    id: string; order_number: string; order_type: string; total: number;
+    refunded_amount: number; refunded_at: string;
+    refund_reason: string | null; cashier_id: string; cashier_name: string;
+    refunded_by_name: string | null; authorized_by_name: string | null;
+    branch_name: string; created_at: string;
+  }[];
+  summary: {
+    totalRefunds: number; totalValue: number;
+    byStaff: { cashier_id: string; name: string; count: number; value: number }[];
+  };
+}
+
+interface InventoryReport {
+  summary: {
+    product_id: string; name: string; sold: number; revenue: number;
+    restocked: number; written_off: number;
+  }[];
+  adjustments: { id: string; reason: string | null; created_at: string }[];
+}
+
 interface TaxReport {
   period: { from: string; to: string };
   rates: { vatRate: number; ctlRate: number };
@@ -100,6 +123,9 @@ const TAB_LIST = [
   { id: 'matrix',     label: 'Menu Matrix' },
   { id: 'food_cost',  label: 'Food Cost' },
   { id: 'voids',      label: 'Voids & Exceptions' },
+  { id: 'refunds',    label: 'Refunds' },
+  { id: 'inventory',  label: 'Inventory' },
+  { id: 'exports',    label: 'Exports' },
   { id: 'tax',        label: 'Tax Report' },
   { id: 'staff',      label: 'Staff Performance' },
   { id: 'splh',       label: 'SPLH & Labour' },
@@ -618,6 +644,213 @@ function VoidsTab({ range, branchId, currency }: { range: DateRange; branchId: s
 }
 
 // ── Tab: Tax Report ───────────────────────────────────────────────────────────
+
+// ── Tab: Refunds ──────────────────────────────────────────────────────────────
+// A193: standalone refund log — sibling of Voids & Exceptions. A refund keeps the
+// sale 'completed', so it never shows in the Void Log; this is its audit surface.
+function RefundsTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+  const [data, setData]       = useState<RefundsReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const p = new URLSearchParams({ from: range.from, to: range.to });
+      if (branchId) p.set('branch_id', branchId);
+      setData(await api.get<RefundsReport>(`/api/reports/refunds?${p}`));
+    } catch (e: any) { setError(e.message ?? 'Failed'); }
+    finally { setLoading(false); }
+  }, [range.from, range.to, branchId]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Spinner />;
+  if (error)   return <ErrMsg msg={error} />;
+  if (!data)   return null;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <KpiCard label="Total Refunds"  value={data.summary.totalRefunds.toString()} accent={data.summary.totalRefunds > 0} />
+        <KpiCard label="Refunded Value" value={fmtShort(data.summary.totalValue, currency)} />
+        <KpiCard label="Staff Involved" value={data.summary.byStaff.length.toString()} />
+      </div>
+
+      {data.summary.byStaff.length > 0 && (
+        <SectionCard title="Refunds by Cashier">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-gray-700">
+                <Th>Cashier</Th><Th right>Count</Th><Th right>Value</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+              {data.summary.byStaff.map(s => (
+                <tr key={s.cashier_id}>
+                  <td className="py-2 text-gray-800 dark:text-gray-200">{s.name}</td>
+                  <td className="py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{s.count}</td>
+                  <td className="py-2 text-right tabular-nums font-medium text-amber-600 dark:text-amber-400">{fmtShort(s.value, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SectionCard>
+      )}
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Refund Log</h3>
+        </div>
+        {data.refunds.length === 0
+          ? <p className="text-center text-gray-400 py-10 text-sm">No refunds in this period ✓</p>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                  <tr>
+                    <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Order</th>
+                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Cashier</th>
+                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Authorized by</th>
+                    <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Reason</th>
+                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Refunded</th>
+                    <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                  {data.refunds.map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{r.order_number}</td>
+                      <td className="px-2 py-2 text-gray-700 dark:text-gray-300">{r.cashier_name}</td>
+                      <td className="px-2 py-2 text-xs text-gray-600 dark:text-gray-400">{r.authorized_by_name ?? r.refunded_by_name ?? '—'}</td>
+                      <td className="px-2 py-2 text-gray-500 dark:text-gray-400 text-xs">{r.refund_reason || '—'}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400 font-medium">{fmtShort(r.refunded_amount, currency)}</td>
+                      <td className="px-4 py-2 text-right text-xs text-gray-400">
+                        {new Date(r.refunded_at).toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab: Inventory ────────────────────────────────────────────────────────────
+// A143: renders the existing GET /api/reports/inventory (sold / restocked /
+// written-off per product) — the endpoint was live with no UI caller.
+function InventoryTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
+  const [data, setData]       = useState<InventoryReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const p = new URLSearchParams({ from: range.from, to: range.to });
+      if (branchId) p.set('branch_id', branchId);
+      setData(await api.get<InventoryReport>(`/api/reports/inventory?${p}`));
+    } catch (e: any) { setError(e.message ?? 'Failed'); }
+    finally { setLoading(false); }
+  }, [range.from, range.to, branchId]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Spinner />;
+  if (error)   return <ErrMsg msg={error} />;
+  if (!data)   return null;
+
+  const rows = data.summary;
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <KpiCard label="Products Moved" value={rows.length.toString()} />
+        <KpiCard label="Units Sold"     value={rows.reduce((s, r) => s + r.sold, 0).toLocaleString()} />
+        <KpiCard label="Units Written Off" value={rows.reduce((s, r) => s + r.written_off, 0).toLocaleString()} accent={rows.some(r => r.written_off > 0)} />
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Stock Movement</h3>
+        </div>
+        {rows.length === 0
+          ? <p className="text-center text-gray-400 py-10 text-sm">No stock movement in this period.</p>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                  <tr>
+                    <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">Product</th>
+                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Sold</th>
+                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
+                    <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Restocked</th>
+                    <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Written Off</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                  {rows.map(r => (
+                    <tr key={r.product_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{r.name}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{r.sold.toLocaleString()}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtShort(r.revenue, currency)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-green-600 dark:text-green-400">{r.restocked.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-red-600 dark:text-red-400">{r.written_off.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab: Exports ──────────────────────────────────────────────────────────────
+// A143: one download hub for every server-side export format (they were live
+// endpoints with no UI caller). Each opens /api/reports/export/<key> as xlsx for
+// the current date range + branch.
+const EXPORT_FORMATS: { key: string; label: string; desc: string }[] = [
+  { key: 'sales',    label: 'Sales (DSR)',   desc: 'Daily sales report — orders, tenders, totals' },
+  { key: 'daily',    label: 'Daily Summary', desc: 'Per-day revenue, VAT and order counts' },
+  { key: 'hourly',   label: 'Hourly Sales',  desc: 'Revenue by hour with channel split' },
+  { key: 'products', label: 'Item Mix',      desc: 'Product performance — qty, revenue, margin' },
+  { key: 'shifts',   label: 'Shifts',        desc: 'Cashier shifts — open/close, float, variance' },
+  { key: 'pnl',      label: 'Profit & Loss', desc: 'Revenue vs cost of goods and expenses' },
+  { key: 'expenses', label: 'Expenses',      desc: 'Branch expenses by category' },
+  { key: 'audit',    label: 'Audit Log',     desc: 'Voids, refunds and sensitive actions' },
+];
+
+function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; currency: string }) {
+  const download = (key: string) => {
+    const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
+    if (branchId) p.set('branch_id', branchId);
+    window.open(`${API_URL}/api/reports/export/${key}?${p}`);
+  };
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        Download any report as an Excel file for {range.from === range.to ? range.from : `${range.from} — ${range.to}`}
+        {branchId ? ' (selected branch)' : ' (all branches)'}.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {EXPORT_FORMATS.map(f => (
+          <div key={f.key} className="flex items-center justify-between gap-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">{f.label}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{f.desc}</p>
+            </div>
+            <button
+              onClick={() => download(f.key)}
+              className="flex-shrink-0 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
+            >↓ Excel</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
   const [data, setData]       = useState<TaxReport | null>(null);
@@ -1704,6 +1937,9 @@ export default function ReportsPage() {
       {activeTab === 'matrix'    && <MatrixTab    {...tabProps} />}
       {activeTab === 'food_cost'  && <FoodCostTab    {...tabProps} />}
       {activeTab === 'voids'  && <VoidsTab   {...tabProps} />}
+      {activeTab === 'refunds'   && <RefundsTab   {...tabProps} />}
+      {activeTab === 'inventory' && <InventoryTab {...tabProps} />}
+      {activeTab === 'exports'   && <ExportsTab   {...tabProps} />}
       {activeTab === 'tax'    && <TaxTab     {...tabProps} />}
       {activeTab === 'staff'  && <StaffTab   {...tabProps} />}
       {activeTab === 'splh'      && <SplhTab      {...tabProps} />}

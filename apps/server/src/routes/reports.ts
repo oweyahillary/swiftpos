@@ -942,6 +942,80 @@ router.get('/voids', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/reports/refunds — A193
+// All refunded orders in a period, with cashier + authorizer attribution and
+// reason — the refund equivalent of the voids report. A refund keeps status
+// 'completed' (the sale stands, with a reversal), so refunds are flagged by
+// refunded_at, not by status, and dated by the refund event (refunded_at).
+// Query: from, to (by refund date), branch_id, cashier_id
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/refunds', async (req, res) => {
+  const { from, to, cashier_id } = req.query;
+  const { start, end } = getDateRange(from as string, to as string);
+  const scopedBranch = branchScope(req);
+
+  let query = supabase
+    .from('orders')
+    .select(`
+      id, order_number, order_type, total, refunded_amount, refunded_at,
+      refund_reason, refunded_by, refund_authorized_by, cashier_id, created_at, branch_id,
+      branches ( name )
+    `)
+    .eq('business_id', req.businessId)
+    .not('refunded_at', 'is', null)
+    .gte('refunded_at', start)
+    .lte('refunded_at', end)
+    .order('refunded_at', { ascending: false });
+
+  if (scopedBranch)  query = query.eq('branch_id', scopedBranch);
+  if (cashier_id)    query = query.eq('cashier_id', cashier_id as string);
+
+  const { data: refunds, error } = await query;
+  if (error) { res.status(500).json({ error: error.message }); return; }
+
+  // Enrich cashier + refunder + authorizer names in one lookup.
+  const userIds = [...new Set(
+    (refunds ?? []).flatMap(o => [o.cashier_id, (o as any).refunded_by, (o as any).refund_authorized_by]).filter(Boolean)
+  )];
+  const nameMap: Record<string, string> = {};
+  if (userIds.length) {
+    const users = await chunkIn<any>('users', 'id', userIds, q => q.select('id, name'));
+    (users ?? []).forEach((u: any) => { nameMap[u.id] = u.name; });
+  }
+
+  const enriched = (refunds ?? []).map(o => ({
+    ...o,
+    refunded_amount:    Number((o as any).refunded_amount ?? 0),
+    cashier_name:       nameMap[o.cashier_id] ?? 'Unknown',
+    refunded_by_name:   (o as any).refunded_by ? (nameMap[(o as any).refunded_by] ?? 'Unknown') : null,
+    authorized_by_name: (o as any).refund_authorized_by ? (nameMap[(o as any).refund_authorized_by] ?? 'Unknown') : null,
+    branch_name:        embedOne<{ name: string }>((o as any).branches)?.name ?? '—',
+  }));
+
+  // Per-cashier summary (value = the amount refunded, not the order total).
+  const staffMap: Record<string, { name: string; count: number; value: number }> = {};
+  for (const o of enriched) {
+    const key = o.cashier_id ?? 'unknown';
+    if (!staffMap[key]) staffMap[key] = { name: o.cashier_name, count: 0, value: 0 };
+    staffMap[key].count++;
+    staffMap[key].value += Number(o.refunded_amount);
+  }
+  const byStaff = Object.entries(staffMap)
+    .map(([cashier_id, v]) => ({ cashier_id, ...v }))
+    .sort((a, b) => b.value - a.value);
+
+  res.json({
+    period:   { from: start, to: end },
+    refunds:  enriched,
+    summary: {
+      totalRefunds: enriched.length,
+      totalValue:   enriched.reduce((s, o) => s + Number(o.refunded_amount), 0),
+      byStaff,
+    },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/reports/tax
 // Kenya tax report — VAT 16% + CTL 2% per period, with category and branch split.
 // Query: from, to, branch_id
