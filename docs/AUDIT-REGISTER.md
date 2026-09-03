@@ -627,6 +627,19 @@ Delivery: `docs/MANIFEST-2026-09-03-d.md`. A184 stays OPEN pending the browser p
 and the Tier 3 decision. Closes on browser confirm: fleet rows show distinct code/role/branch/MAC
 and the on-shift cashier.
 
+**TIER 3 PHASE 1 BUILT 2026-09-03 (migration + test; PGlite 12/12, all schema gates green).** The
+drafted retire/archive migration is now real: `migrations/97_user_devices_retire.sql` (additive
+`retired_at`/`retired_by` + partial live index, self-registering, idempotent) with
+`scripts/test-migration-97.mjs` (12 checks, mutation-checked; discovered by the runner glob).
+`schema-audit`, `check-api-schema-drift` and `check-schema-drift` all stay green because **no code
+references the column yet** — Phase 1 is the migration alone. **Two-phase by design** (the schema
+index is the LIVE db, not the migrations, so code referencing `retired_at` can't ship until the
+column is live): (1) apply 97 to prod via db-migrate-prod, then refresh `scripts/schema-index.json`
+from live; (2) **Phase 2** ships the code — fleet `.is('retired_at', null)` filter,
+`PATCH /:id/retire` + `/:id/unretire`, FleetPage action — which only passes `schema-audit` once the
+column is in the live index. `docs/DRAFT-migration-97-user-devices-retire.sql` is superseded by the
+real migration (kept as the historical draft). Delivery: `docs/MANIFEST-2026-09-03-e.md`.
+
 
 ### A183 · P1 · CLOSED 2026-08-28 · Per-device order-number uniqueness — the durable fix for A181 collisions (migration ready, needs prod apply)
 
