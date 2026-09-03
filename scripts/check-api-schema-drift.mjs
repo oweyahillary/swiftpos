@@ -54,6 +54,13 @@ const SELF_TEST = process.argv.includes('--self-test');
 // allowlist is empty: any drift now fails the gate outright.
 const ALLOWLIST = new Set([]);
 
+// Tables that exist in prod but are NOT created by a numbered migration, so the
+// migration-derived schema above cannot see them. `schema_migration_runs` is
+// bootstrapped by scripts/migrate.mjs (CREATE TABLE IF NOT EXISTS) on every run;
+// the A154 admin migrations panel reads it. Tracked, not real drift — remove the
+// entry if the table ever moves into a migration file.
+const RUNTIME_TABLES = new Set(['schema_migration_runs']); // A154
+
 // ── build the schema in PGlite from migrations ───────────────────────────────
 async function buildSchema() {
   const MIG = path.join(ROOT, 'migrations');
@@ -234,7 +241,7 @@ function collect() {
 function analyse(schema, refs, extra = {}) {
   const missTable = new Set(), missRpc = new Set(), missCol = new Map();
   for (const { table, rel } of [...refs.tableRefs, ...(extra.tableRefs || [])])
-    if (!schema.tabs.has(table)) missTable.add(`${table}  (${rel})`);
+    if (!schema.tabs.has(table) && !RUNTIME_TABLES.has(table)) missTable.add(`${table}  (${rel})`);
   for (const { fn, rel } of [...refs.rpcRefs, ...(extra.rpcRefs || [])])
     if (!schema.fns.has(fn)) missRpc.add(`${fn}  (${rel})`);
   for (const { table, col, op, rel } of [...refs.colRefs, ...(extra.colRefs || [])]) {

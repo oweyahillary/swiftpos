@@ -338,6 +338,34 @@ router.get('/fleet/health', requireAdmin, async (req, res) => {
 
 const VALID_TYPES = ['restaurant','cafe','retail','minimart','parking','petrol_station','other'] as const;
 
+// GET /api/admin/migrations — A154: read-only migration status for the admin panel.
+// Reads the two meta tables migrate.mjs maintains: schema_migration_runs (one row per
+// run, running → success/failed/noop) and schema_migrations (one row per applied
+// version). No schema change — both tables already exist in prod, created idempotently
+// by the migrate tool. Service-role read, admin-gated.
+router.get('/migrations', requireAdmin, async (_req, res) => {
+  const { data: runs, error: rErr } = await supabase
+    .from('schema_migration_runs')
+    .select('id, started_at, finished_at, status, environment, git_sha, triggered_by, planned, applied, applied_versions, failed_version, error')
+    .order('started_at', { ascending: false })
+    .limit(50);
+  if (rErr) { sendError(res, rErr); return; }
+
+  const { data: applied, error: aErr } = await supabase
+    .from('schema_migrations')
+    .select('version');
+  if (aErr) { sendError(res, aErr); return; }
+
+  const versions = (applied ?? []).map((r: { version: string }) => r.version);
+  // "Current" = the highest numeric-prefixed version (e.g. 96_orders_voided_by_fk).
+  const numeric = versions
+    .filter((v: string) => /^\d+/.test(v))
+    .sort((a: string, b: string) => parseInt(a, 10) - parseInt(b, 10));
+  const current = numeric.length ? numeric[numeric.length - 1] : null;
+
+  res.json({ current_version: current, total_applied: versions.length, runs: runs ?? [] });
+});
+
 // POST /api/admin/clients — agent-created business onboarding
 // Creates Supabase auth user + business + branch + default roles + owner user row
 router.post('/clients', requireAdmin, async (req, res) => {
