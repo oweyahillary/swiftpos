@@ -120,6 +120,9 @@ export default function PaymentModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedOrder?.orderId]);
   const [receiptPhone, setReceiptPhone] = useState('');
+  // A194: optional free-text customer name for a walk-in (call-ahead / named
+  // collection). Falls back to an attached loyalty customer's name if left blank.
+  const [customerName, setCustomerName] = useState('');
 
   // After a sale completes, fiscalisation runs async server-side. Poll a few
   // times for the signed KRA record and patch it onto the receipt if it arrives.
@@ -253,7 +256,7 @@ export default function PaymentModal({
       total:           chargedTotal,
       tip_amount:      tipAmount,
       customer_id:     loyaltyState?.customer.id ?? null,
-      customer_name:   loyaltyState?.customer.name ?? null,
+      customer_name:   (customerName.trim() || loyaltyState?.customer.name) ?? null,
       customer_phone:  loyaltyState?.customer.phone ?? null,
       points_redeemed: pointsRedeemed,
       shift_id:        shiftId ?? null,
@@ -474,7 +477,7 @@ export default function PaymentModal({
               loyaltyDiscount={loyaltyDiscount}
               promoDiscount={promoDiscount}
               promoName={discountState?.discount.name}
-              customerName={loyaltyState?.customer.name}
+              customerName={customerName.trim() || loyaltyState?.customer.name}
               footerMessage={printerSettings.footerMessage}
             />
           </div>
@@ -570,6 +573,22 @@ export default function PaymentModal({
             )}
             {loyaltyState && estimatedPoints > 0 && <p className="text-yellow-500 text-xs mt-0.5">Customer earns ~{estimatedPoints} pts</p>}
           </div>
+
+          {/* A194: optional customer name — for a call-ahead / named collection ticket.
+              Hidden when a loyalty customer is attached (their name is used instead). */}
+          {!loyaltyState?.customer.name && (
+            <div className="flex items-center gap-2 bg-gray-800/50 border border-gray-700 rounded-xl px-3 py-2">
+              <span className="text-sm flex-shrink-0">🧾</span>
+              <input
+                type="text"
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                placeholder="Customer name (optional)"
+                maxLength={60}
+                className="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-gray-600"
+              />
+            </div>
+          )}
 
           {/* Split toggles */}
           <div className="flex items-center justify-between">
