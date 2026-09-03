@@ -234,6 +234,22 @@ named tickets (call-ahead, named collection) has nowhere to put the name. **Fix 
 an optional customer-name field to the POS order flow, carried onto the ticket/receipt. Feature
 gap, not a defect; not built. **Next free ID A195.**
 
+**FIX BUILT 2026-09-03 (bench — dashboard vite build + tsc + gates green; OPEN pending browser).**
+Added an optional free-text **Customer name** input to the Payment modal's charge screen (shown
+only when no loyalty customer is attached, whose name is used instead). It feeds the
+`customer_name` the create payload already carries — `(customerName.trim() || loyaltyState?.customer.name)`
+— so it flows on the cash, M-Pesa and split **new-order** paths, and it is passed to `ReceiptView`
+so the printed/preview receipt shows `Customer: <name>`. **Client-only**: the server already
+accepts + stores `customer_name` (`POST /api/orders`), and the Orders list already displays it.
+Guard test `tests/pos-customer-name.test.mjs` (4 checks, mutation-checked; pins the server persist
+so the client change can't go silent). Files: `apps/dashboard/src/pages/pos/PaymentModal.tsx`.
+Delivery: `docs/MANIFEST-2026-09-03-b.md`. **Scoped out (flagged, not built):** the order-first
+`/pay` path (dine-in opened before payment) sets `customer_name` at open-time, not at pay-time —
+a typed-at-payment name there needs `/pay` to forward it; and the KDS card doesn't show the name
+(the kitchen `tickets` select omits `customer_name`). Both are small follow-ups, kept out to stay
+one-file (rule 12). Closes on browser confirm: type a name on a takeaway sale → it prints on the
+receipt and shows on the Orders list.
+
 ### A191 · P1 · CLOSED 2026-09-02 · Visiting /kds logs the owner out of the whole dashboard (tokens cleared app-wide)
 
 **Found by the 2026-09-01 browser test (reproduced twice, across tabs).** Navigating to
