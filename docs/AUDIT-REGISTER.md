@@ -607,6 +607,26 @@ Dependencies / notes:
 
 Surfaced 2026-08-28 (requested at end of the A181/A182/A183 saga). Delivery: TBD.
 
+**FIX BUILT 2026-09-03 (Tiers 1+2; bench — server + dashboard tsc, vite build, schema + route
+gates green; OPEN pending browser + Tier 3/4).** Scoped with the owner into tiers.
+**Tier 1 (identity, no migration):** `GET /api/devices/fleet` now selects `terminal_code`,
+`device_role`, `branch_id` (→ branch name via a lookup map — user_devices has two branch FKs so
+PostgREST can't embed one) and `mac_address`; FleetPage shows terminal code, role · branch and the
+MAC in the terminal cell — so two rows for one shop are tellable apart and a reinstalled duplicate
+shows by its MAC. **MAC is blank until the A182 desktop build (parked) ships and the till reports
+it** — correct but sparse meanwhile. **Tier 2 (active session, no migration):** the fleet joins the
+OPEN shift per device (`shifts.device_id` + `status='open'`) and shows the cashier on shift + a
+green dot; the register's "maybe target-only" worry was unfounded — the shift↔device link exists.
+Guard test `tests/fleet-identity.test.mjs` (6 checks, mutation-checked). Files:
+`apps/server/src/routes/devices.ts`, `apps/dashboard/src/pages/FleetPage.tsx`.
+**Tier 3 (retire/archive) — MIGRATION DRAFTED, NOT APPLIED:** `docs/DRAFT-migration-97-user-devices-retire.sql`
+adds a nullable `retired_at`/`retired_by` (+ partial index) so a dead till drops out of the health
+view and the not-syncing banner while keeping its history; held for owner go-ahead (prod-migrate).
+**Tier 4 (merge duplicates) — deferred** (design-heavy: MAC-matched history/attribution).
+Delivery: `docs/MANIFEST-2026-09-03-d.md`. A184 stays OPEN pending the browser pass on Tiers 1+2
+and the Tier 3 decision. Closes on browser confirm: fleet rows show distinct code/role/branch/MAC
+and the on-shift cashier.
+
 
 ### A183 · P1 · CLOSED 2026-08-28 · Per-device order-number uniqueness — the durable fix for A181 collisions (migration ready, needs prod apply)
 
