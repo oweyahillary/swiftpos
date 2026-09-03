@@ -224,6 +224,19 @@ order/cashier/authorizer/reason/amount/time, and confirm the refund handler actu
 authorizer + reason (the void path does). Not built (rule 16). Files: dashboard Reports (Voids &
 Exceptions) + the refund handler on the server. **Next free ID A194.**
 
+**FIX BUILT 2026-09-03 (bench — server + dashboard tsc, vite build, schema + route gates green;
+OPEN pending browser).** Owner chose a **standalone** Refunds view (not folded into Voids). New
+`GET /api/reports/refunds` mirrors `/voids` but selects on `refunded_at` (a refund keeps status
+`completed`, so it's flagged by the refund timestamp, and dated by the refund event, not
+`created_at`); it returns order / cashier / **authorizer** / **reason** / **refunded amount** / time
+plus a per-cashier summary. Confirmed the refund handler persists `refund_reason` +
+`refund_authorized_by` + `refunded_by` (it does). New `RefundsTab` in `ReportsPage.tsx` renders it
+as a sibling tab to Voids (amber, not red). Guard test `tests/reports-refunds-and-exports.test.mjs`
+(mutation-checked: the `refunded_at` filter and the tab wiring each go red when reverted). Schema
+gates green (the refund columns are in the index). Files: `apps/server/src/routes/reports.ts`,
+`apps/dashboard/src/pages/ReportsPage.tsx`. Delivery: `docs/MANIFEST-2026-09-03-c.md`. Closes on
+browser confirm: refund an order → it appears in the Refunds tab with reason + authorizer.
+
 ### A194 · P3 · OPEN · POS has no customer-name field on Takeaway/Dine-in orders
 
 **Found by the 2026-09-02 browser test (swiftpos-20c2).** The POS Takeaway/Dine-in flow exposes
@@ -2007,6 +2020,20 @@ browser check, not closed here (rule 16). STILL OPEN: the remaining export forma
 (`daily`, `audit`, `shifts`, `pnl`, `expenses`) have no clean tab home, and
 `GET /api/reports/inventory` still has no caller — both deferred, not done.
 Delivery: MANIFEST-2026-08-23-b.md.
+
+**FIX BUILT 2026-09-03 (bench — dashboard tsc + vite build + route gate green; OPEN pending
+browser).** Owner asked for **all** the exports + an inventory report tab. Rather than force
+mismatched export buttons onto unrelated tabs, added a single **Exports** hub tab in `ReportsPage`:
+one download button per server-side format — `sales, daily, hourly, products (item mix), shifts,
+pnl, expenses, audit` — each opening `/api/reports/export/<key>?format=xlsx&from&to&branch_id`
+(all endpoints already existed in `reports-daily.ts` + `reports-export.ts`; this is the missing UI
+caller). Also added an **Inventory** tab rendering the existing `GET /api/reports/inventory`
+(sold / restocked / written-off per product) — another live-but-unwired endpoint. `check-api-routes`
+289 (both new report reads resolve). Guard test `tests/reports-refunds-and-exports.test.mjs`
+(mutation-checked). Files: `apps/dashboard/src/pages/ReportsPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-c.md`. Closes on browser confirm: each export downloads a non-empty xlsx
+and the Inventory tab renders. **Note:** the per-tab export buttons on Master/Hourly/Item-Mix stay;
+the Exports hub is the complete download surface.
 
 ### A144 · P2 · CLOSED 2026-09-02 · Inventory/stock write-actions — endpoints live, no UI caller
 **BROWSER 2026-08-31.** New PO and New Transfer dialogs open and cancel cleanly
