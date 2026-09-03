@@ -1235,6 +1235,31 @@ function ClientDetailPage({ client, req, onBack }) {
                   </div>
                 );
               })}
+
+              {/* A198: show the minted code on the Branches tab too — same shared state
+                  as the Overview card. Without this, "Enrol till" here minted a single-use
+                  code with nowhere to display it, silently burning it. */}
+              {enrolResult && (
+                <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                    Enrolment {enrolResult.codes.length === 1 ? "code" : `codes (${enrolResult.codes.length})`} — {enrolResult.branchName}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                    Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each till the Business ID + one code.
+                  </div>
+                  {[["Business ID", enrolResult.businessId],
+                    ...enrolResult.codes.map((c, i) => [enrolResult.codes.length > 1 ? `Code ${i + 1}` : "Code", c])
+                  ].map(([label, value], i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: C.muted, width: 84, flexShrink: 0 }}>{label}</span>
+                      <code style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{value}</code>
+                      <button onClick={() => navigator.clipboard?.writeText(value)}
+                        style={{ ...S.btn, fontSize: 10, padding: "3px 8px", flexShrink: 0 }}>Copy</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setEnrolResult(null)} style={{ ...S.btn, fontSize: 11, padding: "4px 10px", marginTop: 6 }}>Dismiss</button>
+                </div>
+              )}
             </>
           ) : !deviceView ? (
             <>
