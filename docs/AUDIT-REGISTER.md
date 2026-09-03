@@ -640,6 +640,21 @@ from live; (2) **Phase 2** ships the code — fleet `.is('retired_at', null)` fi
 column is in the live index. `docs/DRAFT-migration-97-user-devices-retire.sql` is superseded by the
 real migration (kept as the historical draft). Delivery: `docs/MANIFEST-2026-09-03-e.md`.
 
+**TIER 3 PHASE 2 BUILT 2026-09-03 (code; dashboard + server tsc, vite build, route + doc gates
+green; `schema-audit` RED-BY-DESIGN until 97 is applied + the index refreshed).** The retire
+feature: `GET /api/devices/fleet` now returns LIVE terminals only (`retired_at IS NULL`) so a
+retired till leaves the health view AND the not-syncing banner; `?retired=1` returns the archive.
+New owner-scoped `PATCH /:id/retire` (stamps `retired_at`+`retired_by`, 409 if already retired) and
+`PATCH /:id/unretire` (reversible). FleetPage gains a Live/Retired toggle and a per-row
+Retire/Restore action (retire behind a confirm). Guard test `tests/fleet-retire.test.mjs` (5 checks,
+mutation-checked). **`schema-audit` correctly reports `user_devices.retired_at`/`retired_by` as
+absent** because migration 97 is not yet applied to any DB and `schema-index.json` is the LIVE
+schema — this is the Phase 1→2 ordering gate, not a defect. **Unblock:** apply 97 to the dev DB,
+then `build-schema-index.mjs --from-db` to refresh the index; `schema-audit` then goes green and the
+code works at runtime. Files: `apps/server/src/routes/devices.ts`,
+`apps/dashboard/src/pages/FleetPage.tsx`. Delivery: `docs/MANIFEST-2026-09-03-f.md`. A184 Tier 3 is
+then code-complete; **Tier 4 (merge duplicates) remains deferred.**
+
 
 ### A183 · P1 · CLOSED 2026-08-28 · Per-device order-number uniqueness — the durable fix for A181 collisions (migration ready, needs prod apply)
 
