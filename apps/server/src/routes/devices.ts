@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
       schema_version, last_sync_at, device_id,
       branch_id, device_role, terminal_code, created_at,
       user_id,
-      users ( id, name, email,
+      users!user_devices_user_id_fkey ( id, name, email,
         roles ( name )
       )
     `)
@@ -98,7 +98,7 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
       id, device_label, device_id, status, app_version, schema_version,
       last_seen_at, last_sync_at,
       terminal_code, device_role, branch_id, mac_address, retired_at, retired_by,
-      users ( name )
+      users!user_devices_user_id_fkey ( name )
     `)
     .eq('business_id', req.businessId)
     .eq('status', 'approved');
