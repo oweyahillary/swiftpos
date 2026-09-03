@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
+import { isRefunded } from './orderRefund';
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -199,7 +200,16 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                 >
                   <td className="px-4 py-2 text-gray-200 font-medium">{o.order_number}</td>
                   <td className="px-4 py-2 text-gray-400 capitalize">{o.order_type}</td>
-                  <td className={`px-4 py-2 capitalize ${STATUS_COLOR[o.status] ?? 'text-gray-300'}`}>{o.status}</td>
+                  <td className={`px-4 py-2 capitalize ${STATUS_COLOR[o.status] ?? 'text-gray-300'}`}>
+                    {o.status}
+                    {/* A195: a refund keeps status 'completed'; without this badge a refunded
+                        sale is pixel-identical to a clean one. Amber, distinct from red 'Voided'. */}
+                    {isRefunded(o.payments) && (
+                      <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">
+                        Refunded
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right text-gray-200">{fmt(o.total, currency)}</td>
                   <td className="px-4 py-2 text-gray-400">{fmtTime(o.created_at)}</td>
                   <td className="px-4 py-2 text-gray-400">{o.customer_name ?? '—'}</td>
@@ -211,7 +221,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                           className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
                         >Void</button>
                       )}
-                      {actionsFor(o, isOwner).includes('refund') && (
+                      {actionsFor(o, isOwner).includes('refund') && !isRefunded(o.payments) && (
                         <button
                           onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setActionError(''); }}
                           className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
