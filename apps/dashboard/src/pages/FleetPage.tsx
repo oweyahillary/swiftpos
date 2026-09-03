@@ -39,6 +39,13 @@ interface FleetDevice {
   lastSyncAt: string | null;
   hoursSinceSync: number | null;
   hoursSinceSeen: number | null;
+  // A184 Tier 1 — identity
+  terminalCode: string | null;
+  role: string | null;
+  branchName: string | null;
+  mac: string | null;
+  // A184 Tier 2 — active session
+  activeShift: { cashier: string | null; openedAt: string | null } | null;
 }
 
 interface FleetResponse {
@@ -178,7 +185,7 @@ export default function FleetPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
-                {['Terminal', 'App', 'Schema', 'Last sync', 'Last sign-in'].map(h => (
+                {['Terminal', 'On shift', 'App', 'Schema', 'Last sync', 'Last sign-in'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
                     {h}
                   </th>
@@ -223,9 +230,31 @@ export default function FleetPage() {
                       <div className="text-xs text-gray-400 font-mono">
                         {/* Truncated: the full id is a uuid and would push every
                             other column off screen. Enough to tell tills apart. */}
-                        {d.deviceId ? d.deviceId.slice(0, 8) : 'no device id'}
+                        {d.terminalCode
+                          ? <span className="font-sans font-medium text-gray-600 dark:text-gray-300">{d.terminalCode}</span>
+                          : (d.deviceId ? d.deviceId.slice(0, 8) : 'no device id')}
                         {d.user && <span className="ml-2 font-sans">· {d.user}</span>}
                       </div>
+                      {/* A184 Tier 1 — role · branch, and the MAC (the tell for a
+                          reinstalled duplicate). MAC is blank until the A182 desktop
+                          build ships and the till has reported it. */}
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {(d.role || d.branchName)
+                          ? <>{d.role ?? '—'}{d.branchName ? ` · ${d.branchName}` : ''}</>
+                          : null}
+                      </div>
+                      {d.mac && <div className="text-[11px] text-gray-400 font-mono">{d.mac}</div>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* A184 Tier 2 — who is on shift right now. */}
+                      {d.activeShift ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Shift open" />
+                          <span className="text-gray-700 dark:text-gray-300 text-sm">{d.activeShift.cashier ?? 'On shift'}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
                       {d.appVersion ?? <span className="italic text-gray-400">not reported</span>}

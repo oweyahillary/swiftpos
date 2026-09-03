@@ -94,12 +94,50 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
     .select(`
       id, device_label, device_id, status, app_version, schema_version,
       last_seen_at, last_sync_at,
+      terminal_code, device_role, branch_id, mac_address,
       users ( name )
     `)
     .eq('business_id', req.businessId)
     .eq('status', 'approved');
 
   if (error) { sendError(res, error); return; }
+
+  // A184 Tier 1 — resolve branch names. user_devices has two FKs to branches
+  // (branch_id + previous_branch_id), so PostgREST can't embed one unambiguously;
+  // a lookup map is simpler and safe.
+  const branchIds = [...new Set((data ?? []).map((d: any) => d.branch_id).filter(Boolean))];
+  const branchMap: Record<string, string> = {};
+  if (branchIds.length) {
+    const { data: branches } = await supabase
+      .from('branches').select('id, name').in('id', branchIds);
+    (branches ?? []).forEach((b: any) => { branchMap[b.id] = b.name; });
+  }
+
+  // A184 Tier 2 — active session: the OPEN shift on each till (if any) and the
+  // cashier who opened it. Scoped to this business's own devices by device_id.
+  const deviceIds = [...new Set((data ?? []).map((d: any) => d.device_id).filter(Boolean))];
+  const shiftByDevice: Record<string, { cashier: string | null; openedAt: string | null }> = {};
+  if (deviceIds.length) {
+    const { data: openShifts } = await supabase
+      .from('shifts')
+      .select('device_id, cashier_id, opened_at')
+      .in('device_id', deviceIds)
+      .eq('status', 'open');
+    const cashierIds = [...new Set((openShifts ?? []).map((s: any) => s.cashier_id).filter(Boolean))];
+    const cashierMap: Record<string, string> = {};
+    if (cashierIds.length) {
+      const { data: cashiers } = await supabase
+        .from('users').select('id, name').in('id', cashierIds);
+      (cashiers ?? []).forEach((u: any) => { cashierMap[u.id] = u.name; });
+    }
+    (openShifts ?? []).forEach((s: any) => {
+      // If a device somehow has two open shifts, the most recently opened wins.
+      const prev = shiftByDevice[s.device_id];
+      if (!prev || (s.opened_at ?? '') > (prev.openedAt ?? '')) {
+        shiftByDevice[s.device_id] = { cashier: cashierMap[s.cashier_id] ?? null, openedAt: s.opened_at ?? null };
+      }
+    });
+  }
 
   const now = Date.now();
   const hoursSince = (iso: string | null) =>
@@ -116,6 +154,14 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
     lastSyncAt: d.last_sync_at ?? null,
     hoursSinceSync: hoursSince(d.last_sync_at ?? null),
     hoursSinceSeen: hoursSince(d.last_seen_at ?? null),
+    // A184 Tier 1 — identity, so two rows for the same physical shop are tellable
+    // apart (and a reinstalled duplicate is visible by its MAC).
+    terminalCode: d.terminal_code ?? null,
+    role:         d.device_role ?? null,
+    branchName:   d.branch_id ? (branchMap[d.branch_id] ?? null) : null,
+    mac:          d.mac_address ?? null,
+    // A184 Tier 2 — who is on shift right now (null = no open shift).
+    activeShift:  (d.device_id && shiftByDevice[d.device_id]) ? shiftByDevice[d.device_id] : null,
   }));
 
   // Never-synced sorts first, then longest-silent. The device needing attention
