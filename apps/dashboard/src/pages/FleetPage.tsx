@@ -46,6 +46,8 @@ interface FleetDevice {
   mac: string | null;
   // A184 Tier 2 — active session
   activeShift: { cashier: string | null; openedAt: string | null } | null;
+  // A184 Tier 3 — retirement
+  retiredAt: string | null;
 }
 
 interface FleetResponse {
@@ -84,6 +86,9 @@ export default function FleetPage() {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
+  // A184 Tier 3 — toggle between live fleet and the retired archive.
+  const [showRetired, setShowRetired] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const saveLabel = useCallback(async (id: string) => {
     const label = draftLabel.trim();
@@ -98,11 +103,26 @@ export default function FleetPage() {
     }
   }, [draftLabel]);
 
+  // A184 Tier 3 — retire drops the row out of the current list; restore does the same
+  // from the archive. Either way we remove it locally so the view stays accurate.
+  const setRetired = useCallback(async (id: string, retire: boolean) => {
+    setBusyId(id);
+    setError('');
+    try {
+      await api.patch(`/api/devices/${id}/${retire ? 'retire' : 'unretire'}`, {});
+      setData(prev => prev ? { ...prev, fleet: prev.fleet.filter(f => f.id !== id) } : prev);
+    } catch (e: any) {
+      setError(e?.message ?? (retire ? 'Could not retire the terminal' : 'Could not restore the terminal'));
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(await api.get<FleetResponse>('/api/devices/fleet'));
+      setData(await api.get<FleetResponse>(`/api/devices/fleet${showRetired ? '?retired=1' : ''}`));
     } catch (e: any) {
       // Say it failed. An empty table would read as "no terminals", which is the
       // reassuring answer and almost certainly the wrong one.
@@ -110,7 +130,7 @@ export default function FleetPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showRetired]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -171,13 +191,26 @@ export default function FleetPage() {
         </div>
       )}
 
+      {/* A184 Tier 3 — switch between the live fleet and the retired archive. */}
+      <div className="flex items-center gap-1 text-sm">
+        <button
+          onClick={() => setShowRetired(false)}
+          className={`px-3 py-1 rounded-lg ${!showRetired ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >Live</button>
+        <button
+          onClick={() => setShowRetired(true)}
+          className={`px-3 py-1 rounded-lg ${showRetired ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >Retired</button>
+      </div>
+
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : fleet.length === 0 ? (
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            No approved terminals yet. A till appears here once it has been approved
-            and someone has signed in on it.
+            {showRetired
+              ? 'No retired terminals. Retiring a dead till moves it here and out of the health view.'
+              : 'No approved terminals yet. A till appears here once it has been approved and someone has signed in on it.'}
           </p>
         </div>
       ) : (
@@ -190,6 +223,7 @@ export default function FleetPage() {
                     {h}
                   </th>
                 ))}
+                <th key="actions" className="px-4 py-2.5 text-right text-xs font-medium text-gray-600 dark:text-gray-400"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -283,6 +317,22 @@ export default function FleetPage() {
                       {d.lastSeenAt
                         ? `${d.hoursSinceSeen}h ago`
                         : <span className="italic text-gray-400">never</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {/* A184 Tier 3 — retire a dead till (reversible from the Retired tab). */}
+                      {showRetired ? (
+                        <button
+                          onClick={() => void setRetired(d.id, false)}
+                          disabled={busyId === d.id}
+                          className="text-xs text-green-600 hover:text-green-500 disabled:opacity-40"
+                        >{busyId === d.id ? '…' : 'Restore'}</button>
+                      ) : (
+                        <button
+                          onClick={() => { if (confirm(`Retire ${d.label ?? d.terminalCode ?? 'this terminal'}? It leaves the health view but keeps its history. You can restore it later.`)) void setRetired(d.id, true); }}
+                          disabled={busyId === d.id}
+                          className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-40"
+                        >{busyId === d.id ? '…' : 'Retire'}</button>
+                      )}
                     </td>
                   </tr>
                 );

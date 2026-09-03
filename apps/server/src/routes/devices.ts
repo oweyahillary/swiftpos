@@ -89,16 +89,21 @@ router.get('/', async (req, res) => {
 // hours; whether "behind" is acceptable is a judgement for whoever reads it.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
-  const { data, error } = await supabase
+  // A184 Tier 3 — by default the fleet is LIVE terminals only (retired ones drop
+  // out of the health view and the not-syncing count). ?retired=1 shows the archive.
+  const showRetired = String(req.query.retired ?? '') === '1';
+  let query = supabase
     .from('user_devices')
     .select(`
       id, device_label, device_id, status, app_version, schema_version,
       last_seen_at, last_sync_at,
-      terminal_code, device_role, branch_id, mac_address,
+      terminal_code, device_role, branch_id, mac_address, retired_at, retired_by,
       users ( name )
     `)
     .eq('business_id', req.businessId)
     .eq('status', 'approved');
+  query = showRetired ? query.not('retired_at', 'is', null) : query.is('retired_at', null);
+  const { data, error } = await query;
 
   if (error) { sendError(res, error); return; }
 
@@ -162,6 +167,8 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
     mac:          d.mac_address ?? null,
     // A184 Tier 2 — who is on shift right now (null = no open shift).
     activeShift:  (d.device_id && shiftByDevice[d.device_id]) ? shiftByDevice[d.device_id] : null,
+    // A184 Tier 3 — when this terminal was retired (null = live).
+    retiredAt:    d.retired_at ?? null,
   }));
 
   // Never-synced sorts first, then longest-silent. The device needing attention
@@ -201,6 +208,41 @@ router.patch('/:id/label', requireAnyPermission('devices.approve', 'settings.man
   if (error) { sendError(res, error); return; }
 
   res.json({ id: req.params.id, device_label: label });
+});
+
+// ── PATCH /api/devices/:id/retire ── A184 Tier 3: mark a dead terminal retired ──
+// Retiring drops the till out of the fleet health view and the not-syncing banner
+// but keeps all its history (orders/shifts). Reversible via /unretire. Owner-scoped.
+router.patch('/:id/retire', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+  const { data: device } = await supabase
+    .from('user_devices').select('id, business_id, retired_at')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+  if ((device as any).retired_at) { res.status(409).json({ error: 'Terminal is already retired.' }); return; }
+
+  const { error } = await supabase
+    .from('user_devices')
+    .update({ retired_at: new Date().toISOString(), retired_by: req.userId })
+    .eq('id', req.params.id);
+  if (error) { sendError(res, error); return; }
+
+  res.json({ id: req.params.id, retired: true });
+});
+
+// ── PATCH /api/devices/:id/unretire ── A184 Tier 3: bring a retired terminal back ──
+router.patch('/:id/unretire', requireAnyPermission('devices.approve', 'settings.manage'), async (req, res) => {
+  const { data: device } = await supabase
+    .from('user_devices').select('id, business_id')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  const { error } = await supabase
+    .from('user_devices')
+    .update({ retired_at: null, retired_by: null })
+    .eq('id', req.params.id);
+  if (error) { sendError(res, error); return; }
+
+  res.json({ id: req.params.id, retired: false });
 });
 
 // ── PATCH /api/devices/:id/approve ───────────────────────────────────────────
