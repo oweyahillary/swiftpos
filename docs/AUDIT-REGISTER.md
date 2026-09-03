@@ -137,6 +137,20 @@ from "Voided" so the two money-reversal paths aren't confused. Do NOT relabel Co
 the badge is the glance-level signal, the log is the full record. Files: dashboard Finance →
 Orders row rendering. **Next free ID A196.**
 
+**FIX BUILT 2026-09-03 (bench — dashboard vite build + tsc + gates green; OPEN pending browser).**
+A refund keeps status `completed` and records the reversal as a payment leg with `status:'refunded'`
+(negative amount), and `GET /api/orders` already returns `payments ( method, amount, status )` — so
+the refund is detectable **client-side with no server change**. New pure detector
+`isRefunded(payments)` (`apps/dashboard/src/pages/orderRefund.ts`) keys off a `'refunded'` leg (not
+the order status). OrdersPage now renders an amber **"Refunded"** badge beside the green status, and
+suppresses the Refund button on an already-refunded order (the server 400s a double refund).
+Refunds are **full-only** (the handler rejects partials), so no "Partially refunded" variant was
+built. Guard test `tests/orders-refund-badge.test.mjs` (4 checks, mutation-checked; also pins the
+server producer so the `status:'refunded'` signal can't silently drift). Files:
+`apps/dashboard/src/pages/orderRefund.ts` (new) + `OrdersPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-a.md`. Closes on browser confirm: a refunded order shows the amber badge
+and offers no Refund action; a clean sale shows neither.
+
 ### A196 · P2 · CLOSED 2026-09-03 · Voided/refunded orders still appear on the KDS — ticket lifecycle not tied to order void/refund
 
 **Found on the 2026-09-02 prod retest (swiftpos-prod-mype, during the A3 close).** After voiding
@@ -181,8 +195,21 @@ treat a tickets-fetch 401/non-200 as an explicit un-paired / auth-failed state (
 "re-pair this display" prompt), never as "all clear"; drive the status dot off the last
 *successful* `/api/kitchen/tickets` response, not merely that the poll ran. Same token/RLS surface
 as A3 but a distinct observability defect, so it carries its own ID. Files:
-`apps/dashboard/src/pages/kds/KDSPage.tsx` (status + empty-state rendering). Not yet fixed
-(rule 16). **Next free ID A193.**
+`apps/dashboard/src/pages/kds/KDSPage.tsx` (status + empty-state rendering). **Next free ID A193.**
+
+**FIX BUILT 2026-09-03 (bench — dashboard vite build + tsc + gates green; OPEN pending browser).**
+`fetchTickets` now derives a connection state from the real HTTP outcome via a pure classifier
+(`apps/dashboard/src/pages/kds/kdsConn.ts` — new): only a 2xx that returns the tickets array is
+`ok`; **401/403 → `auth`** (re-pair), everything else (other non-2xx, malformed body, network
+throw) → `error`. On a non-`ok` fetch the handler now **returns before `setTickets`**, so a 401 can
+no longer blank the board to "all clear"; the last-known tickets stay on screen under an amber
+"Connection problem" strip. The header dot is driven off the state (green=live, red=not-paired,
+amber=connection problem), and an `auth` state renders a full "This display isn't paired → Re-pair"
+panel instead of the empty board. Guard test `tests/kds-conn-state.test.mjs` (7 checks,
+mutation-checked: the 401→auth branch and the no-blind-wipe guard each go red when reverted).
+Files: `apps/dashboard/src/pages/kds/kdsConn.ts` (new) + `KDSPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-a.md`. Closes on browser confirm: on `/kds` with an expired/absent token
+the display shows a RED "not paired / re-pair" state, never "all clear".
 
 ### A193 · P2 · OPEN · Refund has no audit-log view — reason/authorizer are recorded but not reviewable
 
