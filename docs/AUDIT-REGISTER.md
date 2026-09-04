@@ -252,8 +252,12 @@ and marks them received via `PATCH /api/stock/transfers/:id/status` — gated on
 with **no adjust/edit path** (the tab makes exactly one mutating call, the receive). The Overview's
 broken promise now points to Receiving. Guard test `tests/manager-receiving.test.mjs`
 (mutation-checked: a stray adjust call fails the one-mutation check). Files:
-`apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx` (new) + `ManagerDashboard.tsx`. Delivery:
-`docs/MANIFEST-2026-09-04-k.md`. **Slice 2 (supplier deliveries / GRN, `inventory.receive`) — next.**
+`apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx` (new) + `ManagerDashboard.tsx`. **Slice 2 (supplier deliveries / GRN) — BUILT** the same day: the Receiving tab now also lists OPEN
+purchase orders for the branch (`GET /api/stock/purchase-orders?branch_id=`, status ordered/partial)
+and receives against one via a GRN (`POST /api/stock/grn`, per-item quantity that arrived), gated on
+`inventory.receive`. Both slices are RECEIVE-only — every mutation is `/status` (transfer) or `/grn`
+(delivery), no adjust/set/threshold (guard test extended, mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-04-k.md`.
 **Product decision (recorded so it is not re-flagged as a gap):** the **desktop till deliberately
 has NO inventory receive or adjust** — receiving/adjusting is a **premium, online-only capability**
 that drives online subscription, not a missing feature. Closes on a manager browser check: a manager

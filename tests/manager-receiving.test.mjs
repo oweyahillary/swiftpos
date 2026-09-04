@@ -30,17 +30,20 @@ ok('permission model: managers are denied adjust/edit, keep receive', () => {
   assert.doesNotMatch(denyBlock, /inventory\.receive|inventory\.transfer/, 'receive/transfer must remain granted to managers');
 });
 
-ok('tab: receives only IN-TRANSIT transfers heading to this branch', () => {
-  assert.match(tab, /t\.to_branch_id === branchId && t\.status === 'in_transit'/,
-    'incoming = to this branch AND in transit');
+ok('tab: receives transfers AND supplier deliveries, but has NO edit path', () => {
   assert.match(tab, /posApi\.patch\(`\/api\/stock\/transfers\/\$\{t\.id\}\/status`, \{ status: 'received' \}\)/,
-    'Mark received must PATCH status=received');
+    'transfer receive must PATCH status=received');
+  assert.match(tab, /posApi\.post\('\/api\/stock\/grn'/, 'delivery receive must POST a GRN');
+  // Every mutating call must be a RECEIVE endpoint (transfer /status or /grn) — never adjust/set/threshold.
+  const mutPaths = [...tab.matchAll(/posApi\.(?:post|patch|put|delete)\(`?'?([^`',]+)/g)].map(m => m[1]);
+  assert.ok(mutPaths.length >= 2, `expected the two receive mutations; found ${mutPaths.length}`);
+  assert.ok(mutPaths.every(p => /\/status|\/grn/.test(p)),
+    `every mutation must be receive-only (status/grn); saw: ${mutPaths.join(', ')}`);
 });
 
-ok('tab: gated on inventory.transfer (receive, not edit — no adjust anywhere)', () => {
-  assert.match(tab, /hasPermission\('inventory\.transfer'\)/, 'must gate on inventory.transfer');
-  const muts = tab.match(/posApi\.(post|patch|put|delete)\(/g) || [];
-  assert.strictEqual(muts.length, 1, `the receive tab must make exactly ONE mutating call (the receive); found ${muts.length} — no adjust/edit`);
+ok('tab: transfers = in-transit-to-branch; deliveries = open POs only', () => {
+  assert.match(tab, /t\.to_branch_id === branchId && t\.status === 'in_transit'/, 'incoming transfers = to this branch AND in transit');
+  assert.match(tab, /p\.status === 'ordered' \|\| p\.status === 'partial'/, 'deliveries = open (ordered/partial) POs only');
 });
 
 ok('dashboard: Receiving nav item + group + render, gated on inventory.receive', () => {

@@ -1,4 +1,4 @@
-# MANIFEST 2026-09-04-k — A205: manager web-POS stock receiving (slice 1: incoming transfers)
+# MANIFEST 2026-09-04-k — A205: manager web-POS stock receiving (transfers + supplier deliveries)
 
 **Base commit:** current `dev`. **Delivered together with A133 Slice 2** (same ManagerDashboard
 file). **Scope:** dashboard only. **Working rules:** unchanged.
@@ -36,9 +36,10 @@ re-flagged.
 - **Could NOT verify here:** the browser — a manager sees Receiving, marks an incoming transfer
   received, and has no adjust/edit control.
 
-## Next
-**Slice 2 — supplier deliveries / GRN** (`inventory.receive`): receive against a delivery/PO in the
-same Receiving tab.
+## Both slices built
+- **Transfers** — mark in-transit-to-branch transfers received (`inventory.transfer`).
+- **Supplier deliveries** — receive against an open PO via a GRN, per-item quantity (`inventory.receive`).
+Every mutation is receive-only (`/status` or `/grn`); no adjust/edit path.
 
 ## Rollback
 ```
