@@ -25,7 +25,7 @@ const ok = (name, fn) => {
 ok('nav items carry a group + GROUP_ORDER defines the section order', () => {
   assert.match(mgr, /interface NavItem \{[^}]*group: string \| null;[^}]*\}/,
     'NavItem must include a group field');
-  assert.match(mgr, /const GROUP_ORDER: \(string \| null\)\[\] = \[null, 'Finance', 'Customers', 'Settings'\]/,
+  assert.match(mgr, /const GROUP_ORDER: \(string \| null\)\[\] = \[null, 'Inventory', 'Finance', 'Customers', 'Settings'\]/,
     'GROUP_ORDER must define the section order');
 });
 

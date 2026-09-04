@@ -20,6 +20,7 @@ import POSCustomersTab    from '../pos/POSCustomersTab';
 import StaffTab           from '../settings/StaffTab';
 import PrintersPage       from '../settings/PrintersPage';
 import ManagerReportsPage from './ManagerReportsPage';
+import ManagerReceivingTab from './ManagerReceivingTab';
 import { localDateStr } from '../../lib/localDate';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
@@ -67,7 +68,8 @@ interface NavItem { key: string; label: React.ReactNode; title: string; permissi
 // Slice 1). Top-level items carry group: null. Group order is fixed by GROUP_ORDER.
 const NAV_ITEMS: NavItem[] = [
   { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null, group: null },
-  { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: null },
+  { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
+  { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: 'reports.view', group: 'Finance' },
   { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all', group: 'Finance' },
@@ -79,7 +81,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // Sidebar section order. null = the ungrouped top items.
-const GROUP_ORDER: (string | null)[] = [null, 'Finance', 'Customers', 'Settings'];
+const GROUP_ORDER: (string | null)[] = [null, 'Inventory', 'Finance', 'Customers', 'Settings'];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -656,7 +658,7 @@ function OverviewTab() {
                         <p key={a.id} className="text-red-300 text-sm">{a.message}</p>
                       ))}
                     </div>
-                    <p className="text-red-400/50 text-xs mt-2">If a transfer arrived, receive it in Inventory to clear these.</p>
+                    <p className="text-red-400/50 text-xs mt-2">If a transfer arrived, receive it in Receiving to clear these.</p>
                   </div>
                 )}
                 {lows.length > 0 && (
@@ -1263,6 +1265,7 @@ export default function ManagerDashboard() {
       case 'reports':   return <ManagerReportsPage />;
       case 'orders':    return <POSOrderHistoryTab currency={currency} />;
       case 'inventory': return <POSInventoryTab />;
+      case 'receiving': return <ManagerReceivingTab currency={currency} />;
       case 'expenses':  return <POSExpensesTab currency={currency} />;
       case 'customers': return <POSCustomersTab currency={currency} />;
       case 'credit':    return <ManagerCreditTab currency={currency} />;
