@@ -5883,6 +5883,20 @@ and matches `IngredientsPage` for the same branch. **Follow-up, not done:** the
 "dead column inside a live table" class still has no gate — a column-level
 read/write comparator is the missing check (`check-table-usage` is table-level).
 
+**PHASE 6 BUILT 2026-09-04 (migration + test; PGlite 8/8, schema gates green).** Confirmed with a
+repo-wide sweep: **zero writers and zero explicit readers** of `ingredients.current_stock` remain
+(recipes.ts + stock.ts serve the live per-branch value; the create insert doesn't set it; stock.ts's
+`select('*')` pulls it but overrides it). So the drop migration 23 deferred is now safe:
+`migrations/98_drop_ingredients_current_stock.sql` (idempotent `DROP COLUMN IF EXISTS`) +
+`scripts/test-migration-98.mjs` (8 checks, mutation-checked — drops the dead column, keeps the row +
+the LIVE `ingredient_stock_levels.current_stock`). **This also answers the "missing gate":** once the
+column is dropped and `schema-index.json` refreshed, **`schema-audit` becomes the column-level guard
+for free** — any future code that reads `ingredients.current_stock` fails the gate (the column no
+longer exists in the live schema). No bespoke comparator needed. Delivery:
+`docs/MANIFEST-2026-09-04-a.md`. **A12 closes on:** (1) live check — an ingredient with branch stock
+shows the true figure in the Recipes drawer (not "0 in red") and matches IngredientsPage; (2)
+migration 98 applied to prod + index refreshed. Both owner-side.
+
 ### A13 · P3 · NOTE · Two suites run on `node:sqlite`, not the app's driver
 `test-node-ingest`, `test-sync-rejection-routing`. They say so themselves. A
 local green is not hardware-equivalent.
