@@ -223,11 +223,28 @@ async function request<T>(
 // Authorization header (cross-origin to the API host, no cookie), so every export
 // 401'd with "Missing or malformed Authorization header". Fetch the file WITH the
 // auth + active-branch headers, then save the returned blob client-side.
-export async function downloadFile(path: string, filename: string): Promise<void> {
+export async function downloadFile(path: string, filename: string, isRetry = false): Promise<void> {
   const authHeader = await getAuthHeader();
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { ...authHeader, ...activeBranchHeader() },
   });
+
+  // A201: mirror request()'s 401 → refresh → retry-once. The first export click
+  // immediately after a page load can fire before the access token is
+  // hydrated/refreshed; without this, downloadFile did a single fetch and 401'd
+  // ("Missing or malformed Authorization header") on that race. Refresh and retry.
+  if (res.status === 401 && !isRetry) {
+    if (getStoredAccessToken()) {
+      try {
+        await refreshAccessToken();
+        return downloadFile(path, filename, true);
+      } catch {
+        signalSessionExpired();
+        return new Promise(() => {}); // halt — sign-out is in flight
+      }
+    }
+  }
+
   if (!res.ok) {
     let msg = `Download failed (${res.status})`;
     try { const b = await res.json(); if (b?.error) msg = b.error; } catch { /* file/non-JSON body */ }
