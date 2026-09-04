@@ -54,6 +54,10 @@ export default function StockTransfersPage() {
   // Row status actions (A144)
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [actionErr, setActionErr]     = useState<{ id: string; msg: string } | null>(null);
+  // A203: in-app confirmation for the same-user separation-of-duty override,
+  // replacing a native window.confirm() that blocked the page (and automation),
+  // which made "Mark received" look like it hung.
+  const [sameUserPrompt, setSameUserPrompt] = useState<{ t: Transfer; status: 'in_transit' | 'received' | 'cancelled'; msg: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,10 +94,9 @@ export default function StockTransfersPage() {
       await load();
     } catch (e: any) {
       if (e?.code === 'same_user_receipt' && !allowSameUser) {
-        if (window.confirm(`${e.message}\n\nProceed and record that you confirmed your own despatch?`)) {
-          await advance(t, status, true);
-          return;
-        }
+        // Open the in-app modal; the user completes the override there (no native
+        // dialog to block the page / tests). The modal calls advance(t, status, true).
+        setSameUserPrompt({ t, status, msg: e?.message ?? 'You despatched this transfer.' });
       } else {
         setActionErr({ id: t.id, msg: e?.message ?? 'Could not update the transfer' });
       }
@@ -353,6 +356,24 @@ export default function StockTransfersPage() {
               >
                 {creating ? 'Transferring…' : 'Transfer Stock'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {sameUserPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-white font-semibold text-lg mb-2">Confirm your own despatch?</h3>
+            <p className="text-gray-400 text-sm mb-5">{sameUserPrompt.msg}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSameUserPrompt(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-lg transition-colors"
+              >Not now</button>
+              <button
+                onClick={() => { const p = sameUserPrompt; setSameUserPrompt(null); void advance(p.t, p.status, true); }}
+                className="flex-1 bg-green-500 hover:bg-green-400 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
+              >Proceed &amp; record</button>
             </div>
           </div>
         </div>

@@ -717,6 +717,11 @@ router.post('/transfers', requirePermission('inventory.transfer'), async (req, r
 });
 
 router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), async (req, res) => {
+  // A203: the whole handler is wrapped so a failure in the stock RPCs
+  // (applyProductStockIn/Out) can never escape as an unhandled async rejection —
+  // in Express 4 that leaves the request hanging forever with no response, which
+  // is exactly what made "Mark received" appear to hang. On error we return 500.
+  try {
   const { status, reason, allow_same_user } = req.body;
   if (!['in_transit', 'received', 'cancelled'].includes(status)) {
     res.status(400).json({ error: "status must be 'in_transit', 'received' or 'cancelled'" });
@@ -818,6 +823,9 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
     .update(patch).eq('id', transfer.id).eq('business_id', req.businessId).select().single();
   if (error) { sendError(res, error); return; }
   res.json(data);
+  } catch (err) {
+    sendError(res, err as Error);
+  }
 });
 
 export default router;
