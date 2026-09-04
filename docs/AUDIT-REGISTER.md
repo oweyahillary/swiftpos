@@ -2896,6 +2896,24 @@ Settings sections carries its own `p-6` (StationsPage was the only gap, already
 fixed). Dashboard `tsc` + `npm run build` both green on-bench; browser recheck still
 owner's.
 
+**SLICE 2 BUILT 2026-09-04 (manager dashboard nav parity; dashboard tsc + vite build + guard test
+green; OPEN pending browser).** The manager dashboard's flat 10-item sidebar
+(`apps/dashboard/src/pages/manager/ManagerDashboard.tsx`) now groups into labelled sections — the
+same group→items pattern Slice 1 gave the owner. Each `NAV_ITEMS` entry carries a `group`; the
+sidebar iterates `GROUP_ORDER = [null, 'Finance', 'Customers', 'Settings']`, rendering an uppercase
+section header per non-top group and honouring the existing permission filter (a group with no
+permitted items renders nothing — no empty header). **Grouping (flagged for owner review):**
+top-level **Overview · Inventory**; **FINANCE** = Orders, Reports, Turnover, Expenses; **CUSTOMERS**
+= Customers, Credit; **SETTINGS** = Staff, Printers (the manager's only settings-like items — the
+owner's 3-section Users/Devices/Business taxonomy doesn't map 1:1 to the manager's fewer items, so
+this is the sensible parity, not a mechanical copy). No change to the tab switch / `renderContent` /
+auth — purely the sidebar's visual grouping. Guard test `tests/manager-nav-grouped.test.mjs`
+(mutation-checked). Files: `apps/dashboard/src/pages/manager/ManagerDashboard.tsx`. Delivery:
+`docs/MANIFEST-2026-09-04-j.md`. **A133 closes** on a browser check: sign in as a MANAGER (PIN) →
+the sidebar shows the grouped sections with headers, each item still switches its tab, and a manager
+lacking a permission doesn't see that item/group. This is the last piece of A133 (Slice 1 already
+owner-verified).
+
 ### A134 · P3 · CLOSED 2026-08-20 · Business › Profile settings tab (deferred from A133)
 
 The consolidated **Business** section (A133) is designed to open with a **Profile**

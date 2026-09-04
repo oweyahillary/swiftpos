@@ -60,20 +60,26 @@ const I = {
 
 // `label` is JSX (icon + text); `title` is the plain-text tooltip used when
 // the sidebar is collapsed. The two cannot be the same value.
-interface NavItem { key: string; label: React.ReactNode; title: string; permission: string | null; }
+interface NavItem { key: string; label: React.ReactNode; title: string; permission: string | null; group: string | null; }
 
+// A133 Slice 2 — manager-dashboard nav parity with the owner sidebar: the flat list
+// is grouped into labelled sections (the same group→items pattern the owner got in
+// Slice 1). Top-level items carry group: null. Group order is fixed by GROUP_ORDER.
 const NAV_ITEMS: NavItem[] = [
-  { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null },
-  { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: 'reports.view' },
-  { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all' },
-  { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view' },
-  { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view' },
-  { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view' },
-  { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view' },
-  { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all' },
-  { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.manage' },
-  { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'settings.manage' },
+  { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null, group: null },
+  { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: null },
+  { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
+  { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: 'reports.view', group: 'Finance' },
+  { key: 'turnover',  label: <><Icon d={I.turnover}  className="flex-shrink-0" /><span className="truncate">Turnover</span></>,  title: 'Turnover', permission: 'orders.view_all', group: 'Finance' },
+  { key: 'expenses',  label: <><Icon d={I.expenses}  className="flex-shrink-0" /><span className="truncate">Expenses</span></>,  title: 'Expenses', permission: 'expenses.view', group: 'Finance' },
+  { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view', group: 'Customers' },
+  { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view', group: 'Customers' },
+  { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.manage', group: 'Settings' },
+  { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'settings.manage', group: 'Settings' },
 ];
+
+// Sidebar section order. null = the ungrouped top items.
+const GROUP_ORDER: (string | null)[] = [null, 'Finance', 'Customers', 'Settings'];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1301,17 +1307,28 @@ export default function ManagerDashboard() {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 px-2">
-          {visibleNav.map(item => (
-            <button key={item.key} onClick={() => setActive(item.key)}
-              title={!sidebarOpen ? item.title : undefined}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                active === item.key
-                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}>
-              <span className="flex items-center gap-3 min-w-0">{item.label}</span>
-            </button>
-          ))}
+          {GROUP_ORDER.map(group => {
+            const items = visibleNav.filter(i => i.group === group);
+            if (items.length === 0) return null;
+            return (
+              <div key={group ?? 'top'} className={group ? 'pt-3' : ''}>
+                {group && sidebarOpen && (
+                  <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">{group}</p>
+                )}
+                {items.map(item => (
+                  <button key={item.key} onClick={() => setActive(item.key)}
+                    title={!sidebarOpen ? item.title : undefined}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      active === item.key
+                        ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    }`}>
+                    <span className="flex items-center gap-3 min-w-0">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="border-t border-gray-800 p-3 space-y-1 flex-shrink-0">
