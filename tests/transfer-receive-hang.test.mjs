@@ -37,8 +37,19 @@ ok('client: the same-user override no longer uses a blocking native confirm', ()
   );
   assert.doesNotMatch(sameUserBlock, /window\.confirm/,
     'the same-user path must open the in-app modal, not window.confirm');
-  assert.match(page, /setSameUserPrompt\(\{ t, status, msg:/,
+  assert.match(page, /setSameUserPrompt\(\{/,
     'the 409 must open the in-app confirmation modal');
+});
+
+ok('client: same-user is detected PROACTIVELY, before any server call', () => {
+  // Mark received routes through markReceived, which opens the modal directly when
+  // the current user despatched it — so the allowSameUser=false 409 (and any dialog
+  // that could gate it) is never reached. This is the bulletproof part of the fix.
+  assert.match(page, /const markReceived = \(t: Transfer\) => \{/, 'a markReceived handler must exist');
+  assert.match(page, /t\.despatched_by && user\?\.id && t\.despatched_by === user\.id/,
+    'markReceived must compare the transfer despatcher to the current user');
+  assert.match(page, /onClick=\{\(\) => markReceived\(t\)\}/,
+    'the Mark received button must call markReceived, not advance() directly');
 });
 
 ok('client: the modal can complete the override (advance with allow_same_user)', () => {

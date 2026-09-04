@@ -589,6 +589,21 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
     await fetchAll();
   };
 
+  // A148: add ONE option to a SAVED modifier group. The group-create form can add
+  // options and a saved group could DELETE them, but there was no "add option to an
+  // existing group" control — this wires the live POST /api/modifiers/options.
+  const [addOpt, setAddOpt] = useState<{ groupId: string; name: string; price: string } | null>(null);
+  const addModifierOption = async () => {
+    if (!addOpt || !addOpt.name.trim()) return;
+    await api.post('/api/modifiers/options', {
+      modifier_group_id: addOpt.groupId,
+      name: addOpt.name.trim(),
+      price: parseFloat(addOpt.price) || 0,
+    });
+    setAddOpt(null);
+    await fetchAll();
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -718,6 +733,32 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                               </div>
                             </div>
                           ))}
+                          {/* A148: add one option to this saved group */}
+                          {addOpt?.groupId === group.id ? (
+                            <div className="flex items-center gap-2 py-1.5">
+                              <input
+                                autoFocus value={addOpt.name}
+                                onChange={e => setAddOpt({ ...addOpt, name: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') void addModifierOption(); }}
+                                placeholder="Option name"
+                                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-green-500"
+                              />
+                              <input
+                                value={addOpt.price} inputMode="decimal"
+                                onChange={e => setAddOpt({ ...addOpt, price: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') void addModifierOption(); }}
+                                placeholder="0"
+                                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-green-500"
+                              />
+                              <button onClick={() => void addModifierOption()} className="text-xs text-green-400 hover:text-green-300 transition-colors">Add</button>
+                              <button onClick={() => setAddOpt(null)} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setAddOpt({ groupId: group.id, name: '', price: '' })}
+                              className="text-xs text-green-400 hover:text-green-300 transition-colors mt-1"
+                            >+ Add option</button>
+                          )}
                         </div>
                       </div>
                     ))}

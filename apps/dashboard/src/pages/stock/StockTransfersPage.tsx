@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 
@@ -22,6 +23,7 @@ interface Transfer {
   status: 'pending' | 'in_transit' | 'received' | 'cancelled';
   notes: string | null;
   created_at: string;
+  despatched_by: string | null;
   stock_transfer_items: TransferItem[];
 }
 
@@ -33,6 +35,7 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 };
 
 export default function StockTransfersPage() {
+  const { user } = useAuth();
   const { business } = useBusiness();
   const { activeBranchId } = useBranch();
 
@@ -106,6 +109,22 @@ export default function StockTransfersPage() {
   }
 
   const addLine = () => setLines(l => [...l, { product_id: '', quantity: '' }]);
+
+  // A203: decide the same-user case on the CLIENT, before any server call. If the
+  // current user despatched this transfer, open the in-app modal directly — we
+  // never fire the allowSameUser=false request, so the server's 409 (and any
+  // native dialog that could gate it) is never reached. A different user marks it
+  // received straight through. Makes the flow impossible to hang on a dialog.
+  const markReceived = (t: Transfer) => {
+    if (t.despatched_by && user?.id && t.despatched_by === user.id) {
+      setSameUserPrompt({
+        t, status: 'received',
+        msg: 'You despatched this transfer, so ideally someone else confirms it arrived. Proceeding is recorded on the transfer.',
+      });
+    } else {
+      void advance(t, 'received');
+    }
+  };
   const removeLine = (i: number) => setLines(l => l.filter((_, idx) => idx !== i));
   const updateLine = (i: number, field: string, val: string) =>
     setLines(l => l.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
@@ -224,7 +243,7 @@ export default function StockTransfersPage() {
                       {t.status === 'in_transit' && (
                         <button
                           disabled={actioningId === t.id}
-                          onClick={() => advance(t, 'received')}
+                          onClick={() => markReceived(t)}
                           className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors"
                         >Mark received</button>
                       )}
