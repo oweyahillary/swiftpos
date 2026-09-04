@@ -265,6 +265,20 @@ so the A144 close doesn't swallow the untested remainder. **Fix direction:** wir
 into the Inventory UI (a transfer approve/complete action + a direct set-stock control), then
 verify each end-to-end. Files: server inventory routes + dashboard Inventory. **Next free ID A198.**
 
+**ALREADY BUILT — stale entry (rule 17), corrected 2026-09-04.** A source sweep shows BOTH write
+actions are already wired; the entry was written at the A144 split without re-checking:
+- **Direct branch-stock set** = `POST /api/stock/ingredients/:id/adjust` with `type:'set'` (add /
+  remove / set), wired by IngredientsPage's **Adjust** modal (`adjustType` includes `'set'`). This
+  was in fact exercised during the A12 verify on 2026-09-04 ("Adjust → Set to 42 kg on Main Branch")
+  — so the set-stock half is **already browser-verified**.
+- **Transfer approve/complete** = `PATCH /api/stock/transfers/:id/status`, wired by
+  StockTransfersPage's `advance()` with **"Mark in transit"** (despatch/approve) and **"Mark
+  received"** (complete) buttons over the server's `pending → in_transit → received / cancelled`
+  state machine.
+No code change needed. **A197 closes on one browser check** of the transfer flow: create a transfer,
+Mark in transit, Mark received, and confirm stock moves from the source to the destination branch.
+Delivery: `docs/MANIFEST-2026-09-04-c.md`.
+
 ### A192 · P2 · CLOSED 2026-09-03 (browser-verified) · KDS display shows green "connected" + "all clear" while its ticket fetch is 401 — an auth failure reads as an empty queue
 
 **Found by the 2026-09-02 browser test (incidental to the A191 PASS, swiftpos-20c2).** On `/kds`
