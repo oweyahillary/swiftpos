@@ -176,6 +176,14 @@ Intermittent, self-recovers, non-blocking (QA confirmed). Fix (not built): mirro
 401 → `refreshAccessToken()` → retry-once path inside `downloadFile`, or await the auth-ready state
 before enabling the export buttons. Files: `apps/dashboard/src/lib/api.ts`. **Next free ID A204.**
 
+**FIX BUILT 2026-09-04 (dashboard tsc + vite build + guard test green).** `downloadFile` now mirrors
+`request()`'s 401 handling: on a 401 with a stored access token it calls `refreshAccessToken()` and
+retries once (`isRetry` guard prevents a loop); a failed refresh signals session-expiry rather than
+looping or crashing. So the first export click immediately after a page load can no longer 401 on the
+token-hydration race. Guard test `tests/download-401-retry.test.mjs` (mutation-checked). Files:
+`apps/dashboard/src/lib/api.ts`. Delivery: `docs/MANIFEST-2026-09-04-e.md`. Closes on a re-check that
+a first-click export right after a hard refresh downloads cleanly (the race the A143 re-check flagged).
+
 ### A203 · P2 · FIX BUILT 2026-09-04 · Stock transfer "Mark received" hangs; stock strands debited at source, uncredited at destination
 
 Found in the A197 transfer-flow verify. A single user despatching AND receiving a transfer is the
