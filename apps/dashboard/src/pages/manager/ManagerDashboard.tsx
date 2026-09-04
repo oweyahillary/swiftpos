@@ -22,6 +22,7 @@ import PrintersPage       from '../settings/PrintersPage';
 import ManagerReportsPage from './ManagerReportsPage';
 import ManagerReceivingTab from './ManagerReceivingTab';
 import ManagerShiftTab from './ManagerShiftTab';
+import ManagerMenuTab from './ManagerMenuTab';
 import { localDateStr } from '../../lib/localDate';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
@@ -69,6 +70,7 @@ interface NavItem { key: string; label: React.ReactNode; title: string; permissi
 // Slice 1). Top-level items carry group: null. Group order is fixed by GROUP_ORDER.
 const NAV_ITEMS: NavItem[] = [
   { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null, group: null },
+  { key: 'menu',      label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Menu</span></>,      title: 'Menu', permission: 'products.view', group: null },
   { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
   { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
@@ -1269,6 +1271,7 @@ export default function ManagerDashboard() {
       case 'inventory': return <POSInventoryTab />;
       case 'receiving': return <ManagerReceivingTab currency={currency} />;
       case 'shift': return <ManagerShiftTab currency={currency} />;
+      case 'menu': return <ManagerMenuTab currency={currency} />;
       case 'expenses':  return <POSExpensesTab currency={currency} />;
       case 'customers': return <POSCustomersTab currency={currency} />;
       case 'credit':    return <ManagerCreditTab currency={currency} />;
