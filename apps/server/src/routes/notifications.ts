@@ -117,8 +117,16 @@ router.post("/test-email", async (req, res) => {
   if (result.ok) {
     res.json({ ok: true, provider: result.provider, to });
   } else {
-    // The request was well-formed; the mail provider is what failed → 502.
-    res.status(502).json({ ok: false, provider: result.provider, to, error: result.error });
+    // A200: the mailer's diagnostic (SMTP ports, Render plan, "CHECK THE LIVE
+    // INSTANCE TYPE…") is internal hosting detail and must NOT reach the UI.
+    // Log the full diagnostic server-side; return a clean, generic message.
+    console.error('[test-email] delivery failed:', { provider: result.provider, to, diagnostic: result.error });
+    res.status(502).json({
+      ok: false,
+      provider: result.provider,
+      to,
+      error: 'Test email could not be sent — email delivery is not configured or the mail provider is unreachable. See the server logs for details.',
+    });
   }
 });
 

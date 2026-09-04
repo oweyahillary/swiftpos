@@ -218,6 +218,32 @@ async function request<T>(
   return json as T;
 }
 
+// ── Authenticated file download ───────────────────────────────────────────────
+// A143: report exports are files, not JSON. window.open() on the API URL sent NO
+// Authorization header (cross-origin to the API host, no cookie), so every export
+// 401'd with "Missing or malformed Authorization header". Fetch the file WITH the
+// auth + active-branch headers, then save the returned blob client-side.
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const authHeader = await getAuthHeader();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { ...authHeader, ...activeBranchHeader() },
+  });
+  if (!res.ok) {
+    let msg = `Download failed (${res.status})`;
+    try { const b = await res.json(); if (b?.error) msg = b.error; } catch { /* file/non-JSON body */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   get:    <T>(path: string)                => request<T>('GET',    path),
   post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),

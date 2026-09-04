@@ -1,4 +1,3 @@
-import { API_URL } from '../lib/config';
 /**
  * ReportsPage.tsx  — Full Posist-style reporting suite for SwiftPOS.
  *
@@ -7,7 +6,7 @@ import { API_URL } from '../lib/config';
 
 import { useState, useEffect, useCallback } from 'react';
 import { ReportsSkeleton } from './pos/cashier/POSSkeletons';
-import { api } from '../lib/api';
+import { api, downloadFile } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
@@ -242,7 +241,8 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
             if (branchId) p.set('branch_id', branchId);
-            window.open(`${API_URL}/api/reports/export/sales?${p}`);
+            void downloadFile(`/api/reports/export/sales?${p}`, `swiftpos-sales-${range.from}_${range.to}.xlsx`)
+              .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
         >↓ Export Excel</button>
@@ -379,7 +379,8 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
             if (branchId) p.set('branch_id', branchId);
-            window.open(`${API_URL}/api/reports/export/hourly?${p}`);
+            void downloadFile(`/api/reports/export/hourly?${p}`, `swiftpos-hourly-${range.from}_${range.to}.xlsx`)
+              .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
         >↓ Export Excel</button>
@@ -496,7 +497,8 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
             if (branchId) p.set('branch_id', branchId);
-            window.open(`${API_URL}/api/reports/export/products?${p}`);
+            void downloadFile(`/api/reports/export/products?${p}`, `swiftpos-products-${range.from}_${range.to}.xlsx`)
+              .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
         >↓ Export Excel</button>
@@ -823,10 +825,20 @@ const EXPORT_FORMATS: { key: string; label: string; desc: string }[] = [
 ];
 
 function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; currency: string }) {
-  const download = (key: string) => {
+  const [busyKey, setBusyKey] = useState('');
+  const [dlError, setDlError] = useState('');
+  const download = async (key: string) => {
+    setBusyKey(key); setDlError('');
     const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
     if (branchId) p.set('branch_id', branchId);
-    window.open(`${API_URL}/api/reports/export/${key}?${p}`);
+    try {
+      // A143: authed fetch + blob save. window.open() sent no token → 401.
+      await downloadFile(`/api/reports/export/${key}?${p}`, `swiftpos-${key}-${range.from}_${range.to}.xlsx`);
+    } catch (e: any) {
+      setDlError(e?.message ?? 'Download failed');
+    } finally {
+      setBusyKey('');
+    }
   };
   return (
     <div className="space-y-4">
@@ -834,6 +846,7 @@ function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; c
         Download any report as an Excel file for {range.from === range.to ? range.from : `${range.from} — ${range.to}`}
         {branchId ? ' (selected branch)' : ' (all branches)'}.
       </p>
+      {dlError && <p className="text-sm text-red-500">{dlError}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {EXPORT_FORMATS.map(f => (
           <div key={f.key} className="flex items-center justify-between gap-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -842,9 +855,10 @@ function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; c
               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{f.desc}</p>
             </div>
             <button
-              onClick={() => download(f.key)}
-              className="flex-shrink-0 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
-            >↓ Excel</button>
+              onClick={() => void download(f.key)}
+              disabled={busyKey === f.key}
+              className="flex-shrink-0 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors disabled:opacity-50"
+            >{busyKey === f.key ? '…' : '↓ Excel'}</button>
           </div>
         ))}
       </div>
