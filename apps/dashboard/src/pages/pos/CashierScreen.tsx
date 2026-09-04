@@ -144,12 +144,16 @@ export default function CashierScreen() {
   const isManager = hasPermission('settings.manage');
   const { business } = useBusiness();
 
-  // Guard — if this user should not be on the cashier screen, redirect them now.
-  // Uses the same resolveRoute() logic as the login screen — consistent everywhere.
+  // Guard — only the OWNER is redirected off the cashier screen (they use the full
+  // web dashboard, not the POS terminal). Managers and cashiers both belong here:
+  // managers hold orders.create and open the POS from their dashboard's "Open POS"
+  // button. Previously this bounced anyone whose resolveRoute home wasn't
+  // '/pos/cashier' — which kicked managers straight back to /manager, so "Open POS"
+  // opened nothing (A206).
   useEffect(() => {
     if (!session) return;
     const dest = resolveRoute(session.permissions, session.role);
-    if (dest !== '/pos/cashier') navigate(dest, { replace: true });
+    if (dest === '/') navigate(dest, { replace: true });
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data (usePOSData hook) ────────────────────────────────────────────────
