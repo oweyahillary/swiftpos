@@ -170,6 +170,43 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // A209: server-side receipt render. The WEB POS sends the Order as JSON and this
+  // process renders it with the SAME shared/printing renderTicket/toEscPos the
+  // desktop till uses — so the bytes (and therefore the printed format) are
+  // identical to desktop by construction, with no browser Buffer/bundle needed.
+  if (req.method === 'POST' && url.pathname === '/print/receipt') {
+    let body;
+    try { body = await readBody(req); }
+    catch (e) { return send(res, 400, { error: e.message }, origin); }
+
+    const { target, order, business, paperWidth } = body;
+    if (typeof target !== 'string' || !order || !business) {
+      return send(res, 400, { error: 'target, order and business are required' }, origin);
+    }
+
+    let bytes;
+    try {
+      const { renderTicket, toEscPos, receiptPreset } =
+        require('../../../shared/printing/dist/src/index.js');
+      const station = receiptPreset('web-receipt', 'Receipt', paperWidth === 58 ? 58 : 80);
+      // soldAt crosses JSON as an ISO string; shared/printing wants a Date.
+      const ord = { ...order, soldAt: order.soldAt ? new Date(order.soldAt) : new Date() };
+      bytes = toEscPos(renderTicket({ order: ord, business, station }));
+    } catch (e) {
+      return send(res, 400, { error: 'render failed: ' + e.message }, origin);
+    }
+    if (!bytes || !bytes.length) return send(res, 500, { error: 'render produced no bytes' }, origin);
+
+    const started = Date.now();
+    try {
+      await sendToPrinter(parseTarget(target), bytes);
+      return send(res, 200, { ok: true, bytes: bytes.length, ms: Date.now() - started }, origin);
+    } catch (e) {
+      const retryable = e instanceof PrinterError ? e.retryable : true;
+      return send(res, retryable ? 503 : 400, { error: e.message, retryable }, origin);
+    }
+  }
+
   return send(res, 404, { error: 'not found' }, origin);
 });
 
