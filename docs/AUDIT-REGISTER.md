@@ -389,6 +389,10 @@ Server full tsc could NOT be run in the sandbox (server node_modules/TS absent +
 it is type-correct by construction — run the pinned server tsc in CI. Delivery:
 `docs/MANIFEST-2026-09-05-d.md`. Needs an API check: a manager is refused `/adjust` (403); a cashier is
 refused both.
+**DECISION 2026-09-05 (owner):** the reorder "min" (threshold) field stays MANAGER-editable — a manager
+knows the expected traffic/sales for the day and should set their own reorder alert level. No change: the
+A215 gate (`inventory.adjust` OR `inventory.receive`) already permits this; it is deliberately NOT
+tightened to owner-only. Recorded so it isn't revisited.
 
 ### A216 · P3 · FIX BUILT 2026-09-05 · Reports filter requires clicking Apply on every change
 
@@ -444,6 +448,12 @@ Not shown in the picker: live per-branch stock (`GET /api/products` is business-
 enhancement; despatch will still fail/negative on insufficient stock exactly as the owner flow does.
 Delivery: `docs/MANIFEST-2026-09-05-f.md`. Needs a browser pass: manager creates → despatches; the other
 branch receives.
+**STOCK PICKER ADDED 2026-09-05 (owner asked):** the create-transfer picker now sources live per-branch
+stock from `GET /api/inventory?branch_id=<own>` (the same endpoint `POSInventoryTab` uses), shows
+"in stock: N" per product, caps each quantity input at what's on hand (disabled at 0), and rejects
+sending more than stock before the POST. The server despatch guard is unchanged (still the backstop).
+`tests/manager-initiate-transfer.test.mjs` now 11/11 (the 3 new stock guards mutation-checked); dashboard
+tsc clean. Delivery: `docs/MANIFEST-2026-09-05-g.md`.
 
 ### A219 · P3 · FIX BUILT 2026-09-05 · Sidebar shows the business/POS name over the branch; branch should lead
 

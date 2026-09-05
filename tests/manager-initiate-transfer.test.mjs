@@ -37,7 +37,8 @@ ok('A218 server: destination is validated as a real in-business branch', () => {
 
 // ── UI ──────────────────────────────────────────────────────────────────────
 ok('A218 UI: create posts from the manager\'s OWN branch (source locked)', () => {
-  assert.match(ui, /posApi\.post\('\/api\/stock\/transfers', \{ from_branch_id: branchId, to_branch_id: destId, items \}\)/);
+  assert.match(ui, /posApi\.post\('\/api\/stock\/transfers'/);
+  assert.match(ui, /from_branch_id: branchId, to_branch_id: destId/);
 });
 ok('A218 UI: destination list excludes the manager\'s own branch', () => {
   assert.match(ui, /br\.filter\(b => b\.id !== branchId\)/);
@@ -48,6 +49,19 @@ ok('A218 UI: only quantities > 0 are sent as items', () => {
 ok('A218 UI: a pending outgoing transfer can be despatched (in_transit)', () => {
   assert.match(ui, /status: 'in_transit'/);
   assert.match(ui, /despatchTransfer/);
+});
+
+// ── A218 stock-picker enhancement ─────────────────────────────────────────────
+ok('A218+: picker sources live per-branch stock from /api/inventory', () => {
+  assert.match(ui, /posApi\.get<InvRow\[\]>\(`\/api\/inventory/);
+});
+ok('A218+: each quantity input is capped at what is in stock', () => {
+  assert.match(ui, /max=\{p\.stock\}/);
+  assert.match(ui, /in stock: \{p\.stock\}/);
+});
+ok('A218+: sending more than stock is rejected before POST', () => {
+  assert.match(ui, /i\.quantity > i\.stock/);
+  assert.match(ui, /only \$\{over\.stock\} in stock/);
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);

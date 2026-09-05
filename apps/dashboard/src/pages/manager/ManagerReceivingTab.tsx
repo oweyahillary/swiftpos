@@ -18,6 +18,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 
 interface TransferItem { product_id: string; quantity: number; products?: { name: string } | null }
+// A218 stock picker: /api/inventory rows (per-branch stock joined with product).
+interface InvRow { product_id: string; quantity: number; products?: { name: string } | null }
 interface Transfer {
   id: string; transfer_number: string;
   from_branch_id: string; from_branch_name: string;
@@ -61,7 +63,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
 
   // A218: manager initiates a transfer FROM their own branch to another branch.
   const [branchList, setBranchList] = useState<{ id: string; name: string }[]>([]);
-  const [products, setProducts]     = useState<{ id: string; name: string }[]>([]);
+  const [stockList, setStockList]   = useState<{ id: string; name: string; stock: number }[]>([]);
   const [showNew, setShowNew]       = useState(false);
   const [destId, setDestId]         = useState('');
   const [sendQty, setSendQty]       = useState<Record<string, string>>({});
@@ -77,12 +79,14 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
         canTransfer ? posApi.get<Transfer[]>('/api/stock/transfers') : Promise.resolve([] as Transfer[]),
         canReceive  ? posApi.get<PO[]>(`/api/stock/purchase-orders${branchId ? `?branch_id=${branchId}` : ''}`) : Promise.resolve([] as PO[]),
         canTransfer ? posApi.get<{ id: string; name: string }[]>('/api/branches') : Promise.resolve([] as { id: string; name: string }[]),
-        canTransfer ? posApi.get<{ id: string; name: string }[]>('/api/products?status=active') : Promise.resolve([] as { id: string; name: string }[]),
+        canTransfer ? posApi.get<InvRow[]>(`/api/inventory${branchId ? `?branch_id=${branchId}` : ''}`) : Promise.resolve([] as InvRow[]),
       ]);
       setTransfers(Array.isArray(t) ? t : []);
       setPos(Array.isArray(p) ? p : []);
       setBranchList(Array.isArray(br) ? br.filter(b => b.id !== branchId) : []);
-      setProducts(Array.isArray(pr) ? pr : []);
+      setStockList(Array.isArray(pr)
+        ? pr.map(r => ({ id: r.product_id, name: r.products?.name ?? 'Item', stock: Number(r.quantity) || 0 }))
+        : []);
     } catch (e: any) {
       setError(e?.message ?? 'Could not load receiving');
     } finally {
@@ -97,13 +101,18 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
 
   const createTransfer = async () => {
     if (!destId) { setSendError('Choose a destination branch.'); return; }
-    const items = products
-      .map(p => ({ product_id: p.id, quantity: Number(sendQty[p.id] || 0) }))
+    const items = stockList
+      .map(p => ({ product_id: p.id, quantity: Number(sendQty[p.id] || 0), stock: p.stock, name: p.name }))
       .filter(i => i.quantity > 0);
     if (!items.length) { setSendError('Enter a quantity for at least one product.'); return; }
+    const over = items.find(i => i.quantity > i.stock);
+    if (over) { setSendError(`${over.name}: only ${over.stock} in stock at your branch.`); return; }
     setSendBusy(true); setSendError('');
     try {
-      await posApi.post('/api/stock/transfers', { from_branch_id: branchId, to_branch_id: destId, items });
+      await posApi.post('/api/stock/transfers', {
+        from_branch_id: branchId, to_branch_id: destId,
+        items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+      });
       setShowNew(false); setDestId(''); setSendQty({}); setSearch('');
       await load();
     } catch (e: any) {
@@ -220,15 +229,18 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products…"
                   className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-blue-500" />
                 <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
-                  {products
+                  {stockList
                     .filter(p => p.name.toLowerCase().includes(search.trim().toLowerCase()))
                     .map(p => (
                       <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="text-gray-300 truncate">{p.name}</span>
-                        <input type="number" min={0} step="any" value={sendQty[p.id] ?? ''}
+                        <span className="text-gray-300 truncate">
+                          {p.name}
+                          <span className={`ml-2 text-xs ${p.stock <= 0 ? 'text-red-400' : 'text-gray-500'}`}>in stock: {p.stock}</span>
+                        </span>
+                        <input type="number" min={0} max={p.stock} step="any" value={sendQty[p.id] ?? ''}
                           onChange={e => setSendQty(prev => ({ ...prev, [p.id]: e.target.value }))}
-                          placeholder="0"
-                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-blue-500" />
+                          placeholder="0" disabled={p.stock <= 0}
+                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right disabled:opacity-40 focus:outline-none focus:border-blue-500" />
                       </div>
                     ))}
                 </div>
