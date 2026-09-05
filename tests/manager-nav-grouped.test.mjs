@@ -43,5 +43,15 @@ ok('the sidebar renders grouped sections with headers, honouring permissions', (
     'a group with no visible (permitted) items must not render a header');
 });
 
+ok('Printers gates on stations.manage, not owner-only settings.manage (A212)', () => {
+  // settings.manage is on MANAGER_DENY (owner-only), so a manager can never see
+  // Printers through it. Migration 79 moved printers to stations.manage and
+  // granted it to the manager tier — that is the key the nav must use.
+  assert.match(mgr, /key: 'printers',[\s\S]*?permission: 'stations\.manage'/,
+    'Printers must gate on stations.manage (managers hold it)');
+  assert.doesNotMatch(mgr, /key: 'printers',[\s\S]*?permission: 'settings\.manage'/,
+    'Printers must NOT gate on settings.manage — deny-listed for managers');
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

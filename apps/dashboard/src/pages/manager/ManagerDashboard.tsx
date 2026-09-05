@@ -81,7 +81,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'customers', label: <><Icon d={I.customers} className="flex-shrink-0" /><span className="truncate">Customers</span></>, title: 'Customers', permission: 'customers.view', group: 'Customers' },
   { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view', group: 'Customers' },
   { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.manage', group: 'Settings' },
-  { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'settings.manage', group: 'Settings' },
+  { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'stations.manage', group: 'Settings' },
 ];
 
 // Sidebar section order. null = the ungrouped top items.

@@ -99,6 +99,57 @@ exactly once.
 
 ---
 
+## Orientation — chosen, not sensed
+
+TVs have no orientation sensor, and Android TV is usually landscape-locked, so a
+screen's orientation is a **configured value, confirmed by eye at setup** — never
+auto-detected. The player rotates its own output; no hardware rotation is required.
+
+**The setting.** `signage_screens.rotation` — an integer `0 | 90 | 180 | 270`
+(degrees clockwise), default `0`. Four values, not two, because a portrait TV can
+be turned either way and a ceiling/soffit mount can be upside-down:
+
+| `rotation` | Dashboard label | Player applies |
+|---|---|---|
+| `0` | Landscape | nothing |
+| `90` | Portrait (turned clockwise) | rotate stage 90° + swap W/H |
+| `180` | Landscape (upside-down) | rotate 180° |
+| `270` | Portrait (turned counter-clockwise) | rotate 270° + swap W/H |
+
+**Setup without a sensor.** On pairing, the screen shows a large **"▲ THIS WAY UP"**
+marker. The installer picks the dashboard option where that arrow points up on the
+real TV — a person's eyes are the "sensor", done once. `rotation` rides in the
+`now-playing` payload, so changing it in the dashboard re-orients the screen on its
+next poll (~10 s).
+
+**Rotation and content are decoupled.** When the player rotates the stage 90°/270°,
+the viewport it hands the content becomes portrait (e.g. 1080×1920). The content
+never learns a rotation happened — it just reflows to the viewport it is given:
+
+| Layer | Owns | Ignores |
+|---|---|---|
+| Player | rotating the stage to `rotation`, swapping W/H | what the content is |
+| Menu-board / slideshow template | reflowing to whatever viewport it is given | that a rotation happened |
+| Dashboard | letting a human set + preview `rotation` | rendering internals |
+
+**The constraint this creates.** Templates must be **responsive from day one** —
+fluid, viewport-relative, no fixed 1920×1080 assumptions — so one board reflows to
+portrait or landscape (the chosen auto-reflow approach; no separate portrait
+layouts to maintain). Fixed-size *media* (a designed poster image) is the
+exception and will crop/letterbox on the off-orientation, as expected.
+
+**Known risk to verify, not design around.** A full-screen 1080p video rotated
+90°/270° composites heavier than upright and can drop frames on the cheapest
+sticks; HTML/text menu boards rotate for free. Bench-test rotated video on the
+target hardware before promising portrait for video-heavy screens (rule 9).
+
+**Build slice.** *v1 (Phase 0):* `rotation` column + dashboard 4-way picker + "this
+way up" marker + player CSS-rotate / W-H swap + responsive menu-board template.
+*v2 (Phase 1):* orientation-aware preview in the content editor + the rotated-video
+hardware pass.
+
+---
+
 ## Data model — new tables
 
 Added to the existing Supabase database as new numbered SQL migrations. Every
@@ -106,7 +157,7 @@ table carries `business_id`; anything location-specific also carries `branch_id`
 
 | Table | Scope | Holds |
 |---|---|---|
-| `signage_screens` | business + branch | A physical display: name, pairing code + expiry, registration token, player token, status, orientation, last-seen, currently-assigned content. |
+| `signage_screens` | business + branch | A physical display: name, pairing code + expiry, registration token, player token, status, `rotation` (0/90/180/270 — see Orientation), last-seen, currently-assigned content. |
 | `signage_screen_groups` | business + branch | Optional grouping (e.g. "Counter wall", "Drive-thru") so content assigns to many screens at once. |
 | `signage_content` | business | A thing to show: `menu_board`, `slideshow`, `html`, or single `media`. Config in JSONB. |
 | `signage_media` | business | Media library: file name, storage path, type (image/video), processing status. |
@@ -307,4 +358,5 @@ codebase enforces with gates, so they are not optional polish.
 
 *Architecture proposal, 2026-08-17. Not scheduled for build; shared for review.
 Nothing in the SwiftPOS or Content-Manager-Pro codebases was changed to produce
-this document (the "Security & integration notes" section was appended in review).*
+this document (the "Security & integration notes" and "Orientation" sections were
+appended in review).*
