@@ -690,11 +690,18 @@ router.post('/transfers', requirePermission('inventory.transfer'), async (req, r
   if (from_branch_id === to_branch_id)  { res.status(400).json({ error: 'Source and destination branches must be different' }); return; }
   if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
 
-  // BOTH branches, not just one. Checking only the source would let someone
-  // push stock into a branch they have no rights over, and checking only the
-  // destination would let them drain one they do not.
+  // A218: a manager may INITIATE a transfer FROM their own branch (source access
+  // required — you can only drain a branch you control) TO any other branch in the
+  // business. Requiring access to the destination too (the previous rule) blocks a
+  // single-branch manager from ever sending stock out, since they only have access
+  // to their own branch. Pushing stock to another branch is within their authority:
+  // it leaves their branch on despatch and the destination must still RECEIVE it
+  // before it books. Owners keep full any→any access (assertBranchAccess is true for
+  // every branch when isOwner).
   if (!assertBranchAccess(req, from_branch_id)) { res.status(403).json({ error: 'No access to the source branch' }); return; }
-  if (!assertBranchAccess(req, to_branch_id))   { res.status(403).json({ error: 'No access to the destination branch' }); return; }
+  const { data: destBranch } = await supabase.from('branches')
+    .select('id').eq('id', to_branch_id).eq('business_id', req.businessId).maybeSingle();
+  if (!destBranch) { res.status(404).json({ error: 'Destination branch not found in this business' }); return; }
 
   const clean = items
     .map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) }))

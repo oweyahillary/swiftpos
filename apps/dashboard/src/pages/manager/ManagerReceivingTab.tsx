@@ -59,15 +59,30 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const [rxBusy, setRxBusy]     = useState(false);
   const [rxError, setRxError]   = useState('');
 
+  // A218: manager initiates a transfer FROM their own branch to another branch.
+  const [branchList, setBranchList] = useState<{ id: string; name: string }[]>([]);
+  const [products, setProducts]     = useState<{ id: string; name: string }[]>([]);
+  const [showNew, setShowNew]       = useState(false);
+  const [destId, setDestId]         = useState('');
+  const [sendQty, setSendQty]       = useState<Record<string, string>>({});
+  const [search, setSearch]         = useState('');
+  const [sendBusy, setSendBusy]     = useState(false);
+  const [sendError, setSendError]   = useState('');
+  const [despatchBusy, setDespatchBusy] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [t, p] = await Promise.all([
+      const [t, p, br, pr] = await Promise.all([
         canTransfer ? posApi.get<Transfer[]>('/api/stock/transfers') : Promise.resolve([] as Transfer[]),
         canReceive  ? posApi.get<PO[]>(`/api/stock/purchase-orders${branchId ? `?branch_id=${branchId}` : ''}`) : Promise.resolve([] as PO[]),
+        canTransfer ? posApi.get<{ id: string; name: string }[]>('/api/branches') : Promise.resolve([] as { id: string; name: string }[]),
+        canTransfer ? posApi.get<{ id: string; name: string }[]>('/api/products?status=active') : Promise.resolve([] as { id: string; name: string }[]),
       ]);
       setTransfers(Array.isArray(t) ? t : []);
       setPos(Array.isArray(p) ? p : []);
+      setBranchList(Array.isArray(br) ? br.filter(b => b.id !== branchId) : []);
+      setProducts(Array.isArray(pr) ? pr : []);
     } catch (e: any) {
       setError(e?.message ?? 'Could not load receiving');
     } finally {
@@ -77,7 +92,34 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   useEffect(() => { void load(); }, [load]);
 
   const incoming = transfers.filter(t => t.to_branch_id === branchId && t.status === 'in_transit');
+  const outgoing = transfers.filter(t => t.from_branch_id === branchId && (t.status === 'pending' || t.status === 'in_transit'));
   const openPOs  = pos.filter(p => p.status === 'ordered' || p.status === 'partial');
+
+  const createTransfer = async () => {
+    if (!destId) { setSendError('Choose a destination branch.'); return; }
+    const items = products
+      .map(p => ({ product_id: p.id, quantity: Number(sendQty[p.id] || 0) }))
+      .filter(i => i.quantity > 0);
+    if (!items.length) { setSendError('Enter a quantity for at least one product.'); return; }
+    setSendBusy(true); setSendError('');
+    try {
+      await posApi.post('/api/stock/transfers', { from_branch_id: branchId, to_branch_id: destId, items });
+      setShowNew(false); setDestId(''); setSendQty({}); setSearch('');
+      await load();
+    } catch (e: any) {
+      setSendError(e?.message ?? 'Could not create the transfer');
+    } finally { setSendBusy(false); }
+  };
+
+  const despatchTransfer = async (t: Transfer) => {
+    setDespatchBusy(t.id); setError('');
+    try {
+      await posApi.patch(`/api/stock/transfers/${t.id}/status`, { status: 'in_transit' });
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not despatch the transfer');
+    } finally { setDespatchBusy(null); }
+  };
 
   const openTransfer = (t: Transfer) => {
     const seed: Record<string, string> = {};
@@ -147,6 +189,84 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
         <p className="text-gray-500 text-sm">Mark stock arriving at your branch as received. You can receive stock but not adjust it.</p>
       </div>
       {error && <p className="text-red-400 text-sm">{error}</p>}
+
+      {canTransfer && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Send stock to another branch</h3>
+            <button onClick={() => { setShowNew(v => !v); setSendError(''); }}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+              {showNew ? 'Close' : 'New transfer'}
+            </button>
+          </div>
+
+          {showNew && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-3 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">From</span>
+                <span className="text-sm text-gray-300">{session?.branchName} <span className="text-gray-600">(your branch)</span></span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">To</label>
+                <select value={destId} onChange={e => setDestId(e.target.value)}
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500">
+                  <option value="">Choose a branch…</option>
+                  {branchList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+                {branchList.length === 0 && <p className="text-gray-600 text-xs">No other branches to transfer to.</p>}
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Items</label>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products…"
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-blue-500" />
+                <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                  {products
+                    .filter(p => p.name.toLowerCase().includes(search.trim().toLowerCase()))
+                    .map(p => (
+                      <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-gray-300 truncate">{p.name}</span>
+                        <input type="number" min={0} step="any" value={sendQty[p.id] ?? ''}
+                          onChange={e => setSendQty(prev => ({ ...prev, [p.id]: e.target.value }))}
+                          placeholder="0"
+                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-blue-500" />
+                      </div>
+                    ))}
+                </div>
+              </div>
+              {sendError && <p className="text-red-400 text-xs">{sendError}</p>}
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setShowNew(false); setSendError(''); }} disabled={sendBusy}
+                  className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">Cancel</button>
+                <button onClick={() => void createTransfer()} disabled={sendBusy}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors">
+                  {sendBusy ? 'Creating…' : 'Create transfer'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {outgoing.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {outgoing.map(t => (
+                <div key={t.id} className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t.transfer_number} → {t.to_branch_name}</p>
+                    <p className="text-gray-500 text-xs">
+                      {t.stock_transfer_items.length} item(s) · {t.status === 'pending' ? 'not yet despatched' : 'in transit — awaiting receipt'}
+                    </p>
+                  </div>
+                  {t.status === 'pending' && (
+                    <button onClick={() => void despatchTransfer(t)} disabled={despatchBusy === t.id}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white transition-colors">
+                      {despatchBusy === t.id ? 'Despatching…' : 'Despatch'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {canTransfer && (
         <div>

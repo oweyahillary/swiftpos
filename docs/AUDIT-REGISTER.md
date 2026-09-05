@@ -412,7 +412,7 @@ was always `undefined ?? 'Unknown'`. (Overview reads the current session name, h
 from `/reports/staff`, is correct and untouched). dashboard tsc clean; source guard in
 `tests/manager-portal-2026-09-05.test.mjs` (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-c.md`.
 
-### A218 · P2 · OPEN · Managers can't INITIATE stock transfers from the portal (only receive) — feature request
+### A218 · P2 · FIX BUILT 2026-09-05 · Managers can't INITIATE stock transfers from the portal (only receive) — feature request
 
 Owner request (2026-09-05): a branch manager should be able to start a transfer, not always ask the
 owner. **The server already allows it** — `POST /api/stock/transfers` is gated on `inventory.transfer`,
@@ -424,6 +424,26 @@ before building:** the destination picker needs a branches list, and the manager
 (BranchContext) is currently empty/owner-scoped (the A214 root). So this needs (a) a manager-scoped
 branch-list source and (b) an owner call on scope — can a manager send to ANY branch or a configured
 set, and does an outgoing transfer need owner approval? Not built pending that decision.
+
+**FIX BUILT 2026-09-05 (owner decision: from their OWN branch only; manager edits quantities):**
+- Server (`stock.ts` `POST /transfers`) — the create guard was "access to BOTH branches", which blocks a
+  single-branch manager from ever sending out. Now: SOURCE access is still required (`assertBranchAccess`
+  — you can only drain a branch you control) and the DESTINATION is validated as a real in-business
+  branch (existence check, not access). Owners keep any→any (assertBranchAccess true for all). So a
+  manager can only ever create a transfer sourced from their own branch — enforced server-side, not just
+  in the UI.
+- UI (`ManagerReceivingTab`) — a "Send stock to another branch" section: From = the manager's own branch
+  (locked, shown not chosen), To = a picker of the OTHER business branches (`GET /api/branches` filtered
+  to `id !== branchId` — no dependency on the empty BranchContext), a searchable product list with
+  per-item quantities. Creates the transfer as `pending`; an "Outgoing transfers" list then shows it with
+  a **Despatch** button (→ `in_transit`, stock leaves the source). The destination branch's manager
+  receives it via the A221 flow (separation of duty on receipt, A203, still applies).
+- Source guards `tests/manager-initiate-transfer.test.mjs` 8/8 (mutation-checked). dashboard tsc clean;
+  server full tsc not runnable in the sandbox — the guard mirrors existing `assertBranchAccess` usage.
+Not shown in the picker: live per-branch stock (`GET /api/products` is business-scoped) — a possible
+enhancement; despatch will still fail/negative on insufficient stock exactly as the owner flow does.
+Delivery: `docs/MANIFEST-2026-09-05-f.md`. Needs a browser pass: manager creates → despatches; the other
+branch receives.
 
 ### A219 · P3 · FIX BUILT 2026-09-05 · Sidebar shows the business/POS name over the branch; branch should lead
 
