@@ -1242,9 +1242,15 @@ export default function ManagerDashboard() {
 
   // Sync BranchContext to manager's assigned branch (needed for StaffTab/PrintersPage)
   useEffect(() => {
-    if (!session?.branchId || !branches.length) return;
+    if (!session?.branchId) return;
     const myBranch = branches.find(b => b.id === session.branchId);
-    if (myBranch) { setActiveBranch(myBranch); setBranchSynced(true); }
+    if (myBranch) setActiveBranch(myBranch);
+    // A214: never block the tab on the branches list resolving. The manager's
+    // branch is known from the session (managerBranch, below, is what StaffTab
+    // receives), so once we have a branchId we are synced — whether or not the
+    // (possibly empty / scope-filtered) branches list contains it. Previously the
+    // gate hung on "Syncing branch…" forever when the list lacked their branch.
+    setBranchSynced(true);
   }, [session?.branchId, branches]); // eslint-disable-line
 
   if (!session) return null;

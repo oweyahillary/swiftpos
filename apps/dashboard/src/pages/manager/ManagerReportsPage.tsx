@@ -14,7 +14,7 @@
  *   6. Shifts        — shift list with float reconciliation
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePOSAuth , type PosApi } from '../../context/POSAuthContext';
 import { localDateStr } from '../../lib/localDate';
 
@@ -49,7 +49,7 @@ interface StaffRow {
 
 interface ShiftRow {
   id: string; opened_at: string; closed_at: string | null; status: string;
-  staff_name: string | null; opening_float: number; closing_float: number | null;
+  cashier_name: string | null; opening_float: number; closing_float: number | null;
   expected_cash: number | null; variance: number | null;
   order_count: number | null; total_revenue: number | null;
 }
@@ -107,6 +107,17 @@ function Empty({ label }: { label: string }) {
 
 interface DateBarProps { from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void; onApply: () => void; loading: boolean; }
 function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
+  // A216: auto-apply. Presets and date edits both just set from/to; this debounced
+  // effect runs the query ~400ms later, so there's no need to click Apply. The
+  // first run is skipped (each tab already loads once on mount), and empty/partial
+  // dates are guarded. The Apply button stays as an immediate manual trigger.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
+    if (!from || !to) return;
+    const id = setTimeout(() => onApply(), 400);
+    return () => clearTimeout(id);
+  }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   const presets = [
     { label: 'Today',   f: today(),   t: today() },
     { label: '7 days',  f: weekAgo(), t: today() },
@@ -569,7 +580,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-white font-semibold">{r.staff_name ?? 'Unknown'}</p>
+                      <p className="text-white font-semibold">{r.cashier_name ?? 'Unknown'}</p>
                       {isOpen && <span className="text-[10px] text-green-400 font-semibold border border-green-500/30 rounded-full px-2 py-0.5">● Open</span>}
                     </div>
                     <p className="text-gray-500 text-xs mt-0.5">
