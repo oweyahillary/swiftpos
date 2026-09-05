@@ -52,3 +52,7 @@ run-migration-tests                        all pass (incl. 99 + 100)
 3. `git add` the explicit file list; commit; push.
 4. `MIGRATE_ENV=<env> DATABASE_URL=... npm run db:migrate` → applies migration 100.
 5. Deploy dashboard (A219) + server (A215). Browser: Menu tab shows for a manager; `/adjust` refused for non-owner.
+
+## Register also records (doc-only, same AUDIT-REGISTER.md)
+- **A133 / A205 / A214 → CLOSED** (owner browser pass 2026-09-05). Counts P2 22→20.
+- **A221 OPEN (filed)** — transfer receipt books the SENT qty, not the actual received qty (transfers-only; GRN already handles it). Needs a schema change + one shortfall decision.
