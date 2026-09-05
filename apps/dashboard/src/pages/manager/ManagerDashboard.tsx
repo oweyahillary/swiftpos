@@ -1315,8 +1315,8 @@ export default function ManagerDashboard() {
           <span className="flex-shrink-0 text-blue-400"><Icon d={I.logo} size={20} /></span>
           {sidebarOpen && (
             <div className="min-w-0">
-              <p className="text-sm font-bold text-white truncate">{business?.name ?? 'SwiftPOS'}</p>
-              <p className="text-xs text-gray-500 truncate">{session.branchName}</p>
+              <p className="text-sm font-bold text-white truncate">{session.branchName}</p>
+              <p className="text-xs text-gray-500 truncate">{business?.name ?? 'SwiftPOS'}</p>
             </div>
           )}
         </div>
