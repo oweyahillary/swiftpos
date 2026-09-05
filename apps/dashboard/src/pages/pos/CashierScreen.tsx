@@ -144,6 +144,13 @@ export default function CashierScreen() {
   const isManager = hasPermission('settings.manage');
   const { business } = useBusiness();
 
+  // A manager reached the cashier screen via "Open POS" from their portal, so give
+  // them a way back (parity with the desktop app). Cashiers have no portal, so this
+  // is hidden for them. resolveRoute is the same signal that sends them to /manager
+  // (role-based — note managers are denied settings.manage, so the isManager flag
+  // above, which is really "owner/settings.manage", would miss a role-based manager).
+  const hasManagerPortal = !!session && resolveRoute(session.permissions, session.role) === '/manager';
+
   // Guard — only the OWNER is redirected off the cashier screen (they use the full
   // web dashboard, not the POS terminal). Managers and cashiers both belong here:
   // managers hold orders.create and open the POS from their dashboard's "Open POS"
@@ -929,6 +936,15 @@ export default function CashierScreen() {
             <div style={s.branchLabel}>{session?.branchName}</div>
             <div style={s.staffLabel}>{session?.staffName} · {session?.role}</div>
           </div>
+          {hasManagerPortal && (
+            <button
+              onClick={() => navigate('/manager')}
+              title="Back to the manager portal"
+              style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginLeft: 8 }}
+            >
+              ← Manager portal
+            </button>
+          )}
         </div>
 
         <div style={s.headerCenter}>
