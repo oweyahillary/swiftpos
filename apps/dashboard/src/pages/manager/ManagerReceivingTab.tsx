@@ -45,12 +45,19 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const [pos, setPos]             = useState<PO[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
-  const [busyId, setBusyId]       = useState<string | null>(null);
 
   const [target, setTarget]     = useState<PO | null>(null);
   const [lines, setLines]       = useState<Record<string, string>>({});
   const [grnBusy, setGrnBusy]   = useState(false);
   const [grnError, setGrnError] = useState('');
+
+  // A221: transfer receipt — the recipient keys what actually arrived per line
+  // (default = sent, editable down to 0), plus a note. Sent stays as the record.
+  const [rxTarget, setRxTarget] = useState<Transfer | null>(null);
+  const [rxLines, setRxLines]   = useState<Record<string, string>>({});
+  const [rxNote, setRxNote]     = useState('');
+  const [rxBusy, setRxBusy]     = useState(false);
+  const [rxError, setRxError]   = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -72,14 +79,36 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const incoming = transfers.filter(t => t.to_branch_id === branchId && t.status === 'in_transit');
   const openPOs  = pos.filter(p => p.status === 'ordered' || p.status === 'partial');
 
-  const receiveTransfer = async (t: Transfer) => {
-    setBusyId(t.id); setError('');
+  const openTransfer = (t: Transfer) => {
+    const seed: Record<string, string> = {};
+    t.stock_transfer_items.forEach(it => { seed[it.product_id] = String(it.quantity); });
+    setRxLines(seed); setRxNote(''); setRxError(''); setRxTarget(t);
+  };
+
+  const submitTransfer = async () => {
+    if (!rxTarget) return;
+    // Validate each received line is 0..sent before sending; the server enforces
+    // the same, this is just a faster, clearer message.
+    for (const it of rxTarget.stock_transfer_items) {
+      const got = Number(rxLines[it.product_id]);
+      if (!Number.isFinite(got) || got < 0 || got > Number(it.quantity)) {
+        setRxError(`${it.products?.name ?? 'An item'}: received must be between 0 and ${it.quantity} (sent).`);
+        return;
+      }
+    }
+    const received_items = rxTarget.stock_transfer_items.map(it => ({
+      product_id: it.product_id, quantity_received: Number(rxLines[it.product_id] || 0),
+    }));
+    setRxBusy(true); setRxError('');
     try {
-      await posApi.patch(`/api/stock/transfers/${t.id}/status`, { status: 'received' });
-      setTransfers(prev => prev.filter(x => x.id !== t.id));
+      await posApi.patch(`/api/stock/transfers/${rxTarget.id}/status`, {
+        status: 'received', received_items, receipt_note: rxNote.trim() || undefined,
+      });
+      setTransfers(prev => prev.filter(x => x.id !== rxTarget.id));
+      setRxTarget(null);
     } catch (e: any) {
-      setError(e?.message ?? 'Could not receive the transfer');
-    } finally { setBusyId(null); }
+      setRxError(e?.message ?? 'Could not receive the transfer');
+    } finally { setRxBusy(false); }
   };
 
   const openDelivery = (po: PO) => {
@@ -129,28 +158,69 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
               </div>
             ) : (
               <div className="space-y-3">
-                {incoming.map(t => (
+                {incoming.map(t => {
+                  const editing = rxTarget?.id === t.id;
+                  return (
                   <div key={t.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-white text-sm font-medium">{t.transfer_number}</p>
                         <p className="text-gray-500 text-xs">From {t.from_branch_name}</p>
                       </div>
-                      <button onClick={() => void receiveTransfer(t)} disabled={busyId === t.id}
-                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors">
-                        {busyId === t.id ? 'Receiving…' : 'Mark received'}
-                      </button>
+                      {!editing && (
+                        <button onClick={() => openTransfer(t)}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors">
+                          Receive
+                        </button>
+                      )}
                     </div>
-                    <div className="mt-3 space-y-1">
-                      {t.stock_transfer_items.map((it, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-gray-300">{it.products?.name ?? 'Item'}</span>
-                          <span className="text-gray-400 tabular-nums">{it.quantity}</span>
+
+                    {!editing ? (
+                      <div className="mt-3 space-y-1">
+                        {t.stock_transfer_items.map((it, i) => (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-300">{it.products?.name ?? 'Item'}</span>
+                            <span className="text-gray-400 tabular-nums">sent {it.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-[10px] uppercase tracking-wider text-gray-600">
+                          <span>Item</span><span className="text-right">Sent</span><span className="text-right pr-1">Received</span>
                         </div>
-                      ))}
-                    </div>
+                        {t.stock_transfer_items.map((it, i) => (
+                          <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-sm">
+                            <span className="text-gray-300">{it.products?.name ?? 'Item'}</span>
+                            <span className="text-gray-400 tabular-nums text-right w-14">{it.quantity}</span>
+                            <input
+                              type="number" min={0} max={it.quantity} step="any"
+                              value={rxLines[it.product_id] ?? ''}
+                              onChange={e => setRxLines(prev => ({ ...prev, [it.product_id]: e.target.value }))}
+                              className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-green-500" />
+                          </div>
+                        ))}
+                        <textarea
+                          value={rxNote} onChange={e => setRxNote(e.target.value)}
+                          placeholder="Note (optional) — e.g. 2 units short, one carton damaged in transit"
+                          rows={2}
+                          className="w-full bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-green-500" />
+                        {rxError && <p className="text-red-400 text-xs">{rxError}</p>}
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => setRxTarget(null)} disabled={rxBusy}
+                            className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">
+                            Cancel
+                          </button>
+                          <button onClick={() => void submitTransfer()} disabled={rxBusy}
+                            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors">
+                            {rxBusy ? 'Receiving…' : 'Confirm received'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
         </div>

@@ -446,7 +446,7 @@ tier, cashier), A61-safe/idempotent/`public.`-qualified. PGlite test `scripts/te
 green. OPEN pending: apply migration 100 on the DB + browser-confirm the Menu tab renders. Delivery:
 `docs/MANIFEST-2026-09-05-d.md`.
 
-### A221 · P2 · OPEN · Transfer receipt books the SENT quantity, not the actual quantity received (short shipments silently over-book)
+### A221 · P2 · FIX BUILT 2026-09-05 · Transfer receipt books the SENT quantity, not the actual quantity received (short shipments silently over-book)
 
 Owner insight (2026-09-05): when a manager receives a transfer they only click "Mark received" and the
 system books the full SENT quantity. If fewer units arrived (breakage, short pick, loss in transit) the
@@ -467,6 +467,26 @@ Build (proposed, NOT built — needs a schema change + one owner decision):
   record the variance as a note/flag on the transfer (simplest, visible), or (b) also raise a formal
   shrinkage/write-off adjustment for the difference so it shows in stock-loss reports? Also: allow
   received > sent (found extra), or clamp at sent?
+
+**FIX BUILT 2026-09-05 (owner decisions applied):** the recipient keys a received quantity per line; the
+SENT figure (`stock_transfer_items.quantity`) stays untouched as the despatch record, so sent-vs-received
+is the audit trail (never a blank recipient), plus a free-text receipt note. Shortfall handling = option
+(a): the variance is recorded (received stored per line + note on the transfer), NOT a separate
+shrinkage write-off. Received is clamped 0..sent (can't receive more than was despatched; a genuine
+overage is an owner stock adjustment). Built:
+- Migration `101_transfer_received_quantity.sql` — adds `stock_transfer_items.quantity_received` +
+  `stock_transfers.receipt_note` (additive/idempotent, A62). PGlite test `scripts/test-migration-101.mjs`
+  8/8 (mutation-checked).
+- Server (`stock.ts` transfer `/status → received`) — reads `received_items` + `receipt_note`, validates
+  each 0..sent (`invalid_received_qty`) and rejects unknown lines, books stock-in by the RECEIVED lines
+  (not the sent ones), persists `quantity_received` per line + the note. Falls back to sent when no
+  `received_items` are supplied (legacy callers unchanged).
+- UI (`ManagerReceivingTab`) — the transfer card opens an inline form: per-line received input
+  (default = sent, capped at sent), a note field, Confirm/Cancel; sends `received_items` + `receipt_note`.
+- Source guards `tests/transfer-received-qty.test.mjs` 8/8 (mutation-checked). dashboard tsc clean;
+  server full tsc not runnable in the sandbox (no server node_modules) — mirrors existing handler style.
+Delivery: `docs/MANIFEST-2026-09-05-e.md`. Needs: apply migration 101; browser-confirm a short receipt
+books the entered amount and shows the note.
 
 ### A207 · P2 · FIX BUILT 2026-09-04 · Manager web portal has no shift oversight (desktop manager has Shift + Close Day)
 

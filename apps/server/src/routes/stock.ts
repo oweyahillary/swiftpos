@@ -722,7 +722,7 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
   // in Express 4 that leaves the request hanging forever with no response, which
   // is exactly what made "Mark received" appear to hang. On error we return 500.
   try {
-  const { status, reason, allow_same_user } = req.body;
+  const { status, reason, allow_same_user, received_items, receipt_note } = req.body;
   if (!['in_transit', 'received', 'cancelled'].includes(status)) {
     res.status(400).json({ error: "status must be 'in_transit', 'received' or 'cancelled'" });
     return;
@@ -783,12 +783,58 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
       });
       return;
     }
-    await applyProductStockIn(lines, transfer.to_branch_id, req.userId, 'transfer_in',
+    // A221: book what actually ARRIVED, not what was sent. The recipient keys a
+    // received quantity per line; `quantity` on each item stays as the SENT figure
+    // (the despatch record), so sent-vs-received is a visible audit trail. When a
+    // caller sends no `received_items` (legacy / non-manager callers) we fall back
+    // to the sent quantity, so existing behaviour is unchanged unless a received
+    // quantity is supplied. A received line may be 0..sent (a short shipment); it
+    // may not exceed what was despatched, and it may not invent a new product.
+    const sentByProduct = new Map<string, number>(
+      lines.map((l: { product_id: string; quantity: number }) => [l.product_id, Number(l.quantity)]),
+    );
+    const receivedRaw = Array.isArray(received_items) ? received_items : null;
+    if (receivedRaw) {
+      for (const r of receivedRaw) {
+        if (!sentByProduct.has(r?.product_id)) {
+          res.status(400).json({ error: 'A received line references a product that is not on this transfer.', code: 'unknown_received_line' });
+          return;
+        }
+      }
+    }
+    const receivedLines = lines.map((l: { product_id: string; quantity: number }) => {
+      if (!receivedRaw) return { product_id: l.product_id, quantity: Number(l.quantity) };
+      const r = receivedRaw.find((x: any) => x.product_id === l.product_id);
+      return { product_id: l.product_id, quantity: r ? Number(r.quantity_received) : 0 };
+    });
+    for (const rl of receivedLines) {
+      const sent = Number(sentByProduct.get(rl.product_id) ?? 0);
+      if (!Number.isFinite(rl.quantity) || rl.quantity < 0 || rl.quantity > sent) {
+        res.status(400).json({
+          error: `Received quantity must be between 0 and the sent quantity (${sent}) for every line.`,
+          code: 'invalid_received_qty',
+        });
+        return;
+      }
+    }
+
+    const toBook = receivedLines.filter(l => l.quantity > 0);
+    await applyProductStockIn(toBook, transfer.to_branch_id, req.userId, 'transfer_in',
       `Transfer ${transfer.transfer_number} ← ${transfer.from_branch_id}`);
+    // Persist what arrived, per line, so sent (quantity) vs received
+    // (quantity_received) is on the record — the audit trail the recipient leaves.
+    for (const rl of receivedLines) {
+      await supabase.from('stock_transfer_items')
+        .update({ quantity_received: rl.quantity })
+        .eq('transfer_id', transfer.id).eq('product_id', rl.product_id);
+    }
+    if (receipt_note && String(receipt_note).trim()) {
+      patch.receipt_note = String(receipt_note).trim();
+    }
     // Booking the receipt is exactly the "received in the system" event that
     // clears a sold-beyond-stock warning at the destination (register A75).
     void resolveStockNotifications(
-      req.businessId, transfer.to_branch_id, lines.map((l: { product_id: string }) => l.product_id),
+      req.businessId, transfer.to_branch_id, receivedLines.map(l => l.product_id),
     );
     patch.received_by = req.userId;
     patch.received_at = now;
