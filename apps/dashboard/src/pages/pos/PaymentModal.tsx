@@ -12,6 +12,9 @@ import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
 import EvenSplitPanel from './EvenSplitPanel';
 import ByItemSplitPanel from './ByItemSplitPanel';
 import { printReceipt } from '../../lib/printReceipt';
+import { printReceiptViaServer, getPrintToken, getQZStatus } from '../../lib/localPrintServer';
+import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
+import { usePOSAuth } from '../../context/POSAuthContext';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 
 type SingleMethod = 'cash' | 'mpesa' | 'card' | 'credit';
@@ -150,6 +153,7 @@ export default function PaymentModal({
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const { settings: printerSettings } = usePrinterSettings();
+  const { session } = usePOSAuth();
 
   // Double-submit protection. chargingRef blocks a second call synchronously
   // (before React re-renders the button as disabled — a fast touchscreen
@@ -416,10 +420,30 @@ export default function PaymentModal({
     } finally { setWaSending(false); }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const content = receiptRef.current;
-    if (!content) return;
-    printReceipt(content.innerHTML, printerSettings, business.name);
+    // A235: silent thermal via the bridge when it's connected AND paired (token +
+    // a chosen receipt printer). The bridge renders ESC/POS from the Order — the
+    // same shared/printing code as desktop. Any failure falls back to the browser
+    // dialog below, so the cashier is never blocked.
+    const printerName = printerSettings.receiptPrinterName;
+    if (completedOrder && printerName && getPrintToken() && getQZStatus() === 'connected') {
+      try {
+        const order = buildReceiptOrder({
+          orderNumber: completedOrder.orderNumber,
+          orderType, cashierName: session?.staffName ?? 'Cashier',
+          cart, total: grandTotal, change: completedOrder.change,
+          payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
+          tableNumber,
+        });
+        const biz = buildReceiptBusinessConfig(business, printerSettings.footerMessage);
+        await printReceiptViaServer(printerName, order, biz, printerSettings.paperWidth);
+        return;
+      } catch (e: any) {
+        console.warn('[receipt] bridge print failed, using browser dialog:', e?.message);
+      }
+    }
+    if (content) printReceipt(content.innerHTML, printerSettings, business.name);
   };
 
   // ── Receipt screen ────────────────────────────────────────────────────────

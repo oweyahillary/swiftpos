@@ -24,6 +24,22 @@ const SERVER_URL  = (import.meta.env.VITE_PRINT_SERVER_URL as string | undefined
 const HEALTH_PATH = `${SERVER_URL}/health`;
 const PRINT_PATH  = `${SERVER_URL}/print`;
 const TEST_PATH   = `${SERVER_URL}/print/test`;
+const RECEIPT_PATH = `${SERVER_URL}/print/receipt`;
+
+// The bridge requires a pairing token (X-Print-Token) on every print. It prints
+// the token to its console on first run; the cashier pastes it into the Printers
+// page once. Stored per-device (a till), like the printer selection.
+const TOKEN_KEY = 'swiftpos.print.token';
+export function getPrintToken(): string {
+  try { return localStorage.getItem(TOKEN_KEY) ?? ''; } catch { return ''; }
+}
+export function setPrintToken(t: string): void {
+  try { localStorage.setItem(TOKEN_KEY, t.trim()); } catch { /* private mode */ }
+}
+const tokenHeaders = (): Record<string, string> => {
+  const t = getPrintToken();
+  return t ? { 'X-Print-Token': t } : {};
+};
 
 // ─── Types (same as before so imports don't break) ────────────────────────────
 
@@ -144,7 +160,7 @@ export async function printToQZ(
 
   const res = await fetch(PRINT_PATH, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
     body:    JSON.stringify({
       printer:    printerName,
       content:    html,
@@ -166,14 +182,37 @@ export async function printToQZ(
 export async function testPrint(printerName: string, paperWidth: 58 | 80): Promise<void> {
   const res = await fetch(TEST_PATH, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ printer: printerName, paperWidth }),
+    headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
+    body:    JSON.stringify({ printer: printerName, target: printerName, paperWidth }),
     signal:  AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(err.error ?? `Test print failed: HTTP ${res.status}`);
+  }
+}
+
+// ─── Silent receipt via the bridge (server renders ESC/POS from the Order) ─────
+// A235: the correct web path. We send the Order + business JSON to /print/receipt;
+// the bridge renders it with shared/printing (identical to desktop) and prints.
+// Throws on any failure so the caller can fall back to the browser dialog.
+export async function printReceiptViaServer(
+  target: string,
+  order: unknown,
+  business: unknown,
+  paperWidth: 58 | 80,
+): Promise<void> {
+  if (!SERVER_URL) throw new Error('Print server not configured');
+  const res = await fetch(RECEIPT_PATH, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
+    body:    JSON.stringify({ target, order, business, paperWidth }),
+    signal:  AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error ?? `Receipt print failed: HTTP ${res.status}`);
   }
 }
 

@@ -44,7 +44,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { sendToPrinter, parseTarget, PrinterError } =
-  require('../../../shared/printing/dist/src/transport.js');
+  require('../../../shared/printing/dist/transport.js');
 
 const PORT = Number(process.env.PRINT_BRIDGE_PORT || 3001);
 const VERSION = '2.0.0';
@@ -187,7 +187,7 @@ const server = http.createServer(async (req, res) => {
     let bytes;
     try {
       const { renderTicket, toEscPos, receiptPreset } =
-        require('../../../shared/printing/dist/src/index.js');
+        require('../../../shared/printing/dist/index.js');
       const station = receiptPreset('web-receipt', 'Receipt', paperWidth === 58 ? 58 : 80);
       // soldAt crosses JSON as an ISO string; shared/printing wants a Date.
       const ord = { ...order, soldAt: order.soldAt ? new Date(order.soldAt) : new Date() };

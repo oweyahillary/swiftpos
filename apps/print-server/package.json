@@ -5,8 +5,16 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "build:win": "node --experimental-sea-config sea-config.json"
+    "build:win": "node build-exe.mjs",
+    "bundle": "esbuild src/index.js --bundle --platform=node --target=node24 --outfile=build/bridge.cjs",
+    "build:exe": "node build-exe.mjs"
   },
   "dependencies": {},
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0",
+    "postject": "^1.0.0-alpha.6"
+  }
 }

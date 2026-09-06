@@ -11,8 +11,9 @@ import { api } from '../../lib/api';
 import { useBranch } from '../../context/BranchContext';
 import {
   getQZStatus, connectQZ, getQZPrinters,
-  onQZStatusChange, type QZStatus, testPrint,
+  onQZStatusChange, type QZStatus, testPrint, getPrintToken, setPrintToken,
 } from '../../lib/localPrintServer';
+import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import type { BranchPrinter } from '../../lib/printKOT';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 
@@ -171,6 +172,8 @@ export default function PrintersPage() {
   const [loading, setLoading]       = useState(true);
   const [qzStatus, setQzStatus]     = useState<QZStatus>(getQZStatus());
   const [qzPrinters, setQzPrinters] = useState<string[]>([]);
+  const { settings: rxSettings, save: saveRxSettings } = usePrinterSettings();
+  const [pairToken, setPairToken] = useState(getPrintToken());
   const [toast, setToast]           = useState('');
 
   // Full-order printer modal
@@ -393,6 +396,46 @@ export default function PrintersPage() {
               Install <span className="font-mono text-blue-300">SwiftPOS-PrintServer.exe</span> from your installation folder, then run <span className="font-mono text-blue-300">install-windows-service.bat</span> as Administrator. Receipts and KOTs will print instantly with no dialog.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* A235: pair this till with the print server for silent web receipts */}
+      {qzStatus === 'connected' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+          <div>
+            <p className="text-white text-sm font-medium">Silent receipt printing</p>
+            <p className="text-gray-500 text-xs mt-0.5">
+              Paste the pairing token the print server shows on first run, and pick the receipt printer.
+              Once set, sales print instantly with no dialog on this device.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Pairing token</label>
+              <input
+                type="password" value={pairToken}
+                onChange={e => { setPairToken(e.target.value); setPrintToken(e.target.value); }}
+                placeholder="Paste token from the print server"
+                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-green-500" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Receipt printer</label>
+              <select
+                value={rxSettings.receiptPrinterName ?? ''}
+                onChange={e => saveRxSettings({ receiptPrinterName: e.target.value })}
+                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-green-500">
+                <option value="">— browser dialog (no silent print) —</option>
+                {qzPrinters.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          {rxSettings.receiptPrinterName && (
+            <button
+              onClick={async () => { try { await testPrint(rxSettings.receiptPrinterName!, rxSettings.paperWidth); showToast('Test receipt sent'); } catch (e: any) { showToast(e?.message ?? 'Test failed'); } }}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+              Send test receipt
+            </button>
+          )}
         </div>
       )}
 
