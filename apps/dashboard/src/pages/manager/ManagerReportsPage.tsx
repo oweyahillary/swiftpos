@@ -16,6 +16,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePOSAuth , type PosApi } from '../../context/POSAuthContext';
+import { useBusiness } from '../../context/BusinessContext';
+import { printDocument } from '../../lib/printDocument';
 import { localDateStr } from '../../lib/localDate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -50,8 +52,11 @@ interface StaffRow {
 interface ShiftRow {
   id: string; opened_at: string; closed_at: string | null; status: string;
   cashier_name: string | null; opening_float: number; closing_float: number | null;
-  expected_cash: number | null; variance: number | null;
-  order_count: number | null; total_revenue: number | null;
+  expected_cash: number | null;
+  cash_variance: number | null; order_count: number | null; order_revenue: number | null;
+  float_in?: number | null; float_out?: number | null;
+  // legacy aliases (the API sends cash_variance / order_revenue; kept as fallbacks)
+  variance?: number | null; total_revenue?: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -542,7 +547,43 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
 // ── Tab: Shifts ───────────────────────────────────────────────────────────────
 
 function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
+  const { business } = useBusiness();
   const [from, setFrom] = useState(today());
+
+  const zMoney = (n: number) => `${currency} ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const printZReport = (r: ShiftRow) => {
+    const rev      = Number(r.order_revenue ?? r.total_revenue ?? 0);
+    const expected = r.expected_cash == null ? null : Number(r.expected_cash);
+    const counted  = r.closing_float == null ? null : Number(r.closing_float);
+    const variance = r.cash_variance ?? r.variance;
+    printDocument({
+      docType: 'Z REPORT',
+      number: `Z · ${new Date(r.opened_at).toLocaleDateString('en-KE')}`,
+      dateLabel: r.closed_at ? new Date(r.closed_at).toLocaleString('en-KE') : 'open shift',
+      accent: '#7c3aed', statusLabel: r.status,
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'Cashier', value: r.cashier_name ?? 'Unknown' },
+        { label: 'Branch', value: session?.branchName ?? '—' },
+        { label: 'Opened', value: new Date(r.opened_at).toLocaleString('en-KE') },
+        { label: 'Closed', value: r.closed_at ? new Date(r.closed_at).toLocaleString('en-KE') : '—' },
+      ],
+      columns: [{ label: 'Line' }, { label: 'Amount', align: 'right' }],
+      rows: [
+        ['Orders', String(r.order_count ?? 0)],
+        ['Sales', zMoney(rev)],
+        ['Opening float', zMoney(r.opening_float)],
+        ['Paid in', zMoney(r.float_in ?? 0)],
+        ['Paid out', zMoney(r.float_out ?? 0)],
+      ],
+      totals: [
+        ...(expected != null ? [{ label: 'Expected cash', value: zMoney(expected) }] : []),
+        ...(counted  != null ? [{ label: 'Counted cash',  value: zMoney(counted) }] : []),
+        ...(variance != null ? [{ label: 'Variance',      value: zMoney(Number(variance)) }] : []),
+      ],
+      signatures: ['Counted by', 'Verified by'],
+    });
+  };
   const [to,   setTo]   = useState(today());
   const [rows, setRows] = useState<ShiftRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -570,7 +611,8 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
       {!loading && rows.length > 0 && (
         <div className="space-y-3">
           {rows.map(r => {
-            const variance = r.variance ?? null;
+            const variance = r.cash_variance ?? r.variance ?? null;
+            const revenue  = r.order_revenue ?? r.total_revenue ?? null;
             const isOpen   = r.status === 'open';
             const hours    = r.closed_at
               ? ((new Date(r.closed_at).getTime() - new Date(r.opened_at).getTime()) / 3_600_000).toFixed(1)
@@ -587,9 +629,15 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
                       {fmtDate(r.opened_at)} {r.closed_at ? `→ ${fmtDate(r.closed_at)}` : '→ now'} · {hours}h
                     </p>
                   </div>
-                  {r.total_revenue != null && (
-                    <p className="text-green-400 font-bold text-lg">{fmtShort(currency, r.total_revenue)}</p>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {revenue != null && (
+                      <p className="text-green-400 font-bold text-lg">{fmtShort(currency, revenue)}</p>
+                    )}
+                    <button onClick={() => printZReport(r)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+                      Print Z
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   <div>
