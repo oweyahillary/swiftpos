@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
+import { printDocument } from '../../lib/printDocument';
 import { useBranch } from '../../context/BranchContext';
 import AdjustmentModal from './AdjustmentModal';
 import MovementsDrawer from './MovementsDrawer';
@@ -133,6 +134,29 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold text-white">{term('inventory')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">{rows.length} products</p>
         </div>
+        <button
+          onClick={() => {
+            const items = rows.filter(r => r.products.track_stock);
+            printDocument({
+              docType: 'STOCK-TAKE COUNT SHEET',
+              number: new Date().toLocaleDateString('en-KE'),
+              dateLabel: new Date().toLocaleString('en-KE'),
+              accent: '#475569',
+              business: business ?? { name: 'SwiftPOS' },
+              meta: [{ label: 'Prepared', value: new Date().toLocaleString('en-KE') }],
+              columns: [
+                { label: 'Product' }, { label: 'System qty', align: 'right' },
+                { label: 'Counted', align: 'right' }, { label: 'Variance', align: 'right' },
+              ],
+              // System qty is shown so the counter can reconcile; Counted/Variance
+              // are left blank to be written in by hand during the physical count.
+              rows: items.map(r => [r.products.name, String(r.quantity), '', '']),
+              signatures: ['Counted by', 'Verified by'],
+            });
+          }}
+          className="text-sm font-medium px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+          Print count sheet
+        </button>
       </div>
 
       {/* Summary cards */}

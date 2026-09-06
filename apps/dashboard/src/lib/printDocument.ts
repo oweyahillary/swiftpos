@@ -16,7 +16,7 @@ export interface PrintDocSpec {
   docType: string;                                   // "PURCHASE ORDER"
   number: string;                                    // "PO-0001"
   dateLabel?: string;                                // "5 Sep 2026"
-  business: { name: string; address?: string | null; phone?: string | null; tax_pin?: string | null };
+  business: { name: string; address?: string | null; phone?: string | null; tax_pin?: string | null; logo_url?: string | null };
   meta?: { label: string; value: string }[];         // Supplier / From / To / Expected …
   columns: PrintDocColumn[];
   rows: (string | number)[][];                       // each row aligned to columns
@@ -91,6 +91,8 @@ export function printDocument(spec: PrintDocSpec): void {
   .page { padding:26px 36px 32px; }
   .top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #111; padding-bottom:14px; }
   .biz { font-size:18px; font-weight:700; }
+  .bizblock { display:flex; align-items:flex-start; gap:12px; }
+  .logo { max-height:52px; max-width:180px; object-fit:contain; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .bizsub { font-size:11px; color:#555; margin-top:2px; line-height:1.5; }
   .doc { text-align:right; }
   .doctype { font-size:15px; font-weight:700; letter-spacing:.06em; }
@@ -116,11 +118,14 @@ export function printDocument(spec: PrintDocSpec): void {
   <div class="accentbar"></div>
   <div class="page">
   <div class="top">
-    <div>
-      <div class="biz">${esc(business.name)}</div>
-      <div class="bizsub">
-        ${business.address ? esc(business.address) + '<br>' : ''}
-        ${business.phone ? 'Tel: ' + esc(business.phone) : ''}${business.phone && business.tax_pin ? ' · ' : ''}${business.tax_pin ? 'PIN: ' + esc(business.tax_pin) : ''}
+    <div class="bizblock">
+      ${business.logo_url ? `<img class="logo" src="${esc(business.logo_url)}" alt="" />` : ''}
+      <div>
+        <div class="biz">${esc(business.name)}</div>
+        <div class="bizsub">
+          ${business.address ? esc(business.address) + '<br>' : ''}
+          ${business.phone ? 'Tel: ' + esc(business.phone) : ''}${business.phone && business.tax_pin ? ' · ' : ''}${business.tax_pin ? 'PIN: ' + esc(business.tax_pin) : ''}
+        </div>
       </div>
     </div>
     <div class="doc">

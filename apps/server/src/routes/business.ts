@@ -105,7 +105,7 @@ router.get('/', requireAuth, async (req, res) => {
 // because historical amounts are denominated in it; `email` here is the business
 // CONTACT email, not a login credential.
 router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
-  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'currency'] as const;
+  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'currency', 'logo_url'] as const;
   const updates: Record<string, unknown> = {};
   for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
 

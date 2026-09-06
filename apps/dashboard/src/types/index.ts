@@ -9,6 +9,7 @@ export interface Business {
   phone?: string | null;
   tax_pin?: string | null;
   vat_rate?: number;
+  logo_url?: string | null;
 }
 
 export interface Category {
