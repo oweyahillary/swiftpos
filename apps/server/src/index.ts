@@ -14,6 +14,7 @@ import { startDailySummaryJob } from './jobs/dailySummary';
 import { reportMailReadiness }  from './lib/mailer';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
+import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -237,6 +238,13 @@ app.listen(PORT, () => {
   // problem visible in the log rather than to gate anything. A shop's tills must
   // not fail to start over an admin-portal seed.
   void reportSeededAdmins();
+
+  // A213: self-heal the permissions catalogue. A consolidated-dump bootstrap can
+  // leave the live catalogue missing keys (the A211/A212/A220 root), which
+  // silently hides nav items and blocks role grants. This idempotently registers
+  // every canonical key (DO NOTHING on conflict) so no DB can drift missing one.
+  // Not awaited and never throws — startup must not depend on it.
+  void ensurePermissionsRegistered();
 
   // Same shape and the same reason: make a broken mail path visible at boot
   // instead of at 18:00 UTC in a log nobody reads. Nine businesses got no daily
