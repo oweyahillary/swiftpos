@@ -637,7 +637,7 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
 router.get('/transfers', async (req, res) => {
   const { status, branch_id, limit = '50' } = req.query as Record<string, string>;
   let query = supabase.from('stock_transfers')
-    .select(`*, stock_transfer_items ( id, product_id, quantity, products ( name ) )`)
+    .select(`*, stock_transfer_items ( id, product_id, quantity, quantity_received, products ( name ) )`)
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
   if (status)    query = query.eq('status', status);

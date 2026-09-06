@@ -10,6 +10,7 @@ interface Branch  { id: string; name: string; }
 interface TransferItem {
   product_id: string;
   quantity: number;
+  quantity_received?: number | null;
   products: { name: string };
 }
 
@@ -22,6 +23,7 @@ interface Transfer {
   to_branch_name: string;
   status: 'pending' | 'in_transit' | 'received' | 'cancelled';
   notes: string | null;
+  receipt_note?: string | null;
   created_at: string;
   despatched_by: string | null;
   stock_transfer_items: TransferItem[];
@@ -217,19 +219,28 @@ export default function StockTransfersPage() {
                     <thead>
                       <tr className="text-gray-500 uppercase tracking-wide">
                         <th className="text-left pb-2">Product</th>
-                        <th className="text-right pb-2">Quantity</th>
+                        <th className="text-right pb-2">Sent</th>
+                        <th className="text-right pb-2">Received</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {t.stock_transfer_items.map((item, i) => (
-                        <tr key={i} className="border-t border-gray-800/50">
-                          <td className="py-1.5 text-gray-300">{item.products?.name ?? item.product_id}</td>
-                          <td className="py-1.5 text-white text-right font-medium">{item.quantity}</td>
-                        </tr>
-                      ))}
+                      {t.stock_transfer_items.map((item, i) => {
+                        const rec = item.quantity_received;
+                        const short = rec != null && Number(rec) < Number(item.quantity);
+                        return (
+                          <tr key={i} className="border-t border-gray-800/50">
+                            <td className="py-1.5 text-gray-300">{item.products?.name ?? item.product_id}</td>
+                            <td className="py-1.5 text-white text-right font-medium">{item.quantity}</td>
+                            <td className={`py-1.5 text-right font-medium ${rec == null ? 'text-gray-600' : short ? 'text-amber-400' : 'text-white'}`}>
+                              {rec == null ? '—' : rec}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  {t.notes && <p className="text-gray-500 text-xs mt-3 italic">Note: {t.notes}</p>}
+                  {t.notes && <p className="text-gray-500 text-xs mt-3 italic">Despatch note: {t.notes}</p>}
+                  {t.receipt_note && <p className="text-amber-400/90 text-xs mt-1 italic">Receipt note: {t.receipt_note}</p>}
 
                   {(t.status === 'pending' || t.status === 'in_transit') && (
                     <div className="flex items-center gap-2 mt-4">
