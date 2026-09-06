@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
-import { printDocument } from '../../lib/printDocument';
+import { printDocument, DOC_ACCENT } from '../../lib/printDocument';
 
 interface TransferItem { product_id: string; quantity: number; products?: { name: string } | null }
 // A218 stock picker: /api/inventory rows (per-branch stock joined with product).
@@ -46,6 +46,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const printTransferNote = (t: Transfer) => {
     printDocument({
       docType: 'STOCK TRANSFER NOTE', number: t.transfer_number,
+      accent: DOC_ACCENT.despatch, statusLabel: 'Despatch',
       dateLabel: t.created_at ? new Date(t.created_at).toLocaleDateString() : undefined,
       business: business ?? { name: 'SwiftPOS' },
       meta: [
@@ -158,6 +159,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const printReceivedNote = (t: Transfer, receivedById: Record<string, number>, note: string) => {
     printDocument({
       docType: 'TRANSFER RECEIVED NOTE', number: t.transfer_number,
+      accent: DOC_ACCENT.received, statusLabel: 'Received',
       dateLabel: new Date().toLocaleDateString(),
       business: business ?? { name: 'SwiftPOS' },
       meta: [

@@ -17,13 +17,34 @@ export interface PrintDocSpec {
   number: string;                                    // "PO-0001"
   dateLabel?: string;                                // "5 Sep 2026"
   business: { name: string; address?: string | null; phone?: string | null; tax_pin?: string | null };
-  meta?: { label: string; value: string }[];         // Supplier / From / To / Status / Expected …
+  meta?: { label: string; value: string }[];         // Supplier / From / To / Expected …
   columns: PrintDocColumn[];
   rows: (string | number)[][];                       // each row aligned to columns
   totals?: { label: string; value: string }[];
   note?: string | null;
   signatures?: string[];                             // e.g. ["Prepared by", "Received by"]
+  accent?: string;                                   // hex accent (top bar + status pill); see DOC_ACCENT
+  statusLabel?: string;                              // e.g. "Received" — rendered as a coloured pill
 }
+
+/**
+ * Semantic accents per document/status. Colour reinforces meaning at a glance
+ * (green = goods in / done, amber = in transit, red = cancelled) but never carries
+ * it alone — the status also prints as text, so a B&W copy loses nothing. Accents
+ * are thin (a top bar + a bordered pill), not big fills, to stay light on toner.
+ */
+export const DOC_ACCENT = {
+  po:        '#4f46e5', // indigo — purchase order (a request going out)
+  grn:       '#16a34a', // green  — goods received (complete)
+  despatch:  '#d97706', // amber  — transfer despatch (in transit)
+  received:  '#0d9488', // teal   — transfer received
+  cancelled: '#dc2626', // red    — cancelled / void
+  default:   '#111827', // near-black — fallback
+} as const;
+
+const titleCase = (s: string): string =>
+  s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
 
 const esc = (v: unknown): string =>
   String(v ?? '')
@@ -34,6 +55,7 @@ export function printDocument(spec: PrintDocSpec): void {
   const {
     docType, number, dateLabel, business,
     meta = [], columns, rows, totals = [], note, signatures = ['Prepared by', 'Authorised by'],
+    accent = DOC_ACCENT.default, statusLabel,
   } = spec;
 
   const metaHtml = meta.length
@@ -57,10 +79,16 @@ export function printDocument(spec: PrintDocSpec): void {
     ? `<div class="sigs">${signatures.map(s => `<div class="sig"><div class="sigline"></div><div class="sigl">${esc(s)}</div></div>`).join('')}</div>`
     : '';
 
+  const pillHtml = statusLabel
+    ? `<span class="pill">${esc(titleCase(statusLabel))}</span>`
+    : '';
+
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docType)} ${esc(number)}</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#111; margin:0; padding:32px 36px; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#111; margin:0; }
+  .accentbar { height:6px; background:${esc(accent)}; }
+  .page { padding:26px 36px 32px; }
   .top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #111; padding-bottom:14px; }
   .biz { font-size:18px; font-weight:700; }
   .bizsub { font-size:11px; color:#555; margin-top:2px; line-height:1.5; }
@@ -68,6 +96,8 @@ export function printDocument(spec: PrintDocSpec): void {
   .doctype { font-size:15px; font-weight:700; letter-spacing:.06em; }
   .docnum { font-size:13px; margin-top:2px; }
   .docdate { font-size:11px; color:#555; margin-top:2px; }
+  .pill { display:inline-block; margin-top:6px; border:1.5px solid ${esc(accent)}; color:${esc(accent)};
+          border-radius:999px; padding:2px 11px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
   .meta { display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; margin:18px 0; font-size:12px; }
   .meta .ml { color:#666; display:inline-block; min-width:96px; }
   .meta .mv { font-weight:600; }
@@ -81,8 +111,10 @@ export function printDocument(spec: PrintDocSpec): void {
   .note { margin-top:20px; font-size:12px; } .note .nl { color:#666; font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
   .sigs { display:flex; gap:48px; margin-top:44px; }
   .sig { flex:1; } .sigline { border-top:1px solid #999; } .sigl { font-size:10px; color:#666; margin-top:4px; }
-  @media print { body { padding:0; } @page { margin:16mm; } }
+  @media print { @page { margin:14mm; } .accentbar { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
 </style></head><body>
+  <div class="accentbar"></div>
+  <div class="page">
   <div class="top">
     <div>
       <div class="biz">${esc(business.name)}</div>
@@ -95,6 +127,7 @@ export function printDocument(spec: PrintDocSpec): void {
       <div class="doctype">${esc(docType)}</div>
       <div class="docnum">${esc(number)}</div>
       ${dateLabel ? `<div class="docdate">${esc(dateLabel)}</div>` : ''}
+      ${pillHtml}
     </div>
   </div>
   ${metaHtml}
@@ -102,6 +135,7 @@ export function printDocument(spec: PrintDocSpec): void {
   ${totalsHtml}
   ${noteHtml}
   ${sigHtml}
+  </div>
 </body></html>`;
 
   const win = window.open('', '_blank', 'width=820,height=900');

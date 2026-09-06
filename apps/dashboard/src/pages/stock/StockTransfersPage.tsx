@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import { printDocument, DOC_ACCENT } from '../../lib/printDocument';
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }
@@ -39,6 +40,36 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 export default function StockTransfersPage() {
   const { user } = useAuth();
   const { business } = useBusiness();
+
+  // Reprint a transfer document: a received note (Sent vs Received + variance) once
+  // it's been received, otherwise a despatch note. Reuses the shared print engine.
+  const printTransferDoc = (t: Transfer) => {
+    const received = t.status === 'received';
+    printDocument({
+      docType: received ? 'TRANSFER RECEIVED NOTE' : 'STOCK TRANSFER NOTE',
+      number: t.transfer_number,
+      dateLabel: new Date(t.created_at).toLocaleDateString('en-KE'),
+      accent: received ? DOC_ACCENT.received : (t.status === 'cancelled' ? DOC_ACCENT.cancelled : DOC_ACCENT.despatch),
+      statusLabel: t.status,
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'From', value: t.from_branch_name },
+        { label: 'To', value: t.to_branch_name },
+      ],
+      columns: received
+        ? [{ label: 'Product' }, { label: 'Sent', align: 'right' }, { label: 'Received', align: 'right' }, { label: 'Variance', align: 'right' }]
+        : [{ label: 'Product' }, { label: 'Quantity sent', align: 'right' }],
+      rows: t.stock_transfer_items.map(it => {
+        const sent = Number(it.quantity) || 0;
+        if (!received) return [it.products?.name ?? 'Item', String(sent)];
+        const rec = it.quantity_received == null ? sent : Number(it.quantity_received);
+        const v = rec - sent;
+        return [it.products?.name ?? 'Item', String(sent), String(rec), v === 0 ? '—' : String(v)];
+      }),
+      note: t.receipt_note || t.notes || undefined,
+      signatures: received ? ['Received by', 'Checked by'] : ['Despatched by', 'Received by'],
+    });
+  };
   const { activeBranchId } = useBranch();
 
   const [transfers, setTransfers]   = useState<Transfer[]>([]);
@@ -207,6 +238,10 @@ export default function StockTransfersPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  <button onClick={(e) => { e.stopPropagation(); printTransferDoc(t); }}
+                    className="text-xs font-medium px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+                    Print
+                  </button>
                   <span className="text-gray-400 text-xs">{t.stock_transfer_items.length} item{t.stock_transfer_items.length !== 1 ? 's' : ''}</span>
                   <span className="text-gray-500 text-xs">{new Date(t.created_at).toLocaleDateString('en-KE')}</span>
                   <span className="text-gray-600 text-xs">{isOpen ? '▲' : '▼'}</span>

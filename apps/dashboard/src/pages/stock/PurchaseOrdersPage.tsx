@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
-import { printDocument } from '../../lib/printDocument';
+import { printDocument, DOC_ACCENT } from '../../lib/printDocument';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 
@@ -12,6 +12,7 @@ interface Branch     { id: string; name: string; }
 interface POItem     { id?: string; ingredient_id: string; ingredients?: { id: string; name: string; unit: string }; ingredient_name?: string; ingredient_unit?: string; quantity_ordered: number; unit_cost: number; quantity_received: number; }
 interface PO         { id: string; po_number: string; status: 'draft'|'ordered'|'partial'|'received'|'cancelled'; order_date: string; expected_date: string|null; total_amount: number; notes: string|null; branch_id: string; supplier_id: string|null; suppliers: { id: string; name: string }|null; purchase_order_items: POItem[]; }
 interface GRNEntry   { ingredient_id: string; ingredient_name: string; ingredient_unit: string; quantity_ordered: number; quantity_received_so_far: number; quantity_receiving: string; unit_cost: string; }
+interface StoredGRN  { id: string; grn_number: string; created_at: string; notes: string | null; purchase_orders: { po_number: string } | null; grn_items: { ingredient_id: string; quantity_received: number; unit_cost: number | null; ingredients: { name: string; unit: string } | null }[]; }
 interface NewItem    { ingredient_id: string; quantity_ordered: string; unit_cost: string; }
 
 const STATUS: Record<string, { label: string; color: string; bg: string }> = {
@@ -41,6 +42,16 @@ export default function PurchaseOrdersPage() {
   const [branches, setBranches]       = useState<Branch[]>([]);
   const [loading, setLoading]         = useState(true);
   const [selected, setSelected]       = useState<PO | null>(null);
+  // Reprint history: a selected PO's goods received notes, fetched on demand.
+  const [grns, setGrns]               = useState<StoredGRN[]>([]);
+  useEffect(() => {
+    if (!selected) { setGrns([]); return; }
+    let live = true;
+    api.get<StoredGRN[]>(`/api/stock/grn?purchase_order_id=${selected.id}`)
+      .then(rows => { if (live) setGrns(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (live) setGrns([]); });
+    return () => { live = false; };
+  }, [selected]);
   const [filterStatus, setFilterStatus] = useState('');
 
   // Create modal
@@ -171,10 +182,10 @@ export default function PurchaseOrdersPage() {
     });
     printDocument({
       docType: 'PURCHASE ORDER', number: po.po_number, dateLabel: fmtDate(po.order_date),
+      accent: po.status === 'cancelled' ? DOC_ACCENT.cancelled : DOC_ACCENT.po, statusLabel: po.status,
       business: business ?? { name: 'SwiftPOS' },
       meta: [
         { label: 'Supplier', value: po.suppliers?.name ?? '—' },
-        { label: 'Status', value: po.status },
         ...(po.expected_date ? [{ label: 'Expected', value: fmtDate(po.expected_date) }] : []),
       ],
       columns: [
@@ -184,6 +195,34 @@ export default function PurchaseOrdersPage() {
       rows,
       totals: [{ label: 'Total', value: fmt(total, currency) }],
       note: po.notes, signatures: ['Prepared by', 'Approved by'],
+    });
+  };
+
+  const printStoredGRN = (grn: StoredGRN) => {
+    let total = 0;
+    const rows = (grn.grn_items ?? []).map(i => {
+      const qty  = Number(i.quantity_received) || 0;
+      const cost = Number(i.unit_cost) || 0;
+      const line = qty * cost; total += line;
+      const name = i.ingredients?.name ?? 'Item';
+      const unit = i.ingredients?.unit ?? '';
+      return [`${name}${unit ? ` (${unit})` : ''}`, String(qty), fmt(cost, currency), fmt(line, currency)];
+    });
+    printDocument({
+      docType: 'GOODS RECEIVED NOTE', number: grn.grn_number, dateLabel: fmtDate(grn.created_at),
+      accent: DOC_ACCENT.grn, statusLabel: 'Received',
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'Against PO', value: grn.purchase_orders?.po_number ?? selected?.po_number ?? '—' },
+        { label: 'Supplier', value: selected?.suppliers?.name ?? '—' },
+      ],
+      columns: [
+        { label: 'Ingredient' }, { label: 'Received', align: 'right' },
+        { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' },
+      ],
+      rows,
+      totals: [{ label: 'Total received value', value: fmt(total, currency) }],
+      note: grn.notes, signatures: ['Received by', 'Checked by'],
     });
   };
 
@@ -197,6 +236,7 @@ export default function PurchaseOrdersPage() {
     });
     printDocument({
       docType: 'GOODS RECEIVED NOTE', number: grnNumber, dateLabel: fmtDate(new Date().toISOString()),
+      accent: DOC_ACCENT.grn, statusLabel: 'Received',
       business: business ?? { name: 'SwiftPOS' },
       meta: [
         { label: 'Against PO', value: po.po_number },
@@ -389,6 +429,22 @@ export default function PurchaseOrdersPage() {
               <div>
                 <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">Notes</p>
                 <p className="text-gray-300 text-sm whitespace-pre-line bg-gray-900 rounded-xl border border-gray-800 px-4 py-3">{selected.notes}</p>
+              </div>
+            )}
+            {grns.length > 0 && (
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">Goods received notes</p>
+                <div className="space-y-1.5">
+                  {grns.map(g => (
+                    <div key={g.id} className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5">
+                      <div>
+                        <p className="text-white text-sm font-medium">{g.grn_number}</p>
+                        <p className="text-gray-500 text-xs">{fmtDate(g.created_at)} · {g.grn_items?.length ?? 0} item{(g.grn_items?.length ?? 0) !== 1 ? 's' : ''}</p>
+                      </div>
+                      <button onClick={() => printStoredGRN(g)} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors">Reprint</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
