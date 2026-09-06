@@ -8,8 +8,7 @@ import (
 	"github.com/alexbrainman/printer"
 )
 
-// sendSpooler writes RAW bytes to an installed Windows printer by its display
-// name (the way USB thermal printers are driven — no GDI rendering).
+// sendSpooler writes RAW bytes to an installed Windows printer by display name.
 func sendSpooler(name string, data []byte) error {
 	p, err := printer.Open(name)
 	if err != nil {
@@ -24,4 +23,9 @@ func sendSpooler(name string, data []byte) error {
 		return fmt.Errorf("write: %w", err)
 	}
 	return nil
+}
+
+// listPrinters returns installed Windows printer names for the dashboard dropdown.
+func listPrinters() ([]string, error) {
+	return printer.ReadNames()
 }

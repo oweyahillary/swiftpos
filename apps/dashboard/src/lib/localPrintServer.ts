@@ -20,7 +20,9 @@
 // backend's /health (a Supabase ping that 503s) — hammering it and always
 // reporting the printer as down. Configure VITE_PRINT_SERVER_URL to your bridge's
 // address (e.g. http://localhost:9100); leave it unset to disable the feature.
-const SERVER_URL  = (import.meta.env.VITE_PRINT_SERVER_URL as string | undefined) || '';
+// The bridge listens on 127.0.0.1:9911 (distinct from the dev API port). We default
+// to that so no build-time env is needed; VITE_PRINT_SERVER_URL can override it.
+const SERVER_URL  = (import.meta.env.VITE_PRINT_SERVER_URL as string | undefined) || 'http://127.0.0.1:9911';
 const HEALTH_PATH = `${SERVER_URL}/health`;
 const PRINT_PATH  = `${SERVER_URL}/print`;
 const TEST_PATH   = `${SERVER_URL}/print/test`;
@@ -190,6 +192,31 @@ export async function testPrint(printerName: string, paperWidth: 58 | 80): Promi
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(err.error ?? `Test print failed: HTTP ${res.status}`);
+  }
+}
+
+// ─── Silent receipt via the tiny bridge (browser renders ESC/POS, bridge forwards) ─
+// The browser renders the receipt to ESC/POS bytes; we base64 them and POST to
+// /print. This is what lets the bridge stay ~1.6 MB (no embedded renderer).
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+export async function printBytesToServer(target: string, bytes: Uint8Array): Promise<void> {
+  if (!SERVER_URL) throw new Error('Print server not configured');
+  const res = await fetch(PRINT_PATH, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
+    body:    JSON.stringify({ target, data: bytesToBase64(bytes) }),
+    signal:  AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error ?? `Print failed: HTTP ${res.status}`);
   }
 }
 

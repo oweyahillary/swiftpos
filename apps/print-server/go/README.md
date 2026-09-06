@@ -1,34 +1,35 @@
-# SwiftPOS Print Bridge (Go)
+# SwiftPOS Print Bridge (Go) — v4
 
-A tiny (~5 MB) local print bridge — a byte-forwarder. The browser renders the
-receipt (shared/printing) to ESC/POS and POSTs the bytes here; this process writes
-them to the printer. Replaces the ~55 MB Node/pkg build.
+A ~1.6 MB local byte-forwarder (UPX-compressed). The **browser renders** the
+receipt to ESC/POS and POSTs the bytes here; this process writes them to the
+printer. No embedded JS runtime → tiny installer.
 
-## API
-- `GET  /health` → `{ok, version, requiresToken}` (no token)
-- `POST /print`  `{target, data: base64 ESC/POS}` + `X-Print-Token`
+## Endpoints (port 9911)
+- `GET  /health`   → `{ok, version}` (open)
+- `GET  /printers` → `{printers:[...]}` (open; Windows spooler names)
+- `POST /print`      `{target, data: base64 ESC/POS}` (needs `X-Print-Token`)
+- `POST /print/test` `{target|printer}` (needs `X-Print-Token`)
 
-`target`: `printer:<name>` (Windows spooler RAW / USB) · `\\host\name` (share) ·
-`/dev/...` (unix) · `host[:port]` (network, default :9100).
+`target`: `printer:<name>` (Windows spooler/USB) · `\\host\name` (share) ·
+`/dev/...` (unix) · `host[:port]` (network :9100).
 
-Security: loopback-only, exact-origin allowlist (`PRINT_BRIDGE_ORIGINS`), pairing
-token at `~/.swiftpos-print-bridge-token` (printed on first run).
+Security: loopback-only + pairing token (`~/.swiftpos-print-bridge-token`, printed
+on first run). CORS is open — the **token**, not the origin, protects printing —
+so there is no per-deployment origin list to maintain.
 
-## Build (needs Go ≥ 1.22)
+## Zero-config pairing
+The dashboard hard-codes `http://127.0.0.1:9911`, so there is **no Vercel env** to
+set. Run the exe, paste the token in Settings → Printers, pick the printer. Moving
+to a VPS / new domain changes nothing here.
+
+## Build (Go ≥ 1.22; cross-compiles a Windows exe from any OS)
 ```bash
 cd apps/print-server/go
-# Windows exe (from any OS — Go cross-compiles):
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o SwiftPOS-PrintServer.exe .
-# or for the host OS:
-go build -ldflags="-s -w" -o SwiftPOS-PrintServer .
+upx --best --lzma SwiftPOS-PrintServer.exe        # 5 MB → ~1.6 MB (optional)
 ```
-Unsigned → Windows SmartScreen warns until code-signed.
+Unsigned → SmartScreen warns until code-signed.
 
-## NOTE — not yet wired end-to-end
-This thin bridge only forwards bytes, so the dashboard must render ESC/POS in the
-browser and POST them to `/print`. That dashboard change (a `shared/printing`
-browser import + `Buffer` handling + `printBytesViaServer`) is the remaining step;
-until then, use the Node/pkg bridge (`../build:win`) which renders server-side.
-
-Verified: /health, token auth, and network printing. The Windows spooler path is
-Windows-only and untested without a physical printer.
+Verified in CI/sandbox: /health, /print (token + network), /print/test, /printers
+(stub off-Windows). The Windows spooler path (`printer:` → RAW) is exercised only
+on a real Windows printer.

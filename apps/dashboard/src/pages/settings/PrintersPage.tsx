@@ -421,13 +421,21 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Receipt printer</label>
-              <select
-                value={rxSettings.receiptPrinterName ?? ''}
-                onChange={e => saveRxSettings({ receiptPrinterName: e.target.value })}
-                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-green-500">
-                <option value="">— browser dialog (no silent print) —</option>
-                {qzPrinters.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
+              {qzPrinters.length > 0 ? (
+                <select
+                  value={rxSettings.receiptPrinterName ?? ''}
+                  onChange={e => saveRxSettings({ receiptPrinterName: e.target.value })}
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-green-500">
+                  <option value="">— browser dialog (no silent print) —</option>
+                  {qzPrinters.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              ) : (
+                <input
+                  type="text" value={rxSettings.receiptPrinterName ?? ''}
+                  onChange={e => saveRxSettings({ receiptPrinterName: e.target.value })}
+                  placeholder="Exact Windows printer name (e.g. EPSON TM-T20)"
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-green-500" />
+              )}
             </div>
           </div>
           {rxSettings.receiptPrinterName && (

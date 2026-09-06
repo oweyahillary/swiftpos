@@ -1,15 +1,20 @@
-// SwiftPOS Print Bridge (Go) — a tiny local HTTP server that writes ESC/POS bytes
-// to a printer. The browser renders the receipt (shared/printing) and POSTs the
-// bytes here; this process just forwards them. That keeps the binary a few MB
-// instead of ~55 MB (no embedded JS runtime).
+// SwiftPOS Print Bridge (Go) — a tiny (~1.6 MB) local byte-forwarder.
+// The browser renders the receipt to ESC/POS and POSTs the bytes here; this
+// process writes them to the printer. No embedded JS runtime → tiny.
 //
-// API (matches the previous Node bridge so the dashboard is unchanged except that
-// it now sends bytes, not an order):
-//   GET  /health   -> {ok, version, requiresToken}          (no token needed)
-//   POST /print    {target, data: base64 ESC/POS}           (X-Print-Token required)
+// API:
+//   GET  /health   -> {ok, version}                         (open)
+//   GET  /printers -> {printers: [names]}                    (open; Windows spooler)
+//   POST /print       {target, data: base64 ESC/POS}        (X-Print-Token)
+//   POST /print/test  {target|printer, paperWidth}          (X-Print-Token)
 //
-// Security: loopback-only, an exact-origin allowlist, and a pairing token stored
-// at ~/.swiftpos-print-bridge-token (printed on first run).
+// target: "printer:<name>" (Windows spooler/USB) · "\\host\name" (share) ·
+//         "/dev/..." (unix) · "host[:port]" (network, default :9100).
+//
+// Security: loopback-only + a pairing token (~/.swiftpos-print-bridge-token,
+// printed on first run) required for the print endpoints. CORS is open (any
+// origin) because the token — not the origin — is what protects printing; this
+// removes per-deployment origin configuration.
 package main
 
 import (
@@ -27,31 +32,21 @@ import (
 	"time"
 )
 
-const version = "3.0.0"
+const version = "4.0.0"
 
-var allowedOrigins = map[string]bool{}
 var token string
 
 func main() {
-	port := "3001"
+	port := "9911"
 	if p := os.Getenv("PRINT_BRIDGE_PORT"); p != "" {
 		port = p
-	}
-	for _, o := range []string{
-		"http://localhost:5173", "http://localhost:4173", "http://localhost:3000",
-		"http://127.0.0.1:5173", "http://127.0.0.1:4173", "http://127.0.0.1:3000",
-	} {
-		allowedOrigins[o] = true
-	}
-	for _, o := range strings.Split(os.Getenv("PRINT_BRIDGE_ORIGINS"), ",") {
-		if o = strings.TrimSpace(o); o != "" {
-			allowedOrigins[o] = true
-		}
 	}
 	token = loadToken()
 
 	http.HandleFunc("/health", handleHealth)
+	http.HandleFunc("/printers", handlePrinters)
 	http.HandleFunc("/print", handlePrint)
+	http.HandleFunc("/print/test", handleTest)
 
 	addr := "127.0.0.1:" + port
 	fmt.Printf("SwiftPOS Print Bridge %s on http://%s\n", version, addr)
@@ -83,15 +78,18 @@ func loadToken() string {
 	return t
 }
 
-func cors(w http.ResponseWriter, origin string) bool {
-	if origin != "" && !allowedOrigins[origin] {
-		return false
-	}
+// cors reflects the request origin (open) and short-circuits preflight.
+func cors(w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get("Origin")
 	if origin != "" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Print-Token")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	}
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(204)
+		return false
 	}
 	return true
 }
@@ -102,41 +100,42 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func tokenOK(given string) bool {
-	if given == "" {
+func tokenOK(r *http.Request) bool {
+	g := r.Header.Get("X-Print-Token")
+	if g == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(given), []byte(token)) == 1
+	return subtle.ConstantTimeCompare([]byte(g), []byte(token)) == 1
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if !cors(w, origin) {
-		writeJSON(w, 403, map[string]any{"error": "origin not allowed"})
+	if !cors(w, r) {
 		return
 	}
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(204)
+	writeJSON(w, 200, map[string]any{"ok": true, "version": version})
+}
+
+func handlePrinters(w http.ResponseWriter, r *http.Request) {
+	if !cors(w, r) {
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "version": version, "requiresToken": true})
+	names, err := listPrinters()
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"printers": []string{}, "note": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"printers": names})
 }
 
 func handlePrint(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if !cors(w, origin) {
-		writeJSON(w, 403, map[string]any{"error": "origin not allowed"})
-		return
-	}
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(204)
+	if !cors(w, r) {
 		return
 	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, 405, map[string]any{"error": "POST only"})
 		return
 	}
-	if !tokenOK(r.Header.Get("X-Print-Token")) {
+	if !tokenOK(r) {
 		writeJSON(w, 401, map[string]any{"error": "missing or invalid X-Print-Token"})
 		return
 	}
@@ -153,12 +152,8 @@ func handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bytes, err := base64.StdEncoding.DecodeString(body.Data)
-	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": "data is not valid base64"})
-		return
-	}
-	if len(bytes) == 0 {
-		writeJSON(w, 400, map[string]any{"error": "data is empty"})
+	if err != nil || len(bytes) == 0 {
+		writeJSON(w, 400, map[string]any{"error": "data is not valid base64 or is empty"})
 		return
 	}
 	started := time.Now()
@@ -169,13 +164,48 @@ func handlePrint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "bytes": len(bytes), "ms": time.Since(started).Milliseconds()})
 }
 
-// sendToPrinter parses the target the same way the old bridge did and writes the
-// raw bytes to it.
-//
-//	printer:<name>  -> Windows spooler, RAW datatype (USB/installed printers)
-//	\\host\name     -> Windows share (write as a file)
-//	/dev/...        -> unix device node
-//	host[:port]     -> raw TCP (network printer, default :9100)
+func handleTest(w http.ResponseWriter, r *http.Request) {
+	if !cors(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]any{"error": "POST only"})
+		return
+	}
+	if !tokenOK(r) {
+		writeJSON(w, 401, map[string]any{"error": "missing or invalid X-Print-Token"})
+		return
+	}
+	var body struct {
+		Target  string `json:"target"`
+		Printer string `json:"printer"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	target := body.Target
+	if target == "" && body.Printer != "" {
+		target = "printer:" + body.Printer
+	}
+	if target == "" {
+		writeJSON(w, 400, map[string]any{"error": "target or printer required"})
+		return
+	}
+	if err := sendToPrinter(target, testTicket()); err != nil {
+		writeJSON(w, 502, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// testTicket is a minimal ESC/POS test receipt (init, text, feed, cut).
+func testTicket() []byte {
+	esc := []byte{0x1b, 0x40} // ESC @ init
+	esc = append(esc, []byte("\n   SwiftPOS print test\n   ")...)
+	esc = append(esc, []byte(time.Now().Format("2006-01-02 15:04:05"))...)
+	esc = append(esc, []byte("\n\n   If you can read this,\n   silent printing works.\n\n\n")...)
+	esc = append(esc, 0x1d, 0x56, 0x00) // GS V 0 full cut
+	return esc
+}
+
 func sendToPrinter(spec string, data []byte) error {
 	switch {
 	case strings.HasPrefix(spec, "printer:"):

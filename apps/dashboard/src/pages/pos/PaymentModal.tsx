@@ -12,7 +12,8 @@ import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
 import EvenSplitPanel from './EvenSplitPanel';
 import ByItemSplitPanel from './ByItemSplitPanel';
 import { printReceipt } from '../../lib/printReceipt';
-import { printReceiptViaServer, getPrintToken, getQZStatus } from '../../lib/localPrintServer';
+import { printBytesToServer, getPrintToken, getQZStatus } from '../../lib/localPrintServer';
+import { renderEscPos } from '../../lib/escposRenderer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
@@ -437,7 +438,8 @@ export default function PaymentModal({
           tableNumber,
         });
         const biz = buildReceiptBusinessConfig(business, printerSettings.footerMessage);
-        await printReceiptViaServer(printerName, order, biz, printerSettings.paperWidth);
+        const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
+        await printBytesToServer(`printer:${printerName}`, bytes);
         return;
       } catch (e: any) {
         console.warn('[receipt] bridge print failed, using browser dialog:', e?.message);
