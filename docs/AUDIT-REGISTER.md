@@ -553,6 +553,11 @@ Reuses the existing thermal `printReceipt` pattern but as a separate full-page p
 dashboard tsc clean; source guards `tests/print-documents.test.mjs` 7/7 (mutation-checked). Delivery:
 `docs/MANIFEST-2026-09-05-i.md`. Possible follow-ups: a GRN history/reprint list; a received-note variant
 of the transfer doc showing sent vs received; company logo in the header.
+**RECEIVED NOTE ADDED 2026-09-05:** the transfer receive form now offers "Confirm & print" beside
+"Confirm received" — on receipt it prints a TRANSFER RECEIVED NOTE (from/to, per-line Sent vs Received
+with the Variance, the receipt note, received-by/checked-by signatures), turning A221's sent-vs-received
+audit trail into a signed document. All data is client-side at receive time, so no server change. Guard in
+`tests/print-documents.test.mjs` (now 8/8, mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-j.md`.
 
 ### A207 · P2 · FIX BUILT 2026-09-04 · Manager web portal has no shift oversight (desktop manager has Shift + Close Day)
 

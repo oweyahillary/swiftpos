@@ -46,5 +46,12 @@ ok('Manager tab prints a STOCK TRANSFER NOTE', () => {
   assert.match(rx, /printTransferNote\(t\)/);
 });
 
+ok('Manager tab prints a TRANSFER RECEIVED NOTE (sent vs received) on receipt', () => {
+  assert.match(rx, /docType: 'TRANSFER RECEIVED NOTE'/);
+  assert.match(rx, /printReceivedNote\(/);
+  assert.match(rx, /submitTransfer\(true\)/);        // "Confirm & print"
+  assert.match(rx, /\{ label: 'Variance', align: 'right' \}/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

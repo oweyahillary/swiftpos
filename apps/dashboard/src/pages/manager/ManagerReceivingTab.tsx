@@ -155,7 +155,30 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
     setRxLines(seed); setRxNote(''); setRxError(''); setRxTarget(t);
   };
 
-  const submitTransfer = async () => {
+  const printReceivedNote = (t: Transfer, receivedById: Record<string, number>, note: string) => {
+    printDocument({
+      docType: 'TRANSFER RECEIVED NOTE', number: t.transfer_number,
+      dateLabel: new Date().toLocaleDateString(),
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'From', value: t.from_branch_name ?? '—' },
+        { label: 'To', value: t.to_branch_name ?? session?.branchName ?? '—' },
+      ],
+      columns: [
+        { label: 'Product' }, { label: 'Sent', align: 'right' },
+        { label: 'Received', align: 'right' }, { label: 'Variance', align: 'right' },
+      ],
+      rows: t.stock_transfer_items.map(it => {
+        const sent = Number(it.quantity) || 0;
+        const rec  = Number(receivedById[it.product_id] ?? 0);
+        const v    = rec - sent;
+        return [it.products?.name ?? 'Item', String(sent), String(rec), v === 0 ? '—' : String(v)];
+      }),
+      note, signatures: ['Received by', 'Checked by'],
+    });
+  };
+
+  const submitTransfer = async (alsoPrint = false) => {
     if (!rxTarget) return;
     // Validate each received line is 0..sent before sending; the server enforces
     // the same, this is just a faster, clearer message.
@@ -169,12 +192,17 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
     const received_items = rxTarget.stock_transfer_items.map(it => ({
       product_id: it.product_id, quantity_received: Number(rxLines[it.product_id] || 0),
     }));
+    const receivedById: Record<string, number> = {};
+    received_items.forEach(r => { receivedById[r.product_id] = r.quantity_received; });
+    const t = rxTarget;                       // capture before we clear state
+    const note = rxNote.trim();
     setRxBusy(true); setRxError('');
     try {
-      await posApi.patch(`/api/stock/transfers/${rxTarget.id}/status`, {
-        status: 'received', received_items, receipt_note: rxNote.trim() || undefined,
+      await posApi.patch(`/api/stock/transfers/${t.id}/status`, {
+        status: 'received', received_items, receipt_note: note || undefined,
       });
-      setTransfers(prev => prev.filter(x => x.id !== rxTarget.id));
+      if (alsoPrint) printReceivedNote(t, receivedById, note);
+      setTransfers(prev => prev.filter(x => x.id !== t.id));
       setRxTarget(null);
     } catch (e: any) {
       setRxError(e?.message ?? 'Could not receive the transfer');
@@ -368,9 +396,13 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                             className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">
                             Cancel
                           </button>
-                          <button onClick={() => void submitTransfer()} disabled={rxBusy}
-                            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors">
+                          <button onClick={() => void submitTransfer(false)} disabled={rxBusy}
+                            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 transition-colors">
                             {rxBusy ? 'Receiving…' : 'Confirm received'}
+                          </button>
+                          <button onClick={() => void submitTransfer(true)} disabled={rxBusy}
+                            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors">
+                            {rxBusy ? 'Receiving…' : 'Confirm & print'}
                           </button>
                         </div>
                       </div>
