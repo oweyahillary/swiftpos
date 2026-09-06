@@ -27,7 +27,10 @@ function fmt(n: number, currency: string) {
   return new Intl.NumberFormat('en-KE', { style: 'currency', currency, minimumFractionDigits: 2 }).format(n);
 }
 function fmtDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!d) return '—';
+  // Accept both date-only ("2026-09-05") and full ISO timestamps (GRN created_at).
+  const dt = new Date(d.length <= 10 ? d + 'T00:00:00' : d);
+  return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export default function PurchaseOrdersPage() {

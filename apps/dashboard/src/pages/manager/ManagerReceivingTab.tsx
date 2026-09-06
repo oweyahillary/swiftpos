@@ -72,6 +72,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const [lines, setLines]       = useState<Record<string, string>>({});
   const [grnBusy, setGrnBusy]   = useState(false);
   const [grnError, setGrnError] = useState('');
+  const [grnNote, setGrnNote]   = useState('');
 
   // A221: transfer receipt — the recipient keys what actually arrived per line
   // (default = sent, editable down to 0), plus a note. Sent stays as the record.
@@ -262,18 +263,42 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       const remaining = Number(i.quantity_ordered) - Number(i.quantity_received);
       seed[i.ingredient_id] = remaining > 0 ? String(remaining) : '';
     });
-    setLines(seed); setGrnError(''); setTarget(po);
+    setLines(seed); setGrnNote(''); setGrnError(''); setTarget(po);
   };
 
-  const submitDelivery = async () => {
+  const printReceivedGRN = (grnNumber: string, po: PO, filled: { ingredient_id: string; name: string; unit: string; quantity_received: number; unit_cost: number }[], note: string) => {
+    let total = 0;
+    const rows = filled.map(i => {
+      const line = i.quantity_received * i.unit_cost; total += line;
+      return [`${i.name}${i.unit ? ` (${i.unit})` : ''}`, String(i.quantity_received),
+        `${currency} ${i.unit_cost.toFixed(2)}`, `${currency} ${line.toFixed(2)}`];
+    });
+    printDocument({
+      docType: 'GOODS RECEIVED NOTE', number: grnNumber, dateLabel: new Date().toLocaleDateString('en-KE'),
+      accent: DOC_ACCENT.grn, statusLabel: 'Received',
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [{ label: 'Against PO', value: po.po_number }, { label: 'Supplier', value: po.suppliers?.name ?? '—' }],
+      columns: [{ label: 'Ingredient' }, { label: 'Received', align: 'right' }, { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' }],
+      rows, totals: [{ label: 'Total received value', value: `${currency} ${total.toFixed(2)}` }],
+      note, signatures: ['Received by', 'Checked by'],
+    });
+  };
+
+  const submitDelivery = async (alsoPrint = false) => {
     if (!target) return;
-    const items = target.purchase_order_items
-      .map(i => ({ ingredient_id: i.ingredient_id, quantity_received: Number(lines[i.ingredient_id] || 0), unit_cost: Number(i.unit_cost) }))
+    const filled = target.purchase_order_items
+      .map(i => ({ ingredient_id: i.ingredient_id, name: i.ingredients?.name ?? 'Item', unit: i.ingredients?.unit ?? '',
+                   quantity_received: Number(lines[i.ingredient_id] || 0), unit_cost: Number(i.unit_cost) }))
       .filter(i => i.quantity_received > 0);
-    if (!items.length) { setGrnError('Enter a received quantity for at least one item'); return; }
+    if (!filled.length) { setGrnError('Enter a received quantity for at least one item'); return; }
+    const po = target; const note = grnNote.trim();
     setGrnBusy(true); setGrnError('');
     try {
-      await posApi.post('/api/stock/grn', { branch_id: branchId, purchase_order_id: target.id, items });
+      const grn = await posApi.post<{ grn_number: string }>('/api/stock/grn', {
+        branch_id: branchId, purchase_order_id: po.id, notes: note || undefined,
+        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: i.quantity_received, unit_cost: i.unit_cost })),
+      });
+      if (alsoPrint && grn?.grn_number) printReceivedGRN(grn.grn_number, po, filled, note);
       setTarget(null);
       await load();
     } catch (e: any) {
@@ -581,11 +606,18 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 );
               })}
             </div>
-            <div className="flex gap-3 mt-5">
+            <textarea value={grnNote} onChange={e => setGrnNote(e.target.value)} rows={2}
+              placeholder="Note (optional) — e.g. 2kg short, one bag torn"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm mt-3 focus:outline-none focus:border-green-500" />
+            <div className="flex gap-2 mt-4">
               <button onClick={() => setTarget(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2.5 rounded-lg transition-colors">Cancel</button>
-              <button onClick={() => void submitDelivery()} disabled={grnBusy}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors">
+              <button onClick={() => void submitDelivery(false)} disabled={grnBusy}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 font-semibold text-sm py-2.5 rounded-lg transition-colors">
                 {grnBusy ? 'Receiving…' : 'Confirm received'}
+              </button>
+              <button onClick={() => void submitDelivery(true)} disabled={grnBusy}
+                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors">
+                {grnBusy ? 'Receiving…' : 'Confirm & print'}
               </button>
             </div>
           </div>
