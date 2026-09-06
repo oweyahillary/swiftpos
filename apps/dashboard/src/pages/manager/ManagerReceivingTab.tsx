@@ -92,6 +92,51 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const [sendError, setSendError]   = useState('');
   const [despatchBusy, setDespatchBusy] = useState<string | null>(null);
 
+  // A228: manager raises a PO for their OWN branch, straight to Ordered (option a,
+  // no approval step). Suppliers + ingredients are lazy-loaded when the form opens.
+  const [showNewPO, setShowNewPO]     = useState(false);
+  const [suppliers, setSuppliers]     = useState<{ id: string; name: string }[]>([]);
+  const [poIngredients, setPoIngredients] = useState<{ id: string; name: string; unit: string; unit_cost: number | null }[]>([]);
+  const [poSupplier, setPoSupplier]   = useState('');
+  const [poExpected, setPoExpected]   = useState('');
+  const [poNotes, setPoNotes]         = useState('');
+  const [poLines, setPoLines]         = useState<Record<string, { qty: string; cost: string }>>({});
+  const [poSearch, setPoSearch]       = useState('');
+  const [poBusy, setPoBusy]           = useState(false);
+  const [poError, setPoError]         = useState('');
+
+  const openNewPO = async () => {
+    setShowNewPO(true); setPoError('');
+    if (suppliers.length && poIngredients.length) return;
+    try {
+      const [s, ing] = await Promise.all([
+        posApi.get<{ id: string; name: string }[]>('/api/stock/suppliers'),
+        posApi.get<{ id: string; name: string; unit: string; unit_cost: number | null }[]>('/api/stock/ingredients?status=active'),
+      ]);
+      setSuppliers(Array.isArray(s) ? s : []);
+      setPoIngredients(Array.isArray(ing) ? ing : []);
+    } catch (e: any) { setPoError(e?.message ?? 'Could not load suppliers / ingredients'); }
+  };
+
+  const createPO = async () => {
+    const items = poIngredients
+      .map(g => ({ ingredient_id: g.id, quantity_ordered: Number(poLines[g.id]?.qty || 0), unit_cost: Number(poLines[g.id]?.cost || 0) }))
+      .filter(i => i.quantity_ordered > 0);
+    if (!items.length) { setPoError('Enter a quantity for at least one ingredient.'); return; }
+    setPoBusy(true); setPoError('');
+    try {
+      const po = await posApi.post<{ id: string }>('/api/stock/purchase-orders', {
+        branch_id: branchId, supplier_id: poSupplier || undefined,
+        expected_date: poExpected || undefined, notes: poNotes || undefined, items,
+      });
+      // Option (a): straight to Ordered so it's immediately receivable — no approval.
+      if (po?.id) await posApi.patch(`/api/stock/purchase-orders/${po.id}`, { status: 'ordered' });
+      setShowNewPO(false); setPoSupplier(''); setPoExpected(''); setPoNotes(''); setPoLines({}); setPoSearch('');
+      await load();
+    } catch (e: any) { setPoError(e?.message ?? 'Could not create the purchase order'); }
+    finally { setPoBusy(false); }
+  };
+
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -419,7 +464,13 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
 
       {canReceive && (
         <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Supplier deliveries</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Supplier deliveries</h3>
+            <button onClick={() => void openNewPO()}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+              New PO
+            </button>
+          </div>
           {loading ? <p className="text-gray-500 text-sm">Loading…</p>
             : openPOs.length === 0 ? (
               <div className="rounded-xl border border-dashed border-gray-800 p-6 text-center">
@@ -441,6 +492,70 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 ))}
               </div>
             )}
+        </div>
+      )}
+
+      {showNewPO && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <h3 className="text-white font-semibold">New purchase order</h3>
+            <p className="text-gray-500 text-xs mb-4">For {session?.branchName} · goes straight to Ordered.</p>
+            {poError && <p className="text-red-400 text-sm mb-3">{poError}</p>}
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Supplier (optional)</label>
+                  <select value={poSupplier} onChange={e => setPoSupplier(e.target.value)}
+                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500">
+                    <option value="">— none —</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Expected date (optional)</label>
+                  <input type="date" value={poExpected} onChange={e => setPoExpected(e.target.value)}
+                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Ingredients</label>
+                <input value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="Search ingredients…"
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-blue-500" />
+                <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-[10px] uppercase tracking-wider text-gray-600 px-1">
+                  <span>Ingredient</span><span className="text-right">Qty</span><span className="text-right pr-1">Unit cost</span>
+                </div>
+                <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
+                  {poIngredients
+                    .filter(g => g.name.toLowerCase().includes(poSearch.trim().toLowerCase()))
+                    .map(g => (
+                      <div key={g.id} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-sm">
+                        <span className="text-gray-300 truncate">{g.name}{g.unit ? <span className="text-gray-600"> ({g.unit})</span> : null}</span>
+                        <input type="number" min={0} step="any" value={poLines[g.id]?.qty ?? ''} placeholder="0"
+                          onChange={e => setPoLines(prev => ({ ...prev, [g.id]: { qty: e.target.value, cost: prev[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '') } }))}
+                          className="w-16 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-blue-500" />
+                        <input type="number" min={0} step="any" value={poLines[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '')} placeholder="0.00"
+                          onChange={e => setPoLines(prev => ({ ...prev, [g.id]: { qty: prev[g.id]?.qty ?? '', cost: e.target.value } }))}
+                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-blue-500" />
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <textarea value={poNotes} onChange={e => setPoNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
+                className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setShowNewPO(false)} disabled={poBusy}
+                className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">Cancel</button>
+              <button onClick={() => void createPO()} disabled={poBusy}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors">
+                {poBusy ? 'Creating…' : 'Create & order'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

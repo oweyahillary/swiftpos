@@ -21,6 +21,7 @@ import StaffTab           from '../settings/StaffTab';
 import PrintersPage       from '../settings/PrintersPage';
 import ManagerReportsPage from './ManagerReportsPage';
 import ManagerReceivingTab from './ManagerReceivingTab';
+import ManagerHistoryTab   from './ManagerHistoryTab';
 import ManagerShiftTab from './ManagerShiftTab';
 import ManagerMenuTab from './ManagerMenuTab';
 import { localDateStr } from '../../lib/localDate';
@@ -73,6 +74,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'menu',      label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Menu</span></>,      title: 'Menu', permission: 'products.view', group: null },
   { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
   { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
+  { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: 'orders.view_all', group: 'Finance' },
   { key: 'reports',   label: <><Icon d={I.reports}   className="flex-shrink-0" /><span className="truncate">Reports</span></>,   title: 'Reports', permission: 'reports.view', group: 'Finance' },
@@ -1276,6 +1278,7 @@ export default function ManagerDashboard() {
       case 'orders':    return <POSOrderHistoryTab currency={currency} />;
       case 'inventory': return <POSInventoryTab />;
       case 'receiving': return <ManagerReceivingTab currency={currency} />;
+      case 'history':   return <ManagerHistoryTab currency={currency} />;
       case 'shift': return <ManagerShiftTab currency={currency} />;
       case 'menu': return <ManagerMenuTab currency={currency} />;
       case 'expenses':  return <POSExpensesTab currency={currency} />;
