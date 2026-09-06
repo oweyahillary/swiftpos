@@ -3,7 +3,8 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
-import { printDocument, DOC_ACCENT } from '../../lib/printDocument';
+import { printDocument } from '../../lib/printDocument';
+import { transferDocSpec } from '../../lib/documentSpecs';
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }
@@ -41,34 +42,19 @@ export default function StockTransfersPage() {
   const { user } = useAuth();
   const { business } = useBusiness();
 
-  // Reprint a transfer document: a received note (Sent vs Received + variance) once
-  // it's been received, otherwise a despatch note. Reuses the shared print engine.
+  // Reprint a transfer document via the shared spec builder (received note once
+  // received, else a despatch note).
   const printTransferDoc = (t: Transfer) => {
-    const received = t.status === 'received';
-    printDocument({
-      docType: received ? 'TRANSFER RECEIVED NOTE' : 'STOCK TRANSFER NOTE',
+    printDocument(transferDocSpec({
       number: t.transfer_number,
-      dateLabel: new Date(t.created_at).toLocaleDateString('en-KE'),
-      accent: received ? DOC_ACCENT.received : (t.status === 'cancelled' ? DOC_ACCENT.cancelled : DOC_ACCENT.despatch),
-      statusLabel: t.status,
+      date: new Date(t.created_at).toLocaleDateString('en-KE'),
+      from: t.from_branch_name, to: t.to_branch_name, status: t.status, received: t.status === 'received',
       business: business ?? { name: 'SwiftPOS' },
-      meta: [
-        { label: 'From', value: t.from_branch_name },
-        { label: 'To', value: t.to_branch_name },
-      ],
-      columns: received
-        ? [{ label: 'Product' }, { label: 'Sent', align: 'right' }, { label: 'Received', align: 'right' }, { label: 'Variance', align: 'right' }]
-        : [{ label: 'Product' }, { label: 'Quantity sent', align: 'right' }],
-      rows: t.stock_transfer_items.map(it => {
-        const sent = Number(it.quantity) || 0;
-        if (!received) return [it.products?.name ?? 'Item', String(sent)];
-        const rec = it.quantity_received == null ? sent : Number(it.quantity_received);
-        const v = rec - sent;
-        return [it.products?.name ?? 'Item', String(sent), String(rec), v === 0 ? '—' : String(v)];
-      }),
+      lines: t.stock_transfer_items.map(it => ({
+        name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: it.quantity_received,
+      })),
       note: t.receipt_note || t.notes || undefined,
-      signatures: received ? ['Received by', 'Checked by'] : ['Despatched by', 'Received by'],
-    });
+    }));
   };
   const { activeBranchId } = useBranch();
 

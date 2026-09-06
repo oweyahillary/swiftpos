@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
-import { printDocument, DOC_ACCENT } from '../../lib/printDocument';
+import { printDocument } from '../../lib/printDocument';
+import { purchaseOrderDocSpec, grnDocSpec } from '../../lib/documentSpecs';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 
@@ -174,85 +175,45 @@ export default function PurchaseOrdersPage() {
   };
 
   const printPO = (po: PO) => {
-    let total = 0;
-    const rows = (po.purchase_order_items ?? []).map(it => {
-      const name = it.ingredients?.name ?? it.ingredient_name ?? 'Item';
-      const unit = it.ingredients?.unit ?? it.ingredient_unit ?? '';
-      const qty  = Number(it.quantity_ordered) || 0;
-      const cost = Number(it.unit_cost) || 0;
-      const line = qty * cost; total += line;
-      return [`${name}${unit ? ` (${unit})` : ''}`, String(qty), fmt(cost, currency), fmt(line, currency)];
-    });
-    printDocument({
-      docType: 'PURCHASE ORDER', number: po.po_number, dateLabel: fmtDate(po.order_date),
-      accent: po.status === 'cancelled' ? DOC_ACCENT.cancelled : DOC_ACCENT.po, statusLabel: po.status,
-      business: business ?? { name: 'SwiftPOS' },
-      meta: [
-        { label: 'Supplier', value: po.suppliers?.name ?? '—' },
-        ...(po.expected_date ? [{ label: 'Expected', value: fmtDate(po.expected_date) }] : []),
-      ],
-      columns: [
-        { label: 'Ingredient' }, { label: 'Ordered', align: 'right' },
-        { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' },
-      ],
-      rows,
-      totals: [{ label: 'Total', value: fmt(total, currency) }],
-      note: po.notes, signatures: ['Prepared by', 'Approved by'],
-    });
+    printDocument(purchaseOrderDocSpec({
+      poNumber: po.po_number, orderDate: fmtDate(po.order_date),
+      expectedDate: po.expected_date ? fmtDate(po.expected_date) : null,
+      status: po.status, supplier: po.suppliers?.name ?? null,
+      business: business ?? { name: 'SwiftPOS' }, currency,
+      lines: (po.purchase_order_items ?? []).map(it => ({
+        name: it.ingredients?.name ?? it.ingredient_name ?? 'Item',
+        unit: it.ingredients?.unit ?? it.ingredient_unit ?? '',
+        ordered: Number(it.quantity_ordered) || 0, unitCost: Number(it.unit_cost) || 0,
+      })),
+      note: po.notes,
+    }));
   };
 
   const printStoredGRN = (grn: StoredGRN) => {
-    let total = 0;
-    const rows = (grn.grn_items ?? []).map(i => {
-      const qty  = Number(i.quantity_received) || 0;
-      const cost = Number(i.unit_cost) || 0;
-      const line = qty * cost; total += line;
-      const name = i.ingredients?.name ?? 'Item';
-      const unit = i.ingredients?.unit ?? '';
-      return [`${name}${unit ? ` (${unit})` : ''}`, String(qty), fmt(cost, currency), fmt(line, currency)];
-    });
-    printDocument({
-      docType: 'GOODS RECEIVED NOTE', number: grn.grn_number, dateLabel: fmtDate(grn.created_at),
-      accent: DOC_ACCENT.grn, statusLabel: 'Received',
-      business: business ?? { name: 'SwiftPOS' },
-      meta: [
-        { label: 'Against PO', value: grn.purchase_orders?.po_number ?? selected?.po_number ?? '—' },
-        { label: 'Supplier', value: selected?.suppliers?.name ?? '—' },
-      ],
-      columns: [
-        { label: 'Ingredient' }, { label: 'Received', align: 'right' },
-        { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' },
-      ],
-      rows,
-      totals: [{ label: 'Total received value', value: fmt(total, currency) }],
-      note: grn.notes, signatures: ['Received by', 'Checked by'],
-    });
+    printDocument(grnDocSpec({
+      grnNumber: grn.grn_number, date: fmtDate(grn.created_at),
+      poNumber: grn.purchase_orders?.po_number ?? selected?.po_number ?? null,
+      supplier: selected?.suppliers?.name ?? null,
+      business: business ?? { name: 'SwiftPOS' }, currency,
+      lines: (grn.grn_items ?? []).map(i => ({
+        name: i.ingredients?.name ?? 'Item', unit: i.ingredients?.unit ?? '',
+        received: Number(i.quantity_received) || 0, unitCost: Number(i.unit_cost) || 0,
+      })),
+      note: grn.notes,
+    }));
   };
 
   const printGRN = (grnNumber: string, po: PO, filled: GRNEntry[], notes: string) => {
-    let total = 0;
-    const rows = filled.map(i => {
-      const qty  = Number(i.quantity_receiving) || 0;
-      const cost = Number(i.unit_cost) || 0;
-      const line = qty * cost; total += line;
-      return [`${i.ingredient_name}${i.ingredient_unit ? ` (${i.ingredient_unit})` : ''}`, String(qty), fmt(cost, currency), fmt(line, currency)];
-    });
-    printDocument({
-      docType: 'GOODS RECEIVED NOTE', number: grnNumber, dateLabel: fmtDate(new Date().toISOString()),
-      accent: DOC_ACCENT.grn, statusLabel: 'Received',
-      business: business ?? { name: 'SwiftPOS' },
-      meta: [
-        { label: 'Against PO', value: po.po_number },
-        { label: 'Supplier', value: po.suppliers?.name ?? '—' },
-      ],
-      columns: [
-        { label: 'Ingredient' }, { label: 'Received', align: 'right' },
-        { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' },
-      ],
-      rows,
-      totals: [{ label: 'Total received value', value: fmt(total, currency) }],
-      note: notes, signatures: ['Received by', 'Checked by'],
-    });
+    printDocument(grnDocSpec({
+      grnNumber, date: fmtDate(new Date().toISOString()),
+      poNumber: po.po_number, supplier: po.suppliers?.name ?? null,
+      business: business ?? { name: 'SwiftPOS' }, currency,
+      lines: filled.map(i => ({
+        name: i.ingredient_name, unit: i.ingredient_unit,
+        received: Number(i.quantity_receiving) || 0, unitCost: Number(i.unit_cost) || 0,
+      })),
+      note: notes,
+    }));
   };
 
   const submitGRN = async (alsoPrint = false) => {

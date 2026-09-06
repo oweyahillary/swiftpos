@@ -26,7 +26,7 @@ ok('A229: the note is sent to the server on receipt', () => {
 ok('A229: manager can Confirm & print the GRN', () => {
   assert.match(rx, /submitDelivery\(true\)/);
   assert.match(rx, /const printReceivedGRN = /);
-  assert.match(rx, /docType: 'GOODS RECEIVED NOTE'/);
+  assert.match(rx, /printDocument\(grnDocSpec\(/);
 });
 
 // ── A230 ──────────────────────────────────────────────────────────────────

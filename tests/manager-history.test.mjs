@@ -25,7 +25,7 @@ ok('transfers are scoped to the manager\'s own branch (in or out)', () => {
 ok('both document types are re-printable from history', () => {
   assert.match(h, /const printGRN = /);
   assert.match(h, /const printTransfer = /);
-  assert.match(h, /import \{ printDocument, DOC_ACCENT \}/);
+  assert.match(h, /import \{ grnDocSpec, transferDocSpec \}/);
 });
 ok('a History nav item exists, gated on inventory.receive', () => {
   assert.match(md, /key: 'history',[\s\S]*?permission: 'inventory\.receive'/);

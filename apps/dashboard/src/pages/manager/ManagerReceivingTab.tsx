@@ -17,7 +17,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
-import { printDocument, DOC_ACCENT } from '../../lib/printDocument';
+import { printDocument } from '../../lib/printDocument';
+import { transferDocSpec, grnDocSpec } from '../../lib/documentSpecs';
 
 interface TransferItem { product_id: string; quantity: number; products?: { name: string } | null }
 // A218 stock picker: /api/inventory rows (per-branch stock joined with product).
@@ -44,20 +45,14 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   const { business } = useBusiness();
 
   const printTransferNote = (t: Transfer) => {
-    printDocument({
-      docType: 'STOCK TRANSFER NOTE', number: t.transfer_number,
-      accent: DOC_ACCENT.despatch, statusLabel: 'Despatch',
-      dateLabel: t.created_at ? new Date(t.created_at).toLocaleDateString() : undefined,
+    printDocument(transferDocSpec({
+      number: t.transfer_number,
+      date: t.created_at ? new Date(t.created_at).toLocaleDateString() : undefined,
+      from: t.from_branch_name ?? session?.branchName ?? '—', to: t.to_branch_name ?? '—',
+      status: t.status, received: false,
       business: business ?? { name: 'SwiftPOS' },
-      meta: [
-        { label: 'From', value: t.from_branch_name ?? session?.branchName ?? '—' },
-        { label: 'To', value: t.to_branch_name ?? '—' },
-        { label: 'Status', value: t.status },
-      ],
-      columns: [{ label: 'Product' }, { label: 'Quantity sent', align: 'right' }],
-      rows: t.stock_transfer_items.map(it => [it.products?.name ?? 'Item', String(it.quantity)]),
-      signatures: ['Despatched by', 'Received by'],
-    });
+      lines: t.stock_transfer_items.map(it => ({ name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0 })),
+    }));
   };
   const canTransfer = hasPermission('inventory.transfer');
   const canReceive  = hasPermission('inventory.receive');
@@ -203,27 +198,16 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   };
 
   const printReceivedNote = (t: Transfer, receivedById: Record<string, number>, note: string) => {
-    printDocument({
-      docType: 'TRANSFER RECEIVED NOTE', number: t.transfer_number,
-      accent: DOC_ACCENT.received, statusLabel: 'Received',
-      dateLabel: new Date().toLocaleDateString(),
+    printDocument(transferDocSpec({
+      number: t.transfer_number, date: new Date().toLocaleDateString(),
+      from: t.from_branch_name ?? '—', to: t.to_branch_name ?? session?.branchName ?? '—',
+      status: t.status, received: true,
       business: business ?? { name: 'SwiftPOS' },
-      meta: [
-        { label: 'From', value: t.from_branch_name ?? '—' },
-        { label: 'To', value: t.to_branch_name ?? session?.branchName ?? '—' },
-      ],
-      columns: [
-        { label: 'Product' }, { label: 'Sent', align: 'right' },
-        { label: 'Received', align: 'right' }, { label: 'Variance', align: 'right' },
-      ],
-      rows: t.stock_transfer_items.map(it => {
-        const sent = Number(it.quantity) || 0;
-        const rec  = Number(receivedById[it.product_id] ?? 0);
-        const v    = rec - sent;
-        return [it.products?.name ?? 'Item', String(sent), String(rec), v === 0 ? '—' : String(v)];
-      }),
-      note, signatures: ['Received by', 'Checked by'],
-    });
+      lines: t.stock_transfer_items.map(it => ({
+        name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: receivedById[it.product_id] ?? 0,
+      })),
+      note,
+    }));
   };
 
   const submitTransfer = async (alsoPrint = false) => {
@@ -267,21 +251,13 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
   };
 
   const printReceivedGRN = (grnNumber: string, po: PO, filled: { ingredient_id: string; name: string; unit: string; quantity_received: number; unit_cost: number }[], note: string) => {
-    let total = 0;
-    const rows = filled.map(i => {
-      const line = i.quantity_received * i.unit_cost; total += line;
-      return [`${i.name}${i.unit ? ` (${i.unit})` : ''}`, String(i.quantity_received),
-        `${currency} ${i.unit_cost.toFixed(2)}`, `${currency} ${line.toFixed(2)}`];
-    });
-    printDocument({
-      docType: 'GOODS RECEIVED NOTE', number: grnNumber, dateLabel: new Date().toLocaleDateString('en-KE'),
-      accent: DOC_ACCENT.grn, statusLabel: 'Received',
-      business: business ?? { name: 'SwiftPOS' },
-      meta: [{ label: 'Against PO', value: po.po_number }, { label: 'Supplier', value: po.suppliers?.name ?? '—' }],
-      columns: [{ label: 'Ingredient' }, { label: 'Received', align: 'right' }, { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' }],
-      rows, totals: [{ label: 'Total received value', value: `${currency} ${total.toFixed(2)}` }],
-      note, signatures: ['Received by', 'Checked by'],
-    });
+    printDocument(grnDocSpec({
+      grnNumber, date: new Date().toLocaleDateString('en-KE'),
+      poNumber: po.po_number, supplier: po.suppliers?.name ?? null,
+      business: business ?? { name: 'SwiftPOS' }, currency,
+      lines: filled.map(i => ({ name: i.name, unit: i.unit, received: i.quantity_received, unitCost: i.unit_cost })),
+      note,
+    }));
   };
 
   const submitDelivery = async (alsoPrint = false) => {

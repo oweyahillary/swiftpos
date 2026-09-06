@@ -19,7 +19,7 @@ const ok = (name, fn) => { try { fn(); pass++; console.log(`PASS  ${name}`); } c
 ok('transfers: printTransferDoc picks received vs despatch note by status', () => {
   assert.match(tp, /import \{ printDocument/);
   assert.match(tp, /const printTransferDoc = /);
-  assert.match(tp, /received \? 'TRANSFER RECEIVED NOTE' : 'STOCK TRANSFER NOTE'/);
+  assert.match(tp, /printDocument\(transferDocSpec\(/);
 });
 ok('transfers: a Print button on each row (does not toggle the row)', () => {
   assert.match(tp, /e\.stopPropagation\(\); printTransferDoc\(t\)/);
@@ -31,7 +31,7 @@ ok('PO page fetches a selected PO\'s GRNs', () => {
 });
 ok('PO page can reprint a stored GRN', () => {
   assert.match(po, /const printStoredGRN = \(grn: StoredGRN\)/);
-  assert.match(po, /docType: 'GOODS RECEIVED NOTE', number: grn\.grn_number/);
+  assert.match(po, /printDocument\(grnDocSpec\(/);
 });
 ok('PO detail lists GRNs with a Reprint button', () => {
   assert.match(po, /Goods received notes/);
