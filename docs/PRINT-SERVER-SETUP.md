@@ -55,13 +55,14 @@ For a till with no Node install, build a single-file executable. **Build it on W
 
 ```bash
 cd apps/print-server
-npm install          # gets esbuild + postject (dev deps)
+npm install          # gets esbuild + @yao-pkg/pkg (dev deps)
 npm run build:win    # → build/SwiftPOS-PrintServer.exe
 ```
 
 `build:win` runs `build-exe.mjs`, which: builds `shared/printing` → bundles it + `index.js` into one
-self-contained file (Node SEA doesn't resolve dependencies, so they're inlined first) → generates the SEA
-blob → copies the Node runtime → injects the blob with postject.
+self-contained file (`build/bridge.cjs`) → wraps that with `@yao-pkg/pkg` into the executable. (pkg is used
+instead of Node's SEA because the official Windows `node.exe` is signed, which breaks SEA's postject step;
+pkg handles the signed base binary itself. It downloads the Node base for the target once — needs internet.)
 
 Then deploy the exe (see the Windows service option at the top): drop it in `C:\SwiftPOS\PrintServer\`,
 set `PRINT_BRIDGE_ORIGINS`, and run `install-windows-service.bat` as admin.

@@ -1,24 +1,23 @@
 #!/usr/bin/env node
 /**
  * build-exe.mjs — build SwiftPOS-PrintServer(.exe): a single-file executable of
- * the print bridge, so a shop owner can double-click it with no Node install.
+ * the print bridge, so a till needs no Node install.
  *
- * Pipeline (Node's built-in Single Executable App):
+ * Pipeline:
  *   1. build shared/printing → dist
  *   2. esbuild-bundle src/index.js + shared/printing into ONE self-contained .cjs
- *      (Node SEA does NOT resolve dependencies, so we must inline them first)
- *   3. generate the SEA blob from that bundle
- *   4. copy the Node runtime to the output name
- *   5. inject the blob into the copy with postject
+ *   3. @yao-pkg/pkg wraps that bundle + the Node runtime into a single binary
  *
- * Run this on the TARGET OS — the .exe is built ON Windows (SEA doesn't
- * cross-compile). Requires Node >= 24. Output lands in ./build/.
+ * We use pkg (not Node's SEA/postject) because on Windows the official node.exe is
+ * Authenticode-signed, which breaks postject's sentinel injection. pkg handles the
+ * signed base binary itself and is a single step.
  *
- * The result is UNSIGNED: Windows SmartScreen will say "unknown publisher" until
- * you code-sign it (signtool + an OV/EV cert) — a separate, optional step.
+ * Run on the target OS (build the .exe on Windows). pkg downloads a Node base for
+ * the target on first run (needs internet once). Output lands in ./build/.
+ * The exe is UNSIGNED -> Windows SmartScreen warns until code-signed (optional).
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, copyFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -27,41 +26,35 @@ const root   = path.resolve(here, '../..');
 const shared = path.join(root, 'shared', 'printing');
 const isWin  = process.platform === 'win32';
 const buildDir = path.join(here, 'build');
-const outName  = isWin ? 'SwiftPOS-PrintServer.exe' : `SwiftPOS-PrintServer-${process.platform}`;
+
+const plat = { win32: 'win', darwin: 'macos', linux: 'linux' }[process.platform] ?? process.platform;
+const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+const target = `node22-${plat}-${arch}`;
+const outName = isWin ? 'SwiftPOS-PrintServer.exe' : `SwiftPOS-PrintServer-${plat}`;
 
 function run(cmd, args, opts = {}) {
   console.log(`\n> ${cmd} ${args.join(' ')}`);
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: isWin, ...opts });
-  if (r.status !== 0) { console.error(`\n✗ step failed: ${cmd} ${args.join(' ')}`); process.exit(1); }
-}
-
-const major = Number(process.versions.node.split('.')[0]);
-if (major < 24) {
-  console.error(`Node ${process.versions.node} detected — the single executable build needs Node >= 24.`);
-  console.error(`Install Node 24+ on this machine and re-run. (Running from source works on any Node: npm start.)`);
-  process.exit(1);
+  // npm/npx are .cmd on Windows and need a shell; direct binaries must not (a shell
+  // would split a path with spaces, e.g. "C:\Program Files\nodejs\node.exe").
+  const useShell = opts.shell ?? isWin;
+  const r = spawnSync(cmd, args, { stdio: 'inherit', ...opts, shell: useShell });
+  if (r.status !== 0) { console.error(`\n[x] step failed: ${cmd} ${args.join(' ')}`); process.exit(1); }
 }
 
 mkdirSync(buildDir, { recursive: true });
 
-console.log('== 1/5  build shared/printing ==');
+console.log('== 1/3  build shared/printing ==');
 if (!existsSync(path.join(shared, 'node_modules'))) run('npm', ['install'], { cwd: shared });
 run('npm', ['run', 'build'], { cwd: shared });
 
-console.log('== 2/5  bundle into one self-contained file ==');
+console.log('== 2/3  bundle into one self-contained file ==');
 run('npx', ['--yes', 'esbuild', 'src/index.js', '--bundle', '--platform=node',
-  '--target=node24', `--outfile=${path.join('build', 'bridge.cjs')}`], { cwd: here });
+  '--target=node20', `--outfile=${path.join('build', 'bridge.cjs')}`], { cwd: here });
 
-console.log('== 3/5  generate the SEA blob ==');
-run(process.execPath, ['--experimental-sea-config', 'sea-config.json'], { cwd: here });
+console.log(`== 3/3  package the executable (${target}) ==`);
+run('npx', ['--yes', '@yao-pkg/pkg', path.join('build', 'bridge.cjs'),
+  '--targets', target, '--output', path.join('build', outName)], { cwd: here });
 
-console.log('== 4/5  copy the Node runtime ==');
-copyFileSync(process.execPath, path.join(buildDir, outName));
-
-console.log('== 5/5  inject the blob (postject) ==');
-const args = [outName, 'NODE_SEA_BLOB', 'bridge.blob', '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc2f8b3'];
-if (process.platform === 'darwin') args.push('--macho-segment-name', 'NODE_SEA');
-run('npx', ['--yes', 'postject', ...args], { cwd: buildDir });
-
-console.log(`\n✅ Built  ${path.join('build', outName)}`);
-console.log(`   Unsigned — Windows SmartScreen will warn until code-signed. Test it by double-clicking; it prints a pair token and listens on :3001.`);
+console.log(`\n[ok] Built  apps/print-server/build/${outName}`);
+console.log('     Unsigned - Windows SmartScreen will warn until code-signed.');
+console.log('     Run it: it prints a pair token and listens on http://127.0.0.1:3001');

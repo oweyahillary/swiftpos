@@ -762,13 +762,18 @@ path resolved nowhere, so the bridge failed to load its renderer **even from sou
 bundle dependencies, so a single-file exe would crash on that same require.
 **FIX BUILT:** corrected the two require paths (`dist/transport.js`, `dist/index.js`) — the bridge now loads
 its renderer, verified by running the bundle (`/health` → `{ok, version 2.0.0}` + prints the pair token).
-Finished the build pipeline: `build-exe.mjs` does build shared/printing → **esbuild** bundle (index.js +
-shared/printing inlined into one self-contained `build/bridge.cjs`) → SEA blob → copy the Node runtime →
-**postject** inject → `build/SwiftPOS-PrintServer.exe`; `sea-config.json` added; `package.json` gains
-`esbuild`+`postject` devDeps and `npm run build:win`; `build/` gitignored. Steps 1–2 (build + bundle)
-verified here; the SEA/postject/exe steps run on the target OS (**Windows, Node ≥ 24** — SEA doesn't
-cross-compile) and are **not runnable in this sandbox** (Linux, Node 22). Unsigned exe → SmartScreen warns
-until code-signed (documented). Build + run instructions in `docs/PRINT-SERVER-SETUP.md`. Delivery:
+Finished the build pipeline in `build-exe.mjs`: build shared/printing → **esbuild** bundle (index.js +
+shared/printing inlined into one self-contained `build/bridge.cjs`) → **@yao-pkg/pkg** wraps that bundle +
+the Node runtime into `build/SwiftPOS-PrintServer.exe` in a single step. `package.json` gains
+`esbuild` + `@yao-pkg/pkg` devDeps and `npm run build:win`; `build/` gitignored. **VERIFIED end-to-end in
+the sandbox:** the full pipeline produced a 74 MB self-contained binary that runs (`/health` →
+`{ok, version 2.0.0}`, prints the pair token) with no Node installed. On Windows the target is
+`node22-win-x64` → the `.exe`; pkg downloads the base once. Unsigned → SmartScreen warns until code-signed
+(documented). **Two Windows issues fixed along the way:** (a) spawning `node.exe` (`C:\Program Files\…`)
+through a shell split the path — `run()` now uses `shell:false` for direct binaries; (b) Node's own
+SEA/postject flow failed because the official Windows `node.exe` is Authenticode-signed (postject "could
+not find the sentinel") — hence the switch to pkg, which handles the signed base binary itself
+(`sea-config.json` is now unused). Build + run instructions in `docs/PRINT-SERVER-SETUP.md`. Delivery:
 `docs/MANIFEST-2026-09-05-v.md`.
 
 ### A207 · P2 · FIX BUILT 2026-09-04 · Manager web portal has no shift oversight (desktop manager has Shift + Close Day)
