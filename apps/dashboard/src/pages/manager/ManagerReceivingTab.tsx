@@ -16,6 +16,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { useBusiness } from '../../context/BusinessContext';
+import { printDocument } from '../../lib/printDocument';
 
 interface TransferItem { product_id: string; quantity: number; products?: { name: string } | null }
 // A218 stock picker: /api/inventory rows (per-branch stock joined with product).
@@ -39,6 +41,23 @@ interface PO {
 export default function ManagerReceivingTab({ currency }: { currency: string }) {
   void currency;
   const { posApi, session, hasPermission } = usePOSAuth();
+  const { business } = useBusiness();
+
+  const printTransferNote = (t: Transfer) => {
+    printDocument({
+      docType: 'STOCK TRANSFER NOTE', number: t.transfer_number,
+      dateLabel: t.created_at ? new Date(t.created_at).toLocaleDateString() : undefined,
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'From', value: t.from_branch_name ?? session?.branchName ?? '—' },
+        { label: 'To', value: t.to_branch_name ?? '—' },
+        { label: 'Status', value: t.status },
+      ],
+      columns: [{ label: 'Product' }, { label: 'Quantity sent', align: 'right' }],
+      rows: t.stock_transfer_items.map(it => [it.products?.name ?? 'Item', String(it.quantity)]),
+      signatures: ['Despatched by', 'Received by'],
+    });
+  };
   const canTransfer = hasPermission('inventory.transfer');
   const canReceive  = hasPermission('inventory.receive');
   const branchId = session?.branchId;
@@ -267,12 +286,18 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                       {t.stock_transfer_items.length} item(s) · {t.status === 'pending' ? 'not yet despatched' : 'in transit — awaiting receipt'}
                     </p>
                   </div>
-                  {t.status === 'pending' && (
-                    <button onClick={() => void despatchTransfer(t)} disabled={despatchBusy === t.id}
-                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white transition-colors">
-                      {despatchBusy === t.id ? 'Despatching…' : 'Despatch'}
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => printTransferNote(t)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+                      Print note
                     </button>
-                  )}
+                    {t.status === 'pending' && (
+                      <button onClick={() => void despatchTransfer(t)} disabled={despatchBusy === t.id}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white transition-colors">
+                        {despatchBusy === t.id ? 'Despatching…' : 'Despatch'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

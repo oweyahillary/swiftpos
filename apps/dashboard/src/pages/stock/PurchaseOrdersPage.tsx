@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { api } from '../../lib/api';
+import { printDocument } from '../../lib/printDocument';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
 
@@ -158,18 +159,72 @@ export default function PurchaseOrdersPage() {
     setGrnNotes(''); setReceiveError(''); setReceiveTarget(po);
   };
 
-  const submitGRN = async () => {
+  const printPO = (po: PO) => {
+    let total = 0;
+    const rows = (po.purchase_order_items ?? []).map(it => {
+      const name = it.ingredients?.name ?? it.ingredient_name ?? 'Item';
+      const unit = it.ingredients?.unit ?? it.ingredient_unit ?? '';
+      const qty  = Number(it.quantity_ordered) || 0;
+      const cost = Number(it.unit_cost) || 0;
+      const line = qty * cost; total += line;
+      return [`${name}${unit ? ` (${unit})` : ''}`, String(qty), fmt(cost, currency), fmt(line, currency)];
+    });
+    printDocument({
+      docType: 'PURCHASE ORDER', number: po.po_number, dateLabel: fmtDate(po.order_date),
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'Supplier', value: po.suppliers?.name ?? '—' },
+        { label: 'Status', value: po.status },
+        ...(po.expected_date ? [{ label: 'Expected', value: fmtDate(po.expected_date) }] : []),
+      ],
+      columns: [
+        { label: 'Ingredient' }, { label: 'Ordered', align: 'right' },
+        { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' },
+      ],
+      rows,
+      totals: [{ label: 'Total', value: fmt(total, currency) }],
+      note: po.notes, signatures: ['Prepared by', 'Approved by'],
+    });
+  };
+
+  const printGRN = (grnNumber: string, po: PO, filled: GRNEntry[], notes: string) => {
+    let total = 0;
+    const rows = filled.map(i => {
+      const qty  = Number(i.quantity_receiving) || 0;
+      const cost = Number(i.unit_cost) || 0;
+      const line = qty * cost; total += line;
+      return [`${i.ingredient_name}${i.ingredient_unit ? ` (${i.ingredient_unit})` : ''}`, String(qty), fmt(cost, currency), fmt(line, currency)];
+    });
+    printDocument({
+      docType: 'GOODS RECEIVED NOTE', number: grnNumber, dateLabel: fmtDate(new Date().toISOString()),
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'Against PO', value: po.po_number },
+        { label: 'Supplier', value: po.suppliers?.name ?? '—' },
+      ],
+      columns: [
+        { label: 'Ingredient' }, { label: 'Received', align: 'right' },
+        { label: 'Unit Cost', align: 'right' }, { label: 'Line Total', align: 'right' },
+      ],
+      rows,
+      totals: [{ label: 'Total received value', value: fmt(total, currency) }],
+      note: notes, signatures: ['Received by', 'Checked by'],
+    });
+  };
+
+  const submitGRN = async (alsoPrint = false) => {
     if (!receiveTarget) return;
     const filled = grnItems.filter(i => i.quantity_receiving && Number(i.quantity_receiving) > 0);
     if (!filled.length) { setReceiveError('Enter a received quantity for at least one item'); return; }
     setReceiving(true); setReceiveError('');
     try {
-      await api.post('/api/stock/grn', {
+      const grn = await api.post<{ grn_number: string }>('/api/stock/grn', {
         branch_id: receiveTarget.branch_id,
         purchase_order_id: receiveTarget.id,
         notes: grnNotes || undefined,
         items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: Number(i.quantity_receiving), unit_cost: i.unit_cost ? Number(i.unit_cost) : undefined })),
       });
+      if (alsoPrint && grn?.grn_number) printGRN(grn.grn_number, receiveTarget, filled, grnNotes);
       setReceiveTarget(null); await load();
     } catch (e: any) { setReceiveError(e.message ?? 'Failed to record GRN'); }
     finally { setReceiving(false); }
@@ -280,6 +335,7 @@ export default function PurchaseOrdersPage() {
                   <button onClick={() => { setCancelTarget(selected); setCancelReason(''); }} className="px-3 py-1.5 bg-gray-800 hover:bg-red-500/10 text-red-400 text-xs font-semibold rounded-lg transition-colors">Cancel PO</button>
                 </>
               )}
+              <button onClick={() => printPO(selected)} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors">Print PO</button>
               <button onClick={() => setSelected(null)} className="text-gray-500 hover:text-white transition-colors text-lg ml-1">✕</button>
             </div>
           </div>
@@ -536,9 +592,13 @@ export default function PurchaseOrdersPage() {
             </div>
             <div className="px-6 py-4 border-t border-gray-800 flex gap-3 flex-shrink-0">
               <button onClick={() => setReceiveTarget(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-lg transition-colors">Cancel</button>
-              <button onClick={submitGRN} disabled={receiving}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition-colors">
+              <button onClick={() => submitGRN(false)} disabled={receiving}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors">
                 {receiving ? 'Saving…' : 'Confirm Receipt'}
+              </button>
+              <button onClick={() => submitGRN(true)} disabled={receiving}
+                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition-colors">
+                {receiving ? 'Saving…' : 'Confirm & Print GRN'}
               </button>
             </div>
           </div>
