@@ -163,7 +163,7 @@ function HardwareFields({
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function PrintersPage() {
+export default function PrintersPage({ branchId: propBranchId, branchName }: { branchId?: string; branchName?: string } = {}) {
   const { activeBranchId, branches: contextBranches } = useBranch();
 
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
@@ -196,7 +196,8 @@ export default function PrintersPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const branchId = activeBranchId ?? contextBranches[0]?.id ?? '';
+  const branchId = propBranchId ?? activeBranchId ?? contextBranches[0]?.id ?? '';
+  void branchName; // (name comes from the page chrome; kept for callers that pass it)
 
   // ── Load ─────────────────────────────────────────────────────────────────────
 

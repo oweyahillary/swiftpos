@@ -1304,7 +1304,7 @@ export default function ManagerDashboard() {
               <h2 className="text-xl font-bold text-white">Printer Setup</h2>
               <p className="text-gray-500 text-sm mt-0.5">Configure printers for {session.branchName}</p>
             </div>
-            <PrintersPage />
+            <PrintersPage branchId={session.branchId} branchName={session.branchName} />
           </div>
         );
       default: return <OverviewTab />;
