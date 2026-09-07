@@ -91,6 +91,14 @@ export interface ModifierGroup {
 }
 
 // Selections made at the POS for a single cart item
+export interface ComboComponent {
+  product_id: string;
+  name: string;
+  quantity: number;
+  is_kitchen: boolean;
+  category_id: string | null;   // A248: routes each component on its own category
+}
+
 export interface SelectedVariant {
   groupId: string;
   groupName: string;

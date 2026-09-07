@@ -16,7 +16,7 @@ import { getQZStatus, printBytesToServer } from './localPrintServer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from './buildReceiptOrder';
 import type { BranchPrinter } from './printKOT';
 import type { CartItem } from './cart';
-import type { Business } from '../types';
+import type { Business, ComboComponent } from '../types';
 
 const RENDERERS: Record<string, (o: any, b: any, w: 58 | 80) => Uint8Array> = {
   receipt:   renderReceiptEscPos,   // Customer Receipt
@@ -41,6 +41,7 @@ export interface PrintBillArgs {
   tableNumber?: string;
   ctlRate?: number;
   footerMessage?: string;
+  comboItems?: Record<string, ComboComponent[]>;   // A248
 }
 
 export interface PrintBillResult { printed: number; failed: number; configured: number }
@@ -55,6 +56,7 @@ export async function printBillToStations(a: PrintBillArgs): Promise<PrintBillRe
     change:      a.change ?? 0,
     payments:    a.payments ?? [],
     tableNumber: a.tableNumber,
+    comboItems:  a.comboItems,
   });
   const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0);
 

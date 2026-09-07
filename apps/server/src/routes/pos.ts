@@ -111,7 +111,7 @@ router.get('/init', async (req, res) => {
     // routes to the kitchen on its OWN category, so is_kitchen comes along.
     supabase
       .from('products')
-      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, is_kitchen, categories ( is_kitchen ) ) )')
+      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, is_kitchen, category_id, categories ( is_kitchen ) ) )')
       .eq('business_id', req.businessId)
       .eq('is_combo', true)
       .eq('status', 'active'),
@@ -253,7 +253,7 @@ router.get('/init', async (req, res) => {
   // combo_id -> ordered component list. Flattened here rather than in the till so
   // the desktop stores exactly what it prints and nothing has to understand
   // Supabase's nested join shape offline.
-  const comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>> = {};
+  const comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean; category_id: string | null }>> = {};
   for (const c of (comboRows ?? []) as any[]) {
     const items = (c.combo_items ?? [])
       .slice()
@@ -268,6 +268,9 @@ router.get('/init', async (req, res) => {
         is_kitchen: typeof ci.product?.is_kitchen === 'boolean'
           ? ci.product.is_kitchen
           : !!ci.product?.categories?.is_kitchen,
+        // A component routes on its OWN category (A248, Phase 1 of print parity),
+        // exactly as the desktop does; is_kitchen stays the fallback.
+        category_id: ci.product?.category_id ?? null,
       }))
       .filter((i: any) => i.product_id);
     if (items.length) comboItems[c.id] = items;

@@ -178,6 +178,7 @@ export default function CashierScreen() {
     pumps,
     setPumps,
     branchPrinters,
+    comboItems,
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
@@ -701,6 +702,7 @@ export default function CashierScreen() {
         total: orderTotal,
         tableNumber: tableName,
         footerMessage: printerSettings.footerMessage,
+        comboItems,
       });
       if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
       else if (res.configured === 0) alert('No full-order printers configured. Add them in Settings → Printers.');

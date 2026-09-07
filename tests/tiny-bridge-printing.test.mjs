@@ -159,6 +159,17 @@ ok('bill prints kitchen -> customer -> dispatcher (A247)', () => {
   assert.match(pb, /STATION_ORDER[^\n]*kot: 0, receipt: 1, expeditor: 2/);
   assert.match(pb, /\.sort\(\(x, y\) => \(STATION_ORDER/);
 });
+ok('Phase 1: combo components flow from comboItems into ticket units (A248)', () => {
+  const bo = r('apps/dashboard/src/lib/buildReceiptOrder.ts');
+  assert.match(bo, /comboItems\?: Record<string, ComboComponent\[\]>/);
+  assert.match(bo, /a\.comboItems\?\.\[c\.product\?\.id \?\? ''\]/);
+  const pb = r('apps/dashboard/src/lib/printBill.ts');
+  assert.match(pb, /comboItems:  a\.comboItems/);
+  const pos = r('apps/server/src/routes/pos.ts');
+  assert.match(pos, /category_id: ci\.product\?\.category_id \?\? null/);
+  const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
+  assert.match(hook, /setComboItems\(init\.comboItems \?\? \{\}\)/);
+});
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

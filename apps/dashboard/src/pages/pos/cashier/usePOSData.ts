@@ -13,6 +13,7 @@ import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
 import { connectQZ } from '../../../lib/localPrintServer';
 import type { BranchPrinter } from '../../../lib/printKOT';
+import type { ComboComponent } from '../../../types';
 import {
   deriveMode,
   type BusinessMode,
@@ -29,6 +30,7 @@ export interface POSData {
   products:          Product[];
   categories:        Category[];
   variantsByProduct: Record<string, VariantGroup[]>;
+  comboItems:        Record<string, ComboComponent[]>;
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -51,6 +53,7 @@ export function usePOSData(): POSData {
   const [categories,        setCategories]        = useState<Category[]>([]);
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
+  const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
   const [branchPrinters,    setBranchPrinters]    = useState<BranchPrinter[]>([]);
@@ -78,6 +81,7 @@ export function usePOSData(): POSData {
       setCategories(init.categories ?? []);
       setPaymentMethods(init.paymentMethods ?? []);
       setVariantsByProduct(init.variantsByProduct ?? {});
+      setComboItems(init.comboItems ?? {});
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
       // Clamp the web POS to the server's discount ceiling. Falls back to the
@@ -143,7 +147,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct,
+    products, categories, variantsByProduct, comboItems,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
     loading, error,

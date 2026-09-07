@@ -11,7 +11,7 @@
  * Money is integer CENTS, exactly as shared/printing expects.
  */
 import type { CartItem } from './cart';
-import type { Business } from '../types';
+import type { Business, ComboComponent } from '../types';
 
 export type ReceiptOrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';
 export interface ReceiptOrderUnit { name: string; quantity: number; portions: number; priceDelta: number; chosen: boolean; stationIds: []; attributes: [] }
@@ -55,6 +55,7 @@ export function buildReceiptOrder(a: {
   change: number;
   payments: { method: string; amount: number }[];
   tableNumber?: string;
+  comboItems?: Record<string, ComboComponent[]>;   // A248: combo_id -> components
 }): ReceiptOrder {
   return {
     billNumber:  a.orderNumber,
@@ -63,11 +64,17 @@ export function buildReceiptOrder(a: {
     soldAt:      new Date().toISOString(),
     tableNumber: a.tableNumber,
     lines: a.cart.map(c => {
-      // Sub-items: each variant + modifier becomes a named unit so kitchen and
-      // dispatch tickets list what's in the item, and the receipt shows them too.
-      // priceDelta stays 0 (names only) — the line's lineTotal already carries the
-      // full price, so totals reconcile exactly (no base/delta guessing).
+      // Sub-items: combo components (from comboItems) first, then variants and
+      // modifiers. Each becomes a named unit so kitchen/dispatch tickets list what
+      // is in the item; the receipt shows them too. priceDelta stays 0 (names only)
+      // — the line's lineTotal already carries the full price, so totals reconcile
+      // exactly. Components carry is_kitchen/category_id for later routing (A248).
+      const combo = a.comboItems?.[c.product?.id ?? ''] ?? [];
       const units = [
+        ...combo.map(k => ({
+          name: k.name, quantity: k.quantity, portions: 1, priceDelta: 0, chosen: false,
+          stationIds: [] as [], attributes: [] as [],
+        })),
         ...(c.selectedVariants ?? []).map(v => ({
           name: v.groupName ? `${v.groupName}: ${v.optionName}` : v.optionName,
           quantity: 1, portions: 1, priceDelta: 0, chosen: false, stationIds: [] as [], attributes: [] as [],
