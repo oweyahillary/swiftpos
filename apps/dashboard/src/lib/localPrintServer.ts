@@ -150,7 +150,11 @@ export async function testPrint(printerName: string, paperWidth: 58 | 80): Promi
   const res = await fetch(TEST_PATH, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
-    body:    JSON.stringify({ printer: printerName, target: printerName, paperWidth }),
+    // Explicit spooler target. Sending a BARE name here (the old bug) made the
+    // bridge treat "XP-80" as a network host and dial XP-80:9100 → "no such host".
+    // Prefix printer: so it goes to the Windows spooler, matching the receipt/KOT
+    // byte path (A244).
+    body:    JSON.stringify({ target: 'printer:' + printerName, paperWidth }),
     signal:  AbortSignal.timeout(10_000),
   });
 

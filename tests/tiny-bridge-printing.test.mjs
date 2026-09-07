@@ -125,5 +125,11 @@ ok('till pairs the bridge: device-local receipt printer + token/printer inputs',
   assert.match(pp, /saveRxSettings\(\{ receiptPrinterName: e\.target\.value \}\)/);
 });
 
+// A244: test print must target the Windows spooler, not the network
+ok('testPrint sends a printer:-prefixed spooler target (not a bare name)', () => {
+  assert.match(lps, /target: 'printer:' \+ printerName/);
+  assert.doesNotMatch(lps, /target: printerName\b/);   // the bare-name bug must stay gone
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);
