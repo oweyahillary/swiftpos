@@ -19,7 +19,7 @@
 import type { CartItem } from './cart';
 import type { PrinterSettings } from '../hooks/usePrinterSettings';
 import { printReceipt } from './printReceipt';
-import { getQZStatus, getPrintToken, printBytesToServer } from './localPrintServer';
+import { getQZStatus, printBytesToServer } from './localPrintServer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -261,14 +261,13 @@ export async function printKOTs(
     );
 
     // Silent path: the browser renders ESC/POS and the bridge forwards the bytes
-    // (same contract as the customer receipt). Requires the bridge connected, a
-    // pairing token, and a chosen OS printer name. Any failure drops to the
-    // browser dialog so a kitchen ticket is never silently lost (A242).
+    // (same contract as the customer receipt). Requires the bridge connected and a
+    // chosen OS printer name; a trusted dashboard origin authorises with no token.
+    // Any failure drops to the browser dialog so a kitchen ticket is never lost (A242).
     const useBridge =
       printer.connection_type === 'qz' &&
       getQZStatus() === 'connected' &&
-      !!printer.printer_name &&
-      !!getPrintToken();
+      !!printer.printer_name;
 
     try {
       if (useBridge) {

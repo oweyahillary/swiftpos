@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,7 +33,7 @@ import (
 	"time"
 )
 
-const version = "4.1.0"
+const version = "4.2.0"
 
 var token string
 
@@ -50,8 +51,8 @@ func main() {
 
 	addr := "127.0.0.1:" + port
 	fmt.Printf("SwiftPOS Print Bridge %s on http://%s\n", version, addr)
-	fmt.Printf("Bound to loopback only; Host-locked to localhost (DNS-rebinding safe).\n\n")
-	fmt.Printf("Pair token (paste into the till's printer settings):\n   %s\n\n", token)
+	fmt.Printf("Bound to loopback only; Host-locked + origin-allowlisted (DNS-rebinding safe).\n\n")
+	fmt.Printf("Trusted dashboards print with no pairing. Optional manual token:\n   %s\n\n", token)
 	fmt.Printf("Stored at %s. Delete it and restart to rotate.\n", tokenPath())
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		fmt.Fprintln(os.Stderr, "listen error:", err)
@@ -102,12 +103,21 @@ func hostOK(r *http.Request) bool {
 
 // cors reflects the request origin (open) and short-circuits preflight.
 func cors(w http.ResponseWriter, r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin != "" {
+	// Reflect CORS ONLY for an allowed origin. A page from any other origin gets
+	// no Access-Control-Allow-Origin, so the browser refuses to read our
+	// responses — and the print handlers reject it outright (see authorized()).
+	if origin := r.Header.Get("Origin"); origin != "" && originOK(r) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Print-Token")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		// Chrome Private Network Access / Local Network Access: a preflight from a
+		// public https origin to a private IP (127.0.0.1) is blocked unless the
+		// response carries this header. Without it, silent printing silently stops
+		// as Chrome finishes rolling out LNA.
+		if r.Header.Get("Access-Control-Request-Private-Network") == "true" {
+			w.Header().Set("Access-Control-Allow-Private-Network", "true")
+		}
 	}
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(204)
@@ -130,6 +140,59 @@ func tokenOK(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(g), []byte(token)) == 1
 }
 
+// allowedOrigins are the exact dashboard origins that may drive the bridge with
+// no token. These are stable production aliases. We do NOT and MUST NOT wildcard
+// a shared hosting suffix such as vercel.app — that would let ANY tenant's
+// deployment (incl. an attacker's *.vercel.app) print to this till. Preview URLs
+// are intentionally excluded: previews should not drive a real printer.
+var allowedOrigins = map[string]bool{
+	"https://swiftpos-dashboard.vercel.app": true, // prod
+	"https://swiftpos-three.vercel.app":     true, // test
+}
+
+// ownedDomains: once SwiftPOS runs on a domain we OWN, an Origin whose host is
+// that domain or any subdomain of it (e.g. client1.swiftpos.example) is allowed.
+// EMPTY until such a domain exists. Only ever add a domain every subdomain of
+// which we control — never a shared suffix like vercel.app.
+var ownedDomains = []string{
+	// "swiftpos.example",
+}
+
+// originOK reports whether the request's browser Origin is one we trust. The
+// browser sets Origin itself and page JS cannot forge it, so this is a sound
+// wall against a random website driving the bridge. Loopback dev origins (any
+// port) are always allowed.
+func originOK(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return false
+	}
+	if allowedOrigins[o] {
+		return true
+	}
+	u, err := url.Parse(o)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname() // strips any port
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	for _, d := range ownedDomains {
+		if host == d || strings.HasSuffix(host, "."+d) { // real subdomain suffix, not endsWith
+			return true
+		}
+	}
+	return false
+}
+
+// authorized: an allowed Origin needs no token (the zero-config path); a valid
+// pairing token also authorizes (kept for non-browser callers and as a manual
+// fallback). Combined with hostOK (DNS-rebinding wall) on every handler.
+func authorized(r *http.Request) bool {
+	return originOK(r) || tokenOK(r)
+}
+
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	if !hostOK(r) {
 		writeJSON(w, 403, map[string]any{"error": "bad host"})
@@ -149,8 +212,8 @@ func handlePrinters(w http.ResponseWriter, r *http.Request) {
 	if !cors(w, r) {
 		return
 	}
-	if !tokenOK(r) {
-		writeJSON(w, 401, map[string]any{"error": "missing or invalid X-Print-Token"})
+	if !authorized(r) {
+		writeJSON(w, 403, map[string]any{"error": "origin not allowed and no valid X-Print-Token"})
 		return
 	}
 	names, err := listPrinters()
@@ -173,8 +236,8 @@ func handlePrint(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 405, map[string]any{"error": "POST only"})
 		return
 	}
-	if !tokenOK(r) {
-		writeJSON(w, 401, map[string]any{"error": "missing or invalid X-Print-Token"})
+	if !authorized(r) {
+		writeJSON(w, 403, map[string]any{"error": "origin not allowed and no valid X-Print-Token"})
 		return
 	}
 	var body struct {
@@ -214,8 +277,8 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 405, map[string]any{"error": "POST only"})
 		return
 	}
-	if !tokenOK(r) {
-		writeJSON(w, 401, map[string]any{"error": "missing or invalid X-Print-Token"})
+	if !authorized(r) {
+		writeJSON(w, 403, map[string]any{"error": "origin not allowed and no valid X-Print-Token"})
 		return
 	}
 	var body struct {

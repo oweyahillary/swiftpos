@@ -12,7 +12,7 @@ import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
 import EvenSplitPanel from './EvenSplitPanel';
 import ByItemSplitPanel from './ByItemSplitPanel';
 import { printReceipt } from '../../lib/printReceipt';
-import { printBytesToServer, getPrintToken, getQZStatus } from '../../lib/localPrintServer';
+import { printBytesToServer, getQZStatus } from '../../lib/localPrintServer';
 import { renderEscPos } from '../../lib/escposRenderer';
 import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
 import { usePOSAuth } from '../../context/POSAuthContext';
@@ -428,7 +428,7 @@ export default function PaymentModal({
     // same shared/printing code as desktop. Any failure falls back to the browser
     // dialog below, so the cashier is never blocked.
     const printerName = printerSettings.receiptPrinterName;
-    if (completedOrder && printerName && getPrintToken() && getQZStatus() === 'connected') {
+    if (completedOrder && printerName && getQZStatus() === 'connected') {
       try {
         const order = buildReceiptOrder({
           orderNumber: completedOrder.orderNumber,

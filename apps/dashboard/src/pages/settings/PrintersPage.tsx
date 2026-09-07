@@ -394,7 +394,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
           <div>
             <p className="text-blue-300 text-sm font-medium">Enable silent printing with SwiftPOS Print Server</p>
             <p className="text-blue-400/60 text-xs mt-0.5">
-              Install <span className="font-mono text-blue-300">SwiftPOS-PrintServer.exe</span> from your installation folder, then run <span className="font-mono text-blue-300">install-windows-service.bat</span> as Administrator. Receipts and KOTs will print instantly with no dialog.
+              Install <span className="font-mono text-blue-300">SwiftPOS-PrintServer.exe</span> from your installation folder, then run <span className="font-mono text-blue-300">install-startup.bat</span> to start it automatically at logon. Receipts and KOTs will print instantly with no dialog — and no token to paste on this dashboard.
             </p>
           </div>
         </div>
@@ -406,17 +406,17 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
           <div>
             <p className="text-white text-sm font-medium">Silent receipt printing</p>
             <p className="text-gray-500 text-xs mt-0.5">
-              Paste the pairing token the print server shows on first run, and pick the receipt printer.
-              Once set, sales print instantly with no dialog on this device.
+              Just pick the receipt printer — this dashboard is trusted by the print server, so no
+              pairing token is needed. Sales then print instantly with no dialog on this device.
             </p>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Pairing token</label>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Pairing token <span className="normal-case text-gray-600">(optional)</span></label>
               <input
                 type="password" value={pairToken}
                 onChange={e => { setPairToken(e.target.value); setPrintToken(e.target.value); }}
-                placeholder="Paste token from the print server"
+                placeholder="Only needed for an untrusted domain"
                 className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-green-500" />
             </div>
             <div className="flex flex-col gap-1">

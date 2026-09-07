@@ -53,8 +53,8 @@ ok('receipt honours the copies setting on the byte path', () => {
 });
 
 // A240: Go bridge security — loopback + Host-lock + token-gated
-ok('Go bridge is v4.1 with /printers + /print/test + open CORS', () => {
-  assert.match(go, /version = "4\.1\.0"/);
+ok('Go bridge is v4.2 with /printers + /print/test + open CORS', () => {
+  assert.match(go, /version = "4\.2\.0"/);
   assert.match(go, /HandleFunc\("\/printers"/);
   assert.match(go, /HandleFunc\("\/print\/test"/);
   assert.match(go, /Access-Control-Allow-Origin", origin/);
@@ -64,8 +64,30 @@ ok('Go bridge validates the Host header on every handler (DNS-rebinding defence)
   assert.strictEqual((go.match(/if !hostOK\(r\)/g) || []).length, 4);
   assert.match(go, /case "127\.0\.0\.1", "localhost"/);
 });
-ok('Go bridge token-gates /printers (no anonymous printer enumeration)', () => {
-  assert.strictEqual((go.match(/if !tokenOK\(r\)/g) || []).length, 3);
+ok('Go bridge authorises by allowlisted Origin OR token (token optional)', () => {
+  assert.match(go, /func originOK\(r \*http\.Request\) bool/);
+  assert.match(go, /func authorized\(r \*http\.Request\) bool/);
+  assert.match(go, /return originOK\(r\) \|\| tokenOK\(r\)/);
+  // the three write/enumerate handlers now gate on authorized(), not raw tokenOK
+  assert.strictEqual((go.match(/if !authorized\(r\)/g) || []).length, 3);
+});
+ok('origin allowlist is exact — never wildcards a shared hosting suffix', () => {
+  assert.match(go, /"https:\/\/swiftpos-dashboard\.vercel\.app": true/);
+  assert.match(go, /"https:\/\/swiftpos-three\.vercel\.app":\s+true/);
+  // the safe subdomain match is host == d || suffix "."+d, never a loose endsWith
+  assert.match(go, /host == d \|\| strings\.HasSuffix\(host, "\."\+d\)/);
+  // and there must be NO allowlist entry that is a bare/duplicated vercel.app value
+  assert.doesNotMatch(go, /allowedOrigins = map\[string\]bool\{[^}]*"https:\/\/vercel\.app"/s);
+});
+ok('bridge sends the Private Network Access header for trusted origins', () => {
+  assert.match(go, /Access-Control-Request-Private-Network.*==.*"true"/);
+  assert.match(go, /Set\("Access-Control-Allow-Private-Network", "true"\)/);
+  // …and only inside the origin-gated CORS block (reflected only when originOK)
+  assert.match(go, /origin != "" && originOK\(r\)/);
+});
+ok('token is optional in the dashboard print gates (origin authorises)', () => {
+  assert.doesNotMatch(pm, /getPrintToken\(\) && getQZStatus/);
+  assert.doesNotMatch(kot, /getPrintToken/);
 });
 
 // A240: dashboard sends the token when enumerating printers
