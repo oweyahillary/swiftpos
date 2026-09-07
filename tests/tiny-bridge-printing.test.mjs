@@ -18,7 +18,6 @@ const lps  = r('apps/dashboard/src/lib/localPrintServer.ts');
 const pm   = r('apps/dashboard/src/pages/pos/PaymentModal.tsx');
 const go   = r('apps/print-server/go/main.go');
 const rend = r('apps/dashboard/src/lib/escposRenderer.js');
-const kot  = r('apps/dashboard/src/lib/printKOT.ts');
 const rcpt = r('apps/dashboard/src/lib/printReceipt.ts');
 const ups  = r('apps/dashboard/src/hooks/usePrinterSettings.ts');
 const pp   = r('apps/dashboard/src/pages/settings/PrintersPage.tsx');
@@ -87,7 +86,6 @@ ok('bridge sends the Private Network Access header for trusted origins', () => {
 });
 ok('token is optional in the dashboard print gates (origin authorises)', () => {
   assert.doesNotMatch(pm, /getPrintToken\(\) && getQZStatus/);
-  assert.doesNotMatch(kot, /getPrintToken/);
 });
 
 // A240: dashboard sends the token when enumerating printers
@@ -98,16 +96,6 @@ ok('dashboard sends the pairing token to /printers', () => {
   assert.match(seg, /tokenHeaders\(\)/);
 });
 
-// A242: KOT migrated to the byte path; old QZ contract gone
-ok('KOT renders ESC/POS in the browser and forwards bytes', () => {
-  assert.match(kot, /function buildKotEscPos\(/);
-  assert.match(kot, /await printBytesToServer\(`printer:\$\{printer\.printer_name\}`, bytes\)/);
-  assert.match(kot, /0x1d, 0x56, 0x00/);
-});
-ok('KOT no longer uses the old printToQZ contract, and falls back to browser', () => {
-  assert.doesNotMatch(kot, /printToQZ/);
-  assert.match(kot, /browserFallback/);
-});
 
 // A243: dead legacy paths removed everywhere
 ok('legacy printToQZ / printReceiptViaServer are fully retired', () => {
@@ -175,11 +163,14 @@ ok('Phase 3: kitchen exclusions applied (drinks off the kitchen ticket) (A250)',
   const pr = r('apps/dashboard/src/lib/printRouted.ts');
   assert.match(pr, /isExcludedFromKitchen\(u\.name, exc\)/);
   assert.match(pr, /stationIds: u\.stationIds\.filter\(\(id: string\) => !ids\.kitchen\.includes\(id\)\)/);
-  const kot = r('apps/dashboard/src/lib/printKOT.ts');
-  assert.match(kot, /printer\.type === 'kitchen' \|\| printer\.type === 'kot'/);
-  assert.match(kot, /isExcludedFromKitchen\(i\.product\.name, kitchenExclusions\)/);
   const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
   assert.match(hook, /setKitchenExclusions\(init\.kitchenExclusions \?\? \[\]\)/);
+});
+ok('Phase 4: timing split — Send-to-Kitchen fires kitchen+dispatch, Print Bill fires receipt (A253)', () => {
+  const cs = r('apps/dashboard/src/pages/pos/CashierScreen.tsx');
+  assert.match(cs, /kinds: \['receipt'\],/);              // Print Bill = customer proforma
+  assert.strictEqual((cs.match(/kinds: \['kitchen', 'dispatch'\],/g) || []).length, 2);  // send + pay-first
+  assert.doesNotMatch(cs, /printKOTs\(/);                  // old fan-out retired
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);

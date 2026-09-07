@@ -21,7 +21,7 @@ import ShiftModal from './ShiftModal';
 import type { Shift, ShiftModalMode } from './ShiftModal';
 import PrinterSettingsModal from './PrinterSettingsModal';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
-import { printKOTs, type BranchPrinter } from '../../lib/printKOT';
+import { type BranchPrinter } from '../../lib/printKOT';
 import { printRoutedStations } from '../../lib/printRouted';
 import POSDrawer from './POSDrawer';
 import MinimartPOS from './MinimartPOS';
@@ -706,6 +706,7 @@ export default function CashierScreen() {
         comboItems,
         kitchenExclusions,
         categories,
+        kinds: ['receipt'],            // A253: Print Bill is a customer proforma, not the kitchen fire
       });
       if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
       else if (res.configured === 0) alert('No full-order printers configured. Add them in Settings → Printers.');
@@ -745,13 +746,16 @@ export default function CashierScreen() {
       setSentOrderIds(prev => ({ ...prev, [activeKey]: result.orderId }));
       // Print KOT if printers configured
       if (branchPrinters.length > 0) {
-        printKOTs(
-          cart,
-          { orderNumber: result.orderNumber, tableNumber: order.tableId ? order.tableName : undefined, orderType: otype, branchName: session.branchName },
-          branchPrinters,
-          printerSettings,
-          kitchenExclusions,
-        ).catch(err => console.error('[KOT]', err));
+        printRoutedStations({
+          cart, branchPrinters, business: business!,
+          orderNumber: result.orderNumber,
+          orderType: otype,
+          cashierName: session.staffName ?? 'Cashier',
+          total: orderTotal,
+          tableNumber: order.tableId ? order.tableName : undefined,
+          comboItems, categories, kitchenExclusions,
+          kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
+        }).catch(err => console.error('[KOT]', err));
       }
     } catch (err: any) {
       console.error('Send to kitchen failed:', err);
@@ -1978,19 +1982,17 @@ export default function CashierScreen() {
           onSuccess={(orderNumber) => {
             // In pay-first mode, print KOT now. In order-first it was already printed on Send to Kitchen.
             if (isRestaurant && orderMode === 'pay_first' && branchPrinters.length > 0) {
-              printKOTs(
-                cart,
-                {
-                  orderNumber,
-                  tableNumber: activeKey && openOrders[activeKey]?.tableName
-                    ? openOrders[activeKey].tableName : undefined,
-                  orderType: getOrderType(),
-                  branchName: session?.branchName,
-                },
-                branchPrinters,
-                printerSettings,
-                kitchenExclusions,
-              ).catch(err => console.error('[KOT]', err));
+              printRoutedStations({
+                cart, branchPrinters, business: business!,
+                orderNumber,
+                orderType: getOrderType(),
+                cashierName: session?.staffName ?? 'Cashier',
+                total: orderTotal,
+                tableNumber: activeKey && openOrders[activeKey]?.tableName
+                  ? openOrders[activeKey].tableName : undefined,
+                comboItems, categories, kitchenExclusions,
+                kinds: ['kitchen', 'dispatch'],   // A253: pay-first has no send step
+              }).catch(err => console.error('[KOT]', err));
             }
             // Release pump on payment
             if (isPetrol && activeKey && openOrders[activeKey]?.pumpId) {
