@@ -5,6 +5,7 @@
 // (see shared/printing/test/sample.ts → SAMPLE-OUTPUT.txt, the golden format).
 import { renderTicket } from '../../shared/printing/src/render';
 import { toEscPos } from '../../shared/printing/src/escpos';
+import { isExcludedFromKitchen, toUnits, stationsForCategory, idsByKind } from '../../shared/printing/src/routing';
 
 // Station configs copied from shared/printing/src/index.ts (receipt/kitchen/
 // dispatch presets) rather than imported, so the browser bundle does not pull in
@@ -44,5 +45,31 @@ export function renderKitchenEscPos(order, business, paperWidth) {
 export function renderDispatchEscPos(order, business, paperWidth) {
   return toEscPos(renderTicket({ order: withDate(order), business, station: dispatchStation(paperWidth) }));
 }
+// B-engine (A252): render ONE station by id/kind, so units routed to that station
+// (via the shared toUnits/stationsForCategory) print there and nowhere else.
+function stationConfig(station) {
+  const common = { id: station.id, paperWidthMm: station.paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
+  if (station.kind === 'receipt')
+    return { ...common, name: 'Receipt', kind: 'receipt', includeUnits: 'all', showPrices: true,
+      showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: false,
+      attributeStyle: 'inline-when-simple', openCashDrawer: true };
+  if (station.kind === 'kitchen')
+    return { ...common, name: 'Kitchen', kind: 'kitchen', includeUnits: 'routed', showPrices: false,
+      showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: true, showFooterCount: true,
+      attributeStyle: 'always-sublines', openCashDrawer: false };
+  return { ...common, name: 'Dispatch', kind: 'dispatch', includeUnits: 'all', showPrices: false,
+    showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: true,
+    attributeStyle: 'inline-when-simple', openCashDrawer: false };
+}
+export function renderStationEscPos(order, business, station) {
+  return toEscPos(renderTicket({ order: withDate(order), business, station: stationConfig(station) }));
+}
+export { toUnits, stationsForCategory, idsByKind };
+
+// Kitchen exclusions (owner-named items that must never reach a kitchen ticket).
+// Re-exported from the shared routing module so the web applies the SAME rule as
+// the desktop, one copy (A250).
+export { isExcludedFromKitchen };
+
 // Back-compat: the customer-receipt renderer keeps its old name (PaymentModal).
 export const renderEscPos = renderReceiptEscPos;

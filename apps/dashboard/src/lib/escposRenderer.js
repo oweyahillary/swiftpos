@@ -482,6 +482,115 @@ function toEscPos(doc, opts = {}) {
   return Buffer.from(out);
 }
 
+// shared/printing/src/routing.ts
+var toCents = (v) => Math.round((Number(v) || 0) * 100);
+function idsByKind(stations) {
+  return {
+    kitchen: stations.filter((s) => s.kind === "kitchen").map((s) => s.id),
+    dispatch: stations.filter((s) => s.kind === "dispatch").map((s) => s.id)
+  };
+}
+function stationsForCategory(categoryId, ids, routing) {
+  const all = [...ids.kitchen, ...ids.dispatch];
+  if (!categoryId) return ids.dispatch;
+  const configured = (routing.byCategory[categoryId] ?? []).filter((id) => all.includes(id));
+  if (configured.length) return configured;
+  return routing.kitchenCategories.has(categoryId) ? ids.kitchen : ids.dispatch;
+}
+function describeFromText(text) {
+  if (!text) return [];
+  const raw = text.trim();
+  if (!raw || raw.length > 200) return [];
+  const SEPARATORS = [/\r?\n/, /\s*[•·]\s*/, /\s+\+\s+/, /\s*,\s*/, /\s*\/\s*/];
+  for (const sep of SEPARATORS) {
+    const parts = raw.split(sep).map((t) => t.trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    if (parts.length > 12) continue;
+    const looksLikeItems = parts.every((t) => t.length <= 40 && t.split(/\s+/).length <= 6 && !/[.;:!?]$/.test(t));
+    if (!looksLikeItems) continue;
+    return parts;
+  }
+  return [];
+}
+function isExcludedFromKitchen(name, exclusions) {
+  if (!name) return false;
+  const hay = name.toLowerCase();
+  return exclusions.some((term) => {
+    const t = term.trim().toLowerCase();
+    if (!t) return false;
+    const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`, "i").test(hay);
+  });
+}
+function toUnits(line, ids, lineStationIds, routing) {
+  const lineProductId = line.product.id;
+  const lineName = line.product.name;
+  const units = [];
+  for (const c of line.comboComponents ?? []) {
+    units.push({
+      productId: c.name,
+      name: c.name,
+      quantity: c.quantity,
+      portions: 1,
+      priceDelta: 0,
+      chosen: false,
+      attributes: [],
+      stationIds: c.category_id ? stationsForCategory(c.category_id, ids, routing) : c.is_kitchen ? ids.kitchen : ids.dispatch
+    });
+  }
+  if (units.length === 0) {
+    for (const part of describeFromText(line.product.description)) {
+      units.push({
+        productId: part,
+        name: part,
+        quantity: 1,
+        portions: 1,
+        priceDelta: 0,
+        chosen: false,
+        attributes: [],
+        stationIds: lineStationIds
+      });
+    }
+  }
+  const attrs = (line.selectedVariants ?? []).filter((v) => v.optionName).map((v) => ({
+    group: v.groupName ?? "",
+    option: v.optionName,
+    count: 1,
+    priceDelta: 0
+  }));
+  if (attrs.length) {
+    if (units.length) {
+      units[0].attributes = attrs;
+      units[0].chosen = true;
+    } else {
+      units.push({
+        productId: lineProductId,
+        name: lineName,
+        quantity: 1,
+        portions: 1,
+        priceDelta: 0,
+        chosen: true,
+        attributes: attrs,
+        stationIds: lineStationIds
+      });
+    }
+  }
+  for (const m of line.selectedModifiers ?? []) {
+    if (!m.name) continue;
+    units.push({
+      productId: m.name,
+      name: m.name,
+      quantity: 1,
+      portions: 1,
+      priceDelta: toCents(m.price ?? 0),
+      chosen: true,
+      attributes: [],
+      stationIds: ids.dispatch
+    });
+  }
+  return units;
+}
+
 // scripts/escpos-renderer/entry.ts
 var receiptStation = (paperWidthMm) => ({
   id: "web-receipt",
@@ -547,10 +656,62 @@ function renderKitchenEscPos(order, business, paperWidth) {
 function renderDispatchEscPos(order, business, paperWidth) {
   return toEscPos(renderTicket({ order: withDate(order), business, station: dispatchStation(paperWidth) }));
 }
+function stationConfig(station) {
+  const common = { id: station.id, paperWidthMm: station.paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
+  if (station.kind === "receipt")
+    return {
+      ...common,
+      name: "Receipt",
+      kind: "receipt",
+      includeUnits: "all",
+      showPrices: true,
+      showUnchangedUnits: true,
+      showOptionPrices: false,
+      emphasizeParent: false,
+      showFooterCount: false,
+      attributeStyle: "inline-when-simple",
+      openCashDrawer: true
+    };
+  if (station.kind === "kitchen")
+    return {
+      ...common,
+      name: "Kitchen",
+      kind: "kitchen",
+      includeUnits: "routed",
+      showPrices: false,
+      showUnchangedUnits: true,
+      showOptionPrices: false,
+      emphasizeParent: true,
+      showFooterCount: true,
+      attributeStyle: "always-sublines",
+      openCashDrawer: false
+    };
+  return {
+    ...common,
+    name: "Dispatch",
+    kind: "dispatch",
+    includeUnits: "all",
+    showPrices: false,
+    showUnchangedUnits: true,
+    showOptionPrices: false,
+    emphasizeParent: false,
+    showFooterCount: true,
+    attributeStyle: "inline-when-simple",
+    openCashDrawer: false
+  };
+}
+function renderStationEscPos(order, business, station) {
+  return toEscPos(renderTicket({ order: withDate(order), business, station: stationConfig(station) }));
+}
 var renderEscPos = renderReceiptEscPos;
 export {
+  idsByKind,
+  isExcludedFromKitchen,
   renderDispatchEscPos,
   renderEscPos,
   renderKitchenEscPos,
-  renderReceiptEscPos
+  renderReceiptEscPos,
+  renderStationEscPos,
+  stationsForCategory,
+  toUnits
 };

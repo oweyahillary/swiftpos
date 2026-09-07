@@ -137,38 +137,49 @@ ok('bundle exports the 3 station renderers', () => {
   assert.match(rend, /renderKitchenEscPos/);
   assert.match(rend, /renderDispatchEscPos/);
 });
-ok('printBill fans receipt/kot/expeditor via the bridge, silently', () => {
-  const pb = r('apps/dashboard/src/lib/printBill.ts');
-  assert.match(pb, /receipt:\s+renderReceiptEscPos/);
-  assert.match(pb, /kot:\s+renderKitchenEscPos/);
-  assert.match(pb, /expeditor: renderDispatchEscPos/);
-  assert.match(pb, /printBytesToServer\(`printer:\$\{p\.printer_name\}`, bytes\)/);
+ok('printRouted renders each station by id/kind with shared component routing (A252)', () => {
+  const pr = r('apps/dashboard/src/lib/printRouted.ts');
+  assert.match(pr, /renderStationEscPos\(order, biz as any, \{ id: p\.id, kind: kindOf\(p\.type\)/);
+  assert.match(pr, /toUnits\(routable, ids, lineStationIds, routing\)/);
+  assert.match(pr, /stationsForCategory\(cat, ids, routing\)/);
+  assert.match(pr, /printBytesToServer\(`printer:\$\{p\.printer_name\}`, bytes\)/);
 });
 ok('the old guest-check iframe/window.print dialog is gone', () => {
   const cs = r('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   assert.doesNotMatch(cs, /This is not a receipt/);          // the ad-hoc bill HTML is gone
   assert.doesNotMatch(cs, /Please pay at the counter/);
-  assert.match(cs, /printBillToStations/);                    // Print Bill routes through the bridge
+  assert.match(cs, /printRoutedStations/);                    // Print Bill routes through the shared engine
 });
 ok('receipt business config sets currencyCode (no "PAY: undefined")', () => {
   const bo = r('apps/dashboard/src/lib/buildReceiptOrder.ts');
   assert.match(bo, /currencyCode:\s+b\.currency \|\| 'KES'/);
 });
-ok('bill prints kitchen -> customer -> dispatcher (A247)', () => {
-  const pb = r('apps/dashboard/src/lib/printBill.ts');
-  assert.match(pb, /STATION_ORDER[^\n]*kot: 0, receipt: 1, expeditor: 2/);
-  assert.match(pb, /\.sort\(\(x, y\) => \(STATION_ORDER/);
+ok('bill prints kitchen -> customer -> dispatcher (A247/A252)', () => {
+  const pr = r('apps/dashboard/src/lib/printRouted.ts');
+  assert.match(pr, /ORDER: Record<Kind, number> = \{ kitchen: 0, receipt: 1, dispatch: 2 \}/);
+  assert.match(pr, /\.sort\(\(x, y\) => ORDER\[kindOf\(x\.type\)\]/);
 });
 ok('Phase 1: combo components flow from comboItems into ticket units (A248)', () => {
   const bo = r('apps/dashboard/src/lib/buildReceiptOrder.ts');
   assert.match(bo, /comboItems\?: Record<string, ComboComponent\[\]>/);
   assert.match(bo, /a\.comboItems\?\.\[c\.product\?\.id \?\? ''\]/);
-  const pb = r('apps/dashboard/src/lib/printBill.ts');
-  assert.match(pb, /comboItems:  a\.comboItems/);
+  const pr = r('apps/dashboard/src/lib/printRouted.ts');
+  assert.match(pr, /comboComponents: a\.comboItems\?\.\[item\.product\?\.id \?\? ''\]/);
   const pos = r('apps/server/src/routes/pos.ts');
   assert.match(pos, /category_id: ci\.product\?\.category_id \?\? null/);
   const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
   assert.match(hook, /setComboItems\(init\.comboItems \?\? \{\}\)/);
+});
+ok('Phase 3: kitchen exclusions applied (drinks off the kitchen ticket) (A250)', () => {
+  assert.match(rend, /isExcludedFromKitchen/);   // shared rule bundled for the web
+  const pr = r('apps/dashboard/src/lib/printRouted.ts');
+  assert.match(pr, /isExcludedFromKitchen\(u\.name, exc\)/);
+  assert.match(pr, /stationIds: u\.stationIds\.filter\(\(id: string\) => !ids\.kitchen\.includes\(id\)\)/);
+  const kot = r('apps/dashboard/src/lib/printKOT.ts');
+  assert.match(kot, /printer\.type === 'kitchen' \|\| printer\.type === 'kot'/);
+  assert.match(kot, /isExcludedFromKitchen\(i\.product\.name, kitchenExclusions\)/);
+  const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
+  assert.match(hook, /setKitchenExclusions\(init\.kitchenExclusions \?\? \[\]\)/);
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);

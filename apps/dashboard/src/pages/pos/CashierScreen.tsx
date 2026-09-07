@@ -22,7 +22,7 @@ import type { Shift, ShiftModalMode } from './ShiftModal';
 import PrinterSettingsModal from './PrinterSettingsModal';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import { printKOTs, type BranchPrinter } from '../../lib/printKOT';
-import { printBillToStations } from '../../lib/printBill';
+import { printRoutedStations } from '../../lib/printRouted';
 import POSDrawer from './POSDrawer';
 import MinimartPOS from './MinimartPOS';
 
@@ -179,6 +179,7 @@ export default function CashierScreen() {
     setPumps,
     branchPrinters,
     comboItems,
+    kitchenExclusions,
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
@@ -692,7 +693,7 @@ export default function CashierScreen() {
     const tableName = activeKey && openOrders[activeKey]?.tableName
       ? String(openOrders[activeKey].tableName) : undefined;
     try {
-      const res = await printBillToStations({
+      const res = await printRoutedStations({
         cart,
         branchPrinters,
         business: business!,
@@ -703,6 +704,8 @@ export default function CashierScreen() {
         tableNumber: tableName,
         footerMessage: printerSettings.footerMessage,
         comboItems,
+        kitchenExclusions,
+        categories,
       });
       if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
       else if (res.configured === 0) alert('No full-order printers configured. Add them in Settings → Printers.');
@@ -747,6 +750,7 @@ export default function CashierScreen() {
           { orderNumber: result.orderNumber, tableNumber: order.tableId ? order.tableName : undefined, orderType: otype, branchName: session.branchName },
           branchPrinters,
           printerSettings,
+          kitchenExclusions,
         ).catch(err => console.error('[KOT]', err));
       }
     } catch (err: any) {
@@ -1985,6 +1989,7 @@ export default function CashierScreen() {
                 },
                 branchPrinters,
                 printerSettings,
+                kitchenExclusions,
               ).catch(err => console.error('[KOT]', err));
             }
             // Release pump on payment

@@ -20,6 +20,7 @@ export interface Category {
   icon: string | null;
   sort_order: number;
   status: 'active' | 'inactive';
+  is_kitchen?: boolean;   // A252: routing fallback when a category has no station config
   created_at: string;
 }
 
