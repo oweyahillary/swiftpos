@@ -80,3 +80,4 @@ export { KITCHEN as SAMPLE_KITCHEN, DISPATCH as SAMPLE_DISPATCH } from './sample
 export { renderShiftReport } from './shiftReport';
 export type { ShiftReportData, ShiftReportMethodLine } from './shiftReport';
 export { hasPrintableContent } from './render';
+export * from './routing';
