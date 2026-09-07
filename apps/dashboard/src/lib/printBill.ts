@@ -24,6 +24,10 @@ const RENDERERS: Record<string, (o: any, b: any, w: 58 | 80) => Uint8Array> = {
   expeditor: renderDispatchEscPos,  // Dispatcher
 };
 
+// Emit order: KITCHEN first (food starts before anything else), then the
+// CUSTOMER receipt, then the DISPATCHER packing copy last (A247).
+const STATION_ORDER: Record<string, number> = { kot: 0, receipt: 1, expeditor: 2 };
+
 export interface PrintBillArgs {
   cart: CartItem[];
   branchPrinters: BranchPrinter[];
@@ -54,9 +58,9 @@ export async function printBillToStations(a: PrintBillArgs): Promise<PrintBillRe
   });
   const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0);
 
-  const stations = a.branchPrinters.filter(
-    p => p.enabled && !!RENDERERS[p.type] && !!p.printer_name,
-  );
+  const stations = a.branchPrinters
+    .filter(p => p.enabled && !!RENDERERS[p.type] && !!p.printer_name)
+    .sort((x, y) => (STATION_ORDER[x.type] ?? 9) - (STATION_ORDER[y.type] ?? 9));
   let printed = 0, failed = 0;
   for (const p of stations) {
     try {

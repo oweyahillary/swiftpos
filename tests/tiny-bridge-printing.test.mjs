@@ -154,6 +154,11 @@ ok('receipt business config sets currencyCode (no "PAY: undefined")', () => {
   const bo = r('apps/dashboard/src/lib/buildReceiptOrder.ts');
   assert.match(bo, /currencyCode:\s+b\.currency \|\| 'KES'/);
 });
+ok('bill prints kitchen -> customer -> dispatcher (A247)', () => {
+  const pb = r('apps/dashboard/src/lib/printBill.ts');
+  assert.match(pb, /STATION_ORDER[^\n]*kot: 0, receipt: 1, expeditor: 2/);
+  assert.match(pb, /\.sort\(\(x, y\) => \(STATION_ORDER/);
+});
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);
