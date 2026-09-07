@@ -32,7 +32,7 @@ import (
 	"time"
 )
 
-const version = "4.0.0"
+const version = "4.1.0"
 
 var token string
 
@@ -50,7 +50,7 @@ func main() {
 
 	addr := "127.0.0.1:" + port
 	fmt.Printf("SwiftPOS Print Bridge %s on http://%s\n", version, addr)
-	fmt.Printf("Bound to loopback only. Not reachable from the network.\n\n")
+	fmt.Printf("Bound to loopback only; Host-locked to localhost (DNS-rebinding safe).\n\n")
 	fmt.Printf("Pair token (paste into the till's printer settings):\n   %s\n\n", token)
 	fmt.Printf("Stored at %s. Delete it and restart to rotate.\n", tokenPath())
 	if err := http.ListenAndServe(addr, nil); err != nil {
@@ -76,6 +76,28 @@ func loadToken() string {
 	t := base64.RawURLEncoding.EncodeToString(raw)
 	_ = os.WriteFile(p, []byte(t), 0o600)
 	return t
+}
+
+// hostOK defeats DNS-rebinding. Loopback binding stops the network reaching us,
+// but a malicious web page can rebind its own hostname to 127.0.0.1 and drive
+// this process from the victim's browser; the browser sends that page's hostname
+// in the Host header, so we reject anything that is not our own loopback address.
+// Standard defence for a browser-reachable local daemon over plain HTTP (the
+// token is auth; this is the second wall). Applied to EVERY endpoint.
+func hostOK(r *http.Request) bool {
+	h := strings.ToLower(strings.TrimSpace(r.Host))
+	if h == "" {
+		return false
+	}
+	host := h
+	if i := strings.LastIndex(h, ":"); i > 0 && !strings.Contains(h, "]") {
+		host = h[:i]
+	}
+	switch host {
+	case "127.0.0.1", "localhost", "[::1]", "::1":
+		return true
+	}
+	return false
 }
 
 // cors reflects the request origin (open) and short-circuits preflight.
@@ -109,6 +131,10 @@ func tokenOK(r *http.Request) bool {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
+	if !hostOK(r) {
+		writeJSON(w, 403, map[string]any{"error": "bad host"})
+		return
+	}
 	if !cors(w, r) {
 		return
 	}
@@ -116,7 +142,15 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePrinters(w http.ResponseWriter, r *http.Request) {
+	if !hostOK(r) {
+		writeJSON(w, 403, map[string]any{"error": "bad host"})
+		return
+	}
 	if !cors(w, r) {
+		return
+	}
+	if !tokenOK(r) {
+		writeJSON(w, 401, map[string]any{"error": "missing or invalid X-Print-Token"})
 		return
 	}
 	names, err := listPrinters()
@@ -128,6 +162,10 @@ func handlePrinters(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePrint(w http.ResponseWriter, r *http.Request) {
+	if !hostOK(r) {
+		writeJSON(w, 403, map[string]any{"error": "bad host"})
+		return
+	}
 	if !cors(w, r) {
 		return
 	}
@@ -165,6 +203,10 @@ func handlePrint(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTest(w http.ResponseWriter, r *http.Request) {
+	if !hostOK(r) {
+		writeJSON(w, 403, map[string]any{"error": "bad host"})
+		return
+	}
 	if !cors(w, r) {
 		return
 	}

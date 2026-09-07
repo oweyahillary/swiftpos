@@ -19,7 +19,7 @@
 import type { CartItem } from './cart';
 import type { PrinterSettings } from '../hooks/usePrinterSettings';
 import { printReceipt } from './printReceipt';
-import { printToQZ, getQZStatus } from './localPrintServer';
+import { getQZStatus, getPrintToken, printBytesToServer } from './localPrintServer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -142,6 +142,90 @@ function buildKOTHtml(
   return html;
 }
 
+// ─── KOT ESC/POS builder (silent bridge path) ─────────────────────────────────
+//
+// The tiny print bridge is a pure byte-forwarder: it cannot render HTML, so the
+// KOT must be rendered to ESC/POS in the browser (mirroring buildKOTHtml above).
+// This is a small, self-contained ESC/POS text builder — deliberately NOT routed
+// through shared/printing's production renderer, which models combos/portions
+// (units + attributes) rather than the web cart's flat variant/modifier strings;
+// forcing that mapping risked dropping a modifier from a kitchen ticket (wrong
+// food). Content here matches the HTML KOT one-for-one.
+//
+// ESC/POS control codes used:
+//   ESC @  (1b 40)       initialise
+//   ESC a n(1b 61 n)     align: 0 left, 1 centre
+//   ESC E n(1b 45 n)     bold on/off
+//   GS ! n (1d 21 n)     char size (n = width<<4 | height; 0x11 = double both)
+//   LF     (0a)          line feed
+//   GS V 0 (1d 56 00)    full cut
+function buildKotEscPos(items: CartItem[], ctx: KOTContext, printer: BranchPrinter): Uint8Array {
+  const enc = new TextEncoder();
+  const out: number[] = [];
+  const raw  = (...b: number[]) => out.push(...b);
+  // Strip anything outside printable ASCII — thermal heads render CP437, not UTF-8,
+  // so stray unicode (curly quotes, arrows) would print as garbage. The sub-line
+  // markers below are spelled in ASCII for the same reason.
+  const text = (str: string) => out.push(...enc.encode(str.replace(/[^\x20-\x7e]/g, '')));
+  const nl   = () => raw(0x0a);
+  const line = (str = '') => { text(str); nl(); };
+  const alignCenter = () => raw(0x1b, 0x61, 0x01);
+  const alignLeft   = () => raw(0x1b, 0x61, 0x00);
+  const boldOn      = () => raw(0x1b, 0x45, 0x01);
+  const boldOff     = () => raw(0x1b, 0x45, 0x00);
+  const sizeDouble  = () => raw(0x1d, 0x21, 0x11);
+  const sizeNormal  = () => raw(0x1d, 0x21, 0x00);
+
+  const cols = printer.paper_width === 58 ? 32 : 48;
+  const divider = '-'.repeat(cols);
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dateStr = now.toLocaleDateString('en-KE', { day: '2-digit', month: 'short' });
+  const typeLabelMap: Record<string, string> = {
+    kitchen: 'KITCHEN', bar: 'BAR', expeditor: 'EXPEDITOR', kot: 'KOT', receipt: 'ORDER',
+  };
+  const typeLabel = typeLabelMap[printer.type] ?? 'ORDER';
+  const typeDisplay = ctx.orderType === 'dine_in' ? 'DINE IN'
+    : ctx.orderType === 'takeaway' ? 'TAKEAWAY' : 'RETAIL';
+
+  raw(0x1b, 0x40); // init
+
+  alignCenter(); boldOn(); sizeDouble();
+  line(typeLabel);
+  sizeNormal(); boldOff();
+  if (ctx.branchName) line(ctx.branchName);
+  alignLeft();
+  line(divider);
+
+  boldOn();
+  line(`ORDER  ${ctx.orderNumber}`);
+  if (ctx.tableNumber) line(`TABLE  ${ctx.tableNumber}`);
+  boldOff();
+  line(`${typeDisplay} - ${dateStr} ${timeStr}`);
+  if (ctx.staffName) line(`Cashier: ${ctx.staffName}`);
+  line(divider);
+
+  for (const item of items) {
+    boldOn();
+    line(`${item.quantity} x ${item.product.name}`);
+    boldOff();
+    for (const v of item.selectedVariants) line(`   - ${v.groupName}: ${v.optionName}`);
+    for (const m of item.selectedModifiers) line(`   + ${m.optionName}`);
+  }
+  line(divider);
+
+  if (ctx.notes) { boldOn(); line(`NOTE: ${ctx.notes}`); boldOff(); line(divider); }
+
+  alignCenter();
+  line(`Printed ${timeStr}`);
+  alignLeft();
+
+  nl(); nl(); nl();
+  raw(0x1d, 0x56, 0x00); // full cut
+
+  return Uint8Array.from(out);
+}
+
 // ─── Route and print KOTs ─────────────────────────────────────────────────────
 
 /**
@@ -169,29 +253,33 @@ export async function printKOTs(
 
     if (filteredItems.length === 0) continue; // nothing to print for this printer
 
-    const html = buildKOTHtml(filteredItems, ctx, printer);
+    // Browser-dialog fallback (also used when the bridge is unavailable or errors).
+    const browserFallback = () => printReceipt(
+      buildKOTHtml(filteredItems, ctx, printer),
+      { ...fallbackSettings, paperWidth: printer.paper_width, copies: 1, autoCut: true, footerMessage: '' },
+      `KOT — ${printer.name}`,
+    );
+
+    // Silent path: the browser renders ESC/POS and the bridge forwards the bytes
+    // (same contract as the customer receipt). Requires the bridge connected, a
+    // pairing token, and a chosen OS printer name. Any failure drops to the
+    // browser dialog so a kitchen ticket is never silently lost (A242).
+    const useBridge =
+      printer.connection_type === 'qz' &&
+      getQZStatus() === 'connected' &&
+      !!printer.printer_name &&
+      !!getPrintToken();
 
     try {
-      if (printer.connection_type === 'qz' && getQZStatus() === 'connected' && printer.printer_name) {
-        // Silent QZ print
-        await printToQZ(printer.printer_name, html, {
-          paperWidth: printer.paper_width,
-          copies:     1, // KOTs always 1 copy
-          autoCut:    true,
-        });
+      if (useBridge) {
+        const bytes = buildKotEscPos(filteredItems, ctx, printer);
+        await printBytesToServer(`printer:${printer.printer_name}`, bytes);
       } else {
-        // Browser print fallback — opens popup per printer
-        printReceipt(html, {
-          ...fallbackSettings,
-          paperWidth: printer.paper_width,
-          copies:     1,
-          autoCut:    true,
-          footerMessage: '',
-        }, `KOT — ${printer.name}`);
+        await browserFallback();
       }
     } catch (err: any) {
-      console.error(`[KOT] Failed to print to ${printer.name}:`, err?.message);
-      // Don't throw — a failed KOT should never block the order flow
+      console.error(`[KOT] bridge print to ${printer.name} failed, using browser dialog:`, err?.message);
+      try { await browserFallback(); } catch { /* never block the order flow */ }
     }
   }
 }

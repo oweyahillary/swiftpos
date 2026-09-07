@@ -9,7 +9,6 @@
  */
 
 import type { PrinterSettings } from '../hooks/usePrinterSettings';
-import { getQZStatus, printToQZ } from './localPrintServer';
 
 // Paper width in pixels at 96dpi (browser default)
 // 58mm ≈ 219px,  80mm ≈ 302px
@@ -21,27 +20,14 @@ const FONT_SIZE: Record<string, string> = {
   normal: '9pt',
 };
 
+// Browser-dialog receipt. The silent thermal path (render ESC/POS → forward to
+// the bridge) lives in PaymentModal (customer receipt) and printKOT (KOTs); this
+// is the fallback used whenever the bridge is unavailable.
 export async function printReceipt(
   receiptHtml: string,
   settings: PrinterSettings,
   businessName: string,
-  qzPrinterName?: string, // if set and QZ connected, use silent print
 ) {
-  // ── QZ path ──────────────────────────────────────────────────────────────
-  if (qzPrinterName && getQZStatus() === 'connected') {
-    try {
-      await printToQZ(qzPrinterName, receiptHtml, {
-        paperWidth: settings.paperWidth,
-        copies:     settings.copies,
-        autoCut:    settings.autoCut,
-      });
-      return;
-    } catch (err: any) {
-      console.warn('[printReceipt] QZ failed, falling back to browser:', err?.message);
-      // fall through to browser print
-    }
-  }
-
   // ── Browser fallback ──────────────────────────────────────────────────────
   const paperPx  = PAPER_PX[settings.paperWidth] ?? PAPER_PX[80];
   const fontSize  = FONT_SIZE[settings.fontSize]  ?? FONT_SIZE.normal;

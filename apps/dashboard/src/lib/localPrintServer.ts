@@ -1,32 +1,30 @@
 /**
  * localPrintServer.ts
  *
- * Client for the SwiftPOS local print server.
- * The print server is a small .exe that runs on the POS computer and
- * accepts HTTP print jobs — works on Chrome, Firefox, Edge, Safari.
- *
- * API surface is identical to the old qzTray.ts so no other files need changing.
+ * Client for the SwiftPOS Print Bridge — a tiny (~1.6 MB) native helper
+ * (SwiftPOS-PrintServer.exe) that runs on the till and forwards ESC/POS bytes to
+ * the printer. The browser renders the receipt/KOT to ESC/POS; this client
+ * base64s the bytes and POSTs them to the bridge. Works on Chrome, Firefox,
+ * Edge, Safari.
  *
  * Detection:
- *   On load, pings http://localhost:3001/health.
+ *   On load, pings the bridge's /health (127.0.0.1:9911).
  *   Connected  → silent one-click printing via HTTP POST.
- *   Not found  → falls back to window.print() browser dialog.
+ *   Not found  → callers fall back to the window.print() browser dialog.
  *
- * Download print server: provided as SwiftPOS-PrintServer.exe
+ * Security: the bridge is loopback-only, Host-locked (DNS-rebinding safe), and
+ * requires a pairing token (X-Print-Token) on every print/enumerate call.
  */
 
-// The local print bridge must NOT share the API's port. It defaulted to
-// localhost:3001 (the dev API port), so print-server detection was polling the
-// backend's /health (a Supabase ping that 503s) — hammering it and always
-// reporting the printer as down. Configure VITE_PRINT_SERVER_URL to your bridge's
-// address (e.g. http://localhost:9100); leave it unset to disable the feature.
-// The bridge listens on 127.0.0.1:9911 (distinct from the dev API port). We default
-// to that so no build-time env is needed; VITE_PRINT_SERVER_URL can override it.
-const SERVER_URL  = (import.meta.env.VITE_PRINT_SERVER_URL as string | undefined) || 'http://127.0.0.1:9911';
+// The bridge URL is HARD-CODED to its fixed loopback address. It is deliberately
+// NOT read from a Vite/Vercel build env: a stale env override once pointed a
+// deployed dashboard at the dev API port and silently broke printing (A241). The
+// bridge's own port is configurable on the bridge side (PRINT_BRIDGE_PORT env on
+// the .exe); the dashboard always talks to the default 9911.
+const SERVER_URL  = 'http://127.0.0.1:9911';
 const HEALTH_PATH = `${SERVER_URL}/health`;
 const PRINT_PATH  = `${SERVER_URL}/print`;
 const TEST_PATH   = `${SERVER_URL}/print/test`;
-const RECEIPT_PATH = `${SERVER_URL}/print/receipt`;
 
 // The bridge requires a pairing token (X-Print-Token) on every print. It prints
 // the token to its console on first run; the cashier pastes it into the Printers
@@ -46,12 +44,6 @@ const tokenHeaders = (): Record<string, string> => {
 // ─── Types (same as before so imports don't break) ────────────────────────────
 
 export type QZStatus = 'connecting' | 'connected' | 'disconnected' | 'unavailable';
-
-interface PrintConfig {
-  paperWidth: 58 | 80;
-  copies:     1 | 2;
-  autoCut:    boolean;
-}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -140,42 +132,15 @@ function scheduleReconnect() {
 export async function getQZPrinters(): Promise<string[]> {
   if (status !== 'connected') return [];
   try {
-    const res = await fetch(`${SERVER_URL}/printers`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${SERVER_URL}/printers`, {
+      headers: { ...tokenHeaders() },   // /printers is token-gated (A240)
+      signal: AbortSignal.timeout(3000),
+    });
     const data = await res.json();
     availablePrinters = data.printers ?? [];
     return availablePrinters;
   } catch {
     return availablePrinters;
-  }
-}
-
-// ─── Print ────────────────────────────────────────────────────────────────────
-
-export async function printToQZ(
-  printerName: string,
-  html: string,
-  config: PrintConfig,
-): Promise<void> {
-  if (status !== 'connected') {
-    throw new Error('Print server is not connected');
-  }
-
-  const res = await fetch(PRINT_PATH, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
-    body:    JSON.stringify({
-      printer:    printerName,
-      content:    html,
-      paperWidth: config.paperWidth,
-      copies:     config.copies,
-      autoCut:    config.autoCut,
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error ?? `Print failed: HTTP ${res.status}`);
   }
 }
 
@@ -217,29 +182,6 @@ export async function printBytesToServer(target: string, bytes: Uint8Array): Pro
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     throw new Error(err.error ?? `Print failed: HTTP ${res.status}`);
-  }
-}
-
-// ─── Silent receipt via the bridge (server renders ESC/POS from the Order) ─────
-// A235: the correct web path. We send the Order + business JSON to /print/receipt;
-// the bridge renders it with shared/printing (identical to desktop) and prints.
-// Throws on any failure so the caller can fall back to the browser dialog.
-export async function printReceiptViaServer(
-  target: string,
-  order: unknown,
-  business: unknown,
-  paperWidth: 58 | 80,
-): Promise<void> {
-  if (!SERVER_URL) throw new Error('Print server not configured');
-  const res = await fetch(RECEIPT_PATH, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
-    body:    JSON.stringify({ target, order, business, paperWidth }),
-    signal:  AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error ?? `Receipt print failed: HTTP ${res.status}`);
   }
 }
 

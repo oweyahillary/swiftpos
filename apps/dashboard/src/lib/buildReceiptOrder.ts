@@ -68,7 +68,7 @@ export function buildReceiptOrder(a: {
       units:     [] as [],
       stationIds: [] as [],
       note: c.selectedModifiers?.length
-        ? c.selectedModifiers.map(m => (m as any).name).filter(Boolean).join(', ')
+        ? c.selectedModifiers.map(m => m.optionName).filter(Boolean).join(', ')
         : undefined,
     })),
     payments:    a.payments.map(p => ({ label: p.method, amount: toCents(p.amount) })),

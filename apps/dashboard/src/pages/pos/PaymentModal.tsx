@@ -439,7 +439,12 @@ export default function PaymentModal({
         });
         const biz = buildReceiptBusinessConfig(business, printerSettings.footerMessage);
         const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
-        await printBytesToServer(`printer:${printerName}`, bytes);
+        // Honour the copies setting (1 = customer only, 2 = + merchant). The old
+        // QZ path passed copies through; the byte path must send them itself.
+        const copies = printerSettings.copies ?? 1;
+        for (let i = 0; i < copies; i++) {
+          await printBytesToServer(`printer:${printerName}`, bytes);
+        }
         return;
       } catch (e: any) {
         console.warn('[receipt] bridge print failed, using browser dialog:', e?.message);
