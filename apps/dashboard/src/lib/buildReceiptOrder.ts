@@ -14,7 +14,8 @@ import type { CartItem } from './cart';
 import type { Business } from '../types';
 
 export type ReceiptOrderType = 'takeaway' | 'dine_in' | 'delivery' | 'counter';
-export interface ReceiptOrderLine { name: string; quantity: number; unitPrice: number; lineTotal: number; units: []; stationIds: []; note?: string }
+export interface ReceiptOrderUnit { name: string; quantity: number; portions: number; priceDelta: number; chosen: boolean; stationIds: []; attributes: [] }
+export interface ReceiptOrderLine { name: string; quantity: number; unitPrice: number; lineTotal: number; units: ReceiptOrderUnit[]; stationIds: []; note?: string }
 export interface ReceiptPaymentLeg { label: string; amount: number }
 export interface ReceiptOrder {
   billNumber: string;
@@ -30,6 +31,7 @@ export interface ReceiptOrder {
 }
 export interface ReceiptBusinessConfig {
   name: string;
+  currencyCode: string;   // shared/printing renders the PAY line as `<currencyCode> <total>`
   branchName?: string;
   kraPin?: string;
   telephone?: string;
@@ -60,17 +62,29 @@ export function buildReceiptOrder(a: {
     cashierName: a.cashierName || 'Cashier',
     soldAt:      new Date().toISOString(),
     tableNumber: a.tableNumber,
-    lines: a.cart.map(c => ({
-      name:      c.product?.name ?? 'Item',
-      quantity:  c.quantity,
-      unitPrice: toCents(c.unitPrice),
-      lineTotal: toCents(c.lineTotal),
-      units:     [] as [],
-      stationIds: [] as [],
-      note: c.selectedModifiers?.length
-        ? c.selectedModifiers.map(m => m.optionName).filter(Boolean).join(', ')
-        : undefined,
-    })),
+    lines: a.cart.map(c => {
+      // Sub-items: each variant + modifier becomes a named unit so kitchen and
+      // dispatch tickets list what's in the item, and the receipt shows them too.
+      // priceDelta stays 0 (names only) — the line's lineTotal already carries the
+      // full price, so totals reconcile exactly (no base/delta guessing).
+      const units = [
+        ...(c.selectedVariants ?? []).map(v => ({
+          name: v.groupName ? `${v.groupName}: ${v.optionName}` : v.optionName,
+          quantity: 1, portions: 1, priceDelta: 0, chosen: false, stationIds: [] as [], attributes: [] as [],
+        })),
+        ...(c.selectedModifiers ?? []).map(m => ({
+          name: m.optionName, quantity: 1, portions: 1, priceDelta: 0, chosen: false, stationIds: [] as [], attributes: [] as [],
+        })),
+      ];
+      return {
+        name:      c.product?.name ?? 'Item',
+        quantity:  c.quantity,
+        unitPrice: toCents(c.unitPrice),
+        lineTotal: toCents(c.lineTotal),
+        units,
+        stationIds: [] as [],
+      };
+    }),
     payments:    a.payments.map(p => ({ label: p.method, amount: toCents(p.amount) })),
     changeGiven: toCents(a.change),
     total:       toCents(a.total),
@@ -81,6 +95,7 @@ export function buildReceiptOrder(a: {
 export function buildReceiptBusinessConfig(b: Business, footerMessage?: string, ctlRate = 0): ReceiptBusinessConfig {
   return {
     name:            b.name,
+    currencyCode:    b.currency || 'KES',
     kraPin:          b.tax_pin ?? undefined,
     telephone:       b.phone ?? undefined,
     thankYouMessage: footerMessage || undefined,

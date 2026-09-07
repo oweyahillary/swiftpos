@@ -218,26 +218,26 @@ function describeAttributes(unit) {
   return unit.attributes.filter((a) => a.count > 0).map((a) => total === unit.portions ? `${a.count} ${a.option}` : `${a.count} x ${a.option}`).join(", ");
 }
 function visibleUnits(line, ctx) {
-  const { station: station2 } = ctx;
-  if (station2.includeUnits === "none") return [];
+  const { station } = ctx;
+  if (station.includeUnits === "none") return [];
   let units = line.units;
-  if (station2.includeUnits === "routed") {
-    units = units.filter((u) => u.stationIds.includes(station2.id));
+  if (station.includeUnits === "routed") {
+    units = units.filter((u) => u.stationIds.includes(station.id));
   }
-  if (!station2.showUnchangedUnits) {
+  if (!station.showUnchangedUnits) {
     units = units.filter((u) => u.chosen || u.priceDelta !== 0 || u.attributes.length > 0);
   }
   return units;
 }
 function renderProduction(ctx) {
-  const { order, station: station2 } = ctx;
-  const cols = columnsFor(station2.paperWidthMm);
+  const { order, station } = ctx;
+  const cols = columnsFor(station.paperWidthMm);
   const d = new DocBuilder(cols);
   if (ctx.voided) {
     d.line("VOID", { align: "center", size: "large", bold: true });
     d.line(rule(cols));
   }
-  d.line(`* * ${station2.name.toUpperCase()} * *`, { align: "center", size: "tall", bold: true });
+  d.line(`* * ${station.name.toUpperCase()} * *`, { align: "center", size: "tall", bold: true });
   d.blank();
   d.lines(pairOrStack(cols, `Order  ${order.billNumber}`, TYPE_CAPS[order.orderType]));
   d.lines(pairOrStack(cols, shortStamp(order.soldAt), `Cashier  ${order.cashierName}`));
@@ -255,17 +255,17 @@ function renderProduction(ctx) {
   let printedLines = 0;
   for (const line of order.lines) {
     const units = visibleUnits(line, ctx);
-    if (station2.includeUnits !== "none") {
-      const earns = line.units.length > 0 ? units.length > 0 : station2.includeUnits === "all" || line.stationIds.includes(station2.id);
+    if (station.includeUnits !== "none") {
+      const earns = line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
       if (!earns) continue;
     }
     if (printedLines > 0) d.blank();
     printedLines++;
     const qtyPrefix = `${line.quantity}   `;
-    const headingWidth = station2.emphasizeParent ? Math.floor(cols / 2) : cols;
+    const headingWidth = station.emphasizeParent ? Math.floor(cols / 2) : cols;
     d.lines(
       hangingWrap(`${qtyPrefix}${line.name.toUpperCase()}`, headingWidth, qtyPrefix.length),
-      { size: station2.emphasizeParent ? "tall" : "normal", bold: true }
+      { size: station.emphasizeParent ? "tall" : "normal", bold: true }
     );
     if (line.units.length === 0) {
       unitRows++;
@@ -275,7 +275,7 @@ function renderProduction(ctx) {
       unitRows++;
       const attrs = describeAttributes(u);
       const qty = u.quantity > 1 ? ` x${u.quantity}` : "";
-      const inline = station2.attributeStyle === "inline-when-simple" && attrs ? ` (${attrs})` : "";
+      const inline = station.attributeStyle === "inline-when-simple" && attrs ? ` (${attrs})` : "";
       d.lines(subRow(cols, `${u.name}${qty}${inline}`, void 0, 6));
       if (attrs && !inline) {
         d.lines(subRow(cols, attrs, void 0, 8));
@@ -286,15 +286,15 @@ function renderProduction(ctx) {
     }
   }
   d.line(rule(cols));
-  if (station2.showFooterCount) {
-    const label = station2.kind === "kitchen" ? `${unitRows} items to cook` : `${printedLines} bags`;
+  if (station.showFooterCount) {
+    const label = station.kind === "kitchen" ? `${unitRows} items to cook` : `${printedLines} bags`;
     d.line(center(cols, label));
   }
   return d.build();
 }
 function renderReceipt(ctx) {
-  const { order, business, station: station2 } = ctx;
-  const cols = columnsFor(station2.paperWidthMm);
+  const { order, business, station } = ctx;
+  const cols = columnsFor(station.paperWidthMm);
   const c = itemColumns(cols);
   const d = new DocBuilder(cols);
   if (ctx.voided) {
@@ -355,7 +355,7 @@ function renderReceipt(ctx) {
       if (attrs) {
         d.lines(subRow(cols, `${u.name}  ${attrs}`, void 0, 2));
       }
-      if (delta !== 0 && station2.showOptionPrices) {
+      if (delta !== 0 && station.showOptionPrices) {
         const net = netOf(delta * line.quantity, business.vatRate, business.ctlRate);
         d.lines(subRow(cols, u.name, formatCents(net), 2));
       } else if (delta !== 0) {
@@ -483,15 +483,18 @@ function toEscPos(doc, opts = {}) {
 }
 
 // scripts/escpos-renderer/entry.ts
-var station = (paperWidthMm) => ({
+var receiptStation = (paperWidthMm) => ({
   id: "web-receipt",
   name: "Receipt",
   kind: "receipt",
   paperWidthMm,
+  // Web adaptation: the flat web cart has no combo base/delta split, so we show
+  // variant/modifier sub-items as NAMES (showUnchangedUnits) and DON'T print
+  // per-upgrade prices (the line's Amt is the true lineTotal — totals stay exact).
   includeUnits: "all",
   showPrices: true,
-  showUnchangedUnits: false,
-  showOptionPrices: true,
+  showUnchangedUnits: true,
+  showOptionPrices: false,
   emphasizeParent: false,
   aggregateUnits: false,
   showFooterCount: false,
@@ -500,10 +503,54 @@ var station = (paperWidthMm) => ({
   cutPaper: true,
   feedBeforeCut: 3
 });
-function renderEscPos(order, business, paperWidth) {
-  const ord = { ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() };
-  return toEscPos(renderTicket({ order: ord, business, station: station(paperWidth) }));
+var kitchenStation = (paperWidthMm) => ({
+  id: "web-kitchen",
+  name: "Kitchen",
+  kind: "kitchen",
+  paperWidthMm,
+  includeUnits: "all",
+  showPrices: false,
+  showUnchangedUnits: true,
+  showOptionPrices: false,
+  emphasizeParent: true,
+  aggregateUnits: false,
+  showFooterCount: true,
+  attributeStyle: "always-sublines",
+  openCashDrawer: false,
+  cutPaper: true,
+  feedBeforeCut: 3
+});
+var dispatchStation = (paperWidthMm) => ({
+  id: "web-dispatch",
+  name: "Dispatch",
+  kind: "dispatch",
+  paperWidthMm,
+  includeUnits: "all",
+  showPrices: false,
+  showUnchangedUnits: true,
+  showOptionPrices: false,
+  emphasizeParent: false,
+  aggregateUnits: false,
+  showFooterCount: true,
+  attributeStyle: "inline-when-simple",
+  openCashDrawer: false,
+  cutPaper: true,
+  feedBeforeCut: 3
+});
+var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
+function renderReceiptEscPos(order, business, paperWidth) {
+  return toEscPos(renderTicket({ order: withDate(order), business, station: receiptStation(paperWidth) }));
 }
+function renderKitchenEscPos(order, business, paperWidth) {
+  return toEscPos(renderTicket({ order: withDate(order), business, station: kitchenStation(paperWidth) }));
+}
+function renderDispatchEscPos(order, business, paperWidth) {
+  return toEscPos(renderTicket({ order: withDate(order), business, station: dispatchStation(paperWidth) }));
+}
+var renderEscPos = renderReceiptEscPos;
 export {
-  renderEscPos
+  renderDispatchEscPos,
+  renderEscPos,
+  renderKitchenEscPos,
+  renderReceiptEscPos
 };

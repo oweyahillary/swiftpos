@@ -22,6 +22,7 @@ import type { Shift, ShiftModalMode } from './ShiftModal';
 import PrinterSettingsModal from './PrinterSettingsModal';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import { printKOTs, type BranchPrinter } from '../../lib/printKOT';
+import { printBillToStations } from '../../lib/printBill';
 import POSDrawer from './POSDrawer';
 import MinimartPOS from './MinimartPOS';
 
@@ -683,63 +684,31 @@ export default function CashierScreen() {
   }
 
   // ── Print guest check / bill (before payment) ───────────────────────────────
-  function printGuestCheck() {
-    const tableLabel = activeKey && openOrders[activeKey]?.tableName
-      ? `Table ${openOrders[activeKey].tableName}` : '';
-    const lines = cart.map(i => {
-      const name = i.product.name.padEnd(22, ' ').slice(0, 22);
-      const qty  = String(i.quantity).padStart(3);
-      const price = fmt(i.lineTotal, currency).padStart(12);
-      return `${name}${qty}${price}`;
-    }).join('\n');
-    const sep  = '─'.repeat(38);
-    const dateStr = new Date().toLocaleString('en-KE');
-    const receipt = [
-      '',
-      business?.name ?? 'SwiftPOS',
-      tableLabel,
-      session?.branchName ?? '',
-      sep,
-      `${'ITEM'.padEnd(22)} QTY         AMT`,
-      sep,
-      lines,
-      sep,
-      `${'Subtotal'.padEnd(22)}    ${fmt(subtotal, currency)}`,
-      `${'VAT (16%)'.padEnd(22)}    ${fmt(vatAmount, currency)}`,
-      sep,
-      `${'TOTAL'.padEnd(22)}    ${fmt(orderTotal, currency)}`,
-      sep,
-      'This is not a receipt.',
-      'Please pay at the counter.',
-      dateStr,
-      '',
-    ].join('\n');
-    const html = `<!DOCTYPE html><html><head><title>Bill</title>
-      <style>body{font-family:'Courier New',monospace;font-size:12px;padding:16px;white-space:pre;}</style>
-      </head><body>${receipt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-      </body></html>`;
-
-    // Print via a hidden iframe rather than a popup window. A popup can be blocked
-    // (returns null) or half-load and then hang the tab on print(); the iframe is
-    // self-contained and is always cleaned up via onafterprint / a fallback timer.
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('aria-hidden', 'true');
-    Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
-    document.body.appendChild(iframe);
-
-    const cleanup = () => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); };
-    const doc = iframe.contentWindow?.document;
-    if (!doc) { cleanup(); return; }
-    doc.open(); doc.write(html); doc.close();
-
-    const win = iframe.contentWindow!;
-    win.onafterprint = () => setTimeout(cleanup, 100);
-    setTimeout(() => {
-      try { win.focus(); win.print(); }
-      catch { cleanup(); }
-      // Safety net: remove the iframe even if onafterprint never fires.
-      setTimeout(cleanup, 60000);
-    }, 200);
+  async function printGuestCheck() {
+    // Silent, shared-format, fans to all configured full-order printers (Customer
+    // Receipt / Master KOT / Dispatcher). Replaces the old iframe→window.print
+    // dialog. Pre-payment bill: no payments/change yet (A246).
+    const tableName = activeKey && openOrders[activeKey]?.tableName
+      ? String(openOrders[activeKey].tableName) : undefined;
+    try {
+      const res = await printBillToStations({
+        cart,
+        branchPrinters,
+        business: business!,
+        orderNumber: generateOrderNumber(),
+        orderType: (activeKey && openOrders[activeKey]?.orderType) || (activeKey && openOrders[activeKey]?.tableId ? 'dine_in' : 'retail'),
+        cashierName: session?.staffName ?? 'Cashier',
+        total: orderTotal,
+        tableNumber: tableName,
+        footerMessage: printerSettings.footerMessage,
+      });
+      if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
+      else if (res.configured === 0) alert('No full-order printers configured. Add them in Settings → Printers.');
+      else alert('Print server not connected — the bill did not print. Check the bridge.');
+    } catch (e: any) {
+      console.error('[bill] print failed:', e?.message);
+      alert('Could not print the bill. Check Settings → Printers.');
+    }
   }
 
     // ── Send to kitchen (order-first model) ───────────────────────────────────

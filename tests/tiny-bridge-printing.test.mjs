@@ -131,5 +131,29 @@ ok('testPrint sends a printer:-prefixed spooler target (not a bare name)', () =>
   assert.doesNotMatch(lps, /target: printerName\b/);   // the bare-name bug must stay gone
 });
 
+// A246: Print Bill fans to the 3 full-order stations in the shared format
+ok('bundle exports the 3 station renderers', () => {
+  assert.match(rend, /renderReceiptEscPos/);
+  assert.match(rend, /renderKitchenEscPos/);
+  assert.match(rend, /renderDispatchEscPos/);
+});
+ok('printBill fans receipt/kot/expeditor via the bridge, silently', () => {
+  const pb = r('apps/dashboard/src/lib/printBill.ts');
+  assert.match(pb, /receipt:\s+renderReceiptEscPos/);
+  assert.match(pb, /kot:\s+renderKitchenEscPos/);
+  assert.match(pb, /expeditor: renderDispatchEscPos/);
+  assert.match(pb, /printBytesToServer\(`printer:\$\{p\.printer_name\}`, bytes\)/);
+});
+ok('the old guest-check iframe/window.print dialog is gone', () => {
+  const cs = r('apps/dashboard/src/pages/pos/CashierScreen.tsx');
+  assert.doesNotMatch(cs, /This is not a receipt/);          // the ad-hoc bill HTML is gone
+  assert.doesNotMatch(cs, /Please pay at the counter/);
+  assert.match(cs, /printBillToStations/);                    // Print Bill routes through the bridge
+});
+ok('receipt business config sets currencyCode (no "PAY: undefined")', () => {
+  const bo = r('apps/dashboard/src/lib/buildReceiptOrder.ts');
+  assert.match(bo, /currencyCode:\s+b\.currency \|\| 'KES'/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);
