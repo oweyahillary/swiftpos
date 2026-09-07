@@ -20,6 +20,7 @@ import type { CartItem } from './cart';
 import type { PrinterSettings } from '../hooks/usePrinterSettings';
 import { printReceipt } from './printReceipt';
 import { getQZStatus, printBytesToServer } from './localPrintServer';
+import { isExcludedFromKitchen } from './escposRenderer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -241,15 +242,22 @@ export async function printKOTs(
   ctx: KOTContext,
   printers: BranchPrinter[],
   fallbackSettings: PrinterSettings,
+  kitchenExclusions: string[] = [],   // A250: dropped from kitchen-kind tickets
 ): Promise<void> {
   // Only print to non-receipt printers (receipt is handled separately)
   const kotPrinters = printers.filter(p => p.enabled && p.type !== 'receipt');
 
   for (const printer of kotPrinters) {
     // Filter items for this printer
-    const filteredItems = printer.category_ids.length === 0
+    let filteredItems = printer.category_ids.length === 0
       ? cart  // no filter = all items
       : cart.filter(item => printer.category_ids.includes(item.product.category_id ?? ''));
+
+    // Kitchen-kind tickets (Kitchen station, Master KOT) drop owner-excluded items
+    // (drinks etc.) — same rule the desktop applies. Dispatcher/expeditor keep all.
+    if ((printer.type === 'kitchen' || printer.type === 'kot') && kitchenExclusions.length) {
+      filteredItems = filteredItems.filter(i => !isExcludedFromKitchen(i.product.name, kitchenExclusions));
+    }
 
     if (filteredItems.length === 0) continue; // nothing to print for this printer
 

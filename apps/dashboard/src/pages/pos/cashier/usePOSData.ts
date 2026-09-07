@@ -31,6 +31,7 @@ export interface POSData {
   categories:        Category[];
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems:        Record<string, ComboComponent[]>;
+  kitchenExclusions: string[];
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -54,6 +55,7 @@ export function usePOSData(): POSData {
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
+  const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
   const [branchPrinters,    setBranchPrinters]    = useState<BranchPrinter[]>([]);
@@ -82,6 +84,7 @@ export function usePOSData(): POSData {
       setPaymentMethods(init.paymentMethods ?? []);
       setVariantsByProduct(init.variantsByProduct ?? {});
       setComboItems(init.comboItems ?? {});
+      setKitchenExclusions(init.kitchenExclusions ?? []);
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
       // Clamp the web POS to the server's discount ceiling. Falls back to the
@@ -147,7 +150,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct, comboItems,
+    products, categories, variantsByProduct, comboItems, kitchenExclusions,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
     loading, error,

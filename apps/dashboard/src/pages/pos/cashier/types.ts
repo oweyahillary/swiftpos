@@ -68,6 +68,7 @@ export interface POSInitResponse {
   branchId: string | null;
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems?: Record<string, import('../../../types').ComboComponent[]>;
+  kitchenExclusions?: string[];
   businessType: string;
   businessName: string;
   currency: string;

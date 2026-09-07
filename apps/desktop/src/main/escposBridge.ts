@@ -30,8 +30,12 @@
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, saveDeviceConfig } from './deviceConfig';
 import { queueTickets } from './print/printWorker';
-import type { PrintContext, StationConfig, OrderLine, OrderUnit, UnitAttribute,
+import type { PrintContext, StationConfig, OrderLine, OrderUnit,
   PaymentLeg, OrderType } from '@swiftpos/printing';
+// Routing + unit expansion now live in shared/printing (A249) so web and desktop
+// run ONE copy. The desktop supplies the routing tables from its local DB (A250b).
+import { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen,
+  type CategoryRouting } from '@swiftpos/printing';
 
 /** Money crosses into shared/printing as integer cents, never as a float. */
 const toCents = (v: unknown): number => Math.round((Number(v) || 0) * 100);
@@ -104,14 +108,7 @@ interface CartLine {
  * works for a uuid, for the built-in fallback, and for a business with two
  * kitchen stations.
  */
-interface StationIds { kitchen: string[]; dispatch: string[] }
 
-function idsByKind(stations: StationConfig[]): StationIds {
-  return {
-    kitchen:  stations.filter(s => s.kind === 'kitchen').map(s => s.id),
-    dispatch: stations.filter(s => s.kind === 'dispatch').map(s => s.id),
-  };
-}
 
 /**
  * Which stations a line belongs to.
@@ -125,22 +122,6 @@ function idsByKind(stations: StationConfig[]): StationIds {
  * reason: a till that upgrades before anyone sets up stations must keep
  * printing exactly as it did yesterday.
  */
-function stationsForCategory(categoryId: string | null | undefined, ids: StationIds): string[] {
-  const all = [...ids.kitchen, ...ids.dispatch];
-  if (!categoryId) return ids.dispatch;
-
-  const db = getLocalDb();
-  const rows = db.prepare(
-    `SELECT station_id FROM category_stations WHERE category_id = ?`
-  ).all(categoryId) as Array<{ station_id: string }>;
-
-  const configured = rows.map(r => r.station_id).filter(id => all.includes(id));
-  if (configured.length) return configured;
-
-  const cat = db.prepare(`SELECT is_kitchen FROM categories WHERE id = ?`)
-    .get(categoryId) as { is_kitchen?: number } | undefined;
-  return cat?.is_kitchen ? ids.kitchen : ids.dispatch;
-}
 
 
 /**
@@ -170,32 +151,6 @@ function stationsForCategory(categoryId: string | null | undefined, ids: Station
  * in doubt it returns nothing and the ticket prints the title alone, which is
  * honest.
  */
-export function describeFromText(text: string | null | undefined): string[] {
-  if (!text) return [];
-  const raw = text.trim();
-  if (!raw || raw.length > 200) return [];      // a paragraph is not a list
-
-  // Separators people actually use, in the order they are usually meant.
-  // Newlines and bullets first: someone who typed a list on separate lines
-  // meant a list, whatever punctuation is inside each line.
-  const SEPARATORS = [/\r?\n/, /\s*[•·]\s*/, /\s+\+\s+/, /\s*,\s*/, /\s*\/\s*/];
-
-  for (const sep of SEPARATORS) {
-    const parts = raw.split(sep).map(t => t.trim()).filter(Boolean);
-    if (parts.length < 2) continue;             // no split means no list
-    if (parts.length > 12) continue;            // a wall of text, not a meal
-
-    // Every part has to look like an item, not a clause. A single long part
-    // or one carrying sentence punctuation means this was prose that happened
-    // to contain a comma.
-    const looksLikeItems = parts.every(t =>
-      t.length <= 40 && t.split(/\s+/).length <= 6 && !/[.;:!?]$/.test(t));
-    if (!looksLikeItems) continue;
-
-    return parts;
-  }
-  return [];
-}
 
 /**
  * Names the owner has said must never reach a kitchen ticket.
@@ -278,136 +233,7 @@ export function clearKitchenExclusionsOverride(): string[] {
   return parseTerms((getDeviceConfig() as any)?.kitchen_exclusions);
 }
 
-export function isExcludedFromKitchen(name: string, exclusions: string[]): boolean {
-  if (!name) return false;
-  const hay = name.toLowerCase();
-  return exclusions.some(term => {
-    const t = term.trim().toLowerCase();
-    if (!t) return false;
-    // Whole-word / phrase match. Escaped, because an owner may reasonably type
-    // "7-up" or "soda (500ml)" and a stray regex character must not throw.
-    const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`, 'i').test(hay);
-  });
-}
 
-function toUnits(
-  line: CartLine,
-  ids: StationIds,
-  /** Where the parent line is routed, so a synthesised unit follows it. */
-  lineStationIds: string[],
-): OrderUnit[] {
-  const lineProductId = line.product.id;
-  const lineName = line.product.name;
-  const units: OrderUnit[] = [];
-
-  // A combo's components are the things that get cooked and bagged; the parent
-  // name is a heading. Routing therefore lives on the components.
-  for (const c of line.comboComponents ?? []) {
-    // A component routes on its OWN category, exactly like a top-level line.
-    //
-    // Using is_kitchen alone — which is what this did — means configured
-    // station routing works for a plain product and silently falls back to a
-    // boolean inside every combo, which on a fast-food menu is most of what
-    // gets sold. ipcHandlers joins category_id into comboItems precisely so
-    // this can be done properly; it just was not being read.
-    //
-    // is_kitchen remains the fallback for a component whose category has no
-    // routing configured, and stationsForCategory already applies it.
-    units.push({
-      productId:  c.name,          // components arrive by name; id is not carried
-      name:       c.name,
-      quantity:   c.quantity,
-      portions:   1,
-      priceDelta: 0,
-      chosen:     false,           // included as standard unless a variant says otherwise
-      attributes: [],
-      stationIds: c.category_id
-        ? stationsForCategory(c.category_id, ids)
-        : (c.is_kitchen ? ids.kitchen : ids.dispatch),
-    });
-  }
-
-  // Variants describe the unit above them ("all spicy"), so they attach as
-  // attributes rather than becoming units of their own — which is what makes
-  // the kitchen ticket read "3PC Chicken / all spicy" and not two lines.
-  // Nothing structured describes this item, so fall back to its own words.
-  // Runs BEFORE variants so a described item still gets its choice attached to
-  // the first part, exactly as a combo does.
-  if (units.length === 0) {
-    for (const part of describeFromText(line.product.description)) {
-      units.push({
-        productId:  part,
-        name:       part,
-        quantity:   1,
-        portions:   1,
-        priceDelta: 0,
-        chosen:     false,
-        // Every part follows the PARENT's routing. Text cannot tell us that a
-        // soda goes to the packer and the chicken to the fryer — only real
-        // components can, which is the reason to enter them and the reason
-        // this stays a fallback.
-        attributes: [],
-        stationIds: lineStationIds,
-      });
-    }
-  }
-
-  const attrs: UnitAttribute[] = (line.selectedVariants ?? [])
-    .filter(v => v.optionName)
-    .map(v => ({
-      group:      v.groupName ?? '',
-      option:     v.optionName as string,
-      count:      1,
-      priceDelta: 0,
-    }));
-  if (attrs.length) {
-    if (units.length) {
-      // A combo: the choice describes the first component ("3PC Chicken / all
-      // spicy"), which is what the verified sample shows.
-      units[0].attributes = attrs;
-      units[0].chosen = true;
-    } else {
-      // A PLAIN product with a variant — no components to hang the choice on.
-      //
-      // This branch did not exist, and the condition above required units to be
-      // non-empty, so the whole selection was dropped. A ticket for "Chicken
-      // Burger / Large / no onions" printed as the words CHICKEN BURGER and
-      // nothing else: the cook could not tell what to make, and nothing
-      // anywhere reported a problem.
-      //
-      // Synthesised as one unit named after the product, routed by the LINE's
-      // own stations so it lands wherever the product itself is routed.
-      units.push({
-        productId:  lineProductId,
-        name:       lineName,
-        quantity:   1,
-        portions:   1,
-        priceDelta: 0,
-        chosen:     true,
-        attributes: attrs,
-        stationIds: lineStationIds,
-      });
-    }
-  }
-
-  for (const m of line.selectedModifiers ?? []) {
-    if (!m.name) continue;
-    units.push({
-      productId:  m.name,
-      name:       m.name,
-      quantity:   1,
-      portions:   1,
-      priceDelta: toCents(m.price ?? 0),
-      chosen:     true,
-      attributes: [],
-      // A sauce or an extra is packed, not cooked.
-      stationIds: ids.dispatch,
-    });
-  }
-
-  return units;
-}
 
 export interface SaleForPrint {
   billNumber: string;
@@ -438,6 +264,28 @@ const ORDER_TYPES: Record<string, OrderType> = {
  * spool owns retrying, and the queue view on the Printers screen owns telling
  * somebody it did not work.
  */
+/**
+ * Build the routing tables the shared `stationsForCategory`/`toUnits` need, from
+ * this terminal's local DB. This is the desktop half of the A249 extraction: the
+ * two SQLite reads that used to live inside the private `stationsForCategory` —
+ * `category_stations` (the configured routing) and `categories.is_kitchen` (the
+ * fallback) — read once per sale and passed in. Same data, same fallback.
+ */
+function buildCategoryRouting(): CategoryRouting {
+  const db = getLocalDb();
+  const rows = db.prepare(
+    `SELECT category_id, station_id FROM category_stations`
+  ).all() as Array<{ category_id: string; station_id: string }>;
+  const byCategory: Record<string, string[]> = {};
+  for (const r of rows) (byCategory[r.category_id] ??= []).push(r.station_id);
+
+  const kitchenRows = db.prepare(
+    `SELECT id FROM categories WHERE is_kitchen = 1`
+  ).all() as Array<{ id: string }>;
+
+  return { byCategory, kitchenCategories: new Set(kitchenRows.map(r => r.id)) };
+}
+
 export function printSale(
   sale: SaleForPrint,
   business: PrintContext['business'],
@@ -466,6 +314,11 @@ export function printSale(
     // sent at order time and on any ticket produced later.
     const ids = idsByKind(stations);
 
+    // The routing tables the shared stationsForCategory/toUnits used to read from
+    // SQLite themselves, now read ONCE here and passed in (A250b). Same two reads,
+    // same fallback — behaviour is identical to the private version this replaces.
+    const routing = buildCategoryRouting();
+
     // Applied to EVERY source of units — real components, description parts and
     // synthesised variant units alike. Filtering only the text fallback would
     // mean a properly-configured menu still sent drinks to the kitchen, which is
@@ -480,11 +333,11 @@ export function printSale(
       name:       l.product.name,
       quantity:   l.quantity,
       stationIds: stationsForCategory(
-        l.product.category_id ?? l.product.categories?.id, ids),
+        l.product.category_id ?? l.product.categories?.id, ids, routing),
       unitPrice:  toCents(l.unitPrice),
       lineTotal:  toCents(l.lineTotal),
       units:      toUnits(l, ids, stationsForCategory(
-        l.product.category_id ?? l.product.categories?.id, ids)).map(stripKitchen),
+        l.product.category_id ?? l.product.categories?.id, ids, routing), routing).map(stripKitchen),
       note:       l.note,
     }));
 
