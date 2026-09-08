@@ -31,6 +31,9 @@ export interface ReceiptOrder {
 }
 export interface ReceiptBusinessConfig {
   name: string;
+  branchName?: string;    // A255: printed under the business name
+  header?: string;        // A255: owner receipt_header (address/tagline), one line per line
+  footerCredit?: string;  // A255: "Powered by SwiftPOS"
   currencyCode: string;   // shared/printing renders the PAY line as `<currencyCode> <total>`
   branchName?: string;
   kraPin?: string;
@@ -99,13 +102,24 @@ export function buildReceiptOrder(a: {
   };
 }
 
-export function buildReceiptBusinessConfig(b: Business, footerMessage?: string, ctlRate = 0): ReceiptBusinessConfig {
+export function buildReceiptBusinessConfig(
+  b: Business,
+  footerMessage?: string,
+  ctlRate = 0,
+  extra: { branchName?: string; header?: string; footerText?: string } = {},
+): ReceiptBusinessConfig {
   return {
     name:            b.name,
+    branchName:      extra.branchName || undefined,
+    header:          extra.header || undefined,          // A255: owner address/tagline block
+    footerCredit:    'Powered by SwiftPOS',              // A255: closing credit line
     currencyCode:    b.currency || 'KES',
     kraPin:          b.tax_pin ?? undefined,
     telephone:       b.phone ?? undefined,
-    thankYouMessage: footerMessage || undefined,
+    // The shared renderer prints thankYouMessage as the owner's footer box
+    // (paybill / delivery no.). Owner receipt_footer wins; the per-device printer
+    // footerMessage is the fallback. (A255 — was mapped to an ignored footerText.)
+    thankYouMessage: extra.footerText || footerMessage || undefined,
     // Rates must match what the business actually charges so the tax line equals
     // the desktop's. vat_rate comes from the business; CTL defaults to 0 unless
     // the business levies it (pass ctlRate through when it does).

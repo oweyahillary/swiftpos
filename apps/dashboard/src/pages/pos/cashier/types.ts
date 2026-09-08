@@ -69,6 +69,8 @@ export interface POSInitResponse {
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems?: Record<string, import('../../../types').ComboComponent[]>;
   kitchenExclusions?: string[];
+  receiptHeader?: string;
+  receiptFooter?: string;
   businessType: string;
   businessName: string;
   currency: string;

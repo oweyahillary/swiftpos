@@ -44,6 +44,8 @@ interface Props {
   business: Business;
   branchId: string;
   branchName?: string;
+  receiptHeader?: string;
+  receiptFooter?: string;
   orderType?: OrderType;
   tableNumber?: string;
   loyaltyState: LoyaltyState | null;
@@ -82,7 +84,7 @@ function fmt(n: number) {
 }
 
 export default function PaymentModal({
-  cart, total, subtotal, vatAmount, currency, business, branchId, branchName,
+  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptFooter,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId,
@@ -437,7 +439,8 @@ export default function PaymentModal({
           payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
           tableNumber,
         });
-        const biz = buildReceiptBusinessConfig(business, printerSettings.footerMessage);
+        const biz = buildReceiptBusinessConfig(business, printerSettings.footerMessage, 0,
+          { branchName, header: receiptHeader, footerText: receiptFooter });
         const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
         // Honour the copies setting (1 = customer only, 2 = + merchant). The old
         // QZ path passed copies through; the byte path must send them itself.

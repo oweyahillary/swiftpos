@@ -54,6 +54,9 @@ export interface PrintRoutedArgs {
   kitchenExclusions?: string[];
   ctlRate?: number;
   footerMessage?: string;
+  branchName?: string;
+  receiptHeader?: string;
+  receiptFooter?: string;
   /** Restrict to these station kinds (e.g. Send-to-Kitchen = kitchen+dispatch). */
   kinds?: Kind[];
 }
@@ -131,7 +134,8 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
     total: toCents(a.total),
     kotCount: 0,
   } as any;
-  const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0);
+  const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0,
+    { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter });
 
   let printed = 0, failed = 0;
   for (const p of printers) {

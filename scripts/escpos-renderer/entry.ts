@@ -38,9 +38,12 @@ export const renderEscPos = renderReceiptEscPos;   // back-compat name (PaymentM
 function stationConfigForType(type, id, paperWidthMm) {
   const common = { id, paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
   if (type === 'receipt')
+    // A255: the routed receipt is a proforma / copy (Print Bill) — it must NOT kick
+    // the cash drawer. The drawer opens only on the actual payment receipt, which
+    // goes through renderReceiptEscPos (PaymentModal), not this path.
     return { ...common, name: 'Receipt', kind: 'receipt', includeUnits: 'all', showPrices: true,
       showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: false,
-      attributeStyle: 'inline-when-simple', openCashDrawer: true };
+      attributeStyle: 'inline-when-simple', openCashDrawer: false };
   if (type === 'expeditor')
     return { ...common, name: 'Dispatch', kind: 'dispatch', includeUnits: 'all', showPrices: false,
       showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: true,

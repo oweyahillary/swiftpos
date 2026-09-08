@@ -645,7 +645,7 @@ function stationConfigForType(type, id, paperWidthMm) {
       emphasizeParent: false,
       showFooterCount: false,
       attributeStyle: "inline-when-simple",
-      openCashDrawer: true
+      openCashDrawer: false
     };
   if (type === "expeditor")
     return {

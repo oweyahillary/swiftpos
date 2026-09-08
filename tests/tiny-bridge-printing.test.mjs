@@ -196,6 +196,23 @@ ok('A254: printRouted skips empty routed stations (no blank kitchen tickets)', (
   assert.match(pr, /isRouted\(p\.type\) && !stationHasContent/);
   assert.match(pr, /const isRouted = \(t: BranchPrinter\['type'\]\): boolean => t === 'kitchen' \|\| t === 'bar'/);
 });
+ok('A255: receipt carries branch + owner header/footer + credit (matches desktop)', () => {
+  const bo = r('apps/dashboard/src/lib/buildReceiptOrder.ts');
+  assert.match(bo, /branchName:\s+extra\.branchName/);
+  assert.match(bo, /header:\s+extra\.header/);
+  assert.match(bo, /footerCredit:\s+'Powered by SwiftPOS'/);
+  assert.match(bo, /thankYouMessage: extra\.footerText \|\| footerMessage/);  // owner receipt_footer wins
+  const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
+  assert.match(hook, /setReceiptHeader\(init\.receiptHeader \?\? ''\)/);
+  assert.match(hook, /setReceiptFooter\(init\.receiptFooter \?\? ''\)/);
+});
+ok('A255: Print Bill proforma does NOT open the cash drawer', () => {
+  const e = r('scripts/escpos-renderer/entry.ts');
+  // the routed receipt config (Print Bill) has openCashDrawer:false...
+  assert.match(e, /kind: 'receipt'[\s\S]*?openCashDrawer: false \}/);
+  // ...while the payment receipt (renderReceiptEscPos) keeps it true
+  assert.match(e, /const receiptStation[\s\S]*?openCashDrawer: true/);
+});
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);
