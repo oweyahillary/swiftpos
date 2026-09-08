@@ -11,6 +11,7 @@
  * the drawer closes it) — a manager force-close is deliberately marked uncounted.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { printShiftReport } from '../../lib/printShiftReport';
 import { usePOSAuth } from '../../context/POSAuthContext';
 
 interface OpenShift {
@@ -32,6 +33,8 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
   const [target, setTarget]   = useState<OpenShift | null>(null);
   const [reason, setReason]   = useState('');
   const [busy, setBusy]       = useState(false);
+  const [reportId, setReportId] = useState<string | null>(null);
+  const [reportMsg, setReportMsg] = useState<{ id: string; text: string } | null>(null);
 
   const money = (v: number | null) =>
     v === null || v === undefined ? 'unavailable'
@@ -79,17 +82,34 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
         ) : (
           <div className="space-y-3">
             {shifts.map(s => (
-              <div key={s.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div key={s.id}>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium">{s.cashier_name}{s.terminal_code ? ` · ${s.terminal_code}` : ''}</p>
                   <p className="text-gray-500 text-xs">open {since(s.opened_at)} · float {money(s.opening_float)} · expected {money(s.expected_cash_live)}</p>
                 </div>
-                {canForceClose && (
-                  <button onClick={() => { setTarget(s); setReason(''); }}
-                    className="flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors">
-                    Force-close
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setReportId(s.id); setReportMsg(null);
+                      const res = await printShiftReport(s.id);
+                      setReportMsg({ id: s.id, text: res.message }); setReportId(null);
+                    }}
+                    disabled={reportId === s.id}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50">
+                    {reportId === s.id ? 'Printing…' : 'Shift report'}
                   </button>
-                )}
+                  {canForceClose && (
+                    <button onClick={() => { setTarget(s); setReason(''); }}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors">
+                      Force-close
+                    </button>
+                  )}
+                </div>
+              </div>
+              {reportMsg?.id === s.id && (
+                <p className="text-xs text-gray-500 mt-1 ml-1">{reportMsg.text}</p>
+              )}
               </div>
             ))}
           </div>

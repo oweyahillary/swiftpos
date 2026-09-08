@@ -418,6 +418,77 @@ function renderTicket(ctx) {
   return ctx.station.kind === "receipt" ? renderReceipt(ctx) : renderProduction(ctx);
 }
 
+// shared/printing/src/shiftReport.ts
+var METHOD_LABELS = {
+  mpesa: "M-PESA",
+  glovo: "GLOVO"
+};
+function stamp(d) {
+  const day = String(d.getDate()).padStart(2, "0");
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${day} ${mon}, ${hh}:${mm}`;
+}
+function renderShiftReport(r, paperWidthMm) {
+  const cols = columnsFor(paperWidthMm);
+  const d = new DocBuilder(cols);
+  const money = (c) => `${r.currencyCode} ${formatCents(c ?? 0)}`;
+  const isClosed = r.status === "closed" || r.status === "closed_unreconciled";
+  d.line(center(cols, r.businessName.toUpperCase()), { size: "tall", bold: true });
+  d.line(center(cols, isClosed ? "Z-REPORT (SHIFT CLOSE)" : "SHIFT REPORT (LIVE)"), { bold: true });
+  if (r.branchName) d.line(center(cols, r.branchName));
+  d.line(center(cols, `Printed ${stamp(r.printedAt)}`));
+  d.line(rule(cols));
+  d.line(pair(cols, "Cashier", r.cashierName));
+  d.line(pair(cols, "Shift", r.shiftRef));
+  d.line(pair(cols, "Opened", stamp(r.openedAt)));
+  d.line(pair(cols, "Closed", r.closedAt ? stamp(r.closedAt) : "\u2014"));
+  d.line(pair(cols, "Status", r.status.toUpperCase()));
+  d.line(rule(cols));
+  d.line("SALES BY METHOD", { bold: true });
+  if (r.byMethod.length === 0) {
+    d.line("No sales this shift");
+  } else {
+    for (const m of r.byMethod) {
+      const label = METHOD_LABELS[m.method] ?? m.method.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      d.line(pair(cols, `${label} (${m.orders})`, money(m.amount)));
+    }
+  }
+  d.line(rule(cols));
+  d.line(pair(cols, "Orders", String(r.orderCount)));
+  d.line(pair(cols, "Gross sales", money(r.grossSales)));
+  d.line(pair(cols, "Voids", String(r.voidCount)));
+  d.line(rule(cols));
+  d.line("CASH RECONCILIATION", { bold: true });
+  d.line(pair(cols, "Opening float", money(r.openingFloat)));
+  d.line(pair(cols, "+ Cash sales", money(r.cashSales)));
+  d.line(pair(cols, "+ Float in", money(r.floatIn)));
+  d.line(pair(cols, "- Float out", money(r.floatOut)));
+  d.line(pair(cols, "= Expected cash", money(r.expectedCash)), { bold: true });
+  if (isClosed) {
+    d.line(pair(cols, "Counted cash", money(r.countedCash)));
+    if (r.variance != null) {
+      const label = r.variance === 0 ? "Variance" : r.variance > 0 ? "Variance (over)" : "Variance (short)";
+      d.line(pair(cols, label, money(r.variance)), { size: "tall", bold: true });
+    }
+  }
+  if (isClosed && r.notes && r.notes.trim()) {
+    d.line(rule(cols));
+    d.line("NOTES", { bold: true });
+    for (const line of r.notes.split(/\r?\n/)) {
+      if (!line.trim()) {
+        d.blank();
+        continue;
+      }
+      d.lines(wrap(line.trim(), cols));
+    }
+  }
+  d.line(rule(cols));
+  d.line(center(cols, r.footerCredit ?? "Powered by SwiftPOS"));
+  return d.build();
+}
+
 // shared/printing/src/escpos.ts
 var ESC = 27;
 var GS = 29;
@@ -683,11 +754,15 @@ function stationHasContent(order, business, station) {
   const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);
   return hasPrintableContent({ order: withDate(order), business, station: cfg });
 }
+function renderShiftReportEscPos(data, paperWidthMm) {
+  return toEscPos(renderShiftReport(data, paperWidthMm), { cut: true, feedBeforeCut: 3, openDrawer: false });
+}
 export {
   idsByKind,
   isExcludedFromKitchen,
   renderEscPos,
   renderReceiptEscPos,
+  renderShiftReportEscPos,
   renderStationEscPos,
   stationHasContent,
   stationsForCategory,

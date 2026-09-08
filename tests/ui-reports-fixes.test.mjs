@@ -66,5 +66,19 @@ ok('A263: report period selector — one active preset, no Apply button, Today d
   assert.doesNotMatch(rp, /useState\(weekAgo\(\)\)/);               // Today is the default range
 });
 
+ok('A262: shift report reuses the shared renderer + prints via the bridge, wired to a button', () => {
+  const e = r('scripts/escpos-renderer/entry.ts');
+  assert.match(e, /export function renderShiftReportEscPos/);
+  const lib = r('apps/dashboard/src/lib/printShiftReport.ts');
+  assert.match(lib, /renderShiftReportEscPos\(data as any, receipt\.paper_width\)/);
+  assert.match(lib, /api\.get<any>\(`\/api\/shifts\/\$\{shiftId\}`\)/);
+  const srv = r('apps/server/src/routes/shifts.ts');
+  assert.match(srv, /by_method: byMethod/);           // endpoint returns the breakdown
+  assert.match(srv, /expected_cash_computed/);
+  const tab = r('apps/dashboard/src/pages/manager/ManagerShiftTab.tsx');
+  assert.match(tab, /printShiftReport\(s\.id\)/);
+  assert.match(tab, /Shift report/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

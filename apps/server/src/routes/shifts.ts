@@ -574,7 +574,7 @@ router.get('/:id', async (req, res) => {
       .order('created_at'),
     supabase
       .from('orders')
-      .select('id, total, created_at')
+      .select('id, total, created_at, payments ( method, amount, status )')
       .eq('shift_id', id)
       .eq('status', 'completed'),
   ]);
@@ -595,12 +595,40 @@ router.get('/:id', async (req, res) => {
 
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
 
+  // A262: payment breakdown + cash reconciliation for the shift report (byMethod,
+  // cash sales, float in/out, live expected cash) — the figures the desktop
+  // Z-report shows. Only completed payments count toward the drawer.
+  const byMethodMap: Record<string, { orders: number; amount: number }> = {};
+  let cashSales = 0;
+  (orders ?? []).forEach((o: any) => {
+    (o.payments ?? []).forEach((pm: { method: string; amount: string; status: string }) => {
+      if (pm.status && pm.status !== 'completed') return;
+      const method = pm.method ?? 'other';
+      (byMethodMap[method] ??= { orders: 0, amount: 0 });
+      byMethodMap[method].orders += 1;
+      byMethodMap[method].amount += Number(pm.amount);
+      if (method === 'cash') cashSales += Number(pm.amount);
+    });
+  });
+  const byMethod = Object.entries(byMethodMap).map(([method, v]) => ({ method, orders: v.orders, amount: v.amount }));
+  let floatIn = 0, floatOut = 0;
+  (floatTxns ?? []).forEach((f: { type: string; amount: string }) => {
+    if (f.type === 'float_in') floatIn += Number(f.amount);
+    else if (f.type === 'float_out') floatOut += Number(f.amount);
+  });
+  const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut;
+
   res.json({
     ...shift,
     cashier_name: cashier?.name ?? 'Unknown',
     float_transactions: floatTxns ?? [],
     order_count: (orders ?? []).length,
     total_revenue: totalRevenue,
+    by_method: byMethod,
+    cash_sales: cashSales,
+    float_in: floatIn,
+    float_out: floatOut,
+    expected_cash_computed: expectedCash,
   });
 });
 

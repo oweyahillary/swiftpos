@@ -2,6 +2,7 @@
 // shared/printing render/escpos/routing modules into one self-contained browser
 // file. Output matches the desktop (shared/printing/test/sample.ts → SAMPLE-OUTPUT).
 import { renderTicket, hasPrintableContent } from '../../shared/printing/src/render';
+import { renderShiftReport } from '../../shared/printing/src/shiftReport';
 import { toEscPos } from '../../shared/printing/src/escpos';
 import { isExcludedFromKitchen, toUnits, stationsForCategory, idsByKind } from '../../shared/printing/src/routing';
 
@@ -64,6 +65,11 @@ export function renderStationEscPos(order, business, station) {   // station = {
 export function stationHasContent(order, business, station) {
   const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);
   return hasPrintableContent({ order: withDate(order), business, station: cfg });
+}
+
+// A262: shift / Z-report — same renderer the desktop uses.
+export function renderShiftReportEscPos(data, paperWidthMm) {
+  return toEscPos(renderShiftReport(data, paperWidthMm), { cut: true, feedBeforeCut: 3, openDrawer: false });
 }
 
 export { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen };
