@@ -32,5 +32,13 @@ ok('premium extras (Print Bill/Transfer/Split/Room) are below Charge', () => {
   assert.match(c, /Print Bill/); assert.match(c, /Split Bill/); assert.match(c, /🏨 Room/);
 });
 
+ok('A265: receiptHeader/receiptFooter are destructured from usePOSData (Charge no longer crashes)', () => {
+  // They are used in the PaymentModal props + printBill; must be declared or the
+  // PaymentModal render throws ReferenceError (the dashboard build is esbuild-only,
+  // so an undeclared identifier is only caught at runtime).
+  assert.match(c, /\n    receiptHeader,\n    receiptFooter,\n    businessMode:/);
+  assert.match(c, /receiptHeader=\{receiptHeader\}/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

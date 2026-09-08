@@ -180,6 +180,8 @@ export default function CashierScreen() {
     branchPrinters,
     comboItems,
     kitchenExclusions,
+    receiptHeader,
+    receiptFooter,
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
