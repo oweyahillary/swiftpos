@@ -91,7 +91,16 @@ function getStoredAccessToken():  string | null {
       || localStorage.getItem(TOKEN_KEYS.posAccess)
       || localStorage.getItem(TOKEN_KEYS.ownerAccess);
 }
-function getStoredRefreshToken(): string | null { return localStorage.getItem(refreshKey()); }
+function getStoredRefreshToken(): string | null {
+  // A267: the refresh half of A260. A manager works the dashboard surface where
+  // refreshKey() points at the (absent) OWNER refresh token, so refreshAccessToken()
+  // threw "No refresh token" — the 401 handler then failed to refresh and every call
+  // 401'd once the access token expired (business, tables, pos/init, …). Fall back to
+  // whichever refresh token exists (the POS one they actually hold) so refresh works.
+  return localStorage.getItem(refreshKey())
+      || localStorage.getItem(TOKEN_KEYS.posRefresh)
+      || localStorage.getItem(TOKEN_KEYS.ownerRefresh);
+}
 
 // ── Session-expired event ─────────────────────────────────────────────────────
 // Fired when a token refresh fails. AuthContext listens and signs out cleanly.

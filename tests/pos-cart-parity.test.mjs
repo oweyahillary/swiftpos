@@ -49,5 +49,11 @@ ok('A266: PaymentModal resolves the business (no blank receipt) + auto-prints on
   assert.match(pm, /autoPrintedRef\.current = true;\s*\n\s*void printViaBridge\(\)/);  // auto-print once on success
 });
 
+ok('A267: getStoredRefreshToken falls back to any refresh token (fixes the 401 cascade)', () => {
+  const api = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/api.ts'), 'utf8');
+  assert.ok(api.includes('TOKEN_KEYS.posRefresh') && api.includes('TOKEN_KEYS.ownerRefresh'), 'refresh-token fallback (A267)');
+  assert.ok(api.includes('TOKEN_KEYS.posAccess'), 'access-token fallback (A260) still present');
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);
