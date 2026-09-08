@@ -117,6 +117,16 @@ export default function PaymentModal({
   const [placing, setPlacing]       = useState(false);
   const [error, setError]           = useState('');
   const [completedOrder, setCompletedOrder] = useState<CompletedOrder | null>(null);
+  // A266: the receipt needs the business record, but useBusiness() is null on the
+  // POS surface for managers — which left the receipt preview a blank white box and
+  // the printed receipt without a name. Fall back to fetching /api/business (works
+  // via the POS token) so the receipt always has a business.
+  const [resolvedBusiness, setResolvedBusiness] = useState<Business | null>(business ?? null);
+  const autoPrintedRef = useRef(false);
+  useEffect(() => {
+    if (business) { setResolvedBusiness(business); return; }
+    api.get<Business>('/api/business').then(b => setResolvedBusiness(b)).catch(() => {});
+  }, [business]);
 
   // Free the table the moment payment succeeds, not when the receipt is dismissed.
   // Previously the table only cleared via the receipt's "New Sale" button, so
@@ -423,38 +433,49 @@ export default function PaymentModal({
     } finally { setWaSending(false); }
   };
 
-  const handlePrint = async () => {
-    const content = receiptRef.current;
-    // A235: silent thermal via the bridge when it's connected AND paired (token +
-    // a chosen receipt printer). The bridge renders ESC/POS from the Order — the
-    // same shared/printing code as desktop. Any failure falls back to the browser
-    // dialog below, so the cashier is never blocked.
+  // Silent thermal via the bridge when connected + a receipt printer is paired.
+  // Returns true if it printed, false if the bridge path isn't available/failed.
+  const printViaBridge = async (): Promise<boolean> => {
     const printerName = printerSettings.receiptPrinterName;
-    if (completedOrder && printerName && getQZStatus() === 'connected') {
-      try {
-        const order = buildReceiptOrder({
-          orderNumber: completedOrder.orderNumber,
-          orderType, cashierName: session?.staffName ?? 'Cashier',
-          cart, total: grandTotal, change: completedOrder.change,
-          payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
-          tableNumber,
-        });
-        const biz = buildReceiptBusinessConfig(business, printerSettings.footerMessage, 0,
-          { branchName, header: receiptHeader, footerText: receiptFooter });
-        const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
-        // Honour the copies setting (1 = customer only, 2 = + merchant). The old
-        // QZ path passed copies through; the byte path must send them itself.
-        const copies = printerSettings.copies ?? 1;
-        for (let i = 0; i < copies; i++) {
-          await printBytesToServer(`printer:${printerName}`, bytes);
-        }
-        return;
-      } catch (e: any) {
-        console.warn('[receipt] bridge print failed, using browser dialog:', e?.message);
+    if (!(completedOrder && printerName && resolvedBusiness && getQZStatus() === 'connected')) return false;
+    try {
+      const order = buildReceiptOrder({
+        orderNumber: completedOrder.orderNumber,
+        orderType, cashierName: session?.staffName ?? 'Cashier',
+        cart, total: grandTotal, change: completedOrder.change,
+        payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
+        tableNumber,
+      });
+      const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
+        { branchName, header: receiptHeader, footerText: receiptFooter });
+      const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
+      const copies = printerSettings.copies ?? 1;
+      for (let i = 0; i < copies; i++) {
+        await printBytesToServer(`printer:${printerName}`, bytes);
       }
+      return true;
+    } catch (e: any) {
+      console.warn('[receipt] bridge print failed:', e?.message);
+      return false;
     }
-    if (content) printReceipt(content.innerHTML, printerSettings, business.name);
   };
+
+  const handlePrint = async () => {
+    if (await printViaBridge()) return;
+    // Fallback: the browser print dialog (never blocks the cashier).
+    const content = receiptRef.current;
+    if (content) printReceipt(content.innerHTML, printerSettings, resolvedBusiness?.name ?? 'Receipt');
+  };
+
+  // A266: auto-print the receipt once on payment success (silent bridge path only —
+  // no browser dialog), matching the desktop. Waits for resolvedBusiness so the
+  // receipt carries the business name. The Print button remains for a reprint.
+  useEffect(() => {
+    if (completedOrder && resolvedBusiness && !autoPrintedRef.current) {
+      autoPrintedRef.current = true;
+      void printViaBridge();
+    }
+  }, [completedOrder?.orderId, resolvedBusiness]);
 
   // ── Receipt screen ────────────────────────────────────────────────────────
   if (completedOrder) {
@@ -495,7 +516,7 @@ export default function PaymentModal({
           <div className="px-6 py-4 max-h-80 overflow-y-auto bg-white rounded-xl mx-2 mb-2">
             <ReceiptView
               ref={receiptRef}
-              business={business}
+              business={resolvedBusiness as Business}
               branchName={branchName}
               orderNumber={completedOrder.orderNumber}
               etims={completedOrder.etims}

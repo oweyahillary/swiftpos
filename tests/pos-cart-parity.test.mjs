@@ -40,5 +40,14 @@ ok('A265: receiptHeader/receiptFooter are destructured from usePOSData (Charge n
   assert.match(c, /receiptHeader=\{receiptHeader\}/);
 });
 
+ok('A266: PaymentModal resolves the business (no blank receipt) + auto-prints on success', () => {
+  const pm = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/pos/PaymentModal.tsx'), 'utf8');
+  assert.match(pm, /const \[resolvedBusiness, setResolvedBusiness\]/);
+  assert.match(pm, /api\.get<Business>\('\/api\/business'\)\.then/);
+  assert.match(pm, /business=\{resolvedBusiness as Business\}/);     // ReceiptView uses it (no blank box)
+  assert.match(pm, /const printViaBridge = async/);
+  assert.match(pm, /autoPrintedRef\.current = true;\s*\n\s*void printViaBridge\(\)/);  // auto-print once on success
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);
