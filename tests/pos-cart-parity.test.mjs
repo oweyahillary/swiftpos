@@ -55,5 +55,10 @@ ok('A267: getStoredRefreshToken falls back to any refresh token (fixes the 401 c
   assert.ok(api.includes('TOKEN_KEYS.posAccess'), 'access-token fallback (A260) still present');
 });
 
+ok('A268: pay-first payment does not re-fire the kitchen if Send to Kitchen already sent', () => {
+  const cs = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/pos/CashierScreen.tsx'), 'utf8');
+  assert.match(cs, /orderMode === 'pay_first' && branchPrinters\.length > 0\s*\n\s*&& !\(activeKey && sentOrderIds\[activeKey\]\)/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

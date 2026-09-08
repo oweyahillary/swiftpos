@@ -2008,8 +2008,11 @@ export default function CashierScreen() {
             }
           }}
           onSuccess={(orderNumber) => {
-            // In pay-first mode, print KOT now. In order-first it was already printed on Send to Kitchen.
-            if (isRestaurant && orderMode === 'pay_first' && branchPrinters.length > 0) {
+            // In pay-first mode, print KOT now — UNLESS it was already fired via the
+            // Send to Kitchen button (A264 surfaced that in pay-first too). Re-firing
+            // here printed a second kitchen + dispatcher ticket, confusing the line (A268).
+            if (isRestaurant && orderMode === 'pay_first' && branchPrinters.length > 0
+                && !(activeKey && sentOrderIds[activeKey])) {
               printRoutedStations({
                 cart, branchPrinters, business: business!,
                 orderNumber,
