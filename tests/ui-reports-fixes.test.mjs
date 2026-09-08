@@ -52,6 +52,10 @@ ok('A259b: staff report attributes via shift.cashier_id when the order cashier i
   const rep = r('apps/server/src/routes/reports.ts');
   assert.match(rep, /coveringCashier\(o\.branch_id, o\.created_at\)/);   // A259c: time-window shift attribution
   assert.match(rep, /cashier_id, shift_id, branch_id, created_at, branches/);
+  // A259d — THE actual "Unknown" fix: server must emit staff_id/staff_name (the fields
+  // the StaffRow frontend reads), not cashier_id/name.
+  assert.match(rep, /staff_id:\s+id/);
+  assert.match(rep, /staff_name:\s+v\.name/);
   assert.match(rep, /avg_order_value: v\.orders \? v\.revenue \/ v\.orders : 0/);
 });
 ok('A263: report period selector — one active preset, no Apply button, Today default', () => {

@@ -272,7 +272,16 @@ router.get('/staff', async (req, res) => {
   });
 
   const staff = Object.entries(staffMap)
-    .map(([id, v]) => ({ cashier_id: id, ...v, avg_order_value: v.orders ? v.revenue / v.orders : 0 }))
+    // A259d: the frontend StaffRow reads staff_id / staff_name (not cashier_id / name)
+    // — that contract mismatch, not the data, is why every row showed "Unknown".
+    .map(([id, v]) => ({
+      staff_id:        id,
+      staff_name:      v.name,
+      orders:          v.orders,
+      revenue:         v.revenue,
+      avg_order_value: v.orders ? v.revenue / v.orders : 0,
+      voids:           0,
+    }))
     .sort((a, b) => b.revenue - a.revenue);
 
   res.json({ staff });
