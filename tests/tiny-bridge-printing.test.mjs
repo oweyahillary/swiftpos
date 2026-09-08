@@ -180,7 +180,7 @@ ok('A254: renderers pass cut/feed/drawer to toEscPos (paper cuts + bottom margin
   assert.match(e, /feedBeforeCut: station\.feedBeforeCut/);
   assert.match(e, /openDrawer:\s+station\.openCashDrawer/);
   // the fixed renderers all go through emit()
-  assert.match(e, /function emit\(station, order, business\)/);
+  assert.match(e, /function emit\(station, order, business/);
 });
 ok('A254: Master KOT renders as KITCHEN (all items), not a 2nd dispatch', () => {
   const e = r('scripts/escpos-renderer/entry.ts');
