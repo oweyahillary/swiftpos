@@ -197,7 +197,15 @@ async function request<T>(
   const json = await res.json();
 
   if (!res.ok) {
-    const err = new Error(json.error ?? `Request failed: ${res.status}`) as Error & {
+    // A257: the validate() middleware returns { error:'Validation failed',
+    // errors:[{field,message}] }. Showing only `error` gave the user a bare
+    // "Validation failed" with no clue which field — surface the field messages.
+    const fieldErrors = Array.isArray((json as { errors?: { field?: string; message?: string }[] }).errors)
+      ? ((json as { errors: { field?: string; message?: string }[] }).errors)
+          .map(e => (e.field ? `${e.field}: ${e.message}` : e.message))
+          .filter(Boolean).join('; ')
+      : '';
+    const err = new Error(fieldErrors || json.error || `Request failed: ${res.status}`) as Error & {
       code?: string;
       status?: number;
     };

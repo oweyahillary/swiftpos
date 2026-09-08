@@ -38,5 +38,16 @@ ok('UpdateProductSchema has NO defaults (update never injects/resets fields)', (
   assert.match(block, /track_stock:\s+z\.boolean\(\)\.optional\(\)/);
 });
 
+ok('A257: api client surfaces field-level validation errors (not just "Validation failed")', () => {
+  const api = r('apps/dashboard/src/lib/api.ts');
+  assert.match(api, /const fieldErrors = Array\.isArray/);
+  assert.match(api, /e\.field \? `\$\{e\.field\}: \$\{e\.message\}` : e\.message/);
+  assert.match(api, /new Error\(fieldErrors \|\| json\.error/);
+});
+ok('A257: category form placeholder is not petrol-specific ("Diesel")', () => {
+  const c = r('apps/dashboard/src/pages/products/CategoriesPage.tsx');
+  assert.doesNotMatch(c, /e\.g\. Diesel/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);
