@@ -602,8 +602,8 @@ function toUnits(line, ids, lineStationIds, routing) {
 
 // scripts/escpos-renderer/entry.ts
 var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
-function emit(station, order, business) {
-  const doc = renderTicket({ order: withDate(order), business, station });
+function emit(station, order, business, reprint) {
+  const doc = renderTicket({ order: withDate(order), business, station, reprint });
   return toEscPos(doc, {
     cut: station.cutPaper,
     feedBeforeCut: station.feedBeforeCut,
@@ -627,8 +627,8 @@ var receiptStation = (paperWidthMm) => ({
   cutPaper: true,
   feedBeforeCut: 3
 });
-function renderReceiptEscPos(order, business, paperWidth) {
-  return emit(receiptStation(paperWidth), order, business);
+function renderReceiptEscPos(order, business, paperWidth, reprint) {
+  return emit(receiptStation(paperWidth), order, business, reprint);
 }
 var renderEscPos = renderReceiptEscPos;
 function stationConfigForType(type, id, paperWidthMm) {

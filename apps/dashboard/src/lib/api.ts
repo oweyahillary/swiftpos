@@ -80,7 +80,17 @@ export function clearAllTokens() {
   sessionStorage.removeItem(TOKEN_KEYS.cashierSession); // legacy unsoped key
 }
 
-function getStoredAccessToken():  string | null { return localStorage.getItem(accessKey()); }
+function getStoredAccessToken():  string | null {
+  // A260: prefer the surface's token, but fall back to whichever token exists.
+  // A manager works the *dashboard* (Receiving/Reports) where onPosSurface() is
+  // false, so accessKey() pointed at the absent owner token and every `api` call
+  // — incl. BusinessContext's /api/business — 401'd, leaving the business null so
+  // documents printed "SwiftPOS". Falling back to the POS token they DO hold fixes
+  // it (and any other manager-dashboard `api` call that was silently failing).
+  return localStorage.getItem(accessKey())
+      || localStorage.getItem(TOKEN_KEYS.posAccess)
+      || localStorage.getItem(TOKEN_KEYS.ownerAccess);
+}
 function getStoredRefreshToken(): string | null { return localStorage.getItem(refreshKey()); }
 
 // ── Session-expired event ─────────────────────────────────────────────────────

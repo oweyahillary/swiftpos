@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
 import { isRefunded } from './orderRefund';
+import { reprintOrderReceipt } from '../lib/reprintReceipt';
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -80,6 +81,8 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const [search, setSearch]   = useState('');
   const [status, setStatus]   = useState('');
   const [loading, setLoading] = useState(false);
+  const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const [reprintMsg, setReprintMsg] = useState('');
   const [error, setError]     = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -172,6 +175,12 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
 
       {error && <div className="mb-3 text-sm text-red-400">{error}</div>}
 
+      {reprintMsg && (
+        <div className="mb-3 text-sm text-gray-300 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2 flex justify-between">
+          <span>{reprintMsg}</span>
+          <button onClick={() => setReprintMsg('')} className="text-gray-500 hover:text-gray-300">×</button>
+        </div>
+      )}
       <div className="border border-gray-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-900 text-gray-400 text-left">
@@ -245,6 +254,17 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                               {p.status !== 'completed' && <span className="text-amber-400"> ({p.status})</span>}
                             </span>
                           ))}
+                        </div>
+                        <div className="pt-2">
+                          <button
+                            onClick={async () => {
+                              setReprintingId(o.id); setReprintMsg('');
+                              const res = await reprintOrderReceipt(o.id);
+                              setReprintMsg(res.message); setReprintingId(null);
+                            }}
+                            disabled={reprintingId === o.id}
+                            className="px-3 py-1 text-xs font-medium rounded-lg border border-blue-500/40 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50"
+                          >{reprintingId === o.id ? 'Printing…' : 'Reprint receipt'}</button>
                         </div>
                       </div>
                     </td>

@@ -28,5 +28,21 @@ ok('A259: shift queries include active OPEN shifts opened before the period', ()
   assert.strictEqual((rep.match(/status\.eq\.open,opened_at\.gte\.\$\{start\}/g) || []).length, 2);
 });
 
+ok('A260: api token lookup falls back to the POS token (documents get the real business name)', () => {
+  const api = r('apps/dashboard/src/lib/api.ts');
+  assert.match(api, /localStorage\.getItem\(accessKey\(\)\)\s*\n\s*\|\| localStorage\.getItem\(TOKEN_KEYS\.posAccess\)/);
+});
+ok('A261: reprint reuses the built receipt renderer with the duplicate marker', () => {
+  const e = r('scripts/escpos-renderer/entry.ts');
+  assert.match(e, /renderReceiptEscPos\(order, business, paperWidth, reprint\)/);
+  assert.match(e, /renderTicket\(\{ order: withDate\(order\), business, station, reprint \}\)/);
+  const rp = r('apps/dashboard/src/lib/reprintReceipt.ts');
+  assert.match(rp, /renderReceiptEscPos\(toReceiptOrder\(order\), biz as any, receipt\.paper_width, \{ at: new Date\(\), count: 1 \}\)/);
+  assert.match(rp, /printBytesToServer\(`printer:\$\{receipt\.printer_name\}`, bytes\)/);
+  const op = r('apps/dashboard/src/pages/OrdersPage.tsx');
+  assert.match(op, /reprintOrderReceipt\(o\.id\)/);
+  assert.match(op, /Reprint receipt/);
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

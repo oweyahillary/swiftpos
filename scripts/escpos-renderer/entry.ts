@@ -10,8 +10,8 @@ const withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.s
 // A254 FIX: pass the station's cut/feed/drawer through to toEscPos. Without this
 // the paper never cut (continuous receipts) and never fed clear of the head (no
 // bottom margin) — the opts were being dropped on every render.
-function emit(station, order, business) {
-  const doc = renderTicket({ order: withDate(order), business, station });
+function emit(station, order, business, reprint) {
+  const doc = renderTicket({ order: withDate(order), business, station, reprint });
   return toEscPos(doc, {
     cut:           station.cutPaper,
     feedBeforeCut: station.feedBeforeCut,
@@ -27,7 +27,7 @@ const receiptStation = (paperWidthMm) => ({
   attributeStyle: 'inline-when-simple', openCashDrawer: true, cutPaper: true, feedBeforeCut: 3,
 });
 
-export function renderReceiptEscPos(order, business, paperWidth) { return emit(receiptStation(paperWidth), order, business); }
+export function renderReceiptEscPos(order, business, paperWidth, reprint) { return emit(receiptStation(paperWidth), order, business, reprint); }
 export const renderEscPos = renderReceiptEscPos;   // back-compat name (PaymentModal)
 
 // ── Routed station renderer (printRouted) ─────────────────────────────────────
