@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { validateLoose } from '../middleware/validate';
+import { CreateCategorySchema } from '../lib/schemas';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -26,7 +28,7 @@ router.get('/', async (req, res) => {
 // Writes were ungated: any authenticated session, including a cashier's, could
 // create, rename or delete a category — which also moves every product in it and
 // changes what prints on the kitchen ticket.
-router.post('/', requirePermission('products.manage'), async (req, res) => {
+router.post('/', requirePermission('products.manage'), validateLoose(CreateCategorySchema), async (req, res) => {
   const { name, color, icon, sort_order, super_category, is_kitchen } = req.body;
 
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }

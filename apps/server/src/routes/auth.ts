@@ -33,6 +33,8 @@
  *   POST /api/auth/set-pin         — bcrypt PIN update
  *   PATCH /api/auth/me             — clears must_change_password
  */
+import { validateLoose } from '../middleware/validate';
+import { LoginSchema } from '../lib/schemas';
 
 import { Router }   from 'express';
 import { registerDesktopTerminal, findPriorTerminalByMac } from '../lib/deviceRegistry';
@@ -554,7 +556,7 @@ async function checkDeviceRegistration(
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', async (req, res) => {
+router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   const { email, password, business_id } = req.body;
 
   if (!email || !password) {

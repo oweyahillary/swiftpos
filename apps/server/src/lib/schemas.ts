@@ -87,8 +87,20 @@ export const CreateProductSchema = z.object({
   has_modifiers: z.boolean().default(false),
 });
 
-export const UpdateProductSchema = CreateProductSchema.partial().extend({
-  status: z.enum(['active', 'inactive']).optional(),
+// A157: NOT CreateProductSchema.partial() — that keeps the .default() values, so an
+// update omitting track_stock/has_variants/has_modifiers would inject them and the
+// handler (which writes any field that is `!== undefined`) would silently reset them.
+// Explicit optionals with NO defaults: an update touches only the fields it sends.
+export const UpdateProductSchema = z.object({
+  name:          nonEmptyString.max(120).optional(),
+  description:   z.string().max(500).optional(),
+  base_price:    z.number().nonnegative().optional(),
+  category_id:   uuid.optional().nullable(),
+  image_url:     z.string().url().optional().nullable(),
+  track_stock:   z.boolean().optional(),
+  has_variants:  z.boolean().optional(),
+  has_modifiers: z.boolean().optional(),
+  status:        z.enum(['active', 'inactive']).optional(),
 });
 
 // ── Categories ────────────────────────────────────────────────────────────────
