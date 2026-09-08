@@ -223,9 +223,11 @@ router.get('/staff', async (req, res) => {
   if (userIds.length) {
     const { data: users } = await supabase
       .from('users')
-      .select('id, name')
+      .select('id, name, email')
       .in('id', userIds);
-    (users ?? [] as Array<{ id: string; name: string }>).forEach(u => { userMap[u.id] = u.name; });
+    // A258: a user with a null name was rendering as "Unknown" — fall back to email.
+    (users ?? [] as Array<{ id: string; name: string; email: string }>)
+      .forEach(u => { userMap[u.id] = u.name || u.email || 'Unknown'; });
   }
 
   const staffMap: Record<string, { name: string; branch: string; orders: number; revenue: number }> = {};
@@ -434,8 +436,8 @@ router.get('/eod', async (req, res) => {
     .from('shifts')
     .select('id, status, opening_float, closing_float, expected_cash, cash_variance, opened_at')
     .eq('business_id', req.businessId)
-    .gte('opened_at', start)
     .lte('opened_at', end)
+    .or(`status.eq.open,opened_at.gte.${start}`)   // A258: include active open shifts
     .order('opened_at', { ascending: false });
   if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
   const { data: shiftRows } = await shiftsQ;
@@ -523,8 +525,10 @@ router.get('/shifts', async (req, res) => {
     .from('shifts')
     .select('*')
     .eq('business_id', req.businessId)
-    .gte('opened_at', start)
     .lte('opened_at', end)
+    // A258: an OPEN shift opened before this period is still active during it —
+    // include it, not just shifts whose opened_at falls inside the window.
+    .or(`status.eq.open,opened_at.gte.${start}`)
     .order('opened_at', { ascending: false });
 
   if (scopedBranch)            query = query.eq('branch_id', scopedBranch);
@@ -543,10 +547,10 @@ router.get('/shifts', async (req, res) => {
   const cashierIds = [...new Set(shifts.map(s => s.cashier_id))];
   const { data: users } = await supabase
     .from('users')
-    .select('id, name')
+    .select('id, name, email')
     .in('id', cashierIds);
   const nameMap: Record<string, string> = {};
-  (users ?? []).forEach(u => { nameMap[u.id] = u.name; });
+  (users ?? []).forEach(u => { nameMap[u.id] = u.name || u.email || 'Unknown'; });
 
   // ── Enrich with branch names ──────────────────────────────────────────────
   const branchIds = [...new Set(shifts.map(s => s.branch_id))];

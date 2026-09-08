@@ -736,7 +736,7 @@ function OverviewTab() {
           )}
 
           {/* Hourly chart + Top items */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {hourly.length > 0 && (
               <div className="lg:col-span-2 bg-gray-800/50 border border-gray-700 rounded-2xl p-5">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
@@ -781,15 +781,14 @@ function OverviewTab() {
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Payment methods */}
-          {sales && Object.keys(sales.paymentMethods).length > 0 && (
+            {/* Payment methods — beside Top Items (A258) */}
+            {sales && Object.keys(sales.paymentMethods).length > 0 && (
             <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 Payment Methods — Today
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-3">
                 {Object.entries(sales.paymentMethods)
                   .sort((a, b) => b[1] - a[1])
                   .map(([method, amount]) => {
@@ -809,7 +808,8 @@ function OverviewTab() {
                   })}
               </div>
             </div>
-          )}
+            )}
+          </div>
         </>
       )}
     </div>
