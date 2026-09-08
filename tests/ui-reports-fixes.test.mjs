@@ -50,8 +50,8 @@ ok('A261: reprint reuses the built receipt renderer with the duplicate marker', 
 
 ok('A259b: staff report attributes via shift.cashier_id when the order cashier is unresolved + returns avg', () => {
   const rep = r('apps/server/src/routes/reports.ts');
-  assert.match(rep, /const cashierOf = \(o: any\): string \| null => o\.cashier_id \?\? shiftCashier\[o\.shift_id\] \?\? null/);
-  assert.match(rep, /cashier_id, shift_id, branch_id, branches/);      // shift_id now selected
+  assert.match(rep, /coveringCashier\(o\.branch_id, o\.created_at\)/);   // A259c: time-window shift attribution
+  assert.match(rep, /cashier_id, shift_id, branch_id, created_at, branches/);
   assert.match(rep, /avg_order_value: v\.orders \? v\.revenue \/ v\.orders : 0/);
 });
 ok('A263: report period selector — one active preset, no Apply button, Today default', () => {

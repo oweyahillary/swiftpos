@@ -206,7 +206,7 @@ router.get('/staff', async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('id, total, refunded_amount, refunded_at, cashier_id, shift_id, branch_id, branches ( name )')
+    .select('id, total, refunded_amount, refunded_at, cashier_id, shift_id, branch_id, created_at, branches ( name )')
     .eq('business_id', req.businessId)
     .eq('status', 'completed')
     .gte('created_at', start)
@@ -217,17 +217,33 @@ router.get('/staff', async (req, res) => {
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
-  // A259b: many orders (offline-synced, or rung without an explicit cashier) have
-  // no resolvable cashier_id and were all bucketing into "Unknown". Attribute those
-  // through their SHIFT — shifts.cashier_id is NOT NULL — so a shift's sales land on
-  // whoever opened it. Order cashier_id still wins when present.
-  const shiftIds = [...new Set((orders ?? []).map((o: any) => o.shift_id).filter(Boolean))];
-  const shiftCashier: Record<string, string> = {};
-  if (shiftIds.length) {
-    const { data: shifts } = await supabase.from('shifts').select('id, cashier_id').in('id', shiftIds as string[]);
-    (shifts ?? []).forEach((sh: any) => { if (sh.cashier_id) shiftCashier[sh.id] = sh.cashier_id; });
-  }
-  const cashierOf = (o: any): string | null => o.cashier_id ?? shiftCashier[o.shift_id] ?? null;
+  // A259c: orders rung offline/desktop often land with NO cashier_id AND NO shift_id,
+  // so both id- and shift_id-based lookups miss and everything buckets into "Unknown".
+  // Attribute an unresolved order to the SHIFT whose time window covers it (same branch,
+  // opened_at <= created_at <= closed_at/open) — an order rung during Eugene's open shift
+  // is Eugene's even if the row never recorded who. Order cashier_id, then the order's
+  // own shift_id, still win when present.
+  let shiftsQ = supabase
+    .from('shifts')
+    .select('id, cashier_id, branch_id, opened_at, closed_at, status')
+    .eq('business_id', req.businessId)
+    .lte('opened_at', end)
+    .or(`status.eq.open,closed_at.gte.${start}`);
+  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  const { data: shiftRows } = await shiftsQ;
+  const shiftById: Record<string, { cashier_id: string | null }> = {};
+  (shiftRows ?? []).forEach((sh: any) => { shiftById[sh.id] = sh; });
+  const coveringCashier = (branchId: string, at: string): string | null => {
+    const sh = (shiftRows ?? []).find((s: any) =>
+      s.branch_id === branchId && s.cashier_id &&
+      s.opened_at <= at && (s.closed_at == null || s.closed_at >= at));
+    return sh?.cashier_id ?? null;
+  };
+  const cashierOf = (o: any): string | null =>
+    o.cashier_id
+    ?? (o.shift_id ? shiftById[o.shift_id]?.cashier_id ?? null : null)
+    ?? coveringCashier(o.branch_id, o.created_at)
+    ?? null;
 
   // Collect unique user IDs then fetch names in one query
   const userIds = [...new Set((orders ?? []).map((o: any) => cashierOf(o)).filter(Boolean))];
