@@ -206,7 +206,7 @@ router.get('/staff', async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('id, total, refunded_amount, refunded_at, cashier_id, branch_id, branches ( name )')
+    .select('id, total, refunded_amount, refunded_at, cashier_id, shift_id, branch_id, branches ( name )')
     .eq('business_id', req.businessId)
     .eq('status', 'completed')
     .gte('created_at', start)
@@ -217,8 +217,20 @@ router.get('/staff', async (req, res) => {
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
+  // A259b: many orders (offline-synced, or rung without an explicit cashier) have
+  // no resolvable cashier_id and were all bucketing into "Unknown". Attribute those
+  // through their SHIFT — shifts.cashier_id is NOT NULL — so a shift's sales land on
+  // whoever opened it. Order cashier_id still wins when present.
+  const shiftIds = [...new Set((orders ?? []).map((o: any) => o.shift_id).filter(Boolean))];
+  const shiftCashier: Record<string, string> = {};
+  if (shiftIds.length) {
+    const { data: shifts } = await supabase.from('shifts').select('id, cashier_id').in('id', shiftIds as string[]);
+    (shifts ?? []).forEach((sh: any) => { if (sh.cashier_id) shiftCashier[sh.id] = sh.cashier_id; });
+  }
+  const cashierOf = (o: any): string | null => o.cashier_id ?? shiftCashier[o.shift_id] ?? null;
+
   // Collect unique user IDs then fetch names in one query
-  const userIds = [...new Set((orders ?? []).map(o => o.cashier_id).filter(Boolean))];
+  const userIds = [...new Set((orders ?? []).map((o: any) => cashierOf(o)).filter(Boolean))];
   const userMap: Record<string, string> = {};
   if (userIds.length) {
     const { data: users } = await supabase
@@ -232,8 +244,9 @@ router.get('/staff', async (req, res) => {
 
   const staffMap: Record<string, { name: string; branch: string; orders: number; revenue: number }> = {};
   (orders ?? [] as ReportOrderRow[]).forEach((o) => {
-    const key    = o.cashier_id ?? 'unknown';
-    const name   = userMap[o.cashier_id] ?? 'Unknown';
+    const cid    = cashierOf(o);
+    const key    = cid ?? 'unknown';
+    const name   = (cid && userMap[cid]) ? userMap[cid] : 'Unknown';
     const branch = embedOne<{ name: string }>((o as any).branches)?.name ?? '';
     if (!staffMap[key]) staffMap[key] = { name, branch, orders: 0, revenue: 0 };
     staffMap[key].orders++;
@@ -243,7 +256,7 @@ router.get('/staff', async (req, res) => {
   });
 
   const staff = Object.entries(staffMap)
-    .map(([id, v]) => ({ cashier_id: id, ...v }))
+    .map(([id, v]) => ({ cashier_id: id, ...v, avg_order_value: v.orders ? v.revenue / v.orders : 0 }))
     .sort((a, b) => b.revenue - a.revenue);
 
   res.json({ staff });

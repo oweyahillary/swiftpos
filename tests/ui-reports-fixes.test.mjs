@@ -44,5 +44,19 @@ ok('A261: reprint reuses the built receipt renderer with the duplicate marker', 
   assert.match(op, /Reprint receipt/);
 });
 
+ok('A259b: staff report attributes via shift.cashier_id when the order cashier is unresolved + returns avg', () => {
+  const rep = r('apps/server/src/routes/reports.ts');
+  assert.match(rep, /const cashierOf = \(o: any\): string \| null => o\.cashier_id \?\? shiftCashier\[o\.shift_id\] \?\? null/);
+  assert.match(rep, /cashier_id, shift_id, branch_id, branches/);      // shift_id now selected
+  assert.match(rep, /avg_order_value: v\.orders \? v\.revenue \/ v\.orders : 0/);
+});
+ok('A263: report period selector — one active preset, no Apply button, Today default', () => {
+  const rp = r('apps/dashboard/src/pages/manager/ManagerReportsPage.tsx');
+  assert.match(rp, /const \[active, setActive\] = useState<string>/);
+  assert.match(rp, /active === p\.label \? 'bg-blue-600 text-white'/);
+  assert.doesNotMatch(rp, /'Apply'/);                                   // Apply button gone (auto-applies)
+  assert.doesNotMatch(rp, /useState\(weekAgo\(\)\)/);               // Today is the default range
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

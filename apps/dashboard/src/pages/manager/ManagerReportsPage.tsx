@@ -128,12 +128,16 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
     { label: '7 days',  f: weekAgo(), t: today() },
     { label: 'Month',   f: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; })(), t: today() },
   ];
+  // A263: track the chosen preset explicitly so exactly one highlights (deriving
+  // it from from/to could light two up when their ranges coincide), and clear it
+  // when the dates are edited by hand.
+  const [active, setActive] = useState<string>(() => presets.find(p => p.f === from && p.t === to)?.label ?? '');
   return (
     <div className="flex flex-wrap gap-3 items-end mb-6">
       <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
         {presets.map(p => (
-          <button key={p.label} onClick={() => { setFrom(p.f); setTo(p.t); }}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${from===p.f && to===p.t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <button key={p.label} onClick={() => { setActive(p.label); setFrom(p.f); setTo(p.t); }}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${active === p.label ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
             {p.label}
           </button>
         ))}
@@ -141,14 +145,11 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
       {[{ label: 'From', val: from, set: setFrom }, { label: 'To', val: to, set: setTo }].map(({ label, val, set }) => (
         <div key={label} className="flex flex-col gap-1">
           <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
-          <input type="date" value={val} onChange={e => set(e.target.value)}
+          <input type="date" value={val} onChange={e => { set(e.target.value); setActive(''); }}
             className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
         </div>
       ))}
-      <button onClick={onApply} disabled={loading}
-        className="px-4 py-1.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors">
-        {loading ? '…' : 'Apply'}
-      </button>
+      {loading && <span className="self-end pb-1.5 text-xs text-gray-500">Updating…</span>}
     </div>
   );
 }
@@ -156,7 +157,7 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
 // ── Tab: Summary ──────────────────────────────────────────────────────────────
 
 function SummaryTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
-  const [from, setFrom] = useState(weekAgo());
+  const [from, setFrom] = useState(today());
   const [to,   setTo]   = useState(today());
   const [data, setData] = useState<SalesSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -328,7 +329,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
 // ── Tab: Item Mix ─────────────────────────────────────────────────────────────
 
 function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
-  const [from, setFrom]   = useState(weekAgo());
+  const [from, setFrom]   = useState(today());
   const [to,   setTo]     = useState(today());
   const [rows, setRows]   = useState<ProductRow[]>([]);
   const [search, setSearch] = useState('');
