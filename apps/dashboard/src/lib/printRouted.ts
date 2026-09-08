@@ -14,7 +14,7 @@
  * could not do. Owner kitchen-exclusions are stripped from kitchen-kind stations.
  */
 import {
-  renderStationEscPos, toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen,
+  renderStationEscPos, stationHasContent, toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen,
   type StationIds, type CategoryRouting,
 } from './escposRenderer';
 import { buildReceiptBusinessConfig } from './buildReceiptOrder';
@@ -26,8 +26,12 @@ import type { Business, Category, ComboComponent } from '../types';
 const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
 
 type Kind = 'receipt' | 'kitchen' | 'dispatch';
+// Timing/ordering group: Master KOT (kot) fires with the kitchen, NOT as a second
+// dispatch (A254). Only the Dispatcher (expeditor) is the dispatch kind.
 const kindOf = (t: BranchPrinter['type']): Kind =>
-  t === 'receipt' ? 'receipt' : (t === 'kitchen' || t === 'bar') ? 'kitchen' : 'dispatch';
+  t === 'receipt' ? 'receipt' : t === 'expeditor' ? 'dispatch' : 'kitchen';
+// Only kitchen/bar are category-ROUTED stations; kot prints the whole order.
+const isRouted = (t: BranchPrinter['type']): boolean => t === 'kitchen' || t === 'bar';
 
 const ORDER_TYPES: Record<string, string> = {
   takeaway: 'takeaway', dine_in: 'dine_in', delivery: 'delivery',
@@ -69,12 +73,12 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
   // every ticket, even if we only print a subset now.
   const all = a.branchPrinters.filter(p => p.enabled && !!p.printer_name);
   const ids: StationIds = {
-    kitchen:  all.filter(p => kindOf(p.type) === 'kitchen').map(p => p.id),
-    dispatch: all.filter(p => kindOf(p.type) === 'dispatch').map(p => p.id),
+    kitchen:  all.filter(p => isRouted(p.type)).map(p => p.id),        // routed kitchen/bar only
+    dispatch: all.filter(p => p.type === 'expeditor').map(p => p.id),  // all-items dispatch
   };
   const byCategory: Record<string, string[]> = {};
   for (const p of all) {
-    if (kindOf(p.type) !== 'kitchen') continue;          // only routed stations carry a category filter
+    if (!isRouted(p.type)) continue;                     // only routed stations carry a category filter
     for (const c of p.category_ids) (byCategory[c] ??= []).push(p.id);
   }
   const routing: CategoryRouting = {
@@ -132,8 +136,12 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
   let printed = 0, failed = 0;
   for (const p of printers) {
     try {
+      const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width };
+      // A254: don't print a blank kitchen/bar ticket when none of its categories
+      // are in this order (all-items stations always have content).
+      if (isRouted(p.type) && !stationHasContent(order, biz as any, spec)) continue;
       if (getQZStatus() === 'connected') {
-        const bytes = renderStationEscPos(order, biz as any, { id: p.id, kind: kindOf(p.type), paperWidthMm: p.paper_width });
+        const bytes = renderStationEscPos(order, biz as any, spec);
         await printBytesToServer(`printer:${p.printer_name}`, bytes);
         printed++;
       } else { failed++; }

@@ -120,14 +120,16 @@ ok('testPrint sends a printer:-prefixed spooler target (not a bare name)', () =>
 });
 
 // A246: Print Bill fans to the 3 full-order stations in the shared format
-ok('bundle exports the 3 station renderers', () => {
+ok('bundle exports the station renderers + helpers', () => {
   assert.match(rend, /renderReceiptEscPos/);
-  assert.match(rend, /renderKitchenEscPos/);
-  assert.match(rend, /renderDispatchEscPos/);
+  assert.match(rend, /renderStationEscPos/);
+  assert.match(rend, /stationHasContent/);
+  assert.match(rend, /isExcludedFromKitchen/);
 });
 ok('printRouted renders each station by id/kind with shared component routing (A252)', () => {
   const pr = r('apps/dashboard/src/lib/printRouted.ts');
-  assert.match(pr, /renderStationEscPos\(order, biz as any, \{ id: p\.id, kind: kindOf\(p\.type\)/);
+  assert.match(pr, /const spec = \{ id: p\.id, type: p\.type, paperWidthMm: p\.paper_width \}/);
+  assert.match(pr, /renderStationEscPos\(order, biz as any, spec\)/);
   assert.match(pr, /toUnits\(routable, ids, lineStationIds, routing\)/);
   assert.match(pr, /stationsForCategory\(cat, ids, routing\)/);
   assert.match(pr, /printBytesToServer\(`printer:\$\{p\.printer_name\}`, bytes\)/);
@@ -171,6 +173,28 @@ ok('Phase 4: timing split — Send-to-Kitchen fires kitchen+dispatch, Print Bill
   assert.match(cs, /kinds: \['receipt'\],/);              // Print Bill = customer proforma
   assert.strictEqual((cs.match(/kinds: \['kitchen', 'dispatch'\],/g) || []).length, 2);  // send + pay-first
   assert.doesNotMatch(cs, /printKOTs\(/);                  // old fan-out retired
+});
+ok('A254: renderers pass cut/feed/drawer to toEscPos (paper cuts + bottom margin)', () => {
+  const e = r('scripts/escpos-renderer/entry.ts');
+  assert.match(e, /toEscPos\(doc, \{[^}]*cut:\s+station\.cutPaper/s);
+  assert.match(e, /feedBeforeCut: station\.feedBeforeCut/);
+  assert.match(e, /openDrawer:\s+station\.openCashDrawer/);
+  // the fixed renderers all go through emit()
+  assert.match(e, /function emit\(station, order, business\)/);
+});
+ok('A254: Master KOT renders as KITCHEN (all items), not a 2nd dispatch', () => {
+  const e = r('scripts/escpos-renderer/entry.ts');
+  // kot/kitchen/bar -> kitchen header; kitchen/bar routed, kot all-items
+  assert.match(e, /const routed = \(type === 'kitchen' \|\| type === 'bar'\)/);
+  assert.match(e, /includeUnits: routed \? 'routed' : 'all'/);
+  assert.match(e, /if \(type === 'expeditor'\)[\s\S]*kind: 'dispatch'/);
+  const pr = r('apps/dashboard/src/lib/printRouted.ts');
+  assert.match(pr, /t === 'expeditor' \? 'dispatch' : 'kitchen'/);   // only expeditor is dispatch
+});
+ok('A254: printRouted skips empty routed stations (no blank kitchen tickets)', () => {
+  const pr = r('apps/dashboard/src/lib/printRouted.ts');
+  assert.match(pr, /isRouted\(p\.type\) && !stationHasContent/);
+  assert.match(pr, /const isRouted = \(t: BranchPrinter\['type'\]\): boolean => t === 'kitchen' \|\| t === 'bar'/);
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);

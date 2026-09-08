@@ -405,6 +405,15 @@ function renderReceipt(ctx) {
   if (business.footerCredit) d.line(center(cols, business.footerCredit));
   return d.build();
 }
+function hasPrintableContent(ctx) {
+  const { order, station } = ctx;
+  if (station.kind === "receipt") return true;
+  if (station.includeUnits === "none") return order.lines.length > 0;
+  return order.lines.some((line) => {
+    const units = visibleUnits(line, ctx);
+    return line.units.length > 0 ? units.length > 0 : station.includeUnits === "all" || line.stationIds.includes(station.id);
+  });
+}
 function renderTicket(ctx) {
   return ctx.station.kind === "receipt" ? renderReceipt(ctx) : renderProduction(ctx);
 }
@@ -592,14 +601,20 @@ function toUnits(line, ids, lineStationIds, routing) {
 }
 
 // scripts/escpos-renderer/entry.ts
+var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
+function emit(station, order, business) {
+  const doc = renderTicket({ order: withDate(order), business, station });
+  return toEscPos(doc, {
+    cut: station.cutPaper,
+    feedBeforeCut: station.feedBeforeCut,
+    openDrawer: station.openCashDrawer
+  });
+}
 var receiptStation = (paperWidthMm) => ({
   id: "web-receipt",
   name: "Receipt",
   kind: "receipt",
   paperWidthMm,
-  // Web adaptation: the flat web cart has no combo base/delta split, so we show
-  // variant/modifier sub-items as NAMES (showUnchangedUnits) and DON'T print
-  // per-upgrade prices (the line's Amt is the true lineTotal — totals stay exact).
   includeUnits: "all",
   showPrices: true,
   showUnchangedUnits: true,
@@ -612,53 +627,13 @@ var receiptStation = (paperWidthMm) => ({
   cutPaper: true,
   feedBeforeCut: 3
 });
-var kitchenStation = (paperWidthMm) => ({
-  id: "web-kitchen",
-  name: "Kitchen",
-  kind: "kitchen",
-  paperWidthMm,
-  includeUnits: "all",
-  showPrices: false,
-  showUnchangedUnits: true,
-  showOptionPrices: false,
-  emphasizeParent: true,
-  aggregateUnits: false,
-  showFooterCount: true,
-  attributeStyle: "always-sublines",
-  openCashDrawer: false,
-  cutPaper: true,
-  feedBeforeCut: 3
-});
-var dispatchStation = (paperWidthMm) => ({
-  id: "web-dispatch",
-  name: "Dispatch",
-  kind: "dispatch",
-  paperWidthMm,
-  includeUnits: "all",
-  showPrices: false,
-  showUnchangedUnits: true,
-  showOptionPrices: false,
-  emphasizeParent: false,
-  aggregateUnits: false,
-  showFooterCount: true,
-  attributeStyle: "inline-when-simple",
-  openCashDrawer: false,
-  cutPaper: true,
-  feedBeforeCut: 3
-});
-var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
 function renderReceiptEscPos(order, business, paperWidth) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: receiptStation(paperWidth) }));
+  return emit(receiptStation(paperWidth), order, business);
 }
-function renderKitchenEscPos(order, business, paperWidth) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: kitchenStation(paperWidth) }));
-}
-function renderDispatchEscPos(order, business, paperWidth) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: dispatchStation(paperWidth) }));
-}
-function stationConfig(station) {
-  const common = { id: station.id, paperWidthMm: station.paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
-  if (station.kind === "receipt")
+var renderEscPos = renderReceiptEscPos;
+function stationConfigForType(type, id, paperWidthMm) {
+  const common = { id, paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
+  if (type === "receipt")
     return {
       ...common,
       name: "Receipt",
@@ -672,46 +647,49 @@ function stationConfig(station) {
       attributeStyle: "inline-when-simple",
       openCashDrawer: true
     };
-  if (station.kind === "kitchen")
+  if (type === "expeditor")
     return {
       ...common,
-      name: "Kitchen",
-      kind: "kitchen",
-      includeUnits: "routed",
+      name: "Dispatch",
+      kind: "dispatch",
+      includeUnits: "all",
       showPrices: false,
       showUnchangedUnits: true,
       showOptionPrices: false,
-      emphasizeParent: true,
+      emphasizeParent: false,
       showFooterCount: true,
-      attributeStyle: "always-sublines",
+      attributeStyle: "inline-when-simple",
       openCashDrawer: false
     };
+  const routed = type === "kitchen" || type === "bar";
   return {
     ...common,
-    name: "Dispatch",
-    kind: "dispatch",
-    includeUnits: "all",
+    name: "Kitchen",
+    kind: "kitchen",
+    includeUnits: routed ? "routed" : "all",
     showPrices: false,
     showUnchangedUnits: true,
     showOptionPrices: false,
-    emphasizeParent: false,
+    emphasizeParent: true,
     showFooterCount: true,
-    attributeStyle: "inline-when-simple",
+    attributeStyle: "always-sublines",
     openCashDrawer: false
   };
 }
 function renderStationEscPos(order, business, station) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: stationConfig(station) }));
+  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business);
 }
-var renderEscPos = renderReceiptEscPos;
+function stationHasContent(order, business, station) {
+  const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);
+  return hasPrintableContent({ order: withDate(order), business, station: cfg });
+}
 export {
   idsByKind,
   isExcludedFromKitchen,
-  renderDispatchEscPos,
   renderEscPos,
-  renderKitchenEscPos,
   renderReceiptEscPos,
   renderStationEscPos,
+  stationHasContent,
   stationsForCategory,
   toUnits
 };

@@ -1,75 +1,66 @@
 // Build input (NOT type-checked by the dashboard). esbuild bundles this + the
-// shared/printing render/escpos modules into one self-contained browser file.
-// Exposes the THREE station renderers the web needs — customer receipt, kitchen,
-// dispatch — all from shared/printing so the printed output matches the desktop
-// (see shared/printing/test/sample.ts → SAMPLE-OUTPUT.txt, the golden format).
-import { renderTicket } from '../../shared/printing/src/render';
+// shared/printing render/escpos/routing modules into one self-contained browser
+// file. Output matches the desktop (shared/printing/test/sample.ts → SAMPLE-OUTPUT).
+import { renderTicket, hasPrintableContent } from '../../shared/printing/src/render';
 import { toEscPos } from '../../shared/printing/src/escpos';
 import { isExcludedFromKitchen, toUnits, stationsForCategory, idsByKind } from '../../shared/printing/src/routing';
 
-// Station configs copied from shared/printing/src/index.ts (receipt/kitchen/
-// dispatch presets) rather than imported, so the browser bundle does not pull in
-// index.ts's Node-only re-exports (transport/spool). KITCHEN is overridden to
-// includeUnits:'all' — the web's "Full order printers" always print every item
-// (no per-unit routing on the flat web cart), unlike the desktop combo model.
+const withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : new Date() });
+
+// A254 FIX: pass the station's cut/feed/drawer through to toEscPos. Without this
+// the paper never cut (continuous receipts) and never fed clear of the head (no
+// bottom margin) — the opts were being dropped on every render.
+function emit(station, order, business) {
+  const doc = renderTicket({ order: withDate(order), business, station });
+  return toEscPos(doc, {
+    cut:           station.cutPaper,
+    feedBeforeCut: station.feedBeforeCut,
+    openDrawer:    station.openCashDrawer,
+  });
+}
+
+// ── Fixed-station renderers (customer receipt path in PaymentModal) ────────────
 const receiptStation = (paperWidthMm) => ({
   id: 'web-receipt', name: 'Receipt', kind: 'receipt', paperWidthMm,
-  // Web adaptation: the flat web cart has no combo base/delta split, so we show
-  // variant/modifier sub-items as NAMES (showUnchangedUnits) and DON'T print
-  // per-upgrade prices (the line's Amt is the true lineTotal — totals stay exact).
   includeUnits: 'all', showPrices: true, showUnchangedUnits: true, showOptionPrices: false,
   emphasizeParent: false, aggregateUnits: false, showFooterCount: false,
   attributeStyle: 'inline-when-simple', openCashDrawer: true, cutPaper: true, feedBeforeCut: 3,
 });
-const kitchenStation = (paperWidthMm) => ({
-  id: 'web-kitchen', name: 'Kitchen', kind: 'kitchen', paperWidthMm,
-  includeUnits: 'all', showPrices: false, showUnchangedUnits: true, showOptionPrices: false,
-  emphasizeParent: true, aggregateUnits: false, showFooterCount: true,
-  attributeStyle: 'always-sublines', openCashDrawer: false, cutPaper: true, feedBeforeCut: 3,
-});
-const dispatchStation = (paperWidthMm) => ({
-  id: 'web-dispatch', name: 'Dispatch', kind: 'dispatch', paperWidthMm,
-  includeUnits: 'all', showPrices: false, showUnchangedUnits: true, showOptionPrices: false,
-  emphasizeParent: false, aggregateUnits: false, showFooterCount: true,
-  attributeStyle: 'inline-when-simple', openCashDrawer: false, cutPaper: true, feedBeforeCut: 3,
-});
 
-const withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : new Date() });
+export function renderReceiptEscPos(order, business, paperWidth) { return emit(receiptStation(paperWidth), order, business); }
+export const renderEscPos = renderReceiptEscPos;   // back-compat name (PaymentModal)
 
-export function renderReceiptEscPos(order, business, paperWidth) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: receiptStation(paperWidth) }));
-}
-export function renderKitchenEscPos(order, business, paperWidth) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: kitchenStation(paperWidth) }));
-}
-export function renderDispatchEscPos(order, business, paperWidth) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: dispatchStation(paperWidth) }));
-}
-// B-engine (A252): render ONE station by id/kind, so units routed to that station
-// (via the shared toUnits/stationsForCategory) print there and nowhere else.
-function stationConfig(station) {
-  const common = { id: station.id, paperWidthMm: station.paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
-  if (station.kind === 'receipt')
+// ── Routed station renderer (printRouted) ─────────────────────────────────────
+// A254 FIX: config is derived from the printer TYPE, not a 3-way kind. Master KOT
+// (kot) is a KITCHEN-header, ALL-items copy for the expediter — NOT a second
+// dispatch ticket (the "2 dispatch, missing kitchen" bug). Kitchen/bar are routed
+// stations (only their categories); expeditor is the all-items dispatch copy.
+function stationConfigForType(type, id, paperWidthMm) {
+  const common = { id, paperWidthMm, aggregateUnits: false, feedBeforeCut: 3, cutPaper: true };
+  if (type === 'receipt')
     return { ...common, name: 'Receipt', kind: 'receipt', includeUnits: 'all', showPrices: true,
       showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: false,
       attributeStyle: 'inline-when-simple', openCashDrawer: true };
-  if (station.kind === 'kitchen')
-    return { ...common, name: 'Kitchen', kind: 'kitchen', includeUnits: 'routed', showPrices: false,
-      showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: true, showFooterCount: true,
-      attributeStyle: 'always-sublines', openCashDrawer: false };
-  return { ...common, name: 'Dispatch', kind: 'dispatch', includeUnits: 'all', showPrices: false,
-    showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: true,
-    attributeStyle: 'inline-when-simple', openCashDrawer: false };
+  if (type === 'expeditor')
+    return { ...common, name: 'Dispatch', kind: 'dispatch', includeUnits: 'all', showPrices: false,
+      showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: false, showFooterCount: true,
+      attributeStyle: 'inline-when-simple', openCashDrawer: false };
+  // kitchen | bar | kot  → kitchen header; kitchen/bar route by category, kot shows all.
+  const routed = (type === 'kitchen' || type === 'bar');
+  return { ...common, name: 'Kitchen', kind: 'kitchen', includeUnits: routed ? 'routed' : 'all',
+    showPrices: false, showUnchangedUnits: true, showOptionPrices: false, emphasizeParent: true,
+    showFooterCount: true, attributeStyle: 'always-sublines', openCashDrawer: false };
 }
-export function renderStationEscPos(order, business, station) {
-  return toEscPos(renderTicket({ order: withDate(order), business, station: stationConfig(station) }));
+
+export function renderStationEscPos(order, business, station) {   // station = { id, type, paperWidthMm }
+  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business);
 }
-export { toUnits, stationsForCategory, idsByKind };
 
-// Kitchen exclusions (owner-named items that must never reach a kitchen ticket).
-// Re-exported from the shared routing module so the web applies the SAME rule as
-// the desktop, one copy (A250).
-export { isExcludedFromKitchen };
+// Lets printRouted skip a routed station that has nothing routed to it (no blank
+// kitchen/bar tickets when the order has none of that station's categories).
+export function stationHasContent(order, business, station) {
+  const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);
+  return hasPrintableContent({ order: withDate(order), business, station: cfg });
+}
 
-// Back-compat: the customer-receipt renderer keeps its old name (PaymentModal).
-export const renderEscPos = renderReceiptEscPos;
+export { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen };
