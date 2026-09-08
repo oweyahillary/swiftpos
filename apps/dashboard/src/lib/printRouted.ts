@@ -59,6 +59,8 @@ export interface PrintRoutedArgs {
   receiptFooter?: string;
   /** Restrict to these station kinds (e.g. Send-to-Kitchen = kitchen+dispatch). */
   kinds?: Kind[];
+  /** A269: render the receipt as a proforma BILL (Print Bill), not a fiscal receipt. */
+  proforma?: boolean;
 }
 
 export interface PrintRoutedResult { printed: number; failed: number; configured: number }
@@ -140,7 +142,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
   let printed = 0, failed = 0;
   for (const p of printers) {
     try {
-      const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width };
+      const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width, proforma: a.proforma && p.type === 'receipt' };
       // A254: don't print a blank kitchen/bar ticket when none of its categories
       // are in this order (all-items stations always have content).
       if (isRouted(p.type) && !stationHasContent(order, biz as any, spec)) continue;

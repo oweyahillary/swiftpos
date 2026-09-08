@@ -212,6 +212,10 @@ function renderReceipt(ctx: PrintContext): Document {
     d.line('Duplicate Print', { align: 'center', size: 'tall', bold: true });
     d.line(rule(cols));
   }
+  if (ctx.proforma) {
+    d.line('BILL - NOT A RECEIPT', { align: 'center', size: 'tall', bold: true });
+    d.line(rule(cols));
+  }
 
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
@@ -230,7 +234,7 @@ function renderReceipt(ctx: PrintContext): Document {
   d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
   d.line(rule(cols));
 
-  d.line(`Bill No.: ${order.billNumber}`);
+  if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);   // a proforma bill carries no fiscal number
   if (order.orderType === 'delivery') d.line(`Delivery Boy: ${order.deliveryPerson ?? ''}`);
   if (order.orderType === 'dine_in' && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
   d.line(`Cashier: ${order.cashierName}`);

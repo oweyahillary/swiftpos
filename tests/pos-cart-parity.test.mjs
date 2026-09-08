@@ -60,5 +60,15 @@ ok('A268: pay-first payment does not re-fire the kitchen if Send to Kitchen alre
   assert.match(cs, /orderMode === 'pay_first' && branchPrinters\.length > 0\s*\n\s*&& !\(activeKey && sentOrderIds\[activeKey\]\)/);
 });
 
+ok('A269: Print Bill is a proforma BILL (no fiscal number), distinct from the payment receipt', () => {
+  const rnd = fs.readFileSync(path.join(root, 'shared/printing/src/render.ts'), 'utf8');
+  assert.match(rnd, /if \(ctx\.proforma\) \{[\s\S]{0,120}BILL - NOT A RECEIPT/);
+  assert.match(rnd, /if \(!ctx\.proforma\) d\.line\(`Bill No\./);      // proforma carries no bill number
+  const cs = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/pos/CashierScreen.tsx'), 'utf8');
+  assert.match(cs, /proforma: true,/);                                      // Print Bill sets it
+  const pr = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/printRouted.ts'), 'utf8');
+  assert.match(pr, /proforma: a\.proforma && p\.type === 'receipt'/);      // threaded to the receipt station only
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);
 process.exit(fail ? 1 : 0);

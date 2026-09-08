@@ -178,6 +178,8 @@ export interface PrintContext {
   station: StationConfig;
   /** Set on any copy after the first. Drives the Duplicate Print banner. */
   reprint?: { at: Date; count: number };
+  /** A264/A269: a pre-payment BILL (Print Bill), not a fiscal receipt. */
+  proforma?: boolean;
   /** Set when the order was voided. Drives the VOID layout. */
   voided?: { at: Date; by: string; reason?: string };
 }

@@ -709,7 +709,8 @@ export default function CashierScreen() {
         cart,
         branchPrinters,
         business: business!,
-        orderNumber: generateOrderNumber(),
+        orderNumber: '',                 // A269: a proforma BILL carries no fiscal number
+        proforma: true,
         orderType: (activeKey && openOrders[activeKey]?.orderType) || (activeKey && openOrders[activeKey]?.tableId ? 'dine_in' : 'retail'),
         cashierName: session?.staffName ?? 'Cashier',
         total: orderTotal,

@@ -305,6 +305,10 @@ function renderReceipt(ctx) {
     d.line("Duplicate Print", { align: "center", size: "tall", bold: true });
     d.line(rule(cols));
   }
+  if (ctx.proforma) {
+    d.line("BILL - NOT A RECEIPT", { align: "center", size: "tall", bold: true });
+    d.line(rule(cols));
+  }
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
   if (business.header) {
@@ -317,7 +321,7 @@ function renderReceipt(ctx) {
   d.line(rule(cols));
   d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
   d.line(rule(cols));
-  d.line(`Bill No.: ${order.billNumber}`);
+  if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);
   if (order.orderType === "delivery") d.line(`Delivery Boy: ${order.deliveryPerson ?? ""}`);
   if (order.orderType === "dine_in" && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
   d.line(`Cashier: ${order.cashierName}`);
@@ -673,8 +677,8 @@ function toUnits(line, ids, lineStationIds, routing) {
 
 // scripts/escpos-renderer/entry.ts
 var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
-function emit(station, order, business, reprint) {
-  const doc = renderTicket({ order: withDate(order), business, station, reprint });
+function emit(station, order, business, reprint, proforma) {
+  const doc = renderTicket({ order: withDate(order), business, station, reprint, proforma });
   return toEscPos(doc, {
     cut: station.cutPaper,
     feedBeforeCut: station.feedBeforeCut,
@@ -748,7 +752,7 @@ function stationConfigForType(type, id, paperWidthMm) {
   };
 }
 function renderStationEscPos(order, business, station) {
-  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business);
+  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business, void 0, station.proforma);
 }
 function stationHasContent(order, business, station) {
   const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);
