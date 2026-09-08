@@ -647,6 +647,16 @@ export default function CashierScreen() {
     setCart([]);
   }
 
+  // A264: the in-cart order-type selector sets the active order's recorded type
+  // (dine_in / takeaway / delivery), mirroring the desktop toggle. Keeps the same
+  // table association — it changes what the order is booked as, not its key.
+  function setActiveOrderType(val: 'dine_in' | 'takeaway' | 'delivery') {
+    if (!activeKey) return;
+    setOpenOrders(prev => prev[activeKey]
+      ? { ...prev, [activeKey]: { ...prev[activeKey], orderType: val } }
+      : prev);
+  }
+
   function resumeParked(key: string) {
     const order = openOrders[key];
     if (!order) return;
@@ -1379,6 +1389,21 @@ export default function CashierScreen() {
             )}
           </div>
 
+          {/* A264: order-type selector — shared core, top of the cart (matches desktop) */}
+          {isRestaurant && activeKey && (
+            <div style={{ display: 'flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden', margin: '0 14px 10px' }}>
+              {(['dine_in', 'takeaway', 'delivery'] as const).map(val => {
+                const active = getOrderType() === val;
+                return (
+                  <button key={val} onClick={() => setActiveOrderType(val)}
+                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: active ? 'rgba(34,197,94,0.12)' : '#1e293b', color: active ? '#22c55e' : '#cbd5e1' }}>
+                    {val === 'dine_in' ? 'Dine in' : val === 'takeaway' ? 'Takeaway' : 'Delivery'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Slot picker hint when no active key */}
           {hasSlotPicker && !activeKey && (
             <div style={s.tableHint}>
@@ -1527,82 +1552,79 @@ export default function CashierScreen() {
                 <span style={{ ...s.totalValue, color: '#f1f5f9', fontWeight: 700, fontSize: 17 }}>{fmt(orderTotal, currency)}</span>
               </div>
 
-              {/* ── Order-first: Send to Kitchen + Charge as separate actions ── */}
-              {isRestaurant && orderMode === 'order_first' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Fire held courses — shown once the order is sent and held items remain */}
-                  {activeKey && sentOrderIds[activeKey] && (() => {
-                    const heldCourses = Array.from(new Set(
-                      cart.filter(i => i.fire_status === 'held' && i.course).map(i => i.course as string)
-                    ));
-                    if (heldCourses.length === 0) return null;
-                    return (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {heldCourses.map(c => (
-                          <button key={c}
-                            onClick={() => fireCourse(c)}
-                            style={{ flex: '1 1 auto', padding: '8px 10px', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                            🔥 Fire {c}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  {/* Send to Kitchen — disabled once sent (order already in DB) */}
-                  <button
-                    style={{
-                      ...s.chargeBtn,
-                      background: activeKey && sentOrderIds[activeKey]
-                        ? '#166534'  // already sent — muted green
-                        : '#15803d',
-                      fontSize: 14,
-                    }}
-                    disabled={sendingToKitchen || !!(activeKey && sentOrderIds[activeKey])}
-                    onClick={sendToKitchen}
-                  >
-                    {sendingToKitchen
-                      ? 'Sending…'
-                      : activeKey && sentOrderIds[activeKey]
-                        ? '✓ Sent to kitchen'
-                        : '🍳 Send to Kitchen'}
-                  </button>
-                  {/* Charge — always available; uses /pay if already sent */}
-                  <button
-                    data-testid="charge-button"
-                    style={s.chargeBtn}
-                    onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}
-                  >
-                    Charge {fmt(orderTotal, currency)}
-                  </button>
-                </div>
-              ) : (
-                /* Pay-first (default) — single charge button + extra restaurant actions */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {isRestaurant && cart.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { printGuestCheck(); }}>
-                        🧾 Print Bill
-                      </button>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setTransferTarget(null); setShowTransfer(true); }}>
-                        ↔ Transfer
-                      </button>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setPaymentEvenSplit(true); setShowPayment(true); }}>
-                        👥 Split Bill
-                      </button>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setRoomNumber(''); setRoomGuestName(''); setRoomChargeError(''); setShowRoomCharge(true); }}>
-                        🏨 Room
-                      </button>
+              {/* ── A264: shared actions (Send to Kitchen · Hold -> Charge), same on web + desktop.
+                   The web extras sit BELOW Charge so they never displace the shared core. ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Fire held courses — order-first, once sent and held items remain */}
+                {isRestaurant && orderMode === 'order_first' && activeKey && sentOrderIds[activeKey] && (() => {
+                  const heldCourses = Array.from(new Set(
+                    cart.filter(i => i.fire_status === 'held' && i.course).map(i => i.course as string)
+                  ));
+                  if (heldCourses.length === 0) return null;
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {heldCourses.map(c => (
+                        <button key={c}
+                          onClick={() => fireCourse(c)}
+                          style={{ flex: '1 1 auto', padding: '8px 10px', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          🔥 Fire {c}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  <button data-testid="charge-button" style={s.chargeBtn} onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}>
-                    Charge {fmt(orderTotal, currency)}
-                  </button>
-                </div>
-              )}
+                  );
+                })()}
+                {/* Send to Kitchen · Hold — shared core, BOTH modes */}
+                {isRestaurant && cart.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      style={{ flex: 1, padding: '10px 0', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (sendingToKitchen || !!(activeKey && sentOrderIds[activeKey])) ? 0.5 : 1 }}
+                      disabled={sendingToKitchen || !!(activeKey && sentOrderIds[activeKey])}
+                      onClick={sendToKitchen}
+                    >
+                      {sendingToKitchen
+                        ? 'Sending…'
+                        : activeKey && sentOrderIds[activeKey]
+                          ? '✓ Sent to kitchen'
+                          : '🍳 Send to Kitchen'}
+                    </button>
+                    <button
+                      style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={parkOrder}
+                    >
+                      ⏸ Hold
+                    </button>
+                  </div>
+                )}
+                {/* Charge — always */}
+                <button
+                  data-testid="charge-button"
+                  style={s.chargeBtn}
+                  onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}
+                >
+                  Charge {fmt(orderTotal, currency)}
+                </button>
+                {/* Web-only premium extras — below Charge */}
+                {isRestaurant && cart.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { printGuestCheck(); }}>
+                      🧾 Print Bill
+                    </button>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { setTransferTarget(null); setShowTransfer(true); }}>
+                      ↔ Transfer
+                    </button>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { setPaymentEvenSplit(true); setShowPayment(true); }}>
+                      👥 Split Bill
+                    </button>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { setRoomNumber(''); setRoomGuestName(''); setRoomChargeError(''); setShowRoomCharge(true); }}>
+                      🏨 Room
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
