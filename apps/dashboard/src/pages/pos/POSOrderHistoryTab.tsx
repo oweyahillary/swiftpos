@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { reprintOrderReceipt } from '../../lib/reprintReceipt';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
   const [expanded, setExpanded]   = useState<string | null>(null);
+  const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const [reprintMsg, setReprintMsg] = useState<{ id: string; text: string } | null>(null);
 
   const load = useCallback(async (p = 1, q = search) => {
     setLoading(true);
@@ -158,6 +161,21 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                       <span style={s.detailVal}>{fmt(p.amount, currency)}</span>
                     </div>
                   ))}
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setReprintingId(order.id); setReprintMsg(null);
+                      const res = await reprintOrderReceipt(order.id);
+                      setReprintMsg({ id: order.id, text: res.message }); setReprintingId(null);
+                    }}
+                    disabled={reprintingId === order.id}
+                    style={{ marginTop: 10, padding: '6px 12px', fontSize: 12, fontWeight: 600,
+                      borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', color: '#60a5fa',
+                      background: 'transparent', cursor: 'pointer', opacity: reprintingId === order.id ? 0.5 : 1 }}
+                  >{reprintingId === order.id ? 'Printing…' : 'Reprint receipt'}</button>
+                  {reprintMsg?.id === order.id && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>{reprintMsg.text}</div>
+                  )}
                 </div>
               )}
             </div>

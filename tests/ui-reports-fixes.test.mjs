@@ -42,6 +42,10 @@ ok('A261: reprint reuses the built receipt renderer with the duplicate marker', 
   const op = r('apps/dashboard/src/pages/OrdersPage.tsx');
   assert.match(op, /reprintOrderReceipt\(o\.id\)/);
   assert.match(op, /Reprint receipt/);
+  // A261b: the manager's Orders tab is the CARD view (POSOrderHistoryTab), not the table.
+  const pos = r('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
+  assert.match(pos, /reprintOrderReceipt\(order\.id\)/);
+  assert.match(pos, /Reprint receipt/);
 });
 
 ok('A259b: staff report attributes via shift.cashier_id when the order cashier is unresolved + returns avg', () => {
