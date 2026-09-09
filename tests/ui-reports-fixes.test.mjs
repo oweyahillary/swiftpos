@@ -16,6 +16,31 @@ ok('A258: Overview puts Top Items + Payment Methods in a 2-col grid (no blank)',
   assert.match(d, /Payment methods — beside Top Items/);
   assert.doesNotMatch(d, /grid grid-cols-1 sm:grid-cols-3 gap-4/); // payment methods restacked for the narrower column
 });
+ok('A258: the OWNER Overview also pairs Payment methods with Top sellers (not stacked)', () => {
+  // The original A258 fix only reached the manager Overview; the owner OverviewPage still
+  // stacked them (found in the 2026-09-09 browser pass). Guard the owner path too: within
+  // one 2-col grid, Payment methods must be immediately followed by Top sellers/grades.
+  const o = r('apps/dashboard/src/pages/OverviewPage.tsx');
+  assert.match(o, /A258:[\s\S]{0,120}side by side/); // the A258 intent comment (wraps two lines)
+  assert.match(o, /title="Payment methods"[\s\S]{0,1600}\{\/\* Top sellers \*\/\}/);
+});
+ok('A259: OWNER staff report reads staff_name/staff_id (not the stale name/cashier_id)', () => {
+  // The A259d server fix emits staff_name/staff_id; the owner ReportsPage still read
+  // s.name/s.cashier_id, so the Cashier column rendered blank (2026-09-09 browser pass).
+  const rp = r('apps/dashboard/src/pages/ReportsPage.tsx');
+  assert.match(rp, /staff_id:\s*string;\s*staff_name:\s*string/); // the corrected type
+  // the staff-performance row keys on staff_id and renders staff_name (other tables keep
+  // their own s.name / s.cashier_id — this check is scoped to the staff row).
+  assert.match(rp, /key=\{s\.staff_id\}[\s\S]{0,400}\{s\.staff_name\}/);
+});
+ok('A257: empty category/product submit shows a message, not a silent no-op', () => {
+  for (const f of ['apps/dashboard/src/pages/products/CategoriesPage.tsx',
+                   'apps/dashboard/src/pages/products/ProductsPage.tsx']) {
+    const s = r(f);
+    assert.match(s, /if \(!form\.name\.trim\(\)\) \{ setError\('Name is required'\); return; \}/);
+    assert.doesNotMatch(s, /disabled=\{saving \|\| !form\.name\.trim\(\)\}/); // button enabled so the click surfaces the message
+  }
+});
 ok('A259: staff report falls back to email when name is null (not "Unknown")', () => {
   const rep = r('apps/server/src/routes/reports.ts');
   assert.match(rep, /userMap\[u\.id\] = u\.name \|\| u\.email \|\| 'Unknown'/);

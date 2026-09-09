@@ -94,7 +94,10 @@ interface TaxReport {
 }
 
 interface StaffReport {
-  staff: { cashier_id: string; name: string; branch: string; orders: number; revenue: number }[];
+  // A259d: the server emits staff_id / staff_name / avg_order_value (not cashier_id /
+  // name / branch). The owner table read the old field names, so the Cashier column
+  // rendered blank. Match the real contract.
+  staff: { staff_id: string; staff_name: string; orders: number; revenue: number; avg_order_value: number }[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -975,7 +978,6 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
               <tr>
                 <th className="text-left text-xs text-gray-400 px-4 py-2.5 font-medium">#</th>
                 <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Cashier</th>
-                <th className="text-left text-xs text-gray-400 px-2 py-2.5 font-medium">Branch</th>
                 <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Orders</th>
                 <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
                 <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Avg Order</th>
@@ -984,13 +986,12 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {data.staff.map((s, i) => (
-                <tr key={s.cashier_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                <tr key={s.staff_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                   <td className="px-4 py-2.5 text-gray-300 dark:text-gray-600 text-xs tabular-nums">{i + 1}</td>
-                  <td className="px-2 py-2.5 text-gray-800 dark:text-gray-200 font-medium">{s.name}</td>
-                  <td className="px-2 py-2.5 text-gray-500 dark:text-gray-400 text-xs">{s.branch}</td>
+                  <td className="px-2 py-2.5 text-gray-800 dark:text-gray-200 font-medium">{s.staff_name}</td>
                   <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{s.orders}</td>
                   <td className="px-2 py-2.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtShort(s.revenue, currency)}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-gray-500">{fmtShort(s.orders > 0 ? s.revenue / s.orders : 0, currency)}</td>
+                  <td className="px-2 py-2.5 text-right tabular-nums text-gray-500">{fmtShort(s.avg_order_value, currency)}</td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       <div className="w-14 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">

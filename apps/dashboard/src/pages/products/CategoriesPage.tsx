@@ -45,7 +45,10 @@ export default function CategoriesPage() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !business) return;
+    // A257: an empty name used to silently return (button disabled, no message), so a
+    // user got no feedback. Surface the reason instead of no-op'ing.
+    if (!form.name.trim()) { setError('Name is required'); return; }
+    if (!business) return;
     setSaving(true);
     setError('');
 
@@ -180,7 +183,7 @@ export default function CategoriesPage() {
               <button onClick={() => setShowModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving || !form.name.trim()} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
                 {saving ? 'Saving…' : 'Save'}
               </button>
             </div>

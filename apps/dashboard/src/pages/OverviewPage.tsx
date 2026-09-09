@@ -487,39 +487,8 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        {/* Revenue trend */}
-        <Section title="7-day trend" linkTo="/dashboard/reports" linkLabel="full report →">
-          {(sales?.dailySeries?.length ?? 0) > 0
-            ? <MiniBarChart series={sales!.dailySeries} />
-            : <p className="text-gray-600 text-sm">No data yet.</p>}
-        </Section>
-
-        {/* Top sellers */}
-        <Section title={isPetrol ? 'Top grades today' : 'Top sellers today'} live linkTo="/dashboard/reports?tab=items" linkLabel="item mix →">
-          {topProducts.length === 0
-            ? <p className="text-gray-600 text-sm">No sales yet today.</p>
-            : (
-              <div className="flex flex-col divide-y divide-gray-800">
-                {topProducts.map((p, i) => (
-                  <div key={p.product_id} className="flex items-center justify-between py-2 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-gray-700 text-xs w-4 flex-shrink-0 tabular-nums">{i + 1}</span>
-                      <div className="min-w-0">
-                        <p className="text-white text-sm truncate">{p.name}</p>
-                        <p className="text-gray-600 text-xs">{p.qty} sold</p>
-                      </div>
-                    </div>
-                    <span className="text-white text-sm font-medium flex-shrink-0 tabular-nums">{fmt(p.revenue, currency)}</span>
-                  </div>
-                ))}
-              </div>
-            )
-          }
-        </Section>
-      </div>
-
+      {/* Main grid — A258: Top sellers + Payment methods side by side (owner Overview
+          matched the manager Overview, which already paired them). */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {/* Payment split */}
         <Section title="Payment methods" sub="today">
@@ -548,6 +517,38 @@ export default function OverviewPage() {
               </div>
             )
           }
+        </Section>
+
+        {/* Top sellers */}
+        <Section title={isPetrol ? 'Top grades today' : 'Top sellers today'} live linkTo="/dashboard/reports?tab=items" linkLabel="item mix →">
+          {topProducts.length === 0
+            ? <p className="text-gray-600 text-sm">No sales yet today.</p>
+            : (
+              <div className="flex flex-col divide-y divide-gray-800">
+                {topProducts.map((p, i) => (
+                  <div key={p.product_id} className="flex items-center justify-between py-2 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-gray-700 text-xs w-4 flex-shrink-0 tabular-nums">{i + 1}</span>
+                      <div className="min-w-0">
+                        <p className="text-white text-sm truncate">{p.name}</p>
+                        <p className="text-gray-600 text-xs">{p.qty} sold</p>
+                      </div>
+                    </div>
+                    <span className="text-white text-sm font-medium flex-shrink-0 tabular-nums">{fmt(p.revenue, currency)}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          }
+        </Section>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        {/* Revenue trend */}
+        <Section title="7-day trend" linkTo="/dashboard/reports" linkLabel="full report →">
+          {(sales?.dailySeries?.length ?? 0) > 0
+            ? <MiniBarChart series={sales!.dailySeries} />
+            : <p className="text-gray-600 text-sm">No data yet.</p>}
         </Section>
 
         {/* Low stock */}
