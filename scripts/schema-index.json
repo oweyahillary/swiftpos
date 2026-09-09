@@ -1032,7 +1032,8 @@
     "transfer_id": "\"uuid\" NOT NULL",
     "product_id": "\"uuid\" NOT NULL",
     "quantity": "\"numeric\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "quantity_received": "\"numeric\""
   },
   "stock_transfers": {
     "id": "\"uuid\" NOT NULL",
@@ -1051,7 +1052,8 @@
     "received_at": "\"timestamp with time zone\"",
     "cancelled_by": "\"uuid\"",
     "cancelled_at": "\"timestamp with time zone\"",
-    "cancel_reason": "\"text\""
+    "cancel_reason": "\"text\"",
+    "receipt_note": "\"text\""
   },
   "subscriptions": {
     "id": "\"uuid\" NOT NULL",

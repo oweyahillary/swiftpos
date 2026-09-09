@@ -12,6 +12,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pd = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8');
 const po = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/stock/PurchaseOrdersPage.tsx'), 'utf8');
 const rx = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx'), 'utf8');
+// A234 extracted the doc-spec builders (docType strings + columns) into a shared
+// module; the page files keep the print WIRING. The docType/column assertions read
+// documentSpecs.ts; the wiring assertions still read the page files.
+const ds = fs.readFileSync(path.join(root, 'apps/dashboard/src/lib/documentSpecs.ts'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); pass++; console.log(`PASS  ${name}`); } catch (e) { fail++; console.log(`FAIL  ${name}\n       ${e.message}`); } };
@@ -30,11 +34,11 @@ ok('engine: opens a window and prints', () => {
 // ── Purchase Orders: PO + GRN ───────────────────────────────────────────────
 ok('PO page imports the engine', () => assert.match(po, /import \{ printDocument \} from '\.\.\/\.\.\/lib\/printDocument'/));
 ok('PO page prints a PURCHASE ORDER', () => {
-  assert.match(po, /docType: 'PURCHASE ORDER'/);
+  assert.match(ds, /docType: 'PURCHASE ORDER'/);     // A234: literal lives in the shared spec builder
   assert.match(po, /onClick=\{\(\) => printPO\(selected\)\}/);
 });
 ok('PO page prints a GOODS RECEIVED NOTE after receiving', () => {
-  assert.match(po, /docType: 'GOODS RECEIVED NOTE'/);
+  assert.match(ds, /docType: 'GOODS RECEIVED NOTE'/);
   assert.match(po, /submitGRN\(true\)/);           // "Confirm & Print GRN"
   assert.match(po, /if \(alsoPrint && grn\?\.grn_number\) printGRN\(/);
 });
@@ -42,15 +46,15 @@ ok('PO page prints a GOODS RECEIVED NOTE after receiving', () => {
 // ── Transfers: despatch note ────────────────────────────────────────────────
 ok('Manager tab prints a STOCK TRANSFER NOTE', () => {
   assert.match(rx, /import \{ printDocument \}/);
-  assert.match(rx, /docType: 'STOCK TRANSFER NOTE'/);
+  assert.match(ds, /docType: i\.received \? 'TRANSFER RECEIVED NOTE' : 'STOCK TRANSFER NOTE'/);
   assert.match(rx, /printTransferNote\(t\)/);
 });
 
 ok('Manager tab prints a TRANSFER RECEIVED NOTE (sent vs received) on receipt', () => {
-  assert.match(rx, /docType: 'TRANSFER RECEIVED NOTE'/);
+  assert.match(ds, /'TRANSFER RECEIVED NOTE'/);
   assert.match(rx, /printReceivedNote\(/);
   assert.match(rx, /submitTransfer\(true\)/);        // "Confirm & print"
-  assert.match(rx, /\{ label: 'Variance', align: 'right' \}/);
+  assert.match(ds, /\{ label: 'Variance', align: 'right' \}/);   // A234: column in the shared spec
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);

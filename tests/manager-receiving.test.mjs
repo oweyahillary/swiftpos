@@ -30,15 +30,25 @@ ok('permission model: managers are denied adjust/edit, keep receive', () => {
   assert.doesNotMatch(denyBlock, /inventory\.receive|inventory\.transfer/, 'receive/transfer must remain granted to managers');
 });
 
-ok('tab: receives transfers AND supplier deliveries, but has NO edit path', () => {
-  assert.match(tab, /posApi\.patch\(`\/api\/stock\/transfers\/\$\{t\.id\}\/status`, \{ status: 'received' \}\)/,
+ok('tab: receives transfers + deliveries, creates POs/transfers, but never adjusts stock', () => {
+  // A221: the receive PATCHes /status with status:'received', now also carrying the
+  // per-line received_items (and an optional receipt_note). Match the stable prefix.
+  assert.match(tab, /posApi\.patch\(`\/api\/stock\/transfers\/\$\{t\.id\}\/status`, \{\s*status: 'received'/,
     'transfer receive must PATCH status=received');
-  assert.match(tab, /posApi\.post\('\/api\/stock\/grn'/, 'delivery receive must POST a GRN');
-  // Every mutating call must be a RECEIVE endpoint (transfer /status or /grn) — never adjust/set/threshold.
-  const mutPaths = [...tab.matchAll(/posApi\.(?:post|patch|put|delete)\(`?'?([^`',]+)/g)].map(m => m[1]);
-  assert.ok(mutPaths.length >= 2, `expected the two receive mutations; found ${mutPaths.length}`);
-  assert.ok(mutPaths.every(p => /\/status|\/grn/.test(p)),
-    `every mutation must be receive-only (status/grn); saw: ${mutPaths.join(', ')}`);
+  // A229: delivery receive POSTs a GRN (a typed posApi.post<…>('/api/stock/grn') call).
+  assert.match(tab, /posApi\.post(?:<[^>]*>)?\('\/api\/stock\/grn'/, 'delivery receive must POST a GRN');
+  // The invariant that still holds and matters: this tab may receive (status/grn),
+  // create a PO (A228) and initiate a transfer (A218) — those PO/transfer creations are
+  // covered by manager-create-po and manager-initiate-transfer — but it must NEVER
+  // directly ADJUST stock (adjust/set/threshold/stock-level write), which is the manager
+  // permission boundary (inventory.adjust is in MANAGER_DENY, asserted above).
+  const mutPaths = [...tab.matchAll(/posApi\.(?:post|patch|put|delete)(?:<[^>]*>)?\(`?'?([^`',]+)/g)].map(m => m[1]);
+  assert.ok(mutPaths.length >= 2, `expected at least the two receive mutations; found ${mutPaths.length}`);
+  const ALLOWED = /\/status$|\/grn$|\/transfers$|\/purchase-orders(\/|$)/;
+  assert.ok(mutPaths.every(p => ALLOWED.test(p)),
+    `receiving-tab mutations must be receive/create-PO/create-transfer only (no stock adjust); saw: ${mutPaths.join(', ')}`);
+  assert.doesNotMatch(tab, /\/stock\/(adjust|set|threshold|levels?)\b/,
+    'the receiving tab must never directly adjust stock levels');
 });
 
 ok('tab: transfers = in-transit-to-branch; deliveries = open POs only', () => {

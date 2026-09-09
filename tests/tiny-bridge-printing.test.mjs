@@ -105,7 +105,9 @@ ok('legacy printToQZ / printReceiptViaServer are fully retired', () => {
 
 // Pairing + fallback (ported from the retired A235 silent-receipt guard)
 ok('PaymentModal falls back to the browser dialog when unpaired', () => {
-  assert.match(pm, /if \(content\) printReceipt\(content\.innerHTML, printerSettings, business\.name\);/);
+  // A266: business is resolved (useBusiness() is null for managers on the POS surface),
+  // so the fallback prints via resolvedBusiness?.name, not the raw business prop.
+  assert.match(pm, /if \(content\) printReceipt\(content\.innerHTML, printerSettings, resolvedBusiness\?\.name \?\? 'Receipt'\);/);
 });
 ok('till pairs the bridge: device-local receipt printer + token/printer inputs', () => {
   assert.match(ups, /receiptPrinterName\?: string/);
@@ -128,7 +130,8 @@ ok('bundle exports the station renderers + helpers', () => {
 });
 ok('printRouted renders each station by id/kind with shared component routing (A252)', () => {
   const pr = r('apps/dashboard/src/lib/printRouted.ts');
-  assert.match(pr, /const spec = \{ id: p\.id, type: p\.type, paperWidthMm: p\.paper_width \}/);
+  // spec carries id/type/paperWidth, plus the A269 proforma flag applied to the receipt station only.
+  assert.match(pr, /const spec = \{ id: p\.id, type: p\.type, paperWidthMm: p\.paper_width,[^}]*proforma:[^}]*p\.type === 'receipt'[^}]*\}/);
   assert.match(pr, /renderStationEscPos\(order, biz as any, spec\)/);
   assert.match(pr, /toUnits\(routable, ids, lineStationIds, routing\)/);
   assert.match(pr, /stationsForCategory\(cat, ids, routing\)/);

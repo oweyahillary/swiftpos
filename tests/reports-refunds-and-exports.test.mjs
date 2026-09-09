@@ -66,8 +66,12 @@ ok('client: the Exports hub covers all five requested formats', () => {
   for (const key of ['daily', 'audit', 'shifts', 'pnl', 'expenses']) {
     assert.match(page, new RegExp(`key: '${key}'`), `the exports hub must offer '${key}'`);
   }
-  assert.match(page, /window\.open\(`\$\{API_URL\}\/api\/reports\/export\/\$\{key\}/,
-    'each export must open /api/reports/export/<key> as a download');
+  // A143: exports go through an AUTHED downloadFile (blob save), not window.open —
+  // window.open sent no token and 401'd. The guard must require the authed path.
+  assert.match(page, /downloadFile\(`\/api\/reports\/export\/\$\{key\}/,
+    'each export must fetch /api/reports/export/<key> via the authed downloadFile, not window.open');
+  assert.doesNotMatch(page, /window\.open\(`\$\{API_URL\}\/api\/reports\/export/,
+    'the untokened window.open export path (401) must stay gone');
   assert.match(page, /\{ id: 'exports',\s*label: 'Exports' \}/, 'Exports must be in TAB_LIST');
 });
 

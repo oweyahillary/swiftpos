@@ -35,7 +35,7 @@ ok('A260: api token lookup falls back to the POS token (documents get the real b
 ok('A261: reprint reuses the built receipt renderer with the duplicate marker', () => {
   const e = r('scripts/escpos-renderer/entry.ts');
   assert.match(e, /renderReceiptEscPos\(order, business, paperWidth, reprint\)/);
-  assert.match(e, /renderTicket\(\{ order: withDate\(order\), business, station, reprint \}\)/);
+  assert.match(e, /renderTicket\(\{ order: withDate\(order\), business, station, reprint, proforma \}\)/);
   const rp = r('apps/dashboard/src/lib/reprintReceipt.ts');
   assert.match(rp, /renderReceiptEscPos\(toReceiptOrder\(order\), biz as any, receipt\.paper_width, \{ at: new Date\(\), count: 1 \}\)/);
   assert.match(rp, /printBytesToServer\(`printer:\$\{receipt\.printer_name\}`, bytes\)/);

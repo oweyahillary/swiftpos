@@ -35,7 +35,6 @@ export interface ReceiptBusinessConfig {
   header?: string;        // A255: owner receipt_header (address/tagline), one line per line
   footerCredit?: string;  // A255: "Powered by SwiftPOS"
   currencyCode: string;   // shared/printing renders the PAY line as `<currencyCode> <total>`
-  branchName?: string;
   kraPin?: string;
   telephone?: string;
   thankYouMessage?: string;
