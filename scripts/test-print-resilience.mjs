@@ -129,12 +129,22 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
 
   // Ticking ten categories used to mean ten full-catalogue re-pulls in a row.
   {
-    // Scope each check to the HANDLER BODY (up to the next ipcMain.handle) —
-    // a fixed character window ran into the NEXT handler, whose full-catalogue
-    // refresh is legitimate for a category write.
+    // Scope each check to the HANDLER BODY (up to the next handler) — a fixed
+    // character window ran into the NEXT handler, whose full-catalogue refresh is
+    // legitimate for a category write. D7 renamed ipcMain.handle('x' → handle('x'
+    // (a validating wrapper), so match either form when locating a handler.
+    const at = (from) => {
+      const a = IH.indexOf(`ipcMain.handle('`, from);
+      const b = IH.indexOf(`handle('`, from);
+      // earliest non -1 of the two
+      if (a === -1) return b;
+      if (b === -1) return a;
+      return Math.min(a, b);
+    };
     const body = (channel) => {
-      const i = IH.indexOf(`ipcMain.handle('${channel}'`);
-      const j = IH.indexOf('ipcMain.handle(', i + 1);
+      let i = IH.indexOf(`handle('${channel}'`);
+      if (i === -1) i = IH.indexOf(`ipcMain.handle('${channel}'`);
+      const j = at(i + 1);
       return IH.slice(i, j === -1 ? undefined : j);
     };
     const stationWrites = ['manage:createStation', 'manage:updateStation', 'manage:deleteStation', 'manage:setStationCategories'];
