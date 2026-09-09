@@ -18,6 +18,7 @@
 
 import type Database from 'better-sqlite3';
 import { ipcMain, type BrowserWindow } from 'electron';
+import { installValidatedHandle } from '../ipcGuard';
 
 import {
   renderTicket, toEscPos, toPreview, Spool,
@@ -173,9 +174,13 @@ export function queueTickets(
 }
 
 function registerIpc(): void {
-  ipcMain.handle('escpos:assignments', () => assignments());
+  // D7: validate every escpos:* payload against ipcSchemas.ts before the handler
+  // runs (see ipcGuard). setEnabled/canPrint/preview carried scalars and small
+  // bags that silently coerced on the wrong shape; now they reject cleanly.
+  const handle = installValidatedHandle(ipcMain);
+  handle('escpos:assignments', () => assignments());
 
-  ipcMain.handle('escpos:assign', (_e, a: Assignment) => {
+  handle('escpos:assign', (_e, a: Assignment) => {
     db!.prepare(`
       INSERT INTO station_printers (station_id, target, paper_width_mm, updated_at)
       VALUES (?, ?, ?, ?)
@@ -187,12 +192,12 @@ function registerIpc(): void {
     return { ok: true };
   });
 
-  ipcMain.handle('escpos:unassign', (_e, stationId: string) => {
+  handle('escpos:unassign', (_e, stationId: string) => {
     db!.prepare(`DELETE FROM station_printers WHERE station_id=?`).run(stationId);
     return { ok: true };
   });
 
-  ipcMain.handle('escpos:status', () => spool!.status());
+  handle('escpos:status', () => spool!.status());
 
   /**
    * The per-terminal thermal switch.
@@ -201,12 +206,12 @@ function registerIpc(): void {
    * because the only place anyone will look for it is beside the printers it
    * governs. Off by default — see main/escposBridge.ts.
    */
-  ipcMain.handle('escpos:enabled', () => escposEnabled());
-  ipcMain.handle('escpos:setEnabled', (_e, on: boolean) => {
+  handle('escpos:enabled', () => escposEnabled());
+  handle('escpos:setEnabled', (_e, on: boolean) => {
     setEscposEnabled(!!on);
     return { ok: true, enabled: escposEnabled() };
   });
-  ipcMain.handle('escpos:retry', (_e, id: string) => { spool!.retry(id); return { ok: true }; });
+  handle('escpos:retry', (_e, id: string) => { spool!.retry(id); return { ok: true }; });
 
   /**
    * Preview comes from the SAME Document the printer receives, so what the
@@ -226,7 +231,7 @@ function registerIpc(): void {
    * Renders the SAME sample order the verified output was produced from, so a
    * preview that looks right is evidence about the paper.
    */
-  ipcMain.handle('escpos:preview', (_e, req: { stationId: string; paperWidthMm: 58 | 80 }) => {
+  handle('escpos:preview', (_e, req: { stationId: string; paperWidthMm: 58 | 80 }) => {
     try {
       const st = stationConfigFor(req.stationId, req.paperWidthMm);
       if (!st) return 'No such station.';
@@ -282,7 +287,7 @@ function registerIpc(): void {
    * Goes to the RECEIPT station: it is a till document, printed on the same roll
    * as the customer receipt, and a kitchen has no use for it.
    */
-  ipcMain.handle('escpos:printShiftReport', async (_e, data: any) => {
+  handle('escpos:printShiftReport', async (_e, data: any) => {
     try {
       const assignment = assignments().find(a => {
         const st = stationConfigFor(a.stationId, a.paperWidthMm);
@@ -308,7 +313,7 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle('escpos:canPrint', (_e, kind: 'kitchen' | 'dispatch' | 'receipt') => {
+  handle('escpos:canPrint', (_e, kind: 'kitchen' | 'dispatch' | 'receipt') => {
     try {
       if (!escposEnabled()) return false;
       const bound = new Set(assignments().map(a => a.stationId));
@@ -329,7 +334,7 @@ function registerIpc(): void {
    * is the whole point of pressing it: the installer is standing at the printer
    * and needs to know now, not in a queue.
    */
-  ipcMain.handle('escpos:test', async (
+  handle('escpos:test', async (
     _e,
     req: { stationId: string; paperWidthMm: 58 | 80 },
     target: string,

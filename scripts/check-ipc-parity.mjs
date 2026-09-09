@@ -32,7 +32,11 @@ const HANDLER_FILES = [
 const ih  = HANDLER_FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 
 const invoked = new Set([...pre.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map(m => m[1]));
-const handled = new Set([...ih.matchAll(/ipcMain\.handle\('([^']+)'/g)].map(m => m[1]));
+// D7: handlers now register through a local `handle(` wrapper
+// (installValidatedHandle) that validates the payload before delegating to
+// ipcMain.handle. Match both the wrapper and a raw ipcMain.handle, so a channel
+// registered either way counts as handled.
+const handled = new Set([...ih.matchAll(/(?:ipcMain\.)?\bhandle\('([^']+)'/g)].map(m => m[1]));
 
 const noHandler = [...invoked].filter(c => !handled.has(c)).sort();
 const noBridge  = [...handled].filter(c => !invoked.has(c)).sort();

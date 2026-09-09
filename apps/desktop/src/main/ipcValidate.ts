@@ -33,7 +33,20 @@ export type FieldSpec =
   | { t: 'string';  optional?: boolean; min?: number }
   | { t: 'number';  optional?: boolean; int?: boolean }
   | { t: 'boolean'; optional?: boolean }
-  | { t: 'stringArray'; optional?: boolean };
+  | { t: 'stringArray'; optional?: boolean }
+  // D7 rollout: the sale path and a few create/import channels carry NESTED
+  // shapes the flat validator could not describe. These three specs close that
+  // gap so every channel — including order:create — gets a real schema rather
+  // than being left unvalidated. Still no unions/transforms: the boundary only
+  // needs to prove structure (the right fields of the right kinds are present),
+  // not business rules, which stay where they already live.
+  | { t: 'enum';    optional?: boolean; values: readonly string[] }
+  // a value that may be anything but must be present (e.g. an opaque detail bag)
+  | { t: 'any';     optional?: boolean }
+  // a nested object validated against its own schema
+  | { t: 'object';  optional?: boolean; schema: Schema }
+  // an array whose every element is validated against an item schema
+  | { t: 'objectArray'; optional?: boolean; item: Schema; minLen?: number };
 
 export type Schema = Record<string, FieldSpec>;
 
@@ -69,6 +82,39 @@ function checkField(name: string, spec: FieldSpec, value: unknown): string | nul
       if (!Array.isArray(value) || value.some(v => typeof v !== 'string'))
         return `${name} must be an array of strings`;
       return null;
+    case 'enum':
+      if (typeof value !== 'string' || !spec.values.includes(value))
+        return `${name} must be one of: ${spec.values.join(', ')}`;
+      return null;
+    case 'any':
+      // present (already past the absent check) — any shape is acceptable.
+      return null;
+    case 'object': {
+      if (typeof value !== 'object' || value === null || Array.isArray(value))
+        return `${name} must be an object`;
+      const bag = value as Record<string, unknown>;
+      for (const [k, s] of Object.entries(spec.schema)) {
+        const err = checkField(`${name}.${k}`, s, bag[k]);
+        if (err) return err;
+      }
+      return null;
+    }
+    case 'objectArray': {
+      if (!Array.isArray(value)) return `${name} must be an array`;
+      if (spec.minLen !== undefined && value.length < spec.minLen)
+        return `${name} must have at least ${spec.minLen} item(s)`;
+      for (let i = 0; i < value.length; i++) {
+        const el = value[i];
+        if (typeof el !== 'object' || el === null || Array.isArray(el))
+          return `${name}[${i}] must be an object`;
+        const bag = el as Record<string, unknown>;
+        for (const [k, s] of Object.entries(spec.item)) {
+          const err = checkField(`${name}[${i}].${k}`, s, bag[k]);
+          if (err) return err;
+        }
+      }
+      return null;
+    }
   }
 }
 
@@ -112,4 +158,37 @@ export function assertPayload<T = Record<string, unknown>>(
 export function expectStringArray(payload: unknown, name = 'value'): ValidationResult<string[]> {
   const err = checkField(name, { t: 'stringArray' }, payload);
   return err ? { ok: false, error: err } : { ok: true, value: payload as string[] };
+}
+
+/**
+ * Bare-value guards for the ~25 channels that take a single scalar rather than
+ * an object bag — pos:getVariants(productId: string), escpos:setEnabled(on:
+ * boolean), idle:release(token: number), escpos:canPrint(kind: enum). Each
+ * throws IpcValidationError on the wrong shape, so a malformed scalar is a clean
+ * boundary rejection instead of an undefined flowing into a query. The register
+ * (D7) singled out setKitchenExclusions as the archetype: a non-array there
+ * silently coerced to an empty list and WIPED the exclusions — a scalar sent
+ * wrong is not harmless, so the bare channels get the same treatment as the bags.
+ */
+export function expectString(payload: unknown, name = 'value', min?: number): string {
+  const err = checkField(name, { t: 'string', min }, payload);
+  if (err) throw new IpcValidationError(err);
+  return payload as string;
+}
+export function expectNumber(payload: unknown, name = 'value', int = false): number {
+  const err = checkField(name, { t: 'number', int }, payload);
+  if (err) throw new IpcValidationError(err);
+  return payload as number;
+}
+export function expectBoolean(payload: unknown, name = 'value'): boolean {
+  const err = checkField(name, { t: 'boolean' }, payload);
+  if (err) throw new IpcValidationError(err);
+  return payload as boolean;
+}
+export function expectEnum<T extends string>(
+  payload: unknown, values: readonly T[], name = 'value',
+): T {
+  const err = checkField(name, { t: 'enum', values }, payload);
+  if (err) throw new IpcValidationError(err);
+  return payload as T;
 }

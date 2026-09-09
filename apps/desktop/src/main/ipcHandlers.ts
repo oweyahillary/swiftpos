@@ -17,6 +17,7 @@ import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
 import { expectStringArray, assertPayload } from './ipcValidate';
+import { installValidatedHandle } from './ipcGuard';
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
@@ -69,6 +70,13 @@ function clearCatalogue(db: ReturnType<typeof getLocalDb>) {
 
 export function registerIpcHandlers() {
 
+  // D7: every channel below is registered through `handle`, which validates the
+  // payload against ipcSchemas.ts before the handler runs (installValidatedHandle).
+  // A channel with no registry entry throws at the boundary; check-ipc-validation
+  // fails the build first, so it can't ship. This is why the handlers no longer
+  // need per-channel payload boilerplate.
+  const handle = installValidatedHandle(ipcMain);
+
   // ── Auth ────────────────────────────────────────────────
 
   // A158: owner email/password login on the till was RETIRED. A terminal is now
@@ -84,7 +92,7 @@ export function registerIpcHandlers() {
   // business_id + code, redeemed against /enrol/redeem. The
   // server returns the same { token, refreshToken, user, business } shape, so the
   // session is stored identically.
-  ipcMain.handle('auth:enrolDevice', async (_event, payload) => {
+  handle('auth:enrolDevice', async (_event, payload) => {
     // D7: both credentials must be present and non-empty before we call the server.
     const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
       { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
@@ -149,7 +157,7 @@ export function registerIpcHandlers() {
     return { user: data.user, business: data.business, branchId: data.branchId ?? null };
   });
 
-  ipcMain.handle('auth:logout', async () => {
+  handle('auth:logout', async () => {
     const db = getLocalDb();
     clearCatalogue(db);
     db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
@@ -162,7 +170,7 @@ export function registerIpcHandlers() {
     return true;
   });
 
-  ipcMain.handle('auth:getSession', async () => {
+  handle('auth:getSession', async () => {
     const db = getLocalDb();
     const session = db.prepare(`SELECT * FROM session WHERE id=1`).get() as any;
     if (!session) return null;
@@ -233,9 +241,9 @@ export function registerIpcHandlers() {
     return rows.map(toHeld);
   };
 
-  ipcMain.handle('held:list', async () => listHeld());
+  handle('held:list', async () => listHeld());
 
-  ipcMain.handle('held:hold', async (_event, order: any) => {
+  handle('held:hold', async (_event, order: any) => {
     const db = getLocalDb();
     const held = {
       id: `held_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -256,7 +264,7 @@ export function registerIpcHandlers() {
   // Recall hands the tab back AND removes it, in one transaction. Read-then-
   // delete as two statements can hand the same tab to two recalls if the second
   // lands between them — two carts, one order number, one of them unbilled.
-  ipcMain.handle('held:recall', async (_event, { id }: { id: string }) => {
+  handle('held:recall', async (_event, { id }: { id: string }) => {
     const db = getLocalDb();
     const take = db.transaction((tabId: string) => {
       const row = db.prepare(`SELECT * FROM held_orders WHERE id = ?`).get(tabId) as HeldRow | undefined;
@@ -267,7 +275,7 @@ export function registerIpcHandlers() {
     return take(id);
   });
 
-  ipcMain.handle('held:delete', async (_event, { id }: { id: string }) => {
+  handle('held:delete', async (_event, { id }: { id: string }) => {
     getLocalDb().prepare(`DELETE FROM held_orders WHERE id = ?`).run(id);
     return true;
   });
@@ -280,7 +288,7 @@ export function registerIpcHandlers() {
    * renderer start, is idempotent (INSERT OR IGNORE on the existing ids), and
    * reports what it took so the renderer knows whether to clear the old key.
    */
-  ipcMain.handle('held:import', async (_event, { orders }: { orders: any[] }) => {
+  handle('held:import', async (_event, { orders }: { orders: any[] }) => {
     if (!Array.isArray(orders) || orders.length === 0) return { imported: 0 };
     const db = getLocalDb();
     const insert = db.prepare(`
@@ -358,7 +366,7 @@ export function registerIpcHandlers() {
     return res;
   }
 
-  ipcMain.handle('auth:listBranches', async () => {
+  handle('auth:listBranches', async () => {
     // LOCAL-FIRST — this was a server round trip, and every cold start, 429,
     // or dead link blanked the PIN screen with "No branches available" while
     // the bound branch and the branches table sat on this disk the whole
@@ -390,7 +398,7 @@ export function registerIpcHandlers() {
     }));
   });
 
-  ipcMain.handle('auth:verifyPin', async (_event, payload) => {
+  handle('auth:verifyPin', async (_event, payload) => {
     // D7: validate at the boundary. A malformed payload throws a clear error the
     // renderer already catches, instead of destructuring undefined mid-handler.
     const { pin, branch_id } = assertPayload<{ pin: string; branch_id: string }>(
@@ -572,7 +580,7 @@ export function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('auth:getStaffSession', async () => {
+  handle('auth:getStaffSession', async () => {
     const db = getLocalDb();
     const s = db.prepare(`SELECT * FROM staff_session WHERE id=1`).get() as any;
     if (!s) return null;
@@ -593,17 +601,17 @@ export function registerIpcHandlers() {
   const _idleReleases = new Map<number, () => void>();
   let _idleToken = 0;
 
-  ipcMain.handle('idle:setSurface', async (_e, surface: 'manager' | 'pos' | null) => {
+  handle('idle:setSurface', async (_e, surface: 'manager' | 'pos' | null) => {
     setIdleSurface(surface);
     return true;
   });
-  ipcMain.handle('idle:clear', async () => { clearIdleLock(); return true; });
-  ipcMain.handle('idle:suppress', async () => {
+  handle('idle:clear', async () => { clearIdleLock(); return true; });
+  handle('idle:suppress', async () => {
     const token = ++_idleToken;
     _idleReleases.set(token, suppressIdleLock());
     return token;
   });
-  ipcMain.handle('idle:release', async (_e, token: number) => {
+  handle('idle:release', async (_e, token: number) => {
     const release = _idleReleases.get(token);
     if (!release) return false;   // already released, or never issued
     release();
@@ -611,7 +619,7 @@ export function registerIpcHandlers() {
     return true;
   });
 
-  ipcMain.handle('auth:clearStaffSession', async () => {
+  handle('auth:clearStaffSession', async () => {
     const db = getLocalDb();
     db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
     configureStaffSession('', '');
@@ -622,7 +630,7 @@ export function registerIpcHandlers() {
 
   // Dining tables for the restaurant table map — synced reference data,
   // served from SQLite so the floor plan works fully offline.
-  ipcMain.handle('pos:getTables', async () => {
+  handle('pos:getTables', async () => {
     const db = getLocalDb();
     return db.prepare(`
       SELECT * FROM tables WHERE slot_type = 'dining' ORDER BY sort_order, name
@@ -631,14 +639,14 @@ export function registerIpcHandlers() {
 
   // Fuel pumps for the petrol grid, each joined to its fuel product so the
   // renderer has the name + price/litre without a second lookup.
-  ipcMain.handle('pos:paymentMethods', async () => {
+  handle('pos:paymentMethods', async () => {
     // Custom tenders cached from the last pull (A96). Available offline.
     return getLocalDb().prepare(
       `SELECT code, name FROM payment_methods ORDER BY sort_order, name`
     ).all();
   });
 
-  ipcMain.handle('pos:getPumps', async () => {
+  handle('pos:getPumps', async () => {
     const db = getLocalDb();
     return db.prepare(`
       SELECT pu.id, pu.name, pu.status, pu.sort_order, pu.fuel_product_id,
@@ -650,7 +658,7 @@ export function registerIpcHandlers() {
     `).all();
   });
 
-  ipcMain.handle('pos:init', async () => {
+  handle('pos:init', async () => {
     const db = getLocalDb();
 
     const products = db.prepare(`
@@ -752,7 +760,7 @@ export function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('pos:getVariants', async (_event, productId: string) => {
+  handle('pos:getVariants', async (_event, productId: string) => {
     const db = getLocalDb();
     const groups = db.prepare(`
       SELECT * FROM variant_groups WHERE product_id=? ORDER BY sort_order
@@ -778,7 +786,7 @@ export function registerIpcHandlers() {
     }));
   });
 
-  ipcMain.handle('pos:getModifiers', async (_event, productId: string) => {
+  handle('pos:getModifiers', async (_event, productId: string) => {
     const db = getLocalDb();
     const groups = db.prepare(`
       SELECT * FROM modifier_groups WHERE product_id=? ORDER BY sort_order
@@ -945,7 +953,7 @@ export function registerIpcHandlers() {
    * "Local is final" lives one layer down, in escposBridge: the printer path
    * calls kitchenExclusions() directly, which already resolves the override.
    */
-  ipcMain.handle('escpos:kitchenExclusions', () => {
+  handle('escpos:kitchenExclusions', () => {
     try { return kitchenExclusionsState(); }
     catch { return { terms: [] as string[], source: 'cloud' as const, cloudTerms: [] as string[] }; }
   });
@@ -955,7 +963,7 @@ export function registerIpcHandlers() {
    * still override the business default for its own printer, and the override
    * survives every catalogue pull. See escposBridge.setKitchenExclusions.
    */
-  ipcMain.handle('escpos:setKitchenExclusions', (_e, terms: unknown) => {
+  handle('escpos:setKitchenExclusions', (_e, terms: unknown) => {
     // D7 reference adoption: validate at the boundary. A malformed payload is a
     // clean rejection, not a silent coerce-to-empty that would wipe the list.
     const v = expectStringArray(terms, 'terms');
@@ -972,12 +980,12 @@ export function registerIpcHandlers() {
    * Drop the local override and follow the cloud baseline again. Returns the
    * baseline that is now in force so the screen can repaint without a round trip.
    */
-  ipcMain.handle('escpos:clearKitchenExclusions', () => {
+  handle('escpos:clearKitchenExclusions', () => {
     try { return { ok: true, terms: clearKitchenExclusionsOverride() }; }
     catch { return { ok: false, error: 'write failed', terms: kitchenExclusions() }; }
   });
 
-  ipcMain.handle('escpos:printProduction', (_e, payload: any) => {
+  handle('escpos:printProduction', (_e, payload: any) => {
     // `skipped` reaches the renderer so the cashier is told which station
     // produced nothing. Previously this returned a bare { ok: true } and the
     // information was discarded here — D8.
@@ -995,7 +1003,7 @@ export function registerIpcHandlers() {
   let lastOrderPayload: any = null;
   let reprintCount = 0;
 
-  ipcMain.handle('escpos:reprintReceipt', () => {
+  handle('escpos:reprintReceipt', () => {
     if (!lastOrderPayload) return { ok: false, error: 'nothing to reprint' };
     reprintCount += 1;
     // Marked as a duplicate on the paper itself. An unmarked second copy of a
@@ -1008,7 +1016,7 @@ export function registerIpcHandlers() {
   // through the same path as the original — byte-identical, marked "Duplicate
   // Print". Only orders created on THIS terminal (after the feature shipped) have
   // a stored payload; anything else reports honestly rather than printing wrong.
-  ipcMain.handle('escpos:reprintReceiptForOrder', (_e, orderId: string) => {
+  handle('escpos:reprintReceiptForOrder', (_e, orderId: string) => {
     const row = getLocalDb()
       .prepare('SELECT payload FROM receipt_payloads WHERE order_id = ?')
       .get(orderId) as { payload?: string } | undefined;
@@ -1023,7 +1031,7 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('order:create', async (_event, orderPayload: any) => {
+  handle('order:create', async (_event, orderPayload: any) => {
     const orderId = createLocalOrder(orderPayload);
     lastOrderPayload = orderPayload;
     reprintCount = 0;
@@ -1049,7 +1057,7 @@ export function registerIpcHandlers() {
 
   // ── Printing (native — replaces QZ Tray on the desktop) ──
 
-  ipcMain.handle('print:list', async () => {
+  handle('print:list', async () => {
     return await listPrinters();
   });
 
@@ -1060,23 +1068,23 @@ export function registerIpcHandlers() {
    * target. Without it the picker guessed the printer's own name, which is a
    * different field and is absent entirely on a printer nobody has shared.
    */
-  ipcMain.handle('print:shares', async () => await printerShares());
+  handle('print:shares', async () => await printerShares());
 
   // Ping a printer without printing. Cashiers use this constantly; it must not
   // consume paper.
-  ipcMain.handle('print:probe', async (_event, deviceName: string) =>
+  handle('print:probe', async (_event, deviceName: string) =>
     probePrinter(String(deviceName ?? '')));
 
   // Reads the driver's real media size and imageable area, so paper width does
   // not have to be a setting the user can silently get wrong. Returns null when
   // it cannot be determined and the caller falls back to the dot table.
-  ipcMain.handle('print:geometry', async (_event, deviceName: string) =>
+  handle('print:geometry', async (_event, deviceName: string) =>
     probeGeometry(String(deviceName ?? '')));
 
   // Preview: renders the ticket in a visible window instead of printing it.
   // The only way to see a ticket without thermal hardware, since the silent
   // path deliberately suppresses every OS dialog.
-  ipcMain.handle('print:preview', async (_event, opts: any) => {
+  handle('print:preview', async (_event, opts: any) => {
     return openPrintPreview({
       html: String(opts?.html ?? ''),
       paperWidthMm: opts?.paperWidthMm === 58 ? 58 : 80,
@@ -1084,7 +1092,7 @@ export function registerIpcHandlers() {
     });
   });
 
-  ipcMain.handle('print:html', async (_event, opts: any) => {
+  handle('print:html', async (_event, opts: any) => {
     return await printHtmlSilent({
       html: String(opts?.html ?? ''),
       deviceName: String(opts?.deviceName ?? ''),
@@ -1095,17 +1103,17 @@ export function registerIpcHandlers() {
 
   // ── Sync ────────────────────────────────────────────────
 
-  ipcMain.handle('sync:trigger', async () => {
+  handle('sync:trigger', async () => {
     return await syncAll();
   });
 
-  ipcMain.handle('sync:retryFailed', async () => {
+  handle('sync:retryFailed', async () => {
     return await retryFailedOrders();
   });
 
   // Renderer-side `window` online/offline events are the only reliable network
   // signal Electron gives us — main forwards them into an immediate flush.
-  ipcMain.handle('net:changed', async (_event, online: boolean) => {
+  handle('net:changed', async (_event, online: boolean) => {
     if (online) {
       console.log('[sync] Renderer reports online — flushing queue');
       syncAll().catch(console.error);
@@ -1113,21 +1121,21 @@ export function registerIpcHandlers() {
     return getSyncStatus();
   });
 
-  ipcMain.handle('sync:status', async () => {
+  handle('sync:status', async () => {
     return getSyncStatus();
   });
 
   // ── Device config (first-run install + runtime server URL) ──
 
-  ipcMain.handle('config:get', async () => {
+  handle('config:get', async () => {
     return getDeviceConfig();
   });
 
-  ipcMain.handle('config:isConfigured', async () => {
+  handle('config:isConfigured', async () => {
     return isConfigured();
   });
 
-  ipcMain.handle('config:save', async (_event, patch: any) => {
+  handle('config:save', async (_event, patch: any) => {
     const saved = saveDeviceConfig(patch ?? {});
     try {
       if (isNodeRole(saved.device_role)) startNodeServer();
@@ -1151,7 +1159,7 @@ export function registerIpcHandlers() {
   // one number is held in reserve by the till, so a restart can skip one.
   // A wiped local database restarts the sequence — deliberate, since a wipe is
   // an explicit act, and the terminal prefix still separates the tills.
-  ipcMain.handle('orders:nextBillNumber', async () => {
+  handle('orders:nextBillNumber', async () => {
     const db = getLocalDb();
     const code = getDeviceConfig()?.terminal_code?.trim();
 
@@ -1180,7 +1188,7 @@ export function registerIpcHandlers() {
   // one-click version of that is a control bypass. The reveal-code + signed
   // token is the same bar as every other tech action, and the audit row means
   // the new device appearing in the fleet has a name attached to its birth.
-  ipcMain.handle('config:clear', async () => {
+  handle('config:clear', async () => {
     if (!getActiveSession()) {
       throw new Error('Clearing the device configuration requires an active tech session.');
     }
@@ -1200,7 +1208,7 @@ export function registerIpcHandlers() {
    * nothing to reconcile against later. On install day the instinct when a till
    * misbehaves is to wipe and start over, which is exactly when this bites.
    */
-  ipcMain.handle('device:resetPreview', async () => {
+  handle('device:resetPreview', async () => {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     const ownDevice = cfg?.device_id ?? null;
@@ -1234,7 +1242,7 @@ export function registerIpcHandlers() {
    * press it in good faith on a till showing "7 pending" and nobody would find
    * out until the day's totals failed to add up.
    */
-  ipcMain.handle('device:reset', async (_e, { force }: { force?: boolean } = {}) => {
+  handle('device:reset', async (_e, { force }: { force?: boolean } = {}) => {
     // Same bar as config:clear, for a bigger action: this deletes the database.
     // TechPage already sits behind a session — this closes every other route.
     if (!getActiveSession()) {
@@ -1294,7 +1302,7 @@ export function registerIpcHandlers() {
   // response — even 404 — counts as "reachable"; only a network/timeout error
   // is a failure. The local server PC may not be up yet at install time, so a
   // failure is informational, never a hard block.
-  ipcMain.handle('config:testConnection', async (_event, url: string) => {
+  handle('config:testConnection', async (_event, url: string) => {
     const base = (url ?? '').replace(/\/+$/, '');
     if (!/^https?:\/\//i.test(base)) {
       return { ok: false, reachable: false, error: 'URL must start with http:// or https://' };
@@ -1318,13 +1326,13 @@ export function registerIpcHandlers() {
 
   // ── Shifts (offline cash-up + Z-report) ─────────────────────
 
-  ipcMain.handle('shift:current', async () => {
+  handle('shift:current', async () => {
     return currentShiftReport();
   });
 
   // A shift left open past ~18h. Reported, never auto-closed — see
   // forceCloseShift() for why a fabricated cash count is worse than none.
-  ipcMain.handle('shift:stale', async () => getStaleShift());
+  handle('shift:stale', async () => getStaleShift());
 
   // ── Trading day (per till) ────────────────────────────────────────────────
   // checkDayGate is what the POS screen reads to decide whether it may sell at
@@ -1332,7 +1340,7 @@ export function registerIpcHandlers() {
   // a control that exists only in the UI is a suggestion.
   // Which terminal this is. Read-only identity for display: the cashier should
   // not be asked which till they are standing at when the install already knows.
-  ipcMain.handle('device:identity', async () => {
+  handle('device:identity', async () => {
     const cfg = getDeviceConfig();
     return {
       deviceId:     cfg?.device_id ?? null,
@@ -1345,7 +1353,7 @@ export function registerIpcHandlers() {
   // the raw driver error surfaces inside the payment modal — which is exactly
   // what a missing bind in getOpenShift did in production. A gate that cannot
   // run must block and say why, using the same hard-block UI as an unclosed day.
-  ipcMain.handle('day:gate', async () => {
+  handle('day:gate', async () => {
     try { return checkDayGate(); }
     catch (err: any) {
       return {
@@ -1356,14 +1364,14 @@ export function registerIpcHandlers() {
       };
     }
   });
-  ipcMain.handle('day:current', async () => getOpenDay());
+  handle('day:current', async () => getOpenDay());
 
   // ── Central day close (Phase 4) — node-side manager screen ────────────────
-  ipcMain.handle('branchClose:overview', async () => {
+  handle('branchClose:overview', async () => {
     try { return branchCloseOverview(); }
     catch (err: any) { return { error: err?.message ?? 'Could not read the branch state' }; }
   });
-  ipcMain.handle('branchClose:closeTill', async (_e, { device_id, counted_cash, notes }:
+  handle('branchClose:closeTill', async (_e, { device_id, counted_cash, notes }:
     { device_id: string; counted_cash: number; notes?: string }) => {
     try {
       if (!isManager()) return { ok: false, error: 'Only a manager can close the branch.' };
@@ -1389,10 +1397,10 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not start the close' };
     }
   });
-  ipcMain.handle('day:summary', async () => getDayCloseSummary());
-  ipcMain.handle('day:isManager', async () => isManager());
-  ipcMain.handle('day:conflicts', async () => getConflictedShifts());
-  ipcMain.handle('day:retryConflict', async (_e, { shiftId }: { shiftId: string }) => {
+  handle('day:summary', async () => getDayCloseSummary());
+  handle('day:isManager', async () => isManager());
+  handle('day:conflicts', async () => getConflictedShifts());
+  handle('day:retryConflict', async (_e, { shiftId }: { shiftId: string }) => {
     try {
       const r = retryConflictedShift(String(shiftId));
       // Offer it now rather than on the next timer tick: the manager is standing
@@ -1403,31 +1411,31 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not retry this shift' };
     }
   });
-  ipcMain.handle('day:close', async (_e, { countedCash, notes }: { countedCash: number; notes?: string }) => {
+  handle('day:close', async (_e, { countedCash, notes }: { countedCash: number; notes?: string }) => {
     try { return { ok: true, summary: closeDay(Number(countedCash), notes) }; }
     catch (err: any) { return { ok: false, error: err?.message ?? 'Could not close the day' }; }
   });
 
-  ipcMain.handle('shift:forceClose', async (_e, { reason }: { reason: string }) =>
+  handle('shift:forceClose', async (_e, { reason }: { reason: string }) =>
     forceCloseShift(String(reason ?? '')));
 
-  ipcMain.handle('shift:open', async (_event, { opening_float, drawer_label }: { opening_float: number; drawer_label?: string }) => {
+  handle('shift:open', async (_event, { opening_float, drawer_label }: { opening_float: number; drawer_label?: string }) => {
     openShift(Number(opening_float) || 0, drawer_label);
     return currentShiftReport();
   });
 
-  ipcMain.handle('shift:float', async (_event, { type, amount, reason }: { type: 'float_in' | 'float_out'; amount: number; reason?: string }) => {
+  handle('shift:float', async (_event, { type, amount, reason }: { type: 'float_in' | 'float_out'; amount: number; reason?: string }) => {
     addFloat(type, Number(amount), reason);
     return currentShiftReport();
   });
 
-  ipcMain.handle('shift:close', async (_event, { closing_float, notes }: { closing_float: number; notes?: string }) => {
+  handle('shift:close', async (_event, { closing_float, notes }: { closing_float: number; notes?: string }) => {
     // Returns the final Z-report. Throws (with .variance/.expected_cash) if a
     // variance note is required — the renderer surfaces that message.
     return closeShift(Number(closing_float), notes);
   });
 
-  ipcMain.handle('shift:zreport', async (_event, shiftId: string) => {
+  handle('shift:zreport', async (_event, shiftId: string) => {
     return computeZReport(shiftId);
   });
 
@@ -1521,19 +1529,19 @@ export function registerIpcHandlers() {
     try { await syncAll(); } catch (e: any) { console.warn('[manage] post-edit sync failed:', e?.message); }
   }
 
-  ipcMain.handle('manage:listProducts', async () => manageFetch('/api/products', 'GET'));
-  ipcMain.handle('manage:createProduct', async (_e, payload: any) => {
+  handle('manage:listProducts', async () => manageFetch('/api/products', 'GET'));
+  handle('manage:createProduct', async (_e, payload: any) => {
     const out = await manageFetch('/api/products', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:updateProduct', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updateProduct', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/products/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
 
-  ipcMain.handle('manage:listCategories', async () => {
+  handle('manage:listCategories', async () => {
     try { return await manageFetch('/api/categories', 'GET'); }
     catch {
       const db = getLocalDb();
@@ -1578,7 +1586,7 @@ export function registerIpcHandlers() {
     return sts.map(st => ({ ...st, active: !!st.active,
       category_ids: links.filter(l => l.station_id === st.id).map(l => l.category_id) }));
   };
-  ipcMain.handle('manage:listStations', async () => {
+  handle('manage:listStations', async () => {
     try { return await manageFetch('/api/stations', 'GET'); }
     catch { return localStations(); }
   });
@@ -1597,23 +1605,23 @@ export function registerIpcHandlers() {
       (rows ?? []).filter(m => m.is_active).forEach((m, i) => ins.run(m.code, m.name, i));
     } catch { /* the next catalogue pull will reconcile */ }
   }
-  ipcMain.handle('manage:listPaymentMethods', async () => manageFetch('/api/payment-methods', 'GET'));
-  ipcMain.handle('manage:createPaymentMethod', async (_e, payload: any) => {
+  handle('manage:listPaymentMethods', async () => manageFetch('/api/payment-methods', 'GET'));
+  handle('manage:createPaymentMethod', async (_e, payload: any) => {
     const out = await manageFetch('/api/payment-methods', 'POST', payload);
     await refreshPaymentMethodsLocal();
     return out;
   });
-  ipcMain.handle('manage:updatePaymentMethod', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updatePaymentMethod', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/payment-methods/${id}`, 'PATCH', patch);
     await refreshPaymentMethodsLocal();
     return out;
   });
-  ipcMain.handle('manage:deletePaymentMethod', async (_e, id: string) => {
+  handle('manage:deletePaymentMethod', async (_e, id: string) => {
     const out = await manageFetch(`/api/payment-methods/${id}`, 'DELETE');
     await refreshPaymentMethodsLocal();
     return out;
   });
-  ipcMain.handle('manage:unassignedCategories', async () => {
+  handle('manage:unassignedCategories', async () => {
     try { return await manageFetch('/api/stations/unassigned', 'GET'); }
     catch {
       const db = getLocalDb();
@@ -1624,7 +1632,7 @@ export function registerIpcHandlers() {
          ORDER BY c.name`).all() as any[]);
     }
   });
-  ipcMain.handle('manage:createStation', async (_e, payload: any) => {
+  handle('manage:createStation', async (_e, payload: any) => {
     const out = await manageFetch('/api/stations', 'POST', payload);
     await refreshStationsLocal();
     return out;
@@ -1632,33 +1640,33 @@ export function registerIpcHandlers() {
   // One-click day-one seed: Kitchen + Packing + Till, categories routed by
   // is_kitchen server-side (A92). Refresh the local station cache so routing
   // works on this terminal immediately.
-  ipcMain.handle('manage:seedDefaultStations', async () => {
+  handle('manage:seedDefaultStations', async () => {
     const out = await manageFetch('/api/stations/seed-defaults', 'POST', {});
     await refreshStationsLocal();
     return out;
   });
-  ipcMain.handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/stations/${id}`, 'PATCH', patch);
     await refreshStationsLocal();
     return out;
   });
-  ipcMain.handle('manage:deleteStation', async (_e, id: string) => {
+  handle('manage:deleteStation', async (_e, id: string) => {
     const out = await manageFetch(`/api/stations/${id}`, 'DELETE');
     await refreshStationsLocal();
     return out;
   });
-  ipcMain.handle('manage:setStationCategories', async (_e, { id, categoryIds }: { id: string; categoryIds: string[] }) => {
+  handle('manage:setStationCategories', async (_e, { id, categoryIds }: { id: string; categoryIds: string[] }) => {
     const out = await manageFetch(`/api/stations/${id}/categories`, 'PUT', { category_ids: categoryIds });
     await refreshStationsLocal();
     return out;
   });
 
-  ipcMain.handle('manage:createCategory', async (_e, payload: any) => {
+  handle('manage:createCategory', async (_e, payload: any) => {
     const out = await manageFetch('/api/categories', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:updateCategory', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updateCategory', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/categories/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
@@ -1669,62 +1677,62 @@ export function registerIpcHandlers() {
   // Bulk product import. The server maps category_name to EXISTING categories
   // and silently writes null when there is no match, so the UI creates any
   // missing categories first and only then calls this.
-  ipcMain.handle('manage:bulkProducts', async (_e, rows: any[]) => {
+  handle('manage:bulkProducts', async (_e, rows: any[]) => {
     const out = await manageFetch('/api/products/bulk', 'POST', { rows });
     await refreshCatalogue();
     return out;
   });
 
-  ipcMain.handle('manage:listCombos', async () => manageFetch('/api/combos', 'GET'));
-  ipcMain.handle('manage:createCombo', async (_e, payload: any) => {
+  handle('manage:listCombos', async () => manageFetch('/api/combos', 'GET'));
+  handle('manage:createCombo', async (_e, payload: any) => {
     const out = await manageFetch('/api/combos', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:updateCombo', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updateCombo', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/combos/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:setComboItems', async (_e, { id, items }: { id: string; items: any[] }) => {
+  handle('manage:setComboItems', async (_e, { id, items }: { id: string; items: any[] }) => {
     const out = await manageFetch(`/api/combos/${id}/items`, 'PUT', { items });
     await refreshCatalogue();
     return out;
   });
 
   // Variants — the Spice group and anything else a product needs choosing.
-  ipcMain.handle('manage:listVariantGroups', async (_e, productId: string) =>
+  handle('manage:listVariantGroups', async (_e, productId: string) =>
     manageFetch(`/api/variants/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
   // Editing a group's kind, and its options. Without these the manager screen can
   // display what migration 45 classified but cannot resolve anything it left as
   // 'review' — which is exactly where a human is needed.
-  ipcMain.handle('manage:updateVariantGroup', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updateVariantGroup', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/variants/groups/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:createVariantOption', async (_e, payload: any) => {
+  handle('manage:createVariantOption', async (_e, payload: any) => {
     const out = await manageFetch('/api/variants/options', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:updateVariantOption', async (_e, { id, patch }: { id: string; patch: any }) => {
+  handle('manage:updateVariantOption', async (_e, { id, patch }: { id: string; patch: any }) => {
     const out = await manageFetch(`/api/variants/options/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:deleteVariantOption', async (_e, id: string) => {
+  handle('manage:deleteVariantOption', async (_e, id: string) => {
     const out = await manageFetch(`/api/variants/options/${id}`, 'DELETE');
     await refreshCatalogue();
     return out;
   });
 
-  ipcMain.handle('manage:createVariantGroup', async (_e, payload: any) => {
+  handle('manage:createVariantGroup', async (_e, payload: any) => {
     const out = await manageFetch('/api/variants/groups', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
-  ipcMain.handle('manage:deleteVariantGroup', async (_e, id: string) => {
+  handle('manage:deleteVariantGroup', async (_e, id: string) => {
     const out = await manageFetch(`/api/variants/groups/${id}`, 'DELETE');
     await refreshCatalogue();
     return out;
@@ -1736,25 +1744,25 @@ export function registerIpcHandlers() {
   // needs modifiers — as one variant group the two upgrades are mutually
   // exclusive, so a customer could have a large chips or a bigger soda but never
   // both. The POS has always rendered these; nothing could create them.
-  ipcMain.handle('manage:listModifierGroups', async (_e, productId: string) =>
+  handle('manage:listModifierGroups', async (_e, productId: string) =>
     manageFetch(`/api/modifiers/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
-  ipcMain.handle('manage:createModifierGroup', async (_e, payload: any) =>
+  handle('manage:createModifierGroup', async (_e, payload: any) =>
     manageFetch('/api/modifiers/groups', 'POST', payload));
-  ipcMain.handle('manage:deleteModifierGroup', async (_e, id: string) =>
+  handle('manage:deleteModifierGroup', async (_e, id: string) =>
     manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'));
 
-  ipcMain.handle('manage:listStaff', async () => manageFetch('/api/staff', 'GET'));
-  ipcMain.handle('manage:listRoles', async () => manageFetch('/api/staff/roles', 'GET'));
-  ipcMain.handle('manage:createStaff', async (_e, payload: any) =>
+  handle('manage:listStaff', async () => manageFetch('/api/staff', 'GET'));
+  handle('manage:listRoles', async () => manageFetch('/api/staff/roles', 'GET'));
+  handle('manage:createStaff', async (_e, payload: any) =>
     manageFetch('/api/staff', 'POST', payload));
-  ipcMain.handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) =>
+  handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) =>
     manageFetch(`/api/staff/${id}`, 'PATCH', patch));
 
-  ipcMain.handle('manage:getReceiptText', async () => {
+  handle('manage:getReceiptText', async () => {
     const cfg = getDeviceConfig();
     return { header: cfg?.receipt_header ?? '', footer: cfg?.receipt_footer ?? '' };
   });
-  ipcMain.handle('manage:setReceiptText', async (_e, { header, footer }: { header: string; footer: string }) => {
+  handle('manage:setReceiptText', async (_e, { header, footer }: { header: string; footer: string }) => {
     // The endpoint upserts ONE key/value pair per call — posting an object of
     // keys returns "key and value are required". Two sequential calls.
     await manageFetch('/api/business/settings', 'POST', { key: 'receipt_header', value: header });
@@ -1768,10 +1776,10 @@ export function registerIpcHandlers() {
   // 24-hour / continuous operation (A104), per business. Read from the cached
   // config; written to business_settings so it reaches every till, and cached
   // locally at once so the day gate honours it before the next sync.
-  ipcMain.handle('manage:getContinuousOperation', async () => {
+  handle('manage:getContinuousOperation', async () => {
     return { enabled: getDeviceConfig()?.continuous_operation === true };
   });
-  ipcMain.handle('manage:setContinuousOperation', async (_e, enabled: boolean) => {
+  handle('manage:setContinuousOperation', async (_e, enabled: boolean) => {
     const out = await manageFetch('/api/business/settings', 'POST', {
       key: 'continuous_operation', value: enabled ? 'true' : 'false',
     });
@@ -1782,34 +1790,34 @@ export function registerIpcHandlers() {
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
 
   // Range is optional so existing callers keep today's behaviour untouched.
-  ipcMain.handle('manager:salesSummary',  async (_e, r?: RangeArg) =>
+  handle('manager:salesSummary',  async (_e, r?: RangeArg) =>
     getSalesSummary(r ? resolveRange(r.preset, r.from, r.to) : undefined));
-  ipcMain.handle('manager:topProducts',   async (_e, r?: RangeArg) =>
+  handle('manager:topProducts',   async (_e, r?: RangeArg) =>
     getTopProducts(r?.limit ?? 8, r ? resolveRange(r.preset, r.from, r.to) : undefined));
-  ipcMain.handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
+  handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
     getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));
 
   // What the figures cover. Paired with every range query so a till's partial
   // view can never be read as the branch's takings.
-  ipcMain.handle('manager:reportScope', async () => getReportScope());
-  ipcMain.handle('manager:resolveRange', async (_e, r: RangeArg) =>
+  handle('manager:reportScope', async () => getReportScope());
+  handle('manager:resolveRange', async (_e, r: RangeArg) =>
     resolveRange(r?.preset, r?.from, r?.to));
-  ipcMain.handle('manager:exportCsv', async (_e, req: any) => exportReportCsv(req));
-  ipcMain.handle('manager:dailyReport', async (_e, req: any) => exportDailySalesReport(req ?? {}));
-  ipcMain.handle('manager:stockLevels',   async () => getStockLevels());
-  ipcMain.handle('manager:fuelSales',     async () => getFuelSalesToday());
-  ipcMain.handle('manager:pumpStatus',    async () => getPumpStatus());
-  ipcMain.handle('manager:tableOccupancy',async () => getTableOccupancy());
+  handle('manager:exportCsv', async (_e, req: any) => exportReportCsv(req));
+  handle('manager:dailyReport', async (_e, req: any) => exportDailySalesReport(req ?? {}));
+  handle('manager:stockLevels',   async () => getStockLevels());
+  handle('manager:fuelSales',     async () => getFuelSalesToday());
+  handle('manager:pumpStatus',    async () => getPumpStatus());
+  handle('manager:tableOccupancy',async () => getTableOccupancy());
 
   // ── Branch price management (manager = branch authority, local-first) ──────
-  ipcMain.handle('manager:priceList',      async () => getPriceList());
-  ipcMain.handle('manager:setBranchPrice', async (_e, { product_id, price }) => setBranchPrice(product_id, price));
-  ipcMain.handle('manager:clearBranchPrice', async (_e, { product_id }) => clearBranchPrice(product_id));
+  handle('manager:priceList',      async () => getPriceList());
+  handle('manager:setBranchPrice', async (_e, { product_id, price }) => setBranchPrice(product_id, price));
+  handle('manager:clearBranchPrice', async (_e, { product_id }) => clearBranchPrice(product_id));
 
   // ── Expenses (record petty-cash at the till) ──────────────────────────────
 
   // List categories from server (online) for the expense form
-  ipcMain.handle('expense:categories', async () => {
+  handle('expense:categories', async () => {
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) return [];
     const staffRow = { token: readStaffTokens().token };
@@ -1826,7 +1834,7 @@ export function registerIpcHandlers() {
   });
 
   // Save expense locally (syncs up on next push pass)
-  ipcMain.handle('expense:create', async (_event, {
+  handle('expense:create', async (_event, {
     description, amount, expense_category_id, paid_by,
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) => {
     const db = getLocalDb();
@@ -1863,7 +1871,7 @@ export function registerIpcHandlers() {
   });
 
   // Recent expenses for the current shift (for display in ShiftPanel)
-  ipcMain.handle('expense:list', async () => {
+  handle('expense:list', async () => {
     const db = getLocalDb();
     const shift = db.prepare(`SELECT id FROM shifts WHERE status='open'
        AND COALESCE(device_id,'') = COALESCE(?,'')
@@ -1876,7 +1884,7 @@ export function registerIpcHandlers() {
   });
 
   // ── Order void (manager/supervisor only — server enforces permission) ──────
-  ipcMain.handle('order:void', async (_event, payload) => {
+  handle('order:void', async (_event, payload) => {
     // D7: the void identifier and reason must be present and well-typed before we
     // build a request from them; the approval PINs are optional.
     const { orderId, reason, supervisor_pin, override_pin, authorizer_id } =
@@ -1937,7 +1945,7 @@ export function registerIpcHandlers() {
   // Refund a completed sale (audit M3). Online only, like void — money leaving
   // the drawer needs supervisor authorisation, and authorising offline would
   // mean trusting a PIN this till cannot verify.
-  ipcMain.handle('order:refund', async (_event, { orderId, reason, override_pin, authorizer_id }:
+  handle('order:refund', async (_event, { orderId, reason, override_pin, authorizer_id }:
     { orderId: string; reason: string; override_pin?: string; authorizer_id?: string }) => {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
@@ -1993,13 +2001,13 @@ export function registerIpcHandlers() {
 
   // ── Tech access ────────────────────────────────────────────────────────────
   // Reveal code check (doorknock) — opens the token prompt. Grants nothing.
-  ipcMain.handle('tech:checkReveal', async (_event, code: string) => {
+  handle('tech:checkReveal', async (_event, code: string) => {
     const ok = checkRevealCode(code);
     return { ok };
   });
 
   // Verify the Ed25519 token OFFLINE and open a 4-hour active session.
-  ipcMain.handle('tech:openSession', async (_event, token: string) => {
+  handle('tech:openSession', async (_event, token: string) => {
     const result = openTechSession(String(token ?? '').trim());
     if (!result.ok) return { ok: false, error: result.reason };
     // Best-effort: flush queued audit + mark token used server-side if reachable.
@@ -2011,7 +2019,7 @@ export function registerIpcHandlers() {
   });
 
   // A peer till adopts an active tech session broadcast to the branch node.
-  ipcMain.handle('tech:adoptFromNode', async () => {
+  handle('tech:adoptFromNode', async () => {
     const existing = getActiveSession();
     if (existing) return { ok: true, session: existing };
     const token = await fetchNodeTechToken().catch(() => null);
@@ -2020,11 +2028,11 @@ export function registerIpcHandlers() {
     return result.ok ? { ok: true, session: result.session } : { ok: false };
   });
 
-  ipcMain.handle('tech:getSession', async () => getActiveSession());
+  handle('tech:getSession', async () => getActiveSession());
 
-  ipcMain.handle('tech:closeSession', async () => { closeTechSession(); return { ok: true }; });
+  handle('tech:closeSession', async () => { closeTechSession(); return { ok: true }; });
 
-  ipcMain.handle('tech:logAction', async (_event, { action, detail }: { action: string; detail?: any }) => {
+  handle('tech:logAction', async (_event, { action, detail }: { action: string; detail?: any }) => {
     logTechAction(action, detail);
     return { ok: true };
   });
@@ -2039,7 +2047,7 @@ export function registerIpcHandlers() {
   // holds the branch (2a distribution) and already carries the branch secret
   // it was authenticating with as a peer — the listener is the only thing
   // that was not running.
-  ipcMain.handle('tech:promoteToNode', async () => {
+  handle('tech:promoteToNode', async () => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const before = getDeviceConfig()?.device_role ?? 'till';
     // A20 backstop: pull a fresh roster from the CURRENT node before we stop being
@@ -2085,7 +2093,7 @@ export function registerIpcHandlers() {
   //
   // Only on an ACTUAL change — re-entering the same address must not trigger a
   // full re-offer.
-  ipcMain.handle('tech:setNodeUrl', async (_e, { url }: { url: string }) => {
+  handle('tech:setNodeUrl', async (_e, { url }: { url: string }) => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const probe = await probeNode(String(url ?? ''));
     if (!probe.ok) return { ok: false, error: probe.error };
@@ -2107,22 +2115,22 @@ export function registerIpcHandlers() {
     return { ok: true, role: was === 'node' ? 'till' : was, reoffering: nodeChanged };
   });
 
-  ipcMain.handle('tech:backupNow', async () => {
+  handle('tech:backupNow', async () => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     logTechAction('backup.manual', {});
     return await takeSnapshot();
   });
 
-  ipcMain.handle('tech:maintenance', async () => maintenanceStatus());
+  handle('tech:maintenance', async () => maintenanceStatus());
 
-  ipcMain.handle('tech:query', async (_event, { sql }: { sql: string }) => {
+  handle('tech:query', async (_event, { sql }: { sql: string }) => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     logTechAction('db_query', { sql: String(sql ?? '').slice(0, 2000) });
     return runTechQuery(sql);
   });
 
   // Local, offline-safe diagnostics for the tech screen.
-  ipcMain.handle('tech:status', async () => {
+  handle('tech:status', async () => {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     const sync = getSyncStatus();
@@ -2144,14 +2152,14 @@ export function registerIpcHandlers() {
 
   // A178: a REAL reachability probe — reaches the configured server and reports
   // the round-trip, unlike the "ONLINE" badge which is only net.isOnline().
-  ipcMain.handle('tech:testConnection', async () => {
+  handle('tech:testConnection', async () => {
     return testConnection();
   });
 
   // A178: tail the durable log so a tech can read it on the device without
   // hunting for %APPDATA%. Read-only; last N lines; never exposes tokens because
   // the log itself never records them.
-  ipcMain.handle('tech:logTail', async (_event, arg?: { lines?: number }) => {
+  handle('tech:logTail', async (_event, arg?: { lines?: number }) => {
     const lines = Math.min(Math.max(arg?.lines ?? 200, 1), 2000);
     try {
       const p = getSyncStatus().logPath;
@@ -2167,7 +2175,7 @@ export function registerIpcHandlers() {
   // Any till can see ALL the branch's tills' data by reading from the aggregation
   // node. If the node is unreachable (or this device has none) it falls back to
   // this machine's own local data, flagged so the UI can say so.
-  ipcMain.handle('manager:branchReport', async () => {
+  handle('manager:branchReport', async () => {
     if (hasNode()) {
       const report = await fetchNodeReport().catch(() => null);
       if (report) return { ...report, source: 'node' as const };

@@ -438,6 +438,12 @@ jobs:
       - name: IPC bridge parity
         run: node scripts/check-ipc-parity.mjs
 
+      # D7: parity proves a channel is bridged+handled, NOT that its payload is
+      # validated. This gate fails if any handled channel is missing a schema in
+      # ipcSchemas.ts — so a new channel cannot ship passing an unchecked payload.
+      - name: IPC payload validation coverage
+        run: node scripts/check-ipc-validation.mjs
+
       # A38: syncEngine declared 'x-device-id' AND 'X-Device-Id' in one object.
       # Header names are case-insensitive to HTTP but not to an object literal,
       # so fetch sent both and every server reader got them comma-joined —
