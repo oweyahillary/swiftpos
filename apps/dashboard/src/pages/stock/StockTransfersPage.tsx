@@ -80,6 +80,8 @@ export default function StockTransfersPage() {
   // replacing a native window.confirm() that blocked the page (and automation),
   // which made "Mark received" look like it hung.
   const [sameUserPrompt, setSameUserPrompt] = useState<{ t: Transfer; status: 'in_transit' | 'received' | 'cancelled'; msg: string } | null>(null);
+  // A204: cancelling needs a reason; capture it in an in-app modal (no native confirm).
+  const [cancelPrompt, setCancelPrompt] = useState<{ t: Transfer; reason: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,12 +109,17 @@ export default function StockTransfersPage() {
     t: Transfer,
     status: 'in_transit' | 'received' | 'cancelled',
     allowSameUser = false,
+    reason?: string,
   ) {
     setActioningId(t.id);
     setActionErr(null);
     try {
-      await api.patch(`/api/stock/transfers/${t.id}/status`,
-        allowSameUser ? { status, allow_same_user: true } : { status });
+      // A204: cancelling requires a reason (server returns 400 reason_required
+      // without one). Include it when provided; the cancel modal always supplies it.
+      const body: Record<string, unknown> = { status };
+      if (allowSameUser) body.allow_same_user = true;
+      if (reason) body.reason = reason;
+      await api.patch(`/api/stock/transfers/${t.id}/status`, body);
       await load();
     } catch (e: any) {
       if (e?.code === 'same_user_receipt' && !allowSameUser) {
@@ -281,7 +288,7 @@ export default function StockTransfersPage() {
                       )}
                       <button
                         disabled={actioningId === t.id}
-                        onClick={() => { if (window.confirm('Cancel this transfer? Nothing is moved back — reverse settled stock with an adjustment instead.')) advance(t, 'cancelled'); }}
+                        onClick={() => setCancelPrompt({ t, reason: '' })}
                         className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200 disabled:opacity-40 transition-colors"
                       >Cancel</button>
                     </div>
@@ -425,6 +432,37 @@ export default function StockTransfersPage() {
                 onClick={() => { const p = sameUserPrompt; setSameUserPrompt(null); void advance(p.t, p.status, true); }}
                 className="flex-1 bg-green-500 hover:bg-green-400 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
               >Proceed &amp; record</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* A204: cancel a transfer with a required reason (no native confirm). */}
+      {cancelPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-white font-semibold text-lg mb-2">Cancel this transfer?</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Nothing is moved back — reverse settled stock with an adjustment instead.
+              A reason is required and recorded on the transfer.
+            </p>
+            <textarea
+              autoFocus
+              value={cancelPrompt.reason}
+              onChange={e => setCancelPrompt(p => p ? { ...p, reason: e.target.value } : p)}
+              placeholder="Reason for cancelling (e.g. duplicate transfer, sent in error)"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 resize-none h-20 mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelPrompt(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-lg transition-colors"
+              >Keep transfer</button>
+              <button
+                disabled={!cancelPrompt.reason.trim()}
+                onClick={() => { const p = cancelPrompt; setCancelPrompt(null); void advance(p.t, 'cancelled', false, p.reason.trim()); }}
+                className="flex-1 bg-red-500 hover:bg-red-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
+              >Cancel transfer</button>
             </div>
           </div>
         </div>

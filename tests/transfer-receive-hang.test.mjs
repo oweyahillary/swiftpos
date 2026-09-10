@@ -57,6 +57,18 @@ ok('client: the modal can complete the override (advance with allow_same_user)',
     'the modal Proceed button must retry advance() with the same-user override');
 });
 
+ok('A204: Cancel uses an in-app reason modal (no native confirm) and sends the reason', () => {
+  const cancelBtn = page.slice(page.indexOf('>Cancel</button>') - 400, page.indexOf('>Cancel</button>'));
+  assert.doesNotMatch(cancelBtn, /window\.confirm/, 'Cancel must not use a native confirm');
+  assert.match(page, /setCancelPrompt\(\{ t, reason: ''/, 'Cancel must open the reason modal');
+  assert.match(page, /advance\(p\.t, 'cancelled', false, p\.reason\.trim\(\)\)/,
+    'the modal must send the cancellation reason to advance()');
+  assert.match(page, /if \(reason\) body\.reason = reason;/,
+    'advance() must include the reason in the request body');
+  assert.match(page, /disabled=\{!cancelPrompt\.reason\.trim\(\)\}/,
+    'the modal must require a non-empty reason');
+});
+
 ok('server: the transfer status route is wrapped so it cannot hang on a throw', () => {
   const handler = server.slice(
     server.indexOf("router.patch('/transfers/:id/status'"),
