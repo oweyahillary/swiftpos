@@ -23,6 +23,14 @@ module.exports = {
   productName: name,
   directories: { output: 'release' },
   compression: 'normal',
+  // D3: auto-update feed. Only the PROD flavour publishes/consumes a feed — dev
+  // builds are hand-installed for trade-tests and never auto-update (autoUpdate.ts
+  // also skips the dev flavour by name), so a dev till can't pull a prod release
+  // or vice versa. GitHub Releases hosts the installer + .blockmap + latest.yml
+  // the updater polls. Unsigned for now: the loop works; Windows SmartScreen shows
+  // on first install until a signing cert is added (CSC_LINK/CSC_KEY_PASSWORD env
+  // at build time — a config flip, not a code change). See docs/DESKTOP-AUTOUPDATE.md.
+  publish: dev ? null : [{ provider: 'github', owner: 'oweyahillary', repo: 'swiftpos' }],
   files: [
     'dist/**/*',
     'resources/**/*',

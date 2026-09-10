@@ -14,6 +14,7 @@ import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from '
 import { ownDayState, executeCloseDay } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
+import { initAutoUpdate } from './autoUpdate';
 
 const isDev = !app.isPackaged;
 
@@ -236,6 +237,12 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+
+  // D3: check the release feed on launch and every 6h; install on next quit.
+  // No-op in dev (app.isPackaged) and on the "SwiftPOS Dev" flavour, so
+  // `npm run dev` and dev-flavour tills are unaffected. Never throws — a failed
+  // update must not stop a till trading.
+  try { initAutoUpdate(); } catch (e) { console.error('[startup] autoUpdate init failed:', e); }
 
   // ── Background sync ──────────────────────────────────────────────────────
   // `app.on('network-connected')` is NOT a real Electron event (it never fired),

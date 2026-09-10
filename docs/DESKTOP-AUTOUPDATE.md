@@ -1,15 +1,17 @@
 # Desktop auto-update (register D3)
 
-**Status: SCAFFOLD.** The code (`apps/desktop/src/main/autoUpdate.ts`) is written
-and correct against the electron-updater API, but it is **not wired, not built,
-and not verified** — none of that is possible on the Linux bench, and the pieces
-below are release-engineering decisions only the owner can make. Follow this to
-finish and prove it.
+**Status: WIRED (2026-09-10).** `electron-updater` is a dependency, `autoUpdate.ts`
+is built and called from `index.ts`, the prod flavour publishes to GitHub Releases
+(`oweyahillary/swiftpos`), and a tag-triggered `.github/workflows/release.yml`
+builds + publishes on Windows. It runs **unsigned** for now (§4) — the update loop
+works; Windows SmartScreen shows on first install until a signing cert is added,
+which is a config/secret flip, not a code change. What remains is owner-only:
+optionally add a cert, and cut + verify the first published release end-to-end on
+a real Windows till (rule 16 — the Linux bench can't run Electron or publish).
 
-Today every release is a hand-installed `.exe` per till. That is the root of A1
-(no release pipeline) and the tax on every desktop fix — a till is always a
-version or two behind, and a schema bump reaches the fleet only when someone
-walks to each machine.
+Today (until the first release is cut) every install is still a hand-installed
+`.exe`; once a v-tag is pushed, installed prod tills converge on the feed by
+themselves — the end of A1.
 
 ---
 

@@ -1,15 +1,17 @@
 /**
  * autoUpdate.ts — self-updating for the desktop till (register D3).
  *
- * SCAFFOLD — NOT YET BENCH-VERIFIED. This wires electron-updater correctly, but
- * it cannot run or even type-check until `electron-updater` is a dependency and
- * an electron-builder `publish` target exists (see docs/DESKTOP-AUTOUPDATE.md).
- * Until then every release is a hand-installed .exe per till, which the register
- * calls the tax on every other desktop fix.
+ * WIRED 2026-09-10 — electron-updater is a dependency, this is called from
+ * index.ts, and the prod build publishes to GitHub Releases. Runs unsigned for
+ * now (see docs/DESKTOP-AUTOUPDATE.md §4): the mechanism works; Windows
+ * SmartScreen shows on first install until a signing cert is added, which is a
+ * one-config flip, not a code change. The end-to-end update loop is verified on
+ * a real Windows till, not the Linux bench (rule 16).
  *
  * Behaviour, deliberately minimal and silent:
- *   - Dev builds never self-update (app.isPackaged guard) — `npm run dev` is
- *     unaffected.
+ *   - Dev builds never self-update: the app.isPackaged guard skips `npm run dev`,
+ *     AND the "SwiftPOS Dev" flavour is skipped by name so a dev till never pulls
+ *     a prod release (the feed is prod-only).
  *   - On launch and every 6 hours it checks the configured feed, downloads a
  *     newer version in the background, and installs it on the NEXT quit. A till
  *     is never interrupted mid-service; it comes up updated the next morning.
@@ -23,7 +25,6 @@
  */
 
 import { app } from 'electron';
-// eslint-disable-next-line import/no-unresolved -- dependency added as part of D3; see runbook.
 import { autoUpdater } from 'electron-updater';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
@@ -34,6 +35,14 @@ export function initAutoUpdate(): void {
   // Only a packaged, installed app can replace itself. In dev there is no
   // update feed and no installer to swap, so this is a no-op.
   if (!app.isPackaged) return;
+  // D3 + D17: the dev flavour ("SwiftPOS Dev") must NOT auto-update — the release
+  // feed is prod-only, and a dev till pulling a prod build (or vice versa) would
+  // cross the flavours we deliberately separated. Dev is hand-installed for
+  // trade-tests; only prod converges on the feed.
+  if (app.getName().toLowerCase().includes('dev')) {
+    console.log('[autoUpdate] dev flavour — auto-update disabled');
+    return;
+  }
   if (started) return;                 // idempotent — safe if called twice
   started = true;
 

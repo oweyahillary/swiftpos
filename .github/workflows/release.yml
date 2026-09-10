@@ -1,0 +1,67 @@
+# Desktop release (register D3 / A1) — build the PROD till on Windows and publish
+# it to GitHub Releases so installed tills auto-update (electron-updater polls the
+# feed this uploads: the installer .exe, its .blockmap, and latest.yml).
+#
+# TRIGGER: a version tag `v*` (e.g. v0.5.40). Never on push — that would cut a
+# release every commit. Cut a release by tagging:
+#     cd apps/desktop && npm version patch            # bumps + commits + tags on the desktop
+#     # or tag by hand at the repo root:  git tag v0.5.40 && git push origin v0.5.40
+#
+# UNSIGNED for now: the loop works; Windows SmartScreen shows on first install
+# until a signing cert is added. To sign, add repo secrets CSC_LINK (base64 .pfx
+# or a path) + CSC_KEY_PASSWORD and they are picked up automatically — no workflow
+# change needed. See docs/DESKTOP-AUTOUPDATE.md §4.
+name: Release desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:        # allow a manual run from the Actions tab
+
+permissions:
+  contents: write           # electron-builder needs this to create the GitHub Release
+
+jobs:
+  release:
+    name: Build + publish (Windows, prod)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # The desktop imports @swiftpos/printing (a file: dependency) — build it first.
+      - name: Build shared/printing
+        working-directory: shared/printing
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install desktop deps
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build main + renderer (prod flavour)
+        working-directory: apps/desktop
+        env:
+          SWIFTPOS_ENV: prod
+        run: npm run build:all
+
+      - name: Verify build artefacts exist
+        working-directory: apps/desktop
+        run: npm run assert:built
+
+      # Build the NSIS installer AND publish it (installer + .blockmap + latest.yml)
+      # to the GitHub Release for this tag. GITHUB_TOKEN is provided by Actions.
+      # SWIFTPOS_ENV=prod so the publish target in electron-builder.config.js is active
+      # (dev flavour publishes nowhere).
+      - name: Build + publish to GitHub Releases
+        working-directory: apps/desktop
+        env:
+          SWIFTPOS_ENV: prod
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CSC_LINK / CSC_KEY_PASSWORD: add as repo secrets to sign (optional today).
+        run: npx electron-builder --win nsis --config electron-builder.config.js --publish always
