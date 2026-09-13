@@ -77,5 +77,6 @@ await (async () => {
   ok('records itself in schema_migrations', () => assert.strictEqual(ledger, 1));
 
   console.log(`\n${fail ? 'FAILURES' : 'all green'}  (${pass} passed, ${fail} failed)\n`);
+  await db.close().catch(() => {});  // A186: close PGlite before exit so libuv's Windows async-close path can't crash on teardown.
   process.exit(fail ? 1 : 0);
 })();

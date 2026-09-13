@@ -388,7 +388,12 @@ export default function CashierScreen() {
           setShiftModal('open');
         }
       })
-      .catch(() => {});
+      // A274: a failed /current check means the shift state is UNKNOWN, which is
+      // not the same as knowing none is open (mirrors the cloud's own /open guard
+      // comment). Never fall through to a sellable screen on an unknown shift —
+      // prompt to open. If one already exists, POST /open answers 409 with a clear
+      // message rather than a silent shift_id:null sale.
+      .catch(() => setShiftModal('open'));
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -737,6 +742,10 @@ export default function CashierScreen() {
 
   async function sendToKitchen() {
     if (!session || !activeKey || cart.length === 0) return;
+    // A274: no drawer session → no sale. Same hard gate as the desktop till
+    // ("No shift is open. Start a shift before selling."). Belt-and-braces with
+    // the disabled Charge/Send buttons so an order can never carry shift_id:null.
+    if (!currentShift) { setShiftModal('open'); return; }
     setSendingToKitchen(true);
     try {
       const order = openOrders[activeKey];
@@ -1580,8 +1589,8 @@ export default function CashierScreen() {
                 {isRestaurant && cart.length > 0 && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
-                      style={{ flex: 1, padding: '10px 0', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (sendingToKitchen || !!(activeKey && sentOrderIds[activeKey])) ? 0.5 : 1 }}
-                      disabled={sendingToKitchen || !!(activeKey && sentOrderIds[activeKey])}
+                      style={{ flex: 1, padding: '10px 0', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (sendingToKitchen || !currentShift || !!(activeKey && sentOrderIds[activeKey])) ? 0.5 : 1 }}
+                      disabled={sendingToKitchen || !currentShift || !!(activeKey && sentOrderIds[activeKey])}
                       onClick={sendToKitchen}
                     >
                       {sendingToKitchen
@@ -1598,14 +1607,25 @@ export default function CashierScreen() {
                     </button>
                   </div>
                 )}
-                {/* Charge — always */}
+                {/* Charge — gated on an open drawer session (A274). A sale with
+                    shift_id:null cannot be reconciled into any drawer, so with no
+                    shift the button prompts to open one instead of selling. */}
                 <button
                   data-testid="charge-button"
-                  style={s.chargeBtn}
-                  onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}
+                  style={{ ...s.chargeBtn, opacity: currentShift ? 1 : 0.5 }}
+                  disabled={!currentShift}
+                  onClick={() => {
+                    if (!currentShift) { setShiftModal('open'); return; }
+                    setPaymentEvenSplit(false); setShowPayment(true);
+                  }}
                 >
                   Charge {fmt(orderTotal, currency)}
                 </button>
+                {!currentShift && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
+                    Open a shift to start selling.
+                  </p>
+                )}
                 {/* Web-only premium extras — below Charge */}
                 {isRestaurant && cart.length > 0 && (
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -2191,9 +2211,10 @@ export default function CashierScreen() {
                 Cancel
               </button>
               <button
-                disabled={!roomNumber.trim() || roomCharging}
+                disabled={!roomNumber.trim() || roomCharging || !currentShift}
                 onClick={async () => {
                   if (!roomNumber.trim() || !session) return;
+                  if (!currentShift) { setShowRoomCharge(false); setShiftModal('open'); return; } // A274
                   if (roomChargeRef.current) return;   // before any await
                   roomChargeRef.current = true;
                   setRoomCharging(true); setRoomChargeError('');

@@ -98,6 +98,7 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
       id, device_label, device_id, status, app_version, schema_version,
       last_seen_at, last_sync_at,
       terminal_code, device_role, branch_id, mac_address, retired_at, retired_by,
+      role_conflict_at, role_conflict_with,
       users!user_devices_user_id_fkey ( name )
     `)
     .eq('business_id', req.businessId)
@@ -169,6 +170,12 @@ router.get('/fleet', requireAnyPermission('devices.approve', 'settings.manage'),
     activeShift:  (d.device_id && shiftByDevice[d.device_id]) ? shiftByDevice[d.device_id] : null,
     // A184 Tier 3 — when this terminal was retired (null = live).
     retiredAt:    d.retired_at ?? null,
+    // A22 — split-brain: this serving device's claim conflicts with another node
+    // on the same branch (recorded by confirmServingRole / migration 74). Surfaced
+    // here so the owner SEES two servers on one branch instead of it only hitting
+    // the server console.
+    servingConflict: !!d.role_conflict_at,
+    conflictAt:      d.role_conflict_at ?? null,
   }));
 
   // Never-synced sorts first, then longest-silent. The device needing attention

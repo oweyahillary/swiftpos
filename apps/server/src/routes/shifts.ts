@@ -43,6 +43,42 @@ router.get('/current', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/terminals?branch_id=...
+// Lists the enrolled tills for a branch so a web POS — which has no device_id of
+// its own — can pick which till it is COVERING and adopt that till's identity
+// (A273, Option B). The web then sends the chosen device_id as x-device-id on
+// every request, so its shift folds into that till's drawer instead of the
+// shared web:<branch> session. Any authenticated POS session may read its OWN
+// business's tills for a branch: the response is device labels + ids scoped to
+// req.businessId, so a foreign branch_id resolves to nothing. Minimal shape by
+// design — no telemetry, no cash.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/terminals', async (req, res) => {
+  const branchId = (req.query.branch_id as string | undefined)?.trim() || '';
+  if (!branchId) { res.json([]); return; }
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id, terminal_code, device_label')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', branchId)
+    .eq('status', 'approved')
+    .is('retired_at', null)
+    .not('device_id', 'is', null);
+  if (error) { sendError(res, error); return; }
+  // De-dupe by device_id and drop any the web can't key on.
+  const seen = new Set<string>();
+  const tills = (data ?? []).filter((d: any) => {
+    if (!d.device_id || seen.has(d.device_id)) return false;
+    seen.add(d.device_id); return true;
+  }).map((d: any) => ({
+    device_id:     d.device_id,
+    terminal_code: d.terminal_code ?? null,
+    device_label:  d.device_label ?? null,
+  }));
+  res.json(tills);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/shifts/open
 // Opens a new shift. Rejects if the cashier already has an open shift.
 // Body: { branch_id, opening_float }

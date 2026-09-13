@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { printShiftReport } from '../../lib/printShiftReport';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import RemoteDayClose from './RemoteDayClose';
 
 interface OpenShift {
   id: string;
@@ -114,6 +115,11 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
             ))}
           </div>
         )}
+
+      {/* A275 — remote day close for managers who aren't in the store. */}
+      <div className="pt-4 border-t border-gray-800">
+        <RemoteDayClose currency={currency} />
+      </div>
 
       {target && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">

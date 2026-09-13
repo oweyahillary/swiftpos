@@ -19,6 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { getCoveredTerminal, setCoveredTerminal, type CoveredTerminal } from '../../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,11 @@ export default function ShiftModal({
 
   // Open shift
   const [openFloat, setOpenFloat] = useState('');
+  // A273 — which till this web POS is covering (Option B). Web has no device_id
+  // of its own; the cashier picks a till so its shift folds into that drawer.
+  const [terminals, setTerminals]             = useState<CoveredTerminal[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [terminalsLoading, setTerminalsLoading] = useState(false);
 
   // Close shift
   const [closeFloat, setCloseFloat] = useState('');
@@ -94,13 +100,36 @@ export default function ShiftModal({
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
+  // A273 — load the branch's tills so the cashier can pick which one this web POS
+  // is covering. Pre-select the already-covered till, or the only one if there's
+  // just one.
+  useEffect(() => {
+    if (mode !== 'open' || !branchId) return;
+    setTerminalsLoading(true);
+    posApi.get<CoveredTerminal[]>(`/api/shifts/terminals?branch_id=${encodeURIComponent(branchId)}`)
+      .then((rows) => {
+        const list = rows ?? [];
+        setTerminals(list);
+        const covered = getCoveredTerminal();
+        if (covered && list.some(r => r.device_id === covered.device_id)) setSelectedDeviceId(covered.device_id);
+        else if (list.length === 1) setSelectedDeviceId(list[0].device_id);
+      })
+      .catch(() => setTerminals([]))
+      .finally(() => setTerminalsLoading(false));
+  }, [mode, branchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleOpen = async () => {
     if (!branchId) { setError('Branch not found'); return; }
+    const till = terminals.find(t => t.device_id === selectedDeviceId);
+    if (!till) { setError('Select which till you are covering'); return; }
     const amount = parseFloat(openFloat);
     if (isNaN(amount) || amount < 0) { setError('Enter a valid opening float (0 or more)'); return; }
 
     setLoading(true);
     setError('');
+    // A273: adopt the till's identity BEFORE the call so /open — and every request
+    // after it — keys to that till's drawer, not the shared web:<branch> one.
+    setCoveredTerminal(till);
     try {
       const shift = await posApi.post<Shift>('/api/shifts/open', {
         branch_id: branchId,
@@ -108,6 +137,14 @@ export default function ShiftModal({
       });
       onShiftOpened?.(shift);
     } catch (e: any) {
+      // The till already has an open drawer (one-open-per-terminal). Fold into it
+      // rather than erroring — the web sells into the till's existing session.
+      // With the identity now adopted, /current resolves to that till's shift.
+      try {
+        const existing = await posApi.get<Shift | null>('/api/shifts/current');
+        if (existing) { onShiftOpened?.(existing); return; }
+      } catch { /* fall through to the error */ }
+      setCoveredTerminal(null); // open failed and no existing shift — don't keep a stale identity
       setError(e?.message ?? 'Failed to open shift');
     } finally {
       setLoading(false);
@@ -128,6 +165,10 @@ export default function ShiftModal({
         notes: notes || null,
       });
       setCloseResult(shift);
+      // A273: drawer closed — drop the covered-till identity so the next open
+      // re-picks. (While a shift is open the identity must persist across reloads
+      // so /current keeps resolving to this till.)
+      setCoveredTerminal(null);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to close shift');
     } finally {
@@ -191,6 +232,25 @@ export default function ShiftModal({
             </div>
             <h2 style={s.title}>Open Shift</h2>
             <p style={s.subtitle}>Count the cash in the drawer and enter the opening float below.</p>
+
+            {/* A273 — pick the till this web POS is covering so the shift folds
+                into that till's drawer, not the shared web session. */}
+            <label style={s.label}>Which till are you covering?</label>
+            <select
+              style={s.input}
+              value={selectedDeviceId}
+              onChange={e => setSelectedDeviceId(e.target.value)}
+            >
+              <option value="">{terminalsLoading ? 'Loading tills…' : 'Select a till…'}</option>
+              {terminals.map(t => (
+                <option key={t.device_id} value={t.device_id}>
+                  {t.terminal_code ? `${t.terminal_code} — ` : ''}{t.device_label ?? t.device_id}
+                </option>
+              ))}
+            </select>
+            {!terminalsLoading && terminals.length === 0 && (
+              <p style={s.subtitle}>No tills are enrolled for this branch yet. Open the desktop till once to register it.</p>
+            )}
 
             <label style={s.label}>Opening Float ({currency})</label>
             <input

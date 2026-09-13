@@ -37,4 +37,4 @@ ok('unknown vehicle class refused',cls);
 let again=true; try{ await db.exec(fs.readFileSync(new URL('../migrations/51_parking_tariffs.sql', import.meta.url),'utf8')); }catch(e){again=false;console.log('   ',e.message.slice(0,110));}
 ok('re-runnable',again);
 ok('re-run did not duplicate the seed',(await db.query(`SELECT count(*)::int n FROM parking_tariffs WHERE business_id=$1`,[pk])).rows[0].n===1);
-console.log(`\n${p} passed, ${f} failed`); process.exit(f?1:0);
+console.log(`\n${p} passed, ${f} failed`); await db.close().catch(()=>{}); process.exit(f?1:0);

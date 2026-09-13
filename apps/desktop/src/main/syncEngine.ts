@@ -18,6 +18,10 @@ import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
+// A275: reuse the SAME local close the branch-LAN central close uses, so remote
+// and on-prem closes run identical cash arithmetic. Called only at runtime (during
+// sync), so the branchClose ↔ syncEngine import cycle resolves safely.
+import { executeCloseDay } from './branchClose';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
@@ -436,6 +440,9 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     // Best-effort — a failure here must never affect the sync result.
     try { await refreshTechConfig(_accessToken); } catch { /* non-fatal */ }
     pushed = await runPushStages(errors);
+    // A275: after pushing local state up, pull any remote day-close instruction
+    // and execute it locally. Best-effort — must never affect the sync result.
+    try { await runDayCloseInstructions(errors); } catch { /* non-fatal */ }
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -443,6 +450,44 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
   }
 
   return { pulled, pushed, errors };
+}
+
+// A275 — pull any remote day-close instruction and execute it LOCALLY, then ack.
+// The till is the cash authority: executeCloseDay computes this till's own expected
+// cash + variance. Idempotent — a day already closed acks success (already_closed),
+// and an instruction is re-offered until acked, so a crash between execute and ack
+// is safe (the re-run no-ops). Best-effort: never throws into the sync result.
+async function runDayCloseInstructions(errors: string[]): Promise<void> {
+  const deviceId = getDeviceConfig()?.device_id ?? '';
+  if (!deviceId) return;
+  let pending: Array<{ id: string; kind: string; payload: any }> = [];
+  try {
+    const res = await syncFetch(`${_serverUrl}/api/day-close/pending`, { headers: authHeaders() });
+    if (!res.ok) return;                 // 401/5xx — re-offered next cycle
+    pending = await res.json();
+  } catch {
+    return;                              // offline/timeout — re-offered next cycle
+  }
+  for (const ins of pending ?? []) {
+    if (ins.kind !== 'close_day') continue;
+    const ack = executeCloseDay(ins.payload);
+    try {
+      await syncFetch(`${_serverUrl}/api/day-close/ack`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          instruction_id: ins.id,
+          ok:      ack.ok,
+          error:   ack.error ?? null,
+          summary: ack.summary ?? null,
+        }),
+      });
+    } catch (e: any) {
+      // Close succeeded locally but the ack didn't land — leave it pending; the
+      // idempotent re-run next cycle will ack success.
+      errors.push(`day-close ack failed: ${e?.message ?? 'unknown'}`);
+    }
+  }
 }
 
 // Push-only pass — cheap (no catalogue pull), safe to run frequently.

@@ -2050,6 +2050,26 @@ export function registerIpcHandlers() {
   handle('tech:promoteToNode', async () => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };
     const before = getDeviceConfig()?.device_role ?? 'till';
+    // A22 — split-brain guard. Promoting clears node_url and starts serving; if the
+    // CURRENT branch server is still reachable, promoting now would put two nodes on
+    // one branch (the classic case: an old node merely unplugged, then reconnected).
+    // There is no legitimate reason to promote while the old node still answers, so
+    // refuse loudly and tell the tech to demote/disconnect it first. (A reconnect
+    // AFTER promotion is caught server-side: confirmServingRole records the conflict
+    // and the fleet view flags it.)
+    const currentNodeUrl = getDeviceConfig()?.node_url ?? null;
+    if (currentNodeUrl) {
+      const probe = await probeNode(currentNodeUrl);
+      if (probe.ok) {
+        return {
+          ok: false,
+          code: 'node_reachable',
+          error: `The current branch server at ${currentNodeUrl} is still reachable. ` +
+                 `Promoting now would put TWO servers on this branch (split-brain). ` +
+                 `Demote or disconnect it first, then promote.`,
+        };
+      }
+    }
     // A20 backstop: pull a fresh roster from the CURRENT node before we stop being
     // a peer, so the promoted node can authenticate cashiers the instant it serves.
     // Best-effort and guarded (unpackRosterSnapshot refuses an empty/pinless pull,

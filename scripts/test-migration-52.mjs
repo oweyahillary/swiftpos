@@ -62,4 +62,4 @@ ok('move counted',r.branch_change_count===1);
 
 let again=true; try{ await db.exec(fs.readFileSync(new URL('../migrations/52_device_branch_binding.sql', import.meta.url),'utf8')); }catch(e){again=false;console.log('  ',e.message.slice(0,100));}
 ok('re-runnable',again);
-console.log(`\n${p} passed, ${f} failed`); process.exit(f?1:0);
+console.log(`\n${p} passed, ${f} failed`); await db.close().catch(()=>{}); process.exit(f?1:0);

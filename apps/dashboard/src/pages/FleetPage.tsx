@@ -48,6 +48,9 @@ interface FleetDevice {
   activeShift: { cashier: string | null; openedAt: string | null } | null;
   // A184 Tier 3 — retirement
   retiredAt: string | null;
+  // A22 — split-brain: two servers on this branch
+  servingConflict?: boolean;
+  conflictAt?: string | null;
 }
 
 interface FleetResponse {
@@ -278,6 +281,11 @@ export default function FleetPage() {
                           : null}
                       </div>
                       {d.mac && <div className="text-[11px] text-gray-400 font-mono">{d.mac}</div>}
+                      {d.servingConflict && (
+                        <div className="mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/40">
+                          ⚠ Split-brain — two servers on this branch. Demote one.
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {/* A184 Tier 2 — who is on shift right now. */}
