@@ -54,6 +54,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS day_close_instructions_one_pending
   ON public.day_close_instructions (business_id, device_id, business_date)
   WHERE status = 'pending';
 
+-- RLS — same shape as payment_methods (migration 86). All real access is the
+-- server on the service_role (which bypasses RLS): the manager queues via
+-- /api/day-close and the till polls/acks with its device session, both server-side.
+-- This owner_all policy is defense-in-depth for any direct PostgREST access.
+ALTER TABLE public.day_close_instructions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY owner_all ON public.day_close_instructions FOR ALL USING (
+  business_id IN (SELECT id FROM public.businesses WHERE owner_id = auth.uid())
+);
+
 INSERT INTO public.schema_migrations (version, notes)
 VALUES ('102_day_close_instructions',
         'A275 — cloud relay for remote day close (Option i). day_close_instructions mirrors the local node_instructions: a manager queues a close_day the till pulls on cloud sync and executes locally (executeCloseDay), then acks. One-pending-per-(business,till,date). Additive/idempotent/reversible.')

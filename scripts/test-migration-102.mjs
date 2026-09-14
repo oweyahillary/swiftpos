@@ -33,7 +33,13 @@ const colType = async (db, table, col) => {
 console.log('\nMigration 102 (day_close_instructions) — PGlite\n');
 await (async () => {
   const db = new PGlite();
-  await db.exec(`CREATE TABLE public.schema_migrations (version text PRIMARY KEY, notes text, applied_at timestamptz DEFAULT now());`);
+  // RLS policy references auth.uid() + public.businesses (mirror test-migration-86).
+  await db.exec(`
+    CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+    CREATE TABLE public.businesses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text, owner_id uuid);
+    CREATE TABLE public.schema_migrations (version text PRIMARY KEY, notes text, applied_at timestamptz DEFAULT now());
+  `);
 
   ok('table absent before migration', async () => {
     assert.strictEqual(await colType(db, 'day_close_instructions', 'status'), null);
