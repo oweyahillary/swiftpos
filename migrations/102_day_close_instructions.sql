@@ -60,6 +60,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS day_close_instructions_one_pending
 -- This owner_all policy is defense-in-depth for any direct PostgREST access.
 ALTER TABLE public.day_close_instructions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS owner_all ON public.day_close_instructions;
 CREATE POLICY owner_all ON public.day_close_instructions FOR ALL USING (
   business_id IN (SELECT id FROM public.businesses WHERE owner_id = auth.uid())
 );
