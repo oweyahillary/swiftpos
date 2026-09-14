@@ -41,9 +41,9 @@ router.post('/instruct', MANAGER, async (req: any, res) => {
   const closedByName = typeof req.body?.closed_by_name === 'string' ? req.body.closed_by_name.trim() : null;
   const branchId     = req.body?.branch_id ?? null;
 
-  if (!deviceId)                 { sendError(res, 'device_id is required', 400); return; }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) { sendError(res, 'business_date must be YYYY-MM-DD', 400); return; }
-  if (!Number.isFinite(countedCash) || countedCash < 0) { sendError(res, 'counted_cash must be 0 or more', 400); return; }
+  if (!deviceId)                 { res.status(400).json({ error: 'device_id is required' }); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) { res.status(400).json({ error: 'business_date must be YYYY-MM-DD' }); return; }
+  if (!Number.isFinite(countedCash) || countedCash < 0) { res.status(400).json({ error: 'counted_cash must be 0 or more' }); return; }
 
   // The payload the till will hand straight to executeCloseDay(). business_date
   // is included so the till REFUSES a date mismatch rather than closing the
@@ -117,8 +117,8 @@ router.post('/ack', async (req: any, res) => {
   const deviceId      = deviceIdOf(req);
   const instructionId = String(req.body?.instruction_id ?? '').trim();
   const ok            = req.body?.ok === true;
-  if (!deviceId)      { sendError(res, 'device identity required', 400); return; }
-  if (!instructionId) { sendError(res, 'instruction_id is required', 400); return; }
+  if (!deviceId)      { res.status(400).json({ error: 'device identity required' }); return; }
+  if (!instructionId) { res.status(400).json({ error: 'instruction_id is required' }); return; }
 
   const ack = { ok, error: req.body?.error ?? null, summary: req.body?.summary ?? null };
   const { data, error } = await supabase

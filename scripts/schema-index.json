@@ -256,6 +256,20 @@
     "credit_limit": "\"numeric\" NOT NULL",
     "credit_balance": "\"numeric\" NOT NULL"
   },
+  "day_close_instructions": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "device_id": "\"text\" NOT NULL",
+    "business_date": "\"date\" NOT NULL",
+    "payload": "\"jsonb\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "created_by": "\"uuid\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "delivered_at": "\"timestamp with time zone\"",
+    "ack": "\"jsonb\"",
+    "acked_at": "\"timestamp with time zone\""
+  },
   "device_enrolment_codes": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
