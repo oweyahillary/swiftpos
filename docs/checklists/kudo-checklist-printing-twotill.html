@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwiftPOS — checklist: printing + two-till</title>
+<style>
+  :root{--bg:#0b1220;--card:#111a2e;--card2:#0f1728;--line:#22304d;--text:#e6edf7;
+    --dim:#8ba0c0;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--slate:#64748b;--accent:#34d399;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  header{position:sticky;top:0;z-index:20;background:rgba(11,18,32,.97);border-bottom:1px solid var(--line);backdrop-filter:blur(6px);padding:12px 18px;}
+  .h-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;max-width:920px;margin:0 auto;}
+  h1{font-size:17px;margin:0;color:var(--accent);font-weight:700;}
+  .sub{color:var(--dim);font-size:12.5px;margin:2px 0 0;}
+  .counts{margin-left:auto;font-size:13px;color:var(--dim);white-space:nowrap;} .counts b{color:var(--text)}
+  button{font:inherit;cursor:pointer;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:9px 14px;}
+  button.primary{background:var(--accent);color:#052012;border-color:transparent;font-weight:700;}
+  button.ghost{background:transparent;}
+  main{max-width:920px;margin:0 auto;padding:18px;}
+  .howto{background:#0e1830;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:8px;}
+  .howto h3{margin:0 0 6px;font-size:14px;color:var(--accent);} .howto ol{margin:6px 0 0;padding-left:20px;color:var(--dim);font-size:13px;}
+  .howto li{margin:3px 0;} .howto b{color:var(--text);}
+  .setup{background:#141d12;border:1px solid #2f5f2a;border-radius:12px;padding:12px 16px;margin:14px 0;font-size:13px;color:#cde0c9;}
+  .setup h3{margin:0 0 6px;color:#9be08a;font-size:13.5px;} .setup b{color:#eaffe4;}
+  .sec{margin:24px 0 8px;} .sec h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:0 0 2px;}
+  .sec .blurb{margin:0 0 8px;color:var(--slate);font-size:12.5px;}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px;margin:12px 0;}
+  .item.done{border-color:#2f6b45;} .item.fail{border-color:#7f2b2b;}
+  .item-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px;}
+  .id{font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--accent);} .title{font-weight:600;}
+  .steps{margin:0 0 10px;padding:0;list-style:none;}
+  .steps li{position:relative;padding:3px 0 3px 26px;color:#cdd9ec;font-size:13.5px;}
+  .steps li:before{content:attr(data-n);position:absolute;left:0;top:2px;width:18px;height:18px;background:var(--card2);border:1px solid var(--line);border-radius:50%;font-size:11px;text-align:center;line-height:17px;color:var(--dim);}
+  .pf{display:flex;flex-direction:column;gap:4px;margin:8px 0 12px;font-size:13px;} .pf .good{color:#86efac;} .pf .bad{color:#fca5a5;} .pf b{font-weight:700;}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .pill{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card2);color:var(--dim);font-size:13px;user-select:none;}
+  .pill:hover{border-color:var(--slate);}
+  .pill.on-pass{background:var(--green);color:#052012;border-color:transparent;font-weight:700;}
+  .pill.on-fail{background:var(--red);color:#fff;border-color:transparent;font-weight:700;}
+  .pill.on-block{background:var(--amber);color:#231a02;border-color:transparent;font-weight:700;}
+  .pill.on-skip{background:var(--slate);color:#0b1220;border-color:transparent;font-weight:700;}
+  textarea{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:9px 10px;font:inherit;resize:vertical;min-height:44px;} textarea::placeholder{color:#4d5f7d;}
+  .drop{margin-top:8px;border:1.5px dashed #33456a;border-radius:9px;padding:10px;color:var(--dim);font-size:12.5px;text-align:center;cursor:pointer;outline:none;}
+  .drop:focus,.drop.hot{border-color:var(--accent);color:var(--text);background:#0d1830;}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;} .thumb{position:relative;width:88px;}
+  .thumb img{width:88px;height:66px;object-fit:cover;border-radius:7px;border:1px solid var(--line);display:block;}
+  .thumb .nm{font-size:10px;color:var(--dim);word-break:break-all;margin-top:2px;line-height:1.2;}
+  .thumb .x{position:absolute;top:-7px;right:-7px;background:var(--red);color:#fff;border:none;width:20px;height:20px;border-radius:50%;font-size:12px;line-height:20px;padding:0;cursor:pointer;}
+  .thumb a{position:absolute;bottom:20px;right:2px;background:#0b1220cc;color:#8ce0ff;font-size:10px;padding:1px 5px;border-radius:5px;text-decoration:none;border:1px solid var(--line);}
+  .out-wrap{margin:26px 0 70px;} .out{width:100%;min-height:240px;background:#0a0f1c;border:1px solid var(--line);border-radius:12px;color:#cbd5e1;padding:14px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;} .note{color:var(--slate);font-size:12px;} .copied{color:var(--green);font-size:13px;font-weight:700;}
+</style>
+</head>
+<body>
+<header>
+  <div class="h-row">
+    <div><h1>SwiftPOS — printing + two-till checklist</h1>
+      <p class="sub">Group B (printer) now · Group C (two-till / node) once Laptop B is enrolled as T2</p></div>
+    <div class="counts" id="counts"></div>
+    <button class="primary" onclick="copyOut()">Copy results</button>
+    <button class="ghost" onclick="if(confirm('Clear everything?'))location.reload()">Reset</button>
+  </div>
+</header>
+<main>
+  <div class="howto">
+    <h3>How to use this page</h3>
+    <ol>
+      <li>Follow each item's numbered steps → tap <b>Pass / Fail / Blocked / Skip</b> → write what you saw.</li>
+      <li><b>Screenshots / photos of printed tickets:</b> click an item's dashed box (or drag / Ctrl+V). For printed receipts, a phone photo is fine — attach it here, then <b>also drag the file into the chat</b> so I can see it.</li>
+      <li>Hit <b>Copy results</b> after each group and paste into the chat. Nothing autosaves — copy before closing.</li>
+    </ol>
+  </div>
+
+  <div class="setup">
+    <h3>Setup before Group B (printer)</h3>
+    1. Install the <b>print bridge</b> on Laptop A and connect the printer. &nbsp; 2. In the dashboard → <b>Settings → Printers</b>, add the printer and assign it. &nbsp; 3. Dashboard → <b>Print stations</b> — set which station prints the <b>kitchen</b> ticket vs the <b>dispatch</b>/bag ticket.
+  </div>
+  <div class="setup">
+    <h3>Setup before Group C (two-till / node)</h3>
+    1. Laptop B: uninstall/reset → install <b>SwiftPOS Dev 0.5.38</b> → enrol as a <b>Till, terminal T2</b>. &nbsp; 2. Decide the <b>node</b>: one machine serves the branch (its Tech screen → promote to node), the other stays a peer till. &nbsp; 3. Both on the same LAN.
+  </div>
+
+  <div id="list"></div>
+
+  <div class="out-wrap">
+    <div class="bar"><strong>Results to paste back</strong><span class="note">— updates live</span>
+      <span id="copiedMsg" class="copied" style="display:none">✓ copied</span></div>
+    <textarea class="out" id="out" readonly></textarea>
+  </div>
+</main>
+<script>
+const SECTIONS=[
+ {name:"B · Printing (printer on Laptop A)",
+  blurb:"Real receipts + kitchen/dispatch tickets on the physical printer.",
+  items:[
+  {id:"A235", title:"Silent receipt printing works",
+   steps:["Ring a sale and pay.","Instead of the browser print dialog, let it print via the bridge (silent)."],
+   pass:"The receipt prints on the printer <b>without</b> a browser print dialog — one tap.",
+   fail:"Nothing prints, or it still forces the OS/browser dialog. Note any bridge error."},
+  {id:"A209", title:"Web receipt matches the desktop format",
+   steps:["Print a receipt from the <b>web POS</b>.","Compare it to a desktop-printed receipt (or the on-screen one)."],
+   pass:"Same layout — header, items, VAT, total, footer line up; not a raw/garbled dump.",
+   fail:"Web receipt is a different/garbled format."},
+  {id:"A264", title:"Kitchen ticket excludes drinks (finish this)",
+   steps:["Ring a spicy combo (pick <b>Spicy</b>) AND a <b>Soda</b>, order type Takeaway.","Send to Kitchen / pay so tickets print.","Look at the KITCHEN ticket vs the DISPATCH/bag ticket."],
+   pass:"KITCHEN ticket lists the food with 'Spicy' and does <b>NOT</b> list the soda; the soda appears only on DISPATCH + receipt.",
+   fail:"Soda shows on the KITCHEN ticket, or spice missing."},
+  {id:"A249", title:"Routing: items go to the right station",
+   steps:["With print stations configured, ring items from different categories.","See which station each prints at."],
+   pass:"Each item prints at its configured station; kitchen vs dispatch split is correct.",
+   fail:"Items print at the wrong station / everything on one."},
+  {id:"A251", title:"Desktop uses the same routing as web",
+   steps:["Do the same mixed order on the <b>desktop</b> till.","Compare the tickets to the web run."],
+   pass:"Desktop tickets route identically to web (shared routing).",
+   fail:"Desktop routes differently."},
+  {id:"A240", title:"Print bridge is locked down",
+   steps:["(Security spot-check.) Confirm the bridge only accepts the dashboard origin.","It shouldn't expose printer names to any random page."],
+   pass:"Printing works from the dashboard; the bridge doesn't answer arbitrary origins.",
+   fail:"Any page can drive the bridge / list printers."},
+  {id:"A245", title:"No pairing-token copy-paste",
+   steps:["Set up printing on a fresh browser session."],
+   pass:"It just works from the trusted dashboard origin — no manual pairing token to copy.",
+   fail:"It demands a pasted pairing token."},
+  {id:"A239", title:"Bridge installer works",
+   steps:["Confirm the bridge was installed from its small installer and runs on boot."],
+   pass:"Installed cleanly and is running as a service/tray app.",
+   fail:"Won't install / doesn't stay running."},
+  {id:"A236", title:"Bridge builds/runs as an .exe",
+   steps:["Confirm the running bridge is the built .exe (not a dev script)."],
+   pass:"Runs as a packaged .exe.",
+   fail:"Only runs from source / require-path errors."},
+  {id:"A241", title:"Dashboard finds the bridge",
+   steps:["Confirm the dashboard talks to the bridge at the expected local URL."],
+   pass:"Dashboard connects to the bridge and prints.",
+   fail:"Dashboard can't reach the bridge (URL/config mismatch)."},
+  {id:"A243", title:"Old print path retired",
+   steps:["Print a few times."],
+   pass:"Printing goes through the current bridge path; no QZ/legacy popups.",
+   fail:"Old QZ/legacy print path still triggers."},
+ ]},
+ {name:"C · Two-till / node / offline (Laptop B as T2)",
+  blurb:"Needs both laptops on one LAN, one promoted to node.",
+  items:[
+  {id:"A273-2", title:"Two surfaces share ONE drawer (A273 fold-in)",
+   steps:["Open a shift on T1.","On Laptop B (or web-as-T1), try to sell as the SAME till T1."],
+   pass:"The second surface folds into T1's <b>same</b> open drawer — no second drawer; sales land on one drawer/day.",
+   fail:"A second drawer opens for the same till."},
+  {id:"D9", title:"Held orders visible across tills",
+   steps:["On T1, start an order and <b>Hold</b> it.","On T2, open the held-orders list."],
+   pass:"The order held on T1 appears on T2 and can be resumed.",
+   fail:"Held order is invisible on T2."},
+  {id:"A162", title:"Peer sales relay to cloud via node (A19)",
+   steps:["Make T2 a peer of the node.","Ring a sale on T2 (peer).","Check the cloud/dashboard for that sale."],
+   pass:"The peer's sale reaches the cloud (relayed by the node).",
+   fail:"Peer sale never reaches the cloud."},
+  {id:"A19", title:"Offline peer's sales eventually reach cloud",
+   steps:["Take T2 offline from the internet (LAN only).","Ring sales on T2.","Reconnect / let the node relay."],
+   pass:"Once the node syncs, T2's offline sales appear in the cloud.",
+   fail:"Offline sales are lost."},
+  {id:"A163", title:"Staff roster replicates to peers (A20)",
+   steps:["With the node up, add/confirm staff.","On the peer T2, check the staff can sign in."],
+   pass:"Peer has the roster from the node — staff can sign in on T2.",
+   fail:"Peer has no roster."},
+  {id:"A20", title:"Failover can open the shop",
+   steps:["Simulate the cloud being unreachable (LAN only).","Try to open the shop / sign in on the peer via the node."],
+   pass:"The branch can still open and trade off the node (roster available).",
+   fail:"Can't open the shop without the cloud."},
+  {id:"A161", title:"Node serves reference data downstream (A24)",
+   steps:["Peer T2 offline from cloud.","Change a product/price via the node.","Check T2 gets it."],
+   pass:"Peer receives updated reference data from the node.",
+   fail:"Peer reference data goes stale."},
+  {id:"A24", title:"Reference data not permanently stale on peer",
+   steps:["Leave a peer offline-from-cloud a while, then update menu via node."],
+   pass:"Peer refreshes menu/prices from the node (not stuck).",
+   fail:"Peer stuck on old menu/prices."},
+  {id:"A160", title:"Offline peer refreshes its session via node",
+   steps:["Peer offline from cloud; let its session near expiry.","Keep using it on the LAN."],
+   pass:"The peer refreshes its session through the node — no forced logout.",
+   fail:"Peer logged out with no cloud."},
+  {id:"A164", title:"Till write-guard (server half)",
+   steps:["Confirm a till running as owner still respects the write-guard rules."],
+   pass:"No unauthorized writes slip past the guard.",
+   fail:"Guard bypassed."},
+  {id:"A22-2", title:"Promote refuses while a node is reachable",
+   steps:["With the node up and reachable, on the other machine attempt <b>promote to node</b>."],
+   pass:"It refuses ('node still reachable') — won't create a second node (split-brain).",
+   fail:"It promotes anyway → two nodes."},
+ ]},
+];
+const STATUSES=[{key:"pass",label:"Pass",cls:"on-pass",tag:"PASS"},{key:"fail",label:"Fail",cls:"on-fail",tag:"FAIL"},{key:"block",label:"Blocked",cls:"on-block",tag:"BLOCK"},{key:"skip",label:"Skip",cls:"on-skip",tag:"SKIP"}];
+const state={}; let activeDrop=null;
+function render(){const list=document.getElementById('list');
+ SECTIONS.forEach(sec=>{const s=document.createElement('div');s.className='sec';
+  s.innerHTML=`<h2>${sec.name}</h2>`+(sec.blurb?`<div class="blurb">${sec.blurb}</div>`:'');list.appendChild(s);
+  sec.items.forEach(it=>{state[it.id]={status:null,note:'',imgs:[]};
+   const el=document.createElement('div');el.className='item';el.id='card-'+it.id;
+   el.innerHTML=`<div class="item-top"><span class="id">${it.id}</span><span class="title">${it.title}</span></div>
+    <ol class="steps">${it.steps.map((s,i)=>`<li data-n="${i+1}">${s}</li>`).join('')}</ol>
+    <div class="pf"><span class="good">✓ <b>Pass if:</b> ${it.pass}</span><span class="bad">✗ <b>Fail if:</b> ${it.fail}</span></div>
+    <div class="pills" data-id="${it.id}">${STATUSES.map(st=>`<span class="pill" data-st="${st.key}" onclick="setStatus('${it.id}','${st.key}')">${st.label}</span>`).join('')}</div>
+    <textarea placeholder="What did you see? Paste exact error text if any." oninput="setNote('${it.id}',this.value)"></textarea>
+    <div class="drop" tabindex="0" data-id="${it.id}" onclick="pick('${it.id}')" onfocus="activeDrop='${it.id}'"
+      ondragover="event.preventDefault();this.classList.add('hot')" ondragleave="this.classList.remove('hot')" ondrop="dropFiles(event,'${it.id}')">
+      📎 Attach screenshot / photo of the printed ticket — click, drag, or Ctrl+V</div>
+    <input type="file" accept="image/*" multiple style="display:none" id="file-${it.id}" onchange="filesChosen(this.files,'${it.id}')">
+    <div class="thumbs" id="thumbs-${it.id}"></div>`;list.appendChild(el);});});update();}
+function setStatus(id,st){state[id].status=(state[id].status===st)?null:st;
+ const wrap=document.querySelector(`.pills[data-id="${id}"]`);
+ wrap.querySelectorAll('.pill').forEach(p=>{const on=p.dataset.st===state[id].status;p.className='pill'+(on?' '+STATUSES.find(s=>s.key===p.dataset.st).cls:'');});
+ const card=document.getElementById('card-'+id);card.className='item'+(state[id].status==='pass'?' done':state[id].status==='fail'?' fail':'');update();}
+function setNote(id,v){state[id].note=v;update();}
+function pick(id){activeDrop=id;document.getElementById('file-'+id).click();}
+function filesChosen(f,id){addImgs([...f],id);}
+function dropFiles(e,id){e.preventDefault();e.currentTarget.classList.remove('hot');addImgs([...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')),id);}
+function addImgs(files,id){files.forEach(f=>{const r=new FileReader();r.onload=()=>{const name=f.name||`${id}-shot${state[id].imgs.length+1}.png`;state[id].imgs.push({name,url:r.result});renderThumbs(id);update();};r.readAsDataURL(f);});}
+function renderThumbs(id){document.getElementById('thumbs-'+id).innerHTML=state[id].imgs.map((im,i)=>`<div class="thumb"><button class="x" onclick="delImg('${id}',${i})">×</button><a href="${im.url}" download="${im.name}">save</a><img src="${im.url}"><div class="nm">${im.name}</div></div>`).join('');}
+function delImg(id,i){state[id].imgs.splice(i,1);renderThumbs(id);update();}
+document.addEventListener('paste',e=>{if(!activeDrop)return;const items=[...(e.clipboardData?.items||[])].filter(it=>it.type.startsWith('image/'));items.forEach(it=>{const f=it.getAsFile();if(f)addImgs([f],activeDrop);});});
+function summary(){const now=new Date().toISOString().slice(0,10);let L=[`SwiftPOS printing + two-till — ${now}`,'='.repeat(60)];let c={pass:0,fail:0,block:0,skip:0,none:0},shots=[];
+ SECTIONS.forEach(sec=>{L.push('');L.push(sec.name.toUpperCase());sec.items.forEach(it=>{const s=state[it.id];const tag=s.status?STATUSES.find(x=>x.key===s.status).tag:'--';c[s.status||'none']++;
+  L.push(`  [${tag.padEnd(5)}] ${it.id.padEnd(7)} ${it.title}`);if(s.note&&s.note.trim())L.push(`           note: ${s.note.trim().replace(/\n+/g,' ')}`);
+  if(s.imgs.length){L.push(`           shots: ${s.imgs.map(x=>x.name).join(', ')}`);shots.push(`${it.id}: ${s.imgs.map(x=>x.name).join(', ')}`);}});});
+ L.push('');L.push('-'.repeat(60));L.push(`Summary: ${c.pass} pass · ${c.fail} fail · ${c.block} blocked · ${c.skip} skip · ${c.none} not tested`);
+ if(shots.length){L.push('');L.push('Screenshots/photos (drag these into the chat):');shots.forEach(x=>L.push('  '+x));}return L.join('\n');}
+function update(){document.getElementById('out').value=summary();let c={pass:0,fail:0,none:0};Object.values(state).forEach(s=>{if(s.status==='pass')c.pass++;else if(s.status==='fail')c.fail++;else if(!s.status)c.none++;});
+ document.getElementById('counts').innerHTML=`<b>${c.pass}</b> pass · <b>${c.fail}</b> fail · <b>${c.none}</b> left`;}
+function copyOut(){const ta=document.getElementById('out');ta.select();ta.setSelectionRange(0,99999);let ok=false;try{ok=document.execCommand('copy');}catch(e){}if(navigator.clipboard){navigator.clipboard.writeText(ta.value).catch(()=>{});ok=true;}const m=document.getElementById('copiedMsg');if(ok){m.style.display='inline';setTimeout(()=>m.style.display='none',1800);}else alert('Select the box and Ctrl+C.');}
+render();
+</script>
+</body>
+</html>
