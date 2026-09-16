@@ -65,6 +65,12 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: name,
+    // A283: custom NSIS include lives at build/installer.nsh (committed via git add -f
+    // past the build/ ignore). It adds the branch-node firewall rule (TCP 4100-4103,
+    // private) at install time. Must stay in step with the committed file — if the
+    // file is absent from a clean checkout the NSIS build fails (see A282/the first
+    // D3 release). Load-bearing for multi-till; harmless on a single till.
+    include: 'build/installer.nsh',
     allowElevation: true,
   },
   portable: { artifactName: shortName + '-${version}-portable.exe' },
