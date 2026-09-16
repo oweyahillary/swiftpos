@@ -21,6 +21,14 @@ const shortName = dev ? 'SwiftPOS-Dev' : 'SwiftPOS';
 module.exports = {
   appId: dev ? 'com.swiftpos.desktop.dev' : 'com.swiftpos.desktop',
   productName: name,
+  // A284: productName above only names the INSTALLER/exe. At runtime Electron reads
+  // app.getName() from the packaged app's package.json, whose static "productName":
+  // "SwiftPOS" made BOTH flavours resolve userData to %APPDATA%\SwiftPOS — one shared
+  // swiftpos.db/log/token/backups. extraMetadata injects the flavour name into that
+  // bundled package.json, so app.getName() differs and the folders finally separate
+  // (dev -> %APPDATA%\SwiftPOS Dev, prod -> %APPDATA%\SwiftPOS), making the promise
+  // in this file's header true.
+  extraMetadata: { productName: name },
   directories: { output: 'release' },
   compression: 'normal',
   // D3: auto-update feed. Only the PROD flavour publishes/consumes a feed — dev
