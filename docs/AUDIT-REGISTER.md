@@ -8742,3 +8742,5 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-09 | Owner's design clarification: node is branch source of truth, sole cloud uplink, may stay offline forever and may authorise. A17/A19 resolved to a design; `PHASE5-NODE-AUTHORITY.md` written for approval. Reverses D16's override-PIN decision (§5) and makes D4/D14 prerequisites (§7). |
 | 2026-08-09 | Batch 1 (server). A14 Beryl root cause found and fixed, A15 error classification, A16 CI gap, A2 closed. Beryl post-commit hypothesis ruled out by idempotency deduction. 17 new tests, mutation-checked. |
 | 2026-08-08 (eve) | D2, D12, D13 (client half), D16 offline sign-in, A1 packaging closed. Migration 46 applied. 78 desktop tests added, green on Windows/Node 20 with SQLite suites on the real Electron ABI. Working rules moved into the handoff §0. |
+
+A284 → FIX BUILT — extraMetadata.productName per flavour so app.getName()/userData differ (dev → %APPDATA%\SwiftPOS Dev, prod → %APPDATA%\SwiftPOS); ends shared swiftpos.db/log/token/backups. Dev re-enrols once on the new build. Awaiting rebuild to confirm folders split on-target.
