@@ -8744,3 +8744,5 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-08 (eve) | D2, D12, D13 (client half), D16 offline sign-in, A1 packaging closed. Migration 46 applied. 78 desktop tests added, green on Windows/Node 20 with SQLite suites on the real Electron ABI. Working rules moved into the handoff §0. |
 
 A284 → FIX BUILT — extraMetadata.productName per flavour so app.getName()/userData differ (dev → %APPDATA%\SwiftPOS Dev, prod → %APPDATA%\SwiftPOS); ends shared swiftpos.db/log/token/backups. Dev re-enrols once on the new build. Awaiting rebuild to confirm folders split on-target.
+
+A283 → FIX BUILT — build/installer.nsh (branch-node firewall rule, TCP 4100-4103 private) committed via git add -f and un-ignored; nsis.include restored. Reverses the A282 removal now that the file ships. Awaiting a green release build WITH the include to confirm CI finds the file.
