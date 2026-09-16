@@ -57,7 +57,6 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: name,
-    include: 'build/installer.nsh',
     allowElevation: true,
   },
   portable: { artifactName: shortName + '-${version}-portable.exe' },
