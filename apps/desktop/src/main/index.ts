@@ -18,31 +18,20 @@ import { initAutoUpdate } from './autoUpdate';
 
 const isDev = !app.isPackaged;
 
-// D17 / A289: the window title reflects the CLOUD this till is enrolled against.
-// getServerUrl() returns the enrolled device_config.server_url (the cloud — rule 21).
-// PROD_CLOUD_HOSTS lists the expected production cloud host(s): on the PROD flavour
-// those are hidden (a clean "SwiftPOS" title for the shop), but ANY OTHER host is
-// still shown even on prod — a prod till pointed at the wrong cloud must not look
-// clean. The DEV flavour (and unpackaged dev) ALWAYS show the host, since it's
-// useful while trade-testing. Requires A284 (per-flavour app.getName()) to tell
-// the flavours apart on packaged builds.
-// A289: expected PRODUCTION cloud host(s) ONLY. Listed hosts are hidden on the
-// PROD flavour (clean "SwiftPOS" title for the shop); any other host — including
-// the TEST cloud (swiftpos-20c2.onrender.com) — is still shown even on prod, so a
-// prod till pointed at the wrong cloud can't look clean (the D17 safety). The DEV
-// flavour always shows the host. Empty until the real prod host is provisioned —
-// add it here then (e.g. 'api.swiftpos.co.ke'); do NOT add the test host.
-const PROD_CLOUD_HOSTS: string[] = [];
-
+// D17 / A289: the window title. The DEV flavour (and unpackaged dev) ALWAYS show
+// the enrolled cloud host — useful for setup/verification and to catch a dev till
+// pointed at the wrong cloud. The PROD flavour NEVER shows it: prod is the
+// client-facing build and a shop shouldn't see a technical URL in its title.
+// (Wrong-cloud safety for prod, if ever needed, belongs in a one-time first-launch
+// warning, not a permanent badge.) getServerUrl() returns the enrolled cloud (rule 21).
 function cloudBadgeTitle(): string {
   const base = app.getName();                 // 'SwiftPOS' or 'SwiftPOS Dev' (A284)
   const devFlavour = isDev || base.toLowerCase().includes('dev');
+  if (!devFlavour) return base;               // prod: clean, no host
   try {
     const url = getServerUrl();
     if (!url) return base;                     // not enrolled yet — nothing to badge
-    const host = new URL(url).host;
-    if (devFlavour) return `${base} — ${host}`;          // dev: always show the cloud
-    return PROD_CLOUD_HOSTS.includes(host) ? base : `${base} — ${host}`; // prod: hide known, flag unknown
+    return `${base} — ${new URL(url).host}`;   // dev: always show the cloud
   } catch {
     return base;
   }
