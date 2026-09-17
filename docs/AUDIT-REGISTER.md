@@ -8746,3 +8746,8 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 A284 → FIX BUILT — extraMetadata.productName per flavour so app.getName()/userData differ (dev → %APPDATA%\SwiftPOS Dev, prod → %APPDATA%\SwiftPOS); ends shared swiftpos.db/log/token/backups. Dev re-enrols once on the new build. Awaiting rebuild to confirm folders split on-target.
 
 A283 → FIX BUILT — build/installer.nsh (branch-node firewall rule, TCP 4100-4103 private) committed via git add -f and un-ignored; nsis.include restored. Reverses the A282 removal now that the file ships. Awaiting a green release build WITH the include to confirm CI finds the file.
+
+A291 → FIX BUILT — instant web→till propagation: server /api/pos/catalogue-version + desktop 20s pullIfCatalogueChanged poll (pulls only on change); 10-min floor retained. v1 covers trigger-backed tables; v2 triggers pending. Awaiting end-to-end on 0.5.43.
+A293 → FIX BUILT — Overview showed 0 despite correct data: getSalesSummary rejected when a sibling sub-query (payments/hourly) threw on a migrated schema. Isolated payments + hourly (row always returns); getTopProducts fail-soft. Awaiting on-target confirm on 0.5.43.
+A289 → REVISED — window-title cloud host now a pure flavour gate: PROD never shows the host, DEV always does. Removed PROD_CLOUD_HOSTS.
+A295 → OPEN (feature, scoped, deferred) — Client branding P1 (lock screen + receipt logo) + P2 (curated themes, branch overrides, footer). Rides A291. Spec: docs/SCOPE-A295-branding.md. Build after queue; P1 before P2.
