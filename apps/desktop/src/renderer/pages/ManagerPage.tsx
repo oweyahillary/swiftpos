@@ -131,16 +131,22 @@ function RestaurantOverview({ currency }: { currency: string }) {
   useEffect(() => {
     let live = true;
     async function load() {
-      try {
-        const [s, t, tb] = await Promise.all([
-          posApi.manager.salesSummary(),
-          posApi.manager.topProducts(),
-          posApi.manager.tableOccupancy(),
-        ]);
-        if (!live) return;
-        setSales(s); setTopItems(t); setTables(tb);
-      } catch { /* best effort */ }
-      finally { if (live) setLoading(false); }
+      // A290: settle each independently — a failure in one (e.g. tableOccupancy
+      // on an old schema) must NOT blank the KPIs and top sellers. The old shared
+      // try/catch zeroed the whole Overview when any single call threw.
+      const [s, t, tb] = await Promise.allSettled([
+        posApi.manager.salesSummary(),
+        posApi.manager.topProducts(),
+        posApi.manager.tableOccupancy(),
+      ]);
+      if (!live) return;
+      if (s.status === 'fulfilled') setSales(s.value);
+      else console.warn('[Overview] salesSummary failed:', s.reason);
+      if (t.status === 'fulfilled') setTopItems(t.value);
+      else console.warn('[Overview] topProducts failed:', t.reason);
+      if (tb.status === 'fulfilled') setTables(tb.value);
+      else console.warn('[Overview] tableOccupancy failed:', tb.reason);
+      setLoading(false);
     }
     load();
     return () => { live = false; };

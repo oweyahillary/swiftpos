@@ -16,7 +16,6 @@
 const dev = String(process.env.SWIFTPOS_ENV || 'prod').toLowerCase() === 'dev';
 
 const name = dev ? 'SwiftPOS Dev' : 'SwiftPOS';
-const shortName = dev ? 'SwiftPOS-Dev' : 'SwiftPOS';
 
 module.exports = {
   appId: dev ? 'com.swiftpos.desktop.dev' : 'com.swiftpos.desktop',
@@ -53,7 +52,11 @@ module.exports = {
   ],
   linux: { target: ['AppImage', 'deb'] },
   win: {
-    target: ['nsis', 'portable'],
+    // A288: NSIS only. The portable target published a second, updater-invisible
+    // release per tag (no latest.yml/blockmap) and can't run installer.nsh or
+    // self-update — not something a till would deploy. Build portable locally
+    // on demand if ever needed; don't publish it.
+    target: ['nsis'],
     icon: dev ? 'resources/icon.dev.ico' : 'resources/icon.ico',
     artifactName: '${productName}-${version}-${arch}.${ext}',
   },
@@ -73,6 +76,5 @@ module.exports = {
     include: 'build/installer.nsh',
     allowElevation: true,
   },
-  portable: { artifactName: shortName + '-${version}-portable.exe' },
   electronLanguages: ['en-US'],
 };

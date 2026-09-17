@@ -388,14 +388,21 @@ export function getPumpStatus() {
 export function getTableOccupancy() {
   const db = getLocalDb();
 
-  const tables = db.prepare(`
-    SELECT id, name, capacity, slot_type, pos_x, pos_y, zone, shape, sort_order
-    FROM tables
-    WHERE slot_type = 'dining'
-    ORDER BY sort_order, name
-  `).all() as any[];
-
-  return tables;
+  // A290: an older/migrated local db may predate some of these columns
+  // (CREATE TABLE IF NOT EXISTS never adds them). A throw here used to bubble up
+  // and — via the Overview's shared catch — blank revenue + payments + sellers
+  // too. Fail soft: no tables is a valid state, and the KPIs must still render.
+  try {
+    return db.prepare(`
+      SELECT id, name, capacity, slot_type, pos_x, pos_y, zone, shape, sort_order
+      FROM tables
+      WHERE slot_type = 'dining'
+      ORDER BY sort_order, name
+    `).all() as any[];
+  } catch (err) {
+    console.warn('[managerReports] getTableOccupancy failed (schema?):', (err as Error).message);
+    return [];
+  }
 }
 
 // ── Branch price management (manager = branch authority) ─────────────────────

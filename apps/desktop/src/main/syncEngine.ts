@@ -511,6 +511,38 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
   return { pushed, errors };
 }
 
+// A291: cheap catalogue-freshness poll. Ask the server for the newest updated_at
+// across the reference tables (GET /api/pos/catalogue-version) and refresh only
+// when it has moved since our last successful pull. This is what makes a web edit
+// reach the till in ~20s instead of waiting for the 10-min full-pull floor, which
+// stays as the safety net (and covers the tables without an updated_at trigger).
+// Fail-soft throughout: any error just skips this tick — the floor still runs.
+let _lastCatalogueVersion: string | null = null;
+export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pulled: boolean }> {
+  if (!_accessToken || !_serverUrl) return { changed: false, pulled: false };
+  if (!isOnline()) return { changed: false, pulled: false };
+
+  const branch = getDeviceConfig()?.branch_id ?? null;
+  const url = `${_serverUrl}/api/pos/catalogue-version${branch ? `?branch_id=${encodeURIComponent(branch)}` : ''}`;
+
+  let version: string | null = null;
+  try {
+    const res = await syncFetch(url, { headers: authHeaders() });
+    if (!res.ok) return { changed: false, pulled: false }; // 401 etc. — floor loop handles refresh
+    version = ((await res.json()) as any)?.version ?? null;
+  } catch {
+    return { changed: false, pulled: false };
+  }
+  if (!version || version === _lastCatalogueVersion) return { changed: false, pulled: false };
+
+  // Something changed (or first observation). syncAll self-guards against a
+  // concurrent/offline run; only adopt the new version once a pull actually lands,
+  // so a skipped run is retried on the next tick rather than silently swallowed.
+  const r = await syncAll();
+  if (r.pulled) _lastCatalogueVersion = version;
+  return { changed: true, pulled: r.pulled };
+}
+
 export function getSyncStatus(): {
   online: boolean; pendingCount: number; failedCount: number;
   /** A178: the pending count split by table, so the tech screen shows what's stuck. */
