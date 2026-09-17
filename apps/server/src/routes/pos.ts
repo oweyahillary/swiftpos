@@ -10,8 +10,55 @@ const router = safeRouter();
 
 router.use(requireAuth);
 
-// GET /api/pos/init
-// Fetches everything the POS screen needs to boot in a single round-trip:
+// GET /api/pos/catalogue-version
+// A291: a CHEAP freshness signal so a till can pull the moment a web edit lands
+// instead of waiting for the 10-min full-pull floor. Returns the newest updated_at
+// across the reference tables that carry the set_updated_at() BEFORE UPDATE trigger
+// (products, categories, business_settings, users, tables, branches, branch_printers,
+// branch_prices). Any web edit to those bumps a timestamp; the till compares this to
+// its last successful pull and pulls ONLY when it moved. Far lighter than /init.
+//
+// v1 coverage gap (deliberate): category_stations, variant_*, modifier_*, combo_items
+// carry no updated_at trigger, so composition/routing edits still ride the 10-min
+// floor until v2 adds their triggers. NEVER wedges the till: on any failure it returns
+// 200 with version:null and the till simply keeps its floor cadence.
+router.get('/catalogue-version', async (req, res) => {
+  const branchId = typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
+  const biz = req.businessId;
+
+  // Latest updated_at from one table; null (not throw) if the column/scope is absent,
+  // so one odd table can never fail the whole check.
+  const latest = async (table: string, col: 'business_id' | 'branch_id', val: string | null): Promise<string | null> => {
+    if (!val) return null;
+    try {
+      const { data, error } = await supabase
+        .from(table).select('updated_at').eq(col, val)
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      if (error || !data?.updated_at) return null;
+      return data.updated_at as string;
+    } catch { return null; }
+  };
+
+  try {
+    const picks = await Promise.all([
+      latest('products',         'business_id', biz),
+      latest('categories',       'business_id', biz),
+      latest('business_settings','business_id', biz),
+      latest('users',            'business_id', biz),
+      latest('tables',           'business_id', biz),
+      latest('branches',         'business_id', biz),
+      latest('branch_printers',  'branch_id',   branchId),
+      latest('branch_prices',    'branch_id',   branchId),
+    ]);
+    // ISO-8601 UTC strings sort chronologically; newest is the version.
+    const version = picks.filter(Boolean).sort().pop() ?? null;
+    res.json({ version });
+  } catch {
+    res.json({ version: null }); // never wedge the till over a freshness check
+  }
+});
+
+
 // active products (with category colour), active categories, main branch id, and variant groups.
 // GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
 // PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
