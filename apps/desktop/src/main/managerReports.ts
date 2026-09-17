@@ -177,8 +177,12 @@ export function getSalesSummary(range?: ReportRange) {
       AND created_at >= ? AND created_at <= ?
   `).get(from, to) as any;
 
-  // Payment method split
-  const methods = db.prepare(`
+  // Payment method split — isolated: a schema-drift throw here (e.g. an old local
+  // payments table on a migrated db) must NOT take the revenue row down with it.
+  // A293: same fail-soft pattern as getTableOccupancy (A290), one level deeper.
+  let methods: { method: string; amount: number }[] = [];
+  try {
+    methods = db.prepare(`
     SELECT p.method, COALESCE(SUM(p.amount), 0) AS amount
     FROM payments p
     JOIN orders o ON o.id = p.order_id
@@ -186,9 +190,14 @@ export function getSalesSummary(range?: ReportRange) {
       AND o.created_at >= ? AND o.created_at <= ?
     GROUP BY p.method
   `).all(from, to) as { method: string; amount: number }[];
+  } catch (err) {
+    console.warn('[managerReports] getSalesSummary payment split failed (schema?):', (err as Error).message);
+  }
 
-  // Hourly (last 12 hours)
-  const hourly = db.prepare(`
+  // Hourly (last 12 hours) — isolated for the same reason.
+  let hourly: { hour: string; order_count: number; revenue: number }[] = [];
+  try {
+    hourly = db.prepare(`
     SELECT
       strftime('%H', created_at) AS hour,
       COUNT(*)                   AS order_count,
@@ -199,6 +208,9 @@ export function getSalesSummary(range?: ReportRange) {
     GROUP BY strftime('%H', created_at)
     ORDER BY hour
   `).all(from, to) as { hour: string; order_count: number; revenue: number }[];
+  } catch (err) {
+    console.warn('[managerReports] getSalesSummary hourly failed:', (err as Error).message);
+  }
 
   return {
     summary: {
@@ -218,7 +230,10 @@ export function getTopProducts(limit = 8, range?: ReportRange) {
   const db = getLocalDb();
   const { from, to } = range ?? todayRange();
 
-  return db.prepare(`
+  // A293: fail-soft — a schema-drift throw here must not blank the sellers card
+  // (and, under the old shared-catch, used to blank the whole Overview).
+  try {
+    return db.prepare(`
     SELECT
       oi.product_name AS name,
       SUM(oi.quantity) AS qty,
@@ -231,6 +246,10 @@ export function getTopProducts(limit = 8, range?: ReportRange) {
     ORDER BY revenue DESC
     LIMIT ?
   `).all(from, to, limit) as { name: string; qty: number; revenue: number }[];
+  } catch (err) {
+    console.warn('[managerReports] getTopProducts failed (schema?):', (err as Error).message);
+    return [] as { name: string; qty: number; revenue: number }[];
+  }
 }
 
 // ── Order history (last N orders) ────────────────────────────────────────────
