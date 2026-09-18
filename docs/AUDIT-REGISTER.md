@@ -5725,7 +5725,7 @@ This is the file a new reader opens to learn the architecture. Header corrected
 header becomes true again and the corrected one must be corrected back. Noted
 here so that does not read as a regression.
 
-### A19 · P1 · FIX BUILT 2026-09-07 · A permanently-offline peer's sales never reach the cloud
+### A19 · P1 · OPEN · A permanently-offline peer's sales never reach the cloud
 Follows from A18. A peer till pushes to two independent destinations: the cloud
 (`sync_queue`) and the node (`node_queue`). Under the stated design the peer has
 no internet, so:
@@ -5785,6 +5785,10 @@ D3 auto-update (a bad routing build is a site visit). Pairs with A17's deploymen
 reach cloud (web dashboard, eTIMS, cloud loyalty, backup). Target-only: closing
 needs a live node + peer + cloud, verifying a peer sale reaches cloud once, with
 the peer's original id and no duplicate. Not built on the bench (rule 16/20).
+CORRECTION 2026-09-18: heading read "FIX BUILT 2026-09-07" but the code shows it UNBUILT — the cloud
+enqueue at syncEngine.ts:2041 fires for every order unconditionally (peer or not), and nodeIngest still
+stamps peer rows PEER_SYNC_STATUS to keep them OUT of the node's cloud push (replica, not relay). Both
+§3 fix points are absent. Reverted the heading to OPEN to match the code and the 08-23 body note.
 Delivery of this status note: MANIFEST-2026-08-23-t.md.
 
 ### A20 · P1 · FIX BUILT 2026-09-07 · Failover cannot open the shop — the staff roster does not replicate
@@ -8674,6 +8678,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-09-18 | **A19 heading corrected FIX BUILT -> OPEN.** The heading overclaimed: code verified unbuilt (cloud enqueue unconditional at syncEngine.ts:2041; node stamps peer rows PEER_SYNC_STATUS to keep them out of its cloud push). Matches the 08-23 body note. Still P1 open (no count change). Docs-only (rule 18). |
 | 2026-09-18 | **A299 logging — capture all errors + event summaries in swiftpos.log.** Main console.error/warn routed to the file (installConsoleCapture); renderer forwarder over a send/on channel; event summaries at sale/void/refund/shift/config (id/total/method/count + changed keys only — no line items, customer data, or config values); startup build stamp logged; rotation kept at 1MB (tested design). Ships 0.5.47. Open P3 13->14. Desktop code, bench-authored (rule 9). |
 | 2026-09-18 | **D3, D4, D18 CLOSED — owner-confirmed on target.** D3 auto-update: tills pulled 0.5.45 + 0.5.46 unattended via electron-updater. D4 enrolment: device is enrolled and running as a node (device_role=node, terminal_code=T1). D18 tech-token paste: owner pasted a token and used the Tech DB console to run the A297 diagnostics — full paste + tech session end to end. Open D-P1 2→0, D-P2 1→0. Docs-only (rule 18). |
 | 2026-09-18 | **Register/reality sweep (docs + one gate).** Reconciled the register to what actually ships after the A296–A298 desktop work: **A297 CLOSED** (Overview IPC-guard fix confirmed on the till, 0.5.45); **D13 CLOSED** (heading lagged — A88 built the server grace window on 08-15); **D10** line count corrected 1,639→2,214; **Tree line** updated (desktop v0.5.38→**v0.5.46**, migrations →94→**→102**, last-pushed→`f89b8ff`). Added a **Tree-line check** to `check-register-consistency` (the desktop version in the \| Tree \| row must equal apps/desktop/package.json — the field that drifted silently because the count check only reads \| Open \|; mutation-checked). Open P1 19→18. D3/D4/D18 left OPEN pending owner on-till re-confirm. `check-register-consistency` + `check-doc-refs` + `check-root-clean` green. Docs + gate only, no desktop change (rule 18). |
