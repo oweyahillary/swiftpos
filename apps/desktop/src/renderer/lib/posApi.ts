@@ -46,6 +46,7 @@ export interface TechStatus {
     branch_id: string | null; deploy_mode: string | null; server_url: string | null; node_url: string | null;
   };
   sync: { online?: boolean; pending: number; failed: number; lastOrder: string | null; [k: string]: any };
+  build?: { sha: string; time: string };
 }
 
 export interface DeviceConfig {

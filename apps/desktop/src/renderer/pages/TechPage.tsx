@@ -191,6 +191,7 @@ export default function TechPage({ onExit }: Props) {
             <dt className="text-gray-300">Mode</dt><dd className="text-gray-300">{dev?.deploy_mode ?? '—'}</dd>
             <dt className="text-gray-300">Server</dt><dd className="font-mono text-gray-300 truncate">{dev?.server_url ?? '—'}</dd>
             {dev?.node_url && (<><dt className="text-gray-300">Branch server</dt><dd className="font-mono text-gray-300 truncate">{dev.node_url}</dd></>)}
+            {status?.build && (<><dt className="text-gray-300">Build</dt><dd className="font-mono text-gray-300 truncate">{status.build.sha} · {status.build.time}</dd></>)}
           </dl>
         </section>
 

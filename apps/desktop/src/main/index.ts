@@ -15,6 +15,7 @@ import { ownDayState, executeCloseDay } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
+import { getBuildInfo } from './buildInfo';
 
 const isDev = !app.isPackaged;
 
@@ -188,6 +189,9 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
+  // A298: stamp the log with the build this till is actually running, so "is the
+  // fix on this machine?" is answerable from the log, not just the Tech screen.
+  { const b = getBuildInfo(); console.log(`[startup] SwiftPOS ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {

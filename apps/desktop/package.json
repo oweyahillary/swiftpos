@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.45",
+  "version": "0.5.46",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -15,7 +15,8 @@
     "pack:installer": "electron-builder --win nsis --config electron-builder.config.js --config.directories.output=release",
     "pack:portable": "electron-builder --win portable --config electron-builder.config.js --config.directories.output=release",
     "pack:lowmem": "electron-builder --win nsis --config.directories.output=release --config.compression=store",
-    "build:all": "npm run clean && npm run build:main && npm run build:renderer",
+    "build:all": "npm run clean && npm run build:main && npm run gen:buildinfo && npm run build:renderer",
+    "gen:buildinfo": "node scripts/gen-build-info.mjs",
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
     "version:major": "npm version major --no-git-tag-version",

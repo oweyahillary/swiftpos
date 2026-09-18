@@ -18,6 +18,7 @@ import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
 import { expectStringArray, assertPayload } from './ipcValidate';
 import { installValidatedHandle } from './ipcGuard';
+import { getBuildInfo } from './buildInfo';
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
@@ -2167,6 +2168,7 @@ export function registerIpcHandlers() {
         node_url: cfg?.node_url ?? null,
       },
       sync: { online: sync.online, pending: sync.pendingCount, failed: sync.failedCount, lastOrder, breakdown: sync.pendingBreakdown },
+      build: getBuildInfo(),
     };
   });
 
