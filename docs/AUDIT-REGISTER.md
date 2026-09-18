@@ -116,26 +116,30 @@ at every range. NOT verified: desktop renderer `tsc` + on-screen render (rule 16
 Linux bench (no node_modules/Electron). Desktop change → bump 0.5.43 -> 0.5.44 at build, tag after
 (rules 15, 22; package.json version is NOT in this delivery). Delivery: docs/MANIFEST-2026-09-18-a.md.
 
-### A297 · P1 · OPEN · Ingested (node) orders arrive without their line items — Item Mix / top sellers / Overview item+payment cards read empty while the sale shows in the Orders list
-Symptom (target, 0.5.43, B Foods "Mama Ngina", 2026-09-18): the Orders list shows T1--23 (Dine In,
-Cash, KES 650, completed, minutes old) yet Item Mix says "No sales yet today" and the Overview KPIs
-read 0 / "No payments". Owner reports it worked ~v0.5.30 and asks what changed. Mechanism, from the
-source: the Overview and Item Mix aggregate `order_items`/`payments` (getTopProducts / getSalesSummary
-in managerReports.ts), while the Orders list (getRecentOrders) reads only the `orders` table — which is
-why only the list shows the sale. On a node, `order_items` and `payments` are NOT in `REPLICATED_TABLES`
-(nodeIngest.ts); they reach the node only as `_items`/`_payments` piggy-backed on the order
-(insertOrderChildren). `fillNodeOutbox` on current code DOES attach both, so an itemless order on the
-node is either (a) legacy/old-peer data written before the attach existed (the 08-03 path, 3763946) or
-(b) the sending till's own `order_items` was empty at push time. What changed since ~v0.5.30 is the
-branch-node ingest/replication path itself (3763946 payments-replication + `_items`; 3dc17b2
-node-authority A19/A20/A24; fee91cc bounded replicas): before that a plain till rang orders locally with
-their items, so top sellers worked. NOT YET CONFIRMED (needs the till, rules 7/11):
-`SELECT COUNT(*) FROM order_items WHERE order_id=(SELECT id FROM orders WHERE order_number='T1--23');`
-`SELECT device_role FROM device_config;` and the selling till's build. Bundled robustness gap: the
-Overview's main revenue row is the one getSalesSummary sub-query still NOT wrapped in the A293 fail-soft
-try/catch, so any throw there blanks all KPIs with no on-screen error — complete A293 + surface an error
-state so 0 never masquerades as "no sales". No code shipped for A297 (diagnosis only; a blind change to
-the replication/ingest path during the in-flight 0.5.43 release is what rule 13 forbids).
+### A297 · P1 · OPEN · Manager Overview + Item Mix read empty on a till whose installed 0.5.43 build predates the A290/A293 fix — DB and current source are both correct
+Symptom (target, 0.5.43, B Foods "Mama Ngina", 2026-09-18): Overview shows KES 0 / 0 orders / "No
+payments" and Item Mix "No sales yet today", while the Orders list shows T1--23 (Dine In, Cash, KES 650,
+completed) and the WEB dashboard shows the full figures. Owner: worked ~v0.5.30, broke after.
+DISPROVEN on the way here (kept for the next reader; both were my inferences, both wrong): (1) "ingested
+orders lack line items" — the read-only DB console shows T1--23 has 2 items and total_items=46; (2)
+"status/date filter excludes it" — all 21 orders are literally status='completed' (SUM total=45550),
+T1--23.created_at=2026-09-18T07:35Z = 10:35 local (clock UTC+3), inside today; the app's exact today
+window returned app_window_today=1, items_today=2; (3) all three of the app's real sub-queries
+(getSalesSummary main row, payment split, getTopProducts) return the correct rows against the app's own
+DB. So DB, schema, status, date window and SQL are all good. Reading getSalesSummary end-to-end
+(managerReports.ts:164) against those numbers, the function MUST return {totalRevenue:650, totalOrders:1,
+paymentMethods:{cash:650}} — it is structurally incapable of the zeros on screen. The only way both hold:
+the 0.5.43 artifact on the till is NOT this source — a stale/mis-built bundle still carrying the
+pre-A290/A293 Overview-blanking behaviour. This IS the "awaiting on-till confirm on 0.5.43 (A293)" item
+from the 2026-09-17 handoff, and it shows the built artifact never contained the fix. REMEDY (not a code
+change — the source is correct): cut a fresh desktop release from current dev, bump 0.5.43 -> 0.5.44, tag
+v0.5.44 AFTER verifying the build (rule 15); release.yml publishes to GitHub Releases and tills auto-update
+(D3). CONFIRM: after the till reports 0.5.44, Overview shows KES 650 / 1 / cash. If it is STILL 0 on a
+freshly-built 0.5.44, this conclusion is wrong and the next artifact is the DevTools console error
+([Overview] salesSummary failed / [managerReports] ...), which is console.warn and NOT in swiftpos.log.
+Optional robustness (separate, not required here): the getSalesSummary main revenue row is still unguarded
+— wrap it like its siblings and render an explicit error state so a future throw never shows as a silent 0.
+Delivery: docs/MANIFEST-2026-09-18-b.md.
 
 ### A276 · P1 · OPEN · Kitchen ticket includes drinks — a soda prints on the KITCHEN printer (web AND desktop)
 Verified on target 2026-09-15: ringing a spicy combo + a Soda and sending to kitchen,
