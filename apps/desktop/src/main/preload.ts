@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
   })(),
   platform: process.platform,
 
+  // A299: forward a renderer-side error string to main so it lands in
+  // swiftpos.log. Fire-and-forget; never let logging break the bridge.
+  logError: (msg: string) => { try { ipcRenderer.send('log:renderer', msg); } catch { /* ignore */ } },
+
   auth: {
     redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
     logout:     ()                                 => ipcRenderer.invoke('auth:logout'),

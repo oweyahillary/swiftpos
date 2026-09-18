@@ -16,6 +16,7 @@ import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
 import { getBuildInfo } from './buildInfo';
+import { installConsoleCapture, logLine } from './logFile';
 
 const isDev = !app.isPackaged;
 
@@ -189,9 +190,13 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
+  // A299: from here on, main's console.error / console.warn also go to
+  // swiftpos.log — so a failure is in the file, not just a packaged console
+  // nobody can read. Must run before the rest of startup can throw.
+  installConsoleCapture();
   // A298: stamp the log with the build this till is actually running, so "is the
   // fix on this machine?" is answerable from the log, not just the Tech screen.
-  { const b = getBuildInfo(); console.log(`[startup] SwiftPOS ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
+  { const b = getBuildInfo(); logLine('startup', `SwiftPOS ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {

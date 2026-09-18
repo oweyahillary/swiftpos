@@ -1034,6 +1034,11 @@ export function registerIpcHandlers() {
 
   handle('order:create', async (_event, orderPayload: any) => {
     const orderId = createLocalOrder(orderPayload);
+    // A299: event summary — id, total, method, item count. No line-item detail
+    // or customer data (the DB + cloud are the record; this is the trail).
+    logLine('sale', `created ${orderId} ${orderPayload?.total ?? '?'} `
+      + `${orderPayload?.payments?.[0]?.method ?? orderPayload?.payment_method ?? ''} `
+      + `x${orderPayload?.items?.length ?? 0}`.replace(/\s+/g, ' ').trim());
     lastOrderPayload = orderPayload;
     reprintCount = 0;
     // Push-only flush — the old syncAll here re-pulled the entire catalogue
@@ -1144,6 +1149,9 @@ export function registerIpcHandlers() {
     } catch (e) {
       console.error('[config:save] node server transition failed:', e);
     }
+    // A299: log WHICH keys changed, never their values — device_config holds the
+    // node secret and cloud url. Keys are enough for "what was changed, when".
+    logLine('config', `saved ${Object.keys(patch ?? {}).join(',') || '(empty)'}`);
     return saved;
   });
 
@@ -1182,6 +1190,15 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.on('app:version', (event) => { event.returnValue = app.getVersion(); });
+
+  // A299: renderer-side errors (window.onerror, unhandledrejection, and its
+  // console.error/warn — e.g. the "[Overview] salesSummary failed" that only a
+  // DevTools screenshot caught on 2026-09-18) forward here so they land in
+  // swiftpos.log too. Fire-and-forget send/on: no invoke, so no schema/parity
+  // concern. Bounded so a chatty renderer can't flood the file.
+  ipcMain.on('log:renderer', (_event, msg: unknown) => {
+    logLine('renderer', String(msg ?? '').replace(/\s+/g, ' ').slice(0, 2000));
+  });
 
   // Gated + audited (audit: clearDeviceConfig was ungated). Clearing config is
   // how a till sheds its branch binding and re-registers as a new device —
@@ -1422,6 +1439,7 @@ export function registerIpcHandlers() {
 
   handle('shift:open', async (_event, { opening_float, drawer_label }: { opening_float: number; drawer_label?: string }) => {
     openShift(Number(opening_float) || 0, drawer_label);
+    logLine('shift', `open float ${Number(opening_float) || 0}${drawer_label ? ` (${drawer_label})` : ''}`);
     return currentShiftReport();
   });
 
@@ -1433,7 +1451,9 @@ export function registerIpcHandlers() {
   handle('shift:close', async (_event, { closing_float, notes }: { closing_float: number; notes?: string }) => {
     // Returns the final Z-report. Throws (with .variance/.expected_cash) if a
     // variance note is required — the renderer surfaces that message.
-    return closeShift(Number(closing_float), notes);
+    const z = closeShift(Number(closing_float), notes);
+    logLine('shift', `close float ${Number(closing_float) || 0}`);
+    return z;
   });
 
   handle('shift:zreport', async (_event, shiftId: string) => {
@@ -1940,6 +1960,7 @@ export function registerIpcHandlers() {
     // Phase 2b: without the event, every replica of this order stays
     // 'completed' and the branch revenue on other tills counts a voided sale.
     emitEvent('order_voided', String(orderId), { status: 'voided', voided_at: voidedAt });
+    logLine('sale', `void ${orderId}${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`);
     return { ok: true };
   });
 
@@ -1997,6 +2018,8 @@ export function registerIpcHandlers() {
     });
     applyLocal();
 
+    logLine('sale', `refund ${orderId} ${Number(data?.refunded) || 0}`
+      + `${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`);
     return { ok: true, refunded: Number(data?.refunded) || 0 };
   });
 
