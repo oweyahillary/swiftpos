@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.47",
+  "version": "0.5.48",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
