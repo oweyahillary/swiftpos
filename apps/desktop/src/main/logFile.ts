@@ -28,11 +28,11 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
-// Rotation ceiling. Raised 1MB -> 5MB when error + event capture landed (A299):
-// with every console.error/warn and each sale/void/shift/config event now in
-// the file, 1MB rolled in days. 5MB x 2 files = 10MB bounded, still no dated
-// pile-up on a machine nobody prunes.
-const MAX_BYTES = 5_000_000;
+// Rotation ceiling — deliberately 1MB into a single .1 backup (two bounded files,
+// no dated pile-up on a machine nobody prunes). A299 added error + event volume,
+// which just rolls more often within the same bound rather than raising it — the
+// design (and test/logFile.test.mjs) fix this at 1MB.
+const MAX_BYTES = 1_000_000;
 
 // Captured BEFORE installConsoleCapture() swaps the globals, so logLine's own
 // echo — and the append path — never re-enter the hook and recurse.
