@@ -859,26 +859,38 @@ function StockTab({ currency }: { currency: string }) {
 function TopItemsTab({ currency }: { currency: string }) {
   const [items,   setItems]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // A296: Item Mix was hard-wired to today. Give it the same range control as the
+  // Orders tab. getTopProducts already accepts a resolved range and the
+  // manager:topProducts IPC already resolves the preset (managerReports.ts /
+  // ipcHandlers.ts:1795), so this is a renderer wire-up only — no query, handler
+  // or schema change. limit lifted 8 -> 50 so a month's mix is not clipped to
+  // eight rows, while staying a bounded "top sellers" (never the 500 an order
+  // list needs).
+  const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
 
   useEffect(() => {
     let live = true;
-    posApi.manager.topProducts().then(t => { if (live) setItems(t); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    setLoading(true);
+    posApi.manager.topProducts({ ...range, limit: 50 })
+      .then(t => { if (live) setItems(t); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, []);
-
-  if (loading) return <Spinner />;
+  }, [range.preset, range.from, range.to]);
 
   const totalRev = items.reduce((s, i) => s + Number(i.revenue), 0);
 
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-bold text-white">Item Mix — today</h2>
+        <h2 className="text-lg font-bold text-white">Item Mix</h2>
         <p className="text-gray-300 text-sm">Top sellers from local order data · {fmt(totalRev, currency)} total</p>
       </div>
 
-      {items.length === 0
-        ? <div className="text-center py-12 text-gray-300">No sales yet today.</div>
+      <ReportRangeBar value={range} onChange={setRange} exportKind="products" />
+
+      {loading && <Spinner />}
+
+      {!loading && (items.length === 0
+        ? <div className="text-center py-12 text-gray-300">No sales in this date range.</div>
         : (
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
@@ -912,7 +924,7 @@ function TopItemsTab({ currency }: { currency: string }) {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
     </div>
   );
 }
