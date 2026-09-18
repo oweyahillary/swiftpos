@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.5.44",
+  "version": "0.5.45",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -32,6 +32,7 @@
     "pack:dev": "node scripts/release-flavour.mjs dev none",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:held": "node test/heldOrders.test.mjs",
+    "test:ipcguard": "node test/ipc-guard-optional.test.mjs",
     "test:tabs": "node test/node-tabs-claim.test.mjs",
     "test:held:electron": "node test/run-under-electron.mjs test/heldOrders.test.mjs",
     "test:log": "node test/logFile.test.mjs",

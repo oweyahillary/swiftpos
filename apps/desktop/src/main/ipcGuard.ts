@@ -74,7 +74,15 @@ export function guardChannel(channel: string, payload: unknown): unknown {
   if (spec === NO_PAYLOAD) return undefined;
   if (isBare(spec)) { guardBare(spec, payload); return payload; }
   // Schema (object bag). assertPayload throws IpcValidationError on mismatch.
-  return assertPayload(spec as Schema, payload);
+  // A297: an ABSENT payload (a no-arg invoke → undefined) is an empty bag, so a
+  // fully-optional schema accepts it — the documented intent for the report
+  // channels (manager:salesSummary/topProducts/recentOrders), whose Overview and
+  // Item Mix callers pass no argument and rely on the handler's "default to today".
+  // Before A271 there was no validation and these fell through; A271 made the bag
+  // check reject undefined with "payload must be an object", silently blanking the
+  // Overview. Coercing only undefined/null to {} does NOT weaken a required-field
+  // channel: assertPayload still rejects {} when a field is required (missing).
+  return assertPayload(spec as Schema, payload ?? {});
 }
 
 interface HandleHost {
