@@ -23,6 +23,8 @@
  *      entry — do not append a second one. IDs are stable, so a duplicate makes
  *      every citation ambiguous.
  *   2. The header's open P0 / P1 / P2 / P3 counts match the entries in the body.
+ *   3. The | Tree | row's desktop version matches apps/desktop/package.json —
+ *      the field that silently drifted while tills shipped newer builds.
  *
  * WHAT IT DELIBERATELY DOES NOT CHECK
  * Whether a status is TRUE — whether something marked CLOSED really is. Only
@@ -131,6 +133,31 @@ if (!headerLine) {
           + '  body is the failure the register exists to catch — and this is the\n'
           + '  count that decides what gets worked on next.');
       }
+    }
+  }
+}
+
+// ── Tree line vs the shipped desktop version ────────────────────────────────
+// The count check only reads the | Open | row, so the | Tree | row drifted to
+// desktop v0.5.38 while the app shipped 0.5.43+ and nothing caught it — the same
+// "register stops matching what is deployed" rot the 2026-09-18 sweep cleaned up.
+// Guard the one Tree field that is machine-checkable against source.
+// MUTATION-CHECK: change the Tree line's version (or bump package.json without
+// updating it) and this fails, naming both numbers.
+{
+  const treeLine = lines.find(l => /^\|\s*Tree\s*\|/.test(l));
+  let pkgVer = null;
+  try { pkgVer = JSON.parse(readFileSync(resolve(ROOT, 'apps/desktop/package.json'), 'utf8')).version; } catch { /* no pkg */ }
+  if (treeLine && pkgVer) {
+    const m = /desktop\s+\*\*v([\d.]+)\*\*/.exec(treeLine);
+    if (!m) {
+      failed = true;
+      console.error('\nTREE LINE: no `desktop **vX.Y.Z**` field to check against apps/desktop/package.json.');
+    } else if (m[1] !== pkgVer) {
+      failed = true;
+      console.error(
+        `\nTREE LINE STALE: header says desktop v${m[1]}, apps/desktop/package.json is ${pkgVer}.\n`
+        + 'Update the | Tree | row so the register matches what ships (register 2026-09-18 sweep).');
     }
   }
 }
