@@ -10,7 +10,7 @@
 // point of use. One installer serves every client; the tech points it at the
 // cloud API or a LAN server PC at install time.
 //
-// IMPORTANT: read the URL via getServerUrl() at call time — never cache it in a
+// IMPORTANT: read the URL via getCloudUrl() at call time — never cache it in a
 // module-level const. The config does not exist on first boot, and after the
 // install screen writes it we want the new URL to take effect without a restart.
 
@@ -43,7 +43,7 @@ export function canSell(role: string | null | undefined): boolean {
 
 export interface DeviceConfig {
   deploy_mode: DeployMode;
-  server_url: string;
+  server_url: string;            // the enrolled CLOUD url (kept as server_url; read via getCloudUrl(), rule 21)
   branch_id: string | null;
   business_type: string | null;
   device_name: string | null;
@@ -123,9 +123,10 @@ export function isConfigured(): boolean {
   return !!cfg?.configured;
 }
 
-// The runtime server URL. Falls back to env/localhost before install so dev and
-// first-run still work.
-export function getServerUrl(): string {
+// The runtime CLOUD url (rule 21: this returns the cloud, not a LAN 'server';
+// the device_config.server_url column keeps its name). Falls back to env/localhost
+// before install so dev and first-run still work.
+export function getCloudUrl(): string {
   const cfg = getDeviceConfig();
   return cfg?.server_url || FALLBACK_SERVER_URL;
 }

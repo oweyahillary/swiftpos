@@ -13,7 +13,7 @@ import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
-import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -187,7 +187,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
   };
 
   const attempt = async (token: string) => {
-    const res = await syncFetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
+    const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: token }),
@@ -396,7 +396,7 @@ async function runPushStages(errors: string[]): Promise<number> {
 // actually reaches the configured server and reports the round-trip. Uses the
 // same timeout as every other sync fetch.
 export async function testConnection(): Promise<{ ok: boolean; status: number | null; ms: number; error?: string }> {
-  const url = `${_serverUrl || getServerUrl()}/api/health`;
+  const url = `${_serverUrl || getCloudUrl()}/api/health`;
   const t0 = Date.now();
   try {
     const res = await syncFetch(url, { method: 'GET' });
@@ -1263,7 +1263,7 @@ async function pullCatalogue(): Promise<boolean> {
   // a plain till and is simply ignored.
   if (isNodeRole(getDeviceConfig()?.device_role)) {
     try {
-      const rosterRes = await syncFetch(`${_serverUrl || getServerUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
+      const rosterRes = await syncFetch(`${_serverUrl || getCloudUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
       if (rosterRes.ok) {
         const { branch_id: rBranch, staff } = await rosterRes.json();
         if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);

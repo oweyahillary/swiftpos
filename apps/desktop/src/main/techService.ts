@@ -15,7 +15,7 @@
 
 import crypto from 'crypto';
 import { getLocalDb } from './localDb';
-import { getDeviceConfig, getServerUrl } from './deviceConfig';
+import { getDeviceConfig, getCloudUrl } from './deviceConfig';
 
 const ACTIVE_SESSION_MS = 4 * 60 * 60 * 1000; // 4h active session per unlock
 
@@ -85,7 +85,7 @@ export function cacheTechConfig(publicKey: string | null, revealCode: string | n
 export async function refreshTechConfig(ownerToken: string): Promise<void> {
   const cfg = getDeviceConfig();
   if (!cfg?.branch_id) return;
-  const res = await fetch(`${getServerUrl()}/api/tech/branch-config/${cfg.branch_id}`, {
+  const res = await fetch(`${getCloudUrl()}/api/tech/branch-config/${cfg.branch_id}`, {
     headers: { Authorization: `Bearer ${ownerToken}` },
   });
   if (!res.ok) return;
@@ -211,7 +211,7 @@ export async function flushTechAudit(token: string): Promise<void> {
   const pending = db.prepare(`SELECT * FROM tech_audit_queue WHERE synced=0 ORDER BY occurred_at LIMIT 100`).all() as any[];
   for (const e of pending) {
     try {
-      const res = await fetch(`${getServerUrl()}/api/tech/audit`, {
+      const res = await fetch(`${getCloudUrl()}/api/tech/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-tech-token': token },
         body: JSON.stringify({

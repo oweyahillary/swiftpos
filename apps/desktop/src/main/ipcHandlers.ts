@@ -30,7 +30,7 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection } from './syncEngine';
-import { getServerUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { exportReportCsv } from './reportExport';
@@ -97,7 +97,7 @@ export function registerIpcHandlers() {
     // D7: both credentials must be present and non-empty before we call the server.
     const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
       { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
-    const res = await fetch(`${getServerUrl()}/api/auth/enrol/redeem`, {
+    const res = await fetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -151,7 +151,7 @@ export function registerIpcHandlers() {
       if (Object.keys(patch).length) { saveDeviceConfig(patch); logLine('enrol', `restored identity from a prior install: ${JSON.stringify(patch)}`); }
     }
 
-    configureSyncEngine(getServerUrl(), data.token, data.refreshToken ?? '');
+    configureSyncEngine(getCloudUrl(), data.token, data.refreshToken ?? '');
     refreshTechConfig(data.token).catch(() => {});
     await syncAll().catch(console.error);
 
@@ -167,7 +167,7 @@ export function registerIpcHandlers() {
     // decommissioned till keeps working credentials for another fortnight.
     clearPinCache();
     configureStaffSession('', '');
-    configureSyncEngine(getServerUrl(), '');
+    configureSyncEngine(getCloudUrl(), '');
     return true;
   });
 
@@ -179,7 +179,7 @@ export function registerIpcHandlers() {
     // Re-hydrate sync engine in case app was restarted. Credentials are wrapped
     // at rest (D5), so they come from the store rather than off the row.
     const sessTok = readSessionTokens();
-    configureSyncEngine(getServerUrl(), sessTok.token, sessTok.refreshToken);
+    configureSyncEngine(getCloudUrl(), sessTok.token, sessTok.refreshToken);
 
     return {
       user: { id: session.user_id, email: null },
@@ -341,7 +341,7 @@ export function registerIpcHandlers() {
     let token = readToken();
     if (!token) throw new Error('Not signed in');
 
-    const call = (t: string) => fetch(`${getServerUrl()}${path}`, {
+    const call = (t: string) => fetch(`${getCloudUrl()}${path}`, {
       ...init,
       headers: {
         ...(init.headers ?? {}),
@@ -1508,7 +1508,7 @@ export function registerIpcHandlers() {
     let token = readToken();
     if (!token) throw new Error('Not signed in');
 
-    const call = (t: string) => fetch(`${getServerUrl()}${path}`, {
+    const call = (t: string) => fetch(`${getCloudUrl()}${path}`, {
       method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
       body: body === undefined ? undefined : JSON.stringify(body),

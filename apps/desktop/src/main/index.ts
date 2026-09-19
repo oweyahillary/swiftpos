@@ -8,7 +8,7 @@ import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
-import { getServerUrl, getDeviceConfig } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay } from './branchClose';
@@ -25,13 +25,13 @@ const isDev = !app.isPackaged;
 // pointed at the wrong cloud. The PROD flavour NEVER shows it: prod is the
 // client-facing build and a shop shouldn't see a technical URL in its title.
 // (Wrong-cloud safety for prod, if ever needed, belongs in a one-time first-launch
-// warning, not a permanent badge.) getServerUrl() returns the enrolled cloud (rule 21).
+// warning, not a permanent badge.) getCloudUrl() returns the enrolled cloud (rule 21).
 function cloudBadgeTitle(): string {
   const base = app.getName();                 // 'SwiftPOS' or 'SwiftPOS Dev' (A284)
   const devFlavour = isDev || base.toLowerCase().includes('dev');
   if (!devFlavour) return base;               // prod: clean, no host
   try {
-    const url = getServerUrl();
+    const url = getCloudUrl();
     if (!url) return base;                     // not enrolled yet — nothing to badge
     return `${base} — ${new URL(url).host}`;   // dev: always show the cloud
   } catch {
@@ -234,7 +234,7 @@ app.whenReady().then(() => {
     migratePlaintextTokens();
     const session = readSessionTokens();
     if (session.token) {
-      configureSyncEngine(getServerUrl(), session.token, session.refreshToken);
+      configureSyncEngine(getCloudUrl(), session.token, session.refreshToken);
       // Sync on startup if online
       if (net.isOnline()) {
         syncAll().catch(console.error);
