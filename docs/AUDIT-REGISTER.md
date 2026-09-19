@@ -218,7 +218,7 @@ disaster-recovery risk (you cannot rebuild prod from the repo) and overlaps A23.
 baseline reproduce prod (regenerate from a prod snapshot) and reconcile schema-index.json.
 Not blocking today's tests (the drifted tables are outside the shift/POS path).
 
-### A281 · P2 · OPEN · Front-end and back-end deploy from different branches (Vercel=main, Render=dev)
+### A281 · P2 · FIX BUILT · Dev-environment web lagged the dev API — the dev Vercel project needed a manual promote
 Found 2026-09-15: the dashboard/web-POS is a separate Vercel deploy tracking `main`, while
 the API is a Render deploy tracking `dev`. Our A273/A274/A275 work was on `dev`, so the API
 had it but the web POS did not — the till picker was "missing" purely because Vercel served
@@ -226,18 +226,20 @@ a `main` build. Cost hours to diagnose. The split means a feature isn't truly li
 deploy, and they follow different branches. Fix/decision: align the deploy branches (or a
 documented promote flow) so front-end and back-end move together; add a visible build-commit
 somewhere so "is the front-end current?" is a glance, not an investigation.
-SETUP (owner, 2026-09-19): main=production, dev=development (Option 1). Render auto-deploys BOTH — a dev
-push redeploys the dev API, and a dev->main merge redeploys prod. Vercel auto-deploys main on merge, but a
-dev push is NOT auto-deployed — it must be MANUALLY PROMOTED in Vercel. So during dev testing the web can
-lag the (auto-deployed) dev API — that is the till-picker symptom. Production is NOT misconfigured; both
-move together on merge.
+SETUP (owner, 2026-09-19): TWO Vercel projects — a PRODUCTION project tracking `main` and a DEVELOPMENT
+project tracking `dev` — with Render likewise (dev API on dev, prod on main). PRODUCTION always worked: a
+merge to main auto-deploys the real site, no manual step. The friction was only the DEVELOPMENT project: a
+dev push did NOT auto-deploy its dev URL — the commit had to be MANUALLY PROMOTED in Vercel — while
+Render's dev API had already auto-updated, so the dev web lagged the dev API. That was the till-picker
+symptom. Real production was never split.
 PART B FIX BUILT 2026-09-19: web build stamp — vite `define` injects commit SHA + branch
-(VERCEL_GIT_COMMIT_SHA/REF) + build time; logged to the browser console on boot and shown on the login
-footer (web <sha> . <ref>). Because it shows the BRANCH, an unpromoted-web lag is now a glance. Shows on the
-live web once that build is promoted/merged in Vercel.
-PART A remaining (owner's call, dashboard-only — not in the repo): give Vercel a stable auto-deploying
-dev/preview domain so dev-web tracks dev-API without the manual promote, OR keep manual-promote as a release
-checklist. A281 stays OPEN until that is decided and the stamp is confirmed live. Delivery: docs/MANIFEST-2026-09-19-a.md.
+(VERCEL_GIT_COMMIT_SHA/REF) + build time; logged to the console on boot and shown on the login footer
+(web <sha> . <ref>). Because it shows the BRANCH, a lagging dev web is a glance.
+PART A RESOLVED 2026-09-19 (owner, Vercel dashboard): set the DEVELOPMENT project's branch tracking to
+`dev`, so every dev commit now auto-deploys the dev URL — no manual promote. Dev web and dev API move
+together automatically; the real (main) production project was not affected.
+CLOSE when confirmed: next dev push, the dev URL's build-stamp SHA advances on its own (no manual step).
+Delivery: docs/MANIFEST-2026-09-19-a.md.
 
 ### A273 · P1 · FIX BUILT (float-prompt bug found on target 2026-09-15) · Web POS had no per-register identity — all web sales in a branch shared one `web:<branch>` drawer and could not fold into a till's drawer/day
 
@@ -8690,6 +8692,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-09-19 | **A281 -> FIX BUILT.** Corrected the note: TWO Vercel projects (prod tracks main, dev tracks dev); real production was never split — the friction was the dev project needing a manual promote. Part A resolved by owner: dev project now tracks `dev` (auto-deploy). Closes on one dev-push confirmation. |
 | 2026-09-19 | **A281 Part B — web build stamp.** vite define injects commit SHA/branch/time (Vercel git env); logged on boot + shown on the login footer. Web-only (Vercel), no desktop version bump. Part A (branch alignment) is an infra decision, pending owner. A281 stays OPEN. |
 | 2026-09-18 | **A19 heading corrected FIX BUILT -> OPEN.** The heading overclaimed: code verified unbuilt (cloud enqueue unconditional at syncEngine.ts:2041; node stamps peer rows PEER_SYNC_STATUS to keep them out of its cloud push). Matches the 08-23 body note. Still P1 open (no count change). Docs-only (rule 18). |
 | 2026-09-18 | **A299 logging — capture all errors + event summaries in swiftpos.log.** Main console.error/warn routed to the file (installConsoleCapture); renderer forwarder over a send/on channel; event summaries at sale/void/refund/shift/config (id/total/method/count + changed keys only — no line items, customer data, or config values); startup build stamp logged; rotation kept at 1MB (tested design). Ships 0.5.47. Open P3 13->14. Desktop code, bench-authored (rule 9). |
