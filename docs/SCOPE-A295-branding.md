@@ -263,3 +263,58 @@ time — clients never see it.
 - Free arbitrary surface/text recolour (legibility risk; unbounded QA).
 - Custom fonts. Brand colours on thermal tickets (monochrome hardware).
 - Per-user theming. Animated/video splash.
+
+---
+
+# ADDENDUM — colour + logo resolution (2026-09-19 review; Taste Town + KUDO)
+
+Decisions from reviewing two real client logos. These REFINE §2/§5/§6 and are locked.
+
+## A. Curated accent palette (launch set — contrast-vetted)
+
+Eight vetted accents (WCAG checked). "White-on-btn" is white text on the Enter button;
+"on-dark" is the accent on the lock surface (#0f172a) for divider/active-dot visibility.
+
+    SwiftPOS Blue (default)  #3b82f6   white 3.68  dark 4.85
+    Indigo                   #6366f1   white 4.47  dark 4.00
+    Violet                   #7c3aed   white 5.70  dark 3.13
+    Emerald                  #059669   white 3.77  dark 4.74
+    Teal                     #0d9488   white 3.74  dark 4.77
+    Rose                     #e11d48   white 4.70  dark 3.80
+    Pink                     #db2777   white 4.60  dark 3.88
+    Amber (deep)             #b45309   white 5.02  dark 3.56
+
+The button bar is 3:1 (white bold UI text; SwiftPOS's own blue is 3.68). A client's exact
+brand colour may be added to their available set once it passes the guard under rule B.
+
+## B. Adaptive button-text colour (supersedes "one accent, white text")
+
+The Enter button's TEXT colour adapts to the accent's luminance: black text on a bright
+accent, white on a dark one — whichever gives the higher contrast, and it must clear 3:1.
+If NEITHER clears 3:1, fall back to SwiftPOS Blue. This lets a bright brand colour be used
+legibly instead of forcing a muted substitute. The accent still only touches the divider,
+the active PIN dot, and the Enter button — never text, totals, or keypad digits.
+
+## C. Logo rendering — chip on screen, threshold on paper
+
+- **Lock screen (dark):** render the client logo on its OWN chip (a bounded, rounded panel
+  that KEEPS the supplied background), NOT dropped onto the dark surface. A logo drawn as
+  dark artwork on a light background (common) would vanish on a dark surface otherwise.
+- **Receipt (monochrome):** luminance-threshold to black-on-white at upload; solid-artwork
+  logos print crisply, gradient/colour logos may wash out — so the web settings page MUST
+  show a live **receipt preview** and the client approves it (upload a cleaner mark or accept).
+  The receipt preview is a requirement, not a nicety.
+
+## D. Worked examples (the reference cases)
+
+- **Taste Town** — brand yellow (~#F5B800), solid black artwork on a yellow field.
+  Accent = their yellow; Enter uses **black** text (yellow+white = 1.79 fail; yellow+black =
+  11.74). Divider/dot yellow on dark = 9.98 (great). Logo on a yellow chip on the lock
+  screen. Receipt: thresholds to crisp black-on-white.
+- **KUDO KUDO** — brand red (~#E1251B) + orange/yellow gradient mark, white-bg logo.
+  Accent = their red; Enter uses **white** text (4.69, the default path). Logo on a white
+  chip on the lock screen. Receipt: banner + knockout text print fine; the gradient chicken
+  is the case the receipt preview exists for — client reviews the mono result.
+
+These two cover the spread: bright vs mid accent (black vs white button text), light-bg vs
+white-bg logo (chip handles both), solid vs gradient artwork (preview handles the receipt).
