@@ -226,6 +226,13 @@ a `main` build. Cost hours to diagnose. The split means a feature isn't truly li
 deploy, and they follow different branches. Fix/decision: align the deploy branches (or a
 documented promote flow) so front-end and back-end move together; add a visible build-commit
 somewhere so "is the front-end current?" is a glance, not an investigation.
+PART B FIX BUILT 2026-09-19: the web build stamp — vite `define` injects the commit SHA + branch
+(Vercel VERCEL_GIT_COMMIT_SHA/REF) + build time; logged to the browser console on boot and shown on the
+login footer (web <sha> . <ref>). A front-end/back-end branch mismatch is now a glance. It appears on the
+LIVE site only once it reaches Vercel's branch (currently main) — which is Part A. PART A (align the deploy
+branches or a documented promote flow) is an infra/dashboard decision, NOT in the repo (neither render.yaml
+nor vercel.json pins a branch) — pending the owner. A281 stays OPEN until Part A is decided and the stamp
+is confirmed live. Delivery: docs/MANIFEST-2026-09-19-a.md.
 
 ### A273 · P1 · FIX BUILT (float-prompt bug found on target 2026-09-15) · Web POS had no per-register identity — all web sales in a branch shared one `web:<branch>` drawer and could not fold into a till's drawer/day
 
@@ -8678,6 +8685,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-09-19 | **A281 Part B — web build stamp.** vite define injects commit SHA/branch/time (Vercel git env); logged on boot + shown on the login footer. Web-only (Vercel), no desktop version bump. Part A (branch alignment) is an infra decision, pending owner. A281 stays OPEN. |
 | 2026-09-18 | **A19 heading corrected FIX BUILT -> OPEN.** The heading overclaimed: code verified unbuilt (cloud enqueue unconditional at syncEngine.ts:2041; node stamps peer rows PEER_SYNC_STATUS to keep them out of its cloud push). Matches the 08-23 body note. Still P1 open (no count change). Docs-only (rule 18). |
 | 2026-09-18 | **A299 logging — capture all errors + event summaries in swiftpos.log.** Main console.error/warn routed to the file (installConsoleCapture); renderer forwarder over a send/on channel; event summaries at sale/void/refund/shift/config (id/total/method/count + changed keys only — no line items, customer data, or config values); startup build stamp logged; rotation kept at 1MB (tested design). Ships 0.5.47. Open P3 13->14. Desktop code, bench-authored (rule 9). |
 | 2026-09-18 | **D3, D4, D18 CLOSED — owner-confirmed on target.** D3 auto-update: tills pulled 0.5.45 + 0.5.46 unattended via electron-updater. D4 enrolment: device is enrolled and running as a node (device_role=node, terminal_code=T1). D18 tech-token paste: owner pasted a token and used the Tech DB console to run the A297 diagnostics — full paste + tech session end to end. Open D-P1 2→0, D-P2 1→0. Docs-only (rule 18). |

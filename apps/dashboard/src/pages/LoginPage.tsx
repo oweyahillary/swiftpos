@@ -292,6 +292,9 @@ export default function LoginPage() {
         <p className="text-center text-[#1e293b] text-xs mt-6">
           No account? Contact your SwiftPOS agent to get set up.
         </p>
+        <p className="text-center text-[#1e293b] text-xs mt-2" title={__WEB_BUILD_TIME__}>
+          web {__WEB_BUILD_SHA__} · {__WEB_BUILD_REF__}
+        </p>
       </div>
     </div>
   );
