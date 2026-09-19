@@ -235,6 +235,18 @@ via migrate.mjs on the next server deploy. NOT YET VERIFIED against prod (rule 1
 `verify-db-schema` with the prod DATABASE_URL to confirm (a) the index matches prod / no OTHER drift, and
 (b) fuel_tanks/parking_sessions are empty on prod (dead-path). CLOSE when a migrate.mjs rebuild +
 verify-db-schema is green against prod. Delivery: docs/MANIFEST-2026-09-19-b.md.
+PROD VERIFY 2026-09-19 (owner ran verify-db-schema against prod): the gap is bigger than the 58/60 skip
+— PROD IS BEHIND ON MIGRATIONS. Unapplied on prod: 97 (user_devices.retired_at/by), 98 (drops
+ingredients.current_stock — still PRESENT on prod, now shows as an "extra" vs the corrected index), 101
+(stock_transfer_items.quantity_received + stock_transfers.receipt_note), 102 (day_close_instructions),
+plus the six A280 columns (103, new). Every prod-missing item maps to an unapplied migration — no NEW
+skip-gap beyond A280. fuel_tanks + parking_sessions confirmed EMPTY on prod (0 rows), so 103's NOT NULL
+adds are safe there. CLOSURE PATH: merge dev->main -> the prod (Render/main) deploy runs migrate.mjs
+applying 97/98/101/102/103 in order -> prod catches up -> re-run verify-db-schema against prod -> green
+-> CLOSE. CAUTION: 98 DROPS a column, so it is coupled to the reader-free code and must go via the deploy
+(not migrate-only). The merge is a full, deliberate prod release of everything accumulated on dev — take
+a prod backup first, review dev-vs-main, re-verify right after. The lag itself is the practical DR risk
+(A281 cousin): prod trailing dev by 5+ migrations.
 
 ### A281 · P2 · FIX BUILT · Dev-environment web lagged the dev API — the dev Vercel project needed a manual promote
 Found 2026-09-15: the dashboard/web-POS is a separate Vercel deploy tracking `main`, while
@@ -8710,6 +8722,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-09-19 | **A280 prod verify.** verify-db-schema vs prod: prod is behind on migrations (97/98/101/102 unapplied) plus the 6-col 58/60 skip (103). All prod-missing items map to unapplied migrations; no new skip-gap. fuel_tanks/parking_sessions empty on prod -> 103 safe. Closes after a dev->main deploy applies 97-103 and re-verify is green. Still FIX BUILT. |
 | 2026-09-19 | **A280 -> FIX BUILT.** Reproduced the rebuild failure (pglite replay). Migration 103 adds the 6 columns skipped by 58/60 (idempotent ADD COLUMN IF NOT EXISTS; category_stations backfilled then SET NOT NULL). Removed stale ingredients.current_stock from schema-index (98 dropped it). schema_migration_runs is a migrate.mjs artifact, not drift. Bench-verified: replay now matches the corrected index for all 7. Prod verify pending (rule 16). No count change (FIX BUILT still open). |
 | 2026-09-19 | **A281 -> FIX BUILT.** Corrected the note: TWO Vercel projects (prod tracks main, dev tracks dev); real production was never split — the friction was the dev project needing a manual promote. Part A resolved by owner: dev project now tracks `dev` (auto-deploy). Closes on one dev-push confirmation. |
 | 2026-09-19 | **A281 Part B — web build stamp.** vite define injects commit SHA/branch/time (Vercel git env); logged on boot + shown on the login footer. Web-only (Vercel), no desktop version bump. Part A (branch alignment) is an infra decision, pending owner. A281 stays OPEN. |
