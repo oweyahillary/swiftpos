@@ -444,7 +444,6 @@
     "category": "\"character varying\"",
     "unit": "\"character varying\" NOT NULL",
     "unit_cost": "\"numeric\"",
-    "current_stock": "\"numeric\" NOT NULL",
     "reorder_level": "\"numeric\" NOT NULL",
     "status": "\"character varying\" NOT NULL",
     "notes": "\"text\"",

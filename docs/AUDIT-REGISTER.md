@@ -205,7 +205,7 @@ Owner idea 2026-09-15: the cashier POS shows category tabs but no explicit "curr
 indicator or a way to add/manage filters. Small UX enhancement — a visible active-filter
 control on the POS grid.
 
-### A280 · P1 · OPEN · A clean rebuild from baseline+migrations does NOT reproduce production
+### A280 · P1 · FIX BUILT · A clean rebuild from baseline+migrations did NOT reproduce production
 Found 2026-09-15 while resetting the test DB. After DROP SCHEMA + full replay of
 00_baseline.sql + all forward migrations, `verify-db-schema` still FAILS: 7 columns the code
 expects are absent (category_stations.business_id; fuel_tanks.product_id/tank_name;
@@ -217,6 +217,24 @@ So the migration set + schema-index have drifted from prod in BOTH directions. T
 disaster-recovery risk (you cannot rebuild prod from the repo) and overlaps A23. Fix: make
 baseline reproduce prod (regenerate from a prod snapshot) and reconcile schema-index.json.
 Not blocking today's tests (the drifted tables are outside the shift/POS path).
+REPRODUCED 2026-09-19 (pglite replay of baseline + all 98 migrations, 0 failed): all 7 items absent,
+exactly as filed. Root causes are THREE distinct things: (1) six columns the newer migrations declared
+INSIDE `CREATE TABLE IF NOT EXISTS` that skipped because 44/baseline already made the table
+(category_stations.business_id via 60; fuel_tanks.product_id/tank_name + parking_sessions.
+billed_amount/cashier_id/notes via 58); (2) ingredients.current_stock is NOT drift — migration 98
+correctly DROPs it, the schema-index entry was just STALE; (3) schema_migration_runs is not drift either
+— migrate.mjs bootstraps it (line 96), so only a RAW replay misses it; a migrate.mjs rebuild has it.
+FIX BUILT 2026-09-19: migration 103_reconcile_a280_columns.sql adds the six columns idempotently
+(ADD COLUMN IF NOT EXISTS; category_stations uses add-nullable -> backfill from categories.business_id
+-> SET NOT NULL so it is safe even on a seeded table; types/nullability match schema-index.json). Removed
+the stale ingredients.current_stock from scripts/schema-index.json. Bench-verified: replaying baseline +
+all migrations + 103 now yields all 6 columns with the right nullability and current_stock correctly
+absent — the rebuild matches the corrected index for all 7. All schema/repo gates green.
+SAFE ON PROD: 103 is a no-op where the columns already exist (which the index implies prod has); it runs
+via migrate.mjs on the next server deploy. NOT YET VERIFIED against prod (rule 16): run
+`verify-db-schema` with the prod DATABASE_URL to confirm (a) the index matches prod / no OTHER drift, and
+(b) fuel_tanks/parking_sessions are empty on prod (dead-path). CLOSE when a migrate.mjs rebuild +
+verify-db-schema is green against prod. Delivery: docs/MANIFEST-2026-09-19-b.md.
 
 ### A281 · P2 · FIX BUILT · Dev-environment web lagged the dev API — the dev Vercel project needed a manual promote
 Found 2026-09-15: the dashboard/web-POS is a separate Vercel deploy tracking `main`, while
@@ -8692,6 +8710,7 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-09-19 | **A280 -> FIX BUILT.** Reproduced the rebuild failure (pglite replay). Migration 103 adds the 6 columns skipped by 58/60 (idempotent ADD COLUMN IF NOT EXISTS; category_stations backfilled then SET NOT NULL). Removed stale ingredients.current_stock from schema-index (98 dropped it). schema_migration_runs is a migrate.mjs artifact, not drift. Bench-verified: replay now matches the corrected index for all 7. Prod verify pending (rule 16). No count change (FIX BUILT still open). |
 | 2026-09-19 | **A281 -> FIX BUILT.** Corrected the note: TWO Vercel projects (prod tracks main, dev tracks dev); real production was never split — the friction was the dev project needing a manual promote. Part A resolved by owner: dev project now tracks `dev` (auto-deploy). Closes on one dev-push confirmation. |
 | 2026-09-19 | **A281 Part B — web build stamp.** vite define injects commit SHA/branch/time (Vercel git env); logged on boot + shown on the login footer. Web-only (Vercel), no desktop version bump. Part A (branch alignment) is an infra decision, pending owner. A281 stays OPEN. |
 | 2026-09-18 | **A19 heading corrected FIX BUILT -> OPEN.** The heading overclaimed: code verified unbuilt (cloud enqueue unconditional at syncEngine.ts:2041; node stamps peer rows PEER_SYNC_STATUS to keep them out of its cloud push). Matches the 08-23 body note. Still P1 open (no count change). Docs-only (rule 18). |
