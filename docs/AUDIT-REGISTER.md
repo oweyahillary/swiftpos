@@ -226,13 +226,18 @@ a `main` build. Cost hours to diagnose. The split means a feature isn't truly li
 deploy, and they follow different branches. Fix/decision: align the deploy branches (or a
 documented promote flow) so front-end and back-end move together; add a visible build-commit
 somewhere so "is the front-end current?" is a glance, not an investigation.
-PART B FIX BUILT 2026-09-19: the web build stamp — vite `define` injects the commit SHA + branch
-(Vercel VERCEL_GIT_COMMIT_SHA/REF) + build time; logged to the browser console on boot and shown on the
-login footer (web <sha> . <ref>). A front-end/back-end branch mismatch is now a glance. It appears on the
-LIVE site only once it reaches Vercel's branch (currently main) — which is Part A. PART A (align the deploy
-branches or a documented promote flow) is an infra/dashboard decision, NOT in the repo (neither render.yaml
-nor vercel.json pins a branch) — pending the owner. A281 stays OPEN until Part A is decided and the stamp
-is confirmed live. Delivery: docs/MANIFEST-2026-09-19-a.md.
+SETUP (owner, 2026-09-19): main=production, dev=development (Option 1). Render auto-deploys BOTH — a dev
+push redeploys the dev API, and a dev->main merge redeploys prod. Vercel auto-deploys main on merge, but a
+dev push is NOT auto-deployed — it must be MANUALLY PROMOTED in Vercel. So during dev testing the web can
+lag the (auto-deployed) dev API — that is the till-picker symptom. Production is NOT misconfigured; both
+move together on merge.
+PART B FIX BUILT 2026-09-19: web build stamp — vite `define` injects commit SHA + branch
+(VERCEL_GIT_COMMIT_SHA/REF) + build time; logged to the browser console on boot and shown on the login
+footer (web <sha> . <ref>). Because it shows the BRANCH, an unpromoted-web lag is now a glance. Shows on the
+live web once that build is promoted/merged in Vercel.
+PART A remaining (owner's call, dashboard-only — not in the repo): give Vercel a stable auto-deploying
+dev/preview domain so dev-web tracks dev-API without the manual promote, OR keep manual-promote as a release
+checklist. A281 stays OPEN until that is decided and the stamp is confirmed live. Delivery: docs/MANIFEST-2026-09-19-a.md.
 
 ### A273 · P1 · FIX BUILT (float-prompt bug found on target 2026-09-15) · Web POS had no per-register identity — all web sales in a branch shared one `web:<branch>` drawer and could not fold into a till's drawer/day
 
