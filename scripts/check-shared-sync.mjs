@@ -35,6 +35,18 @@ const SHARED = [
       'apps/desktop/src/shared/parkingTariff.ts',
     ],
   },
+  {
+    // A295 accent guard. shared/ is the source of truth; the renderer imports the
+    // desktop/src/shared copy; the desktop/src/main copy exists ONLY so tsconfig.main
+    // emits dist/main/contrast.js for contrast.test.mjs (the renderer is noEmit).
+    // A server/dashboard copy joins this list when the web-portal slice lands.
+    name: 'contrast.ts',
+    copies: [
+      'shared/contrast.ts',
+      'apps/desktop/src/shared/contrast.ts',
+      'apps/desktop/src/main/contrast.ts',
+    ],
+  },
 ];
 
 const sha = (p) =>

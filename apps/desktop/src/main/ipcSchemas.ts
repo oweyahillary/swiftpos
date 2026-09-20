@@ -102,6 +102,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'auth:logout':            NO_PAYLOAD,
   'auth:getSession':        NO_PAYLOAD,
   'auth:listBranches':      NO_PAYLOAD,
+  'branding:get':           NO_PAYLOAD,
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
   'auth:getStaffSession':   NO_PAYLOAD,
   'auth:clearStaffSession': NO_PAYLOAD,
