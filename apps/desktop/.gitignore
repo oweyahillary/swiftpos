@@ -1,3 +1,5 @@
 
 apps/desktop/build-out/
 apps/desktop/dist/
+build-out/
+dist/

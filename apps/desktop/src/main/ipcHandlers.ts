@@ -22,7 +22,7 @@ import { getBuildInfo } from './buildInfo';
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
-import { getLocalDb, getDbPath, closeLocalDb } from './localDb';
+import { getLocalDb, getDbPath, closeLocalDb, getBranding } from './localDb';
 import { logLine } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
@@ -1136,6 +1136,10 @@ export function registerIpcHandlers() {
   handle('config:get', async () => {
     return getDeviceConfig();
   });
+
+  // A295: client branding (accent + logo) for the lock screen. Null until the
+  // branding sync fills the local table → PinPage renders the SwiftPOS default.
+  handle('branding:get', async () => getBranding());
 
   handle('config:isConfigured', async () => {
     return isConfigured();

@@ -137,6 +137,22 @@ function initSchema(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_held_orders_held_at ON held_orders(held_at);
 
+    -- ── Client branding (A295) — synced down from cloud, remote wins ──────────
+    -- One row per business (a till serves one). Populated by the branding sync (a
+    -- later cloud slice); until then the table is empty and PinPage renders the
+    -- SwiftPOS default via resolveBranding (shared/contrast.ts). LOCAL mirror of the
+    -- cloud business_branding; NOT cleared by clearCatalogue() — a logout must not
+    -- un-brand the till; it re-syncs anyway. accent_hex may be null (logo-only, or
+    -- nothing set); logo_png is base64/data-uri; logo_receipt is the thermal mono
+    -- raster (later slice), null until built.
+    CREATE TABLE IF NOT EXISTS branding (
+      business_id   TEXT PRIMARY KEY,
+      accent_hex    TEXT,
+      logo_png      TEXT,
+      logo_receipt  TEXT,
+      synced_at     TEXT
+    );
+
     -- ── Active staff (PIN login) — singleton, layered on top of owner session ─
     CREATE TABLE IF NOT EXISTS staff_session (
       id            INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1075,5 +1091,23 @@ function migrateColumns(db: Database.Database, table: string, cols: [string, str
     if (!existing.has(name)) {
       db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`);
     }
+  }
+}
+
+/**
+ * A295: the client branding for this till (accent + logo), or null when none is
+ * set — an empty table renders the SwiftPOS default via resolveBranding. One row
+ * per business; a till serves one, so LIMIT 1 is that row. Fail-soft: any read
+ * error → null, so the lock screen never fails to render over a branding read.
+ */
+export function getBranding(): { accentHex: string | null; logoPng: string | null } | null {
+  try {
+    const row = getLocalDb().prepare(
+      `SELECT accent_hex, logo_png FROM branding LIMIT 1`).get() as
+      { accent_hex: string | null; logo_png: string | null } | undefined;
+    if (!row) return null;
+    return { accentHex: row.accent_hex ?? null, logoPng: row.logo_png ?? null };
+  } catch {
+    return null;
   }
 }

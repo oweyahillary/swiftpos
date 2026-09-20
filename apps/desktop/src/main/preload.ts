@@ -115,6 +115,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // Held orders (restaurant tabs). Backed by SQLite in the main process since
   // 2026-08-08 — previously renderer localStorage, where a truncated write
   // silently reported zero open tables.
+  branding: {
+    get: () => ipcRenderer.invoke('branding:get'),
+  },
+
   held: {
     list:   ()                => ipcRenderer.invoke('held:list'),
     hold:   (order: unknown)  => ipcRenderer.invoke('held:hold', order),

@@ -278,6 +278,9 @@ declare global {
         >;
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
+      branding: {
+        get: () => Promise<{ accentHex: string | null; logoPng: string | null } | null>;
+      };
       config: {
         get: () => Promise<DeviceConfig | null>;
         isConfigured: () => Promise<boolean>;

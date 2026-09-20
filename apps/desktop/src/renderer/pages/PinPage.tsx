@@ -41,8 +41,17 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
   // so resolveBranding returns the SwiftPOS default: the screen renders today's
   // green look inside the new layout. Wire accentHex / logoDataUri to branding:get
   // when that slice ships — nothing else here changes.
-  const accentHex: string | null = null;
-  const logoDataUri: string | null = null;
+  const [accentHex, setAccentHex] = useState<string | null>(null);
+  const [logoDataUri, setLogoDataUri] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    posApi.branding.get().then((b) => {
+      if (cancelled || !b) return;
+      setAccentHex(b.accentHex ?? null);
+      setLogoDataUri(b.logoPng ?? null);
+    }).catch(() => { /* lock screen renders the SwiftPOS default on any read error */ });
+    return () => { cancelled = true; };
+  }, []);
   const brand = resolveBranding(accentHex, LOCK_SURFACE);
 
   // ── Hidden tech entry: long-press the logo -> reveal code -> token ──
