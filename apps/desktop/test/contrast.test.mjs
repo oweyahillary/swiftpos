@@ -53,7 +53,7 @@ ok('contrast is symmetric',          near(contrastRatio('#123456', '#abcdef'), c
 // ── button-text decision (rule B) ───────────────────────────────────────────
 ok('light accent -> BLACK button text', pickButtonText('#F5B800').text === '#000000');
 ok('dark  accent -> WHITE button text', pickButtonText('#E1251B').text === '#ffffff');
-ok('green default -> BLACK button text', pickButtonText(DEFAULT_ACCENT).text === '#000000');
+ok('teal default -> BLACK button text', pickButtonText(DEFAULT_ACCENT).text === '#000000');
 
 // ── hex normalisation ───────────────────────────────────────────────────────
 ok('3-digit hex expands',   normalizeHex('#0af') === '#00aaff');

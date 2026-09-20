@@ -27,9 +27,9 @@
  * surface and no single "lock surface" constant has to be guessed here.
  */
 
-/** Current-theme accent (Tailwind green-500). Used when a client sets none, or
+/** Current-theme default accent (teal-600, #0d9488). Used when a client sets none, or
  *  when a client's accent is rejected as illegible. */
-export const DEFAULT_ACCENT = '#22c55e';
+export const DEFAULT_ACCENT = '#0d9488';
 
 /** Minimum contrast we accept for a filled control vs its text, and for an accent
  *  mark vs its surface. 3:1 is the WCAG 2.1 floor for large/bold text and for
