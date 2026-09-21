@@ -97,9 +97,15 @@ export default function MenuUpload({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['SwiftPOS — Restaurant menu upload template'],
-      ['Fill any tabs. Rows are matched by name and UPDATED, never duplicated. Only the tabs/columns'],
-      ['you fill are changed. Leave a cell blank to leave it alone; put DELETE to clear it.'],
-      ['Upgrades: type = free (no price) or upgrade (a 0 baseline + priced steps).'],
+      [''],
+      ['ONE upload for everything: products, upgrades & spices, recipes, ingredients. Fill any tabs.'],
+      ['• Matched by NAME and UPDATED — never duplicated. Add plu_code for a stable key so you can rename freely.'],
+      ['• Sparse: only the tabs/columns you fill change. Leave a cell blank to leave it alone; put DELETE to clear it.'],
+      ['• Lists are ONE ROW PER ITEM (Upgrades, Recipe). Never cram several into a cell; if you must, separate with ; (never a comma).'],
+      ['UPGRADES vs SPICES (Upgrades & Spices tab):'],
+      ['• free  — e.g. Normal / Spicy. Put 0 in price_added; spice is never an upsell.'],
+      ['• upgrade — a ladder e.g. 350ml / 1.25L, or Regular / Large fries. ONE option MUST be 0 (baseline); the rest add money.'],
+      ['COST: purchased items set cost_price; central_kitchen items leave it blank (worked out from Recipe × ingredient unit_cost).'],
     ]), 'Read me');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['name', 'category', 'price', 'cost_price', 'description', 'sold_by', 'unit_label', 'pieces_per_unit',
@@ -111,6 +117,8 @@ export default function MenuUpload({
       ['product', 'group', 'type', 'option', 'price_added', 'notes'],
       ['Soda', 'Drink size', 'upgrade', '350ml', 0, 'baseline — must be 0'],
       ['Soda', 'Drink size', 'upgrade', '1.25L', 130, ''],
+      ['Regular Fries', 'Fries size', 'upgrade', 'Regular', 0, 'baseline — must be 0'],
+      ['Regular Fries', 'Fries size', 'upgrade', 'Large', 60, 'example surcharge — set your own'],
       ['Crispy Chicken Burger', 'Spice level', 'free', 'Spicy', 0, 'free — no price change'],
     ]), 'Upgrades & Spices');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
