@@ -44,6 +44,7 @@ router.get('/catalogue-version', async (req, res) => {
       latest('products',         'business_id', biz),
       latest('categories',       'business_id', biz),
       latest('business_settings','business_id', biz),
+      latest('business_branding', 'business_id', biz),
       latest('users',            'business_id', biz),
       latest('tables',           'business_id', biz),
       latest('branches',         'business_id', biz),
@@ -141,6 +142,7 @@ router.get('/init', async (req, res) => {
     { data: boundBranch },
     { data: branchTextRows },
     { data: business },
+    { data: branding },
   ] = await Promise.all([
     supabase
       .from('products')
@@ -212,6 +214,14 @@ router.get('/init', async (req, res) => {
       .select('type, name, currency, vat_rate, ctl_rate')
       .eq('id', req.businessId)
       .single(),
+    // A304: client branding (accent + base64 logo) for this business, pulled to
+    // the till's local `branding` mirror (remote-wins). maybeSingle — the absent
+    // row is the norm (branding is optional) and must not fail the pull closed.
+    supabase
+      .from('business_branding')
+      .select('accent_hex, logo_png')
+      .eq('business_id', req.businessId)
+      .maybeSingle(),
   ]);
 
   if (pErr || cErr || brErr) {
@@ -338,6 +348,10 @@ router.get('/init', async (req, res) => {
   res.json({
     products: productsOut,
     comboItems,
+    // A304: client branding (accent + logo) → the till writes it to the local
+    // `branding` mirror, remote-wins. null when the business has no branding row,
+    // which the till reads as "leave the local (tech-set) value alone".
+    branding: branding ? { accentHex: branding.accent_hex ?? null, logoPng: branding.logo_png ?? null } : null,
     receiptHeader: receiptText.receipt_header ?? '',
     // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
     // a short grace window at rollover instead of an immediate hard lock, so a

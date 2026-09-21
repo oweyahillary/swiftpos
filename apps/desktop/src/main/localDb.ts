@@ -1159,3 +1159,27 @@ export function setBranding(
   });
   return tx();
 }
+
+/**
+ * A304: write branding pulled from the cloud into the local mirror (remote-wins). Called by
+ * the catalogue pull ONLY when the cloud returned a branding object; a null from the cloud
+ * means "no branding row" and the caller skips this, leaving any local (tech-set, A302) value
+ * intact. Keyed by the owner session's business_id — the same PK A301/A302 use — and no-ops
+ * if the till has no session yet. The cloud already validated on write (A303), so this trusts
+ * the payload but still only touches the two columns.
+ */
+export function applyPulledBranding(b: { accentHex: string | null; logoPng: string | null }): void {
+  const db = getLocalDb();
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as
+    { business_id: string } | undefined;
+  if (!sess?.business_id) return;   // no business bound yet — nothing to key the row to
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO branding (business_id, accent_hex, logo_png, synced_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(business_id) DO UPDATE SET
+       accent_hex = excluded.accent_hex,
+       logo_png   = excluded.logo_png,
+       synced_at  = excluded.synced_at`,
+  ).run(sess.business_id, b.accentHex, b.logoPng, now);
+}

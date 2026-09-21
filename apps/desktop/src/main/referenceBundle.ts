@@ -296,6 +296,7 @@ export interface AcquiredReference {
     receiptFooter: string | null;
     kitchenExclusions: string[] | null;
     continuousOperation: boolean | null;
+    branding?: { accentHex: string | null; logoPng: string | null } | null;
   };
 }
 

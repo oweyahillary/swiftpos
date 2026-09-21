@@ -9,7 +9,7 @@
 //   This means an offline sale is always applied on top of whatever quantity is current
 
 import { net } from 'electron';
-import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
@@ -788,6 +788,10 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (typeof c.receiptFooter === 'string') saveDeviceConfig({ receipt_footer: c.receiptFooter });
   if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
+  // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
+  // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
+  // tech-set value (A302) survives until the business actually has cloud branding.
+  if (c.branding) applyPulledBranding(c.branding);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -880,6 +884,11 @@ async function pullCatalogue(): Promise<boolean> {
       receiptFooter: typeof _j.receiptFooter === 'string' ? _j.receiptFooter : null,
       kitchenExclusions: Array.isArray(_j.kitchenExclusions) ? _j.kitchenExclusions : null,
       continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
+      // A304: null when the business has no branding row → applyReferenceConfig skips it,
+      // keeping any local value. A row (even with null fields) is remote-wins.
+      branding: (_j.branding && typeof _j.branding === 'object')
+        ? { accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null }
+        : null,
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
