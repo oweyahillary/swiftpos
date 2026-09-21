@@ -95,22 +95,23 @@ if (db) {
   db.exec(`CREATE TABLE IF NOT EXISTS branding (
     business_id TEXT PRIMARY KEY, accent_hex TEXT, logo_png TEXT, logo_receipt TEXT, synced_at TEXT);`);
 
-  // Mirror of setBranding's read-merge-write (undefined = keep, null = clear, value = set).
+  // Mirror of setBranding's read-merge-write. The REAL setBranding wraps this in a
+  // db.transaction() for concurrency; here the statements run sequentially so the section
+  // works on BOTH better-sqlite3 and the node:sqlite stand-in (which has no .transaction).
+  // This section checks MERGE SEMANTICS (undefined=keep, null=clear, value=set), not the
+  // transaction guarantee — that is a real-driver concern, exercised under Electron.
   const write = (businessId, w) => {
     const clean = validateBrandingWrite(w);
     const now = new Date().toISOString();
-    const tx = db.transaction(() => {
-      const ex = db.prepare(`SELECT accent_hex, logo_png FROM branding WHERE business_id = ?`).get(businessId);
-      const accent = clean.accentHex === undefined ? (ex?.accent_hex ?? null) : clean.accentHex;
-      const logo   = clean.logoPng   === undefined ? (ex?.logo_png ?? null)   : clean.logoPng;
-      db.prepare(`INSERT INTO branding (business_id, accent_hex, logo_png, synced_at)
-                  VALUES (?, ?, ?, ?)
-                  ON CONFLICT(business_id) DO UPDATE SET
-                    accent_hex = excluded.accent_hex, logo_png = excluded.logo_png, synced_at = excluded.synced_at`)
-        .run(businessId, accent, logo, now);
-      return { accentHex: accent, logoPng: logo };
-    });
-    return tx();
+    const ex = db.prepare(`SELECT accent_hex, logo_png FROM branding WHERE business_id = ?`).get(businessId);
+    const accent = clean.accentHex === undefined ? (ex?.accent_hex ?? null) : clean.accentHex;
+    const logo   = clean.logoPng   === undefined ? (ex?.logo_png ?? null)   : clean.logoPng;
+    db.prepare(`INSERT INTO branding (business_id, accent_hex, logo_png, synced_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(business_id) DO UPDATE SET
+                  accent_hex = excluded.accent_hex, logo_png = excluded.logo_png, synced_at = excluded.synced_at`)
+      .run(businessId, accent, logo, now);
+    return { accentHex: accent, logoPng: logo };
   };
   const read = (businessId) => db.prepare(`SELECT accent_hex, logo_png FROM branding WHERE business_id = ?`).get(businessId);
 
