@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import type { TechSession, TechStatus } from '../lib/posApi';
+import BrandingEditor from './BrandingEditor';
 
 interface Props {
   onExit: () => void;   // close session -> back to PIN pad
@@ -367,6 +368,9 @@ export default function TechPage({ onExit }: Props) {
             </div>
           )}
         </section>
+
+        {/* Client branding (A302) — the tech-gated feed for the A301 write path */}
+        <BrandingEditor />
 
         {/* Reset this device */}
         <section className="bg-[#0d1424] border border-red-900/40 rounded-xl p-4">
