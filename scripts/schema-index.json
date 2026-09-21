@@ -109,6 +109,14 @@
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "business_branding": {
+    "business_id": "\"uuid\" NOT NULL",
+    "accent_hex": "\"text\"",
+    "logo_png": "\"text\"",
+    "logo_receipt": "\"text\"",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "branches": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",

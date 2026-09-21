@@ -145,6 +145,70 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
   res.json(data);
 });
 
+// GET /api/business/branding
+// The client branding row (accent + logo) for this business, or null when unset (A303).
+// Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
+router.get('/branding', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('business_branding')
+    .select('accent_hex, logo_png, logo_receipt, updated_at')
+    .eq('business_id', req.businessId)
+    .maybeSingle();
+  if (error) { sendError(res, error); return; }
+  res.json(data ?? null);
+});
+
+// PUT /api/business/branding
+// Upsert the client branding row (A303). Gated like other business settings. Validation
+// mirrors the desktop guard (brandingGuard) at the persist boundary — never trust the client
+// (the SVG-upload research: a direct request skips any browser check): accent must be a hex
+// colour; a logo must be a PNG/JPEG base64 data-URI under 250 KB; SVG is rejected until the
+// sanitiser slice. Omitted field = leave as-is; explicit null = clear.
+router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'settings.manage'), async (req, res) => {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(req.body ?? {}, k);
+  const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+  const RASTER = /^data:image\/(?:png|jpeg);base64,/i;
+  const MAX_LOGO_BYTES = 250 * 1024;
+
+  const row: Record<string, unknown> = { business_id: req.businessId, updated_at: new Date().toISOString() };
+
+  if (has('accent_hex')) {
+    const a = req.body.accent_hex;
+    if (a !== null) {
+      if (typeof a !== 'string' || !HEX.test(a.trim())) {
+        res.status(400).json({ error: 'accent_hex must be a #RGB or #RRGGBB hex colour' });
+        return;
+      }
+      row.accent_hex = a.trim().toLowerCase();
+    } else { row.accent_hex = null; }
+  }
+
+  if (has('logo_png')) {
+    const l = req.body.logo_png;
+    if (l !== null) {
+      if (typeof l !== 'string') { res.status(400).json({ error: 'logo_png must be a data-URI string' }); return; }
+      if (/^data:image\/svg\+xml/i.test(l)) {
+        res.status(400).json({ error: 'SVG logos are not accepted yet — upload a PNG or JPEG' });
+        return;
+      }
+      if (!RASTER.test(l)) { res.status(400).json({ error: 'logo_png must be a data:image/png or data:image/jpeg base64 data-URI' }); return; }
+      const b64 = l.slice(l.indexOf(',') + 1);
+      const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+      const bytes = Math.floor((b64.length * 3) / 4) - pad;
+      if (bytes > MAX_LOGO_BYTES) { res.status(400).json({ error: `logo is ${(bytes / 1024).toFixed(0)} KB; the cap is 250 KB` }); return; }
+      row.logo_png = l;
+    } else { row.logo_png = null; }
+  }
+
+  const { data, error } = await supabase
+    .from('business_branding')
+    .upsert(row, { onConflict: 'business_id' })
+    .select('accent_hex, logo_png, logo_receipt, updated_at')
+    .single();
+  if (error) { sendError(res, error); return; }
+  res.json(data);
+});
+
 // GET /api/business/settings
 // Returns all key/value settings for this business.
 router.get('/settings', requireAuth, async (req, res) => {
