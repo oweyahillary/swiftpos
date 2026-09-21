@@ -20,7 +20,7 @@ const ROOT = path.resolve(HERE, '..');
 const SQL  = fs.readFileSync(path.join(ROOT, 'migrations/104_business_branding.sql'), 'utf8');
 
 let pass = 0, fail = 0;
-const ok = (n, fn) => { try { fn(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n         ${e.message}`); } };
+const ok = async (n, fn) => { try { await fn(); pass++; console.log(`  ok   ${n}`); } catch (e) { fail++; console.log(`  FAIL ${n}\n         ${e.message}`); } };
 
 const colType = async (db, table, col) => {
   const r = await db.query(
@@ -47,13 +47,13 @@ await (async () => {
     CREATE TABLE public.schema_migrations (version text PRIMARY KEY, notes text, applied_at timestamptz DEFAULT now());
   `);
 
-  ok('table absent before migration', async () => {
+  await ok('table absent before migration', async () => {
     assert.strictEqual(await colType(db, 'business_branding', 'accent_hex'), null);
   });
 
   await db.exec(SQL);
 
-  ok('columns and types', async () => {
+  await ok('columns and types', async () => {
     assert.strictEqual(await colType(db, 'business_branding', 'business_id'), 'uuid');
     assert.strictEqual(await colType(db, 'business_branding', 'accent_hex'), 'text');
     assert.strictEqual(await colType(db, 'business_branding', 'logo_png'), 'text');
@@ -61,12 +61,12 @@ await (async () => {
     assert.strictEqual(await colType(db, 'business_branding', 'updated_at'), 'timestamp with time zone');
   });
 
-  ok('RLS is enabled', async () => {
+  await ok('RLS is enabled', async () => {
     const r = await db.query(`SELECT relrowsecurity FROM pg_class WHERE relname='business_branding'`);
     assert.strictEqual(r.rows[0]?.relrowsecurity, true);
   });
 
-  ok('business_id is the primary key', async () => {
+  await ok('business_id is the primary key', async () => {
     const r = await db.query(`
       SELECT a.attname FROM pg_index i
       JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=ANY(i.indkey)
@@ -79,25 +79,25 @@ await (async () => {
   await db.exec(`INSERT INTO public.business_branding (business_id, accent_hex, logo_png)
                  VALUES ('${B}', '#0d9488', 'data:image/png;base64,AAAA');`);
 
-  ok('set_updated_at trigger overrides updated_at to now() on UPDATE (A291 signal)', async () => {
+  await ok('set_updated_at trigger overrides updated_at to now() on UPDATE (A291 signal)', async () => {
     // Write a deliberately OLD updated_at; the BEFORE UPDATE trigger must override it to now().
     await db.exec(`UPDATE public.business_branding SET updated_at='2000-01-01T00:00:00Z', accent_hex='#e11d48' WHERE business_id='${B}';`);
     const after = (await db.query(`SELECT updated_at FROM public.business_branding WHERE business_id='${B}'`)).rows[0].updated_at;
     assert.ok(new Date(after).getFullYear() > 2001, `trigger did not fire — updated_at stuck at ${after}`);
   });
 
-  ok('FK cascade: deleting the business removes its branding', async () => {
+  await ok('FK cascade: deleting the business removes its branding', async () => {
     await db.exec(`DELETE FROM public.businesses WHERE id='${B}';`);
     const r = await db.query(`SELECT count(*)::int c FROM public.business_branding WHERE business_id='${B}'`);
     assert.strictEqual(r.rows[0].c, 0);
   });
 
-  ok('self-registered in schema_migrations', async () => {
+  await ok('self-registered in schema_migrations', async () => {
     const r = await db.query(`SELECT count(*)::int c FROM public.schema_migrations WHERE version='104_business_branding'`);
     assert.strictEqual(r.rows[0].c, 1);
   });
 
-  ok('idempotent: a second run does not throw', async () => {
+  await ok('idempotent: a second run does not throw', async () => {
     await db.exec(SQL);   // DROP ... IF EXISTS before CREATE POLICY/TRIGGER makes this safe
   });
 
