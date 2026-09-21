@@ -11,7 +11,7 @@ interface BusinessRecord {
   id: string;
   name: string; currency: string; address: string | null;
   phone: string | null; email: string | null;
-  tax_pin: string | null; vat_rate: number | null; logo_url: string | null;
+  tax_pin: string | null; vat_rate: number | null; ctl_rate: number | null; logo_url: string | null;
 }
 
 const IDENTITY_FIELDS: Array<{ key: keyof BusinessRecord; label: string; type?: string; help?: string }> = [
@@ -21,6 +21,7 @@ const IDENTITY_FIELDS: Array<{ key: keyof BusinessRecord; label: string; type?: 
   { key: 'email',    label: 'Contact email', type: 'email', help: 'Business contact address. Your sign-in email is changed by your SwiftPOS admin.' },
   { key: 'tax_pin',  label: 'Tax PIN (KRA)' },
   { key: 'vat_rate', label: 'VAT rate (%)', type: 'number' },
+  { key: 'ctl_rate', label: 'Catering/Tourism Levy (%)', type: 'number', help: 'Charged on the same net as VAT. 0 = not applicable. Shows on receipts and tax reports when above 0.' },
   { key: 'logo_url', label: 'Logo image URL', help: 'Paste a hosted image URL (PNG/JPG). It prints on your POs, GRNs, transfer notes and Z reports.' },
 ];
 
@@ -62,6 +63,7 @@ export default function BusinessProfileTab() {
       const payload = {
         name: record.name, address: record.address, phone: record.phone,
         email: record.email, tax_pin: record.tax_pin, vat_rate: record.vat_rate,
+        ctl_rate: record.ctl_rate,
         currency: record.currency, logo_url: record.logo_url,
       };
       const updated = await api.patch<BusinessRecord>('/api/business/', payload);

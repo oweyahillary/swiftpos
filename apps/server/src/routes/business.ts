@@ -105,7 +105,7 @@ router.get('/', requireAuth, async (req, res) => {
 // because historical amounts are denominated in it; `email` here is the business
 // CONTACT email, not a login credential.
 router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
-  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'currency', 'logo_url'] as const;
+  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'ctl_rate', 'currency', 'logo_url'] as const;
   const updates: Record<string, unknown> = {};
   for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
 
@@ -124,6 +124,14 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
       return;
     }
     updates.vat_rate = v;
+  }
+  if ('ctl_rate' in updates) {
+    const v = Number(updates.ctl_rate);
+    if (Number.isNaN(v) || v < 0 || v > 100) {
+      res.status(400).json({ error: 'CTL rate must be between 0 and 100' });
+      return;
+    }
+    updates.ctl_rate = v;   // A277: Catering/Tourism Levy — same net as VAT; drives the receipt CTL line
   }
   if ('currency' in updates) {
     const { data: current } = await supabase
