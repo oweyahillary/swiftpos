@@ -122,6 +122,20 @@ contextBridge.exposeInMainWorld('swiftpos', {
       ipcRenderer.invoke('branding:set', b),
   },
 
+  // A306: auto-update UX. getStatus for the initial read; onStatus is the push the banner
+  // subscribes to; installNow applies a downloaded update (manager/tech-gated at the call site).
+  update: {
+    getStatus:  () => ipcRenderer.invoke('update:getStatus'),
+    installNow: () => ipcRenderer.invoke('update:installNow'),
+    // Push, not poll: main tells the screen when the update state changes.
+    // Returns its own unsubscribe so a React effect can clean up.
+    onStatus:   (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => {
+      const h = (_e: unknown, s: any) => cb(s);
+      ipcRenderer.on('update:status', h);
+      return () => { ipcRenderer.removeListener('update:status', h); };
+    },
+  },
+
   held: {
     list:   ()                => ipcRenderer.invoke('held:list'),
     hold:   (order: unknown)  => ipcRenderer.invoke('held:hold', order),

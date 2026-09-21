@@ -285,6 +285,12 @@ declare global {
         set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null })
           => Promise<{ accentHex: string | null; logoPng: string | null }>;
       };
+      // A306: auto-update status + manager-gated install-now.
+      update: {
+        getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
+        installNow: () => Promise<{ ok: boolean; reason?: string }>;
+        onStatus: (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => () => void;
+      };
       config: {
         get: () => Promise<DeviceConfig | null>;
         isConfigured: () => Promise<boolean>;

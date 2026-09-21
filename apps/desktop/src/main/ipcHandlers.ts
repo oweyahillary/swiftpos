@@ -23,6 +23,7 @@ import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
+import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
@@ -1150,6 +1151,14 @@ export function registerIpcHandlers() {
     { businessId, accentHex, logoPng }:
       { businessId: string; accentHex?: string | null; logoPng?: string | null },
   ) => setBranding(businessId, { accentHex, logoPng }));
+
+  // A306: auto-update status for the renderer banner. Push is via update:status
+  // (webContents.send from autoUpdate.ts); this is the poll the renderer runs on mount.
+  handle('update:getStatus', async () => getUpdateStatus());
+  // Apply a downloaded update now, NSIS progress visible + relaunch. Gated to a manager/tech
+  // PIN at the call site (the banner verifies before invoking); a no-op unless an update is
+  // actually downloaded, so it can never half-restart a trading till.
+  handle('update:installNow', async () => installUpdateNow());
 
   handle('config:isConfigured', async () => {
     return isConfigured();

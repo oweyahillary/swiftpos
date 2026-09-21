@@ -108,6 +108,10 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // accent-only, logo-only, and clear-with-null all validate (the validator treats null on
   // an optional field as absent). In NEEDS_LIVE_TEST until confirmed on a real till.
   'branding:set':           { businessId: { t: 'string', min: 1 }, accentHex: { t: 'string', optional: true }, logoPng: { t: 'string', optional: true } },
+  // A306: auto-update UX. Both payload-less; the status push (update:status) is a send, not a
+  // handled invoke, so it isn't a schema/parity channel.
+  'update:getStatus':       NO_PAYLOAD,
+  'update:installNow':      NO_PAYLOAD,
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
   'auth:getStaffSession':   NO_PAYLOAD,
   'auth:clearStaffSession': NO_PAYLOAD,

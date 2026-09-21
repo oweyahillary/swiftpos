@@ -7,6 +7,7 @@ import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
 import TechPage from './pages/TechPage';
+import UpdateBanner from './pages/UpdateBanner';
 
 type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
 
@@ -159,6 +160,10 @@ export default function App() {
     />
   ) : null;
 
+  // A306: the auto-update banner rides alongside the working surface (like the curtain), so a
+  // pending update is communicated while staff are logged in — never on the lock/PIN screens.
+  const updateBanner = <UpdateBanner branchId={staff?.branchId ?? null} />;
+
   if (state === 'manager' && staff) {
     return (
       <>
@@ -170,6 +175,7 @@ export default function App() {
         onSwitchAccount={handleSignOut}
       />
       {curtain}
+      {updateBanner}
       </>
     );
   }
@@ -185,6 +191,7 @@ export default function App() {
       canManagePrinters={hasManagerRights(staff)}
     />
     {curtain}
+    {updateBanner}
     </>
   );
 }

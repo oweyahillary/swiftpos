@@ -1,67 +1,95 @@
 /**
- * autoUpdate.ts — self-updating for the desktop till (register D3).
+ * autoUpdate.ts — self-updating for the desktop till (register D3; UX in A306).
  *
- * WIRED 2026-09-10 — electron-updater is a dependency, this is called from
- * index.ts, and the prod build publishes to GitHub Releases. Runs unsigned for
- * now (see docs/DESKTOP-AUTOUPDATE.md §4): the mechanism works; Windows
- * SmartScreen shows on first install until a signing cert is added, which is a
- * one-config flip, not a code change. The end-to-end update loop is verified on
- * a real Windows till, not the Linux bench (rule 16).
+ * WIRED 2026-09-10 — electron-updater is a dependency, this is called from index.ts, and the
+ * prod build publishes to GitHub Releases. Runs unsigned for now (docs/DESKTOP-AUTOUPDATE.md §4).
  *
- * Behaviour, deliberately minimal and silent:
- *   - Dev builds never self-update: the app.isPackaged guard skips `npm run dev`,
- *     AND the "SwiftPOS Dev" flavour is skipped by name so a dev till never pulls
- *     a prod release (the feed is prod-only).
- *   - On launch and every 6 hours it checks the configured feed, downloads a
- *     newer version in the background, and installs it on the NEXT quit. A till
- *     is never interrupted mid-service; it comes up updated the next morning.
- *   - Nothing is forced and nothing blocks trading: a failed check is logged and
- *     the app carries on selling on the current version, which is the whole point
- *     of an offline till.
+ * Behaviour:
+ *   - Dev builds never self-update (app.isPackaged guard + the "SwiftPOS Dev" flavour is skipped
+ *     by name so a dev till never pulls a prod release).
+ *   - On launch and every 6h it checks the feed and downloads a newer version in the background.
+ *   - It installs on the NEXT quit (autoInstallOnAppQuit) — a till is never interrupted
+ *     mid-service and comes up updated when it is next closed (typically overnight).
+ *   - Nothing forced, nothing blocks trading: a failed check is logged and the till keeps
+ *     selling on the current version.
  *
- * A visible "update ready — restart to apply" prompt is intentionally NOT here:
- * it needs a preload channel and would entangle this with check-ipc-parity. Add
- * it as a follow-up once the release pipeline itself is proven.
+ * A306 — visible update UX (the follow-up the previous version of this file flagged):
+ *   - Update status is broadcast to the renderer (update:status), which shows a non-blocking
+ *     banner ("update ready — installs when you close SwiftPOS") plus a gentle reminder.
+ *   - installUpdateNow() applies a downloaded update immediately with the NSIS progress window
+ *     VISIBLE, so a manual update shows an "installing" screen and relaunches, instead of the
+ *     app silently vanishing (the "broken shortcut for a few seconds" a till operator saw).
+ *     Gated to a manager/tech PIN at the call site (renderer verifies before invoking).
  */
 
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 
 let started = false;
 
+export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+export interface UpdateStatus { state: UpdateState; version: string | null; percent: number | null; }
+
+let current: UpdateStatus = { state: 'idle', version: null, percent: null };
+
+/** The renderer polls this on mount (in case it missed the push while loading). */
+export function getUpdateStatus(): UpdateStatus { return current; }
+
+function broadcast(): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    try { w.webContents.send('update:status', current); } catch { /* window gone; ignore */ }
+  }
+}
+
+function set(patch: Partial<UpdateStatus>): void {
+  current = { ...current, ...patch };
+  broadcast();
+}
+
+/**
+ * Apply a downloaded update NOW, with the NSIS progress visible and a relaunch after. Only
+ * meaningful once state === 'downloaded'; a no-op otherwise so a stray call can never
+ * half-restart a trading till. The manager/tech gate is enforced at the call site.
+ */
+export function installUpdateNow(): { ok: boolean; reason?: string } {
+  if (!app.isPackaged) return { ok: false, reason: 'not packaged' };
+  if (current.state !== 'downloaded') return { ok: false, reason: 'no update downloaded' };
+  // isSilent=false → show the installer progress window (no silent vanish);
+  // isForceRunAfter=true → relaunch the till once the swap is done.
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
+}
+
 export function initAutoUpdate(): void {
-  // Only a packaged, installed app can replace itself. In dev there is no
-  // update feed and no installer to swap, so this is a no-op.
-  if (!app.isPackaged) return;
-  // D3 + D17: the dev flavour ("SwiftPOS Dev") must NOT auto-update — the release
-  // feed is prod-only, and a dev till pulling a prod build (or vice versa) would
-  // cross the flavours we deliberately separated. Dev is hand-installed for
-  // trade-tests; only prod converges on the feed.
+  if (!app.isPackaged) return;                 // dev has no feed/installer to swap
   if (app.getName().toLowerCase().includes('dev')) {
     console.log('[autoUpdate] dev flavour — auto-update disabled');
     return;
   }
-  if (started) return;                 // idempotent — safe if called twice
+  if (started) return;                         // idempotent
   started = true;
 
   autoUpdater.autoDownload = true;             // fetch in the background
-  autoUpdater.autoInstallOnAppQuit = true;     // swap on quit, never mid-run
+  autoUpdater.autoInstallOnAppQuit = true;     // still swap on a normal quit — never mid-run
   autoUpdater.allowPrerelease = false;
 
   autoUpdater.on('error', (err) => {
-    // Never throw out of here: an update failure must not stop a till trading.
+    // Never throw: an update failure must not stop a till trading.
     console.warn('[autoUpdate] check/download failed:', err?.message ?? err);
+    set({ state: 'error' });
   });
+  autoUpdater.on('checking-for-update', () => set({ state: 'checking' }));
   autoUpdater.on('update-available', (info) => {
     console.log('[autoUpdate] newer version available:', info?.version);
+    set({ state: 'available', version: info?.version ?? null });
   });
-  autoUpdater.on('update-not-available', () => {
-    console.log('[autoUpdate] up to date');
-  });
+  autoUpdater.on('update-not-available', () => set({ state: 'idle' }));
+  autoUpdater.on('download-progress', (p) => set({ state: 'downloading', percent: Math.round(p?.percent ?? 0) }));
   autoUpdater.on('update-downloaded', (info) => {
     console.log('[autoUpdate] downloaded', info?.version, '— will install on next quit');
+    set({ state: 'downloaded', version: info?.version ?? null, percent: 100 });
   });
 
   const check = () =>
