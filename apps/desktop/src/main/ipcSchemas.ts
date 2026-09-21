@@ -59,7 +59,7 @@ export type Bare =
 export type ChannelSpec = Schema | Bare | typeof NO_PAYLOAD;
 
 /** Structurally validated, but not yet confirmed on a live till. */
-export const NEEDS_LIVE_TEST: ReadonlySet<string> = new Set(['order:create']);
+export const NEEDS_LIVE_TEST: ReadonlySet<string> = new Set(['order:create', 'branding:set']);
 
 // Reusable fragments ---------------------------------------------------------
 const idPatch: Schema = { id: { t: 'string' }, patch: { t: 'any' } };
@@ -103,6 +103,11 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'auth:getSession':        NO_PAYLOAD,
   'auth:listBranches':      NO_PAYLOAD,
   'branding:get':           NO_PAYLOAD,
+  // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
+  // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
+  // accent-only, logo-only, and clear-with-null all validate (the validator treats null on
+  // an optional field as absent). In NEEDS_LIVE_TEST until confirmed on a real till.
+  'branding:set':           { businessId: { t: 'string', min: 1 }, accentHex: { t: 'string', optional: true }, logoPng: { t: 'string', optional: true } },
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
   'auth:getStaffSession':   NO_PAYLOAD,
   'auth:clearStaffSession': NO_PAYLOAD,

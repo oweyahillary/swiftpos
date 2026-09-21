@@ -22,7 +22,7 @@ import { getBuildInfo } from './buildInfo';
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 import { assignments } from './print/printWorker';
-import { getLocalDb, getDbPath, closeLocalDb, getBranding } from './localDb';
+import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { logLine } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
@@ -1140,6 +1140,16 @@ export function registerIpcHandlers() {
   // A295: client branding (accent + logo) for the lock screen. Null until the
   // branding sync fills the local table → PinPage renders the SwiftPOS default.
   handle('branding:get', async () => getBranding());
+
+  // A301: desktop-local WRITE path. Validates + upserts the branding row; the accent/logo
+  // then flows through PinPage's existing read seam. Throws on invalid input, surfaced to
+  // the caller verbatim (rule 7). SVG is rejected in the guard here too — defence in depth,
+  // never trust the renderer (the persist-time check the SVG-upload research calls for).
+  handle('branding:set', async (
+    _event,
+    { businessId, accentHex, logoPng }:
+      { businessId: string; accentHex?: string | null; logoPng?: string | null },
+  ) => setBranding(businessId, { accentHex, logoPng }));
 
   handle('config:isConfigured', async () => {
     return isConfigured();

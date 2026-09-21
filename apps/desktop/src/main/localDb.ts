@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
+import { validateBrandingWrite } from './brandingGuard';
 
 // Resolved lazily, NOT at import time.
 //
@@ -1110,4 +1111,51 @@ export function getBranding(): { accentHex: string | null; logoPng: string | nul
   } catch {
     return null;
   }
+}
+
+/**
+ * A301: the desktop-local WRITE path for this till's client branding (accent + logo).
+ * Lets a real accent/logo be written locally and SEEN flowing through PinPage's existing
+ * read seam before any cloud branding sync exists — proving the whole chain visually.
+ *
+ * Merge semantics (so two separate actions don't clobber each other): an OMITTED field
+ * (undefined) is left as-is, an explicit NULL clears it, a value sets it. So "set the
+ * accent" never wipes an existing logo. Read-merge-write runs in ONE transaction so two
+ * writes cannot interleave — the same discipline held-order recall uses.
+ *
+ * Validation is delegated to the pure validateBrandingWrite (brandingGuard.ts): accent must
+ * be hex; a logo must be a PNG/JPEG data-URI under 250 KB; SVG is rejected (its sanitiser is
+ * a later slice — rule 20). Invalid input THROWS; the write is not swallowed (rule 7), and
+ * the same check runs here at the persist boundary because the renderer is not trusted.
+ *
+ * One row per business — a till serves one, which is why getBranding reads LIMIT 1. synced_at
+ * is stamped with the local write time for this slice; when the cloud sync lands it defines
+ * remote-wins provenance against this column.
+ */
+export function setBranding(
+  businessId: string,
+  write: { accentHex?: string | null; logoPng?: string | null },
+): { accentHex: string | null; logoPng: string | null } {
+  if (!businessId) throw new Error('branding: businessId is required');
+  const clean = validateBrandingWrite(write);
+  const db = getLocalDb();
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    const existing = db
+      .prepare(`SELECT accent_hex, logo_png FROM branding WHERE business_id = ?`)
+      .get(businessId) as { accent_hex: string | null; logo_png: string | null } | undefined;
+    const accent =
+      clean.accentHex === undefined ? existing?.accent_hex ?? null : clean.accentHex;
+    const logo = clean.logoPng === undefined ? existing?.logo_png ?? null : clean.logoPng;
+    db.prepare(
+      `INSERT INTO branding (business_id, accent_hex, logo_png, synced_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(business_id) DO UPDATE SET
+         accent_hex = excluded.accent_hex,
+         logo_png   = excluded.logo_png,
+         synced_at  = excluded.synced_at`,
+    ).run(businessId, accent, logo, now);
+    return { accentHex: accent, logoPng: logo };
+  });
+  return tx();
 }
