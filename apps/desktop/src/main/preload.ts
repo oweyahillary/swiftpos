@@ -117,6 +117,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // silently reported zero open tables.
   branding: {
     get: () => ipcRenderer.invoke('branding:get'),
+    // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
+    set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null }) =>
+      ipcRenderer.invoke('branding:set', b),
   },
 
   held: {

@@ -280,6 +280,10 @@ declare global {
       };
       branding: {
         get: () => Promise<{ accentHex: string | null; logoPng: string | null } | null>;
+        // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
+        // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
+        set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null })
+          => Promise<{ accentHex: string | null; logoPng: string | null }>;
       };
       config: {
         get: () => Promise<DeviceConfig | null>;
