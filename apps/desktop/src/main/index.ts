@@ -276,7 +276,13 @@ app.whenReady().then(() => {
   // waiting for the 10-min floor above. pullIfCatalogueChanged() only pulls when the
   // server's catalogue version actually moved, and self-guards on offline/in-flight.
   setInterval(() => {
-    pullIfCatalogueChanged().catch(console.error);
+    pullIfCatalogueChanged()
+      .then((r) => {
+        // A278: a background pull just applied a web edit — tell the running POS to reload
+        // the catalogue from the local DB, so the change shows without a restart.
+        if (r.pulled) BrowserWindow.getAllWindows()[0]?.webContents.send('catalogue:changed');
+      })
+      .catch(console.error);
   }, 20_000);
 
   // Central day close (Phase 4) — the peer side. Every 15s: tell the node how

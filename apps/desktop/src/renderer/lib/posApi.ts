@@ -209,6 +209,7 @@ declare global {
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
+        onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
         create: (payload: any) => Promise<{ orderId: string }>;

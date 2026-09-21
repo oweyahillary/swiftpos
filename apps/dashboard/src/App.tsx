@@ -40,6 +40,7 @@ const DevicesRoute        = lazy(() => import('./pages/settings/DevicesPrintersP
 const KitchenDisplayRoute = lazy(() => import('./pages/settings/KitchenDisplayTab'));
 const BusinessPage        = lazy(() => import('./pages/settings/BusinessPage'));
 const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileTab'));
+const BrandingTab         = lazy(() => import('./pages/settings/BrandingTab'));
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
@@ -160,6 +161,7 @@ export default function App() {
                       <Route path="settings/business" element={<BusinessPage />}>
                         <Route index               element={<Navigate to="profile" replace />} />
                         <Route path="profile"      element={<BusinessProfileTab />} />
+                        <Route path="branding"     element={<BrandingTab />} />
                         <Route path="branches"     element={<BranchesPage />} />
                         <Route path="tax"          element={<EtimsSettingsPage />} />
                         <Route path="payments"     element={<PaymentMethodsPage />} />

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
 import type { CartItem } from '../lib/cart';
@@ -180,7 +180,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
   const currency = business.currency ?? 'KES';
 
-  useEffect(() => {
+  // A278: reload the catalogue (products, prices, combos, stations, rates) from the local DB.
+  // Runs on mount AND whenever a background pull reports the catalogue changed, so a web edit
+  // shows on the till without a restart. Cart lines are snapshots, so an in-progress sale is
+  // unaffected — only the product grid and rates-for-new-items refresh.
+  const loadCatalogue = useCallback(() => {
     posApi.pos.init().then(({ products, categories, branchId, branchName: bn, vatRate, ctlRate, maxDiscountPct: mdp, comboItems: ci, kitchenCategories, stationRouting, receiptHeader: rh, receiptFooter: rf }: any) => {
       setProducts(products);
       setCategories(categories);
@@ -195,6 +199,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       if (typeof rh === 'string') setReceiptHeader(rh);
       if (typeof rf === 'string') setReceiptFooter(rf);
     });
+  }, []);
+
+  // A278: refresh when main signals a catalogue change (a background pull applied a web edit).
+  useEffect(() => posApi.pos.onCatalogueChanged(loadCatalogue), [loadCatalogue]);
+
+  useEffect(() => {
+    loadCatalogue();
 
     // Business mode from the device config written at install time.
     posApi.auth.getStaffSession().then(ss => {

@@ -32,6 +32,7 @@ export function useBusinessTabs() {
   const setupLabel = SETUP_LABELS[business?.type ?? ''] ?? 'Setup';
   return [
     { to: 'profile',      label: 'Profile' },
+    { to: 'branding',     label: 'Branding' },
     { to: 'branches',     label: 'Branches' },
     { to: 'tax',          label: 'Tax & compliance' },
     { to: 'payments',     label: 'Payments' },

@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
+    // A278: main pushes 'catalogue:changed' after a background pull applied a web edit, so the
+    // running POS reloads products/prices without a restart. Returns its own unsubscribe.
+    onCatalogueChanged: (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('catalogue:changed', h);
+      return () => { ipcRenderer.removeListener('catalogue:changed', h); };
+    },
   },
 
   order: {
