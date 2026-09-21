@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.0 — On-till Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:20px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 320px; min-width:240px}
+  .lbl small{display:block; color:var(--muted); font-size:12px; margin-top:2px}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="na"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%; }
+  .note input{margin-top:6px}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:220px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.0 — on-till verification</h1>
+  <p class="sub">One till + thermal printer · ~25 min · progress saves in this browser · use “Generate results” then “Copy”.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till ID / build SHA</label><input type="text" id="m_till" placeholder="e.g. Till-2 · 16072d2"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-21"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Scope:</b> in 0.6.0 client branding shows on the <b>lock screen only</b>.
+  Receipts do <b>not</b> carry the logo/accent yet — in §F, receipts should print as before, with no branding.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const DATA = [
+  ["§A — Update landed", "", [
+    ["a1","Till version reads 0.6.0 (Technician mode / About); a 2nd till also auto-updated"],
+  ]],
+  ["§B — Lock screen, unbranded baseline", "closes A295", [
+    ["b1","Two-column layout renders cleanly at real resolution — no clip/overlap"],
+    ["b2","Business name + branch line correct"],
+    ["b3","Default teal accent on divider, active PIN dot, Enter button"],
+    ["b4","“Powered by SwiftPOS” present, not removable"],
+    ["b5","Keypad + Enter work; valid PIN logs in"],
+  ]],
+  ["§C — Set branding on the till (Technician mode)", "closes A301, A302", [
+    ["c1","Long-press logo → tech unlock → Client branding panel opens"],
+    ["c2","Set accent → Save → lock screen adopts it; Enter text stays readable"],
+    ["c3","Unreadable accent → preview warns; lock screen falls back to default (contrast guard)"],
+    ["c4","Upload PNG → renders on the white chip"],
+    ["c5","Large JPEG → auto-shrinks and saves (≤250 KB)"],
+    ["c6","SVG → rejected with a clear “PNG or JPEG” message (expected)"],
+    ["c7","Reset to default → back to teal + SwiftPOS mark"],
+  ]],
+  ["§D — Cloud sync (remote-wins)", "closes A303, A304", [
+    ["d1","Set branding centrally (dashboard or PUT /api/business/branding)"],
+    ["d2","After one sync tick, the till adopts the cloud value with no restart"],
+    ["d3","No cloud row → a locally tech-set value is NOT wiped on pull"],
+    ["d4","business_branding row exists for this business (migration 104 live on prod)"],
+  ]],
+  ["§E — Offline behaviour", "closes A295 (offline)", [
+    ["e1","Network off → lock screen still renders cached accent/logo (no default flash)"],
+    ["e2","Staff log in from local PIN cache; a sale rings and queues"],
+    ["e3","Reconnect → the queued sale syncs"],
+  ]],
+  ["§F — Release regression (nothing else moved)", "release-blocker if any fail", [
+    ["f1","Sale → payment → receipt prints (normal format, NO branding — correct)"],
+    ["f2","Kitchen ticket / KOT prints as before"],
+    ["f3","Open shift; close shift; day close works"],
+    ["f4","Sync status healthy (no inbound/outbound failures)"],
+    ["f5","A second cashier can log in and ring a sale"],
+  ]],
+  ["§G — Auto-update UX (A306) — verify on NEXT release (v0.6.1)", "not now", [
+    ["g1","On 0.6.0, banner shows “Update ready” once v0.6.1 downloads"],
+    ["g2","“Restart & update now” requires a manager PIN; cashier PIN refused"],
+    ["g3","Confirm → installer progress window shows, till relaunches (no vanish)"],
+    ["g4","“Later” hides it; re-surfaces after ~2h"],
+  ]],
+];
+
+const KEY = "swiftpos-verify-060";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, ids, items] of DATA){
+    const h = document.createElement("h2");
+    h.innerHTML = escapeHtml(title) + (ids? '<span class="ids">'+escapeHtml(ids)+'</span>':'');
+    list.appendChild(h);
+    const card = document.createElement("div"); card.className="card";
+    for(const [id,label] of items){
+      const row = document.createElement("div"); row.className="row";
+      const lbl = document.createElement("div"); lbl.className="lbl"; lbl.textContent = label;
+      const seg = document.createElement("div"); seg.className="seg";
+      for(const v of ["pass","fail","na"]){
+        const b = document.createElement("button");
+        b.dataset.v=v; b.textContent = v==="na"?"N/A":v[0].toUpperCase()+v.slice(1);
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = document.createElement("div"); noteWrap.className="note";
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      note.placeholder = state.marks[id]==="fail" ? "What happened? (required for a fail)" : "note (optional)";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  // restore meta fields
+  for(const k of ["tester","till","date"]){ const el=document.getElementById("m_"+k); if(el) el.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function updateCount(){
+  let p=0,f=0,n=0,total=0;
+  for(const [,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="na")n++; }
+  const done=p+f+n;
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${n} n/a · ${done}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  L.push("SwiftPOS v0.6.0 — on-till verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till/SHA: ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  let p=0,f=0,n=0,blank=0,total=0;
+  for(const [,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="na")n++; else blank++; }
+  L.push(`Summary: ${p} pass / ${f} fail / ${n} n/a / ${blank} not-run  (of ${total})`);
+  L.push("");
+  for(const [title,ids,items] of DATA){
+    L.push(`${title}${ids?"  ["+ids+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id]||"—";
+      const tag = m==="pass"?"[PASS]":m==="fail"?"[FAIL]":m==="na"?"[N/A ]":"[   ]";
+      let line = `  ${tag} ${label}`;
+      const note = (state.notes[id]||"").trim();
+      if(note) line += `\n         ↳ ${note}`;
+      L.push(line);
+    }
+    L.push("");
+  }
+  const fails = [];
+  for(const [,,items] of DATA) for(const [id,label] of items){ if(state.marks[id]==="fail") fails.push(`  - ${label}${state.notes[id]?" — "+state.notes[id]:""}`); }
+  if(fails.length){ L.push("FAILURES:"); L.push(...fails); }
+  else if(blank===0){ L.push("All checks accounted for — no failures. §A–§F clean → close A295/A301/A302/A303/A304."); }
+  document.getElementById("out").value = L.join("\n");
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  if(!ta.value) generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(ok?"Copied to clipboard":"Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1600); }
+
+function escapeHtml(s){ return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const el=document.getElementById("m_"+k);
+    el.oninput=()=>{ state.meta[k]=el.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ generate(); toast("Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>
