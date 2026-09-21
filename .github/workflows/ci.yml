@@ -312,6 +312,7 @@ jobs:
       - name: Migrations against real Postgres
         run: |
           npm install --no-audit --no-fund
+          node scripts/run-migration-tests.mjs --self-test
           npm run test:migrations
 
       # Server DB refs (supabase.from/.rpc/filter-columns) vs the schema the
