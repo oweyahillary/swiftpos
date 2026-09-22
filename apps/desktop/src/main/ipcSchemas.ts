@@ -107,7 +107,9 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
   // accent-only, logo-only, and clear-with-null all validate (the validator treats null on
   // an optional field as absent). In NEEDS_LIVE_TEST until confirmed on a real till.
-  'branding:set':           { businessId: { t: 'string', min: 1 }, accentHex: { t: 'string', optional: true }, logoPng: { t: 'string', optional: true } },
+  // A312: logoRgba is {width,height,data} — shape-checked by brandingGuard in main (the pixel array is
+  // a typed array over structured clone, which the generic validator does not model → 'any').
+  'branding:set':           { businessId: { t: 'string', min: 1 }, accentHex: { t: 'string', optional: true }, logoPng: { t: 'string', optional: true }, logoRgba: { t: 'any', optional: true }, receiptLogoEnabled: { t: 'boolean', optional: true } },
   // A306: auto-update UX. Both payload-less; the status push (update:status) is a send, not a
   // handled invoke, so it isn't a schema/parity channel.
   'update:getStatus':       NO_PAYLOAD,

@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
+import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
 import { validateBrandingWrite } from './brandingGuard';
 
 // Resolved lazily, NOT at import time.
@@ -1154,28 +1155,41 @@ export function getBranding(): BrandingRow | null {
  */
 export function setBranding(
   businessId: string,
-  write: { accentHex?: string | null; logoPng?: string | null },
-): { accentHex: string | null; logoPng: string | null } {
+  write: { accentHex?: string | null; logoPng?: string | null;
+           logoRgba?: { width: number; height: number; data: ArrayLike<number> } | null;
+           receiptLogoEnabled?: boolean },
+): BrandingRow {
   if (!businessId) throw new Error('branding: businessId is required');
   const clean = validateBrandingWrite(write);
+  // A312: the ONE place colour becomes ink. Pixels in, mono1 string out; done outside
+  // the transaction (pure CPU, no DB) so a slow threshold never holds the write lock.
+  const receipt: string | null | undefined =
+    clean.logoRgba === undefined ? undefined
+    : clean.logoRgba === null ? null
+    : monoRasterToString(monoRasterFromRGBA(clean.logoRgba.data, clean.logoRgba.width, clean.logoRgba.height));
   const db = getLocalDb();
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
     const existing = db
-      .prepare(`SELECT accent_hex, logo_png FROM branding WHERE business_id = ?`)
-      .get(businessId) as { accent_hex: string | null; logo_png: string | null } | undefined;
+      .prepare(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id = ?`)
+      .get(businessId) as { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number } | undefined;
     const accent =
       clean.accentHex === undefined ? existing?.accent_hex ?? null : clean.accentHex;
     const logo = clean.logoPng === undefined ? existing?.logo_png ?? null : clean.logoPng;
+    const logoReceipt = receipt === undefined ? existing?.logo_receipt ?? null : receipt;
+    const enabled = clean.receiptLogoEnabled === undefined
+      ? (existing?.receipt_logo_enabled === 1) : clean.receiptLogoEnabled;
     db.prepare(
-      `INSERT INTO branding (business_id, accent_hex, logo_png, synced_at)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO branding (business_id, accent_hex, logo_png, logo_receipt, receipt_logo_enabled, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(business_id) DO UPDATE SET
-         accent_hex = excluded.accent_hex,
-         logo_png   = excluded.logo_png,
-         synced_at  = excluded.synced_at`,
-    ).run(businessId, accent, logo, now);
-    return { accentHex: accent, logoPng: logo };
+         accent_hex   = excluded.accent_hex,
+         logo_png     = excluded.logo_png,
+         logo_receipt = excluded.logo_receipt,
+         receipt_logo_enabled = excluded.receipt_logo_enabled,
+         synced_at    = excluded.synced_at`,
+    ).run(businessId, accent, logo, logoReceipt, enabled ? 1 : 0, now);
+    return { accentHex: accent, logoPng: logo, logoReceipt, receiptLogoEnabled: enabled };
   });
   return tx();
 }

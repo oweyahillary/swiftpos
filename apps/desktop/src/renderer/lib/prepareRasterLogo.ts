@@ -111,3 +111,55 @@ export async function prepareRasterLogo(file: File): Promise<PreparedLogo> {
     bitmap.close();
   }
 }
+
+
+/** A312: the receipt-raster input — RGBA pixels of the logo scaled (never cropped, never
+ *  upscaled) to fit 384×240, the 58 mm head. Main thresholds these into `logo_receipt`;
+ *  thresholding is deliberately NOT done here so there is one rule (shared/printing raster.ts). */
+export const RECEIPT_MAX_W = 384;
+export const RECEIPT_MAX_H = 240;
+
+export interface LogoPixels { width: number; height: number; data: Uint8ClampedArray }
+
+export async function logoPixelsForReceipt(source: File | Blob | string): Promise<LogoPixels> {
+  const blob = typeof source === 'string' ? await (await fetch(source)).blob() : source;
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const scale = Math.min(1, RECEIPT_MAX_W / bitmap.width, RECEIPT_MAX_H / bitmap.height);
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('logo: could not get a 2D canvas context to read pixels');
+    ctx.clearRect(0, 0, w, h);                   // keep alpha — main composites onto white
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    return { width: w, height: h, data: ctx.getImageData(0, 0, w, h).data };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** A312: draw a `mono1:` raster string onto a canvas for a WYSIWYG receipt preview. Decoding
+ *  here mirrors shared/printing's monoRasterFromString for DISPLAY only — the printer never sees
+ *  this path. Returns null on a malformed string, same as the printer prints nothing. */
+export function monoStringToCanvas(mono: string | null | undefined, canvas: HTMLCanvasElement): boolean {
+  const m = mono ? /^mono1:(\d+):(\d+):([A-Za-z0-9+/]+={0,2})$/.exec(mono) : null;
+  if (!m) return false;
+  const w = Number(m[1]), h = Number(m[2]);
+  const bin = atob(m[3]);
+  const stride = Math.ceil(w / 8);
+  if (bin.length !== stride * h) return false;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const black = (bin.charCodeAt(y * stride + (x >> 3)) & (0x80 >> (x & 7))) !== 0;
+    const p = (y * w + x) * 4;
+    img.data[p] = img.data[p + 1] = img.data[p + 2] = black ? 0 : 255;
+    img.data[p + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return true;
+}

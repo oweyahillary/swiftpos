@@ -27,7 +27,18 @@ const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 export interface BrandingWrite {
   accentHex?: string | null;
   logoPng?: string | null;
+  /** A312: the logo's pixels as a canvas returns them (RGBA, row-major). Main thresholds
+   *  them into `logo_receipt` via shared/printing raster.ts — the renderer never does. */
+  logoRgba?: LogoRgba | null;
+  /** A312: the client's opt-in receipt-logo toggle (tech switch; the web page is the client one). */
+  receiptLogoEnabled?: boolean;
 }
+
+export interface LogoRgba { width: number; height: number; data: ArrayLike<number> }
+
+/** Widest a receipt logo is ever prepared at; raster.ts shrinks further if needed. */
+export const RGBA_MAX_WIDTH = 384;
+export const RGBA_MAX_HEIGHT = 240;
 
 /**
  * Normalised write. `undefined` is preserved to mean "leave this column as-is" for the
@@ -36,6 +47,8 @@ export interface BrandingWrite {
 export interface BrandingClean {
   accentHex: string | null | undefined;
   logoPng: string | null | undefined;
+  logoRgba: LogoRgba | null | undefined;
+  receiptLogoEnabled: boolean | undefined;
 }
 
 /**
@@ -85,5 +98,28 @@ export function validateBrandingWrite(write: BrandingWrite): BrandingClean {
     }
   }
 
-  return { accentHex, logoPng };
+  // A312: pixels for the receipt raster. Bounded so a renderer cannot hand main a
+  // 4K image over IPC; raster.ts caps again, but the cheap check belongs at the door.
+  let logoRgba: LogoRgba | null | undefined = write.logoRgba;
+  if (logoRgba !== undefined && logoRgba !== null) {
+    const { width, height, data } = logoRgba as LogoRgba;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+      throw new Error(`branding: logo pixels have bad dimensions ${width}x${height}`);
+    }
+    if (width > RGBA_MAX_WIDTH || height > RGBA_MAX_HEIGHT) {
+      throw new Error(`branding: logo pixels ${width}x${height} exceed ${RGBA_MAX_WIDTH}x${RGBA_MAX_HEIGHT} — shrink before sending`);
+    }
+    if (!data || typeof data.length !== 'number' || data.length !== width * height * 4) {
+      throw new Error(`branding: logo pixels must be ${width * height * 4} RGBA bytes, got ${data?.length ?? 'none'}`);
+    }
+  }
+  // Clearing the logo clears its receipt raster too — a raster with no logo behind it is stale.
+  if (logoPng === null && logoRgba === undefined) logoRgba = null;
+
+  let receiptLogoEnabled: boolean | undefined = write.receiptLogoEnabled;
+  if (receiptLogoEnabled !== undefined && typeof receiptLogoEnabled !== 'boolean') {
+    throw new Error('branding: receiptLogoEnabled must be true or false');
+  }
+
+  return { accentHex, logoPng, logoRgba, receiptLogoEnabled };
 }

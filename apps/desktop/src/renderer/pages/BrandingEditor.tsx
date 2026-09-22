@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { prepareRasterLogo } from '../lib/prepareRasterLogo';
+import { prepareRasterLogo, logoPixelsForReceipt, monoStringToCanvas, type LogoPixels } from '../lib/prepareRasterLogo';
 import { resolveBranding } from '../../shared/contrast';
 
 /**
@@ -24,6 +24,12 @@ export default function BrandingEditor() {
   const [businessId, setBusinessId] = useState<string | null>(null);
   const [accentHex, setAccentHex] = useState('');       // '' = unset (SwiftPOS default)
   const [logoPng, setLogoPng] = useState<string | null>(null);
+  // A312: pixels of a newly picked logo (sent once with the save); the stored mono raster
+  // (for the preview); and the client's opt-in toggle.
+  const [logoRgba, setLogoRgba] = useState<LogoPixels | null>(null);
+  const [logoReceipt, setLogoReceipt] = useState<string | null>(null);
+  const [receiptLogoEnabled, setReceiptLogoEnabled] = useState(false);
+  const monoRef = useRef<HTMLCanvasElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -34,11 +40,20 @@ export default function BrandingEditor() {
     const b = await posApi.branding.get().catch(() => null);
     setAccentHex(b?.accentHex ?? '');
     setLogoPng(b?.logoPng ?? null);
+    setLogoReceipt(b?.logoReceipt ?? null);
+    setReceiptLogoEnabled(b?.receiptLogoEnabled ?? false);
+    setLogoRgba(null);
   };
   useEffect(() => { load(); }, []);
 
   // Live legibility preview — the same decision the lock screen makes.
   const brand = resolveBranding(accentHex.trim() || null, LOCK_SURFACE);
+  // A312: paint the stored mono raster (what the printer gets) whenever it changes.
+  useEffect(() => {
+    const c = monoRef.current;
+    if (!c) return;
+    if (!monoStringToCanvas(logoReceipt, c)) { c.width = 1; c.height = 1; }
+  }, [logoReceipt]);
 
   const onPickLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -49,6 +64,9 @@ export default function BrandingEditor() {
       const { logoPng: png, warnings: w } = await prepareRasterLogo(file);
       setLogoPng(png);
       setWarnings(w);
+      // A312: read the pixels for the receipt raster from the SAME prepared image the
+      // lock screen will show, so preview and paper come from one source.
+      setLogoRgba(await logoPixelsForReceipt(png));
     } catch (err: any) {
       setMsg(String(err?.message ?? err));
     }
@@ -58,9 +76,15 @@ export default function BrandingEditor() {
     if (!businessId) { setMsg('No business on this till yet — enrol it first.'); return; }
     setBusy(true); setMsg('');
     try {
-      await posApi.branding.set({ businessId, accentHex: accentHex.trim() || null, logoPng });
+      const saved = await posApi.branding.set({
+        businessId, accentHex: accentHex.trim() || null, logoPng,
+        logoRgba: logoRgba ?? undefined,      // undefined = keep the stored raster
+        receiptLogoEnabled,
+      });
+      setLogoReceipt(saved.logoReceipt);
+      setLogoRgba(null);
       await posApi.tech.logAction('tech.branding.set',
-        { hasAccent: !!accentHex.trim(), hasLogo: !!logoPng });
+        { hasAccent: !!accentHex.trim(), hasLogo: !!logoPng, hasReceiptLogo: !!saved.logoReceipt, receiptLogoEnabled });
       setMsg('Saved. The lock screen picks it up next time the PIN pad shows.');
       await load();
     } catch (err: any) {
@@ -72,7 +96,7 @@ export default function BrandingEditor() {
     if (!businessId) return;
     setBusy(true); setMsg('');
     try {
-      await posApi.branding.set({ businessId, accentHex: null, logoPng: null });
+      await posApi.branding.set({ businessId, accentHex: null, logoPng: null, logoRgba: null, receiptLogoEnabled: false });
       await posApi.tech.logAction('tech.branding.clear');
       setAccentHex(''); setLogoPng(null); setWarnings([]);
       setMsg('Cleared — back to the SwiftPOS default.');
@@ -134,6 +158,23 @@ export default function BrandingEditor() {
       {warnings.map((w, i) => (
         <p key={i} className="text-xs text-amber-400">{w}</p>
       ))}
+
+      {/* A312: receipt logo — opt-in toggle + the exact mono raster the printer will get */}
+      <label className="flex items-center gap-2 mt-4 text-xs text-gray-300">
+        <input
+          type="checkbox"
+          checked={receiptLogoEnabled}
+          onChange={(e) => setReceiptLogoEnabled(e.target.checked)}
+          disabled={!logoPng}
+        />
+        Print logo on customer receipts
+      </label>
+      <div className="mt-2 rounded-lg bg-white p-2 inline-block">
+        {logoReceipt
+          ? <canvas ref={monoRef} className="block max-w-[192px]" style={{ imageRendering: 'pixelated' }} />
+          : <span className="text-[10px] text-gray-500">{logoRgba ? 'Receipt raster will be generated on save.' : 'No receipt raster yet — pick a logo and save.'}</span>}
+      </div>
+      <p className="text-xs text-gray-400 mt-1">Thermal printers are black-and-white: this is what the paper will show. Gradients wash out; if it looks wrong, upload a cleaner mark.</p>
 
       {/* Actions */}
       <div className="flex gap-2 mt-4">

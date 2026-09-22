@@ -127,5 +127,61 @@ if (db) {
   ok('single row per business', db.prepare(`SELECT COUNT(*) c FROM branding WHERE business_id = ?`).get('biz1').c === 1);
 }
 
+
+// ── A312: receipt-raster pixels + toggle through the REAL guard ────────────────────────────
+console.log('\nA312 — logoRgba + receiptLogoEnabled');
+const px = (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
+ok('A312: valid pixels pass through untouched', (() => { const c = validateBrandingWrite({ logoRgba: px(384, 240) }); return c.logoRgba && c.logoRgba.width === 384 && c.logoRgba.data.length === 384 * 240 * 4; })());
+throwsMsg('A312: too wide is refused at the door', /exceed 384x240/, () => validateBrandingWrite({ logoRgba: px(385, 10) }));
+throwsMsg('A312: too tall is refused at the door', /exceed 384x240/, () => validateBrandingWrite({ logoRgba: px(10, 241) }));
+throwsMsg('A312: data length must be w*h*4', /RGBA bytes/, () => validateBrandingWrite({ logoRgba: { width: 8, height: 1, data: new Uint8ClampedArray(31) } }));
+throwsMsg('A312: non-integer dims refused', /bad dimensions/, () => validateBrandingWrite({ logoRgba: { width: 8.5, height: 1, data: new Uint8ClampedArray(34) } }));
+ok('A312: undefined pixels = keep stored raster', validateBrandingWrite({ accentHex: '#0d9488' }).logoRgba === undefined);
+ok('A312: clearing the logo ALSO clears the raster (null)', validateBrandingWrite({ logoPng: null }).logoRgba === null);
+ok('A312: explicit pixels survive a logo clear (odd but explicit wins)', validateBrandingWrite({ logoPng: null, logoRgba: px(8, 1) }).logoRgba !== null);
+ok('A312: toggle true/false pass', validateBrandingWrite({ receiptLogoEnabled: true }).receiptLogoEnabled === true && validateBrandingWrite({ receiptLogoEnabled: false }).receiptLogoEnabled === false);
+throwsMsg('A312: toggle must be a boolean', /true or false/, () => validateBrandingWrite({ receiptLogoEnabled: 'yes' }));
+ok('A312: toggle undefined = keep', validateBrandingWrite({}).receiptLogoEnabled === undefined);
+
+// ── A312: the REAL setBranding INSERT + merge, extracted from localDb.ts and executed ──────
+// setBranding itself needs better-sqlite3 under Electron's ABI (rule 9), so — as the A311 test
+// does — the statement and the CREATE TABLE are lifted from source and run on node:sqlite. The
+// merge logic (undefined keeps / null clears / value sets) is exercised by feeding the derived
+// values the way setBranding computes them.
+const ldbSrc = fs.readFileSync(path.join(here, '..', 'src', 'main', 'localDb.ts'), 'utf8');
+const fnSrc = ldbSrc.slice(ldbSrc.indexOf('export function setBranding'));
+const sqlM = /`(\s*INSERT INTO branding[\s\S]*?)`\s*,?\s*\)\.run\(([\s\S]*?)\);/.exec(fnSrc);
+const createM = /CREATE TABLE IF NOT EXISTS branding \(([\s\S]*?)\);/.exec(ldbSrc);
+ok('A312: found setBranding upsert + CREATE TABLE in source', !!sqlM && !!createM);
+ok('A312: setBranding uses the shared thresholder, never its own', /monoRasterFromRGBA\(/.test(fnSrc) && /monoRasterToString\(/.test(fnSrc));
+ok('A312: thresholding happens OUTSIDE the transaction', fnSrc.indexOf('monoRasterFromRGBA(') < fnSrc.indexOf('db.transaction('));
+let sq = null;
+try { ({ DatabaseSync: sq } = await import('node:sqlite')); } catch { console.log('  (node:sqlite unavailable — SQL execution skipped, source guards ran)'); }
+if (sqlM && createM && sq) {
+  const args = sqlM[2].split(',').length, qs = (sqlM[1].match(/\?/g) || []).length;
+  ok(`A312: bind count matches placeholders (${args} args, ${qs} ?)`, args === qs);
+  const d = new sq(':memory:');
+  d.exec(`CREATE TABLE IF NOT EXISTS branding (${createM[1]});`);
+  const st = d.prepare(sqlM[1]);
+  const read = () => d.prepare(`SELECT * FROM branding WHERE business_id='B1'`).get();
+  ok('A312: the real statement executes', (() => { try { st.run('B1', '#0d9488', 'png', 'mono1:8:1:AA==', 1, 'now'); return true; } catch (e) { console.log('      ' + e.message); return false; } })());
+  ok('A312: raster + toggle stored', (() => { const r = read(); return r.logo_receipt === 'mono1:8:1:AA==' && r.receipt_logo_enabled === 1; })());
+  st.run('B1', '#0d9488', 'png', 'mono1:8:1:AA==', 0, 'now2');
+  ok('A312: toggle off keeps the raster (the client can re-enable without re-uploading)', (() => { const r = read(); return r.logo_receipt === 'mono1:8:1:AA==' && r.receipt_logo_enabled === 0; })());
+  st.run('B1', null, null, null, 0, 'now3');
+  ok('A312: clear wipes all four', (() => { const r = read(); return r.accent_hex === null && r.logo_png === null && r.logo_receipt === null && r.receipt_logo_enabled === 0; })());
+  d.close();
+}
+
+// ── A312: the print path gates on the toggle AND the raster ────────────────────────────────
+const ih = fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcHandlers.ts'), 'utf8');
+ok('A312: print config passes logoRaster via resolveReceiptLogo()', /logoRaster:\s*resolveReceiptLogo\(\)/.test(ih));
+const rr = /function resolveReceiptLogo\(\)[\s\S]*?\n\}/.exec(ih)?.[0] ?? '';
+ok('A312: resolveReceiptLogo requires the toggle ON', /!b\.receiptLogoEnabled/.test(rr));
+ok('A312: resolveReceiptLogo requires a raster', /!b\.logoReceipt/.test(rr));
+ok('A312: resolveReceiptLogo decodes via shared/printing (malformed → nothing)', /monoRasterFromString\(b\.logoReceipt\)/.test(rr));
+const sch = fs.readFileSync(path.join(here, '..', 'src', 'main', 'ipcSchemas.ts'), 'utf8');
+ok('A312: branding:set schema admits logoRgba + boolean toggle', /'branding:set':[^\n]*logoRgba:\s*\{\s*t:\s*'any'/.test(sch) && /'branding:set':[^\n]*receiptLogoEnabled:\s*\{\s*t:\s*'boolean'/.test(sch));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

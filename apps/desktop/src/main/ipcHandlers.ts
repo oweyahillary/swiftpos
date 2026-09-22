@@ -20,7 +20,15 @@ import { expectStringArray, assertPayload } from './ipcValidate';
 import { installValidatedHandle } from './ipcGuard';
 import { getBuildInfo } from './buildInfo';
 import { printerShares } from './printService';
-import { kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
+import { kitchenPreset, dispatchPreset, receiptPreset, monoRasterFromString, type MonoRaster } from '@swiftpos/printing';
+
+/** A312: the receipt logo the print path should use right now, or undefined. Reads the
+ *  local branding row (synced remote-wins from the cloud, or tech-set); the toggle gates it. */
+function resolveReceiptLogo(): MonoRaster | undefined {
+  const b = getBranding();
+  if (!b || !b.receiptLogoEnabled || !b.logoReceipt) return undefined;
+  return monoRasterFromString(b.logoReceipt) ?? undefined;
+}
 import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
@@ -911,6 +919,10 @@ export function registerIpcHandlers() {
           ctlRate:         Number((cfg as any)?.ctl_rate ?? 0),
           thankYouMessage: (cfg as any)?.receipt_footer || undefined,
           footerCredit:    'Powered by SwiftPOS',
+          // A312: the client logo on customer receipts — ONLY when the client's toggle is on
+          // and a raster exists. Decoded by shared/printing; a malformed stored value decodes
+          // to null and prints no logo. The renderer prints it on receipts only (A310).
+          logoRaster:      resolveReceiptLogo(),
         },
         // The presets shared/printing exports, NOT a hand-rolled config here.
         // They are what the verified sample output was rendered from, so a
@@ -1148,9 +1160,11 @@ export function registerIpcHandlers() {
   // never trust the renderer (the persist-time check the SVG-upload research calls for).
   handle('branding:set', async (
     _event,
-    { businessId, accentHex, logoPng }:
-      { businessId: string; accentHex?: string | null; logoPng?: string | null },
-  ) => setBranding(businessId, { accentHex, logoPng }));
+    { businessId, accentHex, logoPng, logoRgba, receiptLogoEnabled }:
+      { businessId: string; accentHex?: string | null; logoPng?: string | null;
+        logoRgba?: { width: number; height: number; data: ArrayLike<number> } | null;
+        receiptLogoEnabled?: boolean },
+  ) => setBranding(businessId, { accentHex, logoPng, logoRgba, receiptLogoEnabled }));
 
   // A306: auto-update status for the renderer banner. Push is via update:status
   // (webContents.send from autoUpdate.ts); this is the poll the renderer runs on mount.

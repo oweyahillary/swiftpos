@@ -280,11 +280,15 @@ declare global {
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
       branding: {
-        get: () => Promise<{ accentHex: string | null; logoPng: string | null } | null>;
+        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean } | null>;
         // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
         // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
-        set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null })
-          => Promise<{ accentHex: string | null; logoPng: string | null }>;
+        // A312: logoRgba = the logo's pixels (≤384×240 RGBA); main thresholds them into the receipt
+        // raster. receiptLogoEnabled = the opt-in toggle.
+        set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null;
+                   logoRgba?: { width: number; height: number; data: Uint8ClampedArray } | null;
+                   receiptLogoEnabled?: boolean })
+          => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean }>;
       };
       // A306: auto-update status + manager-gated install-now.
       update: {
