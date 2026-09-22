@@ -1,7 +1,8 @@
 # SCOPE — A295 · Client branding (Phase 1 + Phase 2)
 
-Status: OPEN (scoped, not started). Author: lead dev. Sits behind the current
-desktop close-out queue. This doc is the agreed spec so none of the decisions get
+Status: **Phase 1 IN PROGRESS** (corrected 2026-09-22; was "not started" while four slices had closed on
+target). §10 items 1–3, 6 CLOSED on Till 1 (A301–A304); item 4 receipt logo and the §5/§C receipt preview
+NOT built; A308/A278 target checks owed. Tracker: register **A295**. Author: lead dev. This doc is the agreed spec so none of the decisions get
 re-litigated at build time. Register anchor: A295.
 
 ---
