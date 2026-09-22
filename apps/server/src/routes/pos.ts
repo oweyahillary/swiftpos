@@ -219,7 +219,7 @@ router.get('/init', async (req, res) => {
     // row is the norm (branding is optional) and must not fail the pull closed.
     supabase
       .from('business_branding')
-      .select('accent_hex, logo_png')
+      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled')
       .eq('business_id', req.businessId)
       .maybeSingle(),
   ]);
@@ -351,7 +351,12 @@ router.get('/init', async (req, res) => {
     // A304: client branding (accent + logo) → the till writes it to the local
     // `branding` mirror, remote-wins. null when the business has no branding row,
     // which the till reads as "leave the local (tech-set) value alone".
-    branding: branding ? { accentHex: branding.accent_hex ?? null, logoPng: branding.logo_png ?? null } : null,
+    branding: branding ? {
+      accentHex: branding.accent_hex ?? null, logoPng: branding.logo_png ?? null,
+      // A311: the receipt raster + the client's opt-in toggle ride the same pull.
+      logoReceipt: branding.logo_receipt ?? null,
+      receiptLogoEnabled: branding.receipt_logo_enabled === true,
+    } : null,
     receiptHeader: receiptText.receipt_header ?? '',
     // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
     // a short grace window at rollover instead of an immediate hard lock, so a

@@ -40,7 +40,8 @@
  * equality) so the "behind" check stays meaningful; a till on 51 keeps trading
  * and syncing and is merely shown as behind until it takes the A66 build.
  */
-export const REQUIRED_DESKTOP_SCHEMA = 52;
+/** Schema 53 = branding.receipt_logo_enabled (A311). Pulled only; same convention. */
+export const REQUIRED_DESKTOP_SCHEMA = 53;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

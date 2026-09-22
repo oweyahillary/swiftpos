@@ -887,7 +887,13 @@ async function pullCatalogue(): Promise<boolean> {
       // A304: null when the business has no branding row → applyReferenceConfig skips it,
       // keeping any local value. A row (even with null fields) is remote-wins.
       branding: (_j.branding && typeof _j.branding === 'object')
-        ? { accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null }
+        ? {
+            accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null,
+            // A311: undefined (not null) when the cloud predates migration 105, so the
+            // local value is kept rather than cleared — see applyPulledBranding.
+            logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,
+            receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
+          }
         : null,
     });
 

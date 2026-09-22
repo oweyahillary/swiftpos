@@ -114,6 +114,7 @@
     "accent_hex": "\"text\"",
     "logo_png": "\"text\"",
     "logo_receipt": "\"text\"",
+    "receipt_logo_enabled": "\"boolean\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },

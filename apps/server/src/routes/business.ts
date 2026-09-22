@@ -159,7 +159,7 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
 router.get('/branding', requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('business_branding')
-    .select('accent_hex, logo_png, logo_receipt, updated_at')
+    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, updated_at')
     .eq('business_id', req.businessId)
     .maybeSingle();
   if (error) { sendError(res, error); return; }
@@ -208,10 +208,35 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     } else { row.logo_png = null; }
   }
 
+  // A311: the receipt raster. Shape-checked here (mirrors shared/printing raster.ts's decoder — the
+  // cloud (apps/server) does not depend on that package, same precedent as the HEX/RASTER regexes
+  // above mirroring brandingGuard): prefix, integer dims, width within an 80 mm head, and the
+  // base64 payload EXACTLY ceil(w/8)*h bytes. A wrong length is what desyncs a printer's parser.
+  if (has('logo_receipt')) {
+    const v = req.body.logo_receipt;
+    if (v !== null) {
+      const m = typeof v === 'string' ? /^mono1:(\d+):(\d+):([A-Za-z0-9+/]+={0,2})$/.exec(v) : null;
+      const w = m ? Number(m[1]) : 0, h = m ? Number(m[2]) : 0;
+      const bytes = m ? Buffer.from(m[3], 'base64').length : -1;
+      if (!m || w < 1 || w > 576 || h < 1 || h > 1024 || bytes !== Math.ceil(w / 8) * h) {
+        res.status(400).json({ error: 'logo_receipt must be a mono1:<w>:<h>:<base64> raster with ceil(w/8)*h bytes, w<=576' });
+        return;
+      }
+      row.logo_receipt = v;
+    } else { row.logo_receipt = null; }
+  }
+  if (has('receipt_logo_enabled')) {
+    if (typeof req.body.receipt_logo_enabled !== 'boolean') {
+      res.status(400).json({ error: 'receipt_logo_enabled must be true or false' });
+      return;
+    }
+    row.receipt_logo_enabled = req.body.receipt_logo_enabled;
+  }
+
   const { data, error } = await supabase
     .from('business_branding')
     .upsert(row, { onConflict: 'business_id' })
-    .select('accent_hex, logo_png, logo_receipt, updated_at')
+    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, updated_at')
     .single();
   if (error) { sendError(res, error); return; }
   res.json(data);

@@ -151,7 +151,8 @@ function initSchema(db: Database.Database) {
       accent_hex    TEXT,
       logo_png      TEXT,
       logo_receipt  TEXT,
-      synced_at     TEXT
+      synced_at     TEXT,
+      receipt_logo_enabled INTEGER NOT NULL DEFAULT 0
     );
 
     -- ── Active staff (PIN login) — singleton, layered on top of owner session ─
@@ -948,6 +949,9 @@ function initSchema(db: Database.Database) {
       ON business_days (device_id, seq);
   `);
 
+  // A311 (schema 53): the client's opt-in receipt-logo toggle, pulled remote-wins
+  // with the rest of the branding row. INTEGER 0/1 — SQLite has no boolean.
+  migrateColumns(db, 'branding', [['receipt_logo_enabled', 'INTEGER NOT NULL DEFAULT 0']]);
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
     ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
@@ -1071,7 +1075,9 @@ function initSchema(db: Database.Database) {
 // 52 adds device_config.kitchen_exclusions_override — a per-terminal local
 // override that wins over the synced cloud baseline. Additive and idempotent
 // like every column here; an older till converges by running migrateColumns.
-export const LOCAL_SCHEMA_VERSION = 52;
+// 53 adds branding.receipt_logo_enabled (A311) — pulled, never pushed, so no
+// push payload changes; REQUIRED moves with it by convention only.
+export const LOCAL_SCHEMA_VERSION = 53;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
@@ -1101,13 +1107,27 @@ function migrateColumns(db: Database.Database, table: string, cols: [string, str
  * per business; a till serves one, so LIMIT 1 is that row. Fail-soft: any read
  * error → null, so the lock screen never fails to render over a branding read.
  */
-export function getBranding(): { accentHex: string | null; logoPng: string | null } | null {
+export interface BrandingRow {
+  accentHex: string | null;
+  logoPng: string | null;
+  /** A310/A311: `mono1:w:h:base64` raster string, or null. Decoded by shared/printing only. */
+  logoReceipt: string | null;
+  /** A311: the client's opt-in toggle. The print path prints the logo only when this is true. */
+  receiptLogoEnabled: boolean;
+}
+
+export function getBranding(): BrandingRow | null {
   try {
     const row = getLocalDb().prepare(
-      `SELECT accent_hex, logo_png FROM branding LIMIT 1`).get() as
-      { accent_hex: string | null; logo_png: string | null } | undefined;
+      `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding LIMIT 1`).get() as
+      { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null } | undefined;
     if (!row) return null;
-    return { accentHex: row.accent_hex ?? null, logoPng: row.logo_png ?? null };
+    return {
+      accentHex: row.accent_hex ?? null,
+      logoPng: row.logo_png ?? null,
+      logoReceipt: row.logo_receipt ?? null,
+      receiptLogoEnabled: row.receipt_logo_enabled === 1,
+    };
   } catch {
     return null;
   }
@@ -1168,18 +1188,31 @@ export function setBranding(
  * if the till has no session yet. The cloud already validated on write (A303), so this trusts
  * the payload but still only touches the two columns.
  */
-export function applyPulledBranding(b: { accentHex: string | null; logoPng: string | null }): void {
+export function applyPulledBranding(b: {
+  accentHex: string | null; logoPng: string | null;
+  /** A311: absent on an older cloud → keep the local value (COALESCE below), not clear it. */
+  logoReceipt?: string | null; receiptLogoEnabled?: boolean | null;
+}): void {
   const db = getLocalDb();
   const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as
     { business_id: string } | undefined;
   if (!sess?.business_id) return;   // no business bound yet — nothing to key the row to
   const now = new Date().toISOString();
+  // A311: the two receipt fields are remote-wins like the rest, EXCEPT when the
+  // cloud omitted them entirely (undefined — a cloud not yet on migration 105).
+  // Then the local value stands; a null from the cloud still clears/disables.
+  const lr = b.logoReceipt === undefined ? null : b.logoReceipt;
+  const lrKeep = b.logoReceipt === undefined ? 1 : 0;
+  const en = b.receiptLogoEnabled === undefined || b.receiptLogoEnabled === null ? null : (b.receiptLogoEnabled ? 1 : 0);
+  const enKeep = b.receiptLogoEnabled === undefined ? 1 : 0;
   db.prepare(
-    `INSERT INTO branding (business_id, accent_hex, logo_png, synced_at)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO branding (business_id, accent_hex, logo_png, logo_receipt, receipt_logo_enabled, synced_at)
+     VALUES (?, ?, ?, ?, COALESCE(?, 0), ?)
      ON CONFLICT(business_id) DO UPDATE SET
        accent_hex = excluded.accent_hex,
        logo_png   = excluded.logo_png,
+       logo_receipt = CASE WHEN ? = 1 THEN branding.logo_receipt ELSE excluded.logo_receipt END,
+       receipt_logo_enabled = CASE WHEN ? = 1 THEN branding.receipt_logo_enabled ELSE COALESCE(?, 0) END,
        synced_at  = excluded.synced_at`,
-  ).run(sess.business_id, b.accentHex, b.logoPng, now);
+  ).run(sess.business_id, b.accentHex, b.logoPng, lr, en, now, lrKeep, enKeep, en);
 }
