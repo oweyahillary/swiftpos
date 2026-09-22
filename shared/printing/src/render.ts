@@ -217,6 +217,10 @@ function renderReceipt(ctx: PrintContext): Document {
     d.line(rule(cols));
   }
 
+  // A310: client logo above the name, receipts only. Nothing else in this
+  // document moves — with logoRaster absent the byte stream is unchanged.
+  if (business.logoRaster) d.image(business.logoRaster, 'center');
+
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
   // Owner's custom header (address, phone, tagline…), one line per line, centred

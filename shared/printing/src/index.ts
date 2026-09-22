@@ -19,6 +19,7 @@ export { toEscPos } from './escpos';
 export { toPreview } from './preview';
 export { splitTax, netOf, formatCents } from './money';
 export { columnsFor } from './layout';
+export * from './raster';
 
 import type { StationConfig } from './types';
 

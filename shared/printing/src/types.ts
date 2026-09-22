@@ -1,3 +1,4 @@
+import type { MonoRaster } from './raster';
 /**
  * types — the contract between the POS and the printer.
  *
@@ -129,6 +130,11 @@ export interface BusinessConfig {
   /** As a percentage, e.g. 16 for 16%. */
   vatRate: number;
   ctlRate: number;
+  /** A310: client logo as a pre-thresholded 1-bit raster, printed centred above
+   *  the business name on CUSTOMER RECEIPTS only. Absent = no logo, receipt
+   *  identical to before. The caller resolves the client's toggle before setting
+   *  this; the renderer never decides whether a logo is wanted. */
+  logoRaster?: MonoRaster;
 }
 
 export type StationKind = 'kitchen' | 'dispatch' | 'receipt';
