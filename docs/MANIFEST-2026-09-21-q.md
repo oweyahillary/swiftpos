@@ -28,7 +28,7 @@ apps/desktop/src/renderer/pages/POSPage.tsx             (A278)
 tests/catalogue-refresh.test.mjs                        (A278, new)
 tests/branding-web-page.test.mjs                        (A308, new)
 docs/AUDIT-REGISTER.md                                  (A307+A278+A19+A308)
-docs/MANIFEST-2026-09-21-n.md / -o.md / -p.md / -q.md   (delivery docs)
+docs/MANIFEST-2026-09-21-n.md, docs/MANIFEST-2026-09-21-o.md, docs/MANIFEST-2026-09-21-p.md, docs/MANIFEST-2026-09-21-q.md   (delivery docs)
 ```
 (A307's MenuUpload + `menu-template.test.mjs` + `-l` are already on `dev`, so not re-shipped.)
 
