@@ -6,6 +6,7 @@
  * RePrint timestamp, then sends the bytes to the branch receipt printer via the
  * bridge. Prints only where the bridge is connected (i.e. on the till). (A261)
  */
+import { monoRasterFromString } from './escposRenderer';
 import { renderReceiptEscPos } from './escposRenderer';
 import { buildReceiptBusinessConfig } from './buildReceiptOrder';
 import { getQZStatus, printBytesToServer } from './localPrintServer';
@@ -59,8 +60,10 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
   try { order = await api.get<any>(`/api/orders/${orderId}`); }
   catch (e: any) { return { ok: false, message: e?.message ?? 'Could not load the order.' }; }
 
-  const [business, settings, printers] = await Promise.all([
+  const [business, branding, settings, printers] = await Promise.all([
     api.get<any>('/api/business').catch(() => ({ name: 'Receipt' })),
+    // A313: a duplicate must carry the same logo the original did — same gate as the live sale.
+    api.get<{ logo_receipt: string | null; receipt_logo_enabled: boolean } | null>('/api/business/branding').catch(() => null),
     api.get<{ key: string; value: string }[]>('/api/business/settings').catch(() => [] as { key: string; value: string }[]),
     api.get<BranchPrinter[]>(`/api/printers?branch_id=${order.branch_id}`).catch(() => [] as BranchPrinter[]),
   ]);
@@ -74,6 +77,7 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
     branchName: order.branch_name ?? undefined,
     header:     map['receipt_header'] || undefined,
     footerText: map['receipt_footer'] || undefined,
+    logoRaster: branding?.receipt_logo_enabled && branding.logo_receipt ? monoRasterFromString(branding.logo_receipt) : null,
   });
 
   try {

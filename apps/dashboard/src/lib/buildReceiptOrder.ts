@@ -34,6 +34,7 @@ export interface ReceiptBusinessConfig {
   branchName?: string;    // A255: printed under the business name
   header?: string;        // A255: owner receipt_header (address/tagline), one line per line
   footerCredit?: string;  // A255: "Powered by SwiftPOS"
+  logoRaster?: import('./escposRenderer').MonoRaster;  // A313: client logo, receipts only (A310)
   currencyCode: string;   // shared/printing renders the PAY line as `<currencyCode> <total>`
   kraPin?: string;
   telephone?: string;
@@ -105,9 +106,12 @@ export function buildReceiptBusinessConfig(
   b: Business,
   footerMessage?: string,
   ctlRate = 0,
-  extra: { branchName?: string; header?: string; footerText?: string } = {},
+  extra: { branchName?: string; header?: string; footerText?: string;
+           /** A313: already resolved by the caller (toggle ON + decodable raster) — the builder never decides. */
+           logoRaster?: import('./escposRenderer').MonoRaster | null } = {},
 ): ReceiptBusinessConfig {
   return {
+    logoRaster:      extra.logoRaster ?? undefined,
     name:            b.name,
     branchName:      extra.branchName || undefined,
     header:          extra.header || undefined,          // A255: owner address/tagline block

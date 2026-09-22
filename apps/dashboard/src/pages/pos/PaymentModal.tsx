@@ -1,3 +1,4 @@
+import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { generateOrderNumber } from '../../lib/cart';
@@ -45,6 +46,7 @@ interface Props {
   branchId: string;
   branchName?: string;
   receiptHeader?: string;
+  receiptLogo?: MonoRaster | null;   // A313
   receiptFooter?: string;
   orderType?: OrderType;
   tableNumber?: string;
@@ -84,7 +86,7 @@ function fmt(n: number) {
 }
 
 export default function PaymentModal({
-  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptFooter,
+  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId,
@@ -447,7 +449,7 @@ export default function PaymentModal({
         tableNumber,
       });
       const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
-        { branchName, header: receiptHeader, footerText: receiptFooter });
+        { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo });
       const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
       const copies = printerSettings.copies ?? 1;
       for (let i = 0; i < copies; i++) {

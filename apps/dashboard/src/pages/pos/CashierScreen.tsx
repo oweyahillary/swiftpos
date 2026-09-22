@@ -180,6 +180,7 @@ export default function CashierScreen() {
     branchPrinters,
     comboItems,
     kitchenExclusions,
+    receiptLogo,
     receiptHeader,
     receiptFooter,
     businessMode:  posDataMode,
@@ -726,6 +727,7 @@ export default function CashierScreen() {
         categories,
         branchName: session?.branchName,
         receiptHeader, receiptFooter,
+        receiptLogo,
         kinds: ['receipt'],            // A253: Print Bill is a customer proforma, not the kitchen fire
       });
       if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
@@ -2009,6 +2011,7 @@ export default function CashierScreen() {
           branchId={session.branchId}
           branchName={session.branchName}
           receiptHeader={receiptHeader}
+          receiptLogo={receiptLogo}
           receiptFooter={receiptFooter}
           orderType={getOrderType()}
           tableNumber={activeKey && openOrders[activeKey]?.tableName ? openOrders[activeKey].tableName : undefined}

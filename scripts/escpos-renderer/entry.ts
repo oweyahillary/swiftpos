@@ -73,3 +73,8 @@ export function renderShiftReportEscPos(data, paperWidthMm) {
 }
 
 export { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen };
+
+// A313: the receipt-logo raster helpers, so the web Branding page thresholds with the SAME
+// rule the till uses (shared/printing raster.ts) and previews the SAME bytes it will store.
+export { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, monoRasterToAscii,
+         RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT } from '../../shared/printing/src/raster';

@@ -45,3 +45,13 @@ export interface CategoryRouting { byCategory: Record<string, string[]>; kitchen
 export function idsByKind(stations: any[]): StationIds;
 export function stationsForCategory(categoryId: string | null | undefined, ids: StationIds, routing: CategoryRouting): string[];
 export function toUnits(line: any, ids: StationIds, lineStationIds: string[], routing: CategoryRouting): any[];
+
+// A313: receipt-logo raster (shared/printing raster.ts, bundled).
+export interface MonoRaster { width: number; height: number; bytes: Uint8Array }
+export const RECEIPT_LOGO_MAX_WIDTH: number;
+export const RECEIPT_LOGO_MAX_HEIGHT: number;
+export function monoRasterFromRGBA(rgba: ArrayLike<number>, width: number, height: number,
+  opts?: { threshold?: number; maxWidth?: number; maxHeight?: number }): MonoRaster;
+export function monoRasterToString(r: MonoRaster): string;
+export function monoRasterFromString(s: string | null | undefined): MonoRaster | null;
+export function monoRasterToAscii(r: MonoRaster, black?: string, white?: string): string[];

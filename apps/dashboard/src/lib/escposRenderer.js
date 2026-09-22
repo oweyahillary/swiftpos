@@ -28,6 +28,10 @@ var DocBuilder = class {
     for (let i = 0; i < n; i++) this.line("");
     return this;
   }
+  image(raster, align = "center") {
+    this.blocks.push({ kind: "image", raster, align });
+    return this;
+  }
   feed(lines) {
     this.blocks.push({ kind: "feed", lines });
     return this;
@@ -309,6 +313,7 @@ function renderReceipt(ctx) {
     d.line("BILL - NOT A RECEIPT", { align: "center", size: "tall", bold: true });
     d.line(rule(cols));
   }
+  if (business.logoRaster) d.image(business.logoRaster, "center");
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
   if (business.header) {
@@ -493,6 +498,91 @@ function renderShiftReport(r, paperWidthMm) {
   return d.build();
 }
 
+// shared/printing/src/raster.ts
+var RECEIPT_LOGO_MAX_WIDTH = 384;
+var PRINTER_MAX_DOTS = 576;
+var RECEIPT_LOGO_MAX_HEIGHT = 240;
+var DEFAULT_THRESHOLD = 128;
+var bytesPerRow = (width) => Math.ceil(width / 8);
+function monoRasterFromRGBA(rgba, width, height, opts = {}) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new Error(`raster: bad dimensions ${width}x${height}`);
+  }
+  if (rgba.length !== width * height * 4) {
+    throw new Error(`raster: expected ${width * height * 4} RGBA bytes for ${width}x${height}, got ${rgba.length}`);
+  }
+  const threshold = opts.threshold ?? DEFAULT_THRESHOLD;
+  const maxW = opts.maxWidth ?? RECEIPT_LOGO_MAX_WIDTH;
+  const maxH = opts.maxHeight ?? RECEIPT_LOGO_MAX_HEIGHT;
+  const lum = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < lum.length; i++, p += 4) {
+    const a = rgba[p + 3] / 255;
+    const r = rgba[p] * a + 255 * (1 - a);
+    const g = rgba[p + 1] * a + 255 * (1 - a);
+    const b = rgba[p + 2] * a + 255 * (1 - a);
+    lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+  const scale = Math.min(1, maxW / width, maxH / height);
+  const outW = Math.max(1, Math.floor(width * scale));
+  const outH = Math.max(1, Math.floor(height * scale));
+  const out = new Uint8Array(bytesPerRow(outW) * outH);
+  const stride = bytesPerRow(outW);
+  for (let y = 0; y < outH; y++) {
+    const y0 = Math.floor(y / scale), y1 = Math.max(y0 + 1, Math.floor((y + 1) / scale));
+    for (let x = 0; x < outW; x++) {
+      const x0 = Math.floor(x / scale), x1 = Math.max(x0 + 1, Math.floor((x + 1) / scale));
+      let sum = 0, n = 0;
+      for (let yy = y0; yy < y1 && yy < height; yy++) {
+        for (let xx = x0; xx < x1 && xx < width; xx++) {
+          sum += lum[yy * width + xx];
+          n++;
+        }
+      }
+      if ((n ? sum / n : 255) < threshold) out[y * stride + (x >> 3)] |= 128 >> (x & 7);
+    }
+  }
+  return { width: outW, height: outH, bytes: out };
+}
+var PREFIX = "mono1:";
+function monoRasterToString(r) {
+  assertRaster(r);
+  return `${PREFIX}${r.width}:${r.height}:${Buffer.from(r.bytes).toString("base64")}`;
+}
+function monoRasterFromString(s) {
+  if (!s || !s.startsWith(PREFIX)) return null;
+  const parts = s.slice(PREFIX.length).split(":");
+  if (parts.length !== 3) return null;
+  const width = Number(parts[0]), height = Number(parts[1]);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
+  if (width > PRINTER_MAX_DOTS) return null;
+  let bytes;
+  try {
+    bytes = new Uint8Array(Buffer.from(parts[2], "base64"));
+  } catch {
+    return null;
+  }
+  if (bytes.length !== bytesPerRow(width) * height) return null;
+  return { width, height, bytes };
+}
+function assertRaster(r) {
+  if (r.width <= 0 || r.width > PRINTER_MAX_DOTS || r.height <= 0) {
+    throw new Error(`raster: ${r.width}x${r.height} is outside what a printer accepts`);
+  }
+  if (r.bytes.length !== bytesPerRow(r.width) * r.height) {
+    throw new Error(`raster: ${r.bytes.length} bytes does not match ${r.width}x${r.height}`);
+  }
+}
+function monoRasterToAscii(r, black = "#", white = " ") {
+  const stride = bytesPerRow(r.width);
+  const rows = [];
+  for (let y = 0; y < r.height; y++) {
+    let row = "";
+    for (let x = 0; x < r.width; x++) row += r.bytes[y * stride + (x >> 3)] & 128 >> (x & 7) ? black : white;
+    rows.push(row);
+  }
+  return rows;
+}
+
 // shared/printing/src/escpos.ts
 var ESC = 27;
 var GS = 29;
@@ -546,6 +636,20 @@ function toEscPos(doc, opts = {}) {
         }
         text(b.text);
         push(10);
+        break;
+      }
+      case "image": {
+        const b = block;
+        const r = b.raster;
+        const rowBytes = bytesPerRow(r.width);
+        if (r.width <= 0 || r.width > PRINTER_MAX_DOTS || r.height <= 0 || r.height > 65535 || r.bytes.length !== rowBytes * r.height) break;
+        const a = ALIGN[b.align];
+        if (a !== curAlign) {
+          push(ESC, 97, a);
+          curAlign = a;
+        }
+        push(GS, 118, 48, 0, rowBytes & 255, rowBytes >> 8 & 255, r.height & 255, r.height >> 8 & 255);
+        for (let i = 0; i < r.bytes.length; i++) out.push(r.bytes[i]);
         break;
       }
       case "feed":
@@ -762,8 +866,14 @@ function renderShiftReportEscPos(data, paperWidthMm) {
   return toEscPos(renderShiftReport(data, paperWidthMm), { cut: true, feedBeforeCut: 3, openDrawer: false });
 }
 export {
+  RECEIPT_LOGO_MAX_HEIGHT,
+  RECEIPT_LOGO_MAX_WIDTH,
   idsByKind,
   isExcludedFromKitchen,
+  monoRasterFromRGBA,
+  monoRasterFromString,
+  monoRasterToAscii,
+  monoRasterToString,
   renderEscPos,
   renderReceiptEscPos,
   renderShiftReportEscPos,

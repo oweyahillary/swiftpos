@@ -13,6 +13,7 @@
  * on the bar/packer and its food on the grill — the thing line-level filtering
  * could not do. Owner kitchen-exclusions are stripped from kitchen-kind stations.
  */
+import type { MonoRaster } from './escposRenderer';
 import {
   renderStationEscPos, stationHasContent, toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen,
   type StationIds, type CategoryRouting,
@@ -56,6 +57,7 @@ export interface PrintRoutedArgs {
   footerMessage?: string;
   branchName?: string;
   receiptHeader?: string;
+  receiptLogo?: MonoRaster | null;   // A313
   receiptFooter?: string;
   /** Restrict to these station kinds (e.g. Send-to-Kitchen = kitchen+dispatch). */
   kinds?: Kind[];
@@ -137,7 +139,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
     kotCount: 0,
   } as any;
   const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0,
-    { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter });
+    { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter, logoRaster: a.receiptLogo });
 
   let printed = 0, failed = 0;
   for (const p of printers) {
