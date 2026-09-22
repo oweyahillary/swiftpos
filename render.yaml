@@ -60,6 +60,13 @@ services:
       - key: ETIMS_PROVIDER
         value: none
 
+      # middleware/auth.ts — A159 terminal write guard. Unset/false = DRY-RUN
+      # (logs "would block", never refuses). Flip to "true" only after the
+      # [terminal-write-guard] log lines are clean for a trading period; a
+      # premature flip 403s a till mid-service.
+      - key: TERMINAL_WRITE_ENFORCE
+        value: "false"
+
       # ── At-rest encryption (H9) ─────────────────────────────────────────────
       # AES-256-GCM key for eTIMS cmc_key and M-Pesa consumer_secret/passkey.
       # encryptSecret() fails closed without it. Generate: openssl rand -hex 32

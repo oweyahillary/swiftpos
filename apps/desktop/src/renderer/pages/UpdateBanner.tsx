@@ -56,7 +56,8 @@ export default function UpdateBanner({ branchId }: Props) {
         setMsg('That PIN is not a manager.');
         return;
       }
-      await posApi.update.installNow();   // visible installer progress + relaunch
+      const r = await posApi.update.installNow();   // visible installer progress + relaunch
+      if (!r.ok) { setMsg(r.reason === 'manager_required' ? 'A manager must be signed in to restart.' : `Cannot install: ${r.reason ?? 'unknown'}`); return; }
     } catch {
       setMsg('PIN not recognised.');
     } finally {

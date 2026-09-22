@@ -51,7 +51,8 @@ function set(patch: Partial<UpdateStatus>): void {
 /**
  * Apply a downloaded update NOW, with the NSIS progress visible and a relaunch after. Only
  * meaningful once state === 'downloaded'; a no-op otherwise so a stray call can never
- * half-restart a trading till. The manager/tech gate is enforced at the call site.
+ * half-restart a trading till. The manager gate is enforced in the IPC handler (isManager())
+ * AND at the call site (banner PIN) — see ipcHandlers 'update:installNow'.
  */
 export function installUpdateNow(): { ok: boolean; reason?: string } {
   if (!app.isPackaged) return { ok: false, reason: 'not packaged' };

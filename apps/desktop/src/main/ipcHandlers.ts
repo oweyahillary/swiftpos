@@ -1158,7 +1158,14 @@ export function registerIpcHandlers() {
   // Apply a downloaded update now, NSIS progress visible + relaunch. Gated to a manager/tech
   // PIN at the call site (the banner verifies before invoking); a no-op unless an update is
   // actually downloaded, so it can never half-restart a trading till.
-  handle('update:installNow', async () => installUpdateNow());
+  handle('update:installNow', async () => {
+    // A306 (hardened 2026-09-22): the banner verifies a manager PIN before invoking this, but a
+    // renderer-only gate is bypassable by any code that can reach the bridge. Refuse in MAIN
+    // unless the CURRENT staff session is a manager — the same isManager() gate closeDay uses.
+    // The banner's verifyPin signs the manager in first, so the honest path still passes.
+    if (!isManager()) return { ok: false, reason: 'manager_required' };
+    return installUpdateNow();
+  });
 
   handle('config:isConfigured', async () => {
     return isConfigured();

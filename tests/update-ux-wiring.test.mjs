@@ -45,6 +45,19 @@ ok('preload bridges getStatus/installNow/onStatus', /getStatus:\s*\(\)\s*=>\s*ip
 ok('onStatus returns an unsubscribe', /removeListener\('update:status'/.test(pre));
 ok('schemas: both update channels present', /'update:getStatus'/.test(sch) && /'update:installNow'/.test(sch));
 
+// 2026-09-22 hardening: the gate must exist in MAIN, not only in the banner. The handler body
+// must consult isManager() BEFORE installUpdateNow() — a renderer-only gate is bypassable.
+{
+  const m = /handle\('update:installNow',\s*async\s*\(\)\s*=>\s*\{([\s\S]*?)\n\s*\}\);/.exec(ih);
+  // Strip comments first: the handler's own comment names isManager(), and an index into prose
+  // would pass with the call anywhere (or nowhere) — the A171 / rule-24 class.
+  const body = (m ? m[1] : '').replace(/\/\/[^\n]*/g, '');
+  const gate = body.indexOf('isManager()'), install = body.indexOf('installUpdateNow()');
+  ok('main: update:installNow refuses unless isManager()', gate >= 0 && /manager_required/.test(body));
+  ok('main: the gate runs BEFORE installUpdateNow()', gate >= 0 && install > gate);
+  ok('banner surfaces a main-side refusal', /manager_required/.test(banner));
+}
+
 ok('banner shows on downloaded', /state\s*===\s*'downloaded'/.test(banner));
 ok('restart gated behind a manager PIN', /verifyPin\(/.test(banner) && /MANAGER_ROLES/.test(banner));
 ok('restart calls installNow', /posApi\.update\.installNow\(/.test(banner));
