@@ -30,6 +30,24 @@ move A308 and A278 from FIX BUILT to CLOSED. Nothing here needs a printer except
 1. On the web, clear the logo and reset the accent to SwiftPOS Blue. Save.
    PASS = within 30 s the till shows the SwiftPOS mark and blue; layout stays two-column.
 
-## E. What this checklist does NOT cover (owed builds, not owed checks)
-- Receipt logo (SCOPE §10 item 4) — not built; no check possible yet.
-- Receipt preview on the web page (addendum §C) — not built.
+## E. Paper (A310) — DONE 2026-09-22
+`receipt-with-logo-80.bin` printed perfectly on the XP-80 via RAW spool. Nothing further owed here.
+
+## F. Receipt logo end-to-end (closes A311, A312, A313 → A295)
+Needs: migration 105 on prod, cloud deployed, dashboard deployed, till on ≥ 0.6.2.
+1. **Browser.** Settings › Business › Branding. Upload the client's real logo. PASS = the *Receipt preview*
+   box shows a black-and-white version of it above the business name. Tick **Print logo on customer
+   receipts**. Save. Reload the page. PASS = the tick and the preview are both still there.
+2. **Till pull.** On a till, wait 30 s (no restart). Tech feed › Branding. PASS = the same mono preview and
+   the tick show on the till; tech console `SELECT receipt_logo_enabled, length(logo_receipt) FROM branding`
+   returns `1` and a number in the low thousands.
+3. **Real sale.** Ring a small sale and pay. PASS = the receipt has the logo above the business name, the
+   rest identical to yesterday's receipts. The KITCHEN and DISPATCH tickets have NO logo.
+4. **Toggle off.** In the browser untick the box, Save. Wait 30 s. Ring a sale. PASS = no logo, receipt
+   identical to the pre-branding form. The logo is still on the lock screen.
+5. **Web POS.** With the toggle back on, ring a sale from the web POS through the Go bridge. PASS = logo
+   printed. Reprint the same order from the orders list. PASS = logo printed again.
+6. **Bad-logo case.** Upload a gradient/photographic logo. PASS = the receipt preview looks washed-out or
+   wrong *on screen* — the client sees it before any paper is spent. Leave the toggle off; upload a solid
+   mark instead.
+Record what each printed (rule 7). A295 closes when F1–F5 pass on the client's own hardware.
