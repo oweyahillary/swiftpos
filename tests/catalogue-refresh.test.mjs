@@ -7,7 +7,7 @@
  * that the running POS never re-read them. This guards the new notify→reload path end to end.
  *
  * MUTATIONS TO CONFIRM BITE:
- *   - drop the webContents.send('catalogue:changed') in index.ts → "main notifies on pull" fails
+ *   - drop the webContents.send('catalogue:changed') in index.ts → "main forwards…to every window" fails
  *   - remove pos.onCatalogueChanged from preload                 → "preload bridges the push" fails
  *   - remove the POSPage subscription                            → "POS subscribes + reloads" fails
  */
@@ -25,8 +25,13 @@ const pre  = r('apps/desktop/src/main/preload.ts');
 const api  = r('apps/desktop/src/renderer/lib/posApi.ts');
 const page = r('apps/desktop/src/renderer/pages/POSPage.tsx');
 
-ok('main notifies the renderer only when a pull actually landed',
-   /if \(r\.pulled\)[^\n]*webContents\.send\('catalogue:changed'\)/.test(idx) && /pullIfCatalogueChanged\(\)/.test(idx));
+// A321: this pinned `if (r.pulled) …getAllWindows()[0]…send` on the 20-s check — the defect itself:
+// only one of eight pull paths signalled, and only to the first window. The signal now comes from the
+// engine on ANY landed pull (proven by execution in apps/desktop/test/catalogue-refresh-signal.test.mjs,
+// which also proves a FAILED pull does not signal); here, only that main forwards it to every window.
+ok('main forwards the engine\'s "pull landed" signal to every window',
+   /onCataloguePulled\(\(\) => \{/.test(idx) && /for \(const w of BrowserWindow\.getAllWindows\(\)\)/.test(idx)
+   && /webContents\.send\('catalogue:changed'\)/.test(idx) && /pullIfCatalogueChanged\(\)/.test(idx));
 ok('preload bridges the push (on + unsubscribe)',
    /onCatalogueChanged:/.test(pre) && /ipcRenderer\.on\('catalogue:changed'/.test(pre) && /removeListener\('catalogue:changed'/.test(pre));
 ok('posApi types onCatalogueChanged', /onCatalogueChanged:\s*\(cb:\s*\(\)\s*=>\s*void\)\s*=>\s*\(\)\s*=>\s*void/.test(api));

@@ -571,6 +571,13 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/syncEngine-failures.test.mjs
 
+      # A321 — any successful catalogue pull (10-min floor, startup, manual, post-edit, 20-s check)
+      # signals the open screens to reload; the 20-s freshness check refreshes on 401 and records
+      # other failures instead of dropping them. Real compiled syncEngine, shimmed deps, URL-routed fetch.
+      - name: Desktop catalogue refresh signal
+        working-directory: apps/desktop
+        run: node --no-warnings test/catalogue-refresh-signal.test.mjs
+
       # A161 — the node's downstream reference snapshot (A24). Pure reshape of
       # local rows into the cloud shapes pullCatalogue consumes; the tri-state
       # products.is_kitchen and the users->roles mapping corrupt a catalogue

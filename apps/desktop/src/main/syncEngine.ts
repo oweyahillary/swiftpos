@@ -434,6 +434,12 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
       const refreshed = await refreshAccessToken();
       if (refreshed) pulled = await pullCatalogue();
     }
+    // A321: tell the open screens. Every pull path — the 10-min floor, startup, enrol, branch change,
+    // manual sync, post-edit sync and the 20-s freshness check — goes through here, so this is the
+    // ONE place the signal is raised. It used to be raised only by the 20-s check (index.ts), so a
+    // change brought in by any other path sat in the local DB until a screen was re-opened (owner,
+    // 2026-09-23: "the changes reflect but I have to login first then log out").
+    if (pulled) notifyCataloguePulled();
     // A114: refresh the branch reveal code + tech public key on every online
     // sync, not just at owner login (which the till UI can't reach). This is what
     // lets a cashier-only till pick up a freshly-generated/backfilled reveal code.
@@ -518,6 +524,19 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
 // stays as the safety net (and covers the tables without an updated_at trigger).
 // Fail-soft throughout: any error just skips this tick — the floor still runs.
 let _lastCatalogueVersion: string | null = null;
+// A321: who to tell when a pull lands. index.ts registers one listener that messages every window;
+// kept here (not an Electron import) so the engine stays testable under node.
+const _cataloguePulledListeners = new Set<() => void>();
+export function onCataloguePulled(cb: () => void): () => void {
+  _cataloguePulledListeners.add(cb);
+  return () => { _cataloguePulledListeners.delete(cb); };
+}
+function notifyCataloguePulled(): void {
+  for (const cb of _cataloguePulledListeners) {
+    try { cb(); } catch (e: any) { logLine('sync', `catalogue-pulled listener threw: ${e?.message ?? e}`); }
+  }
+}
+
 export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pulled: boolean }> {
   if (!_accessToken || !_serverUrl) return { changed: false, pulled: false };
   if (!isOnline()) return { changed: false, pulled: false };
@@ -525,12 +544,26 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
   const branch = getDeviceConfig()?.branch_id ?? null;
   const url = `${_serverUrl}/api/pos/catalogue-version${branch ? `?branch_id=${encodeURIComponent(branch)}` : ''}`;
 
+  // A321: this check used to treat ANY non-OK answer as "nothing changed" and never reached syncAll's
+  // token refresh — so an expired device token (15-min lifetime) made the 20-s path fail silently and
+  // changes only arrived via the 10-min floor. Now: renew ahead of expiry exactly as syncAll does,
+  // retry once after a refresh on 401, and record any other failure where the tech screen's sync
+  // status already shows inbound failures, instead of dropping it.
   let version: string | null = null;
   try {
-    const res = await syncFetch(url, { headers: authHeaders() });
-    if (!res.ok) return { changed: false, pulled: false }; // 401 etc. — floor loop handles refresh
+    await refreshDeviceTokenIfExpiring();
+    let res = await syncFetch(url, { headers: authHeaders() });
+    if (res.status === 401 && _refreshToken && await refreshAccessToken()) {
+      res = await syncFetch(url, { headers: authHeaders() });
+    }
+    if (!res.ok) {
+      noteInboundFailure('version', `catalogue-version check failed: HTTP ${res.status} — changes will arrive with the 10-minute sync instead`);
+      return { changed: false, pulled: false };
+    }
     version = ((await res.json()) as any)?.version ?? null;
-  } catch {
+    clearInboundFailure('version');
+  } catch (e: any) {
+    noteInboundFailure('version', `catalogue-version check failed: ${e?.message ?? 'unreachable'} — changes will arrive with the 10-minute sync instead`);
     return { changed: false, pulled: false };
   }
   if (!version || version === _lastCatalogueVersion) return { changed: false, pulled: false };
@@ -538,6 +571,7 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
   // Something changed (or first observation). syncAll self-guards against a
   // concurrent/offline run; only adopt the new version once a pull actually lands,
   // so a skipped run is retried on the next tick rather than silently swallowed.
+  // (The screens are told by syncAll itself — A321.)
   const r = await syncAll();
   if (r.pulled) _lastCatalogueVersion = version;
   return { changed: true, pulled: r.pulled };
@@ -661,7 +695,7 @@ const _inbound = new Map<string, { message: string; since: string }>();
 // Order matters when both are set. A dead token explains a dead catalogue pull;
 // a dead catalogue pull does not explain a dead token. Report the cause, not the
 // symptom.
-const SCOPE_PRIORITY = ['auth', 'sync'];
+const SCOPE_PRIORITY = ['auth', 'sync', 'version'];   // A321: the 20-s freshness check reports last — a dead token or pull explains it
 
 function noteInboundFailure(scope: string, message: string): void {
   const prev = _inbound.get(scope);

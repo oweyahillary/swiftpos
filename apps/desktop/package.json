@@ -38,6 +38,7 @@
     "test:held:electron": "node test/run-under-electron.mjs test/heldOrders.test.mjs",
     "test:log": "node test/logFile.test.mjs",
     "test:sync": "node test/syncEngine-failures.test.mjs",
+    "test:refresh": "node test/catalogue-refresh-signal.test.mjs",
     "test:refbundle": "node test/node-reference-bundle.test.mjs",
     "test:refunpack": "node test/node-reference-unpack.test.mjs",
     "test:peerrelay": "node test/peer-relay.test.mjs",

@@ -43,14 +43,22 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
   // when that slice ships — nothing else here changes.
   const [accentHex, setAccentHex] = useState<string | null>(null);
   const [logoDataUri, setLogoDataUri] = useState<string | null>(null);
+  // A321: read on mount AND whenever a background pull lands. This read once and never listened, so a
+  // till waiting on the PIN screen kept the old colour/logo until someone signed in and out (VERIFY A2;
+  // owner 2026-09-23). A cleared branding (null) now returns the screen to the default instead of
+  // leaving the stale look; a read ERROR keeps what is shown.
   useEffect(() => {
     let cancelled = false;
-    posApi.branding.get().then((b) => {
-      if (cancelled || !b) return;
-      setAccentHex(b.accentHex ?? null);
-      setLogoDataUri(b.logoPng ?? null);
-    }).catch(() => { /* lock screen renders the SwiftPOS default on any read error */ });
-    return () => { cancelled = true; };
+    const load = () => {
+      posApi.branding.get().then((b) => {
+        if (cancelled) return;
+        setAccentHex(b?.accentHex ?? null);
+        setLogoDataUri(b?.logoPng ?? null);
+      }).catch(() => { /* keep what is on screen; first paint falls back to the SwiftPOS default */ });
+    };
+    load();
+    const unsubscribe = posApi.pos.onCatalogueChanged(load);
+    return () => { cancelled = true; unsubscribe(); };
   }, []);
   const brand = resolveBranding(accentHex, LOCK_SURFACE);
 

@@ -6,7 +6,7 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
@@ -276,14 +276,16 @@ app.whenReady().then(() => {
   // waiting for the 10-min floor above. pullIfCatalogueChanged() only pulls when the
   // server's catalogue version actually moved, and self-guards on offline/in-flight.
   setInterval(() => {
-    pullIfCatalogueChanged()
-      .then((r) => {
-        // A278: a background pull just applied a web edit — tell the running POS to reload
-        // the catalogue from the local DB, so the change shows without a restart.
-        if (r.pulled) BrowserWindow.getAllWindows()[0]?.webContents.send('catalogue:changed');
-      })
-      .catch(console.error);
+    pullIfCatalogueChanged().catch(console.error);
   }, 20_000);
+  // A321: ANY successful pull (this check, the 10-min floor, startup, manual sync, post-edit sync…)
+  // tells every open window to reload from the local DB. This used to be sent only by the check
+  // above, and only to getAllWindows()[0] — changes from every other path waited for a sign-in/out.
+  onCataloguePulled(() => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('catalogue:changed');
+    }
+  });
 
   // Central day close (Phase 4) — the peer side. Every 15s: tell the node how
   // this till is doing, collect any instruction, execute it, ack the outcome.
