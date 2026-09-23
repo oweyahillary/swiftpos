@@ -27,11 +27,18 @@ const CHECK = process.argv.includes('--check');
 // and a later Node may refuse it. Every argument here is ours — no user input reaches this line.
 // Linux/macOS (CI) keep the direct, shell-free spawn.
 const WIN = process.platform === 'win32';
+// The command NAME stays unquoted; only the arguments are quoted. npx.cmd finds npm via its own folder
+// (%~dp0), and cmd.exe resolves %~dp0 to the CURRENT folder when a batch file is invoked by a QUOTED
+// name found on PATH — the -n builder did that and died with "Cannot find module
+// C:\swiftpos\pos\node_modules\npm\bin\npx-cli.js" (owner, 2026-09-23). This is exactly the line Node
+// built for -m (`npx.cmd "--yes" …`), which ran on the owner's box; -n only changes how it is handed
+// over (one string, so Node 24 does not warn DEP0190).
+const winCommandLine = (args) => `npx.cmd ${args.map((a) => `"${a}"`).join(' ')}`;
 const build = (outfile) => {
   const args = ['--yes', ESBUILD, 'scripts/escpos-renderer/entry.ts',
     '--bundle', '--format=esm', '--platform=browser', '--log-level=warning',
     '--inject:scripts/escpos-renderer/buffer-shim.js', `--outfile=${outfile}`];
-  if (WIN) execSync(['npx.cmd', ...args].map((a) => `"${a}"`).join(' '), { stdio: 'inherit' });
+  if (WIN) execSync(winCommandLine(args), { stdio: 'inherit' });
   else execFileSync('npx', args, { stdio: 'inherit' });
 };
 
