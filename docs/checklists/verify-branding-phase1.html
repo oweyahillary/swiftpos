@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS — Branding Phase 1 retest</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:20px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 320px; min-width:240px}
+  .lbl small{display:block; color:var(--muted); font-size:12px; margin-top:2px}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .rec{display:block; font-size:12px; color:var(--accent); margin-top:4px}
+  .chg{display:inline-block; font-size:10.5px; font-weight:600; color:var(--accent); border:1px solid var(--accent);
+    border-radius:999px; padding:0 6px; margin-right:6px; vertical-align:1px}
+  .lbl b{font-weight:600}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; background:var(--nabg);
+    border:1px solid var(--line); border-radius:4px; padding:0 4px}
+  .note{flex:1 1 100%; }
+  .note input{margin-top:6px}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:220px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS — Branding Phase 1 · retest</h1>
+  <p class="sub">One till + thermal printer + the web dashboard · ~40 min · progress saves in this browser · “Generate results” then “Copy”.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-23"></div>
+      <div><label>Till</label><input type="text" id="m_till" placeholder="e.g. mamangina"></div>
+      <div><label>Desktop version</label><input type="text" id="m_desktop" placeholder="0.6.2"></div>
+      <div><label>Cloud + dashboard deployed from</label><input type="text" id="m_deploy" placeholder="67a5480 or later — ask the owner"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start:</b> the owner must have deployed the <b>cloud AND the dashboard</b> from
+  <code>67a5480</code> or later. The till stays on <b>0.6.2</b>. First run (2026-09-23) failed A2, A5, B1 — those were
+  fixed the same day. Items marked <span class="chg">changed</span> expect something different, or ask you to record
+  something extra. Write what the screen or paper actually showed; a <b>Fail needs a note</b>.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// Content = docs/VERIFY-BRANDING-PHASE1.md (retest, delivery -r). Output format = the first run's report.
+const DATA = [
+ [
+  "A. Web Branding page → till",
+  "closes A308",
+  [
+   [
+    "A1",
+    "Dashboard → Settings → Business → Branding. Pick <b>Teal</b>, upload a PNG logo under 250 KB. The lock-screen preview updates <i>before</i> saving. Then <b>Save</b> → the page says <b>“Saved.”</b> and NO red text appears under the buttons.",
+    "Did “Saved.” appear? (yes/no — first run showed red logo_receipt text: A316)",
+    true
+   ],
+   [
+    "A2",
+    "On the till, sign the cashier out to the PIN screen. Wait up to 30 s — do NOT restart. Divider, active PIN dot and Enter turn <b>teal</b>; the logo shows on its chip; “powered by SwiftPOS” still bottom-left.",
+    "",
+    false
+   ],
+   [
+    "A3",
+    "On the web, upload a <b>300 KB</b> PNG → rejected with a size message, nothing saved.",
+    "",
+    false
+   ],
+   [
+    "A4",
+    "On the web, upload an <b>SVG</b> → rejected.",
+    "",
+    false
+   ],
+   [
+    "A5",
+    "Custom hex <code>#F5B800</code> → page shows <b>“Legible ✓”</b> (no orange warning), preview Enter is yellow with <b>black</b> text. Save → till shows the same yellow with black Enter. Then <code>#1e293b</code> → orange “isn’t legible” warning, preview stays teal. Put the accent back to Teal and Save.",
+    "Till showed for #F5B800: ___ · #1e293b warning shown? ___",
+    true
+   ]
+  ]
+ ],
+ [
+  "B. Propagation without restart",
+  "closes A278",
+  [
+   [
+    "B1",
+    "On the web, open a product whose <b>description is empty</b> with its <b>Edit</b> button (not by clicking the price), change the price, <b>Save</b> → saves with no red text. Keep the till on the POS grid → the new price shows within ~20 s, no restart.",
+    "Seconds: __ · Edit form used? yes/no",
+    true
+   ],
+   [
+    "B2",
+    "Pull the till’s network cable, wait 60 s, reconnect → the till is still trading and the next branding/price change lands after reconnect.",
+    "",
+    false
+   ]
+  ]
+ ],
+ [
+  "C. Offline read",
+  "regression on A301–A304",
+  [
+   [
+    "C1",
+    "With branding set, pull the cable and restart the till → the branded PIN screen renders from the local copy, no error, no SwiftPOS fallback.",
+    "",
+    false
+   ]
+  ]
+ ],
+ [
+  "D. Un-branded business (fallback)",
+  "",
+  [
+   [
+    "D1",
+    "On the web, clear the logo and reset the accent to the default. Save → within 30 s the till shows the SwiftPOS mark and default colour; layout stays two-column.",
+    "",
+    false
+   ]
+  ]
+ ],
+ [
+  "F. Receipt logo end-to-end",
+  "closes A311, A312, A313 → A295",
+  [
+   [
+    "F1",
+    "Branding page: upload the client’s real logo → the <b>Receipt preview</b> shows a black-and-white version above the business name. Tick <b>Print logo on customer receipts</b>, Save, reload → tick and preview are still there.",
+    "",
+    false
+   ],
+   [
+    "F2",
+    "On a till, wait 30 s (no restart). Tech feed › Branding → same mono preview and the tick. Tech console <code>SELECT receipt_logo_enabled, length(logo_receipt) FROM branding</code> → <code>1</code> and a number in the low thousands.",
+    "",
+    false
+   ],
+   [
+    "F3",
+    "Ring a small sale and pay → the receipt has the logo above the business name, the rest as before. KITCHEN and DISPATCH tickets have <b>no</b> logo.",
+    "",
+    false
+   ],
+   [
+    "F4",
+    "Untick the box on the web, Save, wait 30 s, ring a sale → no logo on the receipt. The logo is still on the lock screen.",
+    "",
+    false
+   ],
+   [
+    "F5",
+    "Tick it back on. Ring a sale from the <b>web POS</b> → logo printed; the thank-you line prints <b>once</b>. Reprint the same order from the orders list → logo printed again.",
+    "",
+    true
+   ],
+   [
+    "F6",
+    "Upload a gradient/photo logo → the receipt preview looks washed-out or wrong <i>on screen</i> (the client sees it before paper is spent). Leave the toggle off; put the solid logo back.",
+    "",
+    false
+   ]
+  ]
+ ],
+ [
+  "G. Other fixes of 2026-09-23",
+  "new — A318 · A317 · A320 · A315",
+  [
+   [
+    "G1",
+    "<b>Edit/Delete on every row.</b> Dashboard → Menu → filter <b>Family Meals</b>, same window size that hid Edit before → <b>Edit</b> and <b>Delete</b> at the right end of EVERY row; Edit opens the product. Repeat with <b>Burgers</b>. (Cost/Status may slide under the buttons — expected.)",
+    "",
+    true
+   ],
+   [
+    "G2",
+    "<b>Empty description saves.</b> Web: Edit a product with an empty description, change only the price, Save → saves. Till: Manager screen › <b>Menu</b> tab, edit a product, clear its description, Save → saves.",
+    "Web: ___ · Till: ___",
+    true
+   ],
+   [
+    "G3",
+    "<b>A blank name is refused.</b> Web: Edit a product, replace the name with spaces only, Save → refused with <b>“name: Cannot be empty”</b>; the product keeps its name. Cancel.",
+    "",
+    true
+   ],
+   [
+    "G4",
+    "<b>One thank-you (web).</b> On a business with a blank Receipt footer, ring a web-POS sale and print → “Thank you for your business!” <b>once</b>, then “TAX RECEIPT UPON REQUEST” (if VAT applies), then “Powered by SwiftPOS” last.",
+    "",
+    true
+   ],
+   [
+    "G5",
+    "<b>Paper (owner).</b> Send <code>shared/printing/out/receipt-80.bin</code> to the XP-80 by the same RAW path as the logo test → one thank-you, the TAX line, the credit last.",
+    "",
+    true
+   ]
+  ]
+ ]
+];
+const KEY = "swiftpos-verify-branding-phase1-retest";
+const META = ["tester","date","till","desktop","deploy"];
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, ids, items] of DATA){
+    const h = document.createElement("h2");
+    h.innerHTML = escapeHtml(title) + (ids? '<span class="ids">'+escapeHtml(ids)+'</span>':'');
+    list.appendChild(h);
+    const card = document.createElement("div"); card.className="card";
+    for(const [id,label,rec,changed] of items){
+      const row = document.createElement("div"); row.className="row";
+      const lbl = document.createElement("div"); lbl.className="lbl";
+      lbl.innerHTML = '<b>'+id+'</b> · ' + (changed?'<span class="chg">changed</span>':'') + label
+        + (rec? '<span class="rec">Record: '+escapeHtml(rec)+'</span>' : '');
+      const seg = document.createElement("div"); seg.className="seg";
+      for(const v of ["pass","fail","skip"]){
+        const b = document.createElement("button");
+        b.dataset.v=v; b.textContent = v[0].toUpperCase()+v.slice(1);
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = document.createElement("div"); noteWrap.className="note";
+      if(!rec && state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      note.placeholder = state.marks[id]==="fail" ? "What happened? Exact message / what the screen showed (required)"
+        : rec ? rec : "note (optional)";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of META){ const el=document.getElementById("m_"+k); if(el) el.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0; const failed=[], missing=[];
+  for(const [,,items] of DATA) for(const [id,,rec] of items){
+    total++; const m=state.marks[id];
+    if(m==="pass")p++; else if(m==="fail"){f++; failed.push(id); if(!(state.notes[id]||"").trim()) missing.push(id);}
+    else if(m==="skip")s++; else blank++;
+  }
+  return {p,f,s,blank,total,failed,missing};
+}
+function updateCount(){
+  const t=tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${t.p} pass</b> · <b class="f">${t.f} fail</b> · ${t.s} skip · ${t.p+t.f+t.s}/${t.total} done`
+    + (t.missing.length? ` · <b class="f">note needed: ${t.missing.join(", ")}</b>`:"");
+}
+
+function generate(){
+  const t=tally(), m=state.meta, L=[];
+  L.push("VERIFY-BRANDING-PHASE1 — results (retest)");
+  L.push(`By: ${m.tester||"-"} · Date: ${m.date||"-"} · Till: ${m.till||"-"} · Desktop: ${m.desktop||"-"} · Cloud/dashboard from: ${m.deploy||"-"}`);
+  L.push("");
+  for(const [title,ids,items] of DATA){
+    L.push(`## ${title}${ids?" ("+ids+")":""}`);
+    for(const [id] of items){
+      const v=state.marks[id]; const tag = v==="pass"?"PASS":v==="fail"?"FAIL":v==="skip"?"SKIP":"not run";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}`);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} PASS · ${t.f} FAIL · ${t.s} SKIP · ${t.blank} not run`);
+  L.push(t.failed.length? `Failed: ${t.failed.join(", ")}` : (t.blank? "Failed: none so far" : "Failed: none"));
+  document.getElementById("out").value = L.join("\n");
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(ok?"Copied to clipboard":"Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1600); }
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+for(const k of META){ const el=document.getElementById("m_"+k);
+  el.addEventListener("input", ()=>{ state.meta[k]=el.value; save(); }); }
+document.getElementById("gen").onclick = generate;
+document.getElementById("copy").onclick = copyOut;
+document.getElementById("reset").onclick = ()=>{
+  if(!confirm("Clear all marks and notes?")) return;
+  state.meta={}; state.marks={}; state.notes={};
+  try{ localStorage.removeItem(KEY);}catch(e){}
+  document.getElementById("out").value=""; render();
+};
+load(); render();
+</script>
+</body>
+</html>
