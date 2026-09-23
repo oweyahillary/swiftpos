@@ -45,3 +45,21 @@ till by itself, so A278 **stays open**. Diagnosed the same day from source and o
 till's local DB (a PIN sign-in only pulls on a branch change, so the price was already there); only ONE of the till's eight
 pull paths tells the open screen to reload, the 20-s check fails silently on any error, and the lock screen never listens.
 Fix planned for desktop 0.6.3 — held at the owner's request until testing finished.
+
+## §0.6.3 — the same day, after desktop v0.6.3 (A321 + A315 till half)
+Session: **Eugene**, till **mamangina**, version shown **0.6.3** (tag `v0.6.3` on `648aaa5`; Release desktop #19). Results as
+returned:
+```
+0.6.3 test — By: EUGENE · Date: TODAY · Till: mamangina · Version shown: 0.6.3
+A2 - PASS it refreshed
+B1 - PASS, price synced
+A5 - PASS
+A315 - PASS
+A321 - PASS
+```
+**Closed on target:** A321 (open screens refresh on every pull; lock screen listens; sync status clean) · A278 (web change
+reaches the running till with no restart or sign-in/out) · A308 (web Branding page → till, all checks) · A319 (`#F5B800`
+accepted with black text, web and till agree) · A315 (till receipt + test print: one thank-you; web + paper verified earlier)
+· **A295 — branding Phase 1 — every §10 item verified on the client's till.**
+Not recorded: the refresh times in seconds, and the §6 regression line (normal sale/ticket/sign-in). Nothing reported failing.
+The test print still carries a reference business's name — known, A322, next.
