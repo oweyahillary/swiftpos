@@ -76,9 +76,15 @@ export const CreateOrderSchema = z.object({
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
+// A317: description is .nullable() as well as .optional(). Every client clears
+// it by sending null (`form.description.trim() || null` — web Products page,
+// till MenuWorkbench, till ManageTabs create/update), the column is nullable
+// `text`, and the handler writes null through. Without it zod rejected every
+// save of a product whose description box was empty: "description: Invalid
+// input: expected string, received null" (owner, 2026-09-23). Same for update.
 export const CreateProductSchema = z.object({
   name: nonEmptyString.max(120),
-  description: z.string().max(500).optional(),
+  description: z.string().max(500).optional().nullable(),
   base_price: z.number().nonnegative(),
   category_id: uuid.optional().nullable(),
   image_url: z.string().url().optional().nullable(),
@@ -93,7 +99,7 @@ export const CreateProductSchema = z.object({
 // Explicit optionals with NO defaults: an update touches only the fields it sends.
 export const UpdateProductSchema = z.object({
   name:          nonEmptyString.max(120).optional(),
-  description:   z.string().max(500).optional(),
+  description:   z.string().max(500).optional().nullable(),   // A317: null clears it
   base_price:    z.number().nonnegative().optional(),
   category_id:   uuid.optional().nullable(),
   image_url:     z.string().url().optional().nullable(),

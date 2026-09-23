@@ -11,7 +11,7 @@
 // whatever was latest that morning (a red with no change, i.e. a gate that
 // cries wolf — rule 23). Pinning via npx keeps the root package/lockfile out of
 // it. Bump the pin deliberately, rebuild, commit the bundle in the same change.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,15 +21,17 @@ const TARGET = 'apps/dashboard/src/lib/escposRenderer.js';
 const CHECK = process.argv.includes('--check');
 
 // Windows: npx is npx.cmd, and Node (>= 18.20.2 / 20.12.2, CVE-2024-27980) refuses to spawn a .cmd
-// without a shell — `spawnSync npx ENOENT` on the owner's Git Bash (2026-09-23). So on win32 go
-// through the shell, with every argument double-quoted (a temp dir under a user profile can hold
-// spaces). Linux/macOS (CI) keep the direct, shell-free spawn.
+// without a shell — `spawnSync npx ENOENT` on the owner's Git Bash (2026-09-23). So on win32 hand the
+// shell ONE command line with every argument double-quoted (a temp dir under a user profile can hold
+// spaces). Not an args array + shell:true: Node 24 warns on that (DEP0190, owner's run 2026-09-23)
+// and a later Node may refuse it. Every argument here is ours — no user input reaches this line.
+// Linux/macOS (CI) keep the direct, shell-free spawn.
 const WIN = process.platform === 'win32';
 const build = (outfile) => {
   const args = ['--yes', ESBUILD, 'scripts/escpos-renderer/entry.ts',
     '--bundle', '--format=esm', '--platform=browser', '--log-level=warning',
     '--inject:scripts/escpos-renderer/buffer-shim.js', `--outfile=${outfile}`];
-  if (WIN) execFileSync('npx.cmd', args.map((a) => `"${a}"`), { stdio: 'inherit', shell: true });
+  if (WIN) execSync(['npx.cmd', ...args].map((a) => `"${a}"`).join(' '), { stdio: 'inherit' });
   else execFileSync('npx', args, { stdio: 'inherit' });
 };
 

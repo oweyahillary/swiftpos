@@ -100,9 +100,53 @@ export function monoRasterFromRGBA(
 
 const PREFIX = 'mono1:';
 
+// A316: base64 WITHOUT Buffer or atob/btoa. This file runs in three places —
+// the till's main process (Node), and the web's Branding page, POS and reprint
+// (a browser, via the esbuild bundle). The bundle's Buffer shim only fakes
+// Buffer.from(array); `.toString('base64')` on it gave "255,255,..." and
+// Buffer.from(str, 'base64') gave garbage, so every web encode was rejected by
+// the cloud and every web decode returned null (2026-09-23). A tiny codec here
+// has no environment to differ between. Decoding accepts exactly the alphabet
+// and padding the cloud's validator accepts (routes/business.ts), nothing else.
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+
+function base64Encode(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i], b = bytes[i + 1], c = bytes[i + 2];
+    out += B64[a >> 2] + B64[((a & 3) << 4) | ((b ?? 0) >> 4)]
+      + (i + 1 < bytes.length ? B64[((b & 15) << 2) | ((c ?? 0) >> 6)] : '=')
+      + (i + 2 < bytes.length ? B64[c & 63] : '=');
+  }
+  return out;
+}
+
+function base64Decode(s: string): Uint8Array | null {
+  if (!B64_RE.test(s)) return null;
+  // Padding is not trusted either way: the cloud's validator accepts zero, one or
+  // two '=' regardless of length and stores what Node's lenient decoder reads,
+  // so strip it and re-derive it. A value the cloud stored must never print as
+  // "no logo" here.
+  s = s.replace(/=+$/, '');
+  if (s.length % 4 === 1) return null;              // no valid encoding ends like this
+  s += '='.repeat((4 - (s.length % 4)) % 4);
+  const pad = s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0;
+  const out = new Uint8Array((s.length / 4) * 3 - pad);
+  let o = 0;
+  for (let i = 0; i < s.length; i += 4) {
+    const n = (B64.indexOf(s[i]) << 18) | (B64.indexOf(s[i + 1]) << 12)
+      | ((s[i + 2] === '=' ? 0 : B64.indexOf(s[i + 2])) << 6) | (s[i + 3] === '=' ? 0 : B64.indexOf(s[i + 3]));
+    out[o++] = n >> 16;
+    if (o < out.length) out[o++] = (n >> 8) & 255;
+    if (o < out.length) out[o++] = n & 255;
+  }
+  return out;
+}
+
 export function monoRasterToString(r: MonoRaster): string {
   assertRaster(r);
-  return `${PREFIX}${r.width}:${r.height}:${Buffer.from(r.bytes).toString('base64')}`;
+  return `${PREFIX}${r.width}:${r.height}:${base64Encode(r.bytes)}`;
 }
 
 /** null on anything malformed — a bad stored value must print NO logo, never a
@@ -114,9 +158,8 @@ export function monoRasterFromString(s: string | null | undefined): MonoRaster |
   const width = Number(parts[0]), height = Number(parts[1]);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
   if (width > PRINTER_MAX_DOTS) return null;
-  let bytes: Uint8Array;
-  try { bytes = new Uint8Array(Buffer.from(parts[2], 'base64')); } catch { return null; }
-  if (bytes.length !== bytesPerRow(width) * height) return null;
+  const bytes = base64Decode(parts[2]);
+  if (!bytes || bytes.length !== bytesPerRow(width) * height) return null;
   return { width, height, bytes };
 }
 

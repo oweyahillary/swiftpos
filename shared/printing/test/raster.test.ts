@@ -6,6 +6,10 @@
  * transparent logo printing as a black box, a logo on a KITCHEN ticket, and a
  * stored raster the till can't parse crashing the print path instead of
  * printing no logo. Every assertion here is mutation-checked (rule 10/23).
+ * Section 8 (A316) runs the string codec with globalThis.Buffer DELETED: restore
+ * Buffer in raster.ts and the first four go red; drop the strip-and-repad and
+ * the padding case goes red on its own; make decoding skip unknown characters
+ * and the alphabet case goes red on its own.
  */
 import {
   monoRasterFromRGBA, monoRasterToString, monoRasterFromString, monoRasterToAscii,
@@ -116,6 +120,49 @@ console.log('\n7. Text preview names the logo and its size');
   const r = monoRasterFromRGBA(rgba(20, 3, () => [0, 0, 0, 255]), 20, 3);
   const p = toPreview(renderTicket({ order, business: { ...business, logoRaster: r }, station: receiptPreset('r', 'Receipt', 80) }));
   ok('preview shows [logo 20x3]', /\[logo 20x3\]/.test(p));
+}
+
+console.log('\n8. The string codec needs no Buffer (A316 — the web runs this in a browser)');
+{
+  // The cloud's own acceptance test for the stored form (apps/server/src/routes/business.ts):
+  // this regex, then the decoded length must be ceil(w/8)*h.
+  const CLOUD = /^mono1:(\d+):(\d+):([A-Za-z0-9+/]+={0,2})$/;
+  const cloudAccepts = (s: string) => {
+    const m = CLOUD.exec(s); if (!m) return false;
+    const w = Number(m[1]), h = Number(m[2]);
+    return w <= 576 && h <= 1024 && Buffer.from(m[3], 'base64').length === bytesPerRow(w) * h;
+  };
+  const logo = monoRasterFromRGBA(rgba(20, 3, (x) => (x % 3 ? [0, 0, 0, 255] : [255, 255, 255, 255])), 20, 3);
+  const withNode = monoRasterToString(logo);
+
+  // Browser conditions: no Buffer at all while the codec runs. Restored before
+  // anything else in this file needs it.
+  const g = globalThis as { Buffer?: unknown };
+  const saved = g.Buffer;
+  let noBuf = '', back: ReturnType<typeof monoRasterFromString> = null, threw = '';
+  try {
+    delete g.Buffer;
+    noBuf = monoRasterToString(logo);
+    back = monoRasterFromString(noBuf);
+  } catch (e) { threw = String(e); } finally { g.Buffer = saved; }
+
+  ok('encodes with no Buffer in scope (no throw)', threw === '', threw);
+  ok('the no-Buffer string is one the CLOUD accepts', cloudAccepts(noBuf),
+    `${noBuf.slice(0, 40)} — the 2026-09-23 web save was rejected with exactly this check`);
+  ok('identical to what the till (Node) stores — no format change on either side', noBuf === withNode);
+  ok('decodes with no Buffer in scope, byte-for-byte', !!back && back.width === 20 && back.height === 3
+    && Buffer.from(back.bytes).equals(Buffer.from(logo.bytes)));
+
+  // Decode reads what the CLOUD stored, however it was padded (its regex allows 0-2 '=').
+  const b64 = withNode.split(':')[3], bare = b64.replace(/=+$/, '');
+  ok('unpadded and odd-padded values the cloud accepts still decode',
+    [bare, bare + '=', bare + '=='].every(v => cloudAccepts(`mono1:20:3:${v}`)
+      ? !!monoRasterFromString(`mono1:20:3:${v}`) : true));
+  // INSERTED, not replaced: a decoder that skips the stray '*' would recover the
+  // exact right length and pass the length check — the thing to catch.
+  const stray = `mono1:20:3:${b64.slice(0, 4)}*${b64.slice(4)}`;
+  ok('characters outside the cloud\'s alphabet are refused, not skipped',
+    !cloudAccepts(stray) && monoRasterFromString(stray) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

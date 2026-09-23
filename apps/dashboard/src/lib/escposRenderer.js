@@ -553,9 +553,35 @@ function monoRasterFromRGBA(rgba, width, height, opts = {}) {
   return { width: outW, height: outH, bytes: out };
 }
 var PREFIX = "mono1:";
+var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+function base64Encode(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i], b = bytes[i + 1], c = bytes[i + 2];
+    out += B64[a >> 2] + B64[(a & 3) << 4 | (b ?? 0) >> 4] + (i + 1 < bytes.length ? B64[(b & 15) << 2 | (c ?? 0) >> 6] : "=") + (i + 2 < bytes.length ? B64[c & 63] : "=");
+  }
+  return out;
+}
+function base64Decode(s) {
+  if (!B64_RE.test(s)) return null;
+  s = s.replace(/=+$/, "");
+  if (s.length % 4 === 1) return null;
+  s += "=".repeat((4 - s.length % 4) % 4);
+  const pad = s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0;
+  const out = new Uint8Array(s.length / 4 * 3 - pad);
+  let o = 0;
+  for (let i = 0; i < s.length; i += 4) {
+    const n = B64.indexOf(s[i]) << 18 | B64.indexOf(s[i + 1]) << 12 | (s[i + 2] === "=" ? 0 : B64.indexOf(s[i + 2])) << 6 | (s[i + 3] === "=" ? 0 : B64.indexOf(s[i + 3]));
+    out[o++] = n >> 16;
+    if (o < out.length) out[o++] = n >> 8 & 255;
+    if (o < out.length) out[o++] = n & 255;
+  }
+  return out;
+}
 function monoRasterToString(r) {
   assertRaster(r);
-  return `${PREFIX}${r.width}:${r.height}:${Buffer.from(r.bytes).toString("base64")}`;
+  return `${PREFIX}${r.width}:${r.height}:${base64Encode(r.bytes)}`;
 }
 function monoRasterFromString(s) {
   if (!s || !s.startsWith(PREFIX)) return null;
@@ -564,13 +590,8 @@ function monoRasterFromString(s) {
   const width = Number(parts[0]), height = Number(parts[1]);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
   if (width > PRINTER_MAX_DOTS) return null;
-  let bytes;
-  try {
-    bytes = new Uint8Array(Buffer.from(parts[2], "base64"));
-  } catch {
-    return null;
-  }
-  if (bytes.length !== bytesPerRow(width) * height) return null;
+  const bytes = base64Decode(parts[2]);
+  if (!bytes || bytes.length !== bytesPerRow(width) * height) return null;
   return { width, height, bytes };
 }
 function assertRaster(r) {
