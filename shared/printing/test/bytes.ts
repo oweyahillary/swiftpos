@@ -18,9 +18,15 @@
  * If the paper matches SAMPLE-OUTPUT.txt, the renderer and the byte layer are
  * both correct and only the transport remains. If it does not, the difference
  * tells us which vendor quirk to handle.
+ *
+ * --check (A314): validate as always, but compare each stream against the
+ * committed out/*.bin instead of writing it, and fail naming the file and the
+ * first differing byte. In `npm test`, so the .bin files handed to a printer
+ * can no longer silently predate the renderer (receipt-80.bin was 1851 bytes
+ * while the renderer produced 1927).
  */
 
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { renderTicket, toEscPos, kitchenPreset, dispatchPreset, receiptPreset } from '../src/index';
 import { order, business, KITCHEN, DISPATCH } from './fixture';
@@ -88,8 +94,11 @@ function decode(buf: Buffer): { commands: Decoded[]; text: string[] } {
   return { commands, text };
 }
 
-const outDir = join(process.cwd(), 'out');
-mkdirSync(outDir, { recursive: true });
+const CHECK = process.argv.includes('--check');
+// Package root, not cwd: the check must compare against the committed files
+// wherever it is run from.
+const outDir = join(__dirname, '..', '..', 'out');
+if (!CHECK) mkdirSync(outDir, { recursive: true });
 
 const targets = [
   ['kitchen-80', kitchenPreset(KITCHEN, 'Kitchen', 80)],
@@ -131,13 +140,27 @@ for (const [name, station] of targets) {
   if (station.openCashDrawer && drawer === 0) fail(`${name}: drawer expected but no ESC p emitted`);
   if (!station.openCashDrawer && drawer > 0) fail(`${name}: drawer pulse emitted for a station that should not open it`);
 
-  writeFileSync(join(outDir, `${name}.bin`), buf);
+  const file = join(outDir, `${name}.bin`);
+  if (CHECK) {
+    if (!existsSync(file)) { fail(`${name}.bin is not committed (${file})`); continue; }
+    const want = readFileSync(file);
+    if (!want.equals(buf)) {
+      let at = 0; while (at < want.length && at < buf.length && want[at] === buf[at]) at++;
+      fail(`${name}.bin differs from the current renderer: committed ${want.length} bytes, `
+        + `rendered ${buf.length}, first difference at offset ${at}. `
+        + 'If intended: npm run refresh-artefacts, review, commit.');
+      continue;
+    }
+  } else {
+    writeFileSync(file, buf);
+  }
   console.log(
     `PASS  ${name.padEnd(12)} ${String(buf.length).padStart(5)} bytes  ` +
     `${decoded.commands.length} commands  ${decoded.text.length} lines  widest ${widest}/${cols}`,
   );
 }
 
-console.log(`\nRaw streams written to ${outDir}`);
+console.log(CHECK ? `\nCompared against the committed streams in ${outDir}`
+                  : `\nRaw streams written to ${outDir}`);
 console.log(failures === 0 ? 'Byte stream valid.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

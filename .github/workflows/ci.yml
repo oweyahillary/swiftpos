@@ -643,3 +643,9 @@ jobs:
       - name: Receipt closing block
         working-directory: shared/printing
         run: npm test
+
+      # A314: the web POS prints from a committed esbuild bundle of shared/printing.
+      # Rebuild it (esbuild pinned in the script) and fail if it differs, so a
+      # renderer change cannot reach the till without reaching the web too.
+      - name: Web receipt bundle is reproducible
+        run: node scripts/build-escpos-renderer.mjs --check

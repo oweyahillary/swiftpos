@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc -b",
     "sample": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/sample.js",
-    "test": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/spooler.test.js && node test-dist/test/bridge-sim.js && node test-dist/test/receipt-footer.test.js && node test-dist/test/routing.test.js && node test-dist/test/a276-soda-routing.test.js && node test-dist/test/raster.test.js"
+    "test": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/spooler.test.js && node test-dist/test/bridge-sim.js && node test-dist/test/receipt-footer.test.js && node test-dist/test/routing.test.js && node test-dist/test/a276-soda-routing.test.js && node test-dist/test/raster.test.js && node test-dist/test/bytes.js --check && node test-dist/test/sample.js --check",
+    "refresh-artefacts": "tsc -b && tsc -p tsconfig.test.json && node test-dist/test/bytes.js && node test-dist/test/sample.js --write"
   },
   "types": "dist/index.d.ts",
   "files": [

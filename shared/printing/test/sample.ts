@@ -3,6 +3,16 @@
  * checks the money against the two real receipts photographed from the
  * incumbent system. If the arithmetic here ever stops matching those, the
  * change was wrong.
+ *
+ * Modes (A314):
+ *   node test-dist/test/sample.js           print to stdout (as it always has)
+ *   node test-dist/test/sample.js --write   refresh SAMPLE-OUTPUT.txt
+ *   node test-dist/test/sample.js --check   fail if SAMPLE-OUTPUT.txt differs
+ *
+ * --check is in `npm test`, so a renderer change that moves the paper and does
+ * not refresh the reference fails the build instead of quietly making every
+ * later "identical to SAMPLE-OUTPUT" claim false (which is how A314 happened:
+ * the closing block landed and the reference kept the old receipt for weeks).
  */
 
 import {
@@ -11,6 +21,16 @@ import {
   type PrintContext,
 } from '../src/index';
 import { order, business, KITCHEN, DISPATCH } from './fixture';
+import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+
+const MODE = process.argv.includes('--check') ? 'check'
+  : process.argv.includes('--write') ? 'write' : 'print';
+const REFERENCE = join(__dirname, '..', '..', 'SAMPLE-OUTPUT.txt');
+
+// Everything the run prints is collected, so the three modes see the same text.
+const out: string[] = [];
+const log = (s = '') => { out.push(s); };
 
 function show(title: string, ctx: PrintContext) {
   const doc = renderTicket(ctx);
@@ -19,8 +39,8 @@ function show(title: string, ctx: PrintContext) {
     openDrawer: ctx.station.openCashDrawer,
     feedBeforeCut: ctx.station.feedBeforeCut,
   });
-  console.log(`\n${'='.repeat(60)}\n${title}   (${bytes.length} bytes)\n${'='.repeat(60)}`);
-  console.log(toPreview(doc, { showMargins: true }));
+  log(`\n${'='.repeat(60)}\n${title}   (${bytes.length} bytes)\n${'='.repeat(60)}`);
+  log(toPreview(doc, { showMargins: true }));
 }
 
 show('KITCHEN', { order, business, station: kitchenPreset(KITCHEN, 'Kitchen') });
@@ -42,10 +62,10 @@ let failures = 0;
 function check(label: string, got: string, want: string) {
   const ok = got === want;
   if (!ok) failures++;
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}  got ${got}  want ${want}`);
+  log(`${ok ? 'PASS' : 'FAIL'}  ${label}  got ${got}  want ${want}`);
 }
 
-console.log(`\n${'='.repeat(60)}\nAgainst the incumbent's printed receipts\n${'='.repeat(60)}`);
+log(`\n${'='.repeat(60)}\nAgainst the incumbent's printed receipts\n${'='.repeat(60)}`);
 
 const a = splitTax([325000, 139000], 464000, 16, 2);
 check('sample 1 line 1 net', formatCents(a.lineNets[0]), '2,754.24');
@@ -63,5 +83,33 @@ check('sample 2 VAT', formatCents(b.vat), '58.98');
 check('sample 2 round off', formatCents(b.roundOff), '0.01');
 check('sample 2 total', formatCents(b.total), '435.00');
 
-console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILED`);
+log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILED`);
+
+const text = out.join('\n') + '\n';
+if (MODE === 'print') {
+  process.stdout.write(text);
+} else if (MODE === 'write') {
+  writeFileSync(REFERENCE, text);
+  console.log(`wrote ${REFERENCE}`);
+} else {
+  // The money checks above only reached `out`; show them if one failed.
+  if (failures) process.stdout.write(text);
+  // LF-normalised: git stores LF (.gitattributes) but a Windows editor or a
+  // core.autocrlf checkout must not turn this red on line endings alone.
+  let want: string;
+  try { want = readFileSync(REFERENCE, 'utf8').replace(/\r\n/g, '\n'); }
+  catch { want = ''; console.log(`FAIL  SAMPLE-OUTPUT.txt missing: ${REFERENCE}`); failures++; }
+  if (want && want !== text) {
+    const a = want.split('\n'), b = text.split('\n');
+    let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    console.log(`FAIL  SAMPLE-OUTPUT.txt differs from the current renderer at line ${i + 1}`);
+    console.log(`        committed: ${JSON.stringify(a[i] ?? '<end of file>')}`);
+    console.log(`        rendered:  ${JSON.stringify(b[i] ?? '<end of file>')}`);
+    console.log('      If the change is intended: npm run refresh-artefacts, review the diff, commit it.');
+    failures++;
+  } else if (want) {
+    console.log('PASS  SAMPLE-OUTPUT.txt matches the current renderer');
+  }
+  if (failures) console.log(`${failures} FAILED`);
+}
 process.exit(failures === 0 ? 0 : 1);

@@ -23,7 +23,7 @@
 import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
-import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns } from './layout';
+import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize } from './layout';
 
 const TYPE_CAPS: Record<OrderType, string> = {
   takeaway: 'TAKEAWAY',
@@ -374,9 +374,22 @@ function renderReceipt(ctx: PrintContext): Document {
   }
   if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
 
-  // Closing block — fixed, always printed.
-  d.lines(wrap(business.closingMessage ?? 'Thank you for your business!', cols)
-    .map(l => center(cols, l)));
+  // Closing block — fixed, always printed, EXCEPT its thank-you line when the
+  // owner already wrote it (A315). The owner's box is printed verbatim above,
+  // so if any authored line of it — or of the delivery box, which prints in the
+  // same block — IS the closing line (case and surrounding whitespace aside),
+  // printing it again gives the customer the same sentence twice. Seen on paper
+  // on the XP-80, 2026-09-22; the web POS hits it on every receipt from a
+  // business with no receipt_footer, because its per-device footerMessage
+  // defaults to exactly this phrase. Whole-line equality, never "starts with":
+  // a longer owner sentence that merely begins with these words is a different
+  // line, and suppressing on it would leave no thank-you at all. The TAX line
+  // and the credit below are never suppressed — they are not the owner's to
+  // replace.
+  const closing = business.closingMessage ?? 'Thank you for your business!';
+  if (!ownerAlreadySays(closing, business.thankYouMessage, business.deliveryMessage)) {
+    d.lines(wrap(closing, cols).map(l => center(cols, l)));
+  }
 
   // Only when tax actually applies. A zero-rated business printing "TAX RECEIPT
   // UPON REQUEST" is claiming something untrue on a document a customer keeps.
@@ -387,6 +400,16 @@ function renderReceipt(ctx: PrintContext): Document {
   if (business.footerCredit) d.line(center(cols, business.footerCredit));
 
   return d.build();
+}
+
+/** A315: does any authored line of the owner's boxes equal `line`? Compared as
+ *  printed (sanitize maps smart quotes etc. to the code page), trimmed, and
+ *  case-insensitive. Private: the test drives renderTicket and reads the paper. */
+function ownerAlreadySays(line: string, ...boxes: (string | undefined)[]): boolean {
+  const norm = (s: string) => sanitize(s).trim().toLowerCase();
+  const want = norm(line);
+  if (!want) return false;
+  return boxes.some(box => !!box && box.split(/\r?\n/).some(l => norm(l) === want));
 }
 
 /**

@@ -407,12 +407,21 @@ function renderReceipt(ctx) {
     d.lines(wrapAuthored(business.deliveryMessage, cols).map((l) => center(cols, l)));
   }
   if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
-  d.lines(wrap(business.closingMessage ?? "Thank you for your business!", cols).map((l) => center(cols, l)));
+  const closing = business.closingMessage ?? "Thank you for your business!";
+  if (!ownerAlreadySays(closing, business.thankYouMessage, business.deliveryMessage)) {
+    d.lines(wrap(closing, cols).map((l) => center(cols, l)));
+  }
   if (business.vatRate > 0) {
     d.line(center(cols, "TAX RECEIPT UPON REQUEST"));
   }
   if (business.footerCredit) d.line(center(cols, business.footerCredit));
   return d.build();
+}
+function ownerAlreadySays(line, ...boxes) {
+  const norm = (s) => sanitize(s).trim().toLowerCase();
+  const want = norm(line);
+  if (!want) return false;
+  return boxes.some((box) => !!box && box.split(/\r?\n/).some((l) => norm(l) === want));
 }
 function hasPrintableContent(ctx) {
   const { order, station } = ctx;

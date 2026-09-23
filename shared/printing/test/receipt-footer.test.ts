@@ -28,6 +28,8 @@
  *
  * MUTATION-CHECKED (rules 10 and 23): drop the closing block from render.ts and
  * sections 1, 2 and 4 go red; drop only the `vatRate > 0` guard and section 3
+ * goes red on its own. Section 6 (A315): drop the ownerAlreadySays guard and
+ * the duplicate cases go red; loosen it to "starts with" and the Karibu case
  * goes red on its own.
  */
 
@@ -137,6 +139,61 @@ ok('a two-line owner box stays two lines', () => {
   assert.ok(!has(p, 'Paybill 4098201 Delivery'),
     'wrap() ate the newline — the author\'s break is meaning, not whitespace. '
     + 'wrapAuthored exists for this.');
+});
+
+// ── 6. A315: the thank-you is never printed twice ─────────────────────────
+// The owner's box prints verbatim; if it already IS the closing line, the fixed
+// block must not repeat it. Counted on the paper, case-insensitively, because
+// the owner's own casing is what prints.
+console.log('\n6. no duplicate thank-you (A315)');
+const THANKS = 'thank you for your business!';
+const count = (lines: string[], text: string) =>
+  lines.filter(l => l.toLowerCase() === text.toLowerCase()).length;
+
+for (const width of [80, 58] as const) {
+  ok(`owner box == closing line -> printed ONCE (${width}mm)`, () => {
+    const p = paper({ thankYouMessage: 'Thank you for your business!' }, width);
+    assert.strictEqual(count(p, THANKS), 1,
+      `printed ${count(p, THANKS)} times — the XP-80 paper of 2026-09-22, and every web `
+      + 'receipt whose per-device footerMessage is still the default');
+  });
+}
+ok('a blank box -> the default prints exactly once', () => {
+  assert.strictEqual(count(paper({ thankYouMessage: undefined }), THANKS), 1);
+});
+ok('different case and surrounding spaces still count as the same line', () => {
+  const p = paper({ thankYouMessage: '   THANK YOU FOR YOUR BUSINESS!  ' });
+  assert.strictEqual(count(p, THANKS), 1, `printed ${count(p, THANKS)} times`);
+  assert.ok(has(p, 'THANK YOU FOR YOUR BUSINESS!'),
+    'the OWNER\'s line is the one that survives — theirs is verbatim, ours is the fallback');
+});
+ok('the phrase on a LATER line of a multi-line box -> once', () => {
+  const p = paper({ thankYouMessage: 'Paybill 4098201\nThank you for your business!' });
+  assert.strictEqual(count(p, THANKS), 1);
+  assert.ok(has(p, 'Paybill 4098201'), 'the rest of the box must be untouched');
+});
+ok('the phrase in the DELIVERY box -> once', () => {
+  const p = paper({ deliveryMessage: 'Thank you for your business!' });
+  assert.strictEqual(count(p, THANKS), 1);
+});
+ok('a longer sentence that merely STARTS with it is a different line -> closing kept', () => {
+  const p = paper({ thankYouMessage: 'Thank you for your business! Karibu tena' });
+  assert.strictEqual(count(p, THANKS), 1,
+    'whole-line match only (owner ruling 2026-09-23): "starts with" would leave this '
+    + 'receipt with no standalone thank-you');
+  assert.ok(has(p, 'Karibu tena'));
+});
+ok('a custom closingMessage is matched too, not only the default', () => {
+  const p = paper({ closingMessage: 'Asante sana!', thankYouMessage: 'asante sana!' });
+  assert.strictEqual(count(p, 'asante sana!'), 1);
+});
+ok('suppressing the thank-you never takes the TAX line or the credit with it', () => {
+  const p = paper({ thankYouMessage: 'Thank you for your business!' });
+  assert.ok(has(p, 'TAX RECEIPT UPON REQUEST'), 'tax line lost');
+  const last = p.filter(Boolean);
+  assert.ok(last[last.length - 1].includes('Powered by SwiftPOS'), 'credit is no longer last');
+  assert.ok(indexOf(p, 'Thank you for your business!') < indexOf(p, 'TAX RECEIPT UPON REQUEST'),
+    'the surviving thank-you must still sit above the tax line');
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

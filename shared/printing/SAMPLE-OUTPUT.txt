@@ -50,7 +50,7 @@ DISPATCH   (549 bytes)
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT   (1851 bytes)
+CUSTOMER RECEIPT   (1888 bytes)
 ============================================================
 +------------------------------------------------+
 |                   KUDO KUDO                    |
@@ -99,11 +99,12 @@ CUSTOMER RECEIPT   (1851 bytes)
 |          Thank you for your business!          |
 |         For Delivery call 0117 000 033         |
 |------------------------------------------------|
+|            TAX RECEIPT UPON REQUEST            |
 |              Powered by SwiftPOS               |
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — duplicate, optional fields off   (1755 bytes)
+CUSTOMER RECEIPT — duplicate, optional fields off   (1792 bytes)
 ============================================================
 +------------------------------------------------+
 |                Duplicate Print                 |
@@ -149,6 +150,7 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1755 bytes)
 |------------------------------------------------|
 |          Thank you for your business!          |
 |------------------------------------------------|
+|            TAX RECEIPT UPON REQUEST            |
 |              Powered by SwiftPOS               |
 +------------------------------------------------+
 
@@ -179,7 +181,7 @@ KITCHEN — 58mm   (435 bytes)
 +--------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — 58mm   (1363 bytes)
+CUSTOMER RECEIPT — 58mm   (1392 bytes)
 ============================================================
 +--------------------------------+
 |           KUDO KUDO            |
@@ -228,6 +230,7 @@ CUSTOMER RECEIPT — 58mm   (1363 bytes)
 |  Thank you for your business!  |
 | For Delivery call 0117 000 033 |
 |--------------------------------|
+|    TAX RECEIPT UPON REQUEST    |
 |      Powered by SwiftPOS       |
 +--------------------------------+
 
