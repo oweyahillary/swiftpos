@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveBranding, pickButtonText } from '../../lib/contrast';
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
 
@@ -31,31 +32,14 @@ const PALETTE: Array<{ name: string; hex: string }> = [
   { name: 'Pink',          hex: '#db2777' },
   { name: 'Amber',         hex: '#b45309' },
 ];
-const DEFAULT_ACCENT = '#0d9488';      // the till's shipped default (A295 — teal)
-const LOCK_SURFACE = '#0f172a';        // the lock-screen card the accent sits on
+// A319: the till's OWN rule, not a copy of the idea. `lib/contrast.ts` is a byte-identical copy of
+// shared/contrast.ts (check-shared-sync), the file the till's lock screen (PinPage) resolves with. The
+// page used to carry its own maths that demanded WHITE button text and measured #0f172a — so it rejected
+// #F5B800 (black text on it is 11.7:1, which the till accepts) and told the owner, falsely, that tills
+// would fall back to the default (tester, VERIFY-BRANDING-PHASE1 A5, 2026-09-23).
+// The surface MUST equal PinPage's LOCK_SURFACE — pinned by tests/branding-web-contrast.test.mjs.
+const LOCK_SURFACE = '#0d1424';
 const MAX_LOGO_BYTES = 250 * 1024;
-
-// ── WCAG contrast (enough to guard a custom accent; the palette is pre-vetted) ──────────────
-function lum(hex: string): number {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return 0;
-  const n = parseInt(m[1], 16);
-  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
-    const s = v / 255;
-    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
-}
-function ratio(a: string, b: string): number {
-  const [L1, L2] = [lum(a), lum(b)].sort((x, y) => y - x);
-  return (L1 + 0.05) / (L2 + 0.05);
-}
-const HEX6 = /^#[0-9a-fA-F]{6}$/;
-// Legible if it reads on the dark surface (divider/dot) AND white button text sits on it — 3:1
-// each, the SCOPE §8.A threshold.
-function isLegible(hex: string): boolean {
-  return HEX6.test(hex) && ratio(hex, LOCK_SURFACE) >= 3 && ratio('#ffffff', hex) >= 3;
-}
 
 // ── client-side logo resize: shrink to fit the 250 KB cap, re-encode PNG (shrink, never crop) ──
 const STEP_EDGES = [1024, 768, 512, 384, 256];
@@ -138,8 +122,10 @@ export default function BrandingTab() {
   }, []);
 
   const custom = accentHex.trim() !== '' && !PALETTE.some((p) => p.hex.toLowerCase() === accentHex.trim().toLowerCase());
-  const legible = accentHex.trim() === '' || isLegible(accentHex.trim());
-  const shownAccent = legible && accentHex.trim() ? accentHex.trim() : DEFAULT_ACCENT;
+  // Exactly what a till will do with this value: its accent, or the default when it falls back.
+  const brand = resolveBranding(accentHex.trim() || null, LOCK_SURFACE);
+  const legible = accentHex.trim() === '' || !brand.usedFallback;
+  const shownAccent = brand.accent;
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (fileRef.current) fileRef.current.value = '';
@@ -250,7 +236,7 @@ export default function BrandingTab() {
 // A small, honest mock of the till lock screen (two columns, accent on divider/dot/Enter,
 // logo on a white chip, non-removable "powered by SwiftPOS").
 function LockPreview({ accent, logo }: { accent: string; logo: string | null }) {
-  const btnText = ratio('#ffffff', accent) >= ratio('#000000', accent) ? '#ffffff' : '#000000';
+  const btnText = pickButtonText(accent).text;   // the till's choice of black/white on this accent (A319)
   return (
     <div className="rounded-xl overflow-hidden border" style={{ background: LOCK_SURFACE }}>
       <div className="flex" style={{ minHeight: 220 }}>

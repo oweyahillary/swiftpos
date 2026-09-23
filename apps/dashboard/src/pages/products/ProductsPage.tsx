@@ -364,6 +364,10 @@ export default function ProductsPage() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          {/* A318: the card clips (rounded corners); the TABLE scrolls. Long descriptions (Family Meals)
+              widen the Product column, and with only the clip, Edit/Delete were pushed past the card
+              edge with no way to reach them. Same pattern as Reports / Webhooks / Manager tables. */}
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-800 text-left">
@@ -381,7 +385,7 @@ export default function ProductsPage() {
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Price</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Cost</th>
                 <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider"></th>
+                <th className="px-4 py-3 text-xs text-gray-500 font-medium uppercase tracking-wider sticky right-0 bg-gray-900"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -452,8 +456,11 @@ export default function ProductsPage() {
                       {p.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 justify-end">
+                  {/* A318: actions pinned to the right edge of the scroller, so Edit/Delete are on screen
+                      as rendered at any width — not only after a sideways scroll whose bar sits at the
+                      bottom of a 69-row table. Opaque background so scrolled cells pass beneath it. */}
+                  <td className="px-4 py-3 sticky right-0 bg-gray-900 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.6)]">
+                    <div className="flex items-center gap-2 justify-end whitespace-nowrap">
                       {!isPetrol && (
                         <button
                           onClick={() => setDrawerProduct(p)}
@@ -487,6 +494,7 @@ export default function ProductsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

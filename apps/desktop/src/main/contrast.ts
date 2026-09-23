@@ -6,6 +6,7 @@
  *      shared/contrast.ts
  *      apps/desktop/src/shared/contrast.ts   (the renderer / PinPage imports this)
  *      apps/desktop/src/main/contrast.ts     (compiled to dist/main → the unit test)
+ *      apps/dashboard/src/lib/contrast.ts    (the web Branding page — A319)
  *  scripts/check-shared-sync.mjs fails CI if they diverge. Edit ONE copy, copy it
  *  to the others verbatim, run the vectors. Do not "fix" one side in place.
  * ══════════════════════════════════════════════════════════════════════════════

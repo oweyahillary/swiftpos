@@ -39,12 +39,15 @@ const SHARED = [
     // A295 accent guard. shared/ is the source of truth; the renderer imports the
     // desktop/src/shared copy; the desktop/src/main copy exists ONLY so tsconfig.main
     // emits dist/main/contrast.js for contrast.test.mjs (the renderer is noEmit).
-    // A server/dashboard copy joins this list when the web-portal slice lands.
+    // A319: the web Branding page judges a custom accent with THIS rule (it had its own copy, which
+    // required WHITE button text and measured a different surface — it rejected #F5B800, which the
+    // till accepts with black text). Vendored, not imported: Vercel builds apps/dashboard alone.
     name: 'contrast.ts',
     copies: [
       'shared/contrast.ts',
       'apps/desktop/src/shared/contrast.ts',
       'apps/desktop/src/main/contrast.ts',
+      'apps/dashboard/src/lib/contrast.ts',
     ],
   },
 ];

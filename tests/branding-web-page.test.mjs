@@ -28,7 +28,9 @@ const biz  = r('apps/dashboard/src/pages/settings/BusinessPage.tsx');
 ok('reads current branding (A303 GET)', /api\.get<[^>]*>\('\/api\/business\/branding'\)/.test(tab) || /api\.get\([^)]*'\/api\/business\/branding'/.test(tab));
 ok('saves via the A303 endpoint (PUT)', /api\.put\('\/api\/business\/branding'/.test(tab));
 ok('offers the vetted palette (8 accents)', /const PALETTE/.test(tab) && (tab.match(/hex:\s*'#/g) || []).length >= 8);
-ok('custom accent is legibility-guarded', /function isLegible/.test(tab) && /ratio\(/.test(tab) && /LOCK_SURFACE/.test(tab));
+// A319: the guard is now the till's own rule (lib/contrast.ts, synced) — its behaviour is proven in
+// branding-web-contrast.test.mjs; here only that the page still guards at all.
+ok('custom accent is legibility-guarded', /resolveBranding\(/.test(tab) && /usedFallback/.test(tab) && /LOCK_SURFACE/.test(tab));
 ok('logo resized to the 250 KB cap (shrink, PNG)', /MAX_LOGO_BYTES\s*=\s*250\s*\*\s*1024/.test(tab) && /toDataURL\('image\/png'\)/.test(tab) && /svg/i.test(tab));
 ok('has a live lock-screen preview', /function LockPreview/.test(tab) && /<LockPreview/.test(tab));
 ok('reachable from Business settings (route + tab)',
