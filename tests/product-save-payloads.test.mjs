@@ -17,6 +17,8 @@
  *   - drop .nullable() from CreateProductSchema.description → the create cases fail
  *   - drop .nullable() from UpdateProductSchema.description → the update cases fail (image 5's)
  *   - loosen description to z.any()                          → "a NUMBER description is still refused" fails
+ *   - A320: product name back to nonEmptyString              → the three whitespace cases fail
+ *   - A320: .min(1).trim() (measure before trimming)         → the whitespace cases fail
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -92,6 +94,17 @@ ok('an empty name is still refused', refusedFor(CreateProductSchema, { ...valid,
 ok('a 501-char description is still refused', refusedFor(UpdateProductSchema, { ...valid, description: 'x'.repeat(501) }, 'description'));
 ok('a NUMBER description is still refused', refusedFor(UpdateProductSchema, { ...valid, description: 42 }, 'description'));
 ok('a negative price is still refused', refusedFor(UpdateProductSchema, { ...valid, base_price: -1 }, 'base_price'));
+
+// ── A320: a name of only whitespace is refused on UPDATE as well as create ──
+// PATCH used to accept '   ' (nonEmptyString is min(1) on the raw string) and write name.trim() → ''.
+ok('A320: update with a spaces-only name is refused (was: saved an empty product name)', refusedFor(UpdateProductSchema, { name: '   ' }, 'name'));
+ok('A320: …tabs/newlines only, too', refusedFor(UpdateProductSchema, { name: '\t\n ' }, 'name'));
+ok('A320: create with a spaces-only name is refused at the schema (field-level message)', refusedFor(CreateProductSchema, { ...valid, name: '   ' }, 'name'));
+{ const r = run(UpdateProductSchema, { name: '  Rafiki Box  ' });
+  ok('A320: a real name with stray spaces passes, trimmed', r.passed && r.body.name === 'Rafiki Box', JSON.stringify(r.body)); }
+{ const r = run(UpdateProductSchema, { name: '  ' + 'x'.repeat(120) + '  ' });
+  ok('A320: the 120 limit counts the TRIMMED name', r.passed, r.error); }
+ok('A320: 121 real characters are still refused', refusedFor(UpdateProductSchema, { name: 'x'.repeat(121) }, 'name'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -76,6 +76,13 @@ export const CreateOrderSchema = z.object({
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
+// A320: a product name is trimmed BEFORE the length check. nonEmptyString is `min(1)` on the raw string, so
+// '   ' passed it; POST then refused it in the handler, but PATCH wrote `name.trim()` → an empty product name.
+// Trim-then-min here refuses it at the door for both, with the field-level error the clients already show
+// (A257). Order matters: `.min(1).trim()` would measure the untrimmed string. Product-only on purpose —
+// nonEmptyString serves 12 schemas (orders, variants, staff…); widening it is its own change (see A320).
+const productName = z.string().trim().min(1, 'Cannot be empty').max(120);
+
 // A317: description is .nullable() as well as .optional(). Every client clears
 // it by sending null (`form.description.trim() || null` — web Products page,
 // till MenuWorkbench, till ManageTabs create/update), the column is nullable
@@ -83,7 +90,7 @@ export const CreateOrderSchema = z.object({
 // save of a product whose description box was empty: "description: Invalid
 // input: expected string, received null" (owner, 2026-09-23). Same for update.
 export const CreateProductSchema = z.object({
-  name: nonEmptyString.max(120),
+  name: productName,
   description: z.string().max(500).optional().nullable(),
   base_price: z.number().nonnegative(),
   category_id: uuid.optional().nullable(),
@@ -98,7 +105,7 @@ export const CreateProductSchema = z.object({
 // handler (which writes any field that is `!== undefined`) would silently reset them.
 // Explicit optionals with NO defaults: an update touches only the fields it sends.
 export const UpdateProductSchema = z.object({
-  name:          nonEmptyString.max(120).optional(),
+  name:          productName.optional(),              // A320: trimmed, then must be non-empty
   description:   z.string().max(500).optional().nullable(),   // A317: null clears it
   base_price:    z.number().nonnegative().optional(),
   category_id:   uuid.optional().nullable(),
