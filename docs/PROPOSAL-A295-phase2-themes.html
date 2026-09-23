@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS — Phase 2 theme proposal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f7f8fa; --ink:#0f172a; --muted:#56607a; --rule:#dfe3ea; --card:#ffffff;
+  --pass:#15803d; --fail:#b91c1c; --warnc:#a16207;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --ui:"Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* live theme (set by script) */
+  --a500:#3b82f6; --a400:#60a5fa; --a600:#2563eb; --a700:#1d4ed8; --a950:#172554; --aTxt:#000000; --aTxt600:#ffffff;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 80px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.2vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0 0 14px;max-width:18ch}
+h2{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:-.01em;margin:64px 0 10px}
+h3{font-size:16px;margin:0 0 6px}
+p{max-width:72ch;margin:0 0 12px}
+.lede{font-size:18px;color:var(--muted);max-width:64ch}
+.meta{font-size:13px;color:var(--muted);margin-top:18px}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.88em;background:#eef1f5;border-radius:4px;padding:1px 5px}
+:focus-visible{outline:3px solid var(--a600);outline-offset:2px}
+
+/* ── picker + stage ── */
+.stagegrid{display:grid;grid-template-columns:280px 1fr;gap:28px;margin-top:34px;align-items:start}
+@media (max-width:900px){.stagegrid{grid-template-columns:1fr}}
+.picker{display:flex;flex-direction:column;gap:6px}
+.picker button{display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:12px;text-align:left;width:100%;
+  background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:10px 12px;font:inherit;color:inherit;cursor:pointer}
+.picker button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.picker .sw{width:38px;height:38px;border-radius:8px;position:relative;overflow:hidden}
+.picker .sw i{position:absolute;inset:auto 0 0 0;height:40%}
+.picker .nm{font-weight:600}
+.picker .sub{display:block;font-size:12.5px;color:var(--muted);font-weight:400}
+.tag{font-size:12px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.tag.ok{background:#dcfce7;color:var(--pass)} .tag.no{background:#fee2e2;color:var(--fail)} .tag.edge{background:#fef3c7;color:var(--warnc)}
+.pickhead{font-size:13px;color:var(--muted);margin:14px 2px 2px}
+
+.stage{display:grid;gap:20px}
+.tillrow{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+@media (max-width:700px){.tillrow{grid-template-columns:1fr}}
+.stage,.stage>*,.tillrow>*{min-width:0}
+@media (max-width:620px){
+  .till{grid-template-columns:44px 1fr}
+  .till .cart{grid-column:1 / -1;border-left:0;border-top:1px solid #1f2937}
+  .items{grid-template-columns:repeat(2,1fr)}
+}
+.cap{font-size:13px;color:var(--muted);margin:8px 2px 0}
+
+/* ── till mock (dark, Inter, the app's real grays) ── */
+.till{background:#030712;border-radius:14px;overflow:hidden;display:grid;grid-template-columns:56px 1fr 230px;min-height:340px;
+  font-family:"Inter",system-ui,sans-serif;color:#e5e7eb;font-size:13px}
+.side{background:linear-gradient(var(--a950),var(--a950)) , #030712;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0}
+.side .ico{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#9ca3af}
+.side .ico.on{background:var(--a500);color:var(--aTxt)}
+.side svg{width:18px;height:18px}
+.grid{padding:12px;background:#030712}
+.cats{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.cats span{padding:6px 11px;border-radius:999px;background:#1f2937;color:#d1d5db;font-weight:500}
+.cats span.on{background:var(--a500);color:var(--aTxt)}
+.items{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.item{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:10px;min-height:66px;display:flex;flex-direction:column;justify-content:space-between}
+.item b{font-weight:600;color:#f9fafb}
+.item small{color:#9ca3af}
+.item.sel{border-color:var(--a500);box-shadow:inset 0 0 0 1px var(--a500)}
+.low{align-self:flex-start;font-size:10.5px;font-weight:600;color:#fbbf24;background:rgba(245,158,11,.14);padding:1px 6px;border-radius:5px}
+.cart{background:#111827;border-left:1px solid #1f2937;padding:12px;display:flex;flex-direction:column;gap:8px}
+.cart h4{margin:0 0 2px;font-size:13px;color:#f9fafb}
+.line{display:flex;justify-content:space-between;gap:8px;color:#e5e7eb}
+.line.void{color:#f87171;text-decoration:line-through}
+.badge{font-size:10.5px;font-weight:600;border-radius:5px;padding:1px 6px}
+.badge.paid{color:#4ade80;background:rgba(34,197,94,.14)} .badge.void{color:#f87171;background:rgba(239,68,68,.14);text-decoration:none}
+.link{color:var(--a400);font-weight:500}
+.total{display:flex;justify-content:space-between;border-top:1px solid #1f2937;padding-top:8px;margin-top:auto;font-size:16px;font-weight:700;color:#f9fafb}
+.pay{background:var(--a500);color:var(--aTxt);border:0;border-radius:10px;padding:12px;font:inherit;font-weight:700;font-size:15px}
+.pay:active,.pay.pressed{background:var(--a600);color:var(--aTxt600)}
+.row2{display:flex;gap:6px}
+.row2 .ghost{flex:1;background:#1f2937;color:#e5e7eb;border:0;border-radius:9px;padding:9px;font:inherit;font-weight:500}
+
+/* lock screen */
+.lock{background:#0d1424;border-radius:14px;display:grid;grid-template-columns:1fr 1fr;min-height:340px;font-family:"Inter",system-ui,sans-serif;color:#e5e7eb}
+.lock .l{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border-right:2px solid var(--a500);padding:14px}
+.chip{width:58px;height:58px;border-radius:12px;background:#fff;display:grid;place-items:center;color:#94a3b8;font-size:11px;font-weight:600}
+.lock .r{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:14px}
+.dots{display:flex;gap:7px}.dots i{width:9px;height:9px;border-radius:50%;background:#334155}.dots i.on{background:var(--a500)}
+.pad{display:grid;grid-template-columns:repeat(3,34px);gap:6px}.pad span{height:30px;border-radius:7px;background:#1e293b;display:grid;place-items:center;color:#e5e7eb;font-size:12px}
+.enter{background:var(--a500);color:var(--aTxt);border-radius:8px;padding:8px 22px;font-weight:700;font-size:12.5px}
+.pw{font-size:10px;color:#64748b}
+
+/* dashboard light mock */
+.dash{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:16px;font-family:"Inter",system-ui,sans-serif;font-size:13px;display:grid;gap:12px}
+.dash .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.dash .tabs{display:flex;gap:4px}.dash .tabs span{padding:6px 10px;border-radius:8px;color:#475569}
+.dash .tabs span.on{background:#f1f5f9;color:var(--a700);font-weight:600;box-shadow:inset 0 -2px 0 var(--a600)}
+.dash .btn{background:var(--a600);color:var(--aTxt600);border-radius:8px;padding:8px 14px;font-weight:600}
+.dash .row{display:flex;justify-content:space-between;border-top:1px solid #eef1f5;padding-top:10px;color:#0f172a}
+.dash a{color:var(--a700);font-weight:500;text-decoration:underline}
+
+/* ── explainer ── */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:10px}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+.box{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:18px 20px}
+.box ul{margin:6px 0 0;padding-left:18px}.box li{margin:3px 0}
+.roles{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+.roles th,.roles td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+.roles th{font-weight:600;color:var(--muted);font-size:13px}
+
+/* ── results ── */
+.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--rule);border-radius:12px;margin-top:12px}
+table.res{border-collapse:collapse;font-size:13.5px;min-width:900px;width:100%}
+table.res th,table.res td{padding:9px 10px;border-bottom:1px solid var(--rule);text-align:left;white-space:nowrap}
+table.res th{font-weight:600;color:var(--muted);font-size:12.5px;background:#fafbfc}
+table.res tr:last-child td{border-bottom:0}
+td.p{color:var(--pass);font-weight:600} td.f{color:var(--fail);font-weight:600} td.e{color:var(--warnc);font-weight:600}
+.dot{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.decide{counter-reset:none;display:grid;gap:14px;margin-top:12px}
+.decide .box h3{font-size:16.5px}
+.decide .rec{font-size:14px;color:var(--muted);margin:6px 0 0}
+.note{font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.till,.lock,.dash{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Let a business wear its colour, without ever hiding a total.</h1>
+<p class="lede">A proposal for Phase 2 of client branding: curated themes that tint the till and the dashboard. Pick one on the left and watch every screen change. The checks underneath each name run live, from the colours themselves.</p>
+<p class="meta">Register A295 · Phase 2 · for the owner's decision · prepared 2026-09-23. Nothing here is built yet.</p>
+
+<div class="stagegrid">
+  <nav class="picker" id="picker" aria-label="Themes"></nav>
+  <div class="stage">
+    <div class="tillfull">
+        <div class="till" role="img" aria-label="Till POS screen in the selected theme">
+          <div class="side">
+            <span class="ico on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10"/></svg></span>
+            <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-5 8-5s6.5 1 8 5"/></svg></span>
+          </div>
+          <div class="grid">
+            <div class="cats"><span class="on">Mains</span><span>Sides</span><span>Drinks</span><span>Specials</span></div>
+            <div class="items">
+              <div class="item sel"><b>Chicken wrap</b><small>KES 450</small></div>
+              <div class="item"><b>Beef burger</b><small>KES 520</small></div>
+              <div class="item"><b>Pilau</b><small>KES 380</small></div>
+              <div class="item"><b>Chips, large</b><small>KES 250</small></div>
+              <div class="item"><b>Masala tea</b><small>KES 120</small><span class="low">Low stock</span></div>
+              <div class="item"><b>Soda 500 ml</b><small>KES 100</small></div>
+            </div>
+          </div>
+          <div class="cart">
+            <h4>Order 1042 <span class="badge paid">Paid</span></h4>
+            <div class="line"><span>1 × Chicken wrap</span><span>450</span></div>
+            <div class="line"><span>2 × Chips, large</span><span>500</span></div>
+            <div class="line void"><span>1 × Soda 500 ml <span class="badge void">Void</span></span><span>100</span></div>
+            <span class="link">Add a note</span>
+            <div class="total"><span>Total</span><span>KES 950</span></div>
+            <div class="row2"><button class="ghost" tabindex="-1">Hold</button><button class="ghost" tabindex="-1">Discount</button></div>
+            <button class="pay" tabindex="-1">Charge KES 950</button>
+          </div>
+        </div>
+        <p class="cap">The till. The theme takes the actions and the selected states. The total, the prices and the green, amber and red badges are not the theme's to change.</p>
+    </div>
+    <div class="tillrow">
+      <div>
+        <div class="lock" role="img" aria-label="Lock screen in the selected theme">
+          <div class="l"><div class="chip">LOGO</div><b>Your Business</b><small style="color:#94a3b8">Main branch</small></div>
+          <div class="r"><div class="dots"><i class="on"></i><i></i><i></i><i></i></div>
+            <div class="pad"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div>
+            <span class="enter">Enter</span><span class="pw">powered by SwiftPOS</span></div>
+        </div>
+        <p class="cap">The lock screen, as it works today in Phase 1, now drawn from the same theme.</p>
+      </div>
+      <div>
+      <div class="dash" role="img" aria-label="Dashboard in light mode in the selected theme">
+        <div class="top"><div class="tabs"><span class="on">Menu items</span><span>Categories</span><span>Combos</span></div><span class="btn">New product</span></div>
+        <div class="row"><span>Chicken wrap</span><span>KES 450 <a>Edit</a></span></div>
+        <div class="row"><span>Masala tea</span><span>KES 120 <a>Edit</a></span></div>
+      </div>
+      <p class="cap">The web dashboard in light mode. A light background needs darker shades of the same colour, which is why a theme is a family of shades, not one colour.</p>
+    </div>
+    </div>
+  </div>
+</div>
+
+<h2>What a theme is</h2>
+<p>A theme is one colour family with a fixed shade for each job. The shade for each job was found by testing every family against the till's real surfaces; the same shade number worked for all of them, which keeps authoring and review simple.</p>
+<div class="box" style="margin-top:12px">
+<table class="roles">
+  <thead><tr><th>Job</th><th>Shade</th><th>Must pass</th></tr></thead>
+  <tbody>
+    <tr><td>Buttons and selected states on the till (dark)</td><td>500</td><td>3:1 against the panel it sits on; its label 4.5:1</td></tr>
+    <tr><td>Links and active labels on the till</td><td>400</td><td>4.5:1 as text</td></tr>
+    <tr><td>Buttons on the light dashboard</td><td>600</td><td>3:1 against white; its label 4.5:1</td></tr>
+    <tr><td>Links and active tabs on the light dashboard</td><td>700</td><td>4.5:1 as text on white</td></tr>
+    <tr><td>Pressed state</td><td>one shade darker</td><td>its label still 4.5:1</td></tr>
+    <tr><td>Sidebar tint (optional)</td><td>950</td><td>sidebar text stays 7:1 or better</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="two">
+  <div class="box"><h3>A theme changes</h3><ul><li>Primary buttons, including Charge</li><li>Selected category, selected item, active menu item</li><li>Links and active tabs</li><li>The lock screen's divider, PIN dots and Enter</li><li>An optional tint on the sidebar</li></ul></div>
+  <div class="box"><h3>A theme never changes</h3><ul><li>Totals, prices, keypad digits, body text</li><li>Page and card backgrounds, apart from the sidebar tint</li><li>Green for paid and done, amber for warnings, red for void and errors</li><li>The receipt, which stays black and white</li></ul></div>
+</div>
+<p class="note" style="margin-top:14px">One change follows from this. Today the till's main action colour is green, the same green that means paid. With themes, green returns to meaning success only, and the theme carries the main action. The unthemed default needs the same treatment; see the decisions below.</p>
+
+<h2>How each candidate did</h2>
+<p>Every number below is computed in this page from the colours themselves, using WCAG contrast and the CIEDE2000 colour difference. A theme ships only if every cell passes. The status test asks for a difference of at least 20 from the paid, warning and void colours, on both the button shade and the text shade, so a themed button can never be mistaken for a status.</p>
+<div class="tablewrap"><table class="res" id="res"></table></div>
+<p class="note" id="pairs" style="margin-top:12px"></p>
+
+<h2>Decisions for you</h2>
+<div class="decide">
+  <div class="box"><h3>Which themes ship first</h3>
+    <p class="rec" id="rec-set"></p></div>
+  <div class="box"><h3>Theme as a family of shades, not one colour</h3>
+    <p>The Phase 2 scope described a theme as three colours. That cannot work across a dark till and a light dashboard: a colour bright enough for the till fails on white, and one dark enough for white is hard to see on the till. Storing a family (and a fixed shade per job) solves it, and the business still makes a single choice.</p>
+    <p class="rec">Recommendation: adopt the family model. The stored value stays a single theme name.</p></div>
+  <div class="box"><h3>What the unthemed default looks like</h3>
+    <p>Teal, today's lock-screen default, sits just inside the status threshold next to paid green (see the table). On the lock screen that is harmless, because it shows no status colours. Inside the app it would sit beside green paid badges.</p>
+    <p class="rec">Recommendation: keep Teal as the lock-screen default, and make the in-app default a neutral blue until a business picks a theme.</p></div>
+  <div class="box"><h3>How strict the status test is</h3>
+    <p>At 20, Emerald, Rose and Amber are out and Teal is on the line. At 15, Teal and Rose's lighter shades come back. Lower thresholds let a themed Charge button sit closer to a void badge.</p>
+    <p class="rec">Recommendation: 20, and review any exception on the till under real light before it ships.</p></div>
+  <div class="box"><h3>How different the themes must be from each other</h3>
+    <p>Offering two themes that look almost the same wastes a slot and confuses the choice. The proposal asks for a difference of at least 10 between any two themes' button colours, which is plainly visible side by side. That rule is what leaves Iris out: it is too close to Violet.</p>
+    <p class="rec">Recommendation: 10. Raising it to 15 would leave three themes.</p></div>
+  <div class="box"><h3>The Phase 1 palette</h3>
+    <p>The lock-screen palette offered today includes Emerald, Rose, Pink and Amber. They are fine on the lock screen. Once themes exist, a business that picked one of them would get a different colour inside the app than on its lock screen.</p>
+    <p class="rec">Recommendation: when a business picks a theme, the lock screen follows it. A custom lock-screen colour stays available on its own, as today.</p></div>
+  <div class="box"><h3>Where the business's own receipt line prints</h3>
+    <p>The scope puts the business's footer line under the thank-you. Today it prints above it. Either order keeps the thank-you single, the tax line and the SwiftPOS credit last.</p>
+    <p class="rec">Recommendation: keep today's order; it is already on customers' receipts.</p></div>
+  <div class="box"><h3>Who gets themes</h3>
+    <p>The scope frames themes as a premium feature. The switch for that already exists: a per-business feature flag, the same kind that turns on web hosting.</p>
+    <p class="rec">Recommendation: ship behind a flag, off by default, and decide the price separately.</p></div>
+</div>
+
+<h2>What happens after you decide</h2>
+<p>The approved set becomes a small registry in the code, checked by a test that runs exactly the checks on this page. Then the app gains a theme layer, the branding record gains a theme name and optional per-branch override, and the web Branding page gains a theme picker with a full-screen preview. The last and largest step is walking every screen, every button state and both dashboard modes on a real till for each theme. That walk is why a small, curated set matters.</p>
+
+</div>
+
+<script>
+// Tailwind v3 ramps. Each theme is one family; the shade per job is fixed (500/400/600/700, pressed +1, tint 950).
+const RAMPS = {
+  Blue:   {400:'#60a5fa',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',950:'#172554'},
+  Indigo: {400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',950:'#1e1b4b'},
+  Violet: {400:'#a78bfa',500:'#8b5cf6',600:'#7c3aed',700:'#6d28d9',800:'#5b21b6',950:'#2e1065'},
+  Sky:    {400:'#38bdf8',500:'#0ea5e9',600:'#0284c7',700:'#0369a1',800:'#075985',950:'#082f49'},
+  Cyan:   {400:'#22d3ee',500:'#06b6d4',600:'#0891b2',700:'#0e7490',800:'#155e75',950:'#083344'},
+  Fuchsia:{400:'#e879f9',500:'#d946ef',600:'#c026d3',700:'#a21caf',800:'#86198f',950:'#4a044e'},
+  Teal:   {400:'#2dd4bf',500:'#14b8a6',600:'#0d9488',700:'#0f766e',800:'#115e59',950:'#042f2e'},
+  Emerald:{400:'#34d399',500:'#10b981',600:'#059669',700:'#047857',800:'#065f46',950:'#022c22'},
+  Rose:   {400:'#fb7185',500:'#f43f5e',600:'#e11d48',700:'#be123c',800:'#9f1239',950:'#4c0519'},
+  Amber:  {400:'#fbbf24',500:'#f59e0b',600:'#d97706',700:'#b45309',800:'#92400e',950:'#451a03'},
+};
+const NAMES = {Blue:'Ocean',Indigo:'Iris',Violet:'Violet',Sky:'Sky',Cyan:'Lagoon',Fuchsia:'Orchid',Teal:'Teal',Emerald:'Emerald',Rose:'Rose',Amber:'Amber'};
+// The app's real surfaces and status colours (Tailwind grays used by the till; the lock card; the light dashboard).
+const DARK_PANELS = ['#030712','#111827','#0d1424'];     // gray-950, gray-900, lock card
+const TEXT_PANELS = ['#111827','#1f2937'];                // where links sit: gray-900, gray-800
+const LIGHT_PANELS = ['#ffffff','#f9fafb'];
+const STATUS = {paid:['#22c55e','#4ade80'], warning:['#f59e0b','#fbbf24'], void:['#ef4444','#f87171']};
+const SIDEBAR_TEXT = '#d1d5db';
+const STATUS_MIN = 20, PAIR_MIN = 10;
+// Order of preference when two passing themes are too alike: the more distinct-from-everything one first.
+const PREFER = ['Blue','Violet','Cyan','Fuchsia','Sky','Indigo'];
+
+const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const lin=c=>{c/=255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4};
+const lum=h=>{const[r,g,b]=hex2rgb(h).map(lin);return 0.2126*r+0.7152*g+0.0722*b};
+const cr=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};
+const lab=h=>{const[r,g,b]=hex2rgb(h).map(lin);const X=(r*0.4124+g*0.3576+b*0.1805)/0.95047,Y=r*0.2126+g*0.7152+b*0.0722,Z=(r*0.0193+g*0.1192+b*0.9505)/1.08883;const f=t=>t>0.008856?Math.cbrt(t):7.787*t+16/116;return[116*f(Y)-16,500*(f(X)-f(Y)),200*(f(Y)-f(Z))]};
+function de(h1,h2){const[L1,a1,b1]=lab(h1),[L2,a2,b2]=lab(h2);const rad=Math.PI/180,deg=180/Math.PI;const C1=Math.hypot(a1,b1),C2=Math.hypot(a2,b2),Cb=(C1+C2)/2;const G=0.5*(1-Math.sqrt(Cb**7/(Cb**7+25**7)));const a1p=(1+G)*a1,a2p=(1+G)*a2;const C1p=Math.hypot(a1p,b1),C2p=Math.hypot(a2p,b2);const hh=(a,b)=>{let x=Math.atan2(b,a)*deg;return x<0?x+360:x};const h1p=hh(a1p,b1),h2p=hh(a2p,b2);const dL=L2-L1,dC=C2p-C1p;let dh=h2p-h1p;if(C1p*C2p===0)dh=0;else if(dh>180)dh-=360;else if(dh<-180)dh+=360;const dH=2*Math.sqrt(C1p*C2p)*Math.sin(dh/2*rad);const Lb=(L1+L2)/2,Cbp=(C1p+C2p)/2;let hb=h1p+h2p;if(C1p*C2p!==0){hb=Math.abs(h1p-h2p)>180?(h1p+h2p+360)/2:(h1p+h2p)/2;if(hb>=360)hb-=360}const T=1-0.17*Math.cos((hb-30)*rad)+0.24*Math.cos(2*hb*rad)+0.32*Math.cos((3*hb+6)*rad)-0.2*Math.cos((4*hb-63)*rad);const dT=30*Math.exp(-(((hb-275)/25)**2));const RC=2*Math.sqrt(Cbp**7/(Cbp**7+25**7));const SL=1+0.015*(Lb-50)**2/Math.sqrt(20+(Lb-50)**2),SC=1+0.045*Cbp,SH=1+0.015*Cbp*T;const RT=-Math.sin(2*dT*rad)*RC;return Math.sqrt((dL/SL)**2+(dC/SC)**2+(dH/SH)**2+RT*(dC/SC)*(dH/SH))}
+const label=a=>cr('#ffffff',a)>=cr('#000000',a)?'#ffffff':'#000000';
+const lblCR=a=>cr(label(a),a);
+const minOf=(a,arr)=>Math.min(...arr.map(s=>cr(a,s)));
+
+function vet(fam){
+  const r=RAMPS[fam];
+  const c={
+    fillDark: Math.min(minOf(r[500],DARK_PANELS), 99), fillDarkLbl: lblCR(r[500]),
+    textDark: minOf(r[400],TEXT_PANELS),
+    fillLight: minOf(r[600],LIGHT_PANELS), fillLightLbl: lblCR(r[600]),
+    textLight: minOf(r[700],LIGHT_PANELS),
+    pressDark: lblCR(r[600]), pressLight: lblCR(r[700]),
+    tint: cr(SIDEBAR_TEXT, r[950]),
+  };
+  let worst=Infinity, worstName='';
+  for(const [st,hs] of Object.entries(STATUS)) for(const s of [500,400]) for(const h of hs){ const d=de(r[s],h); if(d<worst){worst=d;worstName=st;} }
+  c.status=worst; c.statusName=worstName;
+  c.ok = c.fillDark>=3 && c.fillDarkLbl>=4.5 && c.textDark>=4.5 && c.fillLight>=3 && c.fillLightLbl>=4.5 && c.textLight>=4.5 && c.pressDark>=4.5 && c.pressLight>=4.5 && c.tint>=7 && c.status>=STATUS_MIN;
+  c.onlyStatus = !c.ok && c.fillDark>=3 && c.fillDarkLbl>=4.5 && c.textDark>=4.5 && c.fillLight>=3 && c.fillLightLbl>=4.5 && c.textLight>=4.5 && c.pressDark>=4.5 && c.pressLight>=4.5 && c.tint>=7;
+  c.edge = c.onlyStatus && c.status>=STATUS_MIN-5;
+  return c;
+}
+const ALL = Object.keys(RAMPS);
+const V = Object.fromEntries(ALL.map(f=>[f,vet(f)]));
+
+// Pairwise: shipped themes must be told apart at a glance (button shade). Greedy in PREFER order:
+// keep a theme only if it differs by at least PAIR_MIN from every theme already kept.
+const passing = PREFER.filter(f=>V[f] && V[f].ok).concat(ALL.filter(f=>V[f].ok && !PREFER.includes(f)));
+const recommended=[], close=[];
+for(const f of passing){
+  const near = recommended.map(k=>[k,de(RAMPS[k][500],RAMPS[f][500])]).filter(([,d])=>d<PAIR_MIN);
+  if(near.length){ close.push([near[0][0],f,near[0][1]]); } else recommended.push(f);
+}
+const drop=new Set(close.map(p=>p[1]));
+
+// Picker
+const picker=document.getElementById('picker');
+const section=(t)=>{const d=document.createElement('div');d.className='pickhead';d.textContent=t;picker.appendChild(d);};
+const addBtn=(f)=>{
+  const v=V[f], r=RAMPS[f], b=document.createElement('button');
+  b.type='button'; b.dataset.fam=f;
+  const tag = v.ok ? (drop.has(f)?['edge','Too close to another']:['ok','Passes']) : v.edge ? ['edge','Borderline'] : ['no','Rejected'];
+  b.innerHTML=`<span class="sw" style="background:${r[500]}"><i style="background:${r[700]}"></i></span><span><span class="nm">${NAMES[f]}</span><span class="sub">${f} family</span></span><span class="tag ${tag[0]}">${tag[1]}</span>`;
+  b.addEventListener('click',()=>apply(f));
+  picker.appendChild(b);
+};
+section('Proposed'); recommended.forEach(addBtn);
+const rest=ALL.filter(f=>!recommended.includes(f));
+if(rest.length){ section('Not proposed'); rest.forEach(addBtn); }
+
+function apply(f){
+  const r=RAMPS[f], s=document.documentElement.style;
+  s.setProperty('--a400',r[400]); s.setProperty('--a500',r[500]); s.setProperty('--a600',r[600]); s.setProperty('--a700',r[700]); s.setProperty('--a950',r[950]);
+  s.setProperty('--aTxt',label(r[500])); s.setProperty('--aTxt600',label(r[600]));
+  document.querySelectorAll('#picker button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fam===f)));
+}
+apply(recommended[0]||ALL[0]);
+
+// Results table
+const fmt=(x,min)=>`<td class="${x>=min?'p':'f'}">${x.toFixed(2)}</td>`;
+let h='<thead><tr><th>Theme</th><th>Till button</th><th>Till button label</th><th>Till link</th><th>Light button</th><th>Light button label</th><th>Light link</th><th>Pressed (till / light)</th><th>Sidebar text on tint</th><th>Closest status</th><th>Verdict</th></tr></thead><tbody>';
+for(const f of ALL){const v=V[f],r=RAMPS[f];
+  const st=v.status>=STATUS_MIN?'p':(v.edge?'e':'f');
+  const verdict=v.ok?(drop.has(f)?'<td class="e">Passes, too close to another</td>':'<td class="p">Ship</td>'):(v.edge?'<td class="e">Borderline</td>':'<td class="f">Reject</td>');
+  h+=`<tr><td><span class="dot" style="background:${r[500]}"></span>${NAMES[f]}</td>${fmt(v.fillDark,3)}${fmt(v.fillDarkLbl,4.5)}${fmt(v.textDark,4.5)}${fmt(v.fillLight,3)}${fmt(v.fillLightLbl,4.5)}${fmt(v.textLight,4.5)}<td class="${Math.min(v.pressDark,v.pressLight)>=4.5?'p':'f'}">${v.pressDark.toFixed(2)} / ${v.pressLight.toFixed(2)}</td>${fmt(v.tint,7)}<td class="${st}">${v.statusName} ${v.status.toFixed(1)}</td>${verdict}</tr>`;}
+document.getElementById('res').innerHTML=h+'</tbody>';
+
+document.getElementById('pairs').textContent = close.length
+  ? 'Too alike to offer together: ' + close.map(p=>`${NAMES[p[1]]} is close to ${NAMES[p[0]]} (difference ${p[2].toFixed(1)}, below ${PAIR_MIN})`).join('; ') + `. Every proposed theme differs from every other by at least ${PAIR_MIN}.`
+  : `Every passing theme differs from every other by at least ${PAIR_MIN}.`;
+document.getElementById('rec-set').textContent = `Proposed: ${recommended.map(f=>NAMES[f]).join(', ')} — ${recommended.length} themes, each passing every check and distinct from the others. `
+  + `Not proposed: ${rest.map(f=>NAMES[f]+(V[f].ok?' (too close to another)':V[f].edge?' (borderline on status)':' (clashes with '+V[f].statusName+')')).join(', ')}. The names are suggestions; rename freely.`;
+</script>
+</body>
+</html>
