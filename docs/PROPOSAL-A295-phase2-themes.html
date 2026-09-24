@@ -14,6 +14,8 @@
   --ui:"Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   /* live theme (set by script) */
   --a500:#3b82f6; --a400:#60a5fa; --a600:#2563eb; --a700:#1d4ed8; --a950:#172554; --aTxt:#000000; --aTxt600:#ffffff;
+  /* brand layer (set by script): the business's own colour — lock screen, sidebar tint, strip, logo chip */
+  --sideTint:#172554; --strip:transparent; --lockAcc:#3b82f6; --lockTxt:#000000;
   box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 *,*::before,*::after{box-sizing:inherit}
@@ -56,9 +58,9 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:.88em;background:#eef
 .cap{font-size:13px;color:var(--muted);margin:8px 2px 0}
 
 /* ── till mock (dark, Inter, the app's real grays) ── */
-.till{background:#030712;border-radius:14px;overflow:hidden;display:grid;grid-template-columns:56px 1fr 230px;min-height:340px;
+.till{position:relative;background:#030712;border-radius:14px;overflow:hidden;display:grid;grid-template-columns:56px 1fr 230px;min-height:340px;
   font-family:"Inter",system-ui,sans-serif;color:#e5e7eb;font-size:13px}
-.side{background:linear-gradient(var(--a950),var(--a950)) , #030712;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0}
+.side{background:var(--sideTint);display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0}
 .side .ico{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#9ca3af}
 .side .ico.on{background:var(--a500);color:var(--aTxt)}
 .side svg{width:18px;height:18px}
@@ -85,18 +87,31 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:.88em;background:#eef
 .row2{display:flex;gap:6px}
 .row2 .ghost{flex:1;background:#1f2937;color:#e5e7eb;border:0;border-radius:9px;padding:9px;font:inherit;font-weight:500}
 
+/* brand strip: decoration only, never on anything clickable or any status */
+.till::before,.dash::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--strip);z-index:1}
+.leftcol{display:grid;gap:18px;align-content:start}
+.brandbox{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px}
+.brandbox .pickhead{margin:0 0 8px}
+.bsw{display:flex;flex-wrap:wrap;gap:6px}
+.bsw button{width:34px;height:34px;border-radius:8px;border:1px solid var(--rule);cursor:pointer;padding:0;font:600 10px var(--ui);color:#56607a;background:#fff}
+.bsw button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--ink)}
+.brandbox label{display:block;font-size:12.5px;color:var(--muted);margin-top:10px}
+.brandbox input{width:100%;margin-top:4px;font:14px ui-monospace,Consolas,monospace;padding:7px 9px;border:1px solid var(--rule);border-radius:8px}
+.bnote{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+.bnote b{color:var(--ink)}
+.bnote button{margin-top:6px;font:600 12.5px var(--ui);border:1px solid var(--ink);background:#fff;border-radius:7px;padding:4px 9px;cursor:pointer}
 /* lock screen */
 .lock{background:#0d1424;border-radius:14px;display:grid;grid-template-columns:1fr 1fr;min-height:340px;font-family:"Inter",system-ui,sans-serif;color:#e5e7eb}
-.lock .l{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border-right:2px solid var(--a500);padding:14px}
-.chip{width:58px;height:58px;border-radius:12px;background:#fff;display:grid;place-items:center;color:#94a3b8;font-size:11px;font-weight:600}
+.lock .l{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border-right:2px solid var(--lockAcc);padding:14px}
+.chip{width:58px;height:58px;border-radius:12px;background:#fff;box-shadow:0 0 0 3px var(--strip);display:grid;place-items:center;color:#94a3b8;font-size:11px;font-weight:600}
 .lock .r{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:14px}
-.dots{display:flex;gap:7px}.dots i{width:9px;height:9px;border-radius:50%;background:#334155}.dots i.on{background:var(--a500)}
+.dots{display:flex;gap:7px}.dots i{width:9px;height:9px;border-radius:50%;background:#334155}.dots i.on{background:var(--lockAcc)}
 .pad{display:grid;grid-template-columns:repeat(3,34px);gap:6px}.pad span{height:30px;border-radius:7px;background:#1e293b;display:grid;place-items:center;color:#e5e7eb;font-size:12px}
-.enter{background:var(--a500);color:var(--aTxt);border-radius:8px;padding:8px 22px;font-weight:700;font-size:12.5px}
+.enter{background:var(--lockAcc);color:var(--lockTxt);border-radius:8px;padding:8px 22px;font-weight:700;font-size:12.5px}
 .pw{font-size:10px;color:#64748b}
 
 /* dashboard light mock */
-.dash{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:16px;font-family:"Inter",system-ui,sans-serif;font-size:13px;display:grid;gap:12px}
+.dash{position:relative;overflow:hidden;background:#fff;border:1px solid var(--rule);border-radius:14px;padding:16px;font-family:"Inter",system-ui,sans-serif;font-size:13px;display:grid;gap:12px}
 .dash .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .dash .tabs{display:flex;gap:4px}.dash .tabs span{padding:6px 10px;border-radius:8px;color:#475569}
 .dash .tabs span.on{background:#f1f5f9;color:var(--a700);font-weight:600;box-shadow:inset 0 -2px 0 var(--a600)}
@@ -132,11 +147,20 @@ td.p{color:var(--pass);font-weight:600} td.f{color:var(--fail);font-weight:600} 
 <div class="wrap">
 
 <h1>Let a business wear its colour, without ever hiding a total.</h1>
-<p class="lede">A proposal for Phase 2 of client branding: curated themes that tint the till and the dashboard. Pick one on the left and watch every screen change. The checks underneath each name run live, from the colours themselves.</p>
-<p class="meta">Register A295 · Phase 2 · for the owner's decision · prepared 2026-09-23. Nothing here is built yet.</p>
+<p class="lede">A proposal for Phase 2 of client branding, in two layers. The business's <b>own brand colour</b>, whatever it is, shows on the lock screen, the logo, the sidebar and a brand strip. A <b>curated action colour</b> carries the buttons and selections, and is vetted so it can never be mistaken for paid, warning or void. Pick both on the left and watch every screen change; every check runs live, from the colours themselves.</p>
+<p class="meta">Register A295 · Phase 2 · for the owner's decision · prepared 2026-09-23, revised 2026-09-24 (two layers: brand + action; seven themes). Nothing here is built yet.</p>
 
 <div class="stagegrid">
-  <nav class="picker" id="picker" aria-label="Themes"></nav>
+  <div class="leftcol">
+    <div class="brandbox">
+      <div class="pickhead">Brand colour — the business's own</div>
+      <div class="bsw" id="brandPresets" role="group" aria-label="Brand colour presets"></div>
+      <label for="brandHex">or type one</label>
+      <input id="brandHex" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="#F5B800">
+      <p class="bnote" id="brandNote"></p>
+    </div>
+    <nav class="picker" id="picker" aria-label="Action themes"></nav>
+  </div>
   <div class="stage">
     <div class="tillfull">
         <div class="till" role="img" aria-label="Till POS screen in the selected theme">
@@ -177,7 +201,7 @@ td.p{color:var(--pass);font-weight:600} td.f{color:var(--fail);font-weight:600} 
             <div class="pad"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div>
             <span class="enter">Enter</span><span class="pw">powered by SwiftPOS</span></div>
         </div>
-        <p class="cap">The lock screen, as it works today in Phase 1, now drawn from the same theme.</p>
+        <p class="cap">The lock screen, as it works today in Phase 1: it wears the brand colour when the business has one, otherwise the action theme.</p>
       </div>
       <div>
       <div class="dash" role="img" aria-label="Dashboard in light mode in the selected theme">
@@ -191,7 +215,14 @@ td.p{color:var(--pass);font-weight:600} td.f{color:var(--fail);font-weight:600} 
   </div>
 </div>
 
-<h2>What a theme is</h2>
+<h2>Two layers: brand and action</h2>
+<p>A yellow, red or green brand cannot colour the buttons: yellow is the till's warning colour, red is void, green is paid. So the brand never goes on anything a cashier presses or reads as a status. It goes where it identifies the business, and there any colour works, as long as it can be seen.</p>
+<div class="two">
+  <div class="box"><h3>Brand colour — the business's own</h3><ul><li>Lock screen: divider, PIN dots, Enter button</li><li>A ring around the logo</li><li>The sidebar tint and a thin brand strip across the top</li><li>Rule: visible on the till's dark screens (3:1). No status rule, because it never marks an action or a status</li><li>Already stored today: it is the Phase 1 lock-screen colour</li></ul></div>
+  <div class="box"><h3>Action colour — one of the curated themes</h3><ul><li>Buttons, including Charge; selected category and item; links and active tabs</li><li>Rule: every check in the table below, including "never looks like a status"</li><li>New in Phase 2: the business picks a theme name. The web page suggests one that sits well beside its brand colour</li></ul></div>
+</div>
+
+<h2>What an action theme is</h2>
 <p>A theme is one colour family with a fixed shade for each job. The shade for each job was found by testing every family against the till's real surfaces; the same shade number worked for all of them, which keeps authoring and review simple.</p>
 <div class="box" style="margin-top:12px">
 <table class="roles">
@@ -217,25 +248,32 @@ td.p{color:var(--pass);font-weight:600} td.f{color:var(--fail);font-weight:600} 
 <div class="tablewrap"><table class="res" id="res"></table></div>
 <p class="note" id="pairs" style="margin-top:12px"></p>
 
+<h2>Brand colours: any hue that can be seen</h2>
+<p>The same checks, for colours used as a brand colour. Only visibility on the till's dark screens applies. The status column shows why these may not be action colours, even though they are welcome as brand colours.</p>
+<div class="tablewrap"><table class="res" id="brandres"></table></div>
+
 <h2>Decisions for you</h2>
 <div class="decide">
+  <div class="box"><h3>Two layers: the business's own colour for identity, a curated colour for actions</h3>
+    <p>This is what lets a business with a yellow, red or green brand see that colour throughout the app without its buttons looking like warnings, voids or payments. It needs no new data for the brand layer: the colour already saved for the lock screen becomes the brand colour.</p>
+    <p class="rec">Recommendation: adopt it.</p></div>
   <div class="box"><h3>Which themes ship first</h3>
     <p class="rec" id="rec-set"></p></div>
   <div class="box"><h3>Theme as a family of shades, not one colour</h3>
     <p>The Phase 2 scope described a theme as three colours. That cannot work across a dark till and a light dashboard: a colour bright enough for the till fails on white, and one dark enough for white is hard to see on the till. Storing a family (and a fixed shade per job) solves it, and the business still makes a single choice.</p>
     <p class="rec">Recommendation: adopt the family model. The stored value stays a single theme name.</p></div>
   <div class="box"><h3>What the unthemed default looks like</h3>
-    <p>Teal, today's lock-screen default, sits just inside the status threshold next to paid green (see the table). On the lock screen that is harmless, because it shows no status colours. Inside the app it would sit beside green paid badges.</p>
-    <p class="rec">Recommendation: keep Teal as the lock-screen default, and make the in-app default a neutral blue until a business picks a theme.</p></div>
+    <p>Today's default lock-screen colour is Teal, which qualifies as an action theme only after a till check. A business that has picked nothing should get a safe, plain look.</p>
+    <p class="rec">Recommendation: Ocean as the default action colour; no brand colour until the business sets one (the lock screen then uses Ocean).</p></div>
   <div class="box"><h3>How strict the status test is</h3>
-    <p>At 20, Emerald, Rose and Amber are out and Teal is on the line. At 15, Teal and Rose's lighter shades come back. Lower thresholds let a themed Charge button sit closer to a void badge.</p>
-    <p class="rec">Recommendation: 20, and review any exception on the till under real light before it ships.</p></div>
+    <p>At 15, Teal and Pink qualify; at 20 they would not. Nothing else moves: Emerald, Rose and Amber sit far closer to paid, void and warning (the table shows Amber and Red are the status colours themselves), so no threshold makes them safe for buttons.</p>
+    <p class="rec">Recommendation: 15 to qualify; any theme between 15 and 20 ships only after a check on a real till under shop lighting. Emerald, Rose, Amber, Red and Yellow remain welcome as brand colours.</p></div>
   <div class="box"><h3>How different the themes must be from each other</h3>
     <p>Offering two themes that look almost the same wastes a slot and confuses the choice. The proposal asks for a difference of at least 10 between any two themes' button colours, which is plainly visible side by side. That rule is what leaves Iris out: it is too close to Violet.</p>
     <p class="rec">Recommendation: 10. Raising it to 15 would leave three themes.</p></div>
-  <div class="box"><h3>The Phase 1 palette</h3>
-    <p>The lock-screen palette offered today includes Emerald, Rose, Pink and Amber. They are fine on the lock screen. Once themes exist, a business that picked one of them would get a different colour inside the app than on its lock screen.</p>
-    <p class="rec">Recommendation: when a business picks a theme, the lock screen follows it. A custom lock-screen colour stays available on its own, as today.</p></div>
+  <div class="box"><h3>The Phase 1 colour</h3>
+    <p>With two layers there is nothing to reconcile: the colour a business already chose for its lock screen simply becomes its brand colour, and keeps working exactly as it does today. A business with no brand colour gets its action theme on the lock screen too.</p>
+    <p class="rec">Recommendation: keep today's lock-screen colour as the brand colour; no migration.</p></div>
   <div class="box"><h3>Where the business's own receipt line prints</h3>
     <p>The scope puts the business's footer line under the thank-you. Today it prints above it. Either order keeps the thank-you single, the tax line and the SwiftPOS credit last.</p>
     <p class="rec">Recommendation: keep today's order; it is already on customers' receipts.</p></div>
@@ -262,17 +300,18 @@ const RAMPS = {
   Emerald:{400:'#34d399',500:'#10b981',600:'#059669',700:'#047857',800:'#065f46',950:'#022c22'},
   Rose:   {400:'#fb7185',500:'#f43f5e',600:'#e11d48',700:'#be123c',800:'#9f1239',950:'#4c0519'},
   Amber:  {400:'#fbbf24',500:'#f59e0b',600:'#d97706',700:'#b45309',800:'#92400e',950:'#451a03'},
+  Pink:   {400:'#f472b6',500:'#ec4899',600:'#db2777',700:'#be185d',800:'#9d174d',950:'#500724'},
 };
-const NAMES = {Blue:'Ocean',Indigo:'Iris',Violet:'Violet',Sky:'Sky',Cyan:'Lagoon',Fuchsia:'Orchid',Teal:'Teal',Emerald:'Emerald',Rose:'Rose',Amber:'Amber'};
+const NAMES = {Blue:'Ocean',Indigo:'Iris',Violet:'Violet',Sky:'Sky',Cyan:'Lagoon',Fuchsia:'Orchid',Teal:'Teal',Emerald:'Emerald',Rose:'Rose',Amber:'Amber',Pink:'Blossom'};
 // The app's real surfaces and status colours (Tailwind grays used by the till; the lock card; the light dashboard).
 const DARK_PANELS = ['#030712','#111827','#0d1424'];     // gray-950, gray-900, lock card
 const TEXT_PANELS = ['#111827','#1f2937'];                // where links sit: gray-900, gray-800
 const LIGHT_PANELS = ['#ffffff','#f9fafb'];
 const STATUS = {paid:['#22c55e','#4ade80'], warning:['#f59e0b','#fbbf24'], void:['#ef4444','#f87171']};
 const SIDEBAR_TEXT = '#d1d5db';
-const STATUS_MIN = 20, PAIR_MIN = 10;
+const STATUS_MIN = 15, STATUS_CLEAR = 20, PAIR_MIN = 10;   // 15–20 qualifies only after a real-till check
 // Order of preference when two passing themes are too alike: the more distinct-from-everything one first.
-const PREFER = ['Blue','Violet','Cyan','Fuchsia','Sky','Indigo'];
+const PREFER = ['Blue','Violet','Cyan','Fuchsia','Sky','Teal','Pink','Indigo'];
 
 const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const lin=c=>{c/=255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4};
@@ -300,6 +339,7 @@ function vet(fam){
   c.ok = c.fillDark>=3 && c.fillDarkLbl>=4.5 && c.textDark>=4.5 && c.fillLight>=3 && c.fillLightLbl>=4.5 && c.textLight>=4.5 && c.pressDark>=4.5 && c.pressLight>=4.5 && c.tint>=7 && c.status>=STATUS_MIN;
   c.onlyStatus = !c.ok && c.fillDark>=3 && c.fillDarkLbl>=4.5 && c.textDark>=4.5 && c.fillLight>=3 && c.fillLightLbl>=4.5 && c.textLight>=4.5 && c.pressDark>=4.5 && c.pressLight>=4.5 && c.tint>=7;
   c.edge = c.onlyStatus && c.status>=STATUS_MIN-5;
+  c.check = c.ok && c.status<STATUS_CLEAR;
   return c;
 }
 const ALL = Object.keys(RAMPS);
@@ -321,7 +361,7 @@ const section=(t)=>{const d=document.createElement('div');d.className='pickhead'
 const addBtn=(f)=>{
   const v=V[f], r=RAMPS[f], b=document.createElement('button');
   b.type='button'; b.dataset.fam=f;
-  const tag = v.ok ? (drop.has(f)?['edge','Too close to another']:['ok','Passes']) : v.edge ? ['edge','Borderline'] : ['no','Rejected'];
+  const tag = v.ok ? (drop.has(f)?['edge','Too close to another']:(v.check?['edge','Check on till']:['ok','Passes'])) : v.edge ? ['edge','Borderline'] : ['no','Rejected'];
   b.innerHTML=`<span class="sw" style="background:${r[500]}"><i style="background:${r[700]}"></i></span><span><span class="nm">${NAMES[f]}</span><span class="sub">${f} family</span></span><span class="tag ${tag[0]}">${tag[1]}</span>`;
   b.addEventListener('click',()=>apply(f));
   picker.appendChild(b);
@@ -330,28 +370,81 @@ section('Proposed'); recommended.forEach(addBtn);
 const rest=ALL.filter(f=>!recommended.includes(f));
 if(rest.length){ section('Not proposed'); rest.forEach(addBtn); }
 
+let curTheme=null, curBrand=null;
 function apply(f){
+  curTheme=f;
   const r=RAMPS[f], s=document.documentElement.style;
   s.setProperty('--a400',r[400]); s.setProperty('--a500',r[500]); s.setProperty('--a600',r[600]); s.setProperty('--a700',r[700]); s.setProperty('--a950',r[950]);
   s.setProperty('--aTxt',label(r[500])); s.setProperty('--aTxt600',label(r[600]));
   document.querySelectorAll('#picker button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fam===f)));
+  paintBrand();
 }
+
+// ── Brand layer ──────────────────────────────────────────────────────────────
+// The business's own colour: lock screen, logo ring, sidebar tint, brand strip. Never a button or a status,
+// so no status rule — only that it can be SEEN on the till's dark screens (3:1, WCAG 1.4.11 for graphics).
+const BRAND_PRESETS = [['None',null],['Yellow','#F5B800'],['Red','#DC2626'],['Green','#16A34A'],['Amber','#F59E0B'],['Orange','#EA580C'],['Navy','#1E3A8A']];
+const HEX=/^#[0-9a-fA-F]{6}$/;
+const mix=(a,b,t)=>'#'+hex2rgb(a).map((x,i)=>Math.round(x*t+hex2rgb(b)[i]*(1-t)).toString(16).padStart(2,'0')).join('');
+function brandVerdict(hex){
+  const vis=minOf(hex,DARK_PANELS), lbl=lblCR(hex);
+  let t=0.28, tint=mix(hex,'#030712',t); while(cr(SIDEBAR_TEXT,tint)<7 && t>0.06){ t-=0.02; tint=mix(hex,'#030712',t); }
+  return {vis, lbl, ok: vis>=3 && lbl>=4.5, tint};
+}
+// Hue angle in CIE LCh — the colour wheel as people see it.
+const hueOf=h=>{const[,a,b]=lab(h);let x=Math.atan2(b,a)*180/Math.PI;return x<0?x+360:x;};
+const angle=(x,y)=>{const d=Math.abs(x-y)%360;return d>180?360-d:d;};
+function suggestFor(hex){
+  // Complementary pairing: the proposed action theme whose hue sits nearest the OPPOSITE of the brand's hue
+  // (yellow → blue/violet, red → cyan/blue, green → violet/magenta), so the two layers support each other.
+  const target=(hueOf(hex)+180)%360;
+  return recommended.map(f=>[f,angle(hueOf(RAMPS[f][500]),target)]).sort((a,b)=>a[1]-b[1])[0][0];
+}
+function paintBrand(){
+  const s=document.documentElement.style, r=RAMPS[curTheme], note=document.getElementById('brandNote');
+  document.querySelectorAll('#brandPresets button').forEach(b=>b.setAttribute('aria-pressed', String((b.dataset.hex||null)===curBrand)));
+  const fallback=()=>{ s.setProperty('--sideTint',r[950]); s.setProperty('--strip','transparent'); s.setProperty('--lockAcc',r[500]); s.setProperty('--lockTxt',label(r[500])); };
+  if(!curBrand){ fallback(); note.innerHTML='No brand colour: the whole look follows the action theme.'; return; }
+  const v=brandVerdict(curBrand);
+  if(!v.ok){ fallback(); note.innerHTML=`<b>${curBrand}</b> is too dark to be seen on the till's screens (${v.vis.toFixed(2)}:1, needs 3:1). The logo still carries the brand; the rest follows the action theme.`; return; }
+  s.setProperty('--sideTint',v.tint); s.setProperty('--strip',curBrand); s.setProperty('--lockAcc',curBrand); s.setProperty('--lockTxt',label(curBrand));
+  const sug=suggestFor(curBrand);
+  note.innerHTML=`<b>${curBrand}</b> is visible on the till (${v.vis.toFixed(2)}:1); the lock screen's Enter text is ${label(curBrand)==='#000000'?'black':'white'}. Suggested action colour beside it: <b>${NAMES[sug]}</b>.`
+    + (sug!==curTheme?` <br><button type="button" id="useSug">Use ${NAMES[sug]}</button>`:'');
+  const u=document.getElementById('useSug'); if(u) u.onclick=()=>apply(sug);
+}
+const bp=document.getElementById('brandPresets');
+for(const [n,h] of BRAND_PRESETS){
+  const b=document.createElement('button'); b.type='button'; b.title=n; b.setAttribute('aria-label',n);
+  if(h){ b.dataset.hex=h; b.style.background=h; } else { b.textContent='None'; }
+  b.onclick=()=>{ curBrand=h; document.getElementById('brandHex').value=h||''; paintBrand(); };
+  bp.appendChild(b);
+}
+document.getElementById('brandHex').addEventListener('input',e=>{
+  const v=e.target.value.trim(); const h=v.startsWith('#')?v:'#'+v;
+  if(HEX.test(h)){ curBrand=h.toUpperCase(); paintBrand(); } else if(!v){ curBrand=null; paintBrand(); }
+});
 apply(recommended[0]||ALL[0]);
 
 // Results table
 const fmt=(x,min)=>`<td class="${x>=min?'p':'f'}">${x.toFixed(2)}</td>`;
 let h='<thead><tr><th>Theme</th><th>Till button</th><th>Till button label</th><th>Till link</th><th>Light button</th><th>Light button label</th><th>Light link</th><th>Pressed (till / light)</th><th>Sidebar text on tint</th><th>Closest status</th><th>Verdict</th></tr></thead><tbody>';
 for(const f of ALL){const v=V[f],r=RAMPS[f];
-  const st=v.status>=STATUS_MIN?'p':(v.edge?'e':'f');
-  const verdict=v.ok?(drop.has(f)?'<td class="e">Passes, too close to another</td>':'<td class="p">Ship</td>'):(v.edge?'<td class="e">Borderline</td>':'<td class="f">Reject</td>');
+  const st=v.status>=STATUS_CLEAR?'p':(v.status>=STATUS_MIN?'e':'f');
+  const verdict=v.ok?(drop.has(f)?'<td class="e">Passes, too close to another</td>':(v.check?'<td class="e">Ship after a till check</td>':'<td class="p">Ship</td>')):(v.edge?'<td class="e">Borderline</td>':'<td class="f">Reject — fine as a brand colour</td>');
   h+=`<tr><td><span class="dot" style="background:${r[500]}"></span>${NAMES[f]}</td>${fmt(v.fillDark,3)}${fmt(v.fillDarkLbl,4.5)}${fmt(v.textDark,4.5)}${fmt(v.fillLight,3)}${fmt(v.fillLightLbl,4.5)}${fmt(v.textLight,4.5)}<td class="${Math.min(v.pressDark,v.pressLight)>=4.5?'p':'f'}">${v.pressDark.toFixed(2)} / ${v.pressLight.toFixed(2)}</td>${fmt(v.tint,7)}<td class="${st}">${v.statusName} ${v.status.toFixed(1)}</td>${verdict}</tr>`;}
 document.getElementById('res').innerHTML=h+'</tbody>';
 
+{ let bh='<thead><tr><th>Brand colour</th><th>Seen on the till (min)</th><th>Lock-screen Enter text</th><th>As a brand colour</th><th>Closest status (as a button)</th><th>As an action colour</th></tr></thead><tbody>';
+  for(const [n,h] of BRAND_PRESETS){ if(!h) continue; const v=brandVerdict(h);
+    let worst=Infinity,wn=''; for(const [st,hs] of Object.entries(STATUS)) for(const x of hs){const d=de(h,x); if(d<worst){worst=d;wn=st;}}
+    bh+=`<tr><td><span class="dot" style="background:${h}"></span>${n} <code>${h}</code></td><td class="${v.vis>=3?'p':'f'}">${v.vis.toFixed(2)}</td><td class="${v.lbl>=4.5?'p':'f'}">${label(h)==='#000000'?'black':'white'} ${v.lbl.toFixed(2)}</td><td class="${v.ok?'p':'f'}">${v.ok?'Yes':'No — too dark to see'}</td><td class="${worst>=STATUS_CLEAR?'p':worst>=STATUS_MIN?'e':'f'}">${wn} ${worst.toFixed(1)}</td><td class="${worst>=STATUS_MIN?'e':'f'}">${worst>=STATUS_MIN?'Only via a curated theme':'No — looks like '+wn}</td></tr>`; }
+  document.getElementById('brandres').innerHTML=bh+'</tbody>'; }
 document.getElementById('pairs').textContent = close.length
   ? 'Too alike to offer together: ' + close.map(p=>`${NAMES[p[1]]} is close to ${NAMES[p[0]]} (difference ${p[2].toFixed(1)}, below ${PAIR_MIN})`).join('; ') + `. Every proposed theme differs from every other by at least ${PAIR_MIN}.`
   : `Every passing theme differs from every other by at least ${PAIR_MIN}.`;
-document.getElementById('rec-set').textContent = `Proposed: ${recommended.map(f=>NAMES[f]).join(', ')} — ${recommended.length} themes, each passing every check and distinct from the others. `
-  + `Not proposed: ${rest.map(f=>NAMES[f]+(V[f].ok?' (too close to another)':V[f].edge?' (borderline on status)':' (clashes with '+V[f].statusName+')')).join(', ')}. The names are suggestions; rename freely.`;
+document.getElementById('rec-set').textContent = `Proposed: ${recommended.map(f=>NAMES[f]+(V[f].check?' (after a till check)':'')).join(', ')} — ${recommended.length} themes, each passing every check and distinct from the others. `
+  + `Not proposed as action themes: ${rest.map(f=>NAMES[f]+(V[f].ok?' (too close to another)':V[f].edge?' (borderline on status)':' (clashes with '+V[f].statusName+')')).join(', ')} — all of them remain available as a business's brand colour. The names are suggestions; rename freely.`;
 </script>
 </body>
 </html>
