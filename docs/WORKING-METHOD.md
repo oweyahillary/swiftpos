@@ -159,6 +159,8 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 | A Linux stand-in for `npx.cmd` could not show cmd.exe behaviour | Say so (rule 9); the owner's Windows run is the real test |
 | A test spawned `node_modules/.bin/tailwindcss` → `ENOENT` on Windows (it is a `.cmd`) — 2026-09-24-f | Never spawn a `.bin` file: run the package's JS entry with `process.execPath` (`require.resolve('<pkg>/lib/cli.js')`), or use its Node API |
 | CI red on a stale pin: a desktop test pinned a line the slice changed; `run-all` does not run `apps/desktop/test` — 2026-09-24 (#394) | Before hand-over run EVERY test CI runs: `run-all` **and** every `apps/desktop/test/*.test.mjs` (after `npx tsc -b tsconfig.main.json`). Sweep for tests that pin ANY line you edit, not only the pattern you are changing |
+| A dashboard control verified in LIGHT mode only was near-invisible in DARK mode, the dashboard's default — 2026-09-24 (A327) | The dashboard is dark-first (light mode = overrides in `index.css`): write dark-first classes, and check every new dashboard UI in BOTH modes in the browser |
+| Node crashed on exit on Windows after a test PASSED — `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` (libuv), 2026-09-24-j | New tests end with `process.exitCode = fail ? 1 : 0;`, not `process.exit()`. Follow-up: 56 older tests still call `process.exit` — convert when touched |
 | Tests passed in Node because Node has `Buffer`; the browser does not | Run the shipped bundle with `Buffer` deleted |
 | A regex test proved "wired", never "accepts the real payload" | Run the real middleware on each caller's real payload |
 | Refusal tests "passed" for the wrong reason | Every refusal starts from a payload that passes |

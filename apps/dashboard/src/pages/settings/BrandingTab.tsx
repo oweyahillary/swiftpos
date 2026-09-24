@@ -233,17 +233,22 @@ export default function BrandingTab() {
                 {THEMES.map((t) => {
                   const on = theme?.id === t.id;
                   return (
+                    // Selected = the theme's OWN colour as border + ring, and a tick — readable in dark AND light mode.
+                    // (The dashboard is dark-first: gray-900/200 invert between modes, which made the selected tile the
+                    // faintest one in dark mode — owner's screenshots, 2026-09-24.)
                     <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => setThemeId(t.id)}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200 hover:border-gray-400'}`}>
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? '' : 'border-gray-700 hover:border-gray-500'}`}
+                      style={on ? { borderColor: t.shades[500], boxShadow: `0 0 0 2px ${t.shades[500]}` } : undefined}>
                       <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
-                      <span className="font-medium text-gray-700">{t.name}</span>
-                      {suggested === t.id && <span className="ml-auto text-[10px] font-semibold text-gray-600">Suggested</span>}
+                      <span className="font-medium text-gray-300">{t.name}</span>
+                      {suggested === t.id && <span className="text-[10px] font-semibold text-gray-400">Suggested</span>}
+                      {on && <span className="ml-auto text-sm font-bold" style={{ color: t.shades[500] }} aria-hidden>✓</span>}
                     </button>
                   );
                 })}
               </div>
               {suggested && theme?.id !== suggested && (
-                <p className="text-xs text-gray-600 mt-2">Suggested beside your brand colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
+                <p className="text-xs text-gray-400 mt-2">Suggested beside your brand colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
               )}
             </div>
           )}

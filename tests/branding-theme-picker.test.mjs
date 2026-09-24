@@ -15,6 +15,7 @@
  *   - show the picker unconditionally                      → "the picker appears only with themes" fails
  *   - lock preview ignores the theme when there's no brand  → "lock preview wears the theme without a brand colour" fails
  *   - Reset stops clearing the theme                       → "Reset clears the theme too" fails
+ *   - selected tile back to ring-gray-900 (light-first)    → the two dark-mode selection checks fail
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,6 +53,15 @@ ok('the till preview draws action from the theme tokens and the strip/sidebar fr
 ok('…and keeps money and Paid green in the preview', /KES \{p\}/.test(tab) && /color: '#4ade80'/.test(tab) && />Paid</.test(tab));
 ok('the suggestion comes from the shared pairing rule', /const suggested = themesEnabled \? suggestThemeFor\(accentHex\.trim\(\) \|\| null\) : null;/.test(tab));
 
+// ── Selection must read in DARK mode (the dashboard's default) as well as light ──
+// The first build marked the selected tile with ring-gray-900 — invisible on the dark-first dashboard, where the
+// unselected tiles' gray-200 border rendered bright (owner's screenshots, 2026-09-24). Now: the theme's own colour.
+ok('the selected tile is marked with the theme\'s OWN colour (border + ring) and a tick — mode-independent',
+  /style=\{on \? \{ borderColor: t\.shades\[500\], boxShadow: `0 0 0 2px \$\{t\.shades\[500\]\}` \} : undefined\}/.test(tab)
+  && /\{on && <span[^>]*style=\{\{ color: t\.shades\[500\] \}\}[^>]*>✓<\/span>\}/.test(tab));
+ok('no light-first grey selection ring is left on the picker', !/ring-gray-900/.test(tab) && !/border-gray-900 ring-1/.test(tab));
+ok('theme names use the dark-first readable text class (text-gray-300, remapped in light mode)', /<span className="font-medium text-gray-300">\{t\.name\}<\/span>/.test(tab));
+
 // ── What the page sends ──
 ok('Save sends theme_id only when the business has themes (the cloud refuses it otherwise — A325)',
   /\.\.\.\(themesEnabled \? \{ theme_id: theme\?\.id \?\? null \} : \{\}\),/.test(tab));
@@ -66,4 +76,6 @@ ok('a yellow brand is suggested Sky; red → Lagoon; no brand → no suggestion'
 ok('nothing chosen resolves to Ocean — what the page shows selected and the cloud serves', T.resolveTheme(null).id === 'ocean');
 
 console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// exitCode, not process.exit(): on Windows, forcing an exit while stdout is still closing can crash Node's event loop
+// ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)", owner's run of delivery -j, after all checks passed).
+process.exitCode = fail ? 1 : 0;
