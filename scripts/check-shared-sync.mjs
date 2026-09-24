@@ -36,6 +36,16 @@ const SHARED = [
     ],
   },
   {
+    // A324 (client branding Phase 2, slice 1): the curated action themes + the brand-colour rule. One registry
+    // for the till and the web; the cloud's copy joins when it validates theme ids (slice 2).
+    name: 'themes.ts',
+    copies: [
+      'shared/themes.ts',
+      'apps/desktop/src/shared/themes.ts',
+      'apps/dashboard/src/lib/themes.ts',
+    ],
+  },
+  {
     // A295 accent guard. shared/ is the source of truth; the renderer imports the
     // desktop/src/shared copy; the desktop/src/main copy exists ONLY so tsconfig.main
     // emits dist/main/contrast.js for contrast.test.mjs (the renderer is noEmit).
