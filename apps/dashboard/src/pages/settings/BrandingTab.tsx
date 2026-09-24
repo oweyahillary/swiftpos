@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
+import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '../../lib/themes';
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
 
@@ -106,6 +107,10 @@ export default function BrandingTab() {
   const [logoReceipt, setLogoReceipt] = useState<string | null>(null);        // A313: mono1 raster string
   const [receiptLogoEnabled, setReceiptLogoEnabled] = useState(false);      // A313: opt-in toggle
   const [bizName, setBizName] = useState('Your business');
+  // A327 (Phase 2 slice 4): the business's ACTION theme. Shown and saved only when its `themes` flag is on (admin portal);
+  // a null stored id means "not chosen" — the cloud then serves Ocean, so the picker shows Ocean selected.
+  const [themesEnabled, setThemesEnabled] = useState(false);
+  const [themeId, setThemeId] = useState<string | null>(null);
   const receiptRef = useRef<HTMLCanvasElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -114,8 +119,9 @@ export default function BrandingTab() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.get<{ accent_hex: string | null; logo_png: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean } | null>('/api/business/branding')
-      .then((b) => { setAccentHex(b?.accent_hex ?? ''); setLogoPng(b?.logo_png ?? null); setLogoReceipt(b?.logo_receipt ?? null); setReceiptLogoEnabled(b?.receipt_logo_enabled === true); })
+    api.get<{ accent_hex?: string | null; logo_png?: string | null; logo_receipt?: string | null; receipt_logo_enabled?: boolean; theme_id?: string | null; themes_enabled?: boolean } | null>('/api/business/branding')
+      .then((b) => { setAccentHex(b?.accent_hex ?? ''); setLogoPng(b?.logo_png ?? null); setLogoReceipt(b?.logo_receipt ?? null); setReceiptLogoEnabled(b?.receipt_logo_enabled === true);
+        setThemesEnabled(b?.themes_enabled === true); setThemeId(b?.theme_id ?? null); })
       .then(() => api.get<{ name?: string }>('/api/business').then((biz) => { if (biz?.name) setBizName(biz.name); }).catch(() => {}))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -126,6 +132,11 @@ export default function BrandingTab() {
   const brand = resolveBranding(accentHex.trim() || null, LOCK_SURFACE);
   const legible = accentHex.trim() === '' || !brand.usedFallback;
   const shownAccent = brand.accent;
+  // A327: what the till's lock screen will actually wear — the brand colour; with themes ON and no brand colour, the
+  // chosen theme (the till's PinPage rule, A326). With themes OFF: exactly the Phase 1 preview (shownAccent).
+  const theme: Theme | null = themesEnabled ? resolveTheme(themeId) : null;
+  const lockAccent = theme && accentHex.trim() === '' ? theme.shades[500] : shownAccent;
+  const suggested = themesEnabled ? suggestThemeFor(accentHex.trim() || null) : null;
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (fileRef.current) fileRef.current.value = '';
@@ -142,6 +153,8 @@ export default function BrandingTab() {
         logo_png: logoPng,
         logo_receipt: logoPng ? logoReceipt : null,           // A313: no logo → no raster
         receipt_logo_enabled: !!logoPng && receiptLogoEnabled,
+        // A327: only when the business has themes — the cloud refuses a theme without the flag (A325).
+        ...(themesEnabled ? { theme_id: theme?.id ?? null } : {}),
       });
       setMsg('Saved. Tills pick up the new branding within about 20 seconds — no restart needed.');
     } catch (err: any) { setMsg(err?.message ?? 'Could not save branding.'); }
@@ -151,8 +164,8 @@ export default function BrandingTab() {
   const clearAll = async () => {
     setBusy(true); setMsg('');
     try {
-      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false });
-      setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn('');
+      await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}) });
+      setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
       setMsg('Reset to the SwiftPOS default.');
     } catch (err: any) { setMsg(err?.message ?? 'Could not reset branding.'); }
     finally { setBusy(false); }
@@ -212,14 +225,42 @@ export default function BrandingTab() {
             <button onClick={save} disabled={busy} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40">Save branding</button>
             <button onClick={clearAll} disabled={busy} className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40">Reset to default</button>
           </div>
+          {themesEnabled && (
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">App theme</label>
+              <p className="text-xs text-gray-500 mb-2">The colour of buttons and selections on your tills. Paid, warnings, voids and prices keep their own colours.</p>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="App theme">
+                {THEMES.map((t) => {
+                  const on = theme?.id === t.id;
+                  return (
+                    <button key={t.id} type="button" role="radio" aria-checked={on} onClick={() => setThemeId(t.id)}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${on ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200 hover:border-gray-400'}`}>
+                      <span className="h-5 w-5 rounded" style={{ background: t.shades[500] }} aria-hidden />
+                      <span className="font-medium text-gray-700">{t.name}</span>
+                      {suggested === t.id && <span className="ml-auto text-[10px] font-semibold text-gray-600">Suggested</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {suggested && theme?.id !== suggested && (
+                <p className="text-xs text-gray-600 mt-2">Suggested beside your brand colour: <b>{resolveTheme(suggested).name}</b>. <button type="button" className="underline" onClick={() => setThemeId(suggested)}>Use it</button></p>
+              )}
+            </div>
+          )}
           {msg && <p className="text-xs text-gray-600 mt-3">{msg}</p>}
         </div>
 
         {/* Live lock-screen preview */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Lock-screen preview</label>
-          <LockPreview accent={shownAccent} logo={logoPng} />
+          <LockPreview accent={lockAccent} logo={logoPng} />
           <p className="text-xs text-gray-500 mt-2">This is how a till’s lock screen will look.</p>
+
+          {theme && (<>
+            <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">Till preview</label>
+            <TillPreview theme={theme} brandHex={accentHex.trim() || null} />
+            <p className="text-xs text-gray-500 mt-2">Buttons and selections take the theme; your brand colour marks the top strip and the sidebar. Paid and prices stay green.</p>
+          </>)}
 
           {/* A313: receipt preview — the exact 1-bit raster a till will print (SCOPE addendum §C) */}
           <label className="block text-sm font-medium text-gray-700 mb-2 mt-6">Receipt preview</label>
@@ -263,6 +304,44 @@ function LockPreview({ accent, logo }: { accent: string; logo: string | null }) 
         </div>
       </div>
       <div className="text-[10px] text-gray-500 px-3 pb-2">powered by SwiftPOS</div>
+    </div>
+  );
+}
+
+/** A327: a small, honest mock of the till with the theme applied — the same rules the till uses (themes.ts via
+ *  A326's themeVars): action = the theme's 500/400; brand strip + sidebar tint = the brand colour when it can be seen,
+ *  otherwise the theme's own tint and no strip; status and money stay green. */
+function TillPreview({ theme, brandHex }: { theme: Theme; brandHex: string | null }) {
+  const k = themeTokens(theme);
+  const brand = resolveBrandLayer(brandHex);
+  return (
+    <div className="rounded-xl overflow-hidden border relative" style={{ background: '#030712' }} data-testid="till-preview">
+      {brand && <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: brand.brand }} aria-hidden data-testid="brand-strip" />}
+      <div className="flex" style={{ minHeight: 170 }}>
+        <div className="w-10 flex flex-col items-center gap-2 pt-4" style={{ background: brand ? brand.tint : k.tint }}>
+          {[0, 1, 2].map((i) => <span key={i} className="h-5 w-5 rounded" style={{ background: i === 0 ? k.fillDark : '#1f2937' }} />)}
+        </div>
+        <div className="flex-1 p-3">
+          <div className="flex gap-1.5 mb-2">
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: k.fillDark, color: k.onFillDark }}>All</span>
+            <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#1f2937] text-gray-300">Burgers</span>
+            <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#1f2937] text-gray-300">Drinks</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[['Chicken wrap', '550'], ['Soda 500 ml', '120']].map(([n, p], i) => (
+              <div key={n} className="rounded-md p-2 bg-[#111827]" style={{ border: `1px solid ${i === 0 ? k.fillDark : '#1f2937'}` }}>
+                <div className="text-[11px] text-gray-100">{n}</div>
+                <div className="text-[11px] font-semibold" style={{ color: '#4ade80' }}>KES {p}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="w-32 p-3 bg-[#111827] flex flex-col gap-1.5">
+          <div className="text-[11px] text-gray-100">Order <span className="text-[10px] font-semibold px-1 rounded" style={{ color: '#4ade80', background: 'rgba(34,197,94,.14)' }}>Paid</span></div>
+          <div className="text-[10px]" style={{ color: k.textDark }}>Add a note</div>
+          <div className="mt-auto rounded-md text-center text-[11px] font-bold py-1.5" data-testid="charge" style={{ background: k.fillDark, color: k.onFillDark }}>Charge KES 670</div>
+        </div>
+      </div>
     </div>
   );
 }

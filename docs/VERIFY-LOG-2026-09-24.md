@@ -24,3 +24,17 @@ migration 106 → cloud → admin portal → desktop.
 | 3 | The screens throughout | unchanged (nothing in slice 2 draws the theme) |
 
 **Closed:** A325.
+
+## §A326 — the till's colours follow the theme (desktop 0.6.6)
+Session: **Eugene**, till **mamangina**, desktop **0.6.6** (tag `v0.6.6` on `bb31313` — slice 3 + the CI fix). Seven screenshots.
+
+| Screen | Themes OFF | Themes ON (Ocean; B Foods has no brand colour) |
+|---|---|---|
+| PIN screen | Phase 1 teal (name, divider) — unchanged | name, divider, Enter in Ocean |
+| Manager Overview | grey sidebar — unchanged (blue Revenue card / nav highlight are the original design) | sidebar Ocean tint, text readable |
+| Open drawer | — | **Start selling** Ocean |
+| POS grid | — | selected **All**, **Dine in**, **T: T10** Ocean; **prices green** |
+| Payment | — | **Cash** selected, **+ Split payment**, **Charge KES 100**, cart badge Ocean; prices green |
+| Status | — | **Shift open**, **pending** green; **SwiftPOS** wordmark green |
+
+Not exercised: a brand colour (none set) and OFF again (same mechanism as A325). **Closed:** A326.
