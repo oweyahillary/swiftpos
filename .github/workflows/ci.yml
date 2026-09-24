@@ -588,6 +588,11 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/test-print-business-name.test.mjs
 
+      # A325 — the till stores the effective action theme (real localDb, real schema-53 → 54 upgrade).
+      - name: Desktop theme pull
+        working-directory: apps/desktop
+        run: node --no-warnings test/theme-pull.test.mjs
+
       # A161 — the node's downstream reference snapshot (A24). Pure reshape of
       # local rows into the cloud shapes pullCatalogue consumes; the tri-state
       # products.is_kitchen and the users->roles mapping corrupt a catalogue

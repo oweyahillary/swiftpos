@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
+import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
 
 const router = safeRouter();
 
@@ -45,6 +46,9 @@ router.get('/catalogue-version', async (req, res) => {
       latest('categories',       'business_id', biz),
       latest('business_settings','business_id', biz),
       latest('business_branding', 'business_id', biz),
+      // A325: switching a business's 'themes' flag must reach its tills within the 20-s check, not the 10-min
+      // floor. feature_flags has business_id and an updated_at trigger, like the tables above.
+      latest('feature_flags', 'business_id', biz),
       latest('users',            'business_id', biz),
       latest('tables',           'business_id', biz),
       latest('branches',         'business_id', biz),
@@ -219,10 +223,14 @@ router.get('/init', async (req, res) => {
     // row is the norm (branding is optional) and must not fail the pull closed.
     supabase
       .from('business_branding')
-      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled')
+      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id')
       .eq('business_id', req.businessId)
       .maybeSingle(),
   ]);
+  // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
+  // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
+  // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
+  const themeId = effectiveThemeId(await themesEnabled(req.businessId), branding?.theme_id);
 
   if (pErr || cErr || brErr) {
     sendError(res, (pErr || cErr || brErr));
@@ -357,6 +365,7 @@ router.get('/init', async (req, res) => {
       logoReceipt: branding.logo_receipt ?? null,
       receiptLogoEnabled: branding.receipt_logo_enabled === true,
     } : null,
+    themeId,
     receiptHeader: receiptText.receipt_header ?? '',
     // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
     // a short grace window at rollover instead of an immediate hard lock, so a

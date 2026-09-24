@@ -153,7 +153,8 @@ function initSchema(db: Database.Database) {
       logo_png      TEXT,
       logo_receipt  TEXT,
       synced_at     TEXT,
-      receipt_logo_enabled INTEGER NOT NULL DEFAULT 0
+      receipt_logo_enabled INTEGER NOT NULL DEFAULT 0,
+      theme_id      TEXT
     );
 
     -- ── Active staff (PIN login) — singleton, layered on top of owner session ─
@@ -953,6 +954,8 @@ function initSchema(db: Database.Database) {
   // A311 (schema 53): the client's opt-in receipt-logo toggle, pulled remote-wins
   // with the rest of the branding row. INTEGER 0/1 — SQLite has no boolean.
   migrateColumns(db, 'branding', [['receipt_logo_enabled', 'INTEGER NOT NULL DEFAULT 0']]);
+  // A325 (schema 54): the EFFECTIVE action theme the cloud serves (null = themes off → today's look).
+  migrateColumns(db, 'branding', [['theme_id', 'TEXT']]);
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
     ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
@@ -1078,7 +1081,8 @@ function initSchema(db: Database.Database) {
 // like every column here; an older till converges by running migrateColumns.
 // 53 adds branding.receipt_logo_enabled (A311) — pulled, never pushed, so no
 // push payload changes; REQUIRED moves with it by convention only.
-export const LOCAL_SCHEMA_VERSION = 53;
+// 54 adds branding.theme_id (A325) — pulled, never pushed; same convention as 53.
+export const LOCAL_SCHEMA_VERSION = 54;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
@@ -1115,19 +1119,23 @@ export interface BrandingRow {
   logoReceipt: string | null;
   /** A311: the client's opt-in toggle. The print path prints the logo only when this is true. */
   receiptLogoEnabled: boolean;
+  /** A325: the effective action theme id from the cloud, or null (themes off → today's look). Resolved against the
+   *  registry (themes.ts) by the screens, so an id from a newer cloud degrades to the default, never to nothing. */
+  themeId: string | null;
 }
 
 export function getBranding(): BrandingRow | null {
   try {
     const row = getLocalDb().prepare(
-      `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding LIMIT 1`).get() as
-      { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null } | undefined;
+      `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`).get() as
+      { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
     if (!row) return null;
     return {
       accentHex: row.accent_hex ?? null,
       logoPng: row.logo_png ?? null,
       logoReceipt: row.logo_receipt ?? null,
       receiptLogoEnabled: row.receipt_logo_enabled === 1,
+      themeId: row.theme_id ?? null,
     };
   } catch {
     return null;
@@ -1189,7 +1197,10 @@ export function setBranding(
          receipt_logo_enabled = excluded.receipt_logo_enabled,
          synced_at    = excluded.synced_at`,
     ).run(businessId, accent, logo, logoReceipt, enabled ? 1 : 0, now);
-    return { accentHex: accent, logoPng: logo, logoReceipt, receiptLogoEnabled: enabled };
+    // A325: the tech write never touches theme_id (the cloud owns it); report what is stored.
+    const themeId = (db.prepare(`SELECT theme_id FROM branding WHERE business_id = ?`).get(businessId) as
+      { theme_id: string | null } | undefined)?.theme_id ?? null;
+    return { accentHex: accent, logoPng: logo, logoReceipt, receiptLogoEnabled: enabled, themeId };
   });
   return tx();
 }
@@ -1202,6 +1213,24 @@ export function setBranding(
  * if the till has no session yet. The cloud already validated on write (A303), so this trusts
  * the payload but still only touches the two columns.
  */
+/**
+ * A325: store the EFFECTIVE action theme the cloud served (`themeId` in /api/pos/init). Its own write — it touches
+ * ONLY theme_id, never the logo or colour — because a business can have themes without a branding row, and
+ * `branding: null` means "leave the local branding alone". `undefined` = the cloud predates A325 → no-op (keep).
+ * The value is stored as-is when it looks like an id; the screens resolve it against the registry.
+ */
+export function applyPulledTheme(themeId: string | null | undefined): void {
+  if (themeId === undefined) return;
+  const value = typeof themeId === 'string' && /^[a-z][a-z0-9-]{1,31}$/.test(themeId) ? themeId : null;
+  const db = getLocalDb();
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id: string } | undefined;
+  if (!sess?.business_id) return;
+  db.prepare(
+    `INSERT INTO branding (business_id, theme_id, synced_at) VALUES (?, ?, ?)
+     ON CONFLICT(business_id) DO UPDATE SET theme_id = excluded.theme_id, synced_at = excluded.synced_at`,
+  ).run(sess.business_id, value, new Date().toISOString());
+}
+
 export function applyPulledBranding(b: {
   accentHex: string | null; logoPng: string | null;
   /** A311: absent on an older cloud → keep the local value (COALESCE below), not clear it. */

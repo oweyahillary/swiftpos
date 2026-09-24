@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -40,6 +40,7 @@
     "test:sync": "node test/syncEngine-failures.test.mjs",
     "test:refresh": "node test/catalogue-refresh-signal.test.mjs",
     "test:print-name": "node test/test-print-business-name.test.mjs",
+    "test:theme-pull": "node test/theme-pull.test.mjs",
     "test:refbundle": "node test/node-reference-bundle.test.mjs",
     "test:refunpack": "node test/node-reference-unpack.test.mjs",
     "test:peerrelay": "node test/peer-relay.test.mjs",

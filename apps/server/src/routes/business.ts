@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, hasFullSettingsAccess } from '../middleware/rbac';
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
+import { themesEnabled, themeWriteError } from '../lib/themeAccess';
 
 const router = safeRouter();
 
@@ -157,13 +158,17 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
 // The client branding row (accent + logo) for this business, or null when unset (A303).
 // Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
 router.get('/branding', requireAuth, async (req, res) => {
-  const { data, error } = await supabase
-    .from('business_branding')
-    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, updated_at')
-    .eq('business_id', req.businessId)
-    .maybeSingle();
+  const [{ data, error }, enabled] = await Promise.all([
+    supabase
+      .from('business_branding')
+      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
+      .eq('business_id', req.businessId)
+      .maybeSingle(),
+    themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
+  ]);
   if (error) { sendError(res, error); return; }
-  res.json(data ?? null);
+  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column.
+  res.json(data ? { ...data, themes_enabled: enabled } : (enabled ? { themes_enabled: true } : null));
 });
 
 // PUT /api/business/branding
@@ -232,11 +237,17 @@ router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'set
     }
     row.receipt_logo_enabled = req.body.receipt_logo_enabled;
   }
+  if (has('theme_id')) {
+    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag.
+    const err = themeWriteError(req.body.theme_id, await themesEnabled(req.businessId));
+    if (err) { res.status(400).json({ error: err }); return; }
+    row.theme_id = req.body.theme_id;
+  }
 
   const { data, error } = await supabase
     .from('business_branding')
     .upsert(row, { onConflict: 'business_id' })
-    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, updated_at')
+    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
     .single();
   if (error) { sendError(res, error); return; }
   res.json(data);

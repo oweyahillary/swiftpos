@@ -695,6 +695,9 @@ function ClientDetailPage({ client, req, onBack }) {
 
   const webHostingFlag = features.find(f => f.key === 'web_hosting');
   const hasWebHosting  = webHostingFlag?.enabled === true;
+  // A325: client branding Phase 2 — curated action themes (premium; off by default). While off, the client's
+  // tills keep today's look and the web hides the theme picker. Price not decided: no invoice is raised here.
+  const hasThemes = features.find(f => f.key === 'themes')?.enabled === true;
 
   // A147: set businesses.web_access_expires_at — the date the renewal ladder is
   // measured against (distinct from the legacy web_hosting on/off boolean above).
@@ -736,6 +739,24 @@ function ClientDetailPage({ client, req, onBack }) {
           });
         } catch(e) { /* Invoice creation is non-fatal */ }
       }
+    } catch(e) { setError(e.message); }
+  }
+
+  async function toggleThemes(enable) {
+    const msg = enable
+      ? 'Enable themes? The client can then pick an app theme on the Branding page; their tills pick it up within about 20 seconds.'
+      : 'Disable themes? The client\'s tills return to the standard look within about 20 seconds. Their chosen theme is kept for later.';
+    if (!(await askConfirm(msg))) return;
+    try {
+      await req("PATCH", `/clients/${client.id}/features/themes`, {
+        enabled: enable,
+        notes:   enable ? 'Themes enabled (client branding Phase 2)' : 'Themes disabled',
+      });
+      setFeatures(prev => {
+        const existing = prev.find(f => f.key === 'themes');
+        if (existing) return prev.map(f => f.key === 'themes' ? { ...f, enabled: enable } : f);
+        return [...prev, { key: 'themes', enabled: enable }];
+      });
     } catch(e) { setError(e.message); }
   }
 
@@ -994,6 +1015,23 @@ function ClientDetailPage({ client, req, onBack }) {
           onClick={() => toggleWebHosting(!hasWebHosting)}
           style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
           {hasWebHosting ? "Disable web access" : "Enable web access"}
+        </button>
+      </div>
+
+      {/* ── Themes (A325, client branding Phase 2) ── */}
+      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>App themes {hasThemes ? "ON" : "OFF"}</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {hasThemes
+              ? "The client can pick an app theme on the Branding page; tills follow it."
+              : "Tills keep the standard look. Turn on to let the client pick an app theme."}
+          </div>
+        </div>
+        <button
+          onClick={() => toggleThemes(!hasThemes)}
+          style={{ ...S.btn, ...(hasThemes ? S.btnGhost : S.btnPrimary), fontSize: 12 }}>
+          {hasThemes ? "Turn themes off" : "Turn themes on"}
         </button>
       </div>
 

@@ -78,8 +78,9 @@ const localDbShim = w('localDb.cjs', `
     }
     return { get: () => ({ count: 0 }), all: () => [], run: () => ({ changes: 0 }) };
   }
+  // applyPulled* are the real module's writers; the engine calls them when the cloud sends branding/theme.
   module.exports = { getLocalDb: () => ({ prepare, exec: () => {}, transaction: (f) => f }),
-                     LOCAL_SCHEMA_VERSION: 51 };`);
+                     LOCAL_SCHEMA_VERSION: 51, applyPulledBranding: () => {}, applyPulledTheme: () => {} };`);
 
 const deviceConfigShim = w('deviceConfig.cjs', `
   module.exports = { getDeviceConfig: () => ({ device_id: 'test-device', branch_id: null }),

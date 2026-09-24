@@ -41,7 +41,8 @@
  * and syncing and is merely shown as behind until it takes the A66 build.
  */
 /** Schema 53 = branding.receipt_logo_enabled (A311). Pulled only; same convention. */
-export const REQUIRED_DESKTOP_SCHEMA = 53;
+/** Schema 54 = branding.theme_id (A325). Pulled only; same convention. */
+export const REQUIRED_DESKTOP_SCHEMA = 54;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -37,12 +37,13 @@ const SHARED = [
   },
   {
     // A324 (client branding Phase 2, slice 1): the curated action themes + the brand-colour rule. One registry
-    // for the till and the web; the cloud's copy joins when it validates theme ids (slice 2).
+    // for the till, the web and the cloud (which validates theme ids on write — A325).
     name: 'themes.ts',
     copies: [
       'shared/themes.ts',
       'apps/desktop/src/shared/themes.ts',
       'apps/dashboard/src/lib/themes.ts',
+      'apps/server/src/lib/themes.ts',     // A325: the cloud validates theme ids on write
     ],
   },
   {

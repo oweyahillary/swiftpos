@@ -76,10 +76,12 @@ if (db) {
 // The upsert gained positional CASE WHEN ? binds; a bind-count slip type-checks and throws at
 // runtime ("Too few parameter values") — the A167 class. So: extract the statement and the CREATE
 // TABLE from localDb.ts's source text, run them on a real SQLite, and check the semantics.
-ok('A311: server /init selects the receipt fields', /select\('accent_hex, logo_png, logo_receipt, receipt_logo_enabled'\)/.test(pos));
+// A325 appended theme_id to this select; the A311 intent is that the receipt fields are still selected.
+ok('A311: server /init selects the receipt fields', /select\('accent_hex, logo_png, logo_receipt, receipt_logo_enabled(, [a-z_]+)*'\)/.test(pos));
 ok('A311: server /init returns receiptLogoEnabled as a strict boolean', /receiptLogoEnabled:\s*branding\.receipt_logo_enabled\s*===\s*true/.test(pos));
 ok('A311: syncEngine distinguishes absent (keep local) from null (clear)', /'logoReceipt'\s+in\s+_j\.branding/.test(sync) && /'receiptLogoEnabled'\s+in\s+_j\.branding/.test(sync));
-ok('A311: LOCAL_SCHEMA_VERSION is 53', /LOCAL_SCHEMA_VERSION = 53/.test(ldb));
+// A325 moved the schema to 54; the A311 intent is that the till is at least on 53 (the column exists).
+ok('A311: LOCAL_SCHEMA_VERSION is at least 53', Number((/LOCAL_SCHEMA_VERSION = (\d+)/.exec(ldb) || [])[1]) >= 53);
 ok('A311: branding.receipt_logo_enabled migrated for existing tills', /migrateColumns\(db,\s*'branding',\s*\[\['receipt_logo_enabled'/.test(ldb));
 
 if (db) {

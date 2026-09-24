@@ -9,7 +9,7 @@
 //   This means an offline sale is always applied on top of whatever quantity is current
 
 import { net } from 'electron';
-import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
@@ -826,6 +826,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
   // tech-set value (A302) survives until the business actually has cloud branding.
   if (c.branding) applyPulledBranding(c.branding);
+  // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
+  if (c.themeId !== undefined) applyPulledTheme(c.themeId);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -929,6 +931,8 @@ async function pullCatalogue(): Promise<boolean> {
             receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
           }
         : null,
+      // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
+      themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).

@@ -109,15 +109,6 @@
     "updated_at": "\"timestamp with time zone\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
-  "business_branding": {
-    "business_id": "\"uuid\" NOT NULL",
-    "accent_hex": "\"text\"",
-    "logo_png": "\"text\"",
-    "logo_receipt": "\"text\"",
-    "receipt_logo_enabled": "\"boolean\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
-  },
   "branches": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -138,6 +129,16 @@
     "mode_switched_by": "\"text\"",
     "web_sync_enabled": "\"boolean\" NOT NULL",
     "tech_reveal_code": "\"text\""
+  },
+  "business_branding": {
+    "business_id": "\"uuid\" NOT NULL",
+    "accent_hex": "\"text\"",
+    "logo_png": "\"text\"",
+    "logo_receipt": "\"text\"",
+    "receipt_logo_enabled": "\"boolean\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "theme_id": "\"text\""
   },
   "business_days": {
     "id": "\"uuid\" NOT NULL",

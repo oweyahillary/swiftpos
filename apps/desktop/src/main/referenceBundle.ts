@@ -297,6 +297,9 @@ export interface AcquiredReference {
     kitchenExclusions: string[] | null;
     continuousOperation: boolean | null;
     branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null } | null;
+    /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
+     *  which relays no branding today) → the till keeps its local value. */
+    themeId?: string | null;
   };
 }
 
