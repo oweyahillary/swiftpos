@@ -204,7 +204,10 @@ check('…and it messages every window, skipping destroyed ones',
 check('the old "first window, 20-s path only" send is gone', !/getAllWindows\(\)\[0\]\?\.webContents\.send\('catalogue:changed'\)/.test(idx));
 const pin = src('renderer/pages/PinPage.tsx');
 check('the lock screen re-reads branding on the refresh signal', /const unsubscribe = posApi\.pos\.onCatalogueChanged\(load\);/.test(pin) && /return \(\) => \{ cancelled = true; unsubscribe\(\); \};/.test(pin));
-check('…and a cleared branding returns it to the default (null is applied, not ignored)', /setAccentHex\(b\?\.accentHex \?\? null\)/.test(pin) && !/if \(cancelled \|\| !b\) return;/.test(pin));
+// A326 changed this line: with themes ON and no brand colour the PIN screen now takes the theme. The A321 intent
+// is unchanged — with no brand colour and themes OFF, null is APPLIED (back to the default), never ignored.
+check('…and a cleared branding returns it to the default (null is applied, not ignored)',
+  /setAccentHex\(b\?\.accentHex \?\? \(b\?\.themeId \? resolveTheme\(b\.themeId\)\.shades\[500\] : null\)\)/.test(pin) && !/if \(cancelled \|\| !b\) return;/.test(pin));
 const pos = src('renderer/pages/POSPage.tsx');
 check('the POS grid still reloads on the same signal', /posApi\.pos\.onCatalogueChanged\(loadCatalogue\)/.test(pos));
 

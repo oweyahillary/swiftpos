@@ -158,6 +158,7 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 | `"npx.cmd"` quoted → cmd.exe resolved `%~dp0` to the repo → `npx-cli.js` not found | Command NAME unquoted, arguments quoted, one string (`execSync`) — no DEP0190 on Node 24 either |
 | A Linux stand-in for `npx.cmd` could not show cmd.exe behaviour | Say so (rule 9); the owner's Windows run is the real test |
 | A test spawned `node_modules/.bin/tailwindcss` → `ENOENT` on Windows (it is a `.cmd`) — 2026-09-24-f | Never spawn a `.bin` file: run the package's JS entry with `process.execPath` (`require.resolve('<pkg>/lib/cli.js')`), or use its Node API |
+| CI red on a stale pin: a desktop test pinned a line the slice changed; `run-all` does not run `apps/desktop/test` — 2026-09-24 (#394) | Before hand-over run EVERY test CI runs: `run-all` **and** every `apps/desktop/test/*.test.mjs` (after `npx tsc -b tsconfig.main.json`). Sweep for tests that pin ANY line you edit, not only the pattern you are changing |
 | Tests passed in Node because Node has `Buffer`; the browser does not | Run the shipped bundle with `Buffer` deleted |
 | A regex test proved "wired", never "accepts the real payload" | Run the real middleware on each caller's real payload |
 | Refusal tests "passed" for the wrong reason | Every refusal starts from a payload that passes |
