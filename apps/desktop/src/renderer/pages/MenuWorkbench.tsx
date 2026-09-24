@@ -237,7 +237,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
               title={count === 0 && key !== 'all' ? `No ${label.toLowerCase()} in this menu` : undefined}
               onClick={() => setTypeFilter(key)}
               className={`px-3 py-2 text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                typeFilter === key ? 'bg-green-500/10 text-green-400'
+                typeFilter === key ? 'bg-action-500/10 text-action-400'
                   : key === 'review' && count > 0 ? 'bg-gray-800 text-amber-400 hover:text-amber-300'
                   : 'bg-gray-800 text-gray-400 hover:text-white'
               }`}
@@ -288,7 +288,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
                   return (
                     <tr
                       key={p.id}
-                      className={`${selected === p.id ? 'bg-green-500/5' : 'hover:bg-gray-800/40'} transition-colors`}
+                      className={`${selected === p.id ? 'bg-action-500/5' : 'hover:bg-gray-800/40'} transition-colors`}
                     >
                       <td className="px-3 py-2 cursor-pointer" onClick={() => setSelected(p.id)}>
                         <span className="text-white">{p.name}</span>
@@ -433,7 +433,7 @@ function ItemDetail({
       <button
         onClick={save}
         disabled={busy}
-        className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white
+        className="w-full bg-action-600 hover:bg-action-500 disabled:bg-gray-700 text-white
                    rounded-lg py-2 text-sm font-medium transition-colors"
       >
         {busy ? 'Saving…' : 'Save details'}

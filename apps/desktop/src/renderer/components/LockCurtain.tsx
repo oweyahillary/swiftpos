@@ -130,7 +130,7 @@ export default function LockCurtain({
           {[0, 1, 2, 3, 4, 5].map(i => (
             <div key={i}
                  className={`w-3 h-3 rounded-full transition-colors ${
-                   i < pin.length ? 'bg-green-400' : 'bg-gray-800'
+                   i < pin.length ? 'bg-brand-400' : 'bg-gray-800'
                  }`} />
           ))}
         </div>
@@ -146,8 +146,8 @@ export default function LockCurtain({
             </button>
           ))}
           <button onClick={() => void submit(pin)} disabled={busy || pin.length < 4}
-            className="h-14 rounded-xl bg-green-600 text-white text-lg font-medium
-                       hover:bg-green-500 active:bg-green-700 disabled:opacity-40
+            className="h-14 rounded-xl bg-brand-600 text-on-brand text-lg font-medium
+                       hover:bg-brand-500 active:bg-brand-700 disabled:opacity-40
                        disabled:cursor-not-allowed">
             OK
           </button>

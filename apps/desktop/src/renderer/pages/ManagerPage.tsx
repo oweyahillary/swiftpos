@@ -1037,7 +1037,7 @@ function PricesTab({ currency }: { currency: string }) {
                             value={draft !== undefined ? draft : (hasOverride ? String(r.branch_price) : '')}
                             placeholder={String(r.base_price)}
                             onChange={e => setDrafts(d => ({ ...d, [r.product_id]: e.target.value }))}
-                            className={`w-28 bg-gray-900 border rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-blue-500 ${hasOverride ? 'border-green-600/50 text-green-300' : 'border-gray-700 text-white'}`}
+                            className={`w-28 bg-gray-900 border rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-blue-500 ${hasOverride ? 'border-action-600/50 text-action-300' : 'border-gray-700 text-white'}`}
                           />
                         </div>
                       </td>
@@ -1251,7 +1251,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
 
       {/* Sidebar */}
-      <aside className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-52' : 'w-16'}`}>
+      {/* A326: tinted by the business's brand colour (or theme) when themes are ON; the fallback IS gray-900, so OFF is unchanged. */}
+      <aside style={{ backgroundColor: 'var(--sidebar-tint, #111827)' }} className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-52' : 'w-16'}`}>
         {/* Header */}
         <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-800 flex-shrink-0">
           <span className="flex-shrink-0 text-blue-400">

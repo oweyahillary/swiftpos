@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { posApi, StaffSession } from '../lib/posApi';
 import { resolveBranding } from '../../shared/contrast';
+import { resolveTheme } from '../../shared/themes';
 
 interface Branch { id: string; name: string; desktop_licensed: boolean; }
 
@@ -52,7 +53,8 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
     const load = () => {
       posApi.branding.get().then((b) => {
         if (cancelled) return;
-        setAccentHex(b?.accentHex ?? null);
+        // A326: themes ON but no brand colour → the lock screen wears the action theme (the proposal). OFF → unchanged.
+        setAccentHex(b?.accentHex ?? (b?.themeId ? resolveTheme(b.themeId).shades[500] : null));
         setLogoDataUri(b?.logoPng ?? null);
       }).catch(() => { /* keep what is on screen; first paint falls back to the SwiftPOS default */ });
     };
@@ -190,13 +192,13 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
                   }}
                   onKeyDown={e => e.key === 'Enter' && submitReveal()}
                   placeholder="ACCESS CODE" maxLength={12}
-                  className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-4 py-2.5 text-white text-center font-mono tracking-widest uppercase focus:outline-none focus:border-green-500"
+                  className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-4 py-2.5 text-white text-center font-mono tracking-widest uppercase focus:outline-none focus:border-action-500"
                 />
                 {techErr && <p className="text-red-400 text-xs mt-2 text-center">{techErr}</p>}
                 <div className="flex gap-2 mt-4">
                   <button onClick={closeTech} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] text-gray-300 rounded-lg py-2.5 text-sm">Cancel</button>
                   <button onClick={submitReveal} disabled={techBusy || revealInput.trim().length < 4}
-                    className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm">
+                    className="flex-1 bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm">
                     {techBusy ? '…' : 'Continue'}
                   </button>
                 </div>
@@ -209,13 +211,13 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
                   autoFocus value={tokenInput}
                   onChange={e => { setTokenInput(e.target.value); setTechErr(''); }}
                   placeholder="st2.…" rows={3}
-                  className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-white text-xs font-mono break-all focus:outline-none focus:border-green-500 resize-none"
+                  className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-white text-xs font-mono break-all focus:outline-none focus:border-action-500 resize-none"
                 />
                 {techErr && <p className="text-red-400 text-xs mt-2 text-center">{techErr}</p>}
                 <div className="flex gap-2 mt-4">
                   <button onClick={() => { setTechStage('reveal'); setTechErr(''); }} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] text-gray-300 rounded-lg py-2.5 text-sm">Back</button>
                   <button onClick={submitToken} disabled={techBusy || tokenInput.trim().length < 10}
-                    className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm">
+                    className="flex-1 bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm">
                     {techBusy ? 'Verifying…' : 'Unlock'}
                   </button>
                 </div>
@@ -266,7 +268,7 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
               <select
                 value={branchId ?? ''}
                 onChange={e => { setBranchId(e.target.value || null); setError(''); setShowBranchPicker(false); }}
-                className="w-full bg-[#0f172a] border border-[#1e293b] rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-green-500"
+                className="w-full bg-[#0f172a] border border-[#1e293b] rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-action-500"
               >
                 <option value="">Select branch…</option>
                 {branches.map(b => (

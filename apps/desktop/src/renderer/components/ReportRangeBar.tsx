@@ -94,7 +94,7 @@ export default function ReportRangeBar({ value, onChange, exportKind, showDailyR
               key={p.key}
               onClick={() => onChange({ ...value, preset: p.key })}
               className={`px-2.5 py-1.5 text-xs transition-colors ${
-                preset === p.key ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-400 hover:text-white'
+                preset === p.key ? 'bg-action-500/10 text-action-400' : 'bg-gray-800 text-gray-400 hover:text-white'
               }`}
             >
               {p.label}
@@ -125,8 +125,8 @@ export default function ReportRangeBar({ value, onChange, exportKind, showDailyR
             <button
               onClick={dailyReport}
               disabled={busy}
-              className="flex items-center gap-1.5 text-xs text-white bg-green-600/80
-                         hover:bg-green-600 rounded-lg px-3 py-1.5 disabled:opacity-50
+              className="flex items-center gap-1.5 text-xs text-white bg-action-600/80
+                         hover:bg-action-600 rounded-lg px-3 py-1.5 disabled:opacity-50
                          transition-colors"
             >
               {busy ? 'Saving…' : '⭳ Daily Sales Report (Excel)'}

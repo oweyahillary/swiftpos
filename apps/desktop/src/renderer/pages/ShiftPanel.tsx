@@ -151,7 +151,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
     if (!res.ok) setPrintMsg(res.error ?? 'Could not print the Z-report.');
   };
 
-  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center px-4 z-50">
@@ -172,7 +172,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors capitalize ${
                   activeTab === t
-                    ? 'text-white border-b-2 border-green-500'
+                    ? 'text-white border-b-2 border-action-500'
                     : 'text-gray-300 hover:text-white'
                 }`}>
                 {t === 'expenses' && expList.length > 0
@@ -198,7 +198,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
               </div>
               <div className="flex gap-3">
                 <button onClick={() => void handlePrint()} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
-                <button onClick={onClose} className="flex-1 bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
+                <button onClick={onClose} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
               </div>
               {/* A print that silently does nothing is the worst outcome here —
                   the drawer is counted and the paper trail is what is left. */}
@@ -214,7 +214,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                 <label className="block text-sm text-gray-400 mb-1.5">Opening float ({currency})</label>
                 <input type="number" inputMode="decimal" value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} placeholder="0.00" autoFocus className={inputCls} />
               </div>
-              <button onClick={handleOpen} disabled={busy} className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
+              <button onClick={handleOpen} disabled={busy} className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
                 {busy ? 'Opening…' : 'Open shift'}
               </button>
             </>
@@ -233,7 +233,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                 <div className="flex gap-2">
                   {(['float_out', 'float_in'] as const).map(t => (
                     <button key={t} onClick={() => setFloatType(t)}
-                      className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${floatType === t ? 'bg-green-500 text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                      className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${floatType === t ? 'bg-action-500 text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
                       {t === 'float_out' ? 'Pay out' : 'Pay in'}
                     </button>
                   ))}
@@ -354,7 +354,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                 <button
                   onClick={handleExpense}
                   disabled={expBusy}
-                  className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
+                  className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
                   {expBusy ? 'Saving…' : 'Save expense'}
                 </button>
               </div>

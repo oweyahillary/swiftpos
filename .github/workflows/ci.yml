@@ -593,6 +593,15 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/theme-pull.test.mjs
 
+      # A326 — the till's colours follow the theme only when themes are on (real themeVars.ts, real compiled CSS).
+      - name: Desktop theme variables
+        working-directory: apps/desktop
+        run: node --no-warnings test/theme-vars.test.mjs
+
+      # A326 — no NEW raw green on the till: green is reserved for status, money and the SwiftPOS wordmark.
+      - name: No new raw green on the till
+        run: node scripts/check-till-green.mjs && node scripts/check-till-green.mjs --self-test
+
       # A161 — the node's downstream reference snapshot (A24). Pure reshape of
       # local rows into the cloud shapes pullCatalogue consumes; the tri-state
       # products.is_kitchen and the users->roles mapping corrupt a catalogue

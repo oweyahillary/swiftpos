@@ -57,7 +57,7 @@ export default function SettingsPanel({ canEdit = true }: { canEdit?: boolean })
             role="switch"
             aria-checked={continuous === true}
             className={`shrink-0 w-12 h-7 rounded-full transition-colors relative disabled:opacity-40 ${
-              continuous ? 'bg-green-500' : 'bg-gray-700'
+              continuous ? 'bg-action-500' : 'bg-gray-700'
             }`}
           >
             <span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${

@@ -176,7 +176,7 @@ export default function ExclusionsPanel() {
         <button
           onClick={() => void save()}
           disabled={!dirty || saving}
-          className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 hover:bg-green-400 text-gray-950 disabled:opacity-40"
+          className="px-4 py-2 rounded-lg text-sm font-semibold bg-action-500 hover:bg-action-400 text-gray-950 disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>

@@ -12,3 +12,15 @@ footer reads "SwiftPOS v0.6.4 · win32"). Fix: delivery 2026-09-24-a.
 No printer was needed: the paper test print renders through the same `sampleBusinessForThisTill()` helper as the preview (pinned by
 `apps/desktop/test/test-print-business-name.test.mjs`). The print path itself was verified on paper on 2026-09-23 (A315).
 **Closed:** A322.
+
+## §A325 — `theme_id` + the `themes` flag (desktop 0.6.5)
+Session: **Eugene**, till **mamangina**, desktop **0.6.5** (tag `v0.6.5` on `b69eeca`; Release desktop #21). Deploy order followed:
+migration 106 → cloud → admin portal → desktop.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Admin → B Foods → *Turn themes on* → ~20 s → Technician mode › Database: `SELECT theme_id FROM branding` | **PASS** — `ocean` (screenshot) |
+| 2 | *Turn themes off* → ~20 s → same query | **PASS** — `null` (screenshot) |
+| 3 | The screens throughout | unchanged (nothing in slice 2 draws the theme) |
+
+**Closed:** A325.

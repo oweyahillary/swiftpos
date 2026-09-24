@@ -73,12 +73,12 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
             onChange={e => setName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') void add(); }}
             placeholder="e.g. Coop Card"
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
           />
           <button
             onClick={add}
             disabled={busy === 'new' || !name.trim()}
-            className="bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm"
+            className="bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm"
           >
             {busy === 'new' ? 'Adding…' : 'Add'}
           </button>
@@ -101,7 +101,7 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
                 <button
                   onClick={() => toggle(m)}
                   className={`text-xs rounded-lg px-2.5 py-1 border transition-colors ${
-                    m.is_active ? 'text-green-400 border-green-500/30 hover:border-green-500/60'
+                    m.is_active ? 'text-action-400 border-action-500/30 hover:border-action-500/60'
                                 : 'text-gray-400 border-gray-600 hover:border-gray-400'}`}
                 >
                   {m.is_active ? 'Active' : 'Inactive'}

@@ -101,7 +101,7 @@ export default function TablesView({ tables, heldOrders, currency, onTableTap, o
             <div className="flex rounded-lg overflow-hidden border border-gray-700">
               {([['floor', 'Floor'], ['grid', 'Grid']] as const).map(([v, label]) => (
                 <button key={v} onClick={() => setView(v)}
-                  className={`px-3 py-1 text-xs ${view === v ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                  className={`px-3 py-1 text-xs ${view === v ? 'bg-action-500/10 text-action-400' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
                   {label}
                 </button>
               ))}

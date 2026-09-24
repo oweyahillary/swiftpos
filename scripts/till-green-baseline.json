@@ -1,0 +1,25 @@
+{
+ "_": "A326: remaining GREEN classes per till file \u2014 status, money, SwiftPOS wordmark only (docs/A326-till-green-classification.md). May go DOWN, never up. Regenerate only with a reviewed classification.",
+ "files": {
+  "components/ExclusionsPanel.tsx": 1,
+  "components/HeldOrdersModal.tsx": 1,
+  "components/PaperWidthControl.tsx": 1,
+  "components/PrinterSettingsModal.tsx": 2,
+  "components/PumpsView.tsx": 2,
+  "components/SettingsPanel.tsx": 1,
+  "components/VariantModal.tsx": 2,
+  "components/VoidModal.tsx": 3,
+  "pages/BranchCloseTab.tsx": 4,
+  "pages/DayCloseTab.tsx": 1,
+  "pages/InstallPage.tsx": 7,
+  "pages/ManageTabs.tsx": 6,
+  "pages/ManagerPage.tsx": 8,
+  "pages/MenuWorkbench.tsx": 3,
+  "pages/POSPage.tsx": 9,
+  "pages/PrintersTab.tsx": 2,
+  "pages/ShiftPanel.tsx": 4,
+  "pages/TechPage.tsx": 6,
+  "pages/UpdateBanner.tsx": 3,
+  "screens/PrinterSetupScreen.tsx": 2
+ }
+}

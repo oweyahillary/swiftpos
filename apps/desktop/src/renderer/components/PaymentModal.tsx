@@ -182,7 +182,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   type="number" min="0" value={discountInput}
                   onChange={e => setDiscountInput(e.target.value)}
                   placeholder="0"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-l-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-l-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
                 />
                 <button
                   onClick={() => setDiscountMode(m => (m === 'amount' ? 'percent' : 'amount'))}
@@ -208,7 +208,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                 type="number" min="0" value={tipInput}
                 onChange={e => setTipInput(e.target.value)}
                 placeholder="0"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
               />
             </div>
           </div>
@@ -227,7 +227,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     <button
                       key={m.code}
                       onClick={() => setLeg(i, { method: m.code })}
-                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
+                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-action-500/10 border-action-500 text-action-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
                     >
                       {m.icon} {m.label}
                     </button>
@@ -245,7 +245,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     type="number" min="0" value={legs[i].amount}
                     onChange={e => setLeg(i, { amount: e.target.value })}
                     placeholder={String(leg.resolvedAmount || amountDue)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-action-500"
                   />
                 </div>
                 {leg.method === 'cash' ? (
@@ -255,7 +255,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                       type="number" min="0" value={legs[i].tendered}
                       onChange={e => setLeg(i, { tendered: e.target.value })}
                       placeholder={String(leg.resolvedAmount)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-green-500"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-action-500"
                     />
                   </div>
                 ) : (
@@ -267,7 +267,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                       type="text" value={legs[i].reference}
                       onChange={e => setLeg(i, { reference: leg.method === 'mpesa' ? e.target.value.toUpperCase() : e.target.value })}
                       placeholder={leg.method === 'mpesa' ? 'QHX4K2L9MP' : leg.method === 'glovo' ? 'Glovo order #' : 'Txn ID'}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-green-500"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500"
                     />
                   </div>
                 )}
@@ -283,7 +283,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           ))}
 
           <div className="flex items-center justify-between">
-            <button onClick={addLeg} className="text-xs text-green-400 hover:text-green-300 transition-colors font-medium">
+            <button onClick={addLeg} className="text-xs text-action-400 hover:text-action-300 transition-colors font-medium">
               + Split payment
             </button>
             {Math.abs(remaining) > EPSILON && (
@@ -299,7 +299,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
         <button
           onClick={handleConfirm}
           disabled={!canConfirm}
-          className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
+          className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
         >
           {placing ? 'Processing…' : `Charge ${fmt(amountDue)}`}
         </button>

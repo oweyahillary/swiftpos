@@ -239,14 +239,14 @@ export default function InstallPage({ onComplete }: Props) {
   const roleBtn = (r: DeviceRole, title: string, sub: string) => (
     <button onClick={() => selectRole(r)}
       className={`flex-1 text-left rounded-xl border px-4 py-3 transition-colors ${
-        role === r ? 'border-green-500 bg-green-500/10' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
+        role === r ? 'border-action-500 bg-action-500/10' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
       }`}>
-      <div className={`font-semibold ${role === r ? 'text-green-400' : 'text-white'}`}>{title}</div>
+      <div className={`font-semibold ${role === r ? 'text-action-400' : 'text-white'}`}>{title}</div>
       <div className="text-xs text-gray-300 mt-0.5">{sub}</div>
     </button>
   );
 
-  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
   const stepNum = step === 'connection' ? 1 : step === 'activate' ? 2 : 3;
 
   return (
@@ -290,7 +290,7 @@ export default function InstallPage({ onComplete }: Props) {
                   </p>
                 )}
                 <button onClick={testConnection} disabled={testing || !urlValid}
-                  className="mt-2 text-xs text-green-400 hover:text-green-300 disabled:opacity-40 disabled:cursor-not-allowed">
+                  className="mt-2 text-xs text-action-400 hover:text-action-300 disabled:opacity-40 disabled:cursor-not-allowed">
                   {testing ? 'Testing…' : 'Test connection'}
                 </button>
                 {testMsg && (
@@ -303,7 +303,7 @@ export default function InstallPage({ onComplete }: Props) {
               </div>
               <button onClick={goToActivate} disabled={!urlValid || (!verified && !testMsg)}
                 className={`w-full font-bold rounded-xl py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                  verified ? 'bg-green-500 hover:bg-green-400 text-gray-950'
+                  verified ? 'bg-action-500 hover:bg-action-400 text-gray-950'
                            : 'bg-amber-500/80 hover:bg-amber-500 text-gray-950'}`}>
                 {verified ? 'Continue' : testMsg ? 'Continue anyway' : 'Test connection first'}
               </button>
@@ -342,7 +342,7 @@ export default function InstallPage({ onComplete }: Props) {
                 <button onClick={() => { setStep('connection'); setError(''); }}
                   className="px-4 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 text-sm transition-colors">Back</button>
                 <button onClick={activate} disabled={activating}
-                  className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
+                  className="flex-1 bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
                   {activating ? 'Activating…' : 'Activate'}
                 </button>
               </div>
@@ -429,7 +429,7 @@ export default function InstallPage({ onComplete }: Props) {
                         setCustomPort(e.target.checked);
                         if (!e.target.checked) setNodePort(String(NODE_DEFAULT_PORT));
                       }}
-                      className="accent-green-500" />
+                      className="accent-action-500" />
                     The branch server is on a different port
                   </label>
                   <p className="text-xs text-gray-400 mt-1.5">
@@ -493,7 +493,7 @@ export default function InstallPage({ onComplete }: Props) {
               </div>
               {error && <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2.5">{error}</p>}
               <button onClick={complete} disabled={saving || !branchId}
-                className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors">
+                className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors">
                 {saving ? 'Saving…' : 'Complete setup'}
               </button>
               <p className="text-xs text-gray-400 text-center">

@@ -119,7 +119,7 @@ export default function OpenDrawerModal({ cashierName, currency, onOpened, onLog
               onKeyDown={e => { if (e.key === 'Enter') void submit(); }}
               placeholder="0.00"
               className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5
-                         text-white text-lg tabular-nums focus:border-green-500 focus:outline-none
+                         text-white text-lg tabular-nums focus:border-action-500 focus:outline-none
                          disabled:opacity-50"
             />
             <p className="text-[11px] text-gray-500 mt-1.5">
@@ -134,7 +134,7 @@ export default function OpenDrawerModal({ cashierName, currency, onOpened, onLog
           <button
             onClick={submit}
             disabled={busy}
-            className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700
+            className="w-full bg-action-600 hover:bg-action-500 disabled:bg-gray-700
                        disabled:text-gray-500 text-white rounded-xl py-3 text-sm
                        font-semibold transition-colors"
           >

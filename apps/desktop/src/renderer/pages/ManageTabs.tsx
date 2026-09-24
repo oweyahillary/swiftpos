@@ -22,10 +22,10 @@ import type { CsvRow } from '../lib/csv';
 
 const input =
   'w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-white ' +
-  'placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
+  'placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
 const label = 'block text-xs text-gray-400 mb-1';
 const btn =
-  'bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed ' +
+  'bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed ' +
   'text-gray-950 font-semibold rounded-lg px-4 py-2 transition-colors';
 
 function Banner({ kind, text }: { kind: 'ok' | 'err'; text: string }) {
@@ -244,7 +244,7 @@ export function MenuTab({ currency }: { currency: string }) {
                     ? `Follows ${categories.find(c => c.id === p.category_id)?.name ?? 'its category'} — click to override`
                     : ov ? 'Forced to the kitchen — click for never' : 'Never goes to the kitchen — click to follow the category'}
                   className={`text-xs px-2 py-0.5 rounded-md border transition-colors whitespace-nowrap ${
-                    effective ? 'border-green-700 text-green-400' : 'border-gray-700 text-gray-300'
+                    effective ? 'border-action-700 text-action-400' : 'border-gray-700 text-gray-300'
                   } ${ov !== null ? 'font-semibold' : 'opacity-80'}`}>
                   {effective ? '🍳 Kitchen' : 'Counter'}{ov !== null ? ' ·' : ''}
                 </button>
@@ -303,7 +303,7 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
         <button
           onClick={() => setIsKitchen(v => !v)}
           className={`px-3 rounded-lg border text-xs whitespace-nowrap transition-colors ${
-            isKitchen ? 'border-green-500 text-green-400' : 'border-gray-700 text-gray-300'}`}>
+            isKitchen ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'}`}>
           {isKitchen ? 'Kitchen ✓' : 'Kitchen'}
         </button>
         <button onClick={add} disabled={busy || !name.trim()} className={btn}>Add</button>
@@ -318,7 +318,7 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
             <span className="flex-1 text-gray-200 truncate">{c.name}</span>
             <button onClick={() => toggleKitchen(c)} disabled={busy}
               className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${
-                c.is_kitchen ? 'border-green-500 text-green-400' : 'border-gray-700 text-gray-300'}`}>
+                c.is_kitchen ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'}`}>
               {c.is_kitchen ? 'Kitchen' : 'Not kitchen'}
             </button>
           </div>
@@ -1414,7 +1414,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
           className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-800 file:text-gray-200 hover:file:bg-gray-700" />
 
         <button onClick={downloadSample}
-          className="mt-3 text-xs text-green-400 hover:text-green-300 transition-colors">
+          className="mt-3 text-xs text-action-400 hover:text-action-300 transition-colors">
           ↓ Download a sample file to fill in
         </button>
 

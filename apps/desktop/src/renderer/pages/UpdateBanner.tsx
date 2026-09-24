@@ -91,7 +91,7 @@ export default function UpdateBanner({ branchId }: Props) {
                      placeholder="Manager PIN" autoFocus
                      className="bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-1.5 w-32" />
               <button onClick={restartNow} disabled={busy || !pin.trim()}
-                      className="bg-green-700 hover:bg-green-600 disabled:opacity-40 rounded-lg px-3 py-1.5">
+                      className="bg-action-700 hover:bg-action-600 disabled:opacity-40 rounded-lg px-3 py-1.5">
                 Confirm restart
               </button>
               <button onClick={() => { setPinMode(false); setPin(''); setMsg(''); }}

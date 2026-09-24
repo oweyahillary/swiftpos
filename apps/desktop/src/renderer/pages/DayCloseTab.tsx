@@ -305,7 +305,7 @@ export default function DayCloseTab({ currency }: Props) {
       <button
         onClick={handleClose}
         disabled={!isManager || busy || counted === ''}
-        className="bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500
+        className="bg-action-600 hover:bg-action-500 disabled:bg-gray-700 disabled:text-gray-500
                    text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
       >
         {busy ? 'Closing…' : 'Count verified — close the day'}

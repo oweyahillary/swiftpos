@@ -70,7 +70,7 @@ export default function PrintersScreen({
             onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === t.key
-                ? 'border-green-500 text-white'
+                ? 'border-action-500 text-white'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >

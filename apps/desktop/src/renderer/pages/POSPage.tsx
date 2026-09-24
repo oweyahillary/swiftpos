@@ -872,7 +872,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <button onClick={handlePrint} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">
               🖨 Print receipt
             </button>
-            <button onClick={handleNewOrder} className="flex-1 bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
+            <button onClick={handleNewOrder} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
               New order
             </button>
           </div>
@@ -1011,7 +1011,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           {onOpenManager && (
             <button
               onClick={onOpenManager}
-              className="text-xs text-green-400 hover:text-green-300 border border-green-900 hover:border-green-700 rounded-md px-2 py-1 transition-colors"
+              className="text-xs text-action-400 hover:text-action-300 border border-action-900 hover:border-action-700 rounded-md px-2 py-1 transition-colors"
               title="Back to manager tools"
             >
               ← Manager
@@ -1144,14 +1144,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               placeholder="Search products…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-green-500 transition-colors"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 text-sm focus:outline-none focus:border-action-500 transition-colors"
             />
           </div>
 
           <div className="flex gap-2 px-4 py-3 border-b border-gray-800 overflow-x-auto">
             <button
               onClick={() => setActiveCategory('all')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === 'all' ? 'bg-green-500 text-gray-950' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${activeCategory === 'all' ? 'bg-action-500 text-gray-950' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
             >All</button>
             {categories.map((cat: any) => (
               <button
@@ -1177,10 +1177,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     <button
                       key={product.id}
                       onClick={() => handleTap(product)}
-                      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${inCart ? 'border-green-500/60 bg-green-500/5' : 'border-gray-800 hover:border-gray-700'}`}
+                      className={`relative bg-gray-900 border rounded-xl p-3 text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${inCart ? 'border-action-500/60 bg-action-500/5' : 'border-gray-800 hover:border-gray-700'}`}
                     >
                       {inCart && (
-                        <span className="absolute top-2 right-2 bg-green-500 text-gray-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                        <span className="absolute top-2 right-2 bg-action-500 text-gray-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
                           {cartCount}
                         </span>
                       )}
@@ -1231,7 +1231,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   <button
                     key={val}
                     onClick={() => chooseOrderType(val)}
-                    className={`flex-1 py-2 text-xs font-medium whitespace-nowrap transition-colors ${orderType === val ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
+                    className={`flex-1 py-2 text-xs font-medium whitespace-nowrap transition-colors ${orderType === val ? 'bg-action-500/10 text-action-400' : 'bg-gray-800 text-gray-200 hover:text-white'}`}
                   >
                     {label}
                   </button>
@@ -1247,7 +1247,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     value={deliveryPerson}
                     onChange={e => setDeliveryPerson(e.target.value)}
                     placeholder="Rider name"
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
                   />
                 )}
                 {orderType === 'dine_in' && (
@@ -1257,12 +1257,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     onChange={e => setCovers(e.target.value)}
                     placeholder="Pax"
                     title="Number of diners — used for Average Per Cover"
-                    className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
                   />
                 )}
                 {orderType === 'dine_in' && (
                   tables.length > 0 ? (
-                    <span className="flex-1 flex items-center justify-center bg-green-500/10 border border-green-500/40 rounded-lg text-green-400 text-xs font-semibold truncate px-2 py-1.5" title="Selected from the table map">
+                    <span className="flex-1 flex items-center justify-center bg-action-500/10 border border-action-500/40 rounded-lg text-action-400 text-xs font-semibold truncate px-2 py-1.5" title="Selected from the table map">
                       {tableNumber ? `T: ${tableNumber}` : 'No table'}
                     </span>
                   ) : (
@@ -1271,7 +1271,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                       value={tableNumber}
                       onChange={e => setTableNumber(e.target.value)}
                       placeholder="Table #"
-                      className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs text-center placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
                     />
                   )
                 )}
@@ -1368,7 +1368,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               // real enforcement, but letting a cashier ring a full basket and
               // then fail at payment wastes their time and the customer's.
               disabled={cart.length === 0 || blocked}
-              className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors mt-1"
+              className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors mt-1"
             >
               Charge {currency} {subtotal.toLocaleString()}
             </button>

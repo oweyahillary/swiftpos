@@ -61,7 +61,7 @@ export default function HeldOrdersModal({ orders, currency, cartHasItems, onReca
                     <button
                       onClick={() => onRecall(o.id)}
                       disabled={cartHasItems}
-                      className="bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 text-xs font-bold rounded-lg px-3 py-1.5 transition-colors"
+                      className="bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 text-xs font-bold rounded-lg px-3 py-1.5 transition-colors"
                     >
                       Recall
                     </button>
