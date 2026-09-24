@@ -21,7 +21,7 @@ move A308 and A278 from FIX BUILT to CLOSED. Nothing here needs a printer except
    "powered by SwiftPOS" is still there bottom-left.
 3. On the web, upload a 300 KB PNG. PASS = rejected with a size message, nothing saved.
 4. On the web, upload an SVG. PASS = rejected.
-5. *(changed)* Custom hex: enter `#F5B800` (Taste Town yellow). PASS = the page shows **"Legible ✓"**
+5. *(changed)* Custom hex: enter `#F5B800` (a strong yellow). PASS = the page shows **"Legible ✓"**
    (no orange warning) and the preview's Enter button is yellow with **black** text. Save; on the till
    PASS = the same yellow with black Enter text.
    Then enter `#1e293b` (dark slate). PASS = the orange "isn't legible" warning shows and the preview

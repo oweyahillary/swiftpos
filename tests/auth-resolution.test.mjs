@@ -35,7 +35,7 @@ const oldSingle = (rows) =>
                     : { data: null, error: { code: 'PGRST116' } };
 
 ok('one business — unchanged behaviour', () => {
-  const r = resolve([{ id: 'b1', name: 'Kudo' }]);
+  const r = resolve([{ id: 'b1', name: 'Alpha Foods' }]);
   assert.equal(r.kind, 'one');
   assert.equal(r.business.id, 'b1');
 });
@@ -54,7 +54,7 @@ ok('TWO businesses used to be reported as ZERO — the bug', () => {
 });
 
 ok('two businesses asks which, rather than guessing', () => {
-  const r = resolve([{ id: 'b1', name: 'Kudo' }, { id: 'b2', name: 'Kudo Two' }]);
+  const r = resolve([{ id: 'b1', name: 'Alpha Foods' }, { id: 'b2', name: 'Alpha Foods Two' }]);
   assert.equal(r.kind, 'many');
   assert.equal(r.businesses.length, 2, 'both are offered to the caller');
 });
@@ -156,7 +156,7 @@ ok('a percent sign cannot turn into a catch-all', () => {
 });
 
 ok('escaping is idempotent on ordinary addresses', () => {
-  assert.equal(escapeLike('jane@kudo.co.ke'), 'jane@kudo.co.ke');
+  assert.equal(escapeLike('jane@example.co.ke'), 'jane@example.co.ke');
 });
 
 ok('a backslash in the input cannot break the escape', () => {

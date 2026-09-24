@@ -72,7 +72,7 @@ const rows = {
   pumps: [{ id: 'pu1', branch_id: 'B1', fuel_product_id: 'p3', name: 'Pump 1', status: 'idle', sort_order: 0 }],
   config: {
     branchId: 'B1', vatRate: 16, ctlRate: 2, maxDiscountPct: 10, businessType: 'restaurant',
-    receiptHeader: 'Kudo', receiptFooter: 'Karibu', kitchenExclusions: ['c9'], continuousOperation: true,
+    receiptHeader: 'Your Business', receiptFooter: 'Karibu', kitchenExclusions: ['c9'], continuousOperation: true,
   },
 };
 

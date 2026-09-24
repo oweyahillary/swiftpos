@@ -59,9 +59,9 @@ console.log('\n3. Threshold — luminance strictly below prints black');
   ok('128 is white at default 128', grey(128) === 0x00);
   const custom = monoRasterFromRGBA(rgba(8, 1, () => [200, 200, 200, 255]), 8, 1, { threshold: 220 }).bytes[0];
   ok('a higher threshold pulls light grey to black', custom === 0xff);
-  // Taste Town: black on yellow → the yellow field must go WHITE (lum 0.299*245+0.587*184+0.114*0 ≈ 181)
+  // A black mark on a yellow field → the yellow field must go WHITE (lum 0.299*245+0.587*184+0.114*0 ≈ 181)
   const yellow = monoRasterFromRGBA(rgba(8, 1, () => [245, 184, 0, 255]), 8, 1).bytes[0];
-  ok('a yellow field thresholds to white (Taste Town case)', yellow === 0x00);
+  ok('a yellow field thresholds to white (black-on-yellow logo)', yellow === 0x00);
 }
 
 console.log('\n4. Downsample — shrink-not-crop to the 58 mm head');

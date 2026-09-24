@@ -48,7 +48,7 @@ show('DISPATCH', { order, business, station: dispatchPreset(DISPATCH, 'Dispatch'
 show('CUSTOMER RECEIPT', { order, business, station: receiptPreset('st-till', 'Till') });
 show('CUSTOMER RECEIPT — duplicate, optional fields off', {
   order,
-  business: { name: 'KUDO JUJA B', currencyCode: 'KES', vatRate: 16, ctlRate: 2,
+  business: { name: 'Your Business', currencyCode: 'KES', vatRate: 16, ctlRate: 2,
               thankYouMessage: 'Thank you for your business!', footerCredit: 'Powered by SwiftPOS' },
   station: receiptPreset('st-till', 'Till'),
   reprint: { at: new Date(2026, 7, 5, 21, 6, 9), count: 2 },

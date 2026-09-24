@@ -267,9 +267,9 @@ time — clients never see it.
 
 ---
 
-# ADDENDUM — colour + logo resolution (2026-09-19 review; Taste Town + KUDO)
+# ADDENDUM — colour + logo resolution (2026-09-19 review of two reference logos)
 
-Decisions from reviewing two real client logos. These REFINE §2/§5/§6 and are locked.
+Decisions from reviewing two reference logos (named by their shape, not their owner — A322). These REFINE §2/§5/§6 and are locked.
 
 ## A. Curated accent palette (launch set — contrast-vetted)
 
@@ -308,13 +308,13 @@ the active PIN dot, and the Enter button — never text, totals, or keypad digit
 
 ## D. Worked examples (the reference cases)
 
-- **Taste Town** — brand yellow (~#F5B800), solid black artwork on a yellow field.
-  Accent = their yellow; Enter uses **black** text (yellow+white = 1.79 fail; yellow+black =
+- **Reference A — a solid black mark on a yellow field** (brand yellow ~#F5B800).
+  Accent = the yellow; Enter uses **black** text (yellow+white = 1.79 fail; yellow+black =
   11.74). Divider/dot yellow on dark = 9.98 (great). Logo on a yellow chip on the lock
   screen. Receipt: thresholds to crisp black-on-white.
-- **KUDO KUDO** — brand red (~#E1251B) + orange/yellow gradient mark, white-bg logo.
-  Accent = their red; Enter uses **white** text (4.69, the default path). Logo on a white
-  chip on the lock screen. Receipt: banner + knockout text print fine; the gradient chicken
+- **Reference B — an orange/yellow gradient mark on white** (brand red ~#E1251B).
+  Accent = the red; Enter uses **white** text (4.69, the default path). Logo on a white
+  chip on the lock screen. Receipt: banner + knockout text print fine; the gradient artwork
   is the case the receipt preview exists for — client reviews the mono result.
 
 These two cover the spread: bright vs mid accent (black vs white button text), light-bg vs

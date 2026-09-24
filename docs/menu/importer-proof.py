@@ -2,7 +2,7 @@
 """
 importer — turns a filled-in composition workbook into menu rows.
 
-THE POINT OF THIS FILE is not to import Kudo Kudo. It is to demonstrate that one
+THE POINT OF THIS FILE is not to import one particular menu. It is to demonstrate that one
 importer, with no knowledge of any specific menu, loads three businesses that
 share nothing:
 
@@ -211,7 +211,7 @@ def summarize(conn: sqlite3.Connection, business_id: str) -> None:
 # ─── Three unrelated menus, to prove the schema does not care ─────────────────
 
 def chicken_shop() -> Menu:
-    """Combos, upgrades, a spice attribute, hidden components. Kudo's shape."""
+    """Combos, upgrades, a spice attribute, hidden components. A quick-service shape."""
     P = Product
     return Menu(
         business_id="chicken",
@@ -244,7 +244,7 @@ def chicken_shop() -> Menu:
 
 
 def coffee_shop() -> Menu:
-    """Size and milk choices, no combos, delta pricing by size. Nothing like Kudo."""
+    """Size and milk choices, no combos, delta pricing by size. Nothing like the first."""
     P = Product
     return Menu(
         business_id="coffee",

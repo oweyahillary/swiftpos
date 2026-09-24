@@ -44,7 +44,7 @@ const ok = (name: string, fn: () => void) => {
 };
 
 const BASE: BusinessConfig = {
-  name: 'KUDO JUJA B', currencyCode: 'KES', vatRate: 16, ctlRate: 2,
+  name: 'Your Business', currencyCode: 'KES', vatRate: 16, ctlRate: 2,
   footerCredit: 'Powered by SwiftPOS',
 } as BusinessConfig;
 

@@ -49,6 +49,18 @@ export interface Assignment {
 let spool: Spool | null = null;
 let db: Database.Database | null = null;
 
+// A322: the test print and the preview show THIS till's business name (the local session row, the same
+// source the rest of the till uses), so a technician sees the client's own name on the client's printer —
+// never a reference business's. Everything else stays the neutral sample; "Your Business" if no name yet.
+function sampleBusinessForThisTill(): typeof sampleBusiness {
+  let name: string | null = null;
+  try {
+    name = (db?.prepare(`SELECT business_name FROM session WHERE id = 1`).get() as { business_name?: string } | undefined)
+      ?.business_name ?? null;
+  } catch { /* not enrolled yet / no session row: fall back */ }
+  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name };
+}
+
 export function initPrinting(database: Database.Database, win: () => BrowserWindow | null): void {
   db = database;
   db.exec(ASSIGNMENTS_SCHEMA);
@@ -256,7 +268,7 @@ function registerIpc(): void {
       };
 
       return toPreview(
-        renderTicket({ order: sampleOrder, business: sampleBusiness, station: previewStation }),
+        renderTicket({ order: sampleOrder, business: sampleBusinessForThisTill(), station: previewStation }),
         { showMargins: true });
     } catch (err) {
       console.error('[escpos] preview failed:', err);
@@ -361,7 +373,7 @@ function registerIpc(): void {
           : st.id,
       };
 
-      const doc = renderTicket({ order: sampleOrder, business: sampleBusiness, station });
+      const doc = renderTicket({ order: sampleOrder, business: sampleBusinessForThisTill(), station });
       const bytes = toEscPos(doc, { cut: station.cutPaper, feedBeforeCut: station.feedBeforeCut });
       await sendToPrinter(parseTarget(target), bytes);
       return { ok: true, ms: Date.now() - started, bytes: bytes.length };

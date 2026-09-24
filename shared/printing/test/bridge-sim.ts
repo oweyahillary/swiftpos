@@ -138,7 +138,7 @@ const lines: OrderLine[] = cart.map(l => ({
 const order = {
   billNumber: 'T1--5718',
   orderType: 'takeaway' as const,
-  cashierName: 'grace wanjiku',
+  cashierName: 'Amina',
   soldAt: new Date('2026-08-05T19:42:11'),
   lines,
   payments: [{ label: 'CASH', amount: toCents(3500) }],
@@ -148,7 +148,7 @@ const order = {
 };
 
 const business = {
-  name: 'KUDO KUDO', branchName: 'Kilimani Branch',
+  name: 'Your Business', branchName: 'Main Branch',
   currencyCode: 'KES', vatRate: 16, ctlRate: 2,
   footerCredit: 'Powered by SwiftPOS',
 };

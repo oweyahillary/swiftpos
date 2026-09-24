@@ -204,7 +204,7 @@ export function kitchenOnly(lines: TicketLine[]): TicketLine[] {
 export function parseDescriptionLines(description?: string | null): string[] | undefined {
   const raw = String(description ?? '').trim();
   if (!raw) return undefined;
-  // '+' is a first-class separator: the Kudo menu writes components as
+  // '+' is a first-class separator: real menus write components as
   // "5pc chicken + cole slaw + medium fries" — exactly the list a kitchen
   // ticket itemizes.
   const parts = (raw.includes('\n') ? raw.split(/\r?\n/) : raw.split(/[,;•·+]+/))

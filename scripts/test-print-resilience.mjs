@@ -254,9 +254,9 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
     const parse = new Function(`${fn}; return parseDescriptionLines;`)();
     const a = parse('3pc chicken, 2 fries, 1 soda 500ml');
     ok('comma prose itemizes into three lines', Array.isArray(a) && a.length === 3 && a[1] === '2 fries', JSON.stringify(a));
-    // The REAL menu (kudo_kudo_menu_clean.csv) — '+'-separated components.
+    // A real-world menu shape — '+'-separated components.
     const k = parse('5pc chicken + cole slaw + popcorn + medium fries + soft drink');
-    ok("the Kudo menu's '+' descriptions itemize", k.length === 5 && k[1] === 'cole slaw' && k[4] === 'soft drink', JSON.stringify(k));
+    ok("a '+'-separated menu description itemizes", k.length === 5 && k[1] === 'cole slaw' && k[4] === 'soft drink', JSON.stringify(k));
     const b = parse('Chicken\nFries\n- Coleslaw');
     const bp = parse('Chicken\n+ Fries\n+ Coleslaw');
     ok("newline lists with leading '+' strip the marker", bp.length === 3 && bp[1] === 'Fries', JSON.stringify(bp));

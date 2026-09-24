@@ -6,7 +6,7 @@ KITCHEN   (486 bytes)
 |                * * KITCHEN * *                 |
 |                                                |
 |Order  T1--5718                         TAKEAWAY|
-|Wed 05 Aug 19:42          Cashier  grace wanjiku|
+|Wed 05 Aug 19:42                  Cashier  Amina|
 |------------------------------------------------|
 |1   3PC CHICKEN COMBO                           |
 |      3PC Chicken                               |
@@ -29,7 +29,7 @@ DISPATCH   (549 bytes)
 |                * * DISPATCH * *                |
 |                                                |
 |Order  T1--5718                         TAKEAWAY|
-|Wed 05 Aug 19:42          Cashier  grace wanjiku|
+|Wed 05 Aug 19:42                  Cashier  Amina|
 |------------------------------------------------|
 |1   3PC CHICKEN COMBO                           |
 |      3PC Chicken (all spicy)                   |
@@ -50,18 +50,18 @@ DISPATCH   (549 bytes)
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT   (1888 bytes)
+CUSTOMER RECEIPT   (1879 bytes)
 ============================================================
 +------------------------------------------------+
-|                   KUDO KUDO                    |
-|                Kilimani Branch                 |
+|                 Your Business                  |
+|                  Main Branch                   |
 |                PIN: P051234567X                |
-|               Tel: 0700 000 033                |
+|               Tel: 0700 000 000                |
 |------------------------------------------------|
 |Type: Takeaway                                  |
 |------------------------------------------------|
 |Bill No.: T1--5718                              |
-|Cashier: grace wanjiku                          |
+|Cashier: Amina                                  |
 |Date: 2026-08-05 19:42:11                       |
 |Kots: 2                                         |
 |------------------------------------------------|
@@ -94,27 +94,27 @@ CUSTOMER RECEIPT   (1888 bytes)
 |CASH                                    3,500.00|
 |CHANGE                                    200.00|
 |------------------------------------------------|
-|Buy Goods: 3423273                              |
+|Buy Goods: 000000                               |
 |------------------------------------------------|
 |          Thank you for your business!          |
-|         For Delivery call 0117 000 033         |
+|         For delivery call 0700 000 000         |
 |------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
 |              Powered by SwiftPOS               |
 +------------------------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — duplicate, optional fields off   (1792 bytes)
+CUSTOMER RECEIPT — duplicate, optional fields off   (1785 bytes)
 ============================================================
 +------------------------------------------------+
 |                Duplicate Print                 |
 |------------------------------------------------|
-|                  KUDO JUJA B                   |
+|                 Your Business                  |
 |------------------------------------------------|
 |Type: Takeaway                                  |
 |------------------------------------------------|
 |Bill No.: T1--5718                              |
-|Cashier: grace wanjiku                          |
+|Cashier: Amina                                  |
 |Date: 2026-08-05 19:42:11                       |
 |RePrint T.: 2026-08-05 21:06:09                 |
 |Kots: 2                                         |
@@ -155,14 +155,13 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1792 bytes)
 +------------------------------------------------+
 
 ============================================================
-KITCHEN — 58mm   (435 bytes)
+KITCHEN — 58mm   (418 bytes)
 ============================================================
 +--------------------------------+
 |        * * KITCHEN * *         |
 |                                |
 |Order  T1--5718         TAKEAWAY|
-|Wed 05 Aug 19:42                |
-|          Cashier  grace wanjiku|
+|Wed 05 Aug 19:42  Cashier  Amina|
 |--------------------------------|
 |1 3PC CHICKEN                   |
 |    COMBO                       |
@@ -181,18 +180,18 @@ KITCHEN — 58mm   (435 bytes)
 +--------------------------------+
 
 ============================================================
-CUSTOMER RECEIPT — 58mm   (1392 bytes)
+CUSTOMER RECEIPT — 58mm   (1383 bytes)
 ============================================================
 +--------------------------------+
-|           KUDO KUDO            |
-|        Kilimani Branch         |
+|         Your Business          |
+|          Main Branch           |
 |        PIN: P051234567X        |
-|       Tel: 0700 000 033        |
+|       Tel: 0700 000 000        |
 |--------------------------------|
 |Type: Takeaway                  |
 |--------------------------------|
 |Bill No.: T1--5718              |
-|Cashier: grace wanjiku          |
+|Cashier: Amina                  |
 |Date: 2026-08-05 19:42:11       |
 |Kots: 2                         |
 |--------------------------------|
@@ -225,10 +224,10 @@ CUSTOMER RECEIPT — 58mm   (1392 bytes)
 |CASH                    3,500.00|
 |CHANGE                    200.00|
 |--------------------------------|
-|Buy Goods: 3423273              |
+|Buy Goods: 000000               |
 |--------------------------------|
 |  Thank you for your business!  |
-| For Delivery call 0117 000 033 |
+| For delivery call 0700 000 000 |
 |--------------------------------|
 |    TAX RECEIPT UPON REQUEST    |
 |      Powered by SwiftPOS       |

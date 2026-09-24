@@ -510,6 +510,11 @@ jobs:
       - name: Register agrees with itself
         run: node scripts/check-register-consistency.mjs
 
+      # A322 — SwiftPOS is general-purpose: no reference business's name in shipped source, sample data,
+      # tests or scripts (the technician test print once printed one on every client's printer).
+      - name: No reference business names
+        run: node scripts/check-reference-names.mjs && node scripts/check-reference-names.mjs --self-test
+
       # A170: a literal NULL written into a NOT NULL local column throws at
       # runtime and is invisible to tsc — the A167 class (offline sign-in locked
       # the till out). The gate parses localDb.ts and flags any such write; the
@@ -577,6 +582,11 @@ jobs:
       - name: Desktop catalogue refresh signal
         working-directory: apps/desktop
         run: node --no-warnings test/catalogue-refresh-signal.test.mjs
+
+      # A322 — the test print / preview show THIS till's business name (real printWorker, real SQLite).
+      - name: Desktop test print business name
+        working-directory: apps/desktop
+        run: node --no-warnings test/test-print-business-name.test.mjs
 
       # A161 — the node's downstream reference snapshot (A24). Pure reshape of
       # local rows into the cloud shapes pullCatalogue consumes; the tri-state

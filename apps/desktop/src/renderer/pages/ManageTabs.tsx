@@ -527,7 +527,7 @@ export function ReceiptTextTab() {
       <div>
         <label className={label}>Footer — printed at the bottom</label>
         <textarea value={footer} onChange={e => setFooter(e.target.value)}
-          placeholder={'Thank you, visit again!\nFollow us @kudokudo_ke'}
+          placeholder={'Thank you, visit again!\nFollow us @yourbusiness'}
           className={area} />
       </div>
 
@@ -1200,7 +1200,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
       'Chicken Wrap,550,Wraps,,yes,,,,',
       'French Fries,200,Hot Sides,,yes,Size,Medium | Large +70,,',
       'Cole Slaw,200,Cold Sides,Prepared at the counter,no,,,,',
-      'Kudo Sauce,100,Sauces,,no,,,,',
+      'House Sauce,100,Sauces,,no,,,,',
       'Shake Chocolate,350,Shakes & Mojitos,Made beside the till,no,,,,',
       'Soda 500ml,120,Soft Drinks,,no,,,,',
       'Water 500ml,100,Soft Drinks,,no,,,,',
