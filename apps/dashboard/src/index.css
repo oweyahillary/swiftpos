@@ -90,6 +90,20 @@
   :root:not(.dark) .bg-gray-900  { background-color: #ffffff !important; }
   :root:not(.dark) .bg-gray-800  { background-color: #f1f5f9 !important; }
   :root:not(.dark) .bg-gray-700  { background-color: #e2e8f0 !important; }
+  /* A330: translucent grey PANELS (base, not hover) had no light-mode rule, so in light mode they stayed dark translucent
+     grey — e.g. the web POS "Add tip" panel. Same light colour as the solid override above, same opacity. None of these is
+     a backdrop (checked 2026-09-25; 11 classes); tests/light-mode-translucent.test.mjs fails if a new one appears without a rule. */
+  :root:not(.dark) .bg-gray-950\/60  { background-color: rgba(248,250,252,0.6) !important; }
+  :root:not(.dark) .bg-gray-900\/60  { background-color: rgba(255,255,255,0.6) !important; }
+  :root:not(.dark) .bg-gray-900\/50  { background-color: rgba(255,255,255,0.5) !important; }
+  :root:not(.dark) .bg-gray-900\/40  { background-color: rgba(255,255,255,0.4) !important; }
+  :root:not(.dark) .bg-gray-800\/60  { background-color: rgba(241,245,249,0.6) !important; }
+  :root:not(.dark) .bg-gray-800\/50  { background-color: rgba(241,245,249,0.5) !important; }
+  :root:not(.dark) .bg-gray-800\/40  { background-color: rgba(241,245,249,0.4) !important; }
+  :root:not(.dark) .bg-gray-800\/30  { background-color: rgba(241,245,249,0.3) !important; }
+  :root:not(.dark) .bg-gray-700\/30  { background-color: rgba(226,232,240,0.3) !important; }
+  :root:not(.dark) .bg-gray-700\/40  { background-color: rgba(226,232,240,0.4) !important; }
+  :root:not(.dark) .bg-gray-700\/50  { background-color: rgba(226,232,240,0.5) !important; }
   :root:not(.dark) .bg-gray-600  { background-color: #cbd5e1 !important; }
   :root:not(.dark) .bg-gray-500  { background-color: #94a3b8 !important; }
   :root:not(.dark) .bg-gray-400  { background-color: #64748b !important; }
