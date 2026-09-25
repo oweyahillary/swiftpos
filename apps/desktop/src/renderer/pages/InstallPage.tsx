@@ -254,7 +254,7 @@ export default function InstallPage({ onComplete }: Props) {
       <div className="w-full max-w-md">
 
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-green-400">SwiftPOS</h1>
+          <h1 className="text-3xl font-bold text-teal-400">SwiftPOS</h1>
           <p className="text-gray-300 text-sm mt-1">Device setup · step {stepNum} of 3</p>
         </div>
 

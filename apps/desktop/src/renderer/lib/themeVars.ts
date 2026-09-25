@@ -41,7 +41,9 @@ export function computeThemeVars(b: ThemeInput | null | undefined): ThemeVars | 
     vars: {
       // The till's action classes use shades 300–900; the theme defines 400–950 (fixed shade per job).
       'action-300': channels(s[400]), 'action-400': channels(s[400]), 'action-500': channels(s[500]),
-      'action-600': channels(s[600]), 'action-700': channels(s[700]), 'action-900': channels(s[800]),
+      // A331: the till's 600/700 fills carry WHITE labels (Start selling, Day close, Stations save, Menu workbench, report
+      // chip, update banner) — white on a theme's 600 is < 4.5 for 5 of 7 themes, so 600 → the theme's 700, 700 → its 800.
+      'action-600': channels(s[700]), 'action-700': channels(s[800]), 'action-900': channels(s[800]),
       'brand-400': channels(base), 'brand-500': channels(base), 'brand-600': channels(base),
       'brand-700': channels(darken(base, 0.2)),            // pressed
       'on-brand': channels(labelOn(base)),

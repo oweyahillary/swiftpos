@@ -7,22 +7,22 @@
    switch shade with the mode). Chosen so every EXISTING label stays >= 4.5:1: 500 fills carry dark text (theme 500 reads
    for all seven themes), 600 fills carry white text (theme 700), links are 400 on dark and 700 on white. */
 :root {
-  --action-400: var(--action-d-400, 74 222 128);
-  --action-500: var(--action-t-500, 34 197 94);
-  --action-600: var(--action-t-600, 22 163 74);
+  --action-400: var(--action-d-400, 45 212 191);   /* A329: themes OFF = SwiftPOS teal (Teal family, shade per job) */
+  --action-500: var(--action-t-500, 20 184 166);
+  --action-600: var(--action-t-600, 15 118 110);
 }
 :root:not(.dark) {
-  --action-400: var(--action-l-400, 74 222 128);
+  --action-400: var(--action-l-400, 15 118 110);   /* teal 700 on white: 5.47:1 (green-400 was 1.8) */
 }
 /* A328 part 2: the web POS's INLINE colours use these aliases as rgb(var(--act-*, <that use's own original r g b>)).
-   They have NO default here on purpose: with themes OFF the --action-* inputs are unset, the alias is invalid, and every
-   use falls back to ITS OWN original colour (green or blue) — unchanged. With themes ON: fill = theme 500 (dark labels,
+   A329 (2026-09-25): they now DEFAULT to SwiftPOS teal, so with themes OFF the web POS's green and blue primaries are
+   teal (before A329 each fell back to its own original green or blue). With themes ON: fill = theme 500 (dark labels,
    borders, dots, tints), strong = theme 700 (white labels), text = 400 on dark / 700 on light. The web POS has its own
    light/dark toggle (data-pos-theme), which wins inside the POS for both the aliases and the part-1 link token. */
-:root { --act-fill: var(--action-t-500); --act-strong: var(--action-t-600); --act-text: var(--action-d-400); }
-:root:not(.dark) { --act-text: var(--action-l-400); }
-[data-pos-theme="dark"]  { --act-text: var(--action-d-400); --action-400: var(--action-d-400, 74 222 128); }
-[data-pos-theme="light"] { --act-text: var(--action-l-400); --action-400: var(--action-l-400, 74 222 128); }
+:root { --act-fill: var(--action-t-500, 20 184 166); --act-strong: var(--action-t-600, 15 118 110); --act-text: var(--action-d-400, 45 212 191); }
+:root:not(.dark) { --act-text: var(--action-l-400, 15 118 110); }
+[data-pos-theme="dark"]  { --act-text: var(--action-d-400, 45 212 191); --action-400: var(--action-d-400, 45 212 191); }
+[data-pos-theme="light"] { --act-text: var(--action-l-400, 15 118 110); --action-400: var(--action-l-400, 15 118 110); }
 
 /*
  * ── Theme system ─────────────────────────────────────────────────────────────

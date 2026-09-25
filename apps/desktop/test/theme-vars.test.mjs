@@ -9,7 +9,8 @@
 //
 // MUTATIONS TO CONFIRM BITE:
 //   - computeThemeVars returns vars with themes OFF          → "themes OFF → nothing overridden" fails
-//   - change a default in index.css (e.g. --action-500)      → "defaults are Tailwind's exact greens" fails
+//   - change a default in index.css (e.g. --action-500)      → "defaults are SwiftPOS teal" fails
+//   - map action-600 back to the theme's 600 (A331)          → "white labels on the till's 600/700 fills" fails (5 of 7 themes)
 //   - point the action scale at a fixed colour in the config  → "the compiled CSS reads the variables" fails
 //   - drop the brand fallback to the theme                    → "no brand colour → the lock curtain uses the theme" fails
 //   - App stops re-reading on catalogue:changed               → "re-applied on every landed pull" fails
@@ -39,8 +40,16 @@ ok('themes OFF (no theme id) → nothing overridden: today\'s look', T.computeTh
   && T.computeThemeVars(null) === null);
 
 const oy = T.computeThemeVars({ themeId: 'ocean', accentHex: '#F5B800' });
-ok('Ocean → the action colours are Ocean\'s fixed shades', oy.vars['action-500'] === '59 130 246' && oy.vars['action-400'] === '96 165 250'
-  && oy.vars['action-600'] === '37 99 235' && oy.vars['action-700'] === '29 78 216', JSON.stringify(oy.vars));
+ok('Ocean → the action colours are Ocean\'s fixed shades (600 → its 700, 700 → its 800 — A331)', oy.vars['action-500'] === '59 130 246' && oy.vars['action-400'] === '96 165 250'
+  && oy.vars['action-600'] === '29 78 216' && oy.vars['action-700'] === '30 64 175', JSON.stringify(oy.vars));
+// A331: every till 600/700 fill carries a WHITE label — it must read (>= 4.5) for all seven themes.
+{ const lum = (ch) => { const [r, g, b] = ch.split(' ').map((v) => { const c = Number(v) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const onWhite = (ch) => 1.05 / (lum(ch) + 0.05);
+  let worst = 99;
+  for (const id of ['ocean', 'violet', 'lagoon', 'orchid', 'sky', 'teal', 'blossom']) {
+    const v = T.computeThemeVars({ themeId: id }).vars; worst = Math.min(worst, onWhite(v['action-600']), onWhite(v['action-700']));
+  }
+  ok(`A331: white labels on the till's 600/700 fills ≥ 4.5 for all seven themes (worst ${worst.toFixed(2)})`, worst >= 4.5); }
 ok('a yellow brand colour → the lock curtain is yellow, with BLACK text on it', oy.vars['brand-600'] === '245 184 0' && oy.vars['on-brand'] === '0 0 0');
 ok('…a brand strip in that yellow, and a yellow-tinted sidebar that keeps its text readable', oy.strip === '#F5B800' && /^#[0-9a-f]{6}$/i.test(oy.vars['sidebar-tint']));
 
@@ -64,11 +73,12 @@ ok('switching themes OFF removes them all (the defaults take over again)', store
 
 // ── the real stylesheet ──
 const css = fs.readFileSync(path.join(desktop, 'src/renderer/index.css'), 'utf8');
-const want = { 'action-300': '134 239 172', 'action-400': '74 222 128', 'action-500': '34 197 94', 'action-600': '22 163 74',
-  'action-700': '21 128 61', 'action-900': '20 83 45', 'brand-400': '74 222 128', 'brand-500': '34 197 94',
-  'brand-600': '22 163 74', 'brand-700': '21 128 61', 'on-brand': '255 255 255' };
+// A329: themes OFF = SwiftPOS teal (the registry's Teal family, shade per job), no longer Tailwind green.
+const want = { 'action-300': '45 212 191', 'action-400': '45 212 191', 'action-500': '20 184 166', 'action-600': '15 118 110',
+  'action-700': '17 94 89', 'action-900': '17 94 89', 'brand-400': '45 212 191', 'brand-500': '20 184 166',
+  'brand-600': '15 118 110', 'brand-700': '17 94 89', 'on-brand': '255 255 255' };
 const wrong = Object.entries(want).filter(([k, v]) => !new RegExp(`--${k}:\\s*${v};`).test(css)).map(([k]) => k);
-ok('defaults are Tailwind\'s exact greens (and white text on the curtain) — so OFF is unchanged', wrong.length === 0, wrong.join(','));
+ok('defaults are SwiftPOS teal (A329) — white-label fills and the curtain on teal 700 (white 5.47:1)', wrong.length === 0, wrong.join(','));
 
 const out = path.join(tmp, 'till.css');
 // Run Tailwind's own JS entry point with THIS node — not node_modules/.bin/tailwindcss, which on Windows is a .cmd

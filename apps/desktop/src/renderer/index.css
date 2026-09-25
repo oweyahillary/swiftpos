@@ -2,12 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* A326: themeable colour channels (r g b). DEFAULTS = Tailwind green (300 #86efac, 400 #4ade80, 500 #22c55e,
-   600 #16a34a, 700 #15803d, 900 #14532d) — themes OFF looks exactly as before. themeVars.ts overrides them on
-   <html> when the business has themes ON. --on-brand defaults to white: the lock curtain's text today. */
+/* A326 / A329: themeable colour channels (r g b). DEFAULTS = SwiftPOS teal (A329, owner 2026-09-25; the registry's Teal family,
+   shade per job): 300/400 #2dd4bf (text on dark) · 500 #14b8a6 (dark-label fills) · 600 #0f766e and 700/900 #115e59 (white-label
+   fills — A331: white on 600 fails) · the lock curtain: dots #2dd4bf, Enter #0f766e with white text (5.47:1). Themes ON:
+   themeVars.ts overrides them. (Before A329 the defaults were Tailwind green.) Status, money and M-Pesa keep plain green. */
 :root {
-  --action-300: 134 239 172; --action-400: 74 222 128; --action-500: 34 197 94;
-  --action-600: 22 163 74;   --action-700: 21 128 61;  --action-900: 20 83 45;
-  --brand-400: 74 222 128;   --brand-500: 34 197 94;   --brand-600: 22 163 74;  --brand-700: 21 128 61;
+  --action-300: 45 212 191;  --action-400: 45 212 191;  --action-500: 20 184 166;
+  --action-600: 15 118 110;  --action-700: 17 94 89;    --action-900: 17 94 89;
+  --brand-400: 45 212 191;   --brand-500: 20 184 166;   --brand-600: 15 118 110;  --brand-700: 17 94 89;
   --on-brand: 255 255 255;
 }

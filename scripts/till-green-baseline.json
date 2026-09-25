@@ -1,5 +1,5 @@
 {
- "_": "A326: remaining GREEN classes per till file \u2014 status, money, SwiftPOS wordmark only (docs/A326-till-green-classification.md). May go DOWN, never up. Regenerate only with a reviewed classification.",
+ "_": "A326: remaining GREEN classes per till file \u2014 status, money, SwiftPOS wordmark only (docs/A326-till-green-classification.md). May go DOWN, never up. Regenerate only with a reviewed classification. A329 (2026-09-25): the SwiftPOS wordmark (POSPage, InstallPage) moved green \u2192 teal \u2014 baseline 68 \u2192 66.",
  "files": {
   "components/ExclusionsPanel.tsx": 1,
   "components/HeldOrdersModal.tsx": 1,
@@ -11,11 +11,11 @@
   "components/VoidModal.tsx": 3,
   "pages/BranchCloseTab.tsx": 4,
   "pages/DayCloseTab.tsx": 1,
-  "pages/InstallPage.tsx": 7,
+  "pages/InstallPage.tsx": 6,
   "pages/ManageTabs.tsx": 6,
   "pages/ManagerPage.tsx": 8,
   "pages/MenuWorkbench.tsx": 3,
-  "pages/POSPage.tsx": 9,
+  "pages/POSPage.tsx": 8,
   "pages/PrintersTab.tsx": 2,
   "pages/ShiftPanel.tsx": 4,
   "pages/TechPage.tsx": 6,

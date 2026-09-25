@@ -887,7 +887,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900">
-        <span className="text-green-400 font-bold text-sm">
+        <span className="text-teal-400 font-bold text-sm">
           SwiftPOS <span className="text-gray-500 font-normal text-[10px] align-middle">v{posApi.version}</span>
         </span>
         <span className="text-gray-200 text-sm">{business.name}</span>

@@ -15,7 +15,7 @@
  *   - links use 400 in light mode too                              → "links in light mode" fails
  *   - vars applied when themes are off                             → "themes OFF sets nothing" fails
  *   - a default in index.css changed                               → "defaults are Tailwind's exact greens" fails
- *   - give --act-fill a default (e.g. green)                       → "aliases have NO default" fails (blue uses would turn green)
+ *   - drop the aliases' teal default                               → "aliases default to SwiftPOS teal" fails
  *   - Charge back to raw '#22c55e'                                 → "Charge … theme's 500" + the 94 count fail
  */
 import fs from 'node:fs';
@@ -62,9 +62,9 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
 
   // ── The stylesheet: defaults = Tailwind green, links switch shade with the mode ──
   const css = D('src/index.css');
-  ok('defaults are Tailwind\'s exact greens (400 / 500 / 600), in both modes',
-    /--action-400: var\(--action-d-400, 74 222 128\);/.test(css) && /--action-500: var\(--action-t-500, 34 197 94\);/.test(css)
-    && /--action-600: var\(--action-t-600, 22 163 74\);/.test(css) && /:root:not\(\.dark\) \{\s*--action-400: var\(--action-l-400, 74 222 128\);/.test(css));
+  ok('defaults are SwiftPOS teal (A329): 400 #2dd4bf dark / #0f766e light, 500 #14b8a6, 600 #0f766e',
+    /--action-400: var\(--action-d-400, 45 212 191\);/.test(css) && /--action-500: var\(--action-t-500, 20 184 166\);/.test(css)
+    && /--action-600: var\(--action-t-600, 15 118 110\);/.test(css) && /:root:not\(\.dark\) \{\s*--action-400: var\(--action-l-400, 15 118 110\);/.test(css));
   ok('light mode keeps the themed focus border (as it does for the green one)', /:root:not\(\.dark\) \.focus\\:border-action-500:focus \{ border-color: rgb\(var\(--action-500\)\) !important; \}/.test(css));
   ok('Tailwind\'s action colours read the variables', /400: 'rgb\(var\(--action-400\) \/ <alpha-value>\)'/.test(D('tailwind.config.js')));
 
@@ -79,11 +79,11 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   // ── Part 2: the web POS's INLINE colours (docs/A328-web-pos-inline-colours.md) ──
   // Bench: Chromium, 94 rewritten uses × 4 contexts (dashboard dark/light, POS toggle dark/light): themes OFF identical to
   // each use's original; 7 themes: white labels ≥ 5.36, dark labels ≥ 4.96, text ≥ 5.36.
-  ok('the inline aliases have NO default of their own — so each use falls back to its OWN original colour',
-    /:root \{ --act-fill: var\(--action-t-500\); --act-strong: var\(--action-t-600\); --act-text: var\(--action-d-400\); \}/.test(css));
+  ok('the inline aliases default to SwiftPOS teal (A329) — green and blue primaries alike are teal with themes OFF',
+    /:root \{ --act-fill: var\(--action-t-500, 20 184 166\); --act-strong: var\(--action-t-600, 15 118 110\); --act-text: var\(--action-d-400, 45 212 191\); \}/.test(css));
   ok('the web POS\'s own light/dark toggle drives the text shade (aliases AND the part-1 link token)',
-    /\[data-pos-theme="light"\] \{ --act-text: var\(--action-l-400\); --action-400: var\(--action-l-400, 74 222 128\); \}/.test(css)
-    && /\[data-pos-theme="dark"\]  \{ --act-text: var\(--action-d-400\);/.test(css));
+    /\[data-pos-theme="light"\] \{ --act-text: var\(--action-l-400, 15 118 110\); --action-400: var\(--action-l-400, 15 118 110\); \}/.test(css)
+    && /\[data-pos-theme="dark"\]  \{ --act-text: var\(--action-d-400, 45 212 191\);/.test(css));
   const posDir = path.join(ROOT, 'apps/dashboard/src/pages/pos');
   const posSrc = fs.readdirSync(posDir).filter((f) => /\.tsx?$/.test(f)).map((f) => fs.readFileSync(path.join(posDir, f), 'utf8')).join('\n');
   const themedUses = (posSrc.match(/var\(--act-(?:fill|strong|text),/g) || []).length;
