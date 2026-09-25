@@ -14,6 +14,15 @@
 :root:not(.dark) {
   --action-400: var(--action-l-400, 74 222 128);
 }
+/* A328 part 2: the web POS's INLINE colours use these aliases as rgb(var(--act-*, <that use's own original r g b>)).
+   They have NO default here on purpose: with themes OFF the --action-* inputs are unset, the alias is invalid, and every
+   use falls back to ITS OWN original colour (green or blue) — unchanged. With themes ON: fill = theme 500 (dark labels,
+   borders, dots, tints), strong = theme 700 (white labels), text = 400 on dark / 700 on light. The web POS has its own
+   light/dark toggle (data-pos-theme), which wins inside the POS for both the aliases and the part-1 link token. */
+:root { --act-fill: var(--action-t-500); --act-strong: var(--action-t-600); --act-text: var(--action-d-400); }
+:root:not(.dark) { --act-text: var(--action-l-400); }
+[data-pos-theme="dark"]  { --act-text: var(--action-d-400); --action-400: var(--action-d-400, 74 222 128); }
+[data-pos-theme="light"] { --act-text: var(--action-l-400); --action-400: var(--action-l-400, 74 222 128); }
 
 /*
  * ── Theme system ─────────────────────────────────────────────────────────────

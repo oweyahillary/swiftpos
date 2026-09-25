@@ -15,6 +15,8 @@
  *   - links use 400 in light mode too                              → "links in light mode" fails
  *   - vars applied when themes are off                             → "themes OFF sets nothing" fails
  *   - a default in index.css changed                               → "defaults are Tailwind's exact greens" fails
+ *   - give --act-fill a default (e.g. green)                       → "aliases have NO default" fails (blue uses would turn green)
+ *   - Charge back to raw '#22c55e'                                 → "Charge … theme's 500" + the 94 count fail
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,6 +75,26 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
     && /window\.addEventListener\(BRANDING_SAVED_EVENT, load\);/.test(layer));
   ok('…and is mounted once, inside BusinessProvider', /<BusinessProvider>\s*<ThemeLayer \/>/.test(D('src/App.tsx')));
   ok('Branding fires the saved event after Save and after Reset', (D('src/pages/settings/BrandingTab.tsx').match(/window\.dispatchEvent\(new Event\(BRANDING_SAVED_EVENT\)\)/g) || []).length === 2);
+
+  // ── Part 2: the web POS's INLINE colours (docs/A328-web-pos-inline-colours.md) ──
+  // Bench: Chromium, 94 rewritten uses × 4 contexts (dashboard dark/light, POS toggle dark/light): themes OFF identical to
+  // each use's original; 7 themes: white labels ≥ 5.36, dark labels ≥ 4.96, text ≥ 5.36.
+  ok('the inline aliases have NO default of their own — so each use falls back to its OWN original colour',
+    /:root \{ --act-fill: var\(--action-t-500\); --act-strong: var\(--action-t-600\); --act-text: var\(--action-d-400\); \}/.test(css));
+  ok('the web POS\'s own light/dark toggle drives the text shade (aliases AND the part-1 link token)',
+    /\[data-pos-theme="light"\] \{ --act-text: var\(--action-l-400\); --action-400: var\(--action-l-400, 74 222 128\); \}/.test(css)
+    && /\[data-pos-theme="dark"\]  \{ --act-text: var\(--action-d-400\);/.test(css));
+  const posDir = path.join(ROOT, 'apps/dashboard/src/pages/pos');
+  const posSrc = fs.readdirSync(posDir).filter((f) => /\.tsx?$/.test(f)).map((f) => fs.readFileSync(path.join(posDir, f), 'utf8')).join('\n');
+  const themedUses = (posSrc.match(/var\(--act-(?:fill|strong|text),/g) || []).length;
+  ok(`94 inline uses take the theme (found ${themedUses})`, themedUses === 94);
+  const cs = fs.readFileSync(path.join(posDir, 'CashierScreen.tsx'), 'utf8');
+  ok('Charge (dark label) is the theme\'s 500, falling back to its own green', /chargeBtn: \{[\s\S]{0,120}background: 'rgb\(var\(--act-fill, 34 197 94\)\)'/.test(cs));
+  ok('Open Table / modal confirm (white label) is the theme\'s 700, falling back to its own blue', /modalConfirm: \{[\s\S]{0,120}background: 'rgb\(var\(--act-strong, 59 130 246\)\)'/.test(cs));
+  const mm = fs.readFileSync(path.join(posDir, 'MinimartPOS.tsx'), 'utf8');
+  ok('Minimart Charge keeps its gradient, in the theme\'s strong shade', /linear-gradient\(135deg, rgb\(var\(--act-strong, 29 78 216\)\) 0%, rgb\(var\(--act-strong, 37 99 235\)\) 100%\)/.test(mm));
+  ok('prices stay their own green (money is never themed)', /productPrice: \{ fontSize: 11, color: '#22c55e'/.test(cs));
+  ok('M-Pesa keeps its own green', /#(?:22c55e|16a34a|4ade80)/i.test(fs.readFileSync(path.join(posDir, 'MpesaStkPanel.tsx'), 'utf8')));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

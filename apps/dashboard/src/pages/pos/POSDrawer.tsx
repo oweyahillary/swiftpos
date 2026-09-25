@@ -396,7 +396,7 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: '0.4px', textAlign: 'center' as const, transition: 'all 0.15s ease',
   },
   railTabActive: {
-    color: '#93c5fd', borderLeftColor: '#3b82f6', background: 'rgba(59,130,246,0.08)',
+    color: '#93c5fd', borderLeftColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.08)',
   },
   railIcon:  { fontSize: 20 },
   railLabel: { lineHeight: 1.2, width: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
@@ -416,7 +416,7 @@ const s: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const, transition: 'all 0.15s ease',
   },
   subTabActive: {
-    color: '#3b82f6', borderBottomColor: '#3b82f6', background: 'rgba(59,130,246,0.06)',
+    color: 'rgb(var(--act-text, 59 130 246))', borderBottomColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.06)',
   },
 
   // Content

@@ -1,14 +1,28 @@
 {
- "_": "A328: remaining GREEN classes in the web POS + shared components (status and money only \u2014 docs/A328-web-pos-green-classification.md). May go DOWN, never up.",
+ "_": "A328: raw colours LEFT in the web POS + shared components \u2014 status, money, data/identity colours and M-Pesa only (docs/A328-web-pos-green-classification.md, docs/A328-web-pos-inline-colours.md). Counts green classes AND inline hex/rgba greens/blues AND blue classes. May go DOWN, never up.",
  "scope": [
   "pages/pos",
   "components",
   "layouts"
  ],
  "files": {
-  "components/Toast.tsx": 3,
+  "components/Toast.tsx": 6,
+  "pages/pos/CashierScreen.tsx": 25,
   "pages/pos/DiscountPanel.tsx": 5,
   "pages/pos/LoyaltyPanel.tsx": 1,
-  "pages/pos/PaymentModal.tsx": 5
+  "pages/pos/MinimartPOS.tsx": 8,
+  "pages/pos/MpesaStkPanel.tsx": 12,
+  "pages/pos/POSCustomersTab.tsx": 2,
+  "pages/pos/POSInventoryTab.tsx": 1,
+  "pages/pos/POSLoginScreen.tsx": 4,
+  "pages/pos/POSOrderHistoryTab.tsx": 2,
+  "pages/pos/POSReportsTab.tsx": 4,
+  "pages/pos/ParkingPOS.tsx": 7,
+  "pages/pos/PaymentModal.tsx": 5,
+  "pages/pos/PetrolPOS.tsx": 4,
+  "pages/pos/ShiftModal.tsx": 3,
+  "pages/pos/SplitPaymentPanel.tsx": 6,
+  "pages/pos/ZReportModal.tsx": 3,
+  "pages/pos/cashier/types.ts": 3
  }
 }

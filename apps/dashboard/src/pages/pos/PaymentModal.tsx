@@ -557,7 +557,7 @@ export default function PaymentModal({
                     // For now — show inline info message (no blocking alert)
                     setWaMsg('WhatsApp receipt: set WHATSAPP_PROVIDER in server .env to enable.');
                   }}
-                  className="flex-shrink-0 text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg font-medium transition-colors">
+                  className="flex-shrink-0 text-xs bg-[rgb(var(--act-strong,37_99_235))] hover:bg-[rgb(var(--act-strong,59_130_246))] text-white px-3 py-1 rounded-lg font-medium transition-colors">
                   Send
                 </button>
               )}

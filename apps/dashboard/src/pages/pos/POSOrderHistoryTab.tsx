@@ -170,7 +170,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     }}
                     disabled={reprintingId === order.id}
                     style={{ marginTop: 10, padding: '6px 12px', fontSize: 12, fontWeight: 600,
-                      borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', color: '#60a5fa',
+                      borderRadius: 8, border: '1px solid rgb(var(--act-fill, 59 130 246) / 0.4)', color: 'rgb(var(--act-text, 96 165 250))',
                       background: 'transparent', cursor: 'pointer', opacity: reprintingId === order.id ? 0.5 : 1 }}
                   >{reprintingId === order.id ? 'Printing…' : 'Reprint receipt'}</button>
                   {reprintMsg?.id === order.id && (
@@ -220,7 +220,7 @@ const s: Record<string, React.CSSProperties> = {
   center:  { display: 'flex', justifyContent: 'center', padding: 24 },
   spinner: {
     display: 'inline-block', width: 22, height: 22,
-    border: '2px solid #334155', borderTop: '2px solid #3b82f6', borderRadius: '50%',
+    border: '2px solid #334155', borderTop: '2px solid rgb(var(--act-fill, 59 130 246))', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   empty:   { color: '#475569', fontSize: 13, textAlign: 'center', padding: '24px 0' },

@@ -230,7 +230,7 @@ export default function ZReportModal({ onClose }: Props) {
               onClick={generate}
               disabled={loading}
               style={{
-                background: loading ? "#334155" : "#22c55e",
+                background: loading ? "#334155" : "rgb(var(--act-fill, 34 197 94))",
                 color: loading ? "#64748b" : "#000",
                 border: "none",
                 borderRadius: 8,

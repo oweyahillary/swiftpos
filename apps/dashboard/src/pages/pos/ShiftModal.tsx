@@ -480,7 +480,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 10, color: '#94a3b8', fontWeight: 600, fontSize: 14, cursor: 'pointer',
   },
   primaryBtn: {
-    flex: 1, padding: '11px 0', background: '#3b82f6', border: 'none',
+    flex: 1, padding: '11px 0', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none',
     borderRadius: 10, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
   },
   toggle: { display: 'flex', gap: 8, marginBottom: 16 },
@@ -489,7 +489,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 8, color: '#64748b', fontWeight: 600, fontSize: 13, cursor: 'pointer',
   },
   toggleActive: {
-    background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6', color: '#93c5fd',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', border: '1px solid rgb(var(--act-fill, 59 130 246))', color: '#93c5fd',
   },
   summaryBox: {
     background: '#0f172a', border: '1px solid #334155', borderRadius: 10,

@@ -779,7 +779,7 @@ const s: Record<string, React.CSSProperties> = {
   dispenseMetaVal: { fontSize: 13, fontWeight: 600, color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' },
 
   pumpActionBtn: {
-    flex: 1, padding: '10px', background: '#1d4ed8',
+    flex: 1, padding: '10px', background: 'rgb(var(--act-strong, 29 78 216))',
     border: 'none', borderRadius: 10, color: '#fff',
     fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%',
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
@@ -840,7 +840,7 @@ const s: Record<string, React.CSSProperties> = {
   gradeInfo: { flex: 1 },
   gradeCheckmark: {
     position: 'absolute', top: 8, right: 8, fontSize: 12,
-    color: '#22c55e', fontWeight: 700,
+    color: 'rgb(var(--act-text, 34 197 94))', fontWeight: 700,
   },
 
   modeToggle: { display: 'flex', background: '#0f172a', borderRadius: 8, padding: 3, gap: 3 },
@@ -858,7 +858,7 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   presetBtnActive: {
-    background: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6', color: '#60a5fa',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', borderColor: 'rgb(var(--act-fill, 59 130 246))', color: 'rgb(var(--act-text, 96 165 250))',
   },
   numInput: {
     width: '100%', background: '#0f172a', border: '1px solid #334155',

@@ -216,7 +216,7 @@ export default function POSLoginScreen() {
                   style={{
                     width: '100%', padding: '14px 18px',
                     background: b.licensed ? '#1e3a5f' : '#1e293b',
-                    border: `1px solid ${b.licensed ? 'rgba(59,130,246,0.4)' : '#334155'}`,
+                    border: `1px solid ${b.licensed ? 'rgb(var(--act-fill, 59 130 246) / 0.4)' : '#334155'}`,
                     borderRadius: 12, cursor: b.licensed ? 'pointer' : 'not-allowed',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     opacity: loading ? 0.6 : 1, fontFamily: "'DM Sans','Segoe UI',sans-serif",
@@ -225,7 +225,7 @@ export default function POSLoginScreen() {
                     <div style={{ fontSize: 15, fontWeight: 700, color: b.licensed ? '#f1f5f9' : '#64748b' }}>{b.name}</div>
                     {!b.licensed && <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>No desktop licence</div>}
                   </div>
-                  {b.licensed && <span style={{ color: '#60a5fa' }}>→</span>}
+                  {b.licensed && <span style={{ color: 'rgb(var(--act-text, 96 165 250))' }}>→</span>}
                 </button>
               ))}
             </div>
@@ -352,7 +352,7 @@ const st: Record<string, React.CSSProperties> = {
   logoText: { fontWeight: 700, letterSpacing: '-0.5px' },
   main: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' },
   card: { background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '36px 32px', width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.4)' },
-  bizPill: { background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 20, padding: '4px 14px', fontSize: 12, color: '#93c5fd', fontWeight: 600, marginBottom: 20 },
+  bizPill: { background: 'rgb(var(--act-fill, 59 130 246) / 0.1)', border: '1px solid rgb(var(--act-fill, 59 130 246) / 0.2)', borderRadius: 20, padding: '4px 14px', fontSize: 12, color: '#93c5fd', fontWeight: 600, marginBottom: 20 },
   title: { fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 6px', color: '#f1f5f9', textAlign: 'center' },
   subtitle: { fontSize: 13, color: '#64748b', margin: '0 0 22px', textAlign: 'center' },
   emailWrap: { width: '100%', marginBottom: 20 },
@@ -360,14 +360,14 @@ const st: Record<string, React.CSSProperties> = {
   dotsRow: { display: 'flex', gap: 12, marginBottom: 10, transition: 'opacity 0.2s' },
   shake: { animation: 'shake 0.5s ease' },
   dot: { width: 14, height: 14, borderRadius: '50%', border: '2px solid #334155', background: 'transparent', transition: 'all 0.15s ease' },
-  dotFilled: { background: '#3b82f6', borderColor: '#3b82f6', boxShadow: '0 0 8px rgba(59,130,246,0.5)' },
+  dotFilled: { background: 'rgb(var(--act-fill, 59 130 246))', borderColor: 'rgb(var(--act-fill, 59 130 246))', boxShadow: '0 0 8px rgb(var(--act-fill, 59 130 246) / 0.5)' },
   dotSuccess: { background: '#22c55e', borderColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.5)' },
-  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: '#1d4ed8', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
+  confirmBtn: { marginBottom: 8, padding: '8px 24px', background: 'rgb(var(--act-strong, 29 78 216))', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif" },
   errorText: { fontSize: 12, color: '#f87171', marginBottom: 4, height: 16, transition: 'opacity 0.2s', textAlign: 'center' },
   successText: { fontSize: 14, color: '#4ade80', marginBottom: 8, fontWeight: 600, textAlign: 'center' },
   keypad: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginTop: 12, width: '100%', transition: 'opacity 0.2s' },
   key: { background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#f1f5f9', fontSize: 20, fontWeight: 600, height: 56, cursor: 'pointer', transition: 'background 0.12s ease', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   keyBack: { background: 'transparent', border: '1px solid transparent', color: '#94a3b8', fontSize: 18 },
   loadingRow: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 16 },
-  spinner: { width: 16, height: 16, border: '2px solid #334155', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  spinner: { width: 16, height: 16, border: '2px solid #334155', borderTopColor: 'rgb(var(--act-fill, 59 130 246))', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
 };

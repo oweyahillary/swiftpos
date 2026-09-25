@@ -22,7 +22,9 @@ const RENDERER = path.join(ROOT, 'apps/dashboard/src');
 const CFG = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/web-pos-green-baseline.json'), 'utf8'));
 const BASELINE = CFG.files;
 const SCOPE = CFG.scope;   // back-office pages are out of scope until 4b-2
-const RX = /\b[a-z:-]*(?:bg|text|border|ring|from|to|via|outline|accent|fill|stroke|shadow|divide|decoration|caret)-(?:green|emerald)-[0-9]{2,3}(?:\/[0-9]+)?\b/g;
+// Tailwind green classes (A328 part 1) PLUS raw inline colours — hex / rgb(a) greens and blues and Tailwind blue classes
+// (A328 part 2: the web POS colours with inline styles, which a class-only pattern could not see).
+const RX = /\b[a-z:-]*(?:bg|text|border|ring|from|to|via|outline|accent|fill|stroke|shadow|divide|decoration|caret)-(?:green|emerald)-[0-9]{2,3}(?:\/[0-9]+)?\b|#(?:22c55e|16a34a|4ade80|10b981|059669|15803d|86efac|34d399|3b82f6|2563eb|60a5fa|1d4ed8)\b|rgba?\(\s*(?:34,\s*197,\s*94|22,\s*163,\s*74|74,\s*222,\s*128|16,\s*185,\s*129|59,\s*130,\s*246|37,\s*99,\s*235)\s*,[^)]*\)|\b[a-z:-]*(?:bg|text|border|ring)-blue-[0-9]{3}(?:\/[0-9]+)?\b/gi;
 
 export function findGreen(text) {
   const hits = [];
@@ -31,9 +33,9 @@ export function findGreen(text) {
 }
 
 if (process.argv.includes('--self-test')) {
-  const planted = findGreen(`<button className="bg-green-500 hover:bg-green-400">Charge</button>`);
-  const themed = findGreen(`<button className="bg-action-500 hover:bg-action-400">Charge</button>`);
-  const ok = planted.length === 2 && themed.length === 0;
+  const planted = findGreen(`<button className="bg-green-500 hover:bg-green-400">Charge</button> <button style={{ background: '#3b82f6' }}>Add</button>`);
+  const themed = findGreen(`<button className="bg-action-500 hover:bg-action-400">Charge</button> <button style={{ background: 'rgb(var(--act-strong, 59 130 246))' }}>Add</button>`);
+  const ok = planted.length === 3 && themed.length === 0;   // two classes + one inline hex
   console.log(ok ? 'OK — self-test: a raw green button is found; an action-* button is not.' : `FAIL — self-test: planted=${planted.length} themed=${themed.length}`);
   process.exit(ok ? 0 : 1);
 }

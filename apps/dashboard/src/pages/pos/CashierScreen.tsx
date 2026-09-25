@@ -887,7 +887,7 @@ export default function CashierScreen() {
         <div className="max-w-md text-sm text-slate-400">{posDataError}</div>
         <button
           onClick={() => reloadPOSData()}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className="rounded-lg bg-[rgb(var(--act-strong,37_99_235))] px-4 py-2 text-sm font-medium text-white hover:bg-[rgb(var(--act-strong,59_130_246))]"
         >
           Retry
         </button>
@@ -1013,7 +1013,7 @@ export default function CashierScreen() {
           {currentShift && (
             <>
               <button
-                style={{ ...s.lockBtn, background: 'transparent', color: '#10b981', border: '1px solid #10b981', marginRight: 4 }}
+                style={{ ...s.lockBtn, background: 'transparent', color: 'rgb(var(--act-text, 16 185 129))', border: '1px solid rgb(var(--act-fill, 16 185 129))', marginRight: 4 }}
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
               >⏱ Clock</button>
@@ -1311,7 +1311,7 @@ export default function CashierScreen() {
                       ...s.catBtn,
                       ...(activeCategory === cat.id
                         ? {
-                            background: (cat as Category).color ?? '#22c55e',
+                            background: (cat as Category).color ?? 'rgb(var(--act-strong, 34 197 94))',
                             color: '#fff',
                             borderColor: 'transparent',
                           }
@@ -1410,7 +1410,7 @@ export default function CashierScreen() {
                 const active = getOrderType() === val;
                 return (
                   <button key={val} onClick={() => setActiveOrderType(val)}
-                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: active ? 'rgba(34,197,94,0.12)' : '#1e293b', color: active ? '#22c55e' : '#cbd5e1' }}>
+                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: active ? 'rgb(var(--act-fill, 34 197 94) / 0.12)' : '#1e293b', color: active ? 'rgb(var(--act-text, 34 197 94))' : '#cbd5e1' }}>
                     {val === 'dine_in' ? 'Dine in' : val === 'takeaway' ? 'Takeaway' : 'Delivery'}
                   </button>
                 );
@@ -2120,9 +2120,9 @@ export default function CashierScreen() {
                   <button key={t.id}
                     onClick={() => setTransferTarget(`table-${t.id}`)}
                     style={{
-                      padding: '10px 6px', borderRadius: 10, border: `2px solid ${transferTarget === `table-${t.id}` ? '#3b82f6' : '#334155'}`,
-                      background: transferTarget === `table-${t.id}` ? 'rgba(59,130,246,0.12)' : 'var(--pos-surface)',
-                      color: transferTarget === `table-${t.id}` ? '#60a5fa' : '#94a3b8',
+                      padding: '10px 6px', borderRadius: 10, border: `2px solid ${transferTarget === `table-${t.id}` ? 'rgb(var(--act-fill, 59 130 246))' : '#334155'}`,
+                      background: transferTarget === `table-${t.id}` ? 'rgb(var(--act-fill, 59 130 246) / 0.12)' : 'var(--pos-surface)',
+                      color: transferTarget === `table-${t.id}` ? 'rgb(var(--act-text, 96 165 250))' : '#94a3b8',
                       fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center',
                     }}>
                     {t.name}
@@ -2169,7 +2169,7 @@ export default function CashierScreen() {
                   setShowTransfer(false);
                   setTransferTarget(null);
                 }}
-                style={{ flex: 1, padding: '11px 0', background: transferTarget ? '#3b82f6' : '#334155', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
+                style={{ flex: 1, padding: '11px 0', background: transferTarget ? 'rgb(var(--act-strong, 59 130 246))' : '#334155', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
                 Transfer →
               </button>
             </div>
@@ -2374,7 +2374,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   spinnerLg: {
     width: 36, height: 36, border: '3px solid var(--pos-border)',
-    borderTopColor: '#22c55e', borderRadius: '50%',
+    borderTopColor: 'rgb(var(--act-fill, 34 197 94))', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   // Header — always dark for POS readability
@@ -2402,7 +2402,7 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8', fontSize: 12, cursor: 'pointer', flexShrink: 0,
   },
   parkedBadgeActive: {
-    background: 'rgba(34,197,94,0.12)', borderColor: '#22c55e', color: '#4ade80',
+    background: 'rgb(var(--act-fill, 34 197 94) / 0.12)', borderColor: 'rgb(var(--act-fill, 34 197 94))', color: 'rgb(var(--act-text, 74 222 128))',
   },
   parkedCount: {
     background: '#475569', borderRadius: 10, padding: '0 5px',
@@ -2482,10 +2482,10 @@ const s: Record<string, React.CSSProperties> = {
   },
   activeTablePill: {
     display: 'flex', alignItems: 'center', gap: 8,
-    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
-    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: '#4ade80', fontWeight: 600,
+    background: 'rgb(var(--act-fill, 34 197 94) / 0.12)', border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.4)',
+    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: 'rgb(var(--act-text, 74 222 128))', fontWeight: 600,
   },
-  coversPill: { fontSize: 11, color: '#4ade80' },
+  coversPill: { fontSize: 11, color: 'rgb(var(--act-text, 74 222 128))' },
   productHeader: { padding: '10px 16px 8px', flexShrink: 0, background: 'var(--pos-panel)' },
   searchInput: {
     width: '100%', background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)',
@@ -2514,9 +2514,9 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: 'stretch', gap: 5,
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
-  productCardActive: { border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.06)' },
+  productCardActive: { border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.5)', background: 'rgb(var(--act-fill, 34 197 94) / 0.06)' },
   cartBadge: {
-    position: 'absolute' as const, top: 6, right: 6, background: '#22c55e',
+    position: 'absolute' as const, top: 6, right: 6, background: 'rgb(var(--act-fill, 34 197 94))',
     color: '#030712', fontSize: 10, fontWeight: 700, width: 18, height: 18,
     borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
@@ -2596,7 +2596,7 @@ const s: Record<string, React.CSSProperties> = {
   totalLabel: { fontSize: 13, color: 'var(--pos-text3)' },
   totalValue: { fontSize: 13, color: 'var(--pos-text3)' },
   chargeBtn: {
-    width: '100%', padding: '13px 0', background: '#22c55e', border: 'none',
+    width: '100%', padding: '13px 0', background: 'rgb(var(--act-fill, 34 197 94))', border: 'none',
     borderRadius: 10, color: '#0f172a', fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 6,
   },
   // Modals
@@ -2622,7 +2622,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 8, color: 'var(--pos-text3)', fontSize: 11, cursor: 'pointer',
   },
   typeBtnActive: {
-    background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6', color: '#60a5fa',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', border: '1px solid rgb(var(--act-fill, 59 130 246))', color: 'rgb(var(--act-text, 96 165 250))',
   },
   coversRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 8 },
   coversBtn: {
@@ -2638,7 +2638,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 10, color: 'var(--pos-text3)', fontWeight: 600, fontSize: 14, cursor: 'pointer',
   },
   modalConfirm: {
-    flex: 1, padding: '11px 0', background: '#3b82f6', border: 'none',
+    flex: 1, padding: '11px 0', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none',
     borderRadius: 10, color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer',
   },
   // Variant modal
@@ -2668,7 +2668,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '7px 14px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)',
     borderRadius: 8, cursor: 'pointer', transition: 'all 0.12s ease',
   },
-  variantOptionSelected: { background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e' },
+  variantOptionSelected: { background: 'rgb(var(--act-fill, 34 197 94) / 0.15)', border: '1px solid rgb(var(--act-fill, 34 197 94))' },
   variantOptionName: { fontSize: 13, color: 'var(--pos-text)', fontWeight: 500 },
   variantOptionPrice: { fontSize: 11, color: '#22c55e', fontWeight: 600 },
   variantTotal: {
