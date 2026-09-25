@@ -574,7 +574,7 @@ export default function PaymentModal({
               {waSending ? 'Sending…' : '💬 WhatsApp'}
             </button>
             <button onClick={() => onSuccess(completedOrder.orderNumber)}
-              className="flex-1 bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
+              className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
               New order
             </button>
           </div>
@@ -652,7 +652,7 @@ export default function PaymentModal({
             <p className="text-gray-400 text-sm">Split payment (by method)</p>
             <button
               onClick={() => { setSplitMode(s => !s); setEvenSplitMode(false); setByItemMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${splitMode ? 'bg-green-500' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${splitMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${splitMode ? 'translate-x-5' : ''}`} />
             </button>
@@ -661,7 +661,7 @@ export default function PaymentModal({
             <p className="text-gray-400 text-sm">Split evenly (per person)</p>
             <button
               onClick={() => { setEvenSplitMode(s => !s); setSplitMode(false); setByItemMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${evenSplitMode ? 'bg-green-500' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${evenSplitMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${evenSplitMode ? 'translate-x-5' : ''}`} />
             </button>
@@ -680,7 +680,7 @@ export default function PaymentModal({
             <p className="text-gray-400 text-sm">Split by item (per guest)</p>
             <button
               onClick={() => { setByItemMode(s => !s); setSplitMode(false); setEvenSplitMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${byItemMode ? 'bg-green-500' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${byItemMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${byItemMode ? 'translate-x-5' : ''}`} />
             </button>
@@ -716,7 +716,7 @@ export default function PaymentModal({
                   <button key={m} onClick={() => setMethod(m)}
                     className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                       method === m
-                        ? 'bg-green-500/10 border-green-500 text-green-400'
+                        ? 'bg-action-500/10 border-action-500 text-action-400'
                         : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
                     }`}>
                     {m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
@@ -728,7 +728,7 @@ export default function PaymentModal({
                   <button key={cm.code} onClick={() => setMethod(cm.code)}
                     className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                       method === cm.code
-                        ? 'bg-green-500/10 border-green-500 text-green-400'
+                        ? 'bg-action-500/10 border-action-500 text-action-400'
                         : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
                     }`}>
                     🏦<br />
@@ -754,7 +754,7 @@ export default function PaymentModal({
                         <button key={pct} type="button"
                           onClick={() => setTipAmount(active ? 0 : amt)}
                           className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                            active ? 'bg-green-500/10 border-green-500 text-green-400'
+                            active ? 'bg-action-500/10 border-action-500 text-action-400'
                                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
                           }`}>
                           {pct}%
@@ -791,7 +791,7 @@ export default function PaymentModal({
                         <button key={v} type="button" onClick={() => setTendered(String(v))}
                           className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                             tenderedNum === v
-                              ? 'bg-green-500/10 border-green-500 text-green-400'
+                              ? 'bg-action-500/10 border-action-500 text-action-400'
                               : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
                           }`}>
                           {v === Math.ceil(total + tipAmount) ? 'Exact' : fmt(v)}
@@ -802,7 +802,7 @@ export default function PaymentModal({
                       type="number" value={tendered}
                       onChange={e => setTendered(e.target.value)}
                       placeholder={fmt(grandTotal)} min={grandTotal} autoFocus
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors text-lg font-semibold"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-action-500 transition-colors text-lg font-semibold"
                     />
                   </div>
                   {tenderedNum >= grandTotal && (
@@ -895,7 +895,7 @@ export default function PaymentModal({
               <button
                 onClick={handleInitiateMpesa}
                 disabled={placing}
-                className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
+                className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
                 {placing ? 'Creating order…' : '📱 Initiate M-Pesa payment'}
               </button>
@@ -904,7 +904,7 @@ export default function PaymentModal({
                 data-testid="payment-confirm"
                 onClick={handleCharge}
                 disabled={placing || !cashValid || !creditValid}
-                className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
+                className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
                 {placing
                   ? 'Processing…'

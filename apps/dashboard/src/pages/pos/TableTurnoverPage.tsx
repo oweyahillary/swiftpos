@@ -65,11 +65,11 @@ export default function TableTurnoverPage() {
 
       <div className="flex gap-2 mb-5">
         <button onClick={() => setTab('live')}
-          className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'live' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+          className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'live' ? 'bg-action-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
           Live tables
         </button>
         <button onClick={() => setTab('report')}
-          className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+          className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-action-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
           Turnover report
         </button>
       </div>

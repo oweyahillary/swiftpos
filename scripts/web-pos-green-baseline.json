@@ -1,0 +1,14 @@
+{
+ "_": "A328: remaining GREEN classes in the web POS + shared components (status and money only \u2014 docs/A328-web-pos-green-classification.md). May go DOWN, never up.",
+ "scope": [
+  "pages/pos",
+  "components",
+  "layouts"
+ ],
+ "files": {
+  "components/Toast.tsx": 3,
+  "pages/pos/DiscountPanel.tsx": 5,
+  "pages/pos/LoyaltyPanel.tsx": 1,
+  "pages/pos/PaymentModal.tsx": 5
+ }
+}

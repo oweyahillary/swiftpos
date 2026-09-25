@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A328: themeable action channels (r g b). Defaults = Tailwind green 400/500/600 in BOTH modes (themes OFF unchanged).
+   With themes ON, src/lib/themeVars.ts sets --action-t-* (same in both modes) and --action-d-400 / --action-l-400 (links
+   switch shade with the mode). Chosen so every EXISTING label stays >= 4.5:1: 500 fills carry dark text (theme 500 reads
+   for all seven themes), 600 fills carry white text (theme 700), links are 400 on dark and 700 on white. */
+:root {
+  --action-400: var(--action-d-400, 74 222 128);
+  --action-500: var(--action-t-500, 34 197 94);
+  --action-600: var(--action-t-600, 22 163 74);
+}
+:root:not(.dark) {
+  --action-400: var(--action-l-400, 74 222 128);
+}
+
 /*
  * ── Theme system ─────────────────────────────────────────────────────────────
  *
@@ -109,6 +122,7 @@
 
   /* Focus rings */
   :root:not(.dark) .focus\:border-green-500:focus { border-color: #22c55e !important; }
+  :root:not(.dark) .focus\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; } /* A328: same rule for the themed class */
   :root:not(.dark) .ring-gray-700 { --tw-ring-color: #e2e8f0; }
 
   /* Divide lines */

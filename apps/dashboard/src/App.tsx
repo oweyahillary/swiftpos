@@ -10,6 +10,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider }        from './context/AuthContext';
 import { BusinessProvider }    from './context/BusinessContext';
+import ThemeLayer              from './components/ThemeLayer';
 import { BranchProvider }      from './context/BranchContext';
 import { PermissionsProvider } from './context/PermissionsContext';
 import { POSAuthProvider }     from './context/POSAuthContext';
@@ -83,6 +84,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BusinessProvider>
+        <ThemeLayer />
         <BranchProvider>
           <BrowserRouter>
             <Suspense fallback={<PageLoader />}>

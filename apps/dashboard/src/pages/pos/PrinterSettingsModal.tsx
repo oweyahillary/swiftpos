@@ -39,7 +39,7 @@ function SegmentedControl<T extends string | number>({
           onClick={() => onChange(opt.value)}
           className={`px-3 py-1.5 text-xs font-medium transition-colors ${
             value === opt.value
-              ? 'bg-green-500 text-black'
+              ? 'bg-action-500 text-black'
               : 'bg-gray-800 text-gray-400 hover:text-white'
           }`}
         >
@@ -54,7 +54,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   return (
     <button
       onClick={() => onChange(!value)}
-      className={`relative w-10 h-5 rounded-full transition-colors ${value ? 'bg-green-500' : 'bg-gray-700'}`}
+      className={`relative w-10 h-5 rounded-full transition-colors ${value ? 'bg-action-500' : 'bg-gray-700'}`}
     >
       <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-5' : ''}`} />
     </button>
@@ -124,7 +124,7 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
                 onChange={e => onSave({ footerMessage: e.target.value })}
                 maxLength={80}
                 placeholder="e.g. Asante! Karibu tena"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-action-500"
               />
               <p className="text-gray-600 text-xs mt-1">Printed at the bottom of every receipt</p>
             </div>
@@ -133,7 +133,7 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
           {/* Preview note */}
           <div className="mx-6 mb-4 bg-gray-800/60 rounded-xl px-4 py-3">
             <p className="text-gray-400 text-xs">
-              <span className="text-green-400 font-medium">Tip:</span> These settings apply to this device only. Each till/computer can have different settings. Changes take effect on the next print.
+              <span className="text-action-400 font-medium">Tip:</span> These settings apply to this device only. Each till/computer can have different settings. Changes take effect on the next print.
             </p>
           </div>
 
@@ -147,7 +147,7 @@ export default function PrinterSettingsModal({ settings, onSave, onReset, onClos
             </button>
             <button
               onClick={onClose}
-              className="px-5 py-2 bg-green-500 hover:bg-green-400 text-black text-sm font-semibold rounded-lg transition-colors"
+              className="px-5 py-2 bg-action-500 hover:bg-action-400 text-black text-sm font-semibold rounded-lg transition-colors"
             >
               Done
             </button>

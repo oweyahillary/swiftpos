@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBranding, pickButtonText } from '../../lib/contrast';
 import { THEMES, resolveTheme, suggestThemeFor, resolveBrandLayer, themeTokens, type Theme } from '../../lib/themes';
+import { BRANDING_SAVED_EVENT } from '../../lib/themeVars';
 import { monoRasterFromRGBA, monoRasterToString, monoRasterFromString, RECEIPT_LOGO_MAX_WIDTH, RECEIPT_LOGO_MAX_HEIGHT, type MonoRaster } from '../../lib/escposRenderer';
 import { api } from '../../lib/api';
 
@@ -157,6 +158,7 @@ export default function BrandingTab() {
         ...(themesEnabled ? { theme_id: theme?.id ?? null } : {}),
       });
       setMsg('Saved. Tills pick up the new branding within about 20 seconds — no restart needed.');
+      window.dispatchEvent(new Event(BRANDING_SAVED_EVENT)); // A328: the dashboard re-reads its own theme now
     } catch (err: any) { setMsg(err?.message ?? 'Could not save branding.'); }
     finally { setBusy(false); }
   };
@@ -166,6 +168,7 @@ export default function BrandingTab() {
     try {
       await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}) });
       setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
+      window.dispatchEvent(new Event(BRANDING_SAVED_EVENT));
       setMsg('Reset to the SwiftPOS default.');
     } catch (err: any) { setMsg(err?.message ?? 'Could not reset branding.'); }
     finally { setBusy(false); }

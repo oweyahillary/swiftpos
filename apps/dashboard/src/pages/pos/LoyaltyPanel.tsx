@@ -165,7 +165,7 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
               <label className="text-xs text-gray-400">Redeem points ({currency} 1 per pt)</label>
               <button
                 onClick={handleRedeemAll}
-                className="text-xs text-green-500 hover:text-green-400 transition-colors"
+                className="text-xs text-action-500 hover:text-action-400 transition-colors"
               >
                 Use all ({maxRedeemable})
               </button>
@@ -177,7 +177,7 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
               placeholder="0"
               min={0}
               max={maxRedeemable}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-action-500 transition-colors"
             />
             {(loyaltyState?.discountAmount ?? 0) > 0 && (
               <p className="text-green-400 text-xs text-right">
@@ -213,13 +213,13 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
           onChange={e => { setPhone(e.target.value); setNotFound(false); }}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder="Phone number"
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-action-500 transition-colors"
           autoFocus
         />
         <button
           onClick={handleSearch}
           disabled={searching || !phone.trim()}
-          className="px-3 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 text-sm font-semibold rounded-lg transition-colors"
+          className="px-3 py-2 bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 text-sm font-semibold rounded-lg transition-colors"
         >
           {searching ? '…' : 'Find'}
         </button>
@@ -234,13 +234,13 @@ export default function LoyaltyPanel({ currency, orderTotal, onCustomerSet, loya
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             placeholder="Customer name"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-action-500 transition-colors"
             autoFocus
           />
           <button
             onClick={handleCreate}
             disabled={creating || !newName.trim()}
-            className="w-full py-2 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 text-sm font-bold rounded-lg transition-colors"
+            className="w-full py-2 bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 text-sm font-bold rounded-lg transition-colors"
           >
             {creating ? 'Creating…' : 'Create & attach'}
           </button>

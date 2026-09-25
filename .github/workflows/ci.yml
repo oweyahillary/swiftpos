@@ -515,6 +515,10 @@ jobs:
       - name: No reference business names
         run: node scripts/check-reference-names.mjs && node scripts/check-reference-names.mjs --self-test
 
+      # A328 — no NEW raw green in the web POS + shared components (status and money only stay green).
+      - name: No new raw green in the web POS
+        run: node scripts/check-web-pos-green.mjs && node scripts/check-web-pos-green.mjs --self-test
+
       # A170: a literal NULL written into a NOT NULL local column throws at
       # runtime and is invisible to tsc — the A167 class (offline sign-in locked
       # the till out). The gate parses localDb.ts and flags any such write; the

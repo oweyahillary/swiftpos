@@ -92,13 +92,13 @@ export default function DiscountPanel({ orderTotal, currency, discountState, onD
           onChange={e => { setCode(e.target.value.toUpperCase()); setError(''); }}
           onKeyDown={e => e.key === 'Enter' && applyCode()}
           placeholder="Enter promo code"
-          className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 font-mono focus:outline-none focus:border-green-500"
+          className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 font-mono focus:outline-none focus:border-action-500"
           autoFocus
         />
         <button
           onClick={applyCode}
           disabled={applying || !code.trim()}
-          className="px-3 py-1.5 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-xs font-semibold rounded-lg transition-colors"
+          className="px-3 py-1.5 bg-action-500 hover:bg-action-400 disabled:opacity-50 text-black text-xs font-semibold rounded-lg transition-colors"
         >
           {applying ? '...' : 'Apply'}
         </button>
