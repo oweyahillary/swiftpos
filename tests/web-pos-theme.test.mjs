@@ -57,7 +57,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   ok(`links in light mode ≥ 4.5 on white (worst ${worst.linkLight.toFixed(2)})`, worst.linkLight >= 4.5);
 
   // ── Only with themes on ──
-  ok('themes OFF sets nothing (the defaults are today\'s green)', /if \(!b \|\| b\.themes_enabled !== true\) return null;/.test(vars));
+  ok('themes OFF sets no variables (the index.css defaults — SwiftPOS teal since A329 — apply)', /if \(!b \|\| b\.themes_enabled !== true\) return null;/.test(vars));
   ok('an unknown or unchosen theme resolves to the default', /themeTokens\(resolveTheme\(b\.theme_id \?\? null\)\)/.test(vars));
 
   // ── The stylesheet: defaults = Tailwind green, links switch shade with the mode ──
@@ -89,8 +89,8 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A328_TS) {
   const themedUses = (posSrc.match(/var\(--act-(?:fill|strong|text),/g) || []).length;
   ok(`94 inline uses take the theme (found ${themedUses})`, themedUses === 94);
   const cs = fs.readFileSync(path.join(posDir, 'CashierScreen.tsx'), 'utf8');
-  ok('Charge (dark label) is the theme\'s 500, falling back to its own green', /chargeBtn: \{[\s\S]{0,120}background: 'rgb\(var\(--act-fill, 34 197 94\)\)'/.test(cs));
-  ok('Open Table / modal confirm (white label) is the theme\'s 700, falling back to its own blue', /modalConfirm: \{[\s\S]{0,120}background: 'rgb\(var\(--act-strong, 59 130 246\)\)'/.test(cs));
+  ok('Charge (dark label) is the theme\'s 500 (the per-use fallback is its original green; the alias default is teal)', /chargeBtn: \{[\s\S]{0,120}background: 'rgb\(var\(--act-fill, 34 197 94\)\)'/.test(cs));
+  ok('Open Table / modal confirm (white label) is the theme\'s 700 (per-use fallback its original blue; alias default teal)', /modalConfirm: \{[\s\S]{0,120}background: 'rgb\(var\(--act-strong, 59 130 246\)\)'/.test(cs));
   const mm = fs.readFileSync(path.join(posDir, 'MinimartPOS.tsx'), 'utf8');
   ok('Minimart Charge keeps its gradient, in the theme\'s strong shade', /linear-gradient\(135deg, rgb\(var\(--act-strong, 29 78 216\)\) 0%, rgb\(var\(--act-strong, 37 99 235\)\) 100%\)/.test(mm));
   ok('prices stay their own green (money is never themed)', /productPrice: \{ fontSize: 11, color: '#22c55e'/.test(cs));
