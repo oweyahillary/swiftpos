@@ -311,7 +311,7 @@ export default function DevicesTab() {
                       <button
                         onClick={() => { setEditingId(d.id); setEditValue(d.device_label ?? ''); }}
                         className="text-gray-600 hover:text-gray-300 text-xs"
-                        title="Rename device"
+                        title="Rename device — a desktop till's own name (set on the till) replaces this at its next sign-in"
                       >✎</button>
                     </span>
                   )}

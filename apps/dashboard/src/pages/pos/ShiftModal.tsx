@@ -19,7 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
-import { getCoveredTerminal, setCoveredTerminal, type CoveredTerminal } from '../../lib/posTerminal';
+import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, type CoveredTerminal } from '../../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -106,7 +106,11 @@ export default function ShiftModal({
   useEffect(() => {
     if (mode !== 'open' || !branchId) return;
     setTerminalsLoading(true);
-    posApi.get<CoveredTerminal[]>(`/api/shifts/terminals?branch_id=${encodeURIComponent(branchId)}`)
+    Promise.all([
+      posApi.get<CoveredTerminal[]>(`/api/shifts/terminals?branch_id=${encodeURIComponent(branchId)}`),
+      loadOpenDrawers((path) => posApi.get(path), branchId),   // A273 follow-up: which drawers are open
+    ])
+      .then(([tills, open]) => withOpenShifts(tills ?? [], open))
       .then((rows) => {
         const list = rows ?? [];
         setTerminals(list);
@@ -118,10 +122,34 @@ export default function ShiftModal({
       .finally(() => setTerminalsLoading(false));
   }, [mode, branchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A273 follow-up: the chosen till's drawer is ALREADY open (on the desktop or another
+  // web tab) — join it. No opening float: the drawer's float was counted when it opened
+  // (the 2026-09-15 target finding). Adopt the till's identity, then /current returns
+  // that drawer's shift.
+  const selectedTill = terminals.find(t => t.device_id === selectedDeviceId);
+  const joining = !!selectedTill?.open_shift;
+  const handleJoin = async (till: CoveredTerminal) => {
+    setLoading(true);
+    setError('');
+    setCoveredTerminal(till);
+    try {
+      const existing = await posApi.get<Shift | null>('/api/shifts/current');
+      if (existing) { onShiftOpened?.(existing); return; }
+      setCoveredTerminal(null);
+      setError('That drawer has just been closed. Pick the till again to open a new shift.');
+    } catch (e: any) {
+      setCoveredTerminal(null);
+      setError(e?.message ?? 'Could not join the drawer');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOpen = async () => {
     if (!branchId) { setError('Branch not found'); return; }
     const till = terminals.find(t => t.device_id === selectedDeviceId);
     if (!till) { setError('Select which till you are covering'); return; }
+    if (till.open_shift) { await handleJoin(till); return; }
     const amount = parseFloat(openFloat);
     if (isNaN(amount) || amount < 0) { setError('Enter a valid opening float (0 or more)'); return; }
 
@@ -230,8 +258,10 @@ export default function ShiftModal({
             <div style={s.iconRow}>
               <span style={s.icon}>🏦</span>
             </div>
-            <h2 style={s.title}>Open Shift</h2>
-            <p style={s.subtitle}>Count the cash in the drawer and enter the opening float below.</p>
+            <h2 style={s.title}>{joining ? 'Join Shift' : 'Open Shift'}</h2>
+            <p style={s.subtitle}>{joining
+              ? 'This till\'s drawer is already open — you will sell into it. No float to count.'
+              : 'Count the cash in the drawer and enter the opening float below.'}</p>
 
             {/* A273 — pick the till this web POS is covering so the shift folds
                 into that till's drawer, not the shared web session. */}
@@ -244,7 +274,7 @@ export default function ShiftModal({
               <option value="">{terminalsLoading ? 'Loading tills…' : 'Select a till…'}</option>
               {terminals.map(t => (
                 <option key={t.device_id} value={t.device_id}>
-                  {t.terminal_code ? `${t.terminal_code} — ` : ''}{t.device_label ?? t.device_id}
+                  {tillName(t)}{t.open_shift ? ` · ${openShiftLine(t)}` : ''}
                 </option>
               ))}
             </select>
@@ -252,6 +282,7 @@ export default function ShiftModal({
               <p style={s.subtitle}>No tills are enrolled for this branch yet. Open the desktop till once to register it.</p>
             )}
 
+            {!joining && (<>
             <label style={s.label}>Opening Float ({currency})</label>
             <input
               style={s.input}
@@ -263,13 +294,14 @@ export default function ShiftModal({
               onChange={e => setOpenFloat(e.target.value)}
               autoFocus
             />
+            </>)}
 
             {error && <p style={s.error}>{error}</p>}
 
             <div style={s.actions}>
               <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
               <button style={s.primaryBtn} onClick={handleOpen} disabled={loading}>
-                {loading ? 'Opening…' : 'Open Shift'}
+                {loading ? (joining ? 'Joining…' : 'Opening…') : (joining ? 'Join this drawer' : 'Open Shift')}
               </button>
             </div>
           </>

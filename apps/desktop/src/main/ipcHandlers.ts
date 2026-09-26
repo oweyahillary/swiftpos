@@ -118,6 +118,11 @@ export function registerIpcHandlers() {
         // A182: the machine's stable MAC, so if this box was enrolled before (a
         // reinstall) the server can hand back its previous terminal code/name.
         mac_address: getMacAddressCached() ?? undefined,
+        // A273 follow-up: the till's code and the name typed at setup, so the web
+        // POS's till picker shows THIS till's real name (the cloud used to label
+        // every till "SwiftPOS till"). Absent on a first enrolment before setup.
+        terminal_code: getDeviceConfig()?.terminal_code ?? undefined,
+        device_name:   getDeviceConfig()?.device_name ?? undefined,
       }),
     });
 
@@ -511,6 +516,10 @@ export function registerIpcHandlers() {
         pin, branch_id,
         app_version: app.getVersion(),
         device_id: getDeviceConfig()?.device_id ?? undefined,
+        // A273 follow-up: sent on every sign-in so the cloud label follows the till's
+        // setup name (the setup name always wins — owner, 2026-09-26).
+        terminal_code: getDeviceConfig()?.terminal_code ?? undefined,
+        device_name:   getDeviceConfig()?.device_name ?? undefined,
       }),
       });
     } catch (netErr: any) {

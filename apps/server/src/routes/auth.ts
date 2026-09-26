@@ -778,6 +778,7 @@ router.post('/enrol/redeem', async (req, res) => {
     deviceId,
     appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
     terminalCode: req.body?.terminal_code ?? null,
+    label:        req.body?.device_name ?? null,   // A273 follow-up: the till's setup name
     ipAddress:    req.ip ?? null,
     role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
     macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
@@ -1450,6 +1451,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
       deviceId:     String(req.body?.device_id ?? ''),
       appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
       terminalCode: req.body?.terminal_code ?? null,
+      label:        req.body?.device_name ?? null,   // A273 follow-up: the till's setup name
       ipAddress:    req.ip ?? null,
       role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
       macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182

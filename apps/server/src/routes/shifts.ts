@@ -8,6 +8,7 @@ import { chunkIn, fetchAllIds } from '../lib/pgQuery';
 import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
+import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -76,6 +77,37 @@ router.get('/terminals', async (req, res) => {
     device_label:  d.device_label ?? null,
   }));
   res.json(tills);
+});
+
+// ──────────────────────────────────────────────────────────
+// GET /api/shifts/terminals/open?branch_id=...
+// A273 follow-up (2026-09-26): the branch's OPEN drawers, one per till, with who opened
+// each and when — never an amount. The web POS merges this with /terminals so it can
+// join the cashier's own open till silently (no picker, no float) and show every other
+// till as "open — Jane, since 09:02"; joining an open drawer never asks for a float
+// (the 2026-09-15 target finding). Additive: /terminals is unchanged, and a web page
+// talking to an older cloud gets a 404 here and keeps the picker behaviour.
+// Scoped like /terminals: the caller's business and the requested branch.
+// ──────────────────────────────────────────────────────────
+router.get('/terminals/open', async (req, res) => {
+  const branchId = (req.query.branch_id as string | undefined)?.trim() || '';
+  if (!branchId) { res.json([]); return; }
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('id, device_id, opened_at, opened_by, cashier_id')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', branchId)
+    .eq('status', 'open')
+    .not('device_id', 'is', null);
+  if (error) { sendError(res, error); return; }
+  const open = (data ?? []) as OpenShiftRow[];
+  const who = [...new Set(open.map((o) => o.opened_by ?? o.cashier_id).filter(Boolean))] as string[];
+  const nameById: Record<string, string> = {};
+  if (who.length) {
+    const { data: users } = await supabase.from('users').select('id, name').eq('business_id', req.businessId).in('id', who);
+    for (const u of users ?? []) nameById[(u as any).id] = (u as any).name;
+  }
+  res.json(openDrawersByTill(open, nameById));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

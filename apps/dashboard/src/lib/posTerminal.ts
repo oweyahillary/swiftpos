@@ -18,7 +18,11 @@ export interface CoveredTerminal {
   device_id: string;
   terminal_code: string | null;
   device_label: string | null;
+  /** A273 follow-up: the till's open drawer, if any (GET /api/shifts/terminals; absent from an older cloud). */
+  open_shift?: TillOpenShift | null;
 }
+
+export interface TillOpenShift { id: string; opened_at: string; opened_by: string | null; opened_by_name: string | null }
 
 const KEY = 'swiftpos_pos_terminal';
 
@@ -41,4 +45,78 @@ export function setCoveredTerminal(t: CoveredTerminal | null): void {
     /* storage unavailable — the x-device-id header simply won't be sent, and the
        web falls back to the shared web:<branch> drawer rather than crashing. */
   }
+}
+
+/**
+ * The labels the cloud invents for a till that reported no name — keep in step with
+ * GENERIC_TERMINAL_LABELS in apps/server/src/lib/terminalLabel.ts (tests/till-name.test.mjs
+ * compares the two). Never shown as a till's name: they are the same for every till.
+ */
+export const GENERIC_TERMINAL_LABELS: readonly string[] = [
+  'SwiftPOS till',
+  'SwiftPOS till (branch server)',
+  'SwiftPOS office server (view only)',
+];
+
+/**
+ * A till's name as a cashier sees it: "T1 — Front Counter" (code + the name typed at the
+ * till's setup), "T1" when it has no real name yet, the name alone when it has no code,
+ * and — only if it has neither — "Till" + the end of its id, so two tills never look alike.
+ */
+export function tillName(t: { device_id: string; terminal_code: string | null; device_label: string | null }): string {
+  const code  = (t.terminal_code ?? '').trim();
+  const raw   = (t.device_label ?? '').trim();
+  const label = raw && !GENERIC_TERMINAL_LABELS.includes(raw) ? raw : '';
+  if (code && label) return `${code} — ${label}`;
+  if (code)  return code;
+  if (label) return label;
+  return `Till ${t.device_id.slice(-4)}`;
+}
+
+/**
+ * The till whose drawer THIS cashier opened — on the desktop or on another web tab — so the
+ * web joins it silently: no picker, no float (owner, 2026-09-26). Only when exactly ONE till
+ * matches; with two, the cashier picks (never a guess about cash custody).
+ */
+export function ownOpenTill<T extends CoveredTerminal>(tills: T[], userId: string | null | undefined): T | null {
+  if (!userId) return null;
+  const mine = tills.filter((t) => t.open_shift && t.open_shift.opened_by === userId);
+  return mine.length === 1 ? mine[0] : null;
+}
+
+/** "open — Jane, since 09:02" for a till with an open drawer; '' when closed. */
+export function openShiftLine(t: CoveredTerminal): string {
+  const o = t.open_shift;
+  if (!o) return '';
+  const at = new Date(o.opened_at);
+  const hhmm = isNaN(at.getTime()) ? '' : `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return `open — ${o.opened_by_name ?? 'another cashier'}${hhmm ? `, since ${hhmm}` : ''}`;
+}
+
+/** Merge GET /api/shifts/terminals/open into the till list by device_id (a till not listed is closed). */
+export function withOpenShifts<T extends CoveredTerminal>(tills: T[], open: Array<{ device_id: string; open_shift: TillOpenShift }> | null | undefined): T[] {
+  const byId = new Map((open ?? []).map((o) => [o.device_id, o.open_shift]));
+  return tills.map((t) => ({ ...t, open_shift: byId.get(t.device_id) ?? null }));
+}
+
+/** The branch's open drawers (GET /api/shifts/terminals/open). An older cloud has no such route → [] (all closed, as before). */
+export async function loadOpenDrawers(
+  get: <R>(path: string) => Promise<R>, branchId: string,
+): Promise<Array<{ device_id: string; open_shift: TillOpenShift }>> {
+  try {
+    return (await get<Array<{ device_id: string; open_shift: TillOpenShift }>>(`/api/shifts/terminals/open?branch_id=${encodeURIComponent(branchId)}`)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** The branch's tills with their open drawers. */
+export async function loadTills(
+  get: <R>(path: string) => Promise<R>, branchId: string,
+): Promise<CoveredTerminal[]> {
+  const [tills, open] = await Promise.all([
+    get<CoveredTerminal[]>(`/api/shifts/terminals?branch_id=${encodeURIComponent(branchId)}`),
+    loadOpenDrawers(get, branchId),
+  ]);
+  return withOpenShifts(tills ?? [], open);
 }

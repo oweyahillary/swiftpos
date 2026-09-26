@@ -19,6 +19,7 @@ import type { LoyaltyState } from './LoyaltyPanel';
 import ZReportModal from './ZReportModal';
 import ShiftModal from './ShiftModal';
 import type { Shift, ShiftModalMode } from './ShiftModal';
+import { ownOpenTill, setCoveredTerminal, loadTills } from '../../lib/posTerminal';
 import PrinterSettingsModal from './PrinterSettingsModal';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import { type BranchPrinter } from '../../lib/printKOT';
@@ -382,12 +383,29 @@ export default function CashierScreen() {
   useEffect(() => {
     if (!session) return;
     posApi.get<Shift | null>('/api/shifts/current')
-      .then((shift) => {
+      .then(async (shift) => {
         if (shift) {
           setCurrentShift(shift);
-        } else {
-          setShiftModal('open');
+          return;
         }
+        // A273 follow-up (owner, 2026-09-26): if THIS cashier already has a drawer open
+        // on one of the branch's tills — opened on the desktop or another web tab — join
+        // it silently: no picker, no float. Anything else (none, several, or a lookup
+        // failure) falls back to the picker, which shows which tills are open.
+        const branchId = session.branchId;
+        if (branchId) {
+          try {
+            const tills = await loadTills((path) => posApi.get(path), branchId);
+            const mine = ownOpenTill(tills, session.staffId);
+            if (mine) {
+              setCoveredTerminal(mine);
+              const joined = await posApi.get<Shift | null>('/api/shifts/current');
+              if (joined) { setCurrentShift(joined); return; }
+              setCoveredTerminal(null);
+            }
+          } catch { /* fall through to the picker */ }
+        }
+        setShiftModal('open');
       })
       // A274: a failed /current check means the shift state is UNKNOWN, which is
       // not the same as knowing none is open (mirrors the cloud's own /open guard
