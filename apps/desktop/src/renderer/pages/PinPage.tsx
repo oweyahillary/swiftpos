@@ -30,6 +30,8 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [pin, setPin] = useState('');
+  // A334: this sign-in joined a drawer ANOTHER cashier opened on the web POS — say so before selling.
+  const [joined, setJoined] = useState<{ session: StaffSession; till: string; who: string; since: string } | null>(null);
   const [loading, setLoading] = useState(true);
   // Two taps to sign the business out. The button only shows on a screen
   // that is already broken, which is exactly when someone is jabbing at it.
@@ -140,6 +142,15 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
     setError('');
     try {
       const session = await posApi.auth.verifyPin(pin, branchId);
+      const j = session.joinedDrawer;
+      if (j && !j.sameCashier) {
+        const id = await posApi.config.identity().catch(() => null);
+        const till = id?.terminalCode ? `${id.terminalCode}${id.deviceName ? ` — ${id.deviceName}` : ''}` : (id?.deviceName || 'This till');
+        const at = new Date(j.openedAt);
+        const since = isNaN(at.getTime()) ? '' : `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+        setJoined({ session, till, who: j.openedByName ?? 'another cashier', since });
+        return;
+      }
       onStaffLogin(session);
     } catch (e: any) {
       setError(e?.message ?? 'Invalid PIN');
@@ -165,6 +176,21 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
 
   return (
     <div className="min-h-screen bg-[#080c14] flex flex-col items-center justify-center px-4">
+      {joined && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-50">
+          <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 w-full max-w-sm" data-testid="joined-drawer">
+            <h2 className="text-lg font-bold text-white">{joined.till} is already open</h2>
+            <p className="text-sm text-gray-300 mt-2">
+              Opened by <span className="text-white font-semibold">{joined.who}</span>{joined.since ? ` at ${joined.since}` : ''} on the web POS.
+              You will sell into the same drawer — every sale still records who rang it.
+            </p>
+            <button onClick={() => { const s = joined.session; setJoined(null); onStaffLogin(s); }}
+              className="mt-5 w-full py-3 rounded-xl font-semibold text-sm bg-action-600 hover:bg-action-500 text-white">
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
       {techStage && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-50" onClick={closeTech}>
           <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>

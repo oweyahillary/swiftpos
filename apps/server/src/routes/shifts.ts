@@ -9,6 +9,7 @@ import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
+import { foreignCash } from '../lib/foreignCash';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -209,6 +210,49 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
 // Calculates expected cash and variance automatically.
 // Body: { closing_float, notes? }
 // ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+// POST /api/shifts/:id/foreign-cash   body: { order_ids, float_ids, expense_ids }
+// A334 (2026-09-26): the cash on this drawer that the calling till does NOT hold —
+// sales, floats and expenses rung on the web POS standing in for it (or on another
+// surface). The till adds it to its own close so a shared drawer reconciles (owner:
+// the close INCLUDES the web's sales). Read-only; the same arithmetic as /:id/close
+// (lib/foreignCash.ts). Authorised like /:id/close: the opener, a cashier on the
+// same terminal, or a manager — a stranger cannot read another drawer's cash.
+// ──────────────────────────────────────────────────────────
+router.post('/:id/foreign-cash', async (req, res) => {
+  const { id } = req.params;
+  const { data: shift } = await supabase
+    .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
+    .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+
+  const sameTerminal =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
+  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const keys = req.permissionKeys ?? [];
+  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
+  if (!openedByRequester && !sameTerminal && !isManager) {
+    res.status(403).json({ error: 'Not your drawer' });
+    return;
+  }
+
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, 20_000) : []);
+  try {
+    const orderIds = await fetchAllIds('orders', q => q.eq('shift_id', id).eq('status', 'completed'));
+    const payments = orderIds.length
+      ? await chunkIn<{ order_id: string; method: string; status: string; amount: number }>(
+          'payments', 'order_id', orderIds,
+          q => q.select('order_id, method, status, amount').eq('method', 'cash').in('status', ['completed', 'refunded']))
+      : [];
+    const { data: floats }   = await supabase.from('float_transactions').select('id, type, amount').eq('shift_id', id);
+    const { data: expenses } = await supabase.from('expenses').select('id, amount').eq('shift_id', id);
+    res.json(foreignCash(
+      { orders: orderIds.map(o => ({ id: o, status: 'completed' })), payments, floats: floats ?? [], expenses: expenses ?? [] },
+      { order_ids: ids(req.body?.order_ids), float_ids: ids(req.body?.float_ids), expense_ids: ids(req.body?.expense_ids) },
+    ));
+  } catch (e) { sendError(res, e as Error); }
+});
+
 router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const { id } = req.params;
   const { closing_float, notes, denomination_breakdown } = req.body;

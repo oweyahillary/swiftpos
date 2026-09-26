@@ -17,6 +17,25 @@ import { getDeviceConfig, canSell } from './deviceConfig';
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 
+/**
+ * A334 (2026-09-26): cash on a SHARED drawer that this till does not hold — sales, floats and
+ * expenses rung on the web POS standing in for this till (the cloud's POST /api/shifts/:id/foreign-cash,
+ * same arithmetic as its own close). Owner: the till's close INCLUDES them. Added to the till's own
+ * figures; never replaces them, so offline the till still closes on what it knows.
+ */
+export interface ForeignCash { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number }
+
+/** The order / float / expense ids this till holds for a shift — what it tells the cloud it already knows. */
+export function localShiftIds(shiftId: string): { order_ids: string[]; float_ids: string[]; expense_ids: string[] } {
+  const db = getLocalDb();
+  const col = (sql: string) => (db.prepare(sql).all(shiftId) as { id: string }[]).map((r) => r.id);
+  return {
+    order_ids:   col(`SELECT id FROM orders WHERE shift_id=?`),
+    float_ids:   col(`SELECT id FROM float_transactions WHERE shift_id=?`),
+    expense_ids: col(`SELECT id FROM expenses WHERE shift_id=?`),
+  };
+}
+
 export interface ZReport {
   shift: {
     id: string;
@@ -40,6 +59,9 @@ export interface ZReport {
     floatIn: number;
     floatOut: number;
     expectedCash: number;
+    /** A334: cash rung on this drawer from another surface (the web POS) — already inside the figures above.
+     *  null = not asked (offline / no answer): the figures are this till's own only. */
+    foreign?: ForeignCash | null;
   };
   businessName: string;
   currency: string;
@@ -189,7 +211,7 @@ export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?
 }
 
 // Compute the Z-report for a shift (open = live preview, closed = final figures).
-export function computeZReport(shiftId: string): ZReport {
+export function computeZReport(shiftId: string, foreign: ForeignCash | null = null): ZReport {
   const db = getLocalDb();
   const { session, staff } = sessionInfo();
 
@@ -215,13 +237,14 @@ export function computeZReport(shiftId: string): ZReport {
     GROUP BY p.method
   `).all(shiftId) as { method: string; amount: number; orders: number }[];
 
-  const cashSales = byMethod.find(m => m.method === 'cash')?.amount ?? 0;
+  const f = foreign;   // A334: the web's part of a shared drawer, added to this till's own
+  const cashSales = (byMethod.find(m => m.method === 'cash')?.amount ?? 0) + (f ? Number(f.cash_sales) : 0);
 
   const floats = db.prepare(`
     SELECT type, COALESCE(SUM(amount), 0) AS amt FROM float_transactions WHERE shift_id=? GROUP BY type
   `).all(shiftId) as { type: string; amt: number }[];
-  const floatIn  = floats.find(f => f.type === 'float_in')?.amt  ?? 0;
-  const floatOut = floats.find(f => f.type === 'float_out')?.amt ?? 0;
+  const floatIn  = (floats.find(x => x.type === 'float_in')?.amt  ?? 0) + (f ? Number(f.float_in) : 0);
+  const floatOut = (floats.find(x => x.type === 'float_out')?.amt ?? 0) + (f ? Number(f.float_out) : 0);
 
   const agg = db.prepare(`
     SELECT COUNT(*) AS orderCount, COALESCE(SUM(total), 0) AS grossSales
@@ -244,9 +267,9 @@ export function computeZReport(shiftId: string): ZReport {
   // Fixed HERE rather than by making expense:create also write a float_out, for
   // two reasons: one place computes the truth, and a cashier who records both an
   // expense and a matching pay-out would otherwise be debited twice.
-  const expensesOut = (db.prepare(`
+  const expensesOut = ((db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS amt FROM expenses WHERE shift_id = ?
-  `).get(shiftId) as { amt: number } | undefined)?.amt ?? 0;
+  `).get(shiftId) as { amt: number } | undefined)?.amt ?? 0) + (f ? Number(f.expenses) : 0);
 
   const expectedCash =
     Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut);
@@ -270,13 +293,14 @@ export function computeZReport(shiftId: string): ZReport {
     },
     byMethod,
     totals: {
-      orderCount: agg.orderCount,
+      orderCount: agg.orderCount + (f ? Number(f.orders) : 0),
       grossSales: Number(agg.grossSales),
       voidCount: voids.c,
       cashSales,
       floatIn,
       floatOut,
       expectedCash,
+      foreign: f,
     },
     businessName: session.business_name,
     currency: session.currency ?? 'KES',
@@ -285,13 +309,13 @@ export function computeZReport(shiftId: string): ZReport {
 
 // Close the open shift with a counted cash amount. Mirrors the server: requires
 // a note when the count doesn't match expected cash.
-export function closeShift(closing_float: number, notes?: string): ZReport {
+export function closeShift(closing_float: number, notes?: string, foreign: ForeignCash | null = null): ZReport {
   const db = getLocalDb();
   const shift = getOpenShift();
   if (!shift) throw new Error('No open shift to close');
   if (closing_float === undefined || closing_float === null) throw new Error('closing_float is required');
 
-  const pre = computeZReport(shift.id);
+  const pre = computeZReport(shift.id, foreign);   // A334: a shared drawer's web cash included
   const expectedCash = pre.totals.expectedCash;
   const variance = Number(closing_float) - expectedCash;
 
@@ -319,7 +343,48 @@ export function closeShift(closing_float: number, notes?: string): ZReport {
     close_method: 'counted', closed_by: sessionInfo().staff?.staff_id ?? null,
   });
 
-  return computeZReport(shift.id);
+  return computeZReport(shift.id, foreign);
+}
+
+/**
+ * A334 (2026-09-26): take a drawer the web POS opened AS THIS TILL into the local database, so the
+ * till sells into it instead of offering to open a second one — which the cloud refuses on sync
+ * (duplicate_open_shift: one open drawer per terminal, migration 63). Called at an ONLINE sign-in with
+ * the cloud's GET /api/shifts/current for this till.
+ *
+ * Same id as the cloud row (no second drawer), attached to THIS till's trading day (ensureDayOpen),
+ * and left 'pending' so the next push records that day on the cloud row — the push only ever writes
+ * open-shift fields and never reopens a closed one (routes/sync.ts). Nothing is adopted when this till
+ * already has an open drawer, the cloud shift is another terminal's or not open, this machine cannot
+ * sell, or its previous day is still unclosed (the day gate owns that screen).
+ *
+ * Returns the adopted row, or null.
+ */
+export function adoptCloudShift(cloud: any): any | null {
+  if (!cloud || cloud.status !== 'open' || !cloud.id) return null;
+  const cfg = getDeviceConfig();
+  if (!cfg?.device_id || cloud.device_id !== cfg.device_id) return null;
+  if (!canSell(cfg.device_role)) return null;
+  if (getOpenShift()) return null;
+  const db = getLocalDb();
+  if (db.prepare(`SELECT 1 FROM shifts WHERE id=?`).get(cloud.id)) return null;   // known here already (e.g. closed locally)
+  if (!checkStaleDay().canTrade) return null;
+
+  const { session, staff } = sessionInfo();
+  if (!staff?.staff_id) return null;
+  const day = ensureDayOpen(staff.staff_id);
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO shifts (id, business_id, branch_id, cashier_id, opened_at, status, opening_float,
+                        created_at, sync_status, business_day_id, business_date,
+                        device_id, terminal_code, drawer_label, opened_by)
+    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+  `).run(cloud.id, session.business_id, cloud.branch_id ?? staff.branch_id,
+         cloud.cashier_id ?? cloud.opened_by ?? staff.staff_id, cloud.opened_at ?? now,
+         Number(cloud.opening_float) || 0, now, day.id, day.business_date,
+         cfg.device_id, cfg.terminal_code ?? cloud.terminal_code ?? null,
+         cloud.drawer_label ?? null, cloud.opened_by ?? cloud.cashier_id ?? null);
+  return db.prepare(`SELECT * FROM shifts WHERE id=?`).get(cloud.id);
 }
 
 // Current open shift enriched with its live Z-report, or null if none open.
@@ -379,8 +444,8 @@ export function forceCloseShift(reason: string, closedByStaffId?: string | null)
   return computeZReport(shift.id);
 }
 
-export function currentShiftReport(): ZReport | null {
+export function currentShiftReport(foreign: ForeignCash | null = null): ZReport | null {
   const shift = getOpenShift();
   if (!shift) return null;
-  return computeZReport(shift.id);
+  return computeZReport(shift.id, foreign);
 }

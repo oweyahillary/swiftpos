@@ -50,7 +50,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
   const currency = business.currency ?? 'KES';
 
   const refresh = async () => {
-    const r = await posApi.shift.current();
+    const r = await posApi.shift.current({ includeForeign: true });   // A334: + the web POS's cash on this drawer
     setReport(r);
     onShiftChange(r);
   };
@@ -257,6 +257,16 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                     Expected {money(expected)} · {variance === 0 ? 'balances' : `${variance > 0 ? 'over' : 'short'} ${money(Math.abs(variance))}`}
                   </div>
                 )}
+                {/* A334: a shared drawer — what the web POS rang into it is part of the count. */}
+                {report?.totals.foreign && (report.totals.foreign.orders > 0 || report.totals.foreign.float_in || report.totals.foreign.float_out || report.totals.foreign.expenses) ? (
+                  <p className="text-xs text-gray-400" data-testid="foreign-cash">
+                    Includes the web POS on this drawer: {report.totals.foreign.orders} sale{report.totals.foreign.orders === 1 ? '' : 's'}, {money(report.totals.foreign.cash_sales)} cash.
+                  </p>
+                ) : report && report.totals.foreign === null ? (
+                  <p className="text-xs text-gray-500" data-testid="foreign-cash-unknown">
+                    Web POS sales on this drawer could not be checked (offline) — the cloud reconciles them after sync.
+                  </p>
+                ) : null}
                 {(noteRequired || closeNotes) && (
                   <textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder={noteRequired ? 'Note required to explain the variance' : 'Notes (optional)'} rows={2} className={inputCls} />
                 )}

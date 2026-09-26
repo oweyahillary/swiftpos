@@ -7,6 +7,8 @@ export interface StaffSession {
   permissions: Record<string, boolean>;
   branchId: string;
   branchName: string | null;
+  /** A334: set when this sign-in joined a drawer the web POS opened as this till. */
+  joinedDrawer?: { openedByName: string | null; openedAt: string; sameCashier: boolean } | null;
 }
 
 export type DeployMode = 'cloud' | 'local';
@@ -101,6 +103,8 @@ export interface ZReport {
     floatIn: number;
     floatOut: number;
     expectedCash: number;
+    /** A334: the web POS's cash on this (shared) drawer, already inside the totals. null = could not be checked. */
+    foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number } | null;
   };
   businessName: string;
   currency: string;
@@ -301,7 +305,7 @@ declare global {
         isConfigured: () => Promise<boolean>;
         save: (patch: Partial<DeviceConfig>) => Promise<DeviceConfig>;
         clear: () => Promise<boolean>;
-        identity: () => Promise<{ deviceId: string | null; terminalCode: string | null }>;
+        identity: () => Promise<{ deviceId: string | null; terminalCode: string | null; deviceName?: string | null }>;
         resetPreview: () => Promise<{ terminalCode: string | null; deviceRole: string | null; unsyncedOrders: number; unsyncedValue: number; openShifts: number; safe: boolean }>;
         reset: (force?: boolean) => Promise<boolean>;
         testConnection: (url: string) => Promise<ConnectionTestResult>;
@@ -336,7 +340,7 @@ declare global {
         // Ends it WITHOUT a cash count. Records closed_unreconciled with a null
         // variance — never zero, which would claim a check that never happened.
         forceClose: (reason: string) => Promise<ZReport>;
-        current: () => Promise<ZReport | null>;
+        current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         float: (type: 'float_in' | 'float_out', amount: number, reason?: string) => Promise<ZReport | null>;
         close: (closing_float: number, notes?: string) => Promise<ZReport>;

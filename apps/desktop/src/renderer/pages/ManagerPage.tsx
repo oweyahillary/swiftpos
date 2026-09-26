@@ -662,7 +662,7 @@ function ShiftTab({ currency }: { currency: string }) {
 
   useEffect(() => {
     let live = true;
-    posApi.shift.current().then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    posApi.shift.current({ includeForeign: true }).then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, []);
 
@@ -732,7 +732,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
 
   useEffect(() => {
     let live = true;
-    posApi.shift.current().then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    posApi.shift.current({ includeForeign: true }).then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, []);
 

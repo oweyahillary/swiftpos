@@ -40,7 +40,7 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift } from './shiftService';
+import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { exportReportCsv } from './reportExport';
 import { exportDailySalesReport } from './dailySalesReport';
@@ -381,6 +381,50 @@ export function registerIpcHandlers() {
     return res;
   }
 
+  // ── A334 (2026-09-26): drawers shared with the web POS ─────────────────────
+  // Both are best-effort and bounded: a slow or absent cloud never blocks a sign-in
+  // or a close — the till falls back to what it holds, and says so (foreign = null).
+  const withinMs = <T,>(p: Promise<T>, ms: number) =>
+    Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('slow')), ms))]);
+
+  /** The cash on this drawer rung on another surface (the web POS). null = not known (offline / no answer). */
+  async function fetchForeignCash(shiftId: string | null | undefined): Promise<ForeignCash | null> {
+    if (!shiftId) return null;
+    try {
+      const res = await withinMs(ownerFetch(`/api/shifts/${encodeURIComponent(shiftId)}/foreign-cash`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(localShiftIds(shiftId)),
+      }), 4_000);
+      if (!res.ok) return null;
+      const f = await res.json();
+      return f && typeof f.cash_sales === 'number' ? f as ForeignCash : null;
+    } catch { return null; }
+  }
+
+  /**
+   * At an ONLINE sign-in: is this till's drawer already open in the cloud — opened on the web POS
+   * standing in for this till? If so, take it in (adoptCloudShift) so the till sells into it instead of
+   * opening a second drawer the cloud will refuse. Returns what the PIN screen shows: nothing for the
+   * cashier who opened it (they just resume), the opener's name and time for anyone else (owner:
+   * show it and offer to join).
+   */
+  async function joinCloudDrawer(staffId: string | null | undefined): Promise<{ openedByName: string | null; openedAt: string; sameCashier: boolean } | null> {
+    try {
+      const res = await withinMs(ownerFetch('/api/shifts/current'), 4_000);
+      if (!res.ok) return null;
+      const cloud = await res.json().catch(() => null);
+      const adopted = adoptCloudShift(cloud);
+      if (!adopted) return null;
+      const openedBy = adopted.opened_by ?? adopted.cashier_id ?? null;
+      const who = openedBy ? (getLocalDb().prepare(`SELECT name FROM users WHERE id=?`).get(openedBy) as any)?.name ?? null : null;
+      logLine('shift', `joined the drawer opened on the web POS (${adopted.id})`);
+      return { openedByName: who, openedAt: adopted.opened_at, sameCashier: !!staffId && openedBy === staffId };
+    } catch (e: any) {
+      logLine('shift', `drawer check at sign-in skipped: ${e?.message ?? e}`);
+      return null;
+    }
+  }
+
   handle('auth:listBranches', async () => {
     // LOCAL-FIRST — this was a server round trip, and every cold start, 429,
     // or dead link blanked the PIN screen with "No branches available" while
@@ -590,12 +634,16 @@ export function registerIpcHandlers() {
       syncAll().catch(console.error);
     }
 
+    // A334: a drawer the web POS opened as this till → sell into it (not a second one).
+    const joinedDrawer = await joinCloudDrawer(data.staff?.id);
+
     return {
       staff: data.staff,
       role: data.staff?.role ?? null,
       permissions: data.permissions ?? {},
       branchId: branch_id,
       branchName: branchRow?.name ?? null,
+      joinedDrawer,
     };
   });
 
@@ -1397,8 +1445,13 @@ export function registerIpcHandlers() {
 
   // ── Shifts (offline cash-up + Z-report) ─────────────────────
 
-  handle('shift:current', async () => {
-    return currentShiftReport();
+  // includeForeign (A334): the close screen and the manager report add the web's cash on a shared
+  // drawer. The POS sell gate calls this WITHOUT it — it must never wait on the cloud.
+  handle('shift:current', async (_e, opts?: { includeForeign?: boolean }) => {
+    if (!opts?.includeForeign) return currentShiftReport();
+    const local = currentShiftReport();
+    if (!local) return null;
+    return currentShiftReport(await fetchForeignCash(local.shift.id));
   });
 
   // A shift left open past ~18h. Reported, never auto-closed — see
@@ -1416,6 +1469,7 @@ export function registerIpcHandlers() {
     return {
       deviceId:     cfg?.device_id ?? null,
       terminalCode: cfg?.terminal_code ?? null,
+      deviceName:   cfg?.device_name ?? null,   // A334: the join notice names the till
     };
   });
 
@@ -1504,13 +1558,14 @@ export function registerIpcHandlers() {
   handle('shift:close', async (_event, { closing_float, notes }: { closing_float: number; notes?: string }) => {
     // Returns the final Z-report. Throws (with .variance/.expected_cash) if a
     // variance note is required — the renderer surfaces that message.
-    const z = closeShift(Number(closing_float), notes);
+    // A334: a shared drawer's web cash is part of what the cashier counted.
+    const z = closeShift(Number(closing_float), notes, await fetchForeignCash(currentShiftReport()?.shift.id));
     logLine('shift', `close float ${Number(closing_float) || 0}`);
     return z;
   });
 
   handle('shift:zreport', async (_event, shiftId: string) => {
-    return computeZReport(shiftId);
+    return computeZReport(shiftId, await fetchForeignCash(shiftId));   // A334
   });
 
   // ── Catalogue & staff management ─────────────────────────────────────────

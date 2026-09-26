@@ -153,7 +153,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   },
 
   shift: {
-    current: ()                                                          => ipcRenderer.invoke('shift:current'),
+    current: (opts?: { includeForeign?: boolean })                       => ipcRenderer.invoke('shift:current', opts),
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
     stale: () => ipcRenderer.invoke('shift:stale'),
     forceClose: (reason: string) => ipcRenderer.invoke('shift:forceClose', { reason }),
