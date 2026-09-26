@@ -247,9 +247,9 @@ export default function FleetPage() {
                               if (e.key === 'Enter') void saveLabel(d.id);
                               if (e.key === 'Escape') setEditingId(null);
                             }}
-                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-green-500 w-40"
+                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-swift w-40"
                           />
-                          <button onClick={() => void saveLabel(d.id)} className="text-green-500 hover:text-green-400 text-sm" title="Save">✓</button>
+                          <button onClick={() => void saveLabel(d.id)} className="text-swift-text hover:text-swift-text-hover text-sm" title="Save">✓</button>
                           <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-200 text-sm" title="Cancel">✕</button>
                         </div>
                       ) : (
@@ -332,7 +332,7 @@ export default function FleetPage() {
                         <button
                           onClick={() => void setRetired(d.id, false)}
                           disabled={busyId === d.id}
-                          className="text-xs text-green-600 hover:text-green-500 disabled:opacity-40"
+                          className="text-xs text-swift-text hover:text-swift-text-hover disabled:opacity-40"
                         >{busyId === d.id ? '…' : 'Restore'}</button>
                       ) : (
                         <button

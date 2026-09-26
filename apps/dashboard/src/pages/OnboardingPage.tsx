@@ -197,7 +197,7 @@ export default function OnboardingPage() {
   // ── Shared input styles ─────────────────────────────────────────────────────
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
-    'focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/30 transition-all text-sm';
+    'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
 
   const labelCls = 'block text-xs font-medium text-[#64748b] mb-1.5 tracking-wide uppercase';
 
@@ -208,8 +208,8 @@ export default function OnboardingPage() {
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: `linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(20,184,166,0.03) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(20,184,166,0.03) 1px, transparent 1px)`,
           backgroundSize: '48px 48px',
         }}
       />
@@ -219,7 +219,7 @@ export default function OnboardingPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22c55e] flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
+            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
             <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
           </div>
           <p className="text-[#334155] text-sm">New business setup — agent onboarding</p>
@@ -235,7 +235,7 @@ export default function OnboardingPage() {
                     step > s.num
                       ? 'bg-[#22c55e] text-[#0f172a]'
                       : step === s.num
-                      ? 'bg-[#3b82f6] text-white ring-4 ring-[#3b82f6]/20'
+                      ? 'bg-swift-strong text-white ring-4 ring-swift/20'
                       : 'bg-[#0f172a] border border-[#1e293b] text-[#334155]'
                   }`}
                 >
@@ -243,7 +243,7 @@ export default function OnboardingPage() {
                 </div>
                 <span
                   className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${
-                    step === s.num ? 'text-[#93c5fd]' : step > s.num ? 'text-[#22c55e]' : 'text-[#334155]'
+                    step === s.num ? 'text-swift-light' : step > s.num ? 'text-[#22c55e]' : 'text-[#334155]'
                   }`}
                 >
                   {s.label}
@@ -327,13 +327,13 @@ export default function OnboardingPage() {
                       onClick={() => set('businessType', t.value)}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
                         form.businessType === t.value
-                          ? 'bg-[#3b82f6]/10 border-[#3b82f6]/50 text-white'
+                          ? 'bg-swift/10 border-swift/50 text-white'
                           : 'bg-[#0f172a] border-[#1e293b] text-[#64748b] hover:border-[#334155]'
                       }`}
                     >
                       <span className="text-lg flex-shrink-0">{t.icon}</span>
                       <div className="min-w-0">
-                        <div className={`text-xs font-semibold truncate ${form.businessType === t.value ? 'text-[#93c5fd]' : 'text-[#94a3b8]'}`}>
+                        <div className={`text-xs font-semibold truncate ${form.businessType === t.value ? 'text-swift-light' : 'text-[#94a3b8]'}`}>
                           {t.label}
                         </div>
                         <div className="text-[10px] text-[#334155] truncate">{t.desc}</div>
@@ -405,7 +405,7 @@ export default function OnboardingPage() {
               <button
                 disabled={!step1Valid()}
                 onClick={() => setStep(2)}
-                className="w-full py-3 rounded-xl font-semibold text-sm transition-all bg-[#3b82f6] hover:bg-[#2563eb] text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-full py-3 rounded-xl font-semibold text-sm transition-all bg-swift-strong hover:bg-swift-deep text-white disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Continue to branch setup →
               </button>
@@ -499,7 +499,7 @@ export default function OnboardingPage() {
                 <button
                   disabled={!step2Valid()}
                   onClick={() => setStep(3)}
-                  className="flex-[2] py-3 rounded-xl font-semibold text-sm bg-[#3b82f6] hover:bg-[#2563eb] text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  className="flex-[2] py-3 rounded-xl font-semibold text-sm bg-swift-strong hover:bg-swift-deep text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
                   Continue to owner access →
                 </button>
@@ -625,7 +625,7 @@ export default function OnboardingPage() {
                 <button
                   disabled={loading || !step3Valid()}
                   onClick={handleSubmit}
-                  className="flex-[2] py-3 rounded-xl font-bold text-sm bg-[#22c55e] hover:bg-[#16a34a] text-[#0f172a] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                  className="flex-[2] py-3 rounded-xl font-bold text-sm bg-swift hover:bg-swift-light text-[#0f172a] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>

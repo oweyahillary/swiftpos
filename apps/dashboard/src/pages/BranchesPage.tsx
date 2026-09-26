@@ -116,7 +116,7 @@ export default function BranchesPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-gray-800">
-              <Link to={`/dashboard/branches/${branch.id}`} className="text-xs text-green-400 hover:text-green-300 transition-colors">
+              <Link to={`/dashboard/branches/${branch.id}`} className="text-xs text-swift-text hover:text-swift-text-hover transition-colors">
                 View Detail →
               </Link>
               <button onClick={() => openEdit(branch)} className="text-xs text-gray-400 hover:text-white transition-colors ml-auto">
@@ -153,7 +153,7 @@ export default function BranchesPage() {
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. Westlands Store"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
               <div>
@@ -162,7 +162,7 @@ export default function BranchesPage() {
                   value={form.address}
                   onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                   placeholder="e.g. Westlands, Nairobi"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
               <div>
@@ -171,7 +171,7 @@ export default function BranchesPage() {
                   value={form.phone}
                   onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="e.g. 0700 000 000"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
             </div>
@@ -180,7 +180,7 @@ export default function BranchesPage() {
               <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2 text-sm font-semibold bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black rounded-lg transition-colors">
+              <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2 text-sm font-semibold bg-swift hover:bg-swift-light disabled:opacity-50 text-black rounded-lg transition-colors">
                 {saving ? "Saving..." : "Save Branch"}
               </button>
             </div>

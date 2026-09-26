@@ -106,7 +106,7 @@ export default function QRMenuPage() {
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="text-center">
-        <div className="w-8 h-8 border-2 border-gray-700 border-t-green-500 rounded-full animate-spin mx-auto mb-3" />
+        <div className="w-8 h-8 border-2 border-gray-700 border-t-swift rounded-full animate-spin mx-auto mb-3" />
         <p className="text-gray-500 text-sm">Loading menu…</p>
       </div>
     </div>
@@ -130,7 +130,7 @@ export default function QRMenuPage() {
         <p className="text-gray-400 text-sm mb-1">Your order <strong className="text-white">{orderDone}</strong> has been sent to the kitchen.</p>
         <p className="text-gray-600 text-xs">A team member will be with you shortly.</p>
         <button onClick={() => setOrderDone(null)}
-          className="mt-6 px-6 py-2.5 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-xl text-sm transition-colors">
+          className="mt-6 px-6 py-2.5 bg-swift-strong hover:bg-swift-deep text-white font-semibold rounded-xl text-sm transition-colors">
           Order more
         </button>
       </div>
@@ -150,7 +150,7 @@ export default function QRMenuPage() {
           </div>
           {cartCount > 0 && (
             <button onClick={() => setShowCart(true)}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+              className="flex items-center gap-2 bg-swift-strong hover:bg-swift-deep text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors">
               🛒 <span>{cartCount}</span>
               <span className="hidden sm:inline">·</span>
               <span className="hidden sm:inline">{fmt(business?.currency ?? 'KES', cartTotal)}</span>
@@ -165,7 +165,7 @@ export default function QRMenuPage() {
           {categories.map(cat => (
             <button key={cat.id} onClick={() => setActiveCat(cat.id)}
               className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex-shrink-0 ${
-                activecat === cat.id ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                activecat === cat.id ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
               }`}>
               {cat.name}
             </button>
@@ -194,7 +194,7 @@ export default function QRMenuPage() {
                   <p className="text-green-400 font-bold">{fmt(business?.currency ?? 'KES', p.price)}</p>
                   {qty === 0 ? (
                     <button onClick={() => addToCart(p)}
-                      className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-xl transition-colors">
+                      className="px-4 py-1.5 bg-swift-strong hover:bg-swift-deep text-white text-sm font-semibold rounded-xl transition-colors">
                       Add
                     </button>
                   ) : (
@@ -203,7 +203,7 @@ export default function QRMenuPage() {
                         className="w-8 h-8 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-lg flex items-center justify-center">−</button>
                       <span className="text-white font-bold w-5 text-center">{qty}</span>
                       <button onClick={() => updateQty(p.id, qty + 1)}
-                        className="w-8 h-8 bg-green-600 hover:bg-green-500 text-white rounded-lg text-lg flex items-center justify-center">+</button>
+                        className="w-8 h-8 bg-swift-strong hover:bg-swift-deep text-white rounded-lg text-lg flex items-center justify-center">+</button>
                     </div>
                   )}
                 </div>
@@ -217,8 +217,8 @@ export default function QRMenuPage() {
       {cartCount > 0 && !showCart && (
         <div className="fixed bottom-6 left-0 right-0 flex justify-center z-30 px-6">
           <button onClick={() => setShowCart(true)}
-            className="w-full max-w-lg bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-2xl shadow-2xl flex items-center justify-between px-6 transition-colors">
-            <span className="bg-green-800/50 text-white text-xs font-bold w-6 h-6 rounded-lg flex items-center justify-center">{cartCount}</span>
+            className="w-full max-w-lg bg-swift-strong hover:bg-swift-deep text-white font-bold py-4 rounded-2xl shadow-2xl flex items-center justify-between px-6 transition-colors">
+            <span className="bg-swift-deep/50 text-white text-xs font-bold w-6 h-6 rounded-lg flex items-center justify-center">{cartCount}</span>
             <span>View order</span>
             <span>{fmt(business?.currency ?? 'KES', cartTotal)}</span>
           </button>
@@ -259,12 +259,12 @@ export default function QRMenuPage() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Your name (optional)</label>
                 <input value={guestName} onChange={e => setGuestName(e.target.value)} placeholder="e.g. Kizzy"
-                  className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-green-500" />
+                  className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
             </div>
             <div className="px-6 py-5 border-t border-gray-800">
               <button onClick={submitOrder} disabled={submitting || cart.length === 0}
-                className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-base transition-colors">
+                className="w-full bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-base transition-colors">
                 {submitting ? 'Sending to kitchen…' : `Place order · ${fmt(business?.currency ?? 'KES', cartTotal)}`}
               </button>
             </div>

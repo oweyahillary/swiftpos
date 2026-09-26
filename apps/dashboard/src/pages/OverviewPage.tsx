@@ -67,10 +67,10 @@ function KpiCard({ label, value, delta, sub, accent }: {
 }) {
   return (
     <div className={`rounded-xl p-4 flex flex-col gap-1.5 border ${accent
-      ? 'bg-blue-600 border-blue-500'
+      ? 'bg-swift-strong border-swift-strong'
       : 'bg-gray-900 border-gray-800'
     }`}>
-      <span className={`text-xs uppercase tracking-wider font-medium ${accent ? 'text-blue-100' : 'text-gray-500'}`}>{label}</span>
+      <span className={`text-xs uppercase tracking-wider font-medium ${accent ? 'text-teal-100' : 'text-gray-500'}`}>{label}</span>
       <span className={`text-xl font-semibold tabular-nums ${accent ? 'text-white' : 'text-white'}`}>{value}</span>
       {delta != null && (
         <span className={`text-xs font-medium ${delta.up ? 'text-green-400' : 'text-red-400'}`}>

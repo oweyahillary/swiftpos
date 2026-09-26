@@ -6,8 +6,9 @@ top of the rules — `HANDOFF-2026-08-08-evening.md` §0, rules 1–24 — and t
 it does not replace or reword them. Where this file and a rule disagree, the rule wins and this file gets fixed.
 
 Standing rulings, restated because they changed an original rule:
-- **Every delivery is a zip** mirroring the repo root, with a manifest — **docs-only included**. Rule 18 ("zip only when
-  code changed") is retired (owner, 2026-09-22).
+- **Every delivery is a commit on the session branch** (`claude/…`), with a manifest — docs-only included — which the owner
+  fast-forwards onto `dev` (owner, 2026-09-26: updates go directly into the repo, not as zip files; a zip sent from the
+  cloud session never reached the owner's PC). This replaces the zip (owner, 2026-09-22), which replaced rule 18.
 - **Rule 21 covers UI strings**: "node" or "cloud", never "server" on its own — in code, docs, tests and anything a user reads.
 - **SwiftPOS is general-purpose.** Logos, menus or names of any business used as test references never appear in shipped
   code, UI strings, sample data, proposals or new docs. Use "Your Business" and generic items (A322). Dated history stays
@@ -21,19 +22,20 @@ Standing rulings, restated because they changed an original rule:
   and tags desktop releases, tests on the till (**mamangina**), decides scope. Zips are saved in `C:\swiftpos\other files`.
 - **Lead developer (Claude):** reads the source, builds and proves every change on a Linux bench, packages deliveries,
   gives the exact commands, and after every push independently confirms the tip and CI before saying "landed" (the
-  owner's standing instruction, item 4 of the prompt in §10). Never pushes. Never assumes a push worked.
+  owner's standing instruction, item 4 of the prompt in §10). Pushes ONLY to the session branch — never to `dev`, never a
+  tag. Never assumes a push worked.
 
 ## 2. The loop
 
 ```
 owner asks ──► sweep + diagnose (read source) ──► if ambiguous or growing: ASK (rule 3/12)
-          ──► build + test + mutation-check ──► gates ──► register + manifest ──► zip
-          ──► rehearse on a FRESH CLONE of the tip (apply · checksums · gates · rollback) ──► hand over
-owner applies (3 blocks) ──► pushes ──► lead dev pulls, checks checksums + gates + CI ──► "landed" (or not, with why)
+          ──► build + test + mutation-check ──► gates ──► register + manifest ──► commit on the session branch, push it
+          ──► check a FRESH CLONE of the branch (one commit on the tip · gates) ──► hand over
+owner fast-forwards dev (1 block) ──► pushes ──► lead dev pulls, checks commit + gates + CI ──► "landed" (or not, with why)
 ```
 
-"Landed" means all of: the tip commit contains **exactly** the delivered files · every file's md5 matches what was
-delivered · the gates exit 0 on a fresh clone · CI for **that** commit completed successfully · (when a CI step was added)
+"Landed" means all of: `origin/dev` is **exactly** the delivered commit (same hash — a fast-forward, nothing added) ·
+the commit contains exactly the files the manifest lists · the gates exit 0 on a fresh clone · CI for **that** commit completed successfully · (when a CI step was added)
 the step appears in the run's job. Anything less is reported as not landed, with the evidence.
 
 ## 3. Starting a session
@@ -65,40 +67,27 @@ the step appears in the run's job. Anything less is reported as not landed, with
 8. **Manifest** `docs/MANIFEST-YYYY-MM-DD-<letter>.md`: base commit, why, files table (the manifest counts itself),
    verification as commands + what they printed, what is owed on target, a rollback line that works **both** before and
    after commit (`git rm -q --ignore-unmatch … && rm -f …`).
-9. **Zip** only the changed/new files, paths from the repo root (`zip -X -q` from a file list).
-10. **Rehearse on a fresh clone of the tip:** unzip · `md5sum -c` · gates · (for a bump: the version step) · commit · run
-    the rollback · confirm `git diff <base>` is empty. Only then hand it over.
+9. **Commit on the session branch**, based on the current `origin/dev` tip, ONE commit per delivery (`git add` each file by
+   path — never `-A`), and push the branch.
+10. **Check a fresh clone of the branch:** it is the `dev` tip plus exactly that commit · the files are the manifest's · the
+    gates exit 0 · the rollback line works. Only then hand it over.
 
-## 5. Handing over — the three blocks (never change this shape)
+## 5. Handing over — one block (never change this shape)
 
-Every delivery message gives the owner exactly these, each **pasted on its own**:
-
-**Block 1 — apply.** Resets to the tip and extracts INTO the repo (the owner's zips live in `C:\swiftpos\other files`;
-extracting anywhere else was the 2026-09-23 `-l` failure: only the new file landed).
+(Until 2026-09-26 this was three blocks around a zip — apply, md5, commit; retired with the zip, see the standing rulings.)
+Every delivery message gives the owner exactly this, **pasted on its own**, with the commit it must print:
 ```bash
 cd /c/swiftpos/pos && git fetch && git reset --hard origin/dev && git log -1 --format=%h && \
-unzip -o "/c/swiftpos/other files/swiftpos-delivery-YYYY-MM-DD-<x>.zip" -d .
-```
-Say which commit it must print.
-
-**Block 2 — prove it applied.** A heredoc of the md5 of every file; every line must say `OK`.
-```bash
-md5sum -c <<'EOF'
-<md5>  <path>
-EOF
-```
-
-**Block 3 — verify, commit, push — CHAINED with `&&`** so any failing check stops the commit. (Unchained, a failed check
-scrolled past and the commit went through anyway — 2026-09-23 `-n`.)
-```bash
+git merge --ff-only origin/claude/<session-branch> && git log -1 --format=%h && \
 <build/test commands> && \
 node scripts/check-register-consistency.mjs && node scripts/check-doc-refs.mjs && node scripts/check-root-clean.mjs && \
-git add -u && git add <each NEW file, by path> && \
-git commit -m "<what> (delivery -<x>)" && \
 git push origin dev
 ```
-`git add -u` + new files **by path** — never `git add -A` (untracked local files, e.g. a tester's HTML, must not ride along).
-State what each test must print ("expect 18 passed"), and "if the chain stops, send me the output".
+- The first hash is today's tip; the second is the delivery commit. `--ff-only` refuses (and changes nothing) if `dev` moved
+  since the branch was cut — then send the output; the lead dev rebases the branch and re-issues.
+- CHAINED with `&&` so a failing check stops the push (2026-09-23 `-n`). State what each check prints; "if the chain stops,
+  send me the output".
+- The owner never re-commits: `dev` becomes the delivered commit, byte for byte — no checksums needed.
 
 Then, in plain language: what changed, what was proven, what the owner verifies next and on what (deploy / build / till).
 
@@ -106,8 +95,7 @@ Then, in plain language: what changed, what was proven, what the owner verifies 
 
 ```bash
 cd /tmp && rm -rf tip && git clone -q -b dev https://github.com/oweyahillary/swiftpos.git tip && cd tip
-git log --oneline -2 && git show --stat --format= HEAD | tail -1      # the commit holds exactly the delivered files
-md5sum -c --quiet /tmp/<x>.md5 && echo "all files match"            # the md5 list saved when zipping
+git log --oneline -2 && git show --stat --format= HEAD | tail -1      # HEAD is the delivered commit; it holds exactly its files
 for s in check-register-consistency check-doc-refs check-root-clean; do node scripts/$s.mjs >/dev/null 2>&1; echo "$s exit=$?"; done
 ```
 **CI:** the GitHub REST API rate-limits this bench, so read the Actions page and poll until the run for the new number
@@ -118,15 +106,15 @@ for i in $(seq 1 20); do S=$(curl -s "https://github.com/oweyahillary/swiftpos/a
 ```
 Look for `completed successfully`. When a delivery adds a CI step, open the run's job pages and confirm the step's name is
 there. Release runs appear as `Run <n> of Release desktop`. Tags: `git ls-remote --tags origin | grep vX.Y.Z`.
-If the tip does not match: say so plainly, show which files differ, give a recovery (usually: re-extract with `-o`, check,
-`git add -u`, commit) — or re-issue as the next letter if the delivery itself needs a fix.
+If the tip does not match: say so plainly, show what differs, give a recovery (usually: rebase the session branch on the new
+tip and re-issue the one block) — or re-issue as the next letter if the delivery itself needs a fix.
 
 ## 7. Desktop release (bump + tag)
 
 Three files change together or CI goes red: `apps/desktop/package.json`, `apps/desktop/package-lock.json` (both by the
 owner's `npm version X.Y.Z --no-git-tag-version`) and the register Tree row `desktop **vX.Y.Z**` (in the delivery).
-The version field itself is never in a zip (rule 22). Sequence:
-1. Delivery with the Tree row → owner applies → runs `npm version` → **one commit** → push.
+The version field itself is never in a delivery commit (rule 22). Sequence:
+1. Delivery with the Tree row → owner fast-forwards `dev` onto it → runs `npm version` → **one commit** → push.
 2. Lead dev confirms CI green on that commit.
 3. Owner tags **on that commit**, with a guard:
 ```bash
@@ -162,6 +150,10 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 | A dashboard control verified in LIGHT mode only was near-invisible in DARK mode, the dashboard's default — 2026-09-24 (A327) | The dashboard is dark-first (light mode = overrides in `index.css`): write dark-first classes, and check every new dashboard UI in BOTH modes in the browser |
 | Node crashed on exit on Windows after a test PASSED — `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` (libuv), 2026-09-24-j | New tests end with `process.exitCode = fail ? 1 : 0;`, not `process.exit()`. Follow-up: 56 older tests still call `process.exit` — convert when touched |
 | A colour sweep matched Tailwind CLASSES only; the main web POS colours with inline hex/rgba and was counted as zero — the owner saw green Charge beside themed Confirm (2026-09-25, A328) | A sweep must match every form the code uses (classes, hex, `rgb(a)`, named colours) AND list every file scanned with its count; a key screen with 0 hits is a red flag, not a pass |
+| A colour sweep matched colour NAMES; the dashboard's Tailwind config also defines a green palette as `brand-*` (2026-09-26 — unused, but invisible to the sweep) | Read `tailwind.config.js` for custom palettes before sweeping; count them too |
+| A light-mode override written inside `@layer base` for a variant class (`.focus\:border-x:focus`) never reached the build — Tailwind drops it (A328's focus rule, found 2026-09-26) | Put such overrides OUTSIDE the layer, and grep the COMPILED CSS for every new rule |
+| A contrast proof computed from token values passed; in Chromium the light theme had turned `.text-white` slate — 3.26:1 on teal 700 (2026-09-26, A329/A332) | Prove label contrast in the browser on the compiled CSS, dark AND light — a token calculation cannot see the cascade |
+| A zip sent from the cloud session never reached the owner's PC (2026-09-26-a) | Deliver as a commit on the session branch; the owner fast-forwards `dev` (§5) |
 | Tests passed in Node because Node has `Buffer`; the browser does not | Run the shipped bundle with `Buffer` deleted |
 | A regex test proved "wired", never "accepts the real payload" | Run the real middleware on each caller's real payload |
 | Refusal tests "passed" for the wrong reason | Every refusal starts from a payload that passes |
@@ -177,9 +169,9 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 > Before touching code:
 > 1. Clone the repo and read, in order: the newest docs/HANDOFF-*.md, the one before it, docs/WORKING-METHOD.md, and the
 >    working rules in docs/HANDOFF-2026-08-08-evening.md §0 (rules 1–24).
-> 2. Follow docs/WORKING-METHOD.md exactly — the delivery loop, the three command blocks, how you confirm "landed", the
->    release sequence. Standing rulings: every delivery is a zip mirroring the repo root with a MANIFEST, docs-only
->    included; rule 21 (node/cloud, never "server") covers UI strings; never name any reference business — SwiftPOS is
+> 2. Follow docs/WORKING-METHOD.md exactly — the delivery loop, the one command block, how you confirm "landed", the
+>    release sequence. Standing rulings: every delivery is one commit on your session branch with a MANIFEST, docs-only
+>    included, which I fast-forward onto dev; rule 21 (node/cloud, never "server") covers UI strings; never name any reference business — SwiftPOS is
 >    general-purpose.
 > 3. If a rule is ambiguous, ask me rather than guess. If a fix starts growing, stop and ask.
 > 4. After every push I make, pull origin/dev yourself, check the files and gates, and read CI on that commit before

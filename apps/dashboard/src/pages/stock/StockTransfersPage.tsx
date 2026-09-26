@@ -191,7 +191,7 @@ export default function StockTransfersPage() {
         </div>
         <button
           onClick={() => { setCreateError(''); setShowCreate(true); }}
-          className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-swift hover:bg-swift-light text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
         >
           + New Transfer
         </button>
@@ -276,14 +276,14 @@ export default function StockTransfersPage() {
                         <button
                           disabled={actioningId === t.id}
                           onClick={() => advance(t, 'in_transit')}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors"
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors"
                         >Mark in transit</button>
                       )}
                       {t.status === 'in_transit' && (
                         <button
                           disabled={actioningId === t.id}
                           onClick={() => markReceived(t)}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors"
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors"
                         >Mark received</button>
                       )}
                       <button
@@ -319,7 +319,7 @@ export default function StockTransfersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">From Branch *</label>
                   <select
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.from_branch_id}
                     onChange={e => setForm(f => ({ ...f, from_branch_id: e.target.value }))}
                   >
@@ -330,7 +330,7 @@ export default function StockTransfersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">To Branch *</label>
                   <select
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.to_branch_id}
                     onChange={e => setForm(f => ({ ...f, to_branch_id: e.target.value }))}
                   >
@@ -346,7 +346,7 @@ export default function StockTransfersPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-gray-500 uppercase tracking-wide">Items *</label>
-                  <button onClick={addLine} className="text-xs text-green-400 hover:text-green-300">+ Add row</button>
+                  <button onClick={addLine} className="text-xs text-swift-text hover:text-swift-text-hover">+ Add row</button>
                 </div>
 
                 <div className="space-y-2">
@@ -359,7 +359,7 @@ export default function StockTransfersPage() {
                     <div key={i} className="grid grid-cols-12 gap-2 items-center">
                       <div className="col-span-8">
                         <select
-                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-green-500"
+                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-swift"
                           value={line.product_id}
                           onChange={e => updateLine(i, 'product_id', e.target.value)}
                         >
@@ -371,7 +371,7 @@ export default function StockTransfersPage() {
                         <input
                           type="number"
                           min="1"
-                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-green-500 text-right"
+                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-swift text-right"
                           value={line.quantity}
                           onChange={e => updateLine(i, 'quantity', e.target.value)}
                           placeholder="0"
@@ -390,7 +390,7 @@ export default function StockTransfersPage() {
               <div>
                 <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Notes</label>
                 <input
-                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                   value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Reason for transfer…"
@@ -410,7 +410,7 @@ export default function StockTransfersPage() {
               <button
                 onClick={create}
                 disabled={creating}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
+                className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
               >
                 {creating ? 'Transferring…' : 'Transfer Stock'}
               </button>
@@ -430,7 +430,7 @@ export default function StockTransfersPage() {
               >Not now</button>
               <button
                 onClick={() => { const p = sameUserPrompt; setSameUserPrompt(null); void advance(p.t, p.status, true); }}
-                className="flex-1 bg-green-500 hover:bg-green-400 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
+                className="flex-1 bg-swift hover:bg-swift-light text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
               >Proceed &amp; record</button>
             </div>
           </div>

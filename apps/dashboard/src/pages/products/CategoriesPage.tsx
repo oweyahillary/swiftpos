@@ -101,14 +101,14 @@ export default function CategoriesPage() {
           <h1 className="text-2xl font-bold text-white">{term('categories')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">Organise your products into categories · <span className="text-blue-400/70">shared across all branches</span></p>
         </div>
-        <button onClick={openNew} className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
+        <button onClick={openNew} className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
           + New category
         </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-swift border-t-transparent rounded-full animate-spin" />
         </div>
       ) : categories.length === 0 ? (
         <div className="text-center py-20 text-gray-500">
@@ -159,7 +159,7 @@ export default function CategoriesPage() {
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Beverages"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
               />
             </div>
 
@@ -183,7 +183,7 @@ export default function CategoriesPage() {
               <button onClick={() => setShowModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+              <button onClick={handleSave} disabled={saving} className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
                 {saving ? 'Saving…' : 'Save'}
               </button>
             </div>

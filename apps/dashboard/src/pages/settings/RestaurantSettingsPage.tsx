@@ -44,7 +44,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${checked ? 'bg-blue-600' : 'bg-gray-700'}`}
+      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${checked ? 'bg-swift-strong' : 'bg-gray-700'}`}
     >
       <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
     </button>
@@ -219,13 +219,13 @@ export default function RestaurantSettingsPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setBulkOpen(true)}
-              className="px-4 py-2 border border-gray-700 hover:border-blue-500/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
+              className="px-4 py-2 border border-gray-700 hover:border-swift/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
             >
               + Add multiple
             </button>
             <button
               onClick={() => setEditTable({ name: '', capacity: 4, sort_order: tables.length, slot_type: 'dining', zone: 'Main Hall', shape: 'rect' })}
-              className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+              className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
             >
               + Add Table
             </button>
@@ -269,7 +269,7 @@ export default function RestaurantSettingsPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
-              tab === t.key ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+              tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
           >
             {t.label}
@@ -289,13 +289,13 @@ export default function RestaurantSettingsPage() {
               <div className="flex items-center justify-center gap-2 mt-4">
                 <button
                   onClick={() => setEditTable({ name: '', capacity: 4, sort_order: 0, slot_type: 'dining', zone: 'Main Hall' })}
-                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+                  className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
                 >
                   + Add first table
                 </button>
                 <button
                   onClick={() => setBulkOpen(true)}
-                  className="px-4 py-2 border border-gray-700 hover:border-blue-500/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
+                  className="px-4 py-2 border border-gray-700 hover:border-swift/50 text-gray-300 text-sm font-semibold rounded-lg transition-colors"
                 >
                   Create several at once
                 </button>
@@ -324,7 +324,7 @@ export default function RestaurantSettingsPage() {
                       </div>
                       <div className="text-xs text-gray-500 text-center mb-2">👥 {table.capacity} covers</div>
                       <div className="flex gap-1.5 justify-center">
-                        <button onClick={() => setEditTable({ ...table })} className="px-2 py-1 text-[11px] text-blue-400 border border-gray-700 rounded-md hover:border-blue-500/50 transition-colors">Edit</button>
+                        <button onClick={() => setEditTable({ ...table })} className="px-2 py-1 text-[11px] text-swift-text border border-gray-700 rounded-md hover:border-swift/50 transition-colors">Edit</button>
                         <button onClick={() => deleteTable(table.id)} className="px-2 py-1 text-[11px] text-red-400 border border-red-500/20 rounded-md hover:bg-red-500/5 transition-colors">Del</button>
                       </div>
                     </div>
@@ -356,9 +356,9 @@ export default function RestaurantSettingsPage() {
               const active = (settings['restaurant_order_mode'] ?? 'pay_first') === opt.value;
               return (
                 <button key={opt.value} onClick={() => saveSetting('restaurant_order_mode', opt.value)}
-                  className={`text-left p-4 rounded-xl border-2 transition-colors cursor-pointer ${active ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700 bg-gray-950 hover:border-gray-600'}`}>
+                  className={`text-left p-4 rounded-xl border-2 transition-colors cursor-pointer ${active ? 'border-swift bg-swift/10' : 'border-gray-700 bg-gray-950 hover:border-gray-600'}`}>
                   <div className="text-2xl mb-2">{opt.icon}</div>
-                  <div className={`text-sm font-bold mb-1 ${active ? 'text-blue-400' : 'text-white'}`}>
+                  <div className={`text-sm font-bold mb-1 ${active ? 'text-swift-text' : 'text-white'}`}>
                     {opt.label}
                     {active && <span className="ml-2 text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full">Active</span>}
                   </div>
@@ -477,12 +477,12 @@ export default function RestaurantSettingsPage() {
               <input
                 type="number" min={1} max={100} value={bulkCount}
                 onChange={e => setBulkCount(Number(e.target.value))}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500"
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift"
               />
             </div>
             <div className="flex gap-2.5 pt-1">
               <button onClick={() => setBulkOpen(false)} className="flex-1 py-2.5 border border-gray-700 rounded-lg text-gray-400 text-sm hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={bulkCreate} disabled={saving} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
+              <button onClick={bulkCreate} disabled={saving} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
                 {saving ? 'Creating…' : `Create ${Math.max(1, Math.min(100, Math.floor(bulkCount || 0)))}`}
               </button>
             </div>
@@ -526,7 +526,7 @@ export default function RestaurantSettingsPage() {
                 {(['rect', 'circle'] as const).map(shape => (
                   <button key={shape} onClick={() => setEditTable(p => ({ ...p!, shape }))}
                     className={`flex-1 py-3 px-2 border-2 rounded-xl text-xs text-center cursor-pointer transition-colors ${
-                      editTable.shape === shape ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-gray-700 bg-gray-950 text-gray-500 hover:border-gray-600'
+                      editTable.shape === shape ? 'border-swift bg-swift/10 text-swift-text' : 'border-gray-700 bg-gray-950 text-gray-500 hover:border-gray-600'
                     }`}>
                     <div className={`mx-auto mb-1.5 border-2 border-current ${shape === 'circle' ? 'w-6 h-6 rounded-full' : 'w-6 h-4 rounded'}`} />
                     {shape === 'rect' ? 'Rectangle' : 'Round'}
@@ -543,7 +543,7 @@ export default function RestaurantSettingsPage() {
             </div>
             <div className="flex gap-2.5 mt-5">
               <button onClick={() => setEditTable(null)} className="flex-1 py-2.5 bg-transparent border border-gray-700 rounded-lg text-gray-400 text-sm cursor-pointer hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={saveTable} disabled={saving} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
+              <button onClick={saveTable} disabled={saving} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
                 {saving ? 'Saving…' : editTable.id ? 'Save changes' : 'Create table'}
               </button>
             </div>

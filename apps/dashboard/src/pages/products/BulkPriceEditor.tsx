@@ -171,7 +171,7 @@ export default function BulkPriceEditor({
                 {busy ? 'Working…' : 'Preview'}
               </button>
             : <button onClick={apply} disabled={busy || changing === 0}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 hover:bg-green-400 text-gray-950 disabled:opacity-50">
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-swift hover:bg-swift-light text-gray-950 disabled:opacity-50">
                 {busy ? 'Applying…' : `Apply to ${changing}`}
               </button>}
         </div>

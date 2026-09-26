@@ -97,7 +97,7 @@ export default function ManagerShiftTab({ currency }: { currency: string }) {
                       setReportMsg({ id: s.id, text: res.message }); setReportId(null);
                     }}
                     disabled={reportId === s.id}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50">
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-swift/50 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50">
                     {reportId === s.id ? 'Printing…' : 'Shift report'}
                   </button>
                   {canForceClose && (

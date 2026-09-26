@@ -87,7 +87,7 @@ export default function BulkIngredientImport({
       </p>
 
       <a
-        className="inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 mb-3 no-underline"
+        className="inline-flex items-center gap-1.5 text-sm text-swift-text hover:text-swift-text-hover mb-3 no-underline"
         href={`data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE)}`}
         download="swiftpos_ingredients_template.csv"
       >
@@ -159,7 +159,7 @@ export default function BulkIngredientImport({
         <button
           onClick={runImport}
           disabled={importing}
-          className="mt-2 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-semibold"
+          className="mt-2 px-4 py-2.5 rounded-xl bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white text-sm font-semibold"
         >
           {importing ? 'Importing…' : `Import ${rows.length} ingredient${rows.length !== 1 ? 's' : ''}`}
         </button>

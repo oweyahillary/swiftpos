@@ -95,7 +95,7 @@ const ALL_TABS = [
 function Spinner() {
   return (
     <div className="flex justify-center py-12">
-      <div className="w-6 h-6 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
+      <div className="w-6 h-6 border-2 border-gray-700 border-t-swift rounded-full animate-spin" />
     </div>
   );
 }
@@ -137,7 +137,7 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
       <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
         {presets.map(p => (
           <button key={p.label} onClick={() => { setActive(p.label); setFrom(p.f); setTo(p.t); }}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${active === p.label ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${active === p.label ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white'}`}>
             {p.label}
           </button>
         ))}
@@ -146,7 +146,7 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
         <div key={label} className="flex flex-col gap-1">
           <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
           <input type="date" value={val} onChange={e => { set(e.target.value); setActive(''); }}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift" />
         </div>
       ))}
       {loading && <span className="self-end pb-1.5 text-xs text-gray-500">Updating…</span>}
@@ -356,7 +356,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
     <div className="space-y-4">
       <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
-        className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+        className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && filtered.length === 0 && <Empty label="No items sold in this period." />}
@@ -516,7 +516,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
                 <tr key={r.staff_id} className="hover:bg-gray-800/30 transition-colors">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-xs font-bold flex-shrink-0">
+                      <div className="w-7 h-7 rounded-full bg-swift/20 border border-swift/30 flex items-center justify-center text-swift-text text-xs font-bold flex-shrink-0">
                         {(r.staff_name ?? '?').charAt(0).toUpperCase()}
                       </div>
                       <span className="text-white font-medium">{r.staff_name ?? 'Unknown'}</span>
@@ -892,7 +892,7 @@ export default function ManagerReportsPage() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === t.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              activeTab === t.id ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
             }`}>
             {t.label}
           </button>

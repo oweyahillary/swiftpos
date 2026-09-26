@@ -124,11 +124,11 @@ export default function BulkItemCodeModal({ onClose }: { onClose: () => void }) 
 
         <div className="flex gap-2 mb-5">
           <button onClick={() => setTab('category')}
-            className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'category' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+            className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'category' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>
             By category
           </button>
           <button onClick={() => setTab('csv')}
-            className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'csv' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+            className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'csv' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>
             CSV import / export
           </button>
         </div>
@@ -171,7 +171,7 @@ export default function BulkItemCodeModal({ onClose }: { onClose: () => void }) 
               Only fill products that don't have a code yet
             </label>
             <button onClick={applyByCategory} disabled={busy}
-              className="w-full px-4 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium">
+              className="w-full px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm font-medium">
               {busy ? 'Applying…' : 'Apply to scope'}
             </button>
           </div>
@@ -189,7 +189,7 @@ export default function BulkItemCodeModal({ onClose }: { onClose: () => void }) 
               <span className="block text-sm text-gray-400 mb-1.5">Import filled CSV</span>
               <input type="file" accept=".csv" disabled={busy}
                 onChange={e => { const f = e.target.files?.[0]; if (f) importCsv(f); }}
-                className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-green-600 file:text-white hover:file:bg-green-500" />
+                className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-swift-strong file:text-white hover:file:bg-swift-deep" />
             </label>
           </div>
         )}

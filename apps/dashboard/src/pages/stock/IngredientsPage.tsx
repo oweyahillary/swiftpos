@@ -250,7 +250,7 @@ export default function IngredientsPage() {
           {canManage && (
             <button
               onClick={openAdd}
-              className="px-4 py-2 bg-green-500 hover:bg-green-400 text-black text-sm font-semibold rounded-lg transition-colors"
+              className="px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg transition-colors"
             >+ Add Ingredient</button>
           )}
         </div>
@@ -263,12 +263,12 @@ export default function IngredientsPage() {
           placeholder="Search ingredients…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 w-56"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift w-56"
         />
         <select
           value={filterCat}
           onChange={e => setFilterCat(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
         >
           <option value="">All categories</option>
           {categories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -277,7 +277,7 @@ export default function IngredientsPage() {
           {['active', 'inactive', ''].map((s, idx) => (
             <button key={idx}
               onClick={() => setFilterStatus(s)}
-              className={`px-3 py-2 text-xs font-medium transition-colors ${filterStatus === s ? 'bg-green-500 text-black' : 'bg-gray-900 text-gray-400 hover:text-white'}`}
+              className={`px-3 py-2 text-xs font-medium transition-colors ${filterStatus === s ? 'bg-swift text-black' : 'bg-gray-900 text-gray-400 hover:text-white'}`}
             >{s === '' ? 'All' : s === 'active' ? 'Active' : 'Inactive'}</button>
           ))}
         </div>
@@ -342,7 +342,7 @@ export default function IngredientsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 justify-end transition-opacity">
-                        <button onClick={() => openMovements(i)} className="text-gray-500 hover:text-blue-400 text-xs transition-colors" title="History">History</button>
+                        <button onClick={() => openMovements(i)} className="text-gray-500 hover:text-swift-text-hover text-xs transition-colors" title="History">History</button>
                         {canManage && (
                           <>
                             <button onClick={() => openAdjust(i)} className="text-gray-500 hover:text-amber-400 text-xs transition-colors">Adjust</button>
@@ -377,7 +377,7 @@ export default function IngredientsPage() {
                   <label className="block text-gray-400 text-xs mb-1.5">Name <span className="text-red-400">*</span></label>
                   <input type="text" placeholder="e.g. Maize Flour, Kales, Cooking Oil…"
                     value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
 
@@ -385,7 +385,7 @@ export default function IngredientsPage() {
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Category</label>
                   <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500">
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
                     <option value="">— None —</option>
                     {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -395,7 +395,7 @@ export default function IngredientsPage() {
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Unit <span className="text-red-400">*</span></label>
                   <select value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500">
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
                     {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
@@ -405,7 +405,7 @@ export default function IngredientsPage() {
                   <label className="block text-gray-400 text-xs mb-1.5">Unit Cost ({currency})</label>
                   <input type="number" min="0" step="0.01" placeholder="0.00"
                     value={form.unit_cost} onChange={e => setForm(f => ({ ...f, unit_cost: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
 
@@ -414,7 +414,7 @@ export default function IngredientsPage() {
                   <label className="block text-gray-400 text-xs mb-1.5">Reorder Level</label>
                   <input type="number" min="0" step="0.01" placeholder="0"
                     value={form.reorder_level} onChange={e => setForm(f => ({ ...f, reorder_level: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
 
@@ -424,7 +424,7 @@ export default function IngredientsPage() {
                     <label className="block text-gray-400 text-xs mb-1.5">Opening Stock (current qty on hand)</label>
                     <input type="number" min="0" step="0.01" placeholder="0"
                       value={form.current_stock} onChange={e => setForm(f => ({ ...f, current_stock: e.target.value }))}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                     />
                   </div>
                 )}
@@ -436,7 +436,7 @@ export default function IngredientsPage() {
                       type="checkbox"
                       checked={form.is_packaging}
                       onChange={e => setForm(f => ({ ...f, is_packaging: e.target.checked }))}
-                      className="accent-green-500"
+                      className="accent-swift"
                     />
                     <span className="text-sm text-gray-300">This is a packaging item (box, basket, bag…)</span>
                   </label>
@@ -450,7 +450,7 @@ export default function IngredientsPage() {
                   <label className="block text-gray-400 text-xs mb-1.5">Notes (optional)</label>
                   <input type="text" placeholder="e.g. Keep refrigerated, buy from Wakulima…"
                     value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
               </div>
@@ -462,7 +462,7 @@ export default function IngredientsPage() {
             <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3">
               <button onClick={() => setModal(null)} className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
               <button onClick={save} disabled={saving}
-                className="px-5 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors">
+                className="px-5 py-2 bg-swift hover:bg-swift-light disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors">
                 {saving ? 'Saving…' : modal === 'add' ? 'Add Ingredient' : 'Save Changes'}
               </button>
             </div>
@@ -483,7 +483,7 @@ export default function IngredientsPage() {
               <div className="flex rounded-lg overflow-hidden border border-gray-700">
                 {(['add', 'remove', 'set'] as const).map(t => (
                   <button key={t} onClick={() => setAdjustType(t)}
-                    className={`flex-1 py-2 text-sm font-medium capitalize transition-colors ${adjustType === t ? 'bg-green-500 text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                    className={`flex-1 py-2 text-sm font-medium capitalize transition-colors ${adjustType === t ? 'bg-swift text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
                     {t}
                   </button>
                 ))}
@@ -496,14 +496,14 @@ export default function IngredientsPage() {
                 <input type="number" min="0" step="0.01" placeholder="0"
                   value={adjustQty} onChange={e => setAdjustQty(e.target.value)}
                   autoFocus
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
               <div>
                 <label className="block text-gray-400 text-xs mb-1.5">Reason (optional)</label>
                 <input type="text" placeholder="e.g. Spoilage, Stock count correction…"
                   value={adjustNote} onChange={e => setAdjustNote(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
               <div className="pt-1 border-t border-gray-800">
@@ -513,14 +513,14 @@ export default function IngredientsPage() {
                 </label>
                 <input type="number" min="0" step="0.01" placeholder="0"
                   value={adjustReorder} onChange={e => setAdjustReorder(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-800 flex gap-3">
               <button onClick={() => setAdjustTarget(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-lg transition-colors">Cancel</button>
               <button onClick={doAdjust} disabled={adjusting}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition-colors">
+                className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition-colors">
                 {adjusting ? 'Saving…' : 'Apply'}
               </button>
             </div>

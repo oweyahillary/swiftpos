@@ -13,6 +13,20 @@ module.exports = {
           500: 'rgb(var(--action-500) / <alpha-value>)',
           600: 'rgb(var(--action-600) / <alpha-value>)',
         },
+        // A329 step 3: the BACK OFFICE's own colour — a FIXED SwiftPOS teal, never the client's theme (A323 4b-2). Values
+        // live in src/index.css (one place). Fills never change with the mode; only the text shades do (400 on dark,
+        // 700 on white). Pick by job: `swift` fill + dark label · `swift-strong` fill + white label/knob/tick ·
+        // `swift-light` / `swift-deep` their hovers · `swift-text` / `swift-text-hover` text and links · `swift-logo` the
+        // wordmark. docs/A329-back-office-colour-classification.md.
+        swift: {
+          DEFAULT:      'rgb(var(--swift) / <alpha-value>)',
+          light:        'rgb(var(--swift-light) / <alpha-value>)',
+          strong:       'rgb(var(--swift-strong) / <alpha-value>)',
+          deep:         'rgb(var(--swift-deep) / <alpha-value>)',
+          logo:         'rgb(var(--swift-logo) / <alpha-value>)',
+          text:         'rgb(var(--swift-text) / <alpha-value>)',
+          'text-hover': 'rgb(var(--swift-text-hover) / <alpha-value>)',
+        },
         brand: {
           50:  '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0',
           300: '#86efac', 400: '#4ade80', 500: '#22c55e',

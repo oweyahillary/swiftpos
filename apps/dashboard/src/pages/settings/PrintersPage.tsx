@@ -58,7 +58,7 @@ function QZStatus({ status }: { status: QZStatus }) {
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button onClick={onChange}
-      className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-green-500' : 'bg-gray-700'}`}>
+      className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-swift-strong' : 'bg-gray-700'}`}>
       <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-5' : ''}`} />
     </button>
   );
@@ -96,7 +96,7 @@ function HardwareFields({
         <div className="flex rounded-lg overflow-hidden border border-gray-700">
           {([58, 80] as const).map(w => (
             <button key={w} onClick={() => setForm(f => ({ ...f, paper_width: w }))}
-              className={`flex-1 py-2 text-sm font-medium transition-colors ${form.paper_width === w ? 'bg-green-500 text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${form.paper_width === w ? 'bg-swift text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
               {w}mm
             </button>
           ))}
@@ -109,7 +109,7 @@ function HardwareFields({
         <div className="flex rounded-lg overflow-hidden border border-gray-700">
           {(['browser', 'qz'] as const).map(ct => (
             <button key={ct} onClick={() => setForm(f => ({ ...f, connection_type: ct }))}
-              className={`flex-1 py-2 text-sm font-medium transition-colors ${form.connection_type === ct ? 'bg-green-500 text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${form.connection_type === ct ? 'bg-swift text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
               {ct === 'qz' ? '⚡ Print Server' : '🌐 Browser dialog'}
             </button>
           ))}
@@ -127,14 +127,14 @@ function HardwareFields({
         </label>
         {qzStatus === 'connected' && qzPrinters.length > 0 ? (
           <select value={form.printer_name} onChange={e => setForm(f => ({ ...f, printer_name: e.target.value }))}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-green-500">
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift">
             <option value="">— Select printer —</option>
             {qzPrinters.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         ) : (
           <input type="text" placeholder="e.g. EPSON TM-T20III"
             value={form.printer_name} onChange={e => setForm(f => ({ ...f, printer_name: e.target.value }))}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm font-mono placeholder-gray-600 focus:outline-none focus:border-green-500" />
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm font-mono placeholder-gray-600 focus:outline-none focus:border-swift" />
         )}
         <p className="text-gray-600 text-xs mt-1">
           {qzStatus === 'connected' ? 'Printers detected from your device.' : 'Must match the exact name in your OS printer list.'}
@@ -417,7 +417,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                 type="password" value={pairToken}
                 onChange={e => { setPairToken(e.target.value); setPrintToken(e.target.value); }}
                 placeholder="Only needed for an untrusted domain"
-                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-green-500" />
+                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-swift" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Receipt printer</label>
@@ -425,7 +425,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                 <select
                   value={rxSettings.receiptPrinterName ?? ''}
                   onChange={e => saveRxSettings({ receiptPrinterName: e.target.value })}
-                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-green-500">
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift">
                   <option value="">— browser dialog (no silent print) —</option>
                   {qzPrinters.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
@@ -434,7 +434,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                   type="text" value={rxSettings.receiptPrinterName ?? ''}
                   onChange={e => saveRxSettings({ receiptPrinterName: e.target.value })}
                   placeholder="Exact Windows printer name (e.g. EPSON TM-T20)"
-                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-green-500" />
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift" />
               )}
             </div>
           </div>
@@ -485,7 +485,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                           <span className="text-xs text-gray-400 truncate">{existing.printer_name || 'Browser dialog'}</span>
                         </div>
                         <div className="text-xs text-gray-600">{existing.paper_width}mm · {existing.connection_type === 'qz' ? 'Print Server' : 'Browser'}</div>
-                        <div className="text-xs text-blue-400 mt-1">Click to edit →</div>
+                        <div className="text-xs text-swift-text mt-1">Click to edit →</div>
                       </div>
                     ) : (
                       <div className="text-xs text-gray-600">Not configured — click to set up</div>
@@ -507,7 +507,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
               </div>
               <button
                 onClick={openAddStation}
-                className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+                className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
               >
                 + Add Station
               </button>
@@ -518,7 +518,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                 <div className="text-3xl mb-2">🖨️</div>
                 <p className="text-sm text-gray-500">No station printers yet</p>
                 <p className="text-xs text-gray-600 mt-1">Add a Kitchen, Beverages, or custom station to route KOTs to specific printers.</p>
-                <button onClick={openAddStation} className="mt-4 text-xs text-blue-400 hover:text-blue-300 transition-colors">+ Add first station →</button>
+                <button onClick={openAddStation} className="mt-4 text-xs text-swift-text hover:text-swift-text-hover transition-colors">+ Add first station →</button>
               </div>
             ) : (
               <div className="space-y-3">
@@ -624,7 +624,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
               <div className="flex gap-3">
                 <button onClick={() => setFoModal(null)} className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
                 <button onClick={saveFo} disabled={saving}
-                  className="px-5 py-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors">
+                  className="px-5 py-2 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors">
                   {saving ? 'Saving…' : foEditId ? 'Save changes' : 'Add printer'}
                 </button>
               </div>
@@ -656,12 +656,12 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                         }}
                         className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-colors ${
                           stType === st.type
-                            ? 'border-blue-500 bg-blue-500/10'
+                            ? 'border-swift bg-swift/10'
                             : 'border-gray-700 bg-gray-800 hover:border-gray-600'
                         }`}>
                         <span className="text-xl">{st.icon}</span>
                         <div>
-                          <p className={`text-sm font-semibold ${stType === st.type ? 'text-blue-400' : 'text-white'}`}>{st.label}</p>
+                          <p className={`text-sm font-semibold ${stType === st.type ? 'text-swift-text' : 'text-white'}`}>{st.label}</p>
                           <p className="text-xs text-gray-500">{st.hint}</p>
                         </div>
                       </button>
@@ -675,7 +675,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Station name</label>
                 <input type="text" placeholder="e.g. Kitchen, Grill, Hot Drinks"
                   value={stName} onChange={e => setStName(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift" />
               </div>
 
               {/* Category selector */}
@@ -691,7 +691,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
                       <button key={cat.id} onClick={() => toggleCat(cat.id)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
                           stCats.includes(cat.id)
-                            ? 'bg-blue-500/15 border-blue-500 text-blue-400'
+                            ? 'bg-swift/15 border-swift text-swift-text'
                             : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'
                         }`}>
                         {cat.name}
@@ -726,7 +726,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
             <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3 flex-shrink-0">
               <button onClick={() => setStModal(false)} className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
               <button onClick={saveSt} disabled={saving}
-                className="px-5 py-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors">
+                className="px-5 py-2 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors">
                 {saving ? 'Saving…' : stEditId ? 'Save changes' : 'Add station'}
               </button>
             </div>

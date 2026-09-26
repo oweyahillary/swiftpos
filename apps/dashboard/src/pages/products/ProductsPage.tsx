@@ -308,18 +308,18 @@ export default function ProductsPage() {
           <button onClick={openBulkCost} className="bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors">
             Set costs
           </button>
-          <button onClick={openNew} className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
+          <button onClick={openNew} className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors">
             + New product
           </button>
         </div>
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 mb-4 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-2">
-          <span className="text-sm text-green-300 font-medium">{selectedIds.size} selected</span>
+        <div className="flex items-center gap-3 mb-4 bg-swift/10 border border-swift/30 rounded-lg px-4 py-2">
+          <span className="text-sm text-swift-text font-medium">{selectedIds.size} selected</span>
           <button
             onClick={() => { setBulkPriceIds(Array.from(selectedIds)); setShowBulkPrice(true); }}
-            className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
+            className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
             Change price
           </button>
           <button
@@ -343,12 +343,12 @@ export default function ProductsPage() {
           placeholder={`Search ${lower('products')}…`}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors w-64"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-64"
         />
         <select
           value={filterCategory}
           onChange={e => setFilterCategory(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-swift transition-colors"
         >
           <option value="">All categories</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -434,13 +434,13 @@ export default function ProductsPage() {
                           if (e.key === 'Escape') { priceCancel.current = true; e.currentTarget.blur(); }
                         }}
                         onBlur={() => savePrice(p)}
-                        className="w-24 bg-gray-800 border border-green-500 rounded px-2 py-1 text-white text-sm focus:outline-none"
+                        className="w-24 bg-gray-800 border border-swift rounded px-2 py-1 text-white text-sm focus:outline-none"
                       />
                     ) : (
                       <button
                         onClick={() => { setEditPriceId(p.id); setPriceDraft(String(p.base_price)); }}
                         title="Click to edit price"
-                        className="text-white hover:text-green-400 decoration-dotted hover:underline"
+                        className="text-white hover:text-swift-text-hover decoration-dotted hover:underline"
                       >
                         {currency} {Number(p.base_price).toLocaleString()}
                       </button>
@@ -464,7 +464,7 @@ export default function ProductsPage() {
                       {!isPetrol && (
                         <button
                           onClick={() => setDrawerProduct(p)}
-                          className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+                          className="text-xs text-swift-text hover:text-swift-text-hover px-2 py-1 rounded hover:bg-gray-700 transition-colors"
                         >
                           Variants
                         </button>
@@ -473,7 +473,7 @@ export default function ProductsPage() {
                         <button
                           onClick={() => setRecipeProduct(p)}
                           className={`text-xs px-2 py-1 rounded hover:bg-gray-700 transition-colors ${
-                            productRecipes.has(p.id) ? 'text-green-400 hover:text-green-300' : 'text-gray-400 hover:text-white'
+                            productRecipes.has(p.id) ? 'text-swift-text hover:text-swift-text-hover' : 'text-gray-400 hover:text-white'
                           }`}
                         >
                           {productRecipes.has(p.id) ? '🧂 Recipe' : 'Recipe'}
@@ -525,7 +525,7 @@ export default function ProductsPage() {
               <label className="block text-sm text-gray-400 mb-1.5">Image</label>
               <div
                 onClick={() => fileRef.current?.click()}
-                className="w-full h-32 bg-gray-800 border border-gray-700 border-dashed rounded-lg flex items-center justify-center cursor-pointer hover:border-green-500 transition-colors overflow-hidden"
+                className="w-full h-32 bg-gray-800 border border-gray-700 border-dashed rounded-lg flex items-center justify-center cursor-pointer hover:border-swift transition-colors overflow-hidden"
               >
                 {imagePreview ? (
                   <img src={imagePreview} alt="preview" className="w-full h-full object-cover rounded-lg" />
@@ -546,7 +546,7 @@ export default function ProductsPage() {
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder={isPetrol ? 'e.g. Super Petrol' : isFood ? 'e.g. Chicken Burger' : 'e.g. Product name'}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
               />
             </div>
 
@@ -557,7 +557,7 @@ export default function ProductsPage() {
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="Short description…"
                 rows={2}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors resize-none"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors resize-none"
               />
             </div>
 
@@ -572,7 +572,7 @@ export default function ProductsPage() {
                   onChange={e => setForm(f => ({ ...f, base_price: e.target.value }))}
                   placeholder="0"
                   min="0"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
                 />
               </div>
               <div>
@@ -585,7 +585,7 @@ export default function ProductsPage() {
                   onChange={e => setForm(f => ({ ...f, cost_price: e.target.value }))}
                   placeholder="0"
                   min="0"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
                 />
                 {form.base_price && form.cost_price && parseFloat(form.base_price) > 0 && (
                   <p className="text-[11px] text-gray-500 mt-1">
@@ -598,7 +598,7 @@ export default function ProductsPage() {
                 <select
                   value={form.category_id}
                   onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-green-500 transition-colors"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors"
                 >
                   <option value="">None</option>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -613,7 +613,7 @@ export default function ProductsPage() {
                 <select
                   value={form.tax_type}
                   onChange={e => setForm(f => ({ ...f, tax_type: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-green-500 transition-colors"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors"
                 >
                   <option value="A">A — Exempt</option>
                   <option value="B">B — 16% (Standard)</option>
@@ -629,7 +629,7 @@ export default function ProductsPage() {
                   value={form.kra_item_class_code}
                   onChange={e => setForm(f => ({ ...f, kra_item_class_code: e.target.value }))}
                   placeholder="e.g. 50161509"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
                 />
               </div>
             </div>
@@ -637,7 +637,7 @@ export default function ProductsPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setForm(f => ({ ...f, track_stock: !f.track_stock }))}
-                className={`w-10 h-5 rounded-full transition-colors relative ${form.track_stock ? 'bg-green-500' : 'bg-gray-700'}`}
+                className={`w-10 h-5 rounded-full transition-colors relative ${form.track_stock ? 'bg-swift-strong' : 'bg-gray-700'}`}
               >
                 <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${form.track_stock ? 'left-5' : 'left-0.5'}`} />
               </button>
@@ -653,7 +653,7 @@ export default function ProductsPage() {
                   <button
                     type="button"
                     onClick={() => setForm(f => ({ ...f, is_fuel: !f.is_fuel, sold_by: !f.is_fuel ? 'volume' : 'each' }))}
-                    className={`w-10 h-5 rounded-full transition-colors relative ${form.is_fuel ? 'bg-green-500' : 'bg-gray-700'}`}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${form.is_fuel ? 'bg-swift-strong' : 'bg-gray-700'}`}
                   >
                     <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${form.is_fuel ? 'left-5' : 'left-0.5'}`} />
                   </button>
@@ -665,7 +665,7 @@ export default function ProductsPage() {
                     <select
                       value={form.fuel_unit}
                       onChange={e => setForm(f => ({ ...f, fuel_unit: e.target.value }))}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-swift transition-colors"
                     >
                       <option value="L">Litre (L)</option>
                       <option value="kg">Kilogram (kg)</option>
@@ -684,7 +684,7 @@ export default function ProductsPage() {
               <button onClick={() => setShowModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+              <button onClick={handleSave} disabled={saving} className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
                 {uploading ? 'Uploading…' : saving ? 'Saving…' : 'Save'}
               </button>
             </div>
@@ -741,7 +741,7 @@ export default function ProductsPage() {
                         value={costStr}
                         onChange={e => setBulkCosts(m => ({ ...m, [p.id]: e.target.value }))}
                         placeholder="0"
-                        className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                        className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                       />
                     </div>
                   </div>
@@ -758,7 +758,7 @@ export default function ProductsPage() {
               <button onClick={() => setShowBulkCost(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
                 Cancel
               </button>
-              <button onClick={saveBulkCost} disabled={bulkSaving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+              <button onClick={saveBulkCost} disabled={bulkSaving} className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
                 {bulkSaving ? 'Saving…' : 'Save costs'}
               </button>
             </div>

@@ -62,7 +62,7 @@ export default function ManagerMenuTab({ currency }: { currency: string }) {
       <input
         value={q} onChange={e => setQ(e.target.value)}
         placeholder="Search products or categories…"
-        className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
+        className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-swift placeholder-gray-600"
       />
 
       {error && <p className="text-red-400 text-sm">{error}</p>}

@@ -149,7 +149,7 @@ export default function CreditAccountsPage() {
                   <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{fmt(c.credit_balance)}</td>
                   <td className="p-3 text-right text-gray-300">{fmt(c.available_credit)}</td>
                   <td className="p-3 text-right">
-                    <button onClick={() => openCustomer(c)} className="text-green-400 hover:text-green-300 text-xs">Manage →</button>
+                    <button onClick={() => openCustomer(c)} className="text-swift-text hover:text-swift-text-hover text-xs">Manage →</button>
                   </td>
                 </tr>
               ))}
@@ -187,7 +187,7 @@ export default function CreditAccountsPage() {
                 <input type="number" value={limit} onChange={e => setLimit(e.target.value)} min={0}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white" />
               </div>
-              <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
+              <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
             </div>
 
             {/* Record payment */}
@@ -203,7 +203,7 @@ export default function CreditAccountsPage() {
                 <input value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="Ref (optional)"
                   className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
               </div>
-              <button onClick={recordPayment} disabled={busy} className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg text-sm">Record payment</button>
+              <button onClick={recordPayment} disabled={busy} className="px-4 py-2 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Record payment</button>
             </div>
 
             {/* Adjustment */}

@@ -141,11 +141,11 @@ const TAB_LIST = [
 function KpiCard({ label, value, sub, accent = false }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
     <div className={`rounded-xl p-4 border ${accent
-      ? 'bg-blue-600 border-blue-700'
+      ? 'bg-swift-strong border-swift-strong'
       : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
-      <p className={`text-xs font-medium uppercase tracking-wide mb-1 ${accent ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
+      <p className={`text-xs font-medium uppercase tracking-wide mb-1 ${accent ? 'text-teal-100' : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
       <p className={`text-xl font-semibold tabular-nums ${accent ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{value}</p>
-      {sub && <p className={`text-xs mt-0.5 ${accent ? 'text-blue-100' : 'text-gray-400'}`}>{sub}</p>}
+      {sub && <p className={`text-xs mt-0.5 ${accent ? 'text-teal-100' : 'text-gray-400'}`}>{sub}</p>}
     </div>
   );
 }
@@ -189,7 +189,7 @@ function DateRangeBar({ range, onChange, branches, branchId, onBranchChange }: {
       <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
         {presets.map(p => (
           <button key={p.label} onClick={() => onChange({ from: p.from, to: p.to })}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${range.from === p.from && range.to === p.to ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${range.from === p.from && range.to === p.to ? 'bg-swift-strong text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
             {p.label}
           </button>
         ))}
@@ -1939,7 +1939,7 @@ export default function ReportsPage() {
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`whitespace-nowrap text-sm px-4 py-2.5 border-b-2 transition-colors flex-shrink-0 ${
               activeTab === t.id
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400 font-medium'
+                ? 'border-swift-strong text-swift-text dark:text-swift-text font-medium'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
             }`}>{t.label}
           </button>

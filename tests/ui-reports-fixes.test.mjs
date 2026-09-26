@@ -86,7 +86,7 @@ ok('A259b: staff report attributes via shift.cashier_id when the order cashier i
 ok('A263: report period selector — one active preset, no Apply button, Today default', () => {
   const rp = r('apps/dashboard/src/pages/manager/ManagerReportsPage.tsx');
   assert.match(rp, /const \[active, setActive\] = useState<string>/);
-  assert.match(rp, /active === p\.label \? 'bg-blue-600 text-white'/);
+  assert.match(rp, /active === p\.label \? 'bg-swift-strong text-white'/);   // A329: the active preset is SwiftPOS teal (was blue-600)
   assert.doesNotMatch(rp, /'Apply'/);                                   // Apply button gone (auto-applies)
   assert.doesNotMatch(rp, /useState\(weekAgo\(\)\)/);               // Today is the default range
 });

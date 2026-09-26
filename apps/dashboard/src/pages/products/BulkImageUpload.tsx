@@ -145,7 +145,7 @@ export default function BulkImageUpload({
             <button
               onClick={upload}
               disabled={uploading || matchedCount === 0}
-              className="mt-3 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-semibold"
+              className="mt-3 px-4 py-2.5 rounded-xl bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white text-sm font-semibold"
             >
               {uploading ? `Uploading ${progress}/${matchedCount}…` : `Upload ${matchedCount} image${matchedCount !== 1 ? 's' : ''}`}
             </button>

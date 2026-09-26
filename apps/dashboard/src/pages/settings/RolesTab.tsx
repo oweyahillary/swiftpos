@@ -106,7 +106,7 @@ export default function RolesTab({ onRolesChange }: Props) {
           <p className="text-gray-500 text-sm">Define what each role can access. Expand a role to edit its permissions.</p>
         </div>
         <button onClick={() => setShowNewRole(!showNewRole)}
-          className="px-4 py-2 bg-green-500 hover:bg-green-400 text-gray-950 text-sm font-semibold rounded-xl transition-colors">
+          className="px-4 py-2 bg-swift hover:bg-swift-light text-gray-950 text-sm font-semibold rounded-xl transition-colors">
           + New Role
         </button>
       </div>
@@ -120,13 +120,13 @@ export default function RolesTab({ onRolesChange }: Props) {
                 <label className="block text-xs text-gray-400 mb-1">Role Name</label>
                 <input value={newName} onChange={e => setNewName(e.target.value)}
                   placeholder="e.g. Supervisor"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Description (optional)</label>
                 <input value={newDesc} onChange={e => setNewDesc(e.target.value)}
                   placeholder="What this role does"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
             </div>
           </div>
@@ -153,7 +153,7 @@ export default function RolesTab({ onRolesChange }: Props) {
               Cancel
             </button>
             <button onClick={createRole} disabled={creating || !newName.trim()}
-              className="px-4 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-gray-950 text-sm font-semibold rounded-lg transition-colors">
+              className="px-4 py-2 bg-swift hover:bg-swift-light disabled:opacity-50 text-gray-950 text-sm font-semibold rounded-lg transition-colors">
               {creating ? 'Creating…' : 'Create Role'}
             </button>
           </div>
@@ -198,7 +198,7 @@ export default function RolesTab({ onRolesChange }: Props) {
                       className={`px-5 py-2 rounded-xl text-sm font-semibold transition-colors ${
                         saved === role.id
                           ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                          : 'bg-green-500 hover:bg-green-400 text-gray-950'
+                          : 'bg-swift hover:bg-swift-light text-gray-950'
                       }`}>
                       {saving === role.id ? 'Saving…' : saved === role.id ? '✓ Saved' : 'Save Changes'}
                     </button>
@@ -235,7 +235,7 @@ function PermissionGrid({ permissions, modules, checked, onToggle, onToggleAll }
             <div className="flex items-center gap-3 mb-2">
               <button onClick={() => onToggleAll(modIds)}
                 className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                  allChecked ? 'bg-green-500 border-green-500' : someChecked ? 'bg-green-500/30 border-green-500/50' : 'border-gray-600'
+                  allChecked ? 'bg-swift-strong border-swift-strong' : someChecked ? 'bg-swift/30 border-swift/50' : 'border-gray-600'
                 }`}>
                 {(allChecked || someChecked) && <span className="text-white text-xs font-bold">{allChecked ? '✓' : '−'}</span>}
               </button>
@@ -246,12 +246,12 @@ function PermissionGrid({ permissions, modules, checked, onToggle, onToggleAll }
                 <label key={perm.id}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
                     checked.has(perm.id)
-                      ? 'border-green-500/40 bg-green-500/8 text-white'
+                      ? 'border-swift/40 bg-swift/8 text-white'
                       : 'border-gray-700 text-gray-500 hover:border-gray-500'
                   }`}>
                   <div onClick={() => onToggle(perm.id)}
                     className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      checked.has(perm.id) ? 'bg-green-500 border-green-500' : 'border-gray-600'
+                      checked.has(perm.id) ? 'bg-swift-strong border-swift-strong' : 'border-gray-600'
                     }`}>
                     {checked.has(perm.id) && <span className="text-white text-xs font-bold">✓</span>}
                   </div>

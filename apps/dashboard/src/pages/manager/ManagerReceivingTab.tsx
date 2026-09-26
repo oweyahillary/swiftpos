@@ -299,7 +299,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Send stock to another branch</h3>
             <button onClick={() => { setShowNew(v => !v); setSendError(''); }}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep text-white transition-colors">
               {showNew ? 'Close' : 'New transfer'}
             </button>
           </div>
@@ -313,7 +313,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">To</label>
                 <select value={destId} onChange={e => setDestId(e.target.value)}
-                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500">
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift">
                   <option value="">Choose a branch…</option>
                   {branchList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
@@ -322,7 +322,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Items</label>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products…"
-                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-blue-500" />
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-swift" />
                 <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
                   {stockList
                     .filter(p => p.name.toLowerCase().includes(search.trim().toLowerCase()))
@@ -335,7 +335,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                         <input type="number" min={0} max={p.stock} step="any" value={sendQty[p.id] ?? ''}
                           onChange={e => setSendQty(prev => ({ ...prev, [p.id]: e.target.value }))}
                           placeholder="0" disabled={p.stock <= 0}
-                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right disabled:opacity-40 focus:outline-none focus:border-blue-500" />
+                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right disabled:opacity-40 focus:outline-none focus:border-swift" />
                       </div>
                     ))}
                 </div>
@@ -345,7 +345,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 <button onClick={() => { setShowNew(false); setSendError(''); }} disabled={sendBusy}
                   className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">Cancel</button>
                 <button onClick={() => void createTransfer()} disabled={sendBusy}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors">
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors">
                   {sendBusy ? 'Creating…' : 'Create transfer'}
                 </button>
               </div>
@@ -402,7 +402,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                       </div>
                       {!editing && (
                         <button onClick={() => openTransfer(t)}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors">
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep text-white transition-colors">
                           Receive
                         </button>
                       )}
@@ -430,14 +430,14 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                               type="number" min={0} max={it.quantity} step="any"
                               value={rxLines[it.product_id] ?? ''}
                               onChange={e => setRxLines(prev => ({ ...prev, [it.product_id]: e.target.value }))}
-                              className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-green-500" />
+                              className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-swift" />
                           </div>
                         ))}
                         <textarea
                           value={rxNote} onChange={e => setRxNote(e.target.value)}
                           placeholder="Note (optional) — e.g. 2 units short, one carton damaged in transit"
                           rows={2}
-                          className="w-full bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-green-500" />
+                          className="w-full bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-swift" />
                         {rxError && <p className="text-red-400 text-xs">{rxError}</p>}
                         <div className="flex gap-2 justify-end">
                           <button onClick={() => setRxTarget(null)} disabled={rxBusy}
@@ -449,7 +449,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                             {rxBusy ? 'Receiving…' : 'Confirm received'}
                           </button>
                           <button onClick={() => void submitTransfer(true)} disabled={rxBusy}
-                            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors">
+                            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors">
                             {rxBusy ? 'Receiving…' : 'Confirm & print'}
                           </button>
                         </div>
@@ -468,7 +468,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Supplier deliveries</h3>
             <button onClick={() => void openNewPO()}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep text-white transition-colors">
               New PO
             </button>
           </div>
@@ -486,7 +486,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                       <p className="text-gray-500 text-xs">{po.suppliers?.name ?? 'Supplier'} · {po.purchase_order_items.length} item(s){po.status === 'partial' ? ' · partially received' : ''}</p>
                     </div>
                     <button onClick={() => openDelivery(po)}
-                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors">
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep text-white transition-colors">
                       Receive delivery
                     </button>
                   </div>
@@ -508,7 +508,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Supplier (optional)</label>
                   <select value={poSupplier} onChange={e => setPoSupplier(e.target.value)}
-                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500">
+                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift">
                     <option value="">— none —</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
@@ -516,14 +516,14 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Expected date (optional)</label>
                   <input type="date" value={poExpected} onChange={e => setPoExpected(e.target.value)}
-                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                    className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift" />
                 </div>
               </div>
 
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Ingredients</label>
                 <input value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="Search ingredients…"
-                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-blue-500" />
+                  className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm mb-1 focus:outline-none focus:border-swift" />
                 <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-[10px] uppercase tracking-wider text-gray-600 px-1">
                   <span>Ingredient</span><span className="text-right">Qty</span><span className="text-right pr-1">Unit cost</span>
                 </div>
@@ -535,24 +535,24 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                         <span className="text-gray-300 truncate">{g.name}{g.unit ? <span className="text-gray-600"> ({g.unit})</span> : null}</span>
                         <input type="number" min={0} step="any" value={poLines[g.id]?.qty ?? ''} placeholder="0"
                           onChange={e => setPoLines(prev => ({ ...prev, [g.id]: { qty: e.target.value, cost: prev[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '') } }))}
-                          className="w-16 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-blue-500" />
+                          className="w-16 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-swift" />
                         <input type="number" min={0} step="any" value={poLines[g.id]?.cost ?? (g.unit_cost != null ? String(g.unit_cost) : '')} placeholder="0.00"
                           onChange={e => setPoLines(prev => ({ ...prev, [g.id]: { qty: prev[g.id]?.qty ?? '', cost: e.target.value } }))}
-                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-blue-500" />
+                          className="w-20 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-right focus:outline-none focus:border-swift" />
                       </div>
                     ))}
                 </div>
               </div>
 
               <textarea value={poNotes} onChange={e => setPoNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
-                className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
 
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setShowNewPO(false)} disabled={poBusy}
                 className="text-xs px-3 py-1.5 rounded-lg text-gray-400 hover:text-white disabled:opacity-40 transition-colors">Cancel</button>
               <button onClick={() => void createPO()} disabled={poBusy}
-                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors">
+                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors">
                 {poBusy ? 'Creating…' : 'Create & order'}
               </button>
             </div>
@@ -577,14 +577,14 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                     </div>
                     <input inputMode="decimal" value={lines[i.ingredient_id] ?? ''}
                       onChange={e => setLines(prev => ({ ...prev, [i.ingredient_id]: e.target.value }))}
-                      className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-green-500" />
+                      className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-swift" />
                   </div>
                 );
               })}
             </div>
             <textarea value={grnNote} onChange={e => setGrnNote(e.target.value)} rows={2}
               placeholder="Note (optional) — e.g. 2kg short, one bag torn"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm mt-3 focus:outline-none focus:border-green-500" />
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm mt-3 focus:outline-none focus:border-swift" />
             <div className="flex gap-2 mt-4">
               <button onClick={() => setTarget(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2.5 rounded-lg transition-colors">Cancel</button>
               <button onClick={() => void submitDelivery(false)} disabled={grnBusy}
@@ -592,7 +592,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                 {grnBusy ? 'Receiving…' : 'Confirm received'}
               </button>
               <button onClick={() => void submitDelivery(true)} disabled={grnBusy}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors">
+                className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors">
                 {grnBusy ? 'Receiving…' : 'Confirm & print'}
               </button>
             </div>

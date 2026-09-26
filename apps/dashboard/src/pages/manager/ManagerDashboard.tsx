@@ -881,7 +881,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
         </div>
         {canManage && (
           <button onClick={() => setShowForm(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-colors">
+            className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-semibold rounded-xl transition-colors">
             + Add Expense
           </button>
         )}
@@ -891,7 +891,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
           <div key={label} className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</label>
             <input type="date" value={val} onChange={e => set(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
           </div>
         ))}
         <button onClick={() => load(from, to)} disabled={loading}
@@ -930,25 +930,25 @@ function POSExpensesTab({ currency }: { currency: string }) {
             <div>
               <label className="block text-sm text-gray-400 mb-1">Description</label>
               <input value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="e.g. Cleaning supplies"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Amount ({currency})</label>
                 <input type="number" min="0" value={formAmount} onChange={e => setFormAmount(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Date</label>
                 <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
             </div>
             {categories.length > 0 && (
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Category (optional)</label>
                 <select value={formCat} onChange={e => setFormCat(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
                   <option value="">— None —</option>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -959,7 +959,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
               <button onClick={() => { setShowForm(false); setFormError(''); }}
                 className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm transition-colors">Cancel</button>
               <button onClick={handleAdd} disabled={formLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
+                className="flex-1 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
                 {formLoading ? 'Saving…' : 'Save'}
               </button>
             </div>
@@ -975,7 +975,7 @@ function POSExpensesTab({ currency }: { currency: string }) {
 function BranchLoading() {
   return (
     <div className="flex items-center justify-center py-20 gap-3 text-gray-500 text-sm">
-      <span className="inline-block w-4 h-4 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+      <span className="inline-block w-4 h-4 border-2 border-gray-600 border-t-swift rounded-full animate-spin" />
       Syncing branch…
     </div>
   );
@@ -1087,7 +1087,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                   <td className="p-3 text-right text-gray-300">{fmt(c.credit_limit)}</td>
                   <td className={`p-3 text-right font-medium ${Number(c.credit_balance) > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{fmt(c.credit_balance)}</td>
                   <td className="p-3 text-right text-gray-300">{fmt(c.available_credit)}</td>
-                  <td className="p-3 text-right"><button onClick={() => openCustomer(c)} className="text-green-400 hover:text-green-300 text-xs">Manage →</button></td>
+                  <td className="p-3 text-right"><button onClick={() => openCustomer(c)} className="text-swift-text hover:text-swift-text-hover text-xs">Manage →</button></td>
                 </tr>
               ))}
             </tbody>
@@ -1113,7 +1113,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                 <div className="flex items-end gap-2 mb-4">
                   <div className="flex-1"><label className="block text-sm text-gray-400 mb-1.5">Credit limit</label>
                     <input type="number" value={limit} onChange={e => setLimit(e.target.value)} min={0} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white" /></div>
-                  <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
+                  <button onClick={saveLimit} disabled={busy} className="px-4 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Save</button>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
                   <p className="text-white font-medium text-sm mb-3">Record repayment</p>
@@ -1122,7 +1122,7 @@ function ManagerCreditTab({ currency }: { currency: string }) {
                     <select value={payMethod} onChange={e => setPayMethod(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white"><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="card">Card</option></select>
                     <input value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="Ref (optional)" className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600" />
                   </div>
-                  <button onClick={recordPayment} disabled={busy} className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg text-sm">Record payment</button>
+                  <button onClick={recordPayment} disabled={busy} className="px-4 py-2 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 text-white rounded-lg text-sm">Record payment</button>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-4 mb-5">
                   <p className="text-white font-medium text-sm mb-1">Manual adjustment</p>
@@ -1192,8 +1192,8 @@ function ManagerTurnoverTab() {
     <div className="space-y-4">
       <div><h2 className="text-xl font-bold text-white">Table Turnover</h2><p className="text-gray-500 text-sm mt-0.5">Live dwell time and average turnover for {session?.branchName}</p></div>
       <div className="flex gap-2">
-        <button onClick={() => setTab('live')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'live' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Live tables</button>
-        <button onClick={() => setTab('report')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Turnover report</button>
+        <button onClick={() => setTab('live')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'live' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Live tables</button>
+        <button onClick={() => setTab('report')} className={`px-3 py-1.5 rounded-lg text-sm ${tab === 'report' ? 'bg-swift-strong text-white' : 'bg-gray-800 text-gray-400'}`}>Turnover report</button>
       </div>
       {tab === 'live' ? (
         loading ? <p className="text-gray-500">Loading…</p> : live.length === 0 ? <p className="text-gray-500">No occupied dine-in tables right now.</p> : (
@@ -1315,7 +1315,7 @@ export default function ManagerDashboard() {
     <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
       <aside className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-56' : 'w-16'}`}>
         <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-800 flex-shrink-0">
-          <span className="flex-shrink-0 text-blue-400"><Icon d={I.logo} size={20} /></span>
+          <span className="flex-shrink-0 text-swift-text"><Icon d={I.logo} size={20} /></span>
           {sidebarOpen && (
             <div className="min-w-0">
               <p className="text-sm font-bold text-white truncate">{session.branchName}</p>
@@ -1338,7 +1338,7 @@ export default function ManagerDashboard() {
                     title={!sidebarOpen ? item.title : undefined}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                       active === item.key
-                        ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                        ? 'bg-swift/20 text-swift-text border border-swift/30'
                         : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     }`}>
                     <span className="flex items-center gap-3 min-w-0">{item.label}</span>
@@ -1378,7 +1378,7 @@ export default function ManagerDashboard() {
               <p className="text-sm font-medium text-white">{session.staffName}</p>
               <p className="text-xs text-gray-500 capitalize">{session.role} · {session.branchName}</p>
             </div>
-            <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-sm flex-shrink-0">
+            <div className="w-9 h-9 rounded-full bg-swift/20 border border-swift/30 flex items-center justify-center text-swift-text font-bold text-sm flex-shrink-0">
               {session.staffName.charAt(0).toUpperCase()}
             </div>
           </div>

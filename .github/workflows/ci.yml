@@ -519,6 +519,11 @@ jobs:
       - name: No new raw green in the web POS
         run: node scripts/check-web-pos-green.mjs && node scripts/check-web-pos-green.mjs --self-test
 
+      # A329 step 3 — no NEW raw green or blue in the back office: its actions are the fixed SwiftPOS teal (swift-*);
+      # what stays green/blue is status, money, data or info (docs/A329-back-office-colour-classification.md).
+      - name: No new raw green or blue in the back office
+        run: node scripts/check-back-office-colour.mjs && node scripts/check-back-office-colour.mjs --self-test
+
       # A170: a literal NULL written into a NOT NULL local column throws at
       # runtime and is invisible to tsc — the A167 class (offline sign-in locked
       # the till out). The gate parses localDb.ts and flags any such write; the

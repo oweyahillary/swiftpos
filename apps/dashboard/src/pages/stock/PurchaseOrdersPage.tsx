@@ -257,12 +257,12 @@ export default function PurchaseOrdersPage() {
         <div className="px-5 py-4 border-b border-gray-800 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-white font-semibold">Purchase Orders</h2>
-            <button onClick={openCreate} className="px-3 py-1.5 bg-green-500 hover:bg-green-400 text-black text-xs font-semibold rounded-lg transition-colors">+ New PO</button>
+            <button onClick={openCreate} className="px-3 py-1.5 bg-swift hover:bg-swift-light text-black text-xs font-semibold rounded-lg transition-colors">+ New PO</button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {[['','All'],['draft','Draft'],['ordered','Ordered'],['partial','Partial'],['received','Received'],['cancelled','Cancelled']].map(([val, label]) => (
               <button key={val} onClick={() => setFilterStatus(val)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${filterStatus === val ? 'bg-green-500 text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${filterStatus === val ? 'bg-swift text-black' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
                 {label}
               </button>
             ))}
@@ -284,7 +284,7 @@ export default function PurchaseOrdersPage() {
             return (
               <div key={po.id}
                 onClick={() => setSelected(isSelected ? null : po)}
-                className={`px-5 py-4 border-b border-gray-800/60 cursor-pointer transition-colors ${isSelected ? 'bg-green-500/5 border-l-2 border-l-green-500' : 'hover:bg-gray-800/40'}`}>
+                className={`px-5 py-4 border-b border-gray-800/60 cursor-pointer transition-colors ${isSelected ? 'bg-swift/5 border-l-2 border-l-swift' : 'hover:bg-gray-800/40'}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -299,7 +299,7 @@ export default function PurchaseOrdersPage() {
                     {(po.status === 'ordered' || po.status === 'partial') && (
                       <div className="flex gap-1.5 mt-1.5 justify-end">
                         <button onClick={e => { e.stopPropagation(); openReceive(po); }}
-                          className="text-xs bg-green-500/10 text-green-400 hover:bg-green-500/20 px-2 py-1 rounded transition-colors">Receive</button>
+                          className="text-xs bg-swift/10 text-swift-text hover:bg-swift/20 px-2 py-1 rounded transition-colors">Receive</button>
                         <button onClick={e => { e.stopPropagation(); setCancelTarget(po); setCancelReason(''); }}
                           className="text-xs text-gray-500 hover:text-red-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors">Cancel</button>
                       </div>
@@ -329,13 +329,13 @@ export default function PurchaseOrdersPage() {
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {selected.status === 'draft' && (
                 <>
-                  <button onClick={() => markOrdered(selected)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-400 text-white text-xs font-semibold rounded-lg transition-colors">Mark as Ordered</button>
+                  <button onClick={() => markOrdered(selected)} className="px-3 py-1.5 bg-swift-strong hover:bg-swift-deep text-white text-xs font-semibold rounded-lg transition-colors">Mark as Ordered</button>
                   <button onClick={() => deletePO(selected)} className="px-3 py-1.5 bg-gray-800 hover:bg-red-500/20 text-red-400 text-xs font-semibold rounded-lg transition-colors">Delete</button>
                 </>
               )}
               {(selected.status === 'ordered' || selected.status === 'partial') && (
                 <>
-                  <button onClick={() => openReceive(selected)} className="px-3 py-1.5 bg-green-500 hover:bg-green-400 text-black text-xs font-semibold rounded-lg transition-colors">Receive Goods</button>
+                  <button onClick={() => openReceive(selected)} className="px-3 py-1.5 bg-swift hover:bg-swift-light text-black text-xs font-semibold rounded-lg transition-colors">Receive Goods</button>
                   <button onClick={() => { setCancelTarget(selected); setCancelReason(''); }} className="px-3 py-1.5 bg-gray-800 hover:bg-red-500/10 text-red-400 text-xs font-semibold rounded-lg transition-colors">Cancel PO</button>
                 </>
               )}
@@ -428,7 +428,7 @@ export default function PurchaseOrdersPage() {
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Branch <span className="text-red-400">*</span></label>
                   <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500">
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
                     <option value="">Select branch…</option>
                     {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
@@ -436,7 +436,7 @@ export default function PurchaseOrdersPage() {
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Supplier</label>
                   <select value={newSupplierId} onChange={e => setNewSupplierId(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500">
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
                     <option value="">— No supplier —</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
@@ -444,19 +444,19 @@ export default function PurchaseOrdersPage() {
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Expected Delivery</label>
                   <input type="date" value={newExpected} onChange={e => setNewExpected(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
                 </div>
                 <div>
                   <label className="block text-gray-400 text-xs mb-1.5">Notes</label>
                   <input type="text" placeholder="Optional…" value={newNotes} onChange={e => setNewNotes(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500" />
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift" />
                 </div>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Ingredients to Order</p>
-                  <button onClick={addLine} className="text-green-400 hover:text-green-300 text-xs font-medium transition-colors">+ Add Line</button>
+                  <button onClick={addLine} className="text-swift-text hover:text-swift-text-hover text-xs font-medium transition-colors">+ Add Line</button>
                 </div>
                 <div className="grid grid-cols-12 gap-2 px-1 mb-1.5">
                   <p className="col-span-5 text-gray-600 text-xs">Ingredient</p>
@@ -485,7 +485,7 @@ export default function PurchaseOrdersPage() {
                               <input type="text" placeholder="Search ingredient…"
                                 value={srch}
                                 onChange={e => setIngSearches(p => p.map((s, i) => i === idx ? e.target.value : s))}
-                                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                               />
                               {srch && opts.length > 0 && (
                                 <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
@@ -511,7 +511,7 @@ export default function PurchaseOrdersPage() {
                             <input type="number" min="0.01" step="0.01" placeholder="0"
                               value={item.quantity_ordered}
                               onChange={e => setNewItems(p => p.map((it, i) => i === idx ? { ...it, quantity_ordered: e.target.value } : it))}
-                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                             />
                             {selIng && <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">{selIng.unit}</span>}
                           </div>
@@ -520,7 +520,7 @@ export default function PurchaseOrdersPage() {
                           <input type="number" min="0" step="0.01" placeholder="0.00"
                             value={item.unit_cost}
                             onChange={e => setNewItems(p => p.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value } : it))}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                           />
                         </div>
                         <div className="col-span-1 flex items-center justify-center pt-2">
@@ -546,7 +546,7 @@ export default function PurchaseOrdersPage() {
             <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3 flex-shrink-0">
               <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
               <button onClick={createPO} disabled={creating}
-                className="px-5 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors">
+                className="px-5 py-2 bg-swift hover:bg-swift-light disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors">
                 {creating ? 'Creating…' : 'Create Draft PO'}
               </button>
             </div>
@@ -587,7 +587,7 @@ export default function PurchaseOrdersPage() {
                           placeholder={remaining > 0 ? `up to ${remaining}` : '0'}
                           value={item.quantity_receiving}
                           onChange={e => setGrnItems(p => p.map((gi, i) => i === idx ? { ...gi, quantity_receiving: e.target.value } : gi))}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                         />
                       </div>
                       <div>
@@ -595,7 +595,7 @@ export default function PurchaseOrdersPage() {
                         <input type="number" min="0" step="0.01" placeholder="0.00"
                           value={item.unit_cost}
                           onChange={e => setGrnItems(p => p.map((gi, i) => i === idx ? { ...gi, unit_cost: e.target.value } : gi))}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                         />
                       </div>
                     </div>
@@ -606,7 +606,7 @@ export default function PurchaseOrdersPage() {
                 <label className="block text-gray-500 text-xs mb-1.5">GRN Notes (optional)</label>
                 <input type="text" placeholder="e.g. Partial delivery, driver: Kamau…"
                   value={grnNotes} onChange={e => setGrnNotes(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500" />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift" />
               </div>
               {receiveError && <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{receiveError}</p>}
             </div>
@@ -617,7 +617,7 @@ export default function PurchaseOrdersPage() {
                 {receiving ? 'Saving…' : 'Confirm Receipt'}
               </button>
               <button onClick={() => submitGRN(true)} disabled={receiving}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition-colors">
+                className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-black text-sm font-semibold py-2.5 rounded-lg transition-colors">
                 {receiving ? 'Saving…' : 'Confirm & Print GRN'}
               </button>
             </div>

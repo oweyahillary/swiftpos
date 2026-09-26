@@ -151,7 +151,7 @@ export default function DiscountsPage() {
         </div>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-green-500 hover:bg-green-400 text-black text-sm font-semibold rounded-lg transition-colors"
+          className="px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg transition-colors"
         >
           + New Discount
         </button>
@@ -165,7 +165,7 @@ export default function DiscountsPage() {
           <p className="text-3xl mb-3">🏷️</p>
           <p className="text-gray-400 text-sm font-medium">No discounts yet</p>
           <p className="text-gray-600 text-xs mt-1">Create percentage or fixed discounts and promo codes for your POS</p>
-          <button onClick={openCreate} className="mt-4 px-4 py-2 bg-green-500 hover:bg-green-400 text-black text-sm font-semibold rounded-lg transition-colors">
+          <button onClick={openCreate} className="mt-4 px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg transition-colors">
             Create first discount
           </button>
         </div>
@@ -227,7 +227,7 @@ export default function DiscountsPage() {
                         className={`text-xs px-2 py-1 rounded-full border transition-colors ${
                           d.status === 'active' && !expired
                             ? 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
-                            : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/20'
+                            : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-swift/10 hover:text-swift-text-hover hover:border-swift/20'
                         }`}
                       >
                         {d.status === 'active' ? 'Active' : 'Inactive'}
@@ -263,7 +263,7 @@ export default function DiscountsPage() {
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. Happy Hour 20%"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
 
@@ -274,7 +274,7 @@ export default function DiscountsPage() {
                   <select
                     value={form.type}
                     onChange={e => setForm(f => ({ ...f, type: e.target.value as 'percentage' | 'fixed' }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-swift"
                   >
                     <option value="percentage">Percentage (%)</option>
                     <option value="fixed">Fixed ({currency})</option>
@@ -289,7 +289,7 @@ export default function DiscountsPage() {
                     placeholder={form.type === 'percentage' ? '0–100' : '0.00'}
                     min="0"
                     max={form.type === 'percentage' ? 100 : undefined}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
               </div>
@@ -300,7 +300,7 @@ export default function DiscountsPage() {
                 <select
                   value={form.applies_to}
                   onChange={e => setForm(f => ({ ...f, applies_to: e.target.value as 'order' | 'item' }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-swift"
                 >
                   <option value="order">Entire Order</option>
                   <option value="item">Per Item</option>
@@ -314,7 +314,7 @@ export default function DiscountsPage() {
                   value={form.promo_code}
                   onChange={e => setForm(f => ({ ...f, promo_code: e.target.value.toUpperCase() }))}
                   placeholder="e.g. SAVE20"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500 font-mono"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift font-mono"
                 />
               </div>
 
@@ -328,7 +328,7 @@ export default function DiscountsPage() {
                     onChange={e => setForm(f => ({ ...f, min_order_value: e.target.value }))}
                     placeholder="0"
                     min="0"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
                 <div>
@@ -339,7 +339,7 @@ export default function DiscountsPage() {
                     onChange={e => setForm(f => ({ ...f, max_uses: e.target.value }))}
                     placeholder="Unlimited"
                     min="1"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-swift"
                   />
                 </div>
               </div>
@@ -351,7 +351,7 @@ export default function DiscountsPage() {
                   type="date"
                   value={form.expires_at}
                   onChange={e => setForm(f => ({ ...f, expires_at: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-swift"
                 />
               </div>
             </div>
@@ -360,7 +360,7 @@ export default function DiscountsPage() {
               <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2 text-sm font-semibold bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black rounded-lg transition-colors">
+              <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2 text-sm font-semibold bg-swift hover:bg-swift-light disabled:opacity-50 text-black rounded-lg transition-colors">
                 {saving ? 'Saving...' : 'Save Discount'}
               </button>
             </div>

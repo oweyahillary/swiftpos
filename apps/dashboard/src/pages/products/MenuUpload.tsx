@@ -188,14 +188,14 @@ export default function MenuUpload({
             <h2 className="text-base font-bold text-white">Menu upload</h2>
             <p className="text-sm text-gray-500">One workbook — products, upgrades, recipes and ingredients.</p>
           </div>
-          <button onClick={downloadTemplate} className="text-sm text-green-400 hover:text-green-300 whitespace-nowrap">↓ Template</button>
+          <button onClick={downloadTemplate} className="text-sm text-swift-text hover:text-swift-text-hover whitespace-nowrap">↓ Template</button>
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto">
           <div>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
             <button onClick={() => fileRef.current?.click()}
-                    className="w-full border border-dashed border-gray-700 rounded-lg py-6 text-sm text-gray-400 hover:border-green-500 hover:text-white transition-colors">
+                    className="w-full border border-dashed border-gray-700 rounded-lg py-6 text-sm text-gray-400 hover:border-swift hover:text-white transition-colors">
               {fileName ? `📄 ${fileName} — choose another` : 'Choose an .xlsx workbook'}
             </button>
           </div>
@@ -260,7 +260,7 @@ export default function MenuUpload({
           </button>
           {preview && !results && (
             <button onClick={apply} disabled={busy || totalRows === 0 || needsBranch}
-                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 hover:bg-green-400 text-gray-950 disabled:opacity-50">
+                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-swift hover:bg-swift-light text-gray-950 disabled:opacity-50">
               {busy ? 'Applying…' : `Apply ${totalRows} row${totalRows === 1 ? '' : 's'}`}
             </button>
           )}

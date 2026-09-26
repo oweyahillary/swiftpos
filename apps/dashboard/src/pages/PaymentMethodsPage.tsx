@@ -95,12 +95,12 @@ export default function PaymentMethodsPage() {
           onChange={e => setName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void add(); }}
           placeholder="e.g. Coop Card"
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
         />
         <button
           onClick={add}
           disabled={saving || !name.trim()}
-          className="bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm"
+          className="bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm"
         >
           {saving ? 'Adding…' : 'Add'}
         </button>
@@ -122,7 +122,7 @@ export default function PaymentMethodsPage() {
                 onChange={e => setEditName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') void saveEdit(m); if (e.key === 'Escape') setEditId(null); }}
                 onBlur={() => void saveEdit(m)}
-                className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-green-500"
+                className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-swift"
               />
             ) : (
               <button

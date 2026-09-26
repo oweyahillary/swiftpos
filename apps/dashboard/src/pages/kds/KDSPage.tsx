@@ -206,7 +206,7 @@ export default function KDSPage() {
             onChange={e => setTokenDraft(e.target.value)}
             placeholder="Paste KDS token…"
             rows={4}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-green-500 focus:outline-none font-mono break-all"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-swift focus:outline-none font-mono break-all"
           />
           <button
             onClick={() => {
@@ -216,7 +216,7 @@ export default function KDSPage() {
               setKdsToken(t);
               setTokenDraft('');
             }}
-            className="w-full bg-green-500 hover:bg-green-400 text-gray-950 font-semibold py-2.5 rounded-lg transition-colors"
+            className="w-full bg-swift hover:bg-swift-light text-gray-950 font-semibold py-2.5 rounded-lg transition-colors"
           >Save &amp; start</button>
         </div>
       </div>
@@ -230,7 +230,7 @@ export default function KDSPage() {
           <p className="text-white text-xl font-semibold">Invalid KDS token</p>
           <button
             onClick={() => { localStorage.removeItem(KDS_TOKEN_KEY); setKdsToken(null); }}
-            className="text-green-400 text-sm underline"
+            className="text-swift-text text-sm underline"
           >Re-enter token</button>
         </div>
       </div>

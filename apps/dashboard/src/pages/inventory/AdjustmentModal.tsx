@@ -116,7 +116,7 @@ export default function AdjustmentModal({ product, branchId, currency: _currency
             onChange={e => setQuantity(e.target.value)}
             placeholder={type === 'correction' ? `Current: ${product.currentQty}` : 'Enter quantity'}
             autoFocus
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors text-lg font-semibold"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors text-lg font-semibold"
           />
         </div>
 
@@ -139,7 +139,7 @@ export default function AdjustmentModal({ product, branchId, currency: _currency
             value={notes}
             onChange={e => setNotes(e.target.value)}
             placeholder="e.g. Supplier delivery, damaged goods..."
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
           />
         </div>
 
@@ -152,7 +152,7 @@ export default function AdjustmentModal({ product, branchId, currency: _currency
           <button
             onClick={handleSave}
             disabled={saving || !qty || qty <= 0}
-            className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors"
+            className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors"
           >
             {saving ? 'Saving…' : 'Save adjustment'}
           </button>

@@ -14,6 +14,17 @@
 :root:not(.dark) {
   --action-400: var(--action-l-400, 15 118 110);   /* teal 700 on white: 5.47:1 (green-400 was 1.8) */
 }
+/* A329 step 3: the back office's FIXED SwiftPOS teal (not the client theme). Teal family, shade per job — dark labels on
+   500 = 8.09:1, white on 700 = 5.47:1, text 400 on dark = 9.53:1 / 700 on white = 5.47:1. If slice 5's B1 finds teal too
+   close to "paid" green in shop light, these values move — nothing else does. */
+:root {
+  --swift: 20 184 166;          --swift-light: 45 212 191;    /* teal 500 · 400 (hover on dark-label fills)          */
+  --swift-strong: 15 118 110;   --swift-deep: 17 94 89;       /* teal 700 · 800 (white-label fills and their hover)   */
+  --swift-logo: 13 148 136;                                   /* the logo's #0d9488 — wordmark only                   */
+  --swift-text: 45 212 191;     --swift-text-hover: 94 234 212; /* teal 400 · 300 on dark                             */
+}
+:root:not(.dark) { --swift-text: 15 118 110; --swift-text-hover: 17 94 89; }   /* teal 700 · 800 on white */
+
 /* A328 part 2: the web POS's INLINE colours use these aliases as rgb(var(--act-*, <that use's own original r g b>)).
    A329 (2026-09-25): they now DEFAULT to SwiftPOS teal, so with themes OFF the web POS's green and blue primaries are
    teal (before A329 each fell back to its own original green or blue). With themes ON: fill = theme 500 (dark labels,
@@ -144,13 +155,21 @@
   }
 
   /* Focus rings */
-  :root:not(.dark) .focus\:border-green-500:focus { border-color: #22c55e !important; }
   :root:not(.dark) .focus\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; } /* A328: same rule for the themed class */
   :root:not(.dark) .ring-gray-700 { --tw-ring-color: #e2e8f0; }
 
   /* Divide lines */
   :root:not(.dark) .divide-gray-800 > * + * { border-color: #e2e8f0 !important; }
 }
+
+/* A329: the back office's focus ring in light mode. OUTSIDE @layer base on purpose — inside it, Tailwind drops a rule
+   written for a variant class (`.focus\:border-x:focus`), so the two rules above for green / action never reach the build. */
+:root:not(.dark) .focus\:border-swift:focus { border-color: rgb(var(--swift)) !important; }
+/* A329: white labels STAY white on the teal-700 fills in light mode. The light theme turns every .text-white into slate
+   (#0f172a) — on teal 700 that is 3.26:1 (2.35 on the hover); white is 5.47 / 7.58. Covers the label on the button itself
+   and a child label (the checkbox tick). */
+:root:not(.dark) .bg-swift-strong.text-white,
+:root:not(.dark) .bg-swift-strong .text-white { color: #ffffff !important; }
 
 /* ── Smooth theme transition ─────────────────────────────────────────────── */
 *, *::before, *::after {

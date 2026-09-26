@@ -84,7 +84,7 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
                 value={overrides[f.key] ?? ''}
                 onChange={e => setOverrides(prev => ({ ...prev, [f.key]: e.target.value }))}
                 onBlur={e => save(f.key, e.target.value)}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 resize-y"
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift resize-y"
               />
             ) : (
               <div className="text-sm text-gray-500 bg-gray-950/60 border border-gray-800/60 rounded-lg px-3.5 py-2.5 whitespace-pre-wrap min-h-[2.5rem]">
@@ -107,7 +107,7 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
             {contOverridden && (
               <button
                 onClick={() => save('continuous_operation', contValueOn ? 'false' : 'true')}
-                className={`w-11 h-6 rounded-full transition-colors relative ${contValueOn ? 'bg-green-500' : 'bg-gray-700'}`}
+                className={`w-11 h-6 rounded-full transition-colors relative ${contValueOn ? 'bg-swift-strong' : 'bg-gray-700'}`}
               >
                 <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${contValueOn ? 'left-5' : 'left-0.5'}`} />
               </button>

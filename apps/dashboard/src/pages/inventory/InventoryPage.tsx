@@ -185,7 +185,7 @@ export default function InventoryPage() {
           placeholder="Search products…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors w-64"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-64"
         />
         {filter !== 'all' && (
           <button
@@ -268,7 +268,7 @@ export default function InventoryPage() {
                               if (escRef.current) { escRef.current = false; setEditThreshId(null); setThreshErr(''); return; }
                               saveThreshold(row);
                             }}
-                            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-green-500"
+                            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-swift"
                           />
                           {threshErr && <span className="text-red-400 text-[10px] max-w-[8rem]">{threshErr}</span>}
                         </div>
@@ -293,7 +293,7 @@ export default function InventoryPage() {
                           <>
                             <button
                               onClick={() => setAdjusting(row)}
-                              className="text-xs text-green-400 hover:text-green-300 px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+                              className="text-xs text-swift-text hover:text-swift-text-hover px-2 py-1 rounded hover:bg-gray-700 transition-colors"
                             >
                               Adjust
                             </button>

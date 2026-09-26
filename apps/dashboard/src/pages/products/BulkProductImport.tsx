@@ -78,7 +78,7 @@ export default function BulkProductImport({
       </p>
 
       <a
-        className="inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 mb-4 no-underline"
+        className="inline-flex items-center gap-1.5 text-sm text-swift-text hover:text-swift-text-hover mb-4 no-underline"
         href="data:text/csv;charset=utf-8,name,base_price,cost_price,category_name,barcode,plu_code,sold_by,description"
         download="swiftpos_products_template.csv"
       >
@@ -152,7 +152,7 @@ export default function BulkProductImport({
         <button
           disabled={importRows.length === 0 || importErrors.length > 0 || importing}
           onClick={runImport}
-          className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors"
+          className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 disabled:cursor-not-allowed border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors"
         >
           {importing ? 'Importing…' : `Import ${importRows.length} products`}
         </button>

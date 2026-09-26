@@ -85,7 +85,7 @@ export default function StaffTab({ branches, excludeRoles }: Props) {
           <p className="text-gray-500 text-sm">{staff.filter(s => s.status === 'active').length} active</p>
         </div>
         <button onClick={() => { setEditing(null); setShowModal(true); }}
-          className="px-4 py-2 bg-green-500 hover:bg-green-400 text-gray-950 text-sm font-semibold rounded-xl transition-colors">
+          className="px-4 py-2 bg-swift hover:bg-swift-light text-gray-950 text-sm font-semibold rounded-xl transition-colors">
           + Add Staff
         </button>
       </div>
@@ -139,7 +139,7 @@ export default function StaffTab({ branches, excludeRoles }: Props) {
                     </button>
                   ) : (
                     <button onClick={() => activate(s.id)}
-                      className="text-xs text-green-400 hover:text-green-300 px-3 py-1.5 rounded-lg hover:bg-green-500/10 transition-colors">
+                      className="text-xs text-swift-text hover:text-swift-text-hover px-3 py-1.5 rounded-lg hover:bg-swift/10 transition-colors">
                       Activate
                     </button>
                   )}
@@ -319,12 +319,12 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
           <div className="col-span-2 md:col-span-1">
             <label className="block text-sm text-gray-400 mb-1">Full Name</label>
             <input value={name} onChange={e => setName(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Role</label>
             <select value={roleId} onChange={e => handleRoleChange(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500">
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift">
               {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </div>
@@ -332,7 +332,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             <div className="col-span-2">
               <label className="block text-sm text-gray-400 mb-1">Email</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
           )}
           {editing && (
@@ -342,7 +342,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
               </label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="staff@example.com"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
           )}
           {(!editing && mode === 'pin') && (
@@ -352,7 +352,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
               </label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="staff@example.com"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               <p className="text-xs text-gray-600 mt-1">Staff use their email + PIN to log into the POS terminal.</p>
             </div>
           )}
@@ -360,7 +360,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             <div>
               <label className="block text-sm text-gray-400 mb-1">Phone (optional)</label>
               <input value={phone} onChange={e => setPhone(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
           )}
           {(mode === 'pin' || editing) && (
@@ -370,7 +370,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
               </label>
               <input type="password" value={pin} onChange={e => setPin(e.target.value)}
                 maxLength={6} placeholder="••••"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
           )}
           <div className="col-span-2">
@@ -386,7 +386,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
               maxLength={6}
               disabled={clearOverride}
               placeholder={editing ? '•••• (leave blank to keep)' : '4–6 digits (optional)'}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 disabled:opacity-40 tracking-widest"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift disabled:opacity-40 tracking-widest"
             />
             <p className="text-xs text-gray-600 mt-1">
               Separate from the login PIN. Entered by the supervisor to approve a paid void — the void is recorded against them.
@@ -410,7 +410,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
               <input type="number" min="0" step="0.5"
                 value={hourlyRate} onChange={e => setHourlyRate(e.target.value)}
                 placeholder="e.g. 250"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-12 pr-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-12 pr-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
               />
             </div>
             <p className="text-xs text-gray-600 mt-1">Used for labour cost % in the SPLH report.</p>
@@ -422,7 +422,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
               <button
                 type="button"
                 onClick={() => setShowBranchDropdown(prev => !prev)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:border-green-500 hover:border-gray-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:border-swift hover:border-gray-500 transition-colors"
               >
                 <span className={selectedBranches.length === 0 ? 'text-gray-500' : 'text-white'}>
                   {selectedBranches.length === 0
@@ -487,8 +487,8 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                   <div className="flex items-center gap-2 mb-2">
                     <button onClick={() => toggleModuleAll(modIds)}
                       className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                        allOn ? 'bg-green-500 border-green-500'
-                        : someOn ? 'bg-green-500/30 border-green-500/50'
+                        allOn ? 'bg-swift-strong border-swift-strong'
+                        : someOn ? 'bg-swift/30 border-swift/50'
                         : 'border-gray-600 hover:border-gray-400'
                       }`}>
                       {(allOn || someOn) && <span className="text-white text-xs font-bold">{allOn ? '✓' : '−'}</span>}
@@ -501,10 +501,10 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                       return (
                         <label key={perm.id} onClick={() => togglePerm(perm.id)}
                           className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                            on ? 'border-green-500/40 bg-green-500/8 text-white' : 'border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-400'
+                            on ? 'border-swift/40 bg-swift/8 text-white' : 'border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-400'
                           }`}>
                           <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            on ? 'bg-green-500 border-green-500' : 'border-gray-600'
+                            on ? 'bg-swift-strong border-swift-strong' : 'border-gray-600'
                           }`}>
                             {on && <span className="text-white text-xs font-bold">✓</span>}
                           </div>
@@ -527,7 +527,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             Cancel
           </button>
           <button onClick={handleSave} disabled={loading}
-            className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-gray-950 rounded-xl py-2.5 text-sm font-semibold transition-colors">
+            className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-gray-950 rounded-xl py-2.5 text-sm font-semibold transition-colors">
             {loading ? 'Saving…' : editing ? 'Save Changes' : mode === 'invite' ? 'Send Invite' : 'Add Staff'}
           </button>
         </div>

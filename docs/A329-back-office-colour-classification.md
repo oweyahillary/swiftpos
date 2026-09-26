@@ -5,6 +5,14 @@
 **the admin portal (`apps/admin`) stays out** (owner). Standing decision (A323 4b-2): the back office stays **SwiftPOS-branded** — its
 action colour is a FIXED SwiftPOS teal, never the client's theme. **No screen changes in this delivery** — this is the list you review.
 
+## Owner answers (2026-09-26) and applied (delivery 2026-09-26-b)
+- (1) **(a)** — the preset is now **"SwiftPOS Teal" `#0d9488`**. The palette already held a "Teal" `#0d9488` (swatches are keyed by
+  hex, and a test pins 8 accents), so that slot became **"Blue" `#3b82f6`** — the same 8 colours, renamed and re-ordered.
+- (2) accents OK · (3) pairs OK · (4) logged as **A333**.
+- **Applied** to every "→ teal" row below, at its position (610 by script + 9 by hand = 619), with fixed `swift-*` tokens — see A329
+  in `docs/AUDIT-REGISTER.md` for the token table, the proofs and two light-mode defects found on the way. The "Status" and "Money"
+  rows name what the gate `scripts/check-back-office-colour.mjs` still allows (baseline 397).
+
 ## How it was made
 - **Sweep, every form** (WORKING-METHOD §9): Tailwind classes (`green|emerald|lime|blue|sky|indigo`, every prefix — `hover:`,
   `focus:`, `dark:`, `file:`, `group-hover:`, `accent-`, `border-t-`…), hex (`#rgb`/`#rrggbb`), `rgb()`/`rgba()`, and named colour

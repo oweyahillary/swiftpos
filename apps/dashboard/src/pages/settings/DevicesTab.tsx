@@ -187,7 +187,7 @@ export default function DevicesTab() {
           disabled={toggling}
           onClick={toggleRegistration}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
-            registrationOn ? 'bg-green-500' : 'bg-gray-700'
+            registrationOn ? 'bg-swift-strong' : 'bg-gray-700'
           }`}
         >
           <span
@@ -225,7 +225,7 @@ export default function DevicesTab() {
                 </button>
                 <button
                   onClick={() => approve(d)}
-                  className="px-3 py-1.5 text-xs font-semibold text-gray-950 bg-green-400 hover:bg-green-300 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-xs font-semibold text-gray-950 bg-swift hover:bg-swift-light rounded-lg transition-colors"
                 >
                   Approve
                 </button>
@@ -243,7 +243,7 @@ export default function DevicesTab() {
             onClick={() => setFilter(f)}
             className={`px-3 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
               filter === f
-                ? 'text-white border-green-400'
+                ? 'text-white border-swift'
                 : 'text-gray-500 border-transparent hover:text-gray-300'
             }`}
           >
@@ -302,7 +302,7 @@ export default function DevicesTab() {
                         className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white w-44"
                         placeholder="e.g. Front Till"
                       />
-                      <button onClick={() => saveLabel(d)} className="text-green-400 hover:text-green-300 text-xs font-medium">Save</button>
+                      <button onClick={() => saveLabel(d)} className="text-swift-text hover:text-swift-text-hover text-xs font-medium">Save</button>
                       <button onClick={() => setEditingId(null)} className="text-gray-500 hover:text-gray-300 text-xs">✕</button>
                     </span>
                   ) : (
@@ -353,7 +353,7 @@ export default function DevicesTab() {
                       Reject
                     </button>
                     <button onClick={() => approve(d)}
-                      className="px-3 py-1.5 text-xs font-semibold text-gray-950 bg-green-400 hover:bg-green-300 rounded-lg transition-colors">
+                      className="px-3 py-1.5 text-xs font-semibold text-gray-950 bg-swift hover:bg-swift-light rounded-lg transition-colors">
                       Approve
                     </button>
                   </>

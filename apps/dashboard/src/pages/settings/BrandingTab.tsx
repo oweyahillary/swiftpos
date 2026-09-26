@@ -25,11 +25,11 @@ import { api } from '../../lib/api';
 
 // SCOPE §8.A — the vetted accent palette (WCAG-checked on the lock surface + white button text).
 const PALETTE: Array<{ name: string; hex: string }> = [
-  { name: 'SwiftPOS Blue', hex: '#3b82f6' },
+  { name: 'SwiftPOS Teal', hex: '#0d9488' },
   { name: 'Indigo',        hex: '#6366f1' },
   { name: 'Violet',        hex: '#7c3aed' },
   { name: 'Emerald',       hex: '#059669' },
-  { name: 'Teal',          hex: '#0d9488' },
+  { name: 'Blue',          hex: '#3b82f6' },   // A329: was 'SwiftPOS Blue' (slot 1); SwiftPOS is teal now
   { name: 'Rose',          hex: '#e11d48' },
   { name: 'Pink',          hex: '#db2777' },
   { name: 'Amber',         hex: '#b45309' },

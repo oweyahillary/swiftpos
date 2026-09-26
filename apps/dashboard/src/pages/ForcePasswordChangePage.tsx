@@ -46,7 +46,7 @@ export default function ForcePasswordChangePage() {
 
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
-    'focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/30 transition-all text-sm';
+    'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
 
   return (
     <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
@@ -55,8 +55,8 @@ export default function ForcePasswordChangePage() {
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: `linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(20,184,166,0.03) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(20,184,166,0.03) 1px, transparent 1px)`,
           backgroundSize: '48px 48px',
         }}
       />
@@ -66,7 +66,7 @@ export default function ForcePasswordChangePage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22c55e] flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
+            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
             <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
           </div>
           <p className="text-[#334155] text-sm">Welcome — let's secure your account</p>
@@ -151,7 +151,7 @@ export default function ForcePasswordChangePage() {
           <button
             disabled={loading || !valid}
             onClick={handleSubmit}
-            className="w-full py-3 rounded-xl font-bold text-sm bg-[#22c55e] hover:bg-[#16a34a] text-[#0f172a] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-xl font-bold text-sm bg-swift hover:bg-swift-light text-[#0f172a] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
           >
             {loading ? (
               <>

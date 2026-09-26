@@ -276,7 +276,7 @@ export default function ExpensesPage() {
         {canManage && (
           <button
             onClick={openAddExpense}
-            className="px-4 py-2 bg-green-500 hover:bg-green-400 text-black text-sm font-semibold rounded-lg transition-colors"
+            className="px-4 py-2 bg-swift hover:bg-swift-light text-black text-sm font-semibold rounded-lg transition-colors"
           >
             + Add Expense
           </button>
@@ -293,7 +293,7 @@ export default function ExpensesPage() {
             {canManage && (
               <button
                 onClick={openAddCat}
-                className="text-green-400 hover:text-green-300 text-lg leading-none transition-colors"
+                className="text-swift-text hover:text-swift-text-hover text-lg leading-none transition-colors"
                 title="Add category"
               >+</button>
             )}
@@ -304,7 +304,7 @@ export default function ExpensesPage() {
             onClick={() => setFilterCategory('')}
             className={`w-full text-left px-4 py-2.5 text-sm transition-colors border-b border-gray-800/50 ${
               !filterCategory
-                ? 'text-green-400 bg-green-500/10'
+                ? 'text-swift-text bg-swift/10'
                 : 'text-gray-400 hover:text-white hover:bg-gray-800'
             }`}
           >
@@ -316,7 +316,7 @@ export default function ExpensesPage() {
               key={cat.id}
               className={`group flex items-center justify-between px-4 py-2.5 border-b border-gray-800/50 transition-colors cursor-pointer ${
                 filterCategory === cat.id
-                  ? 'text-green-400 bg-green-500/10'
+                  ? 'text-swift-text bg-swift/10'
                   : 'text-gray-400 hover:text-white hover:bg-gray-800'
               }`}
               onClick={() => setFilterCategory(cat.id)}
@@ -411,7 +411,7 @@ export default function ExpensesPage() {
                             href={e.receipt_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-green-500 text-xs hover:underline"
+                            className="text-swift-text text-xs hover:underline"
                           >Receipt ↗</a>
                         )}
                       </td>
@@ -479,7 +479,7 @@ export default function ExpensesPage() {
                   type="date"
                   value={form.expense_date}
                   onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
                 />
               </div>
 
@@ -489,7 +489,7 @@ export default function ExpensesPage() {
                 <select
                   value={form.branch_id}
                   onChange={e => setForm(f => ({ ...f, branch_id: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
                 >
                   <option value="">Select branch…</option>
                   {branches.map(b => (
@@ -504,7 +504,7 @@ export default function ExpensesPage() {
                 <select
                   value={form.expense_category_id}
                   onChange={e => setForm(f => ({ ...f, expense_category_id: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
                 >
                   <option value="">Uncategorised</option>
                   {categories.map(c => (
@@ -521,7 +521,7 @@ export default function ExpensesPage() {
                   placeholder="e.g. Electricity bill – March"
                   value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
 
@@ -535,7 +535,7 @@ export default function ExpensesPage() {
                   placeholder="0.00"
                   value={form.amount}
                   onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
 
@@ -545,7 +545,7 @@ export default function ExpensesPage() {
                 <select
                   value={form.paid_by}
                   onChange={e => setForm(f => ({ ...f, paid_by: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
                 >
                   <option value="">— Select staff member —</option>
                   {staff.map(s => (
@@ -562,7 +562,7 @@ export default function ExpensesPage() {
                   placeholder="https://…"
                   value={form.receipt_url}
                   onChange={e => setForm(f => ({ ...f, receipt_url: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
 
@@ -581,7 +581,7 @@ export default function ExpensesPage() {
               <button
                 onClick={saveExpense}
                 disabled={saving}
-                className="px-5 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors"
+                className="px-5 py-2 bg-swift hover:bg-swift-light disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors"
               >{saving ? 'Saving…' : 'Save Expense'}</button>
             </div>
           </div>
@@ -607,7 +607,7 @@ export default function ExpensesPage() {
                 onChange={e => setCatName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && saveCat()}
                 autoFocus
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
               />
               {catError && (
                 <p className="text-red-400 text-xs mt-2">{catError}</p>
@@ -622,7 +622,7 @@ export default function ExpensesPage() {
               <button
                 onClick={saveCat}
                 disabled={catSaving}
-                className="px-5 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors"
+                className="px-5 py-2 bg-swift hover:bg-swift-light disabled:opacity-50 text-black text-sm font-semibold rounded-lg transition-colors"
               >{catSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>

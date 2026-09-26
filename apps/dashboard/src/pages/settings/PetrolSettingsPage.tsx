@@ -51,7 +51,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${checked ? 'bg-blue-600' : 'bg-gray-700'}`}
+      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${checked ? 'bg-swift-strong' : 'bg-gray-700'}`}
     >
       <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
     </button>
@@ -215,7 +215,7 @@ export default function PetrolSettingsPage() {
           {tab === 'pumps' && (
             <button
               onClick={() => setEditPump({ name: '', status: 'idle', sort_order: pumps.length })}
-              className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+              className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
             >
               + Add Pump
             </button>
@@ -223,7 +223,7 @@ export default function PetrolSettingsPage() {
           {tab === 'tanks' && (
             <button
               onClick={() => setEditTank({ name: '', capacity_litres: 10000, current_level: 0, reorder_level: 2000 })}
-              className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+              className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
             >
               + Add Tank
             </button>
@@ -261,7 +261,7 @@ export default function PetrolSettingsPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
-              tab === t.key ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+              tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
           >
             {t.label}
@@ -303,7 +303,7 @@ export default function PetrolSettingsPage() {
                   </span>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setEditPump({ ...pump })} className="px-2.5 py-1 text-xs text-blue-400 border border-gray-700 rounded-md hover:border-blue-500/50 transition-colors">Edit</button>
+                  <button onClick={() => setEditPump({ ...pump })} className="px-2.5 py-1 text-xs text-swift-text border border-gray-700 rounded-md hover:border-swift/50 transition-colors">Edit</button>
                   <button onClick={() => deletePump(pump.id)} className="px-2.5 py-1 text-xs text-red-400 border border-red-500/20 rounded-md hover:bg-red-500/5 transition-colors">Delete</button>
                 </div>
               </div>
@@ -373,8 +373,8 @@ export default function PetrolSettingsPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button onClick={() => setEditTank({ ...tank })} className="flex-1 px-2.5 py-1.5 text-xs text-blue-400 border border-gray-700 rounded-md hover:border-blue-500/50 transition-colors">Edit</button>
-                  <button onClick={() => setStockEntry({ tank, litres: '' })} className="flex-1 px-2.5 py-1.5 text-xs text-green-400 border border-green-500/20 rounded-md hover:bg-green-500/5 transition-colors">+ Delivery</button>
+                  <button onClick={() => setEditTank({ ...tank })} className="flex-1 px-2.5 py-1.5 text-xs text-swift-text border border-gray-700 rounded-md hover:border-swift/50 transition-colors">Edit</button>
+                  <button onClick={() => setStockEntry({ tank, litres: '' })} className="flex-1 px-2.5 py-1.5 text-xs text-swift-text border border-swift/20 rounded-md hover:bg-swift/5 transition-colors">+ Delivery</button>
                 </div>
               </div>
             );
@@ -418,7 +418,7 @@ export default function PetrolSettingsPage() {
                     </span>
                   </td>
                   <td className="px-3 py-3">
-                    <a href="/dashboard/products" className="text-xs text-blue-400 hover:text-blue-300 no-underline">Edit in Products →</a>
+                    <a href="/dashboard/products" className="text-xs text-swift-text hover:text-swift-text-hover no-underline">Edit in Products →</a>
                   </td>
                 </tr>
               ))}
@@ -579,7 +579,7 @@ export default function PetrolSettingsPage() {
             </div>
             <div className="flex gap-2.5 mt-5">
               <button onClick={() => setEditPump(null)} className="flex-1 py-2.5 bg-transparent border border-gray-700 rounded-lg text-gray-400 text-sm cursor-pointer hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={savePump} disabled={saving} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
+              <button onClick={savePump} disabled={saving} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
                 {saving ? 'Saving…' : editPump.id ? 'Save' : 'Create pump'}
               </button>
             </div>
@@ -632,7 +632,7 @@ export default function PetrolSettingsPage() {
             </div>
             <div className="flex gap-2.5 mt-2">
               <button onClick={() => setEditTank(null)} className="flex-1 py-2.5 bg-transparent border border-gray-700 rounded-lg text-gray-400 text-sm cursor-pointer hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={saveTank} disabled={saving || !editTank.fuel_product_id} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
+              <button onClick={saveTank} disabled={saving || !editTank.fuel_product_id} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
                 {saving ? 'Saving…' : editTank.id ? 'Save' : 'Create tank'}
               </button>
             </div>
@@ -665,7 +665,7 @@ export default function PetrolSettingsPage() {
             )}
             <div className="flex gap-2.5">
               <button onClick={() => setStockEntry(null)} className="flex-1 py-2.5 bg-transparent border border-gray-700 rounded-lg text-gray-400 text-sm cursor-pointer hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={recordDelivery} className="flex-1 py-2.5 bg-green-700 hover:bg-green-600 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">Record delivery</button>
+              <button onClick={recordDelivery} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">Record delivery</button>
             </div>
           </div>
         </div>
