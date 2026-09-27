@@ -27,7 +27,10 @@ export default function PaymentMethodsPanel({ canEdit = true }: { canEdit?: bool
         const local = await posApi.pos.paymentMethods();
         setMethods(local.map((m, i) => ({ id: '', name: m.name, code: m.code, is_active: true, sort_order: i })));
         setOffline(true);
-        setError("Can't reach the server to manage payment methods. Showing what's active on this till — reconnect to add, rename, or remove.");
+        // A345: an offline sign-in says so in its own words (it is not a connection fault the manager can fix by waiting).
+        setError(/signed in while offline/i.test(String(e?.message ?? ''))
+          ? `${e.message} Showing what's active on this till.`
+          : "Can't reach the cloud to manage payment methods. Showing what's active on this till — reconnect to add, rename, or remove.");
       } catch {
         setError(e?.message ?? 'Could not load payment methods.');
       }

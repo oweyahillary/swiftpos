@@ -57,6 +57,7 @@ import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeo
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
 import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode } from './nodeClient';
 import { isUnreachableStatus } from './authTransport';
+import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from './offlineSession';
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
@@ -181,6 +182,7 @@ export function registerIpcHandlers() {
     // Signing the terminal out must also remove the offline way in, or a
     // decommissioned till keeps working credentials for another fortnight.
     clearPinCache();
+    clearOfflinePin();
     configureStaffSession('', '');
     configureSyncEngine(getCloudUrl(), '');
     return true;
@@ -458,6 +460,67 @@ export function registerIpcHandlers() {
     }));
   });
 
+  /** The staff's own cloud tokens and cached credential, from a verify-pin answer — shared by the online sign-in and the
+   *  A345 upgrade of an offline sign-in. Returns the branch row (for the display name). */
+  function persistCloudSignIn(data: any, branch_id: string): { name?: string | null } | undefined {
+    const db = getLocalDb();
+    // Online sign-in succeeded, so the server has just confirmed this PIN and
+    // that it is unique across the business. Only now is it safe to cache.
+    cacheStaffCredential(
+      { staffId: data.staff?.id, name: data.staff?.name ?? 'Staff',
+        roleName: data.staff?.role ?? null, permissions: data.permissions ?? {} },
+      data.offlineAuth?.pinHash,
+      branch_id,
+    );
+
+    // Resolve branch name for display (from the local branches table if present).
+    const branchRow = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
+
+    db.prepare(`
+      INSERT INTO staff_session
+        (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
+        branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
+        token=excluded.token, refresh_token=excluded.refresh_token, logged_in_at=excluded.logged_in_at
+    `).run(
+      data.staff?.id ?? null,
+      data.staff?.name ?? 'Staff',
+      data.staff?.role ?? null,
+      branch_id,
+      branchRow?.name ?? null,
+      JSON.stringify(data.permissions ?? {}),
+      data.accessToken ?? data.token,
+      data.refreshToken ?? null,
+      new Date().toISOString(),
+    );
+
+    // D5 - wrap at rest, same as the owner session.
+    writeStaffTokens({ token: data.accessToken ?? data.token ?? '', refreshToken: data.refreshToken ?? '' });
+
+    // Make the staff token the active credential for order pushes.
+    configureStaffSession(data.accessToken ?? data.token, data.refreshToken ?? '');
+    return branchRow;
+  }
+
+  /** POST /api/auth/verify-pin's body — the same on a sign-in and on the A345 background upgrade. */
+  function verifyPinBody(pin: string, branch_id: string): string {
+    return JSON.stringify({
+      pin, branch_id,
+      // The running build, reported on the one call every till makes every day.
+      // Three tills are updated by hand and drift; without this a bug report
+      // cannot be tied to a version, so a fixed bug and an un-updated till look
+      // identical from the outside.
+      app_version: app.getVersion(),
+      device_id: getDeviceConfig()?.device_id ?? undefined,
+      // A273 follow-up: sent on every sign-in so the cloud label follows the till's
+      // setup name (the setup name always wins — owner, 2026-09-26).
+      terminal_code: getDeviceConfig()?.terminal_code ?? undefined,
+      device_name:   getDeviceConfig()?.device_name ?? undefined,
+    });
+  }
+
   handle('auth:verifyPin', async (_event, payload) => {
     // D7: validate at the boundary. A malformed payload throws a clear error the
     // renderer already catches, instead of destructuring undefined mid-handler.
@@ -510,6 +573,8 @@ export function registerIpcHandlers() {
         new Date().toISOString(),
       );
       configureStaffSession('', '');
+      // A345: held in memory so the session becomes a cloud sign-in by itself once the network is back (offlineSession.ts).
+      holdOfflinePin({ staffId: staff.staffId, branchId: branch_id, pin: String(pin) });
       return {
         staff: { id: staff.staffId, name: staff.name, role: staff.roleName },
         // The PIN screen routes on the TOP-LEVEL role (App.tsx hasManagerRights), exactly as the online answer gives it
@@ -557,19 +622,8 @@ export function registerIpcHandlers() {
       res = await ownerFetch('/api/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // The running build, reported on the one call every till makes every day.
-      // Three tills are updated by hand and drift; without this a bug report
-      // cannot be tied to a version, so a fixed bug and an un-updated till look
-      // identical from the outside.
-      body: JSON.stringify({
-        pin, branch_id,
-        app_version: app.getVersion(),
-        device_id: getDeviceConfig()?.device_id ?? undefined,
-        // A273 follow-up: sent on every sign-in so the cloud label follows the till's
-        // setup name (the setup name always wins — owner, 2026-09-26).
-        terminal_code: getDeviceConfig()?.terminal_code ?? undefined,
-        device_name:   getDeviceConfig()?.device_name ?? undefined,
-      }),
+      // PIN, branch, the running build and this till's name (verifyPinBody).
+      body: verifyPinBody(String(pin), branch_id),
       });
     } catch (netErr: any) {
       logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
@@ -590,43 +644,9 @@ export function registerIpcHandlers() {
     const data = await res.json().catch(() => ({} as any));
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
 
-    // Online sign-in succeeded, so the server has just confirmed this PIN and
-    // that it is unique across the business. Only now is it safe to cache.
-    cacheStaffCredential(
-      { staffId: data.staff?.id, name: data.staff?.name ?? 'Staff',
-        roleName: data.staff?.role ?? null, permissions: data.permissions ?? {} },
-      data.offlineAuth?.pinHash,
-      branch_id,
-    );
-
-    // Resolve branch name for display (from the local branches table if present).
-    const branchRow = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id) as any;
-
-    db.prepare(`
-      INSERT INTO staff_session
-        (id, staff_id, staff_name, role_name, branch_id, branch_name, permissions, token, refresh_token, logged_in_at)
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        staff_id=excluded.staff_id, staff_name=excluded.staff_name, role_name=excluded.role_name,
-        branch_id=excluded.branch_id, branch_name=excluded.branch_name, permissions=excluded.permissions,
-        token=excluded.token, refresh_token=excluded.refresh_token, logged_in_at=excluded.logged_in_at
-    `).run(
-      data.staff?.id ?? null,
-      data.staff?.name ?? 'Staff',
-      data.staff?.role ?? null,
-      branch_id,
-      branchRow?.name ?? null,
-      JSON.stringify(data.permissions ?? {}),
-      data.accessToken ?? data.token,
-      data.refreshToken ?? null,
-      new Date().toISOString(),
-    );
-
-    // D5 - wrap at rest, same as the owner session.
-    writeStaffTokens({ token: data.accessToken ?? data.token ?? '', refreshToken: data.refreshToken ?? '' });
-
-    // Make the staff token the active credential for order pushes.
-    configureStaffSession(data.accessToken ?? data.token, data.refreshToken ?? '');
+    // Online sign-in succeeded: an offline PIN held from an earlier sign-in is no longer needed (A345).
+    clearOfflinePin();
+    const branchRow = persistCloudSignIn(data, branch_id);
 
     // Bind this till to the branch the cashier works on. From now on the PIN
     // screen skips the selector and — crucially — sync pulls stock/tables for
@@ -697,6 +717,7 @@ export function registerIpcHandlers() {
   handle('auth:clearStaffSession', async () => {
     const db = getLocalDb();
     db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
+    clearOfflinePin();   // A345: locking the till ends the offline sign-in's upgrade too
     configureStaffSession('', '');
     return true;
   });
@@ -1602,6 +1623,97 @@ export function registerIpcHandlers() {
   // Every call runs under the STAFF token, so the server's own permission
   // checks (products.manage, staff.manage) apply exactly as they do on the web.
   // The till does not get to decide who may edit the menu.
+
+  // ── A345: offline sign-ins ─────────────────────────────────────────────────
+  // Why the last cloud-owned list could not be read: an offline sign-in, or no connection. null = the last call reached the
+  // cloud. Only these two reasons let the Menu / Staff pages fall back to what this till has saved — a refusal (403) or any
+  // other answer never does.
+  let lastManageFailure: ManageOfflineReason | null = null;
+
+  /** One attempt to turn an offline sign-in into a cloud sign-in (offlineSession.ts). Never throws; bounded to 8 s. */
+  async function tryUpgradeOfflineSession() {
+    if (!heldOfflinePin()) return 'nothing' as const;
+    const outcome = await upgradeOfflineSession({
+      currentSession: () => {
+        const r = getLocalDb().prepare(`SELECT staff_id FROM staff_session WHERE id=1`).get() as { staff_id: string } | undefined;
+        return r ? { staffId: r.staff_id, hasToken: !!readStaffTokens().token } : null;
+      },
+      verifyAtCloud: async (pin, branchId) => {
+        const res = await withinMs(ownerFetch('/api/auth/verify-pin', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: verifyPinBody(pin, branchId),
+        }), 8_000);
+        return { status: res.status, body: await res.json().catch(() => ({})) };
+      },
+      adopt: (data, branchId) => { persistCloudSignIn(data, branchId); },
+      isUnreachableStatus,
+      log: (line) => logLine('pin', line),
+    }).catch(() => 'unreachable' as const);
+    if (outcome === 'upgraded') {
+      lastManageFailure = null;
+      pullWebSales().catch(() => { /* the 20-s poll retries */ });
+    }
+    return outcome;
+  }
+  // The network coming back is not an event the till is told about, so look every 30 s while an offline sign-in is held.
+  // Nothing is sent while none is (heldOfflinePin() is checked first). unref: never keeps the app (or a test) alive.
+  const offlineUpgradeTimer = setInterval(() => { if (heldOfflinePin()) void tryUpgradeOfflineSession(); }, 30_000);
+  (offlineUpgradeTimer as any).unref?.();
+
+  /** Signed in, but offline (no cloud token for the person at the till). */
+  function offlineSessionNow(): boolean {
+    return !!getLocalDb().prepare(`SELECT 1 FROM staff_session WHERE id=1`).get() && !readStaffTokens().token;
+  }
+
+  /** Is the back office's cloud-owned data unreachable for an OFFLINE reason? (The only case the saved lists are shown.) */
+  function manageOfflineReason(): { reason: ManageOfflineReason; message: string } | null {
+    if (offlineSessionNow()) return { reason: 'offline_session', message: OFFLINE_SESSION_MESSAGE };
+    if (lastManageFailure === 'no_connection') return { reason: 'no_connection', message: NO_CONNECTION_MESSAGE };
+    return null;
+  }
+
+  // What this till has saved, for the Menu page while offline (read-only). Only what sync already brought down.
+  handle('manage:cachedMenu', async () => {
+    const off = manageOfflineReason();
+    if (!off) return { offline: null, products: [], categories: [], combos: [] };
+    const db = getLocalDb();
+    const products = db.prepare(`
+      SELECT p.id, p.name, p.base_price, p.category_id, p.description, p.status,
+             EXISTS (SELECT 1 FROM combo_items ci WHERE ci.combo_id = p.id) AS is_combo
+        FROM products p WHERE COALESCE(p.status, 'active') = 'active' ORDER BY p.name COLLATE NOCASE`).all() as any[];
+    const categories = db.prepare(`SELECT id, name FROM categories WHERE COALESCE(status, 'active') = 'active' ORDER BY sort_order, name`).all();
+    const items = db.prepare(`SELECT combo_id, product_id, name, quantity FROM combo_items ORDER BY combo_id, sort_order`).all() as any[];
+    const byCombo = new Map<string, any[]>();
+    for (const it of items) {
+      if (!byCombo.has(it.combo_id)) byCombo.set(it.combo_id, []);
+      byCombo.get(it.combo_id)!.push({ product_id: it.product_id, name: it.name, quantity: it.quantity });
+    }
+    return {
+      offline: off,
+      products: products.map(p => ({ ...p, is_combo: !!p.is_combo })),
+      categories,
+      combos: [...byCombo].map(([id, list]) => ({ id, items: list })),
+    };
+  });
+
+  // The Staff page while offline: the people this till knows (read-only). A branch node holds the whole branch roster; any
+  // other till knows the people who have signed in on it. Names and roles only — never a PIN hash.
+  handle('manage:cachedStaff', async () => {
+    const off = manageOfflineReason();
+    if (!off) return { offline: null, source: null, staff: [] };
+    const db = getLocalDb();
+    const cfg = getDeviceConfig();
+    const branchId = cfg?.branch_id ?? null;
+    const roster = isNodeRole(cfg?.device_role)
+      ? db.prepare(`SELECT staff_id AS id, name, role_name, (status = 'active') AS is_active FROM branch_staff WHERE (? IS NULL OR branch_id = ?) ORDER BY name COLLATE NOCASE`).all(branchId, branchId)
+      : db.prepare(`SELECT staff_id AS id, name, role_name FROM staff_pin_cache WHERE (? IS NULL OR branch_id = ?) ORDER BY name COLLATE NOCASE`).all(branchId, branchId);
+    return {
+      offline: off,
+      source: isNodeRole(cfg?.device_role) ? 'branch' : 'till',
+      // SQLite gives 0/1; the page reads `is_active === false`.
+      staff: (roster as any[]).map(r => ('is_active' in r ? { ...r, is_active: !!r.is_active } : r)),
+    };
+  });
+
   /**
    * The manager-screen fetch: Menu, Staff, Prices, Combos, Receipt, Printers.
    * 35 handlers route through it.
@@ -1637,7 +1749,15 @@ export function registerIpcHandlers() {
     const readToken = () => readStaffTokens().token;
 
     let token = readToken();
-    if (!token) throw new Error('Not signed in');
+    if (!token) {
+      // A345: an OFFLINE sign-in has no cloud token. Try to make it a cloud sign-in now (the network may be back), and if it
+      // cannot be, say so — it is NOT "not signed in" (owner's screenshots, v0.6.14 checklist).
+      const signedIn = !!db.prepare(`SELECT 1 FROM staff_session WHERE id=1`).get();
+      if (!signedIn) throw new Error('Not signed in');
+      await tryUpgradeOfflineSession();
+      token = readToken();
+      if (!token) { lastManageFailure = 'offline_session'; throw new Error(OFFLINE_SESSION_MESSAGE); }
+    }
 
     const call = (t: string) => fetch(`${getCloudUrl()}${path}`, {
       method,
@@ -1660,8 +1780,10 @@ export function registerIpcHandlers() {
         }
       }
     } catch {
-      throw new Error('No connection — menu and staff changes need internet. Try again once you are back online.');
+      lastManageFailure = 'no_connection';
+      throw new Error(NO_CONNECTION_MESSAGE);
     }
+    lastManageFailure = null;
 
     const text = await res.text();
     let data: any = null;
@@ -2075,10 +2197,12 @@ export function registerIpcHandlers() {
     // Get server URL + best available auth token
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
+    // A345: an offline sign-in has no cloud token yet — make it a cloud sign-in first if the network is back.
+    if (!readStaffTokens().token) await tryUpgradeOfflineSession();
     const staffRow = { token: readStaffTokens().token };
     const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
-    if (!token) throw new Error('Not signed in');
+    if (!token) throw new Error(offlineSessionNow() ? OFFLINE_SESSION_MESSAGE : 'Not signed in');
 
     const res = await fetch(`${cfg.server_url}/api/orders/${orderId}/void`, {
       method: 'POST',
@@ -2126,10 +2250,12 @@ export function registerIpcHandlers() {
     const db = getLocalDb();
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
+    // A345: an offline sign-in has no cloud token yet — make it a cloud sign-in first if the network is back.
+    if (!readStaffTokens().token) await tryUpgradeOfflineSession();
     const staffRow = { token: readStaffTokens().token };
     const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
-    if (!token) throw new Error('Not signed in');
+    if (!token) throw new Error(offlineSessionNow() ? OFFLINE_SESSION_MESSAGE : 'Not signed in');
 
     const res = await fetch(`${cfg.server_url}/api/orders/${orderId}/refund`, {
       method: 'POST',

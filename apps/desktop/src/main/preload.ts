@@ -204,6 +204,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),
     listRoles:      ()                                   => ipcRenderer.invoke('manage:listRoles'),
+    cachedMenu:     ()                                   => ipcRenderer.invoke('manage:cachedMenu'),
+    cachedStaff:    ()                                   => ipcRenderer.invoke('manage:cachedStaff'),
     createStaff:    (payload: any)                       => ipcRenderer.invoke('manage:createStaff', payload),
     updateStaff:    (id: string, patch: any)             => ipcRenderer.invoke('manage:updateStaff', { id, patch }),
     getReceiptText: ()                                   => ipcRenderer.invoke('manage:getReceiptText'),

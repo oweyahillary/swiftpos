@@ -1,6 +1,9 @@
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
+/** A345: why the back office's cloud-owned lists cannot be read right now (main/offlineSession.ts has the words). */
+export interface OfflineManage { reason: 'offline_session' | 'no_connection'; message: string }
+
 export interface StaffSession {
   staff: { id: string; name: string } | null;
   role: string | null;
@@ -404,6 +407,10 @@ declare global {
         deleteVariantGroup: (id: string) => Promise<any>;
         listStaff:      () => Promise<any[]>;
         listRoles:      () => Promise<any[]>;
+        /** A345: what this till has saved, shown read-only while the cloud is out of reach. `offline` null = the cloud is
+         *  reachable (or refused for another reason) — nothing is returned then. */
+        cachedMenu:     () => Promise<{ offline: OfflineManage | null; products: any[]; categories: any[]; combos: any[] }>;
+        cachedStaff:    () => Promise<{ offline: OfflineManage | null; source: 'branch' | 'till' | null; staff: any[] }>;
         createStaff:    (payload: any) => Promise<any>;
         updateStaff:    (id: string, patch: any) => Promise<any>;
         getReceiptText: () => Promise<{ header: string; footer: string }>;

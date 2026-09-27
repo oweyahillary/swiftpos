@@ -244,6 +244,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:deleteModifierGroup': { kind: 'string' },
   'manage:listStaff':           NO_PAYLOAD,
   'manage:listRoles':           NO_PAYLOAD,
+  'manage:cachedMenu':          NO_PAYLOAD,   // A345: offline, read-only
+  'manage:cachedStaff':         NO_PAYLOAD,   // A345: offline, read-only
   'manage:createStaff':         { name: { t: 'string' } },
   'manage:updateStaff':         idPatch,
   'manage:getReceiptText':      NO_PAYLOAD,

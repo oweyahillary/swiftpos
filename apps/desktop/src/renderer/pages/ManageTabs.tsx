@@ -339,6 +339,9 @@ export function StaffTab({ branchId }: { branchId?: string }) {
   const [ok, setOk] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: '', pin: '', role_id: '', override_pin: '' });
+  // A345: set while the cloud is out of reach for an offline reason — the page then lists the people this till knows,
+  // read-only, and says why. `source`: 'branch' = a node's whole branch roster; 'till' = people who signed in here.
+  const [offline, setOffline] = useState<{ message: string; source: 'branch' | 'till' | null } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -347,8 +350,19 @@ export function StaffTab({ branchId }: { branchId?: string }) {
       setStaff(Array.isArray(s) ? s : []);
       setRoles(Array.isArray(r) ? r : []);
       setErr('');
+      setOffline(null);
     } catch (e: any) {
-      setErr(e?.message ?? 'Could not load staff.');
+      const cached = await posApi.manage.cachedStaff().catch(() => null);
+      if (cached?.offline) {
+        setStaff(cached.staff);
+        setRoles([]);
+        setShowNew(false);
+        setErr('');
+        setOffline({ message: cached.offline.message, source: cached.source });
+      } else {
+        setOffline(null);
+        setErr(e?.message ?? 'Could not load staff.');
+      }
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -406,9 +420,25 @@ export function StaffTab({ branchId }: { branchId?: string }) {
       <Banner kind="err" text={err} />
       <Banner kind="ok" text={ok} />
 
-      <button onClick={() => setShowNew(v => !v)} className={`${btn} mb-4`}>
-        {showNew ? 'Cancel' : 'Add staff member'}
-      </button>
+      {offline ? (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-4 flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm text-amber-300">{offline.message}</p>
+            <p className="text-xs text-gray-300 mt-1">
+              {offline.source === 'branch'
+                ? 'Showing this branch\'s staff as saved on this till — read-only.'
+                : 'Showing the staff who have signed in on this till — read-only. Others appear once the till is online.'}
+            </p>
+          </div>
+          <button onClick={load} className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5">
+            Try again
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setShowNew(v => !v)} className={`${btn} mb-4`}>
+          {showNew ? 'Cancel' : 'Add staff member'}
+        </button>
+      )}
 
       {showNew && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 space-y-3">
@@ -470,10 +500,12 @@ export function StaffTab({ branchId }: { branchId?: string }) {
                 {m.can_authorize ? ' · can authorise voids' : ''}
               </p>
             </div>
-            <button onClick={() => toggleActive(m)} disabled={busy}
-              className="text-xs text-gray-300 hover:text-amber-400 px-2">
-              {m.is_active === false ? 'Reactivate' : 'Deactivate'}
-            </button>
+            {!offline && (
+              <button onClick={() => toggleActive(m)} disabled={busy}
+                className="text-xs text-gray-300 hover:text-amber-400 px-2">
+                {m.is_active === false ? 'Reactivate' : 'Deactivate'}
+              </button>
+            )}
           </div>
         ))}
       </div>

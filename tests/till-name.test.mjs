@@ -130,7 +130,11 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
     const s = read('apps/desktop/src/main/ipcHandlers.ts');
     const at = s.indexOf('}/api/auth/enrol/redeem`');   // the fetch, not the file-header comment
     const enrol = s.slice(at, at + 1500);
-    const pin = s.slice(s.indexOf("ownerFetch('/api/auth/verify-pin'"), s.indexOf("ownerFetch('/api/auth/verify-pin'") + 1200);
+    // A345 (0.6.15): the sign-in's body is built by verifyPinBody(), shared with the offline session's background upgrade.
+    const at2 = s.indexOf("res = await ownerFetch('/api/auth/verify-pin'");   // the sign-in (the upgrade has its own call)
+    const call = s.slice(at2, at2 + 300);
+    assert.match(call, /body: verifyPinBody\(String\(pin\), branch_id\)/, 'the sign-in sends verifyPinBody');
+    const pin = s.slice(s.indexOf('function verifyPinBody('), s.indexOf('function verifyPinBody(') + 1200);
     for (const [name, body] of [['enrol', enrol], ['verify-pin', pin]]) {
       assert.match(body, /terminal_code: getDeviceConfig\(\)\?\.terminal_code \?\? undefined,/, name);
       assert.match(body, /device_name: {3}getDeviceConfig\(\)\?\.device_name \?\? undefined,/, name);
