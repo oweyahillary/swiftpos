@@ -81,6 +81,10 @@ export interface DeviceConfig {
   /** Per-terminal local override. NULL = follow the cloud baseline above;
    *  non-NULL = this terminal's own list, which wins and survives every sync. */
   kitchen_exclusions_override: string | null;
+  /** A346: does the business have the web POS (web access active or in grace)? Pulled with the catalogue; null = the
+   *  cloud has not said yet (an older cloud, or never synced) → treated as NO. Read-only here: written only by
+   *  setWebPosEnabled() from the pull, never by saveDeviceConfig / config:save. */
+  web_pos_enabled: boolean | null;
   configured: boolean;
 }
 
@@ -112,6 +116,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     receipt_footer: row.receipt_footer ?? null,
     kitchen_exclusions: row.kitchen_exclusions ?? null,
     kitchen_exclusions_override: row.kitchen_exclusions_override ?? null,
+    web_pos_enabled: row.web_pos_enabled == null ? null : row.web_pos_enabled === 1,
     configured: row.configured === 1,
   };
 }
@@ -160,6 +165,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     continuous_operation: patch.continuous_operation !== undefined ? patch.continuous_operation : (current?.continuous_operation ?? false),
     kitchen_exclusions: patch.kitchen_exclusions !== undefined ? patch.kitchen_exclusions : (current?.kitchen_exclusions ?? null),
     kitchen_exclusions_override: patch.kitchen_exclusions_override !== undefined ? patch.kitchen_exclusions_override : (current?.kitchen_exclusions_override ?? null),
+    // A346: never from the patch — only setWebPosEnabled() (the cloud pull) writes it; the INSERT below leaves it alone.
+    web_pos_enabled: current?.web_pos_enabled ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -249,4 +256,14 @@ export function ensureNodeSecret(): string {
 export function clearDeviceConfig(): void {
   const db = getLocalDb();
   db.prepare(`DELETE FROM device_config WHERE id=1`).run();
+}
+
+/**
+ * A346: store what the cloud said about the web POS (catalogue pull, `webPosEnabled`). Its own write — the ONLY writer of
+ * web_pos_enabled — so a renderer's config:save can never switch a paid web feature on. undefined = the cloud did not say
+ * (an older cloud): leave the stored value alone.
+ */
+export function setWebPosEnabled(enabled: boolean | undefined): void {
+  if (typeof enabled !== 'boolean') return;
+  getLocalDb().prepare(`UPDATE device_config SET web_pos_enabled = ? WHERE id = 1`).run(enabled ? 1 : 0);
 }

@@ -9,6 +9,10 @@
  *   petrol_station → Overview (pump monitor + fuel sales) · Orders · Shift · Z-report · Stock
  *   restaurant/cafe → Overview (tables + revenue) · Orders · Shift · Z-report · Top items · Stock
  *   retail/other   → Overview (revenue KPIs) · Orders · Shift · Z-report · Stock
+ *
+ * Stock is a web POS (pro) feature (owner, 2026-09-27: "stock should only appear if the web pos is enabled"): the Stock
+ * item shows only when the business has the web POS — web access active or in grace, as the cloud reports it on every
+ * catalogue pull — AND something tracks stock.
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -1291,12 +1295,17 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     MANAGER_ROLES.includes(String((staff as any)?.role ?? '').toLowerCase())
     || has('settings.manage');
 
-  // Stock tab only appears once something actually tracks stock.
+  // Stock only for a business with the web POS (A346), and only once something actually tracks stock.
   const [showStock, setShowStock] = useState(false);
   useEffect(() => {
-    posApi.manager.stockLevels()
-      .then((rows: any[]) => setShowStock(Array.isArray(rows) && rows.length > 0))
-      .catch(() => setShowStock(false));
+    let live = true;
+    (async () => {
+      const cfg = await posApi.config.get().catch(() => null);
+      if (cfg?.web_pos_enabled !== true) { if (live) setShowStock(false); return; }
+      const rows = await posApi.manager.stockLevels().catch(() => []);
+      if (live) setShowStock(Array.isArray(rows) && rows.length > 0);
+    })();
+    return () => { live = false; };
   }, []);
 
   // Build nav from vertical
@@ -1346,7 +1355,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     // each permission allows. A manager with only receipt.manage keeps Receipt.
     ...((has('stations.manage') || canManageReceipt)
       ? [{ key: 'printers' as TabKey, label: 'Printing', icon: I.printer }] : []),
-    // Hidden when nothing is stock-tracked — an owner who turned stock off
+    // Hidden without the web POS (A346), and when nothing is stock-tracked — an owner who turned stock off
     // shouldn't be shown an empty Stock screen and conclude it's broken.
     ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
   ];
@@ -1382,7 +1391,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         canManageStations={has('stations.manage')}
         canManageReceipt={canManageReceipt}
       />;
-      case 'stock':   return <StockTab   currency={currency} />;
+      case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }
   }

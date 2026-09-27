@@ -1011,6 +1011,8 @@ function initSchema(db: Database.Database) {
     // WINS over the baseline and is never overwritten by a catalogue pull. This
     // is how a local edit is "final" while the cloud default keeps updating.
     ['kitchen_exclusions_override', 'TEXT'],
+    // A346: does the business have the web POS? Pulled (webPosEnabled), never pushed. NULL = not told yet = no.
+    ['web_pos_enabled', 'INTEGER'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1090,7 +1092,9 @@ function initSchema(db: Database.Database) {
 // 54 adds branding.theme_id (A325) — pulled, never pushed; same convention as 53.
 // 55 adds orders.origin — the web POS's sales on this till's drawer, downloaded (cross-sync stage 1). Pulled,
 // never pushed; REQUIRED moves with it by convention.
-export const LOCAL_SCHEMA_VERSION = 55;
+// 56 adds device_config.web_pos_enabled (A346) — whether the business has the web POS, which decides whether the
+// manager screen shows Stock. Pulled, never pushed; REQUIRED moves with it by convention.
+export const LOCAL_SCHEMA_VERSION = 56;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

@@ -67,6 +67,8 @@ export interface DeviceConfig {
   // src/main/deviceConfig.ts. Sent as X-Node-Secret on every /node/* call.
   node_secret: string | null;
   terminal_code: string | null;
+  /** A346: does the business have the web POS (from the cloud)? null = not known yet = no. Read-only (the cloud sets it). */
+  web_pos_enabled?: boolean | null;
   vat_rate: number | null;
   ctl_rate: number | null;
   // Discount ceiling the server enforces; cached so an offline till clamps to it.

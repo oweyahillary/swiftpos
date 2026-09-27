@@ -85,7 +85,9 @@ const localDbShim = w('localDb.cjs', `
 const deviceConfigShim = w('deviceConfig.cjs', `
   module.exports = { getDeviceConfig: () => ({ device_id: 'test-device', branch_id: null }),
                      saveDeviceConfig: () => {}, getServerUrl: () => 'http://127.0.0.1:1',
-                     canSell: () => true, isNodeRole: () => false };`);
+                     canSell: () => true, isNodeRole: () => false,
+                     // A346: the pull stores the cloud's web POS answer through this.
+                     setWebPosEnabled: () => {} };`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

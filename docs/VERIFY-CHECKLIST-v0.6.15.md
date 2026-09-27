@@ -2,17 +2,45 @@
 
 Interactive copy: `docs/checklists/VERIFY-CHECKLIST-v0.6.15.html` (Pass / Fail / Skip, a note required on a Fail, progress kept in the browser, results in the `R1: PASS — note … Summary … Failed:` format). This markdown is the same list, generated from it.
 
-0.6.15 adds A345 (a manager signed in offline: the right message, the saved menu and staff read-only, and unlocking by itself when the network returns), and carries the 3 checks skipped on 0.6.14. Till only — nothing to deploy on the cloud or the dashboard. Do §R first. **Record** = send a screenshot/photo. A **Fail** needs a note.
+0.6.15 adds A346 (the till shows Stock only when the business has the web POS) and A345 (a manager signed in offline: the right message, the saved menu and staff read-only, and unlocking by itself when the network returns), and carries the 3 checks skipped on 0.6.14. Deploy the cloud first, then the tills; nothing on the dashboard. Do §R first. **Record** = send a screenshot/photo. A **Fail** needs a note.
 
-## §R — Rollout — prerequisite for everything below
+## §R — Rollout (do these first, in order) — prerequisite for everything below
 
-Till only this time — nothing to deploy on the cloud or the dashboard, no migration.
+The cloud first, then the tills. Nothing to deploy on the dashboard; no migration.
 
-### R1 — Every till is on 0.6.15 · **Record**
+### R1 — Cloud deployed from dev
+1. Render → the API service → deploy the latest dev commit.
+2. Wait for “Live”.
+
+**Expected:** Deploy finished; the web POS and dashboard still sign in.
+
+### R2 — Every till is on 0.6.15 · **Record**
 1. Install 0.6.15 (or let auto-update finish and restart).
 2. Technician mode / About → version.
 
 **Expected:** Each till reads **0.6.15**.
+
+## §N — Stock only with the web POS — closes A346
+
+Stock is a web POS (pro) feature. The till learns whether the business has the web POS on its catalogue sync — after installing, sign in online once (or Technician → Force sync) before N1.
+
+### N1 — A business WITH the web POS sees Stock · **Record**
+1. On a till of a business that has web access (e.g. B Foods), sign in as the manager, online.
+2. Look at the manager menu.
+
+**Expected:** **Stock** is in the menu (if any item tracks stock) and opens the stock levels.
+
+### N2 — A business WITHOUT the web POS does not · **Record**
+1. Admin portal → that business (or a test business) → switch web access OFF (or use a business that never had it).
+2. On its till: Technician → Force sync (or wait for the next sync), then lock and sign in again as the manager.
+3. Switch web access back ON afterwards if it was a real business, and sync again.
+
+**Expected:** With web access off: **no Stock** in the manager menu. Back on + sync: Stock returns.
+
+### N3 — Selling is unchanged
+1. With web access off, ring a sale of an item that tracks stock.
+
+**Expected:** The sale goes through as before — only the Stock screen is hidden.
 
 ## §O — A manager signed in OFFLINE — closes A345
 

@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
+import { getWebAccess } from '../lib/webAccess';
 
 const router = safeRouter();
 
@@ -215,7 +216,7 @@ router.get('/init', async (req, res) => {
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
-      .select('type, name, currency, vat_rate, ctl_rate')
+      .select('type, name, currency, vat_rate, ctl_rate, status')
       .eq('id', req.businessId)
       .single(),
     // A304: client branding (accent + base64 logo) for this business, pulled to
@@ -231,6 +232,9 @@ router.get('/init', async (req, res) => {
   // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
   // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
   const themeId = effectiveThemeId(await themesEnabled(req.businessId), branding?.theme_id);
+  // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
+  // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
+  const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
 
   if (pErr || cErr || brErr) {
     sendError(res, (pErr || cErr || brErr));
@@ -371,6 +375,8 @@ router.get('/init', async (req, res) => {
     // a short grace window at rollover instead of an immediate hard lock, so a
     // round-the-clock branch keeps trading while a manager closes the day.
     continuousOperation: receiptText.continuous_operation === 'true',
+    // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
+    webPosEnabled,
     receiptFooter: receiptText.receipt_footer ?? '',
     // Things that must never reach a kitchen ticket — drinks, sauces, packaged
     // sides. Stated by the owner rather than inferred: a keyword guess is wrong

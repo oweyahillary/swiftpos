@@ -49,6 +49,8 @@ export interface ReferenceBundle {
     kitchenExclusions: string[] | null;
     paymentMethods: Array<{ code: string; name: string }>;
     continuousOperation: boolean | null;
+    /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
+    webPosEnabled?: boolean | null;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -90,6 +92,7 @@ export interface ReferenceRows {
     receiptFooter: string | null;
     kitchenExclusions: string[] | null;
     continuousOperation: boolean | null;
+    webPosEnabled?: boolean | null;   // A346
   };
 }
 
@@ -191,6 +194,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       kitchenExclusions: rows.config.kitchenExclusions,
       paymentMethods,
       continuousOperation: rows.config.continuousOperation,
+      webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
     },
     variantGroups: rows.variantGroups,
     variantOptions: rows.variantOptions,
@@ -256,6 +260,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         typeof cfg?.continuous_operation === 'boolean' ? cfg.continuous_operation
         : cfg?.continuous_operation == null ? null
         : asBool(cfg.continuous_operation),
+      webPosEnabled: typeof cfg?.web_pos_enabled === 'boolean' ? cfg.web_pos_enabled : null,
     },
   };
 
@@ -300,6 +305,8 @@ export interface AcquiredReference {
     /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
      *  which relays no branding today) → the till keeps its local value. */
     themeId?: string | null;
+    /** A346: does the business have the web POS? undefined = not said (older cloud / older node) → keep the local value. */
+    webPosEnabled?: boolean;
   };
 }
 
@@ -340,6 +347,8 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       receiptFooter: typeof pi.receiptFooter === 'string' ? pi.receiptFooter : null,
       kitchenExclusions: Array.isArray(pi.kitchenExclusions) ? pi.kitchenExclusions : null,
       continuousOperation: typeof pi.continuousOperation === 'boolean' ? pi.continuousOperation : null,
+      // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
+      webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
     },
   };
 }

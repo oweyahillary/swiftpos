@@ -50,7 +50,7 @@ db.prepare(`INSERT INTO staff_session (id, staff_id, staff_name, role_name, bran
 
 console.log('Cross-sync stage 1 — web sales on this till\'s drawer\n');
 const cols = db.prepare(`PRAGMA table_info(orders)`).all().map((c) => c.name);
-ok('local schema 55: orders.origin exists', L.LOCAL_SCHEMA_VERSION === 55 && cols.includes('origin'), String(L.LOCAL_SCHEMA_VERSION));
+ok('local schema 55 or later: orders.origin exists', L.LOCAL_SCHEMA_VERSION >= 55 && cols.includes('origin'), String(L.LOCAL_SCHEMA_VERSION));
 
 // The drawer (opened on the web as this till and joined — A334), float 1000.
 const shift = S.adoptCloudShift({ id: 'sh-1', status: 'open', device_id: 'dev-T1', branch_id: 'br-1', cashier_id: 'u-jane',

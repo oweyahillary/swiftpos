@@ -13,7 +13,7 @@ import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -864,6 +864,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (c.branding) applyPulledBranding(c.branding);
   // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
   if (c.themeId !== undefined) applyPulledTheme(c.themeId);
+  // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.
+  setWebPosEnabled(c.webPosEnabled);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -969,6 +971,8 @@ async function pullCatalogue(): Promise<boolean> {
         : null,
       // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
       themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
+      // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
+      webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).

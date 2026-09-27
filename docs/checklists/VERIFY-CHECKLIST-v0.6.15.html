@@ -88,7 +88,7 @@
 <body>
 <div class="wrap">
   <h1>SwiftPOS v0.6.15 — rollout verification</h1>
-  <p class="sub">0.6.15: a manager signed in offline — the right message, the saved menu and staff read-only, and unlocking by itself when the network returns — plus the 3 checks skipped on 0.6.14 · one till (manager + cashier PINs) · ~30 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
+  <p class="sub">0.6.15: Stock only with the web POS · a manager signed in offline — the right message, the saved menu and staff read-only, and unlocking by itself when the network returns — plus the 3 checks skipped on 0.6.14 · one till (manager + cashier PINs), the admin portal · ~40 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
 
   <div class="card">
     <div class="meta">
@@ -98,7 +98,7 @@
     </div>
   </div>
 
-  <p class="scopenote"><b>Before you start.</b> Do §R first. You need: a manager PIN that has signed in ONLINE on this till before, a cashier PIN, a way to take the till offline (cable or Wi-Fi), and the dashboard. §S K4 also needs the web POS. Wherever a check says <b>Record</b>, take a screenshot or photo. A <b>Fail needs a note</b> saying exactly what you saw.</p>
+  <p class="scopenote"><b>Before you start.</b> Do §R first (the cloud before the tills). You need: admin-portal access for §N, a manager PIN that has signed in ONLINE on this till before, a cashier PIN, a way to take the till offline (cable or Wi-Fi), and the dashboard. §S K4 also needs the web POS. Wherever a check says <b>Record</b>, take a screenshot or photo. A <b>Fail needs a note</b> saying exactly what you saw.</p>
 
   <div id="list"></div>
 
@@ -118,8 +118,24 @@
 <script>
 // [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
 const DATA = [
-  ["§R — Rollout", "prerequisite for everything below", "Till only this time — nothing to deploy on the cloud or the dashboard, no migration.", [
-    ["R1", "Every till is on 0.6.15", ["Install 0.6.15 (or let auto-update finish and restart).", "Technician mode / About → version."], "Each till reads <b>0.6.15</b>.", true],
+  ["§R — Rollout (do these first, in order)", "prerequisite for everything below", "The cloud first, then the tills. Nothing to deploy on the dashboard; no migration.", [
+    ["R1", "Cloud deployed from dev", ["Render → the API service → deploy the latest dev commit.", "Wait for “Live”."], "Deploy finished; the web POS and dashboard still sign in.", false],
+    ["R2", "Every till is on 0.6.15", ["Install 0.6.15 (or let auto-update finish and restart).", "Technician mode / About → version."], "Each till reads <b>0.6.15</b>.", true],
+  ]],
+
+  ["§N — Stock only with the web POS", "closes A346", "Stock is a web POS (pro) feature. The till learns whether the business has the web POS on its catalogue sync — after installing, sign in online once (or Technician → Force sync) before N1.", [
+    ["N1", "A business WITH the web POS sees Stock", [
+      "On a till of a business that has web access (e.g. B Foods), sign in as the manager, online.",
+      "Look at the manager menu.",
+    ], "<b>Stock</b> is in the menu (if any item tracks stock) and opens the stock levels.", true],
+    ["N2", "A business WITHOUT the web POS does not", [
+      "Admin portal → that business (or a test business) → switch web access OFF (or use a business that never had it).",
+      "On its till: Technician → Force sync (or wait for the next sync), then lock and sign in again as the manager.",
+      "Switch web access back ON afterwards if it was a real business, and sync again.",
+    ], "With web access off: <b>no Stock</b> in the manager menu. Back on + sync: Stock returns.", true],
+    ["N3", "Selling is unchanged", [
+      "With web access off, ring a sale of an item that tracks stock.",
+    ], "The sale goes through as before — only the Stock screen is hidden.", false],
   ]],
 
   ["§O — A manager signed in OFFLINE", "closes A345", "You need a MANAGER PIN that has signed in on this till online at least once, and a cashier PIN. “Network off” = unplug the cable / turn Wi-Fi off on the till.", [
