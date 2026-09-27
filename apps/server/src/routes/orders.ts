@@ -548,6 +548,17 @@ router.post('/', async (req, res) => {
     // The client's supplied shift_id wins when present (it already reflects the
     // terminal's session from /shifts/current); otherwise resolve by terminal.
     let resolvedShiftId: string | null = shift_id ?? null;
+    // A338: a sale whose drawer has not reached the cloud yet is not a fault — the till pushes the drawer first and
+    // will retry. Say so with a code the till understands (it keeps the sale pending instead of giving up after 5
+    // tries), rather than letting the orders.shift_id foreign key fail as a 500.
+    if (resolvedShiftId) {
+      const { data: drawer } = await supabase
+        .from('shifts').select('id').eq('id', resolvedShiftId).eq('business_id', req.businessId).maybeSingle();
+      if (!drawer) {
+        res.status(424).json({ code: 'shift_not_synced', error: 'This sale\'s drawer has not reached the cloud yet — it will sync right after it.' });
+        return;
+      }
+    }
     if (!resolvedShiftId) {
       const tkey = terminalKeyFromRequest(req);
       const { data: openShifts } = await supabase

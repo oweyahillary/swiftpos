@@ -384,6 +384,8 @@ async function runPushStages(errors: string[]): Promise<number> {
       return 0;
     }
   };
+  // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
+  await stage('requeue', async () => requeueAfterDrawerClash());
   await stage('shift push', () => pushLocalRecords(errors));
   await stage('price push', () => pushBranchPriceEdits(errors));
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
@@ -1737,6 +1739,13 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         `).run(message, row.id);
         errors.push(`Order ${row.order_id}: ${message}`);
         logLine('sync', `order push rejected (409): ${message}`);
+      } else if (res.status === 424) {
+        // A338: the sale's drawer is not on the cloud yet (it goes up in the shift stage, before this one). Not a
+        // fault and not this sale's to give up on: it stays pending, never counts towards 'failed', and goes next pass.
+        const err = await res.json().catch(() => ({} as any));
+        const message = (err as any)?.error || 'drawer not on the cloud yet';
+        db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
+        logLine('sync', `order ${row.order_id} waits for its drawer: ${message}`);
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         const message = describeServerError(err, res.status);
@@ -1882,6 +1891,58 @@ async function pushToNode(errors: string[]): Promise<number> {
   }
 
   return delivered.length;
+}
+
+/**
+ * A338 (2026-09-27) — one drawer must never stop another from syncing (owner: "one should never block the other").
+ *
+ * Until migration 107 the cloud refused a till's shift while another drawer was open on the same terminal (the web POS
+ * standing in for this till): the shift was parked 'conflict' (duplicate_open_shift), its floats and expenses were refused
+ * as missing_shift and parked too, and every sale on it failed its foreign key five times and went 'failed'. Nothing
+ * retried any of it, and Force sync could not help. Once the cloud accepts such a drawer, this puts them back:
+ *   - shifts parked for that reason → pending (the rejection line is taken out of the notes, which the close sends on);
+ *   - floats / expenses parked while their drawer was missing → pending, once the drawer is no longer parked;
+ *   - sales that failed because their drawer was missing → pending, ONCE (marked, so a sale refused for another reason
+ *     cannot loop), and only once their drawer has reached the cloud.
+ * Cheap and idempotent: each is a single UPDATE that matches nothing on a healthy till.
+ */
+export const DRAWER_CLASH_NOTE = 'Sync rejected: This cashier already has an open shift. It must be closed before this one can sync.';
+export const REQUEUED_MARK = '[requeued after its drawer synced] ';
+export const REQUEUE_ONCE = 1000;
+export function requeueAfterDrawerClash(): { shifts: number; floats: number; expenses: number; orders: number } {
+  const db = getLocalDb();
+  const own = getDeviceConfig()?.device_id ?? null;
+  const shifts = db.prepare(`
+    UPDATE shifts SET sync_status = 'pending', notes = NULLIF(TRIM(REPLACE(COALESCE(notes,''), ?, ''), ' ' || char(10) || char(13)), '')
+     -- own: only this till pushes its drawers, so only it re-queues them.
+     WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'') AND notes LIKE '%already has an open shift%'
+  `).run(DRAWER_CLASH_NOTE, own).changes;
+  const floats = db.prepare(`
+    UPDATE float_transactions SET sync_status = 'pending'
+     -- own: this till's drawer movements, whose drawer is no longer parked.
+     WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'')
+       AND shift_id IN (SELECT id FROM shifts WHERE sync_status != 'conflict')
+  `).run(own).changes;
+  const expenses = db.prepare(`
+    UPDATE expenses SET sync_status = 'pending'
+     -- own: this till's expenses, whose drawer is no longer parked.
+     WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'')
+       AND shift_id IN (SELECT id FROM shifts WHERE sync_status != 'conflict')
+  `).run(own).changes;
+  // Once only: attempts is set to REQUEUE_ONCE, which the failure path only ever increments — so a sale that fails
+  // again goes straight back to 'failed' (attempts+1 >= 5) and is never matched here again. (A mark in last_error
+  // would not hold: the failure path overwrites last_error.)
+  const orders = db.prepare(`
+    UPDATE sync_queue SET status = 'pending', attempts = ?, last_error = ? || COALESCE(last_error, '')
+     WHERE status = 'failed' AND attempts < ?
+       AND (last_error LIKE '%references a record the server does not have%' OR last_error LIKE '%drawer has not reached the cloud%')
+       -- branch-wide: keyed by order id to this till's own sync_queue rows; the drawer test is by id.
+       AND order_id IN (SELECT o.id FROM orders o JOIN shifts s ON s.id = o.shift_id WHERE s.sync_status = 'synced')
+  `).run(REQUEUE_ONCE, REQUEUED_MARK, REQUEUE_ONCE).changes;
+  if (shifts + floats + expenses + orders) {
+    logLine('sync', `A338 requeued after a drawer clash: ${shifts} shift(s), ${floats} float(s), ${expenses} expense(s), ${orders} sale(s)`);
+  }
+  return { shifts, floats, expenses, orders };
 }
 
 async function reconcileClosedShifts(errors: string[]): Promise<number> {
