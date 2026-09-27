@@ -202,7 +202,7 @@ export default function OnboardingPage() {
   const labelCls = 'block text-xs font-medium text-[#64748b] mb-1.5 tracking-wide uppercase';
 
   return (
-    <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4 py-8">
+    <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4 py-8">
 
       {/* Background grid */}
       <div

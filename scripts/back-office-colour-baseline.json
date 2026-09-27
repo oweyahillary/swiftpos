@@ -1,6 +1,7 @@
 {
  "_": "A329 step 3: raw green/blue LEFT in the back office — status, money, data colours and blue info only (docs/A329-back-office-colour-classification.md). Counts classes, hex/rgb(a) by hue and named strings. May go DOWN, never up.",
  "files": {
+  "index.css": 14,
   "lib/printDocument.ts": 2,
   "pages/BranchDetailPage.tsx": 7,
   "pages/BranchesPage.tsx": 4,

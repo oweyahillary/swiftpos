@@ -49,7 +49,7 @@ export default function ForcePasswordChangePage() {
     'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
 
   return (
-    <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
+    <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
 
       {/* Background grid */}
       <div

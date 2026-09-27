@@ -126,7 +126,7 @@ export default function LoginPage() {
   const accessError = errorCode ? ACCESS_ERROR_CODES[errorCode] : null;
   if (accessError) {
     return (
-      <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
+      <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
         <div className="w-full max-w-md">
           <div className="bg-[#0f172a] border border-[#1e2d45] rounded-2xl p-8 text-center space-y-5">
             <div className="text-5xl">{accessError.icon}</div>
@@ -168,7 +168,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
+    <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
 
       {/* Background grid */}
       <div
