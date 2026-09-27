@@ -53,3 +53,24 @@ Owner ran migration 107 and pasted the `pg_indexes` result for `shifts`:
 **R1: PASS** — the plain index is in, `shifts_one_open_per_terminal` (unique) is gone. (Not via the "DB migrate (production)"
 workflow — its last run is #4 on 2026-09-02; applied by hand.) The remaining rollout checks and every open item are in
 `docs/checklists/VERIFY-CHECKLIST-v0.6.13.html`.
+
+## Checklist v0.6.13 on target (tester Max, T1 on 0.6.13) — 31 pass / 0 fail / 8 skip
+Results as returned (`docs/checklists/VERIFY-CHECKLIST-v0.6.13.html`):
+
+```
+R1 PASS · R2 PASS · R3 PASS · R4 PASS
+H1 PASS — pending is zero · H2 PASS · H3 PASS · H4 PASS
+J1 SKIP · J2 PASS · J3 PASS · J4 PASS
+B1 PASS · B2 PASS · B3 SKIP · B4 PASS · B5 PASS · B6 SKIP · B7 PASS
+F1 PASS · F2 PASS · F3 SKIP · F4 SKIP · F5 SKIP · F6 SKIP
+G1 PASS · G2 PASS · G3 PASS · G4 PASS · G5 PASS
+D5 PASS · E1 PASS · E2 PASS · E3 PASS
+X1 PASS · X2 PASS · X3 PASS · X4 PASS · X5 SKIP
+Summary: 31 pass / 0 fail / 8 skip / 0 not run (of 39) · Failed: none
+```
+
+**Closed:** A338 (sync never blocked), A340 (managers cannot make owners), A337 (reports), A332 + A333 (light mode).
+**B5 PASS** — the double count reported on 0.6.9 (6,210 for 4,720) is fixed on target.
+**Still open, for their skipped checks:** A339 (J1 offline manager), A334 (B3, B6), A336 (F3, F4, F6), A335 (F5).
+Owner's follow-ups the same day → NEW A342 (closing on the till closes the web's drawer), A343 (a cashier's own web shift), A344
+(payment method colours).
