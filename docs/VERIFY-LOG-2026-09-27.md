@@ -42,3 +42,14 @@ the till (cross-sync stage 1, A336), so they show in the till's orders and shift
 is 30 s (was 60 s).
 
 **Closed:** none yet — A273 follow-up and A334 close after B5–B7 pass on 0.6.10; A332 closes after D5.
+
+## Rollout 2026-09-27 — migration 107 on prod (A338)
+Owner ran migration 107 and pasted the `pg_indexes` result for `shifts`:
+
+```
+| shifts_open_by_terminal | CREATE INDEX shifts_open_by_terminal ON public.shifts USING btree (business_id, shift_terminal_key(device_id, terminal_code, branch_id)) WHERE (status = 'open'::text) |
+```
+
+**R1: PASS** — the plain index is in, `shifts_one_open_per_terminal` (unique) is gone. (Not via the "DB migrate (production)"
+workflow — its last run is #4 on 2026-09-02; applied by hand.) The remaining rollout checks and every open item are in
+`docs/checklists/VERIFY-CHECKLIST-v0.6.13.html`.
