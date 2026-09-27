@@ -45,7 +45,7 @@ import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
 import ReportRangeBar from '../components/ReportRangeBar';
-import type { ReportRangeArg } from '../lib/posApi';
+import type { ReportRangeArg, ShiftSummary, ExpenseRow } from '../lib/posApi';
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printShiftReport } from '../lib/printShiftReport';
@@ -65,6 +65,7 @@ const I = {
   overview:  'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
   orders:    'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
   shift:     'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  expenses:  'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
   zreport:   'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   stock:     'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
   items:     'M4 6h16M4 12h16M4 18h7',
@@ -763,15 +764,26 @@ function ShiftTab({ currency }: { currency: string }) {
 
 // ── Z-Report Tab ──────────────────────────────────────────────────────────────
 function ZReportTab({ businessName, currency }: { businessName: string; currency: string }) {
-  const [report,  setReport]  = useState<ZReport | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 0.6.11 (owner: "I should be able to print previous shift reports"): the open shift's live report
+  // AND every past shift this till ran — pick one, see it, print it.
+  const [shifts,   setShifts]   = useState<ShiftSummary[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);   // null = the open shift (live)
+  const [report,   setReport]   = useState<ZReport | null>(null);
+  const [loading,  setLoading]  = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let live = true;
-    posApi.shift.current({ includeForeign: true }).then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+    posApi.shift.history().then(setShifts).catch(() => setShifts([]));
   }, []);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    const load = selected ? posApi.shift.zreport(selected) : posApi.shift.current({ includeForeign: true });
+    load.then(r => { if (live) setReport(r); }).catch(() => { if (live) setReport(null); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [selected]);
 
   const [printMsg, setPrintMsg] = useState('');
 
@@ -784,30 +796,117 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
     if (!r.ok) setPrintMsg(r.error ?? 'Could not print the shift report.');
   };
 
-  if (loading) return <Spinner />;
-  if (!report)  return (
-    <div className="text-center py-16">
-      <p className="text-gray-400 font-medium">No open shift</p>
-      <p className="text-gray-400 text-sm mt-1">Open a shift from the POS first.</p>
-    </div>
-  );
+  const past = shifts.filter(x => x.status !== 'open');
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-bold text-white">Shift Report</h2>
-          <p className="text-gray-300 text-sm">Live preview — not a closed Z-report</p>
+          <p className="text-gray-300 text-sm">
+            {selected ? 'Z-report of a closed shift' : 'Live preview — not a closed Z-report'}
+          </p>
         </div>
-        <button onClick={handlePrint}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
-          Print report
-        </button>
+        <div className="flex items-center gap-2">
+          <select data-testid="shift-picker" value={selected ?? ''} onChange={e => setSelected(e.target.value || null)}
+            className="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
+            <option value="">Current shift (live)</option>
+            {past.map(x => (
+              <option key={x.id} value={x.id}>
+                {when(x.opened_at)} → {when(x.closed_at)} · {x.cashier_name ?? 'Cashier'}
+                {x.status === 'closed_unreconciled' ? ' · force-closed' : ''}
+              </option>
+            ))}
+          </select>
+          <button onClick={handlePrint} disabled={!report}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors">
+            Print report
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl p-4 max-w-sm">
-        <ZReportView ref={printRef} report={report} />
-      {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
+      {past.length === 0 && <p className="text-gray-400 text-xs">No closed shifts on this till yet.</p>}
+
+      {loading ? <Spinner /> : !report ? (
+        <div className="text-center py-16">
+          <p className="text-gray-400 font-medium">{selected ? 'That shift could not be loaded' : 'No open shift'}</p>
+          <p className="text-gray-400 text-sm mt-1">
+            {selected ? 'Choose another shift above.' : 'Open a shift from the POS, or choose a previous shift above.'}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl p-4 max-w-sm">
+          <ZReportView ref={printRef} report={report} />
+          {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Expenses Tab (0.6.11) ─────────────────────────────────────────────────────
+// Owner (2026-09-27): "I should be able to see expenses". Cash this till's drawers paid out, by date range —
+// the same rows the shift report deducts. Recorded from the POS (Shift → Expenses); this screen only reads.
+function ExpensesTab({ currency }: { currency: string }) {
+  const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
+  const [data, setData] = useState<{ rows: ExpenseRow[]; total: number; label: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    posApi.expense.range(range).then(d => { if (live) setData(d); }).catch(() => { if (live) setData(null); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [range.preset, range.from, range.to]);
+
+  const rows = data?.rows ?? [];
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-lg font-bold text-white">Expenses</h2>
+        <p className="text-gray-300 text-sm" data-testid="expenses-summary">
+          {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(data?.total ?? 0, currency)} paid out`}
+        </p>
       </div>
+      <ReportRangeBar value={range} onChange={setRange} />
+      {loading ? <Spinner /> : rows.length === 0 ? (
+        <div className="text-center py-12 text-gray-300">No expenses in this date range. Record one from the POS: Shift → Expenses.</div>
+      ) : (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-700">
+                {['When', 'Description', 'Paid by', 'Amount'].map(h => (
+                  <th key={h} className={`px-4 py-3 text-xs font-medium text-gray-300 ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-700/50">
+              {rows.map(e => (
+                <tr key={e.id} className="hover:bg-gray-700/30 transition-colors">
+                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                    {new Date(e.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td className="px-4 py-3 text-gray-200">
+                    {e.description}
+                    {e.sync_status !== 'synced' && <span className="ml-1.5 text-[10px] text-amber-400">not synced</span>}
+                  </td>
+                  <td className="px-4 py-3 text-gray-300">{e.paid_by_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-white tabular-nums">{fmt(e.amount, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-gray-700">
+                <td colSpan={3} className="px-4 py-3 text-gray-300 font-medium">Total</td>
+                <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmt(data?.total ?? 0, currency)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1199,12 +1298,13 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   }, []);
 
   // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers' | 'settings';
+  type TabKey = 'overview' | 'orders' | 'shift' | 'expenses' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers' | 'settings';
 
   const navItems: { key: TabKey; label: string; icon: string }[] = [
     { key: 'overview', label: 'Overview',     icon: I.overview },
     { key: 'orders',   label: 'Orders',       icon: I.orders   },
     { key: 'shift',    label: 'Shift',        icon: I.shift    },
+    { key: 'expenses', label: 'Expenses',     icon: I.expenses },   // 0.6.11
     // #6 (A105): the Shift Report is now a view INSIDE the Shift tab, not its own
     // nav item.
     // Manager-only: this is the escape route for the trading-day gate. Without
@@ -1259,6 +1359,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         return <RetailOverview currency={currency} />;
       case 'orders':  return <OrdersAndMixTab currency={currency} isRestaurant={flags.isRestaurant} />;
       case 'shift':   return <ShiftAndReportTab currency={currency} businessName={businessName} />;
+      case 'expenses': return <ExpensesTab currency={currency} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
       // Reachable only as a fallback now — the nav folds these into Orders/Shift

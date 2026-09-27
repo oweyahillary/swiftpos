@@ -53,6 +53,10 @@ export interface ShiftReportData {
   cashSales: Cents;
   floatIn: Cents;
   floatOut: Cents;
+  /** 0.6.11: cash paid out as expenses, already taken off expectedCash. null/absent = not reported (older caller). */
+  expenses?: Cents | null;
+  /** 0.6.11: the expense lines behind it. */
+  expenseLines?: { description: string; amount: Cents }[];
   expectedCash: Cents;
 
   /** Present once the drawer has been counted. */
@@ -125,6 +129,8 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   d.line(pair(cols, '+ Cash sales', money(r.cashSales)));
   d.line(pair(cols, '+ Float in', money(r.floatIn)));
   d.line(pair(cols, '- Float out', money(r.floatOut)));
+  // 0.6.11: expenses were always deducted from expected cash but never printed, so the column did not add up.
+  if (r.expenses != null) d.line(pair(cols, '- Expenses', money(r.expenses)));
   d.line(pair(cols, '= Expected cash', money(r.expectedCash)), { bold: true });
 
   if (isClosed) {
@@ -136,6 +142,18 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
         : r.variance > 0 ? 'Variance (over)'
         : 'Variance (short)';
       d.line(pair(cols, label, money(r.variance)), { size: 'tall', bold: true });
+    }
+  }
+
+  if (r.expenseLines && r.expenseLines.length) {
+    d.line(rule(cols));
+    d.line(`EXPENSES (${r.expenseLines.length})`, { bold: true });
+    for (const e of r.expenseLines) {
+      const amt = money(e.amount);
+      // Fits → one line. Otherwise the description wraps WHOLE (it is what the owner reads to know what the cash
+      // was for) and the amount sits right-aligned beneath it.
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
     }
   }
 

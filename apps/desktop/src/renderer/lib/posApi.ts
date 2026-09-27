@@ -107,9 +107,25 @@ export interface ZReport {
     foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number } | null;
     /** Cross-sync stage 1: the web's sales downloaded onto the till — already inside the totals. */
     webSales?: { orders: number; cash_sales: number };
+    /** 0.6.11: cash paid out as expenses — already taken off expectedCash. Absent on reports from older builds. */
+    expenses?: number;
   };
+  /** 0.6.11: this till's expense lines on the shift. */
+  expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
   businessName: string;
   currency: string;
+}
+
+/** 0.6.11: a row in the previous-shift-reports list. */
+export interface ShiftSummary {
+  id: string; status: string; opened_at: string; closed_at: string | null;
+  cashier_name: string | null; expected_cash: number | null; cash_variance: number | null;
+}
+
+/** 0.6.11: an expense on the manager's Expenses screen. */
+export interface ExpenseRow {
+  id: string; description: string; amount: number; created_at: string; shift_id: string | null;
+  paid_by_name: string | null; expense_category_id: string | null; sync_status: string;
 }
 
 /** Date-range selection for the manager reports. */
@@ -347,6 +363,8 @@ declare global {
         float: (type: 'float_in' | 'float_out', amount: number, reason?: string) => Promise<ZReport | null>;
         close: (closing_float: number, notes?: string) => Promise<ZReport>;
         zreport: (shiftId: string) => Promise<ZReport>;
+        /** 0.6.11: this till's shifts, newest first (previous shift reports). */
+        history: () => Promise<ShiftSummary[]>;
       };
       manage: {
         listProducts:   () => Promise<any[]>;
@@ -422,6 +440,8 @@ declare global {
         categories: () => Promise<{ id: string; name: string }[]>;
         create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) => Promise<{ id: string }>;
         list: () => Promise<any[]>;
+        /** 0.6.11: expenses paid out on this till in a date range. */
+        range: (range?: ReportRangeArg) => Promise<{ rows: ExpenseRow[]; total: number; label: string }>;
       };
     };
   }

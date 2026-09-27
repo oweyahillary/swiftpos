@@ -207,6 +207,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true } },
   'shift:close':            { closing_float: { t: 'number' }, notes: { t: 'string', optional: true } },
   'shift:zreport':          { kind: 'string' },
+  'shift:history':          NO_PAYLOAD,
 
   // ── manage (catalogue) ────────────────────────────────────────────────────
   'manage:listProducts':        NO_PAYLOAD,
@@ -275,6 +276,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'expense:categories': NO_PAYLOAD,
   'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true } },
   'expense:list':       NO_PAYLOAD,
+  'expense:range':      { ...rangeArg },
 
   // ── tech ──────────────────────────────────────────────────────────────────
   'tech:checkReveal':   { kind: 'string' },

@@ -70,12 +70,26 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {row('+ Cash sales', money(totals.cashSales))}
       {row('+ Float in', money(totals.floatIn))}
       {row('− Float out', money(totals.floatOut))}
+      {/* 0.6.11: expenses were always taken off expected cash but never shown, so the lines did not add up. */}
+      {totals.expenses != null && row('− Expenses', money(totals.expenses))}
       {row('= Expected cash', money(shift.expected_cash), { bold: true })}
       {isClosed && row('Counted cash', money(shift.closing_float))}
       {isClosed && variance != null && row(
         variance === 0 ? 'Variance' : variance > 0 ? 'Variance (over)' : 'Variance (short)',
         money(variance),
         { bold: true, size: '14px' },
+      )}
+
+      {(report.expenseLines?.length ?? 0) > 0 && (
+        <>
+          {rule}
+          <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>EXPENSES ({report.expenseLines!.length})</p>
+          {report.expenseLines!.map((e, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+              <span>{e.description}{e.paid_by_name ? ` (${e.paid_by_name})` : ''}</span><span>{money(e.amount)}</span>
+            </div>
+          ))}
+        </>
       )}
 
       {isClosed && shift.notes && (

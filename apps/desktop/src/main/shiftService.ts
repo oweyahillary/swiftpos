@@ -65,7 +65,12 @@ export interface ZReport {
     /** Cross-sync stage 1: the web POS's sales on this drawer that are DOWNLOADED onto the till (orders.origin 'web') —
      *  already inside every figure above, like this till's own; reported so the panel can still say what the web rang. */
     webSales?: { orders: number; cash_sales: number };
+    /** 0.6.11: cash PAID OUT of this drawer as expenses — already taken off expectedCash; shown so the
+     *  reconciliation adds up on paper (float + sales + in − out − expenses = expected). Includes the web's. */
+    expenses: number;
   };
+  /** 0.6.11: this till's expense lines on the shift (newest last), for the report's EXPENSES section. */
+  expenseLines: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
   businessName: string;
   currency: string;
 }
@@ -277,6 +282,14 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
   const expectedCash =
     Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut);
 
+  // 0.6.11: the lines behind expensesOut (this till's own; a web expense is in the total via `foreign`).
+  const expenseLines = (db.prepare(`
+    SELECT e.description, e.amount, e.created_at, u.name AS paid_by_name
+      FROM expenses e LEFT JOIN users u ON u.id = e.paid_by
+     WHERE e.shift_id = ? ORDER BY e.created_at
+  `).all(shiftId) as { description: string; amount: number; created_at: string; paid_by_name: string | null }[])
+    .map((x) => ({ ...x, amount: Number(x.amount) }));
+
   // Cross-sync stage 1: the web's sales held on the till (downloaded) — already in the sums above.
   const webHeld = db.prepare(`
     SELECT COUNT(DISTINCT o.id) AS orders,
@@ -313,7 +326,9 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       expectedCash,
       foreign: f,
       webSales: webHeld,
+      expenses: Number(expensesOut),
     },
+    expenseLines,
     businessName: session.business_name,
     currency: session.currency ?? 'KES',
   };
@@ -460,4 +475,45 @@ export function currentShiftReport(foreign: ForeignCash | null = null): ZReport 
   const shift = getOpenShift();
   if (!shift) return null;
   return computeZReport(shift.id, foreign);
+}
+
+/** 0.6.11: one row per shift for the "previous shift reports" list. */
+export interface ShiftSummary {
+  id: string; status: string; opened_at: string; closed_at: string | null;
+  cashier_name: string | null; expected_cash: number | null; cash_variance: number | null;
+}
+
+/**
+ * This till's shifts, newest first — the open one (if any) and the closed ones, so a manager can reopen and
+ * print a past Z-report. Owner (2026-09-27): "I should be able to print previous shift reports".
+ */
+export function listShifts(limit = 60): ShiftSummary[] {
+  const db = getLocalDb();
+  return db.prepare(`
+    SELECT s.id, s.status, s.opened_at, s.closed_at, u.name AS cashier_name, s.expected_cash, s.cash_variance
+      FROM shifts s LEFT JOIN users u ON u.id = s.cashier_id
+     -- own: a till reprints the drawers IT ran; a peer's shifts are that till's to report.
+     WHERE COALESCE(s.device_id,'') = COALESCE(?,'')
+     ORDER BY s.opened_at DESC
+     LIMIT ?
+  `).all(getDeviceConfig()?.device_id ?? null, Math.max(1, Math.min(500, Math.floor(limit)))) as ShiftSummary[];
+}
+
+/** 0.6.11: expenses paid out on this till in a date range — the manager's Expenses screen. */
+export interface ExpenseRow {
+  id: string; description: string; amount: number; created_at: string; shift_id: string | null;
+  paid_by_name: string | null; expense_category_id: string | null; sync_status: string;
+}
+export function listExpenses(from: string, to: string): { rows: ExpenseRow[]; total: number } {
+  const db = getLocalDb();
+  const rows = (db.prepare(`
+    SELECT e.id, e.description, e.amount, e.created_at, e.shift_id, u.name AS paid_by_name,
+           e.expense_category_id, e.sync_status
+      FROM expenses e LEFT JOIN users u ON u.id = e.paid_by
+     -- own: the cash this till's drawers paid out; another till's expenses are on its own screen.
+     WHERE COALESCE(e.device_id,'') = COALESCE(?,'')
+       AND e.created_at >= ? AND e.created_at <= ?
+     ORDER BY e.created_at DESC
+  `).all(getDeviceConfig()?.device_id ?? null, from, to) as ExpenseRow[]).map((r) => ({ ...r, amount: Number(r.amount) }));
+  return { rows, total: rows.reduce((a, r) => a + r.amount, 0) };
 }

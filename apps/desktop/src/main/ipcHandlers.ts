@@ -40,7 +40,7 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, type ForeignCash } from './shiftService';
+import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { cloudBranchOrders } from './webSales';
 import { exportReportCsv } from './reportExport';
@@ -1583,6 +1583,10 @@ export function registerIpcHandlers() {
     return computeZReport(shiftId, await fetchForeignCash(shiftId));   // A334
   });
 
+  // 0.6.11 (owner: "I should be able to print previous shift reports") — this till's shifts, newest first.
+  // Each opens through shift:zreport above, which already rebuilds any shift's report from local data.
+  handle('shift:history', async () => listShifts(60));
+
   // ── Catalogue & staff management ─────────────────────────────────────────
   //
   // Deliberately ONLINE-ONLY. Orders queue offline because a sale must never be
@@ -2029,6 +2033,12 @@ export function registerIpcHandlers() {
       getDeviceConfig()?.device_id ?? null,
     );
     return { id };
+  });
+
+  // 0.6.11 (owner: "I should be able to see expenses") — the manager's Expenses screen, by date range.
+  handle('expense:range', async (_e, r?: RangeArg) => {
+    const range = resolveRange(r?.preset ?? 'today', r?.from, r?.to);
+    return { ...listExpenses(range.from, range.to), label: range.label };
   });
 
   // Recent expenses for the current shift (for display in ShiftPanel)

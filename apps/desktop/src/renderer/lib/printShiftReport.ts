@@ -50,6 +50,9 @@ export async function printShiftReport(
     cashSales:    toCents(totals.cashSales),
     floatIn:      toCents(totals.floatIn),
     floatOut:     toCents(totals.floatOut),
+    // 0.6.11: the expenses already taken off expected cash, and their lines — so the paper adds up.
+    expenses:     totals.expenses == null ? null : toCents(totals.expenses),
+    expenseLines: (report.expenseLines ?? []).map(e => ({ description: e.description, amount: toCents(e.amount) })),
     // The shift's own figure, not the totals block: once a shift is closed the
     // stored expected_cash is what was reconciled against, and recomputing it
     // here could quietly disagree with the number the cashier signed off.

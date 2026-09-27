@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason }),
     close:   (closing_float: number, notes?: string)                     => ipcRenderer.invoke('shift:close', { closing_float, notes }),
     zreport: (shiftId: string)                                           => ipcRenderer.invoke('shift:zreport', shiftId),
+    history: ()                                                          => ipcRenderer.invoke('shift:history'),
   },
 
   // Catalogue and staff management. Online-only by design — see ipcHandlers.
@@ -306,5 +307,6 @@ contextBridge.exposeInMainWorld('swiftpos', {
     create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) =>
               ipcRenderer.invoke('expense:create', payload),
     list: () => ipcRenderer.invoke('expense:list'),
+    range: (range?: any) => ipcRenderer.invoke('expense:range', range),
   },
 });

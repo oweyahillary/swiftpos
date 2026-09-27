@@ -483,12 +483,25 @@ function renderShiftReport(r, paperWidthMm) {
   d.line(pair(cols, "+ Cash sales", money(r.cashSales)));
   d.line(pair(cols, "+ Float in", money(r.floatIn)));
   d.line(pair(cols, "- Float out", money(r.floatOut)));
+  if (r.expenses != null) d.line(pair(cols, "- Expenses", money(r.expenses)));
   d.line(pair(cols, "= Expected cash", money(r.expectedCash)), { bold: true });
   if (isClosed) {
     d.line(pair(cols, "Counted cash", money(r.countedCash)));
     if (r.variance != null) {
       const label = r.variance === 0 ? "Variance" : r.variance > 0 ? "Variance (over)" : "Variance (short)";
       d.line(pair(cols, label, money(r.variance)), { size: "tall", bold: true });
+    }
+  }
+  if (r.expenseLines && r.expenseLines.length) {
+    d.line(rule(cols));
+    d.line(`EXPENSES (${r.expenseLines.length})`, { bold: true });
+    for (const e of r.expenseLines) {
+      const amt = money(e.amount);
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else {
+        d.lines(wrap(e.description, cols));
+        d.line(" ".repeat(Math.max(0, cols - amt.length)) + amt);
+      }
     }
   }
   if (isClosed && r.notes && r.notes.trim()) {
