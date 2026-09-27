@@ -74,3 +74,28 @@ Summary: 31 pass / 0 fail / 8 skip / 0 not run (of 39) · Failed: none
 **Still open, for their skipped checks:** A339 (J1 offline manager), A334 (B3, B6), A336 (F3, F4, F6), A335 (F5).
 Owner's follow-ups the same day → NEW A342 (closing on the till closes the web's drawer), A343 (a cashier's own web shift), A344
 (payment method colours).
+
+## Checklist v0.6.14 on target (tester Eugene, T1 on 0.6.14) — 24 pass / 0 fail / 5 skip
+Results as returned (`docs/checklists/VERIFY-CHECKLIST-v0.6.14.html`):
+
+```
+R1 PASS · R2 PASS · R3 PASS
+K1 PASS · K2 PASS · K3 PASS · K4 SKIP
+L1 PASS · L2 PASS · L3 PASS · L4 PASS · L5 PASS · L6 PASS
+M1 PASS · M2 PASS · M3 PASS · M4 PASS
+J1 PASS · B3 PASS · B6 PASS · F3 PASS · F4 PASS · F5 SKIP · F6 PASS · X5 SKIP
+X1 SKIP · X2 SKIP · X3 PASS · X4 PASS
+Summary: 24 pass / 0 fail / 5 skip / 0 not run (of 29) · Failed: none
+```
+
+**Closed:** A343 (web till, L1–L6), A344 (payment colours, M1–M4), A339 (offline manager reaches the manager screen, J1),
+A334 (B3 + B6 — every B check now passed on target).
+**Still open:** A342 (K1–K3 PASS; K4 — a web close never closes the till's shift — not yet run), A336 (stage 1 fully verified:
+F1–F4, F6; stages 2–3 not built), A335 (F5). X1/X2 (normal sale, kitchen ticket) and X5 (second till) not run this round.
+
+**Owner's note with the results (three screenshots, manager signed in OFFLINE on T1 0.6.14):** "we can sell this as an option
+fully offline till, thats why the manager has to log in confirm this is true full offline once registered". Screens: Staff and
+Menu show "This till is not signed in. Ask a manager to sign in." (Menu: "0 of 0 items"); Settings → Payment methods says it
+cannot reach the cloud and shows the till's active methods. Read in the code → **NEW A345** (see the register). Selling, shifts,
+expenses, orders, reports and day close run from the till's own database and work offline; the lists the cloud owns (menu, staff,
+payment methods, stations, receipt text) are edited on the cloud only, and the offline sign-in's message about them is wrong.
