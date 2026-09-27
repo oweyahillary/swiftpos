@@ -11,6 +11,15 @@ interface Props {
   onShiftChange: (report: ZReport | null) => void;
 }
 
+/** A334 + cross-sync stage 1: the web POS's part of a shared drawer — downloaded onto this till (webSales) plus what is
+ *  still only in the cloud (foreign). Both are already inside the totals; this is only what the panel says about them. */
+function webPart(report: { totals: { webSales?: { orders: number; cash_sales: number }; foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number } | null } } | null) {
+  const w = report?.totals.webSales, f = report?.totals.foreign;
+  const sales = (w?.orders ?? 0) + (f?.orders ?? 0);
+  const cash = Number(w?.cash_sales ?? 0) + Number(f?.cash_sales ?? 0);
+  return { sales, cash, show: sales > 0 || !!(f && (f.float_in || f.float_out || f.expenses)) };
+}
+
 export default function ShiftPanel({ business, canForceClose = false, onClose, onShiftChange }: Props) {
   const [report, setReport] = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -257,10 +266,11 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                     Expected {money(expected)} · {variance === 0 ? 'balances' : `${variance > 0 ? 'over' : 'short'} ${money(Math.abs(variance))}`}
                   </div>
                 )}
-                {/* A334: a shared drawer — what the web POS rang into it is part of the count. */}
-                {report?.totals.foreign && (report.totals.foreign.orders > 0 || report.totals.foreign.float_in || report.totals.foreign.float_out || report.totals.foreign.expenses) ? (
+                {/* A334 + cross-sync stage 1: a shared drawer — what the web POS rang into it is part of the count, whether
+                    already downloaded onto this till (webSales) or still only in the cloud (foreign). */}
+                {webPart(report).show ? (
                   <p className="text-xs text-gray-400" data-testid="foreign-cash">
-                    Includes the web POS on this drawer: {report.totals.foreign.orders} sale{report.totals.foreign.orders === 1 ? '' : 's'}, {money(report.totals.foreign.cash_sales)} cash.
+                    Includes the web POS on this drawer: {webPart(report).sales} sale{webPart(report).sales === 1 ? '' : 's'}, {money(webPart(report).cash)} cash.
                   </p>
                 ) : report && report.totals.foreign === null ? (
                   <p className="text-xs text-gray-500" data-testid="foreign-cash-unknown">

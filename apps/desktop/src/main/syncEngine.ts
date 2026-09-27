@@ -25,6 +25,7 @@ import { executeCloseDay } from './branchClose';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
+import { ownOrderIds, webSaleShifts, applyWebOrders, type WebOrder } from './webSales';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth,
@@ -449,6 +450,8 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     // A275: after pushing local state up, pull any remote day-close instruction
     // and execute it locally. Best-effort — must never affect the sync result.
     try { await runDayCloseInstructions(errors); } catch { /* non-fatal */ }
+    // Cross-sync stage 1: the web's sales on this till's drawers. Best-effort, like the above.
+    try { await pullWebSales(); } catch { /* non-fatal */ }
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -515,6 +518,37 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
     _isSyncing = false;
   }
   return { pushed, errors };
+}
+
+// Cross-sync stage 1 (2026-09-27): download the web POS's sales on this till's drawers (webSales.ts).
+// Runs on the 20-s poll (index.ts), after every full sync and at sign-in — so a sale rung on the web as this
+// till shows in its orders, shift panel and Z-report within ~20 s. Read-only on the cloud; fail-soft: any
+// error skips this pass (the close still includes the web's cash through foreign-cash).
+let _pullingWebSales = false;
+export async function pullWebSales(): Promise<number> {
+  if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingWebSales) return 0;
+  _pullingWebSales = true;
+  let changed = 0;
+  try {
+    for (const shift of webSaleShifts()) {
+      const res = await syncFetch(`${_serverUrl}/api/shifts/${encodeURIComponent(shift.id)}/foreign-orders`, {
+        method: 'POST',
+        headers: pushAuthHeaders(),
+        body: JSON.stringify({ own_ids: ownOrderIds(shift.id) }),
+      });
+      if (res.status === 404) continue;   // not on the cloud yet (the shift push has not landed) — next pass
+      if (!res.ok) { noteInboundFailure('web-sales', `web sales pull failed: HTTP ${res.status}`); continue; }
+      const body = await res.json() as { orders?: WebOrder[] };
+      changed += applyWebOrders(shift, body.orders ?? []);
+    }
+    clearInboundFailure('web-sales');
+    if (changed) logLine('sync', `web sales: ${changed} downloaded or updated`);
+  } catch (err: any) {
+    noteInboundFailure('web-sales', `web sales pull error: ${err?.message ?? err}`);
+  } finally {
+    _pullingWebSales = false;
+  }
+  return changed;
 }
 
 // A291: cheap catalogue-freshness poll. Ask the server for the newest updated_at

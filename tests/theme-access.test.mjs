@@ -58,7 +58,8 @@ ok('PUT /branding validates theme_id through themeWriteError and the flag',
 ok('GET /branding returns theme_id and themes_enabled (the web shows the picker only with the flag)',
   /theme_id, updated_at'\)/.test(biz) && /themes_enabled: enabled/.test(biz));
 ok('the cloud\'s themes.ts copy is under the shared-sync gate', /'apps\/server\/src\/lib\/themes\.ts'/.test(src('scripts/check-shared-sync.mjs')));
-ok('the till is required to be on schema 54', /export const REQUIRED_DESKTOP_SCHEMA = 54;/.test(src('apps/server/src/lib/desktopSchema.ts')));
+// 55 since cross-sync stage 1 (2026-09-27); A325's intent is that a till is on AT LEAST 54 (branding.theme_id).
+ok('the till is required to be on schema 54 or later', Number((/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/.exec(src('apps/server/src/lib/desktopSchema.ts')) || [])[1]) >= 54);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -9,7 +9,7 @@ import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
-import { foreignCash } from '../lib/foreignCash';
+import { foreignCash, foreignOrders, type CloudOrder } from '../lib/foreignCash';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -239,6 +239,11 @@ router.post('/:id/foreign-cash', async (req, res) => {
   const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, 20_000) : []);
   try {
     const orderIds = await fetchAllIds('orders', q => q.eq('shift_id', id).eq('status', 'completed'));
+    // The till's sales carry its local id as idempotency_key (the cloud mints its own id) — fetch both.
+    const keyed = orderIds.length
+      ? await chunkIn<{ id: string; idempotency_key: string | null }>('orders', 'id', orderIds, q => q.select('id, idempotency_key'))
+      : [];
+    const keyById = new Map(keyed.map(o => [o.id, o.idempotency_key]));
     const payments = orderIds.length
       ? await chunkIn<{ order_id: string; method: string; status: string; amount: number }>(
           'payments', 'order_id', orderIds,
@@ -247,9 +252,56 @@ router.post('/:id/foreign-cash', async (req, res) => {
     const { data: floats }   = await supabase.from('float_transactions').select('id, type, amount').eq('shift_id', id);
     const { data: expenses } = await supabase.from('expenses').select('id, amount').eq('shift_id', id);
     res.json(foreignCash(
-      { orders: orderIds.map(o => ({ id: o, status: 'completed' })), payments, floats: floats ?? [], expenses: expenses ?? [] },
+      { orders: orderIds.map(o => ({ id: o, status: 'completed', idempotency_key: keyById.get(o) ?? null })), payments, floats: floats ?? [], expenses: expenses ?? [] },
       { order_ids: ids(req.body?.order_ids), float_ids: ids(req.body?.float_ids), expense_ids: ids(req.body?.expense_ids) },
     ));
+  } catch (e) { sendError(res, e as Error); }
+});
+
+// ──────────────────────────────────────────────────────────
+// POST /api/shifts/:id/foreign-orders   body: { own_ids }
+// Cross-sync stage 1 (2026-09-27): the SALES on this drawer the calling till did not
+// ring — the web POS standing in for it — with their lines and payments, so the till
+// can show them in its orders, shift and Z-report. Read-only; authorised exactly like
+// foreign-cash (the opener, a cashier on the same terminal, or a manager).
+// ──────────────────────────────────────────────────────────
+router.post('/:id/foreign-orders', async (req, res) => {
+  const { id } = req.params;
+  const { data: shift } = await supabase
+    .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
+    .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+
+  const sameTerminal =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
+  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const keys = req.permissionKeys ?? [];
+  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
+  if (!openedByRequester && !sameTerminal && !isManager) {
+    res.status(403).json({ error: 'Not your drawer' });
+    return;
+  }
+
+  const ownIds = Array.isArray(req.body?.own_ids)
+    ? req.body.own_ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20_000) : [];
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        id, order_number, order_type, status, subtotal, vat_amount, discount_amount, total, tip_amount,
+        ctl_amount, covers, customer_id, customer_name, customer_phone, idempotency_key, cashier_id,
+        shift_id, branch_id, created_at, void_reason, voided_at, voided_by, refunded_at,
+        refunded_amount, refund_reason, delivery_person,
+        order_items ( id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status ),
+        payments ( id, method, amount, amount_tendered, change_given, reference, status, created_at )
+      `)
+      .eq('shift_id', id)
+      .eq('business_id', req.businessId)
+      .in('status', ['completed', 'voided'])
+      .order('created_at', { ascending: true })
+      .limit(2000);
+    if (error) throw error;
+    res.json({ orders: foreignOrders((data ?? []) as unknown as CloudOrder[], ownIds) });
   } catch (e) { sendError(res, e as Error); }
 });
 

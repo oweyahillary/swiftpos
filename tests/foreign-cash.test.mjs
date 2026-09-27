@@ -13,6 +13,8 @@
  *
  * MUTATIONS TO CONFIRM BITE:
  *   - count known orders too                         → "only what the till does not hold" fails
+ *   - match known orders by id only (not idempotency_key) → "a till sale the cloud re-keyed is still recognised" fails
+ *     (the owner's B5 on the till: expected 6,210 for 4,720 — the till's own sale counted as the web's)
  *   - drop 'refunded' from the cash statuses         → "a web refund comes back out" fails
  *   - the route loses its terminal/opener/manager check → "authorised like /:id/close" fails
  *   - the POS sell gate asks for the web's part        → "the sell gate never waits on the cloud" fails
@@ -67,6 +69,30 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.FOREIGN_CASH_TS) {
   ok('the till knows everything → nothing foreign', () => {
     const all = foreignCash(cloud, { order_ids: ['o-till', 'o-web-1', 'o-web-2'], float_ids: ['f-till', 'f-web'], expense_ids: ['e-web'] });
     assert.deepEqual(all, { orders: 0, cash_sales: 0, float_in: 0, float_out: 0, expenses: 0 });
+  });
+
+  // ── The owner's B5 (2026-09-27): the cloud mints its own order ids; the till's id is the idempotency_key ──
+  ok('a till sale the cloud re-keyed is still recognised (idempotency_key), not counted twice — B5: 4,720 not 6,210', () => {
+    const b5 = {
+      orders: [{ id: 'cloud-uuid-1', status: 'completed', idempotency_key: 'till-local-T1-37' },     // the till's T1--37
+               { id: 'cloud-uuid-2', status: 'completed', idempotency_key: 'web-key-230' }],        // the web's sale
+      payments: [{ order_id: 'cloud-uuid-1', method: 'cash', status: 'completed', amount: 1490 },
+                 { order_id: 'cloud-uuid-2', method: 'cash', status: 'completed', amount: 230 }],
+      floats: [], expenses: [],
+    };
+    const r = foreignCash(b5, { order_ids: ['till-local-T1-37'] });
+    assert.equal(r.orders, 1); assert.equal(r.cash_sales, 230);
+    assert.equal(3000 + 1490 + foreignExpected(r), 4720);
+  });
+  ok('the route fetches idempotency_key for the shift\'s orders and passes it to the rule', () => {
+    const src = read('apps/server/src/routes/shifts.ts');
+    const r = src.slice(src.indexOf("router.post('/:id/foreign-cash'"), src.indexOf("router.post('/:id/close'"));
+    assert.match(r, /q\.select\('id, idempotency_key'\)/);
+    assert.match(r, /idempotency_key: keyById\.get\(o\) \?\? null/);
+  });
+  ok('…because the till pushes each sale with its local id as X-Idempotency-Key (the fact the fix rests on)', () => {
+    assert.match(read('apps/desktop/src/main/syncEngine.ts'), /'X-Idempotency-Key': row\.order_id,/);
+    assert.match(read('apps/server/src/routes/orders.ts'), /idempotency_key: idempotencyKey \|\| crypto\.randomUUID\(\),/);
   });
 
   // ── The route (source) ──

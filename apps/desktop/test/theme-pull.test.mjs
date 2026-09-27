@@ -50,7 +50,8 @@ const cols = db.prepare(`PRAGMA table_info(branding)`).all().map((c) => c.name);
 
 console.log('A325 — till stores the effective theme\n');
 ok('an existing schema-53 till gains theme_id on upgrade', cols.includes('theme_id'), cols.join(','));
-ok('the local schema version is 54', L.LOCAL_SCHEMA_VERSION === 54, String(L.LOCAL_SCHEMA_VERSION));
+// 55 since cross-sync stage 1 (2026-09-27); the column this test needs arrived in 54.
+ok('the local schema version is 54 or later', L.LOCAL_SCHEMA_VERSION >= 54, String(L.LOCAL_SCHEMA_VERSION));
 ok('the upgrade keeps the brand colour, logo and receipt toggle', (() => { const b = L.getBranding();
   return b && b.accentHex === '#F5B800' && b.logoPng === 'data:image/png;base64,AAAA' && b.receiptLogoEnabled === true && b.themeId === null; })(),
   JSON.stringify(L.getBranding()));

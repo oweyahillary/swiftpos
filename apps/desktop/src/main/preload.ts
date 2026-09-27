@@ -216,6 +216,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     salesSummary:   (range?: any) => ipcRenderer.invoke('manager:salesSummary', range),
     topProducts:    (range?: any) => ipcRenderer.invoke('manager:topProducts', range),
     recentOrders:   (range?: any) => ipcRenderer.invoke('manager:recentOrders', range),
+    branchOrders:   (range?: any) => ipcRenderer.invoke('manager:branchOrders', range),
     reportScope:    ()            => ipcRenderer.invoke('manager:reportScope'),
     resolveRange:   (range: any)  => ipcRenderer.invoke('manager:resolveRange', range),
     exportCsv:      (req: any)    => ipcRenderer.invoke('manager:exportCsv', req),

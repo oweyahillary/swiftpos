@@ -105,6 +105,8 @@ export interface ZReport {
     expectedCash: number;
     /** A334: the web POS's cash on this (shared) drawer, already inside the totals. null = could not be checked. */
     foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number } | null;
+    /** Cross-sync stage 1: the web's sales downloaded onto the till — already inside the totals. */
+    webSales?: { orders: number; cash_sales: number };
   };
   businessName: string;
   currency: string;
@@ -405,6 +407,8 @@ declare global {
         salesSummary:    (range?: ReportRangeArg) => Promise<any>;
         topProducts:     (range?: ReportRangeArg) => Promise<any[]>;
         recentOrders:    (range?: ReportRangeArg) => Promise<any[]>;
+        /** Every till's sales at this branch, from the cloud (online only — throws offline). */
+        branchOrders:    (range?: ReportRangeArg) => Promise<any[]>;
         stockLevels:     () => Promise<any[]>;
         fuelSales:       () => Promise<any>;
         pumpStatus:      () => Promise<any[]>;

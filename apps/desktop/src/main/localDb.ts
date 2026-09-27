@@ -697,6 +697,12 @@ function initSchema(db: Database.Database) {
     // paper did not reconcile with the tax in the till's own reports.
     ['ctl_amount', 'REAL DEFAULT 0'],
   ]);
+  // 55 (cross-sync stage 1, 2026-09-27): where a sale was RUNG. NULL = on this till (every sale before 55,
+  // and every sale this till makes); 'web' = rung on the web POS on this till's drawer and downloaded from the
+  // cloud (webSales.ts). Such a row is never pushed, relayed to the node, or claimed as this till's own.
+  migrateColumns(db, 'orders', [
+    ['origin', 'TEXT'],
+  ]);
 
   migrateColumns(db, 'categories', [
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
@@ -1082,7 +1088,9 @@ function initSchema(db: Database.Database) {
 // 53 adds branding.receipt_logo_enabled (A311) — pulled, never pushed, so no
 // push payload changes; REQUIRED moves with it by convention only.
 // 54 adds branding.theme_id (A325) — pulled, never pushed; same convention as 53.
-export const LOCAL_SCHEMA_VERSION = 54;
+// 55 adds orders.origin — the web POS's sales on this till's drawer, downloaded (cross-sync stage 1). Pulled,
+// never pushed; REQUIRED moves with it by convention.
+export const LOCAL_SCHEMA_VERSION = 55;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

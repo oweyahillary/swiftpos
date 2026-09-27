@@ -15,12 +15,14 @@
   "localOnlyColumns": [
     "sync_status",
     "synced_at",
-    "seq"
+    "seq",
+    "origin"
   ],
   "_localOnlyColumnReasons": {
     "sync_status": "Per-row push state on the till: pending | synced | conflict. Verified absent from every push payload — pushLocalRecords selects an explicit column list that excludes it, and it is meaningless server-side because the server is the destination.",
     "synced_at": "When the till last pulled this row. Local cache metadata; the server has no concept of a particular terminal's freshness.",
-    "seq": "Phase 1 per-device replication sequence (localDb v45): the LAN outbox/cursor checkpoint between a till and its branch node. Verified absent from every cloud push payload — pushLocalRecords and the sync arms name explicit column lists that exclude it (it appears only in WHERE scoping). Cloud replication keys on ids and idempotency, never on this counter; sending it would mean the server storing one terminal's private LAN checkpoint as data."
+    "seq": "Phase 1 per-device replication sequence (localDb v45): the LAN outbox/cursor checkpoint between a till and its branch node. Verified absent from every cloud push payload — pushLocalRecords and the sync arms name explicit column lists that exclude it (it appears only in WHERE scoping). Cloud replication keys on ids and idempotency, never on this counter; sending it would mean the server storing one terminal's private LAN checkpoint as data.",
+    "origin": "orders.origin (local v55, cross-sync stage 1): 'web' marks a sale the till DOWNLOADED from the cloud (rung on the web POS on this till's drawer); NULL = rung on this till. Verified absent from every push: a till's orders go up as the sync_queue payload (buildCloudOrderPayload), downloaded rows never enter sync_queue, and the node relay names an explicit column list (nodeIngest COLUMNS) without it. The cloud already knows where a sale came from; the till needs it only to never push or relay a sale it did not ring."
   },
   "ignoreColumns": {
     "payments": [

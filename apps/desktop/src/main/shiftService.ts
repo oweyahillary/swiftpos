@@ -62,6 +62,9 @@ export interface ZReport {
     /** A334: cash rung on this drawer from another surface (the web POS) — already inside the figures above.
      *  null = not asked (offline / no answer): the figures are this till's own only. */
     foreign?: ForeignCash | null;
+    /** Cross-sync stage 1: the web POS's sales on this drawer that are DOWNLOADED onto the till (orders.origin 'web') —
+     *  already inside every figure above, like this till's own; reported so the panel can still say what the web rang. */
+    webSales?: { orders: number; cash_sales: number };
   };
   businessName: string;
   currency: string;
@@ -274,6 +277,14 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
   const expectedCash =
     Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut);
 
+  // Cross-sync stage 1: the web's sales held on the till (downloaded) — already in the sums above.
+  const webHeld = db.prepare(`
+    SELECT COUNT(DISTINCT o.id) AS orders,
+           COALESCE(SUM(CASE WHEN p.method = 'cash' THEN p.amount ELSE 0 END), 0) AS cash_sales
+      FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+     WHERE o.shift_id = ? AND o.origin = 'web' AND o.status != 'voided'
+  `).get(shiftId) as { orders: number; cash_sales: number };
+
   return {
     shift: {
       id: shift.id,
@@ -301,6 +312,7 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       floatOut,
       expectedCash,
       foreign: f,
+      webSales: webHeld,
     },
     businessName: session.business_name,
     currency: session.currency ?? 'KES',

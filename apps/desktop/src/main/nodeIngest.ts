@@ -559,9 +559,12 @@ export function fillNodeOutbox(): number {
     // own: a till offers the node ITS OWN rows. A node running this same code
     // must not offer a peer's rows back to itself, and on a mesh peer it would
     // re-offer another till's history as though it were its own.
+    // Cross-sync (2026-09-27): a web sale downloaded onto this till's drawer (orders.origin) is not this
+    // till's to offer — it was never rung here, and the cloud already has it.
+    const notDownloaded = table === 'orders' ? 'AND origin IS NULL' : '';
     const unnumbered = db.prepare(
       `SELECT id FROM ${table}
-        WHERE seq IS NULL AND COALESCE(device_id,'') = COALESCE(?,'')
+        WHERE seq IS NULL AND COALESCE(device_id,'') = COALESCE(?,'') ${notDownloaded}
         ORDER BY created_at, rowid LIMIT 500`,
     ).all(own) as Array<{ id: string }>;
 
@@ -576,7 +579,7 @@ export function fillNodeOutbox(): number {
     // own: as above — only this terminal's rows are its to offer.
     const rows = db.prepare(
       `SELECT ${cols.join(', ')} FROM ${table}
-        WHERE seq IS NOT NULL AND seq > ? AND COALESCE(device_id,'') = COALESCE(?,'')
+        WHERE seq IS NOT NULL AND seq > ? AND COALESCE(device_id,'') = COALESCE(?,'') ${notDownloaded}
         ORDER BY seq LIMIT 500`,
     ).all(getOutboxCursor(table), own) as any[];
     if (!rows.length) continue;

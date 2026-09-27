@@ -6,7 +6,7 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
@@ -266,9 +266,11 @@ app.whenReady().then(() => {
   // mid-sale.
   startIdleMonitor();
 
+  // Backstop for anything still pending (a retry after a network blip). Sales and shift changes push at once
+  // (order:create, shift:* in ipcHandlers); 30 s, not 60, per the owner (2026-09-27).
   setInterval(() => {
     if (getSyncStatus().pendingCount > 0) syncPush().catch(console.error);
-  }, 60_000);
+  }, 30_000);
   setInterval(() => {
     syncAll().catch(console.error);
   }, 10 * 60_000);
@@ -277,6 +279,8 @@ app.whenReady().then(() => {
   // server's catalogue version actually moved, and self-guards on offline/in-flight.
   setInterval(() => {
     pullIfCatalogueChanged().catch(console.error);
+    // Cross-sync stage 1 (2026-09-27): a sale rung on the web as this till reaches it on the same ~20 s beat.
+    pullWebSales().catch(console.error);
   }, 20_000);
   // A321: ANY successful pull (this check, the 10-min floor, startup, manual sync, post-edit sync…)
   // tells every open window to reload from the local DB. This used to be sent only by the check

@@ -38,10 +38,11 @@ import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCach
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
+import { cloudBranchOrders } from './webSales';
 import { exportReportCsv } from './reportExport';
 import { exportDailySalesReport } from './dailySalesReport';
 
@@ -636,6 +637,9 @@ export function registerIpcHandlers() {
 
     // A334: a drawer the web POS opened as this till → sell into it (not a second one).
     const joinedDrawer = await joinCloudDrawer(data.staff?.id);
+    if (joinedDrawer) syncPush().catch(() => { /* the timer retries */ });   // record this till's day on the joined drawer now
+    // Cross-sync stage 1: the web's sales on this till's drawer, at sign-in rather than on the next 20-s beat.
+    pullWebSales().catch(() => { /* the 20-s poll retries */ });
 
     return {
       staff: data.staff,
@@ -1541,17 +1545,27 @@ export function registerIpcHandlers() {
     catch (err: any) { return { ok: false, error: err?.message ?? 'Could not close the day' }; }
   });
 
-  handle('shift:forceClose', async (_e, { reason }: { reason: string }) =>
-    forceCloseShift(String(reason ?? '')));
+  // A334 follow-up (owner, 2026-09-27: "can it be instant"): a shift change reaches the cloud NOW, the way a sale
+  // already does (order:create), not on the next timer tick — so the web POS sees a till's drawer open / close within
+  // seconds. Fire-and-forget: the push self-guards on offline / in-flight, and the 30 s timer is the backstop.
+  const pushNow = () => { syncPush().catch(() => { /* the timer retries */ }); };
+
+  handle('shift:forceClose', async (_e, { reason }: { reason: string }) => {
+    const z = forceCloseShift(String(reason ?? ''));
+    pushNow();
+    return z;
+  });
 
   handle('shift:open', async (_event, { opening_float, drawer_label }: { opening_float: number; drawer_label?: string }) => {
     openShift(Number(opening_float) || 0, drawer_label);
     logLine('shift', `open float ${Number(opening_float) || 0}${drawer_label ? ` (${drawer_label})` : ''}`);
+    pushNow();
     return currentShiftReport();
   });
 
   handle('shift:float', async (_event, { type, amount, reason }: { type: 'float_in' | 'float_out'; amount: number; reason?: string }) => {
     addFloat(type, Number(amount), reason);
+    pushNow();
     return currentShiftReport();
   });
 
@@ -1561,6 +1575,7 @@ export function registerIpcHandlers() {
     // A334: a shared drawer's web cash is part of what the cashier counted.
     const z = closeShift(Number(closing_float), notes, await fetchForeignCash(currentShiftReport()?.shift.id));
     logLine('shift', `close float ${Number(closing_float) || 0}`);
+    pushNow();
     return z;
   });
 
@@ -1925,6 +1940,23 @@ export function registerIpcHandlers() {
     getTopProducts(r?.limit ?? 8, r ? resolveRange(r.preset, r.from, r.to) : undefined));
   handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
     getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));
+
+  // Cross-sync stage 1 (2026-09-27): every till's sales at this branch, read from the cloud (owner: "Branch
+  // view, read from cloud"). Online only — the caller falls back to this till's own list and says so.
+  handle('manager:branchOrders', async (_e, r?: RangeArg) => {
+    const cfg = getDeviceConfig();
+    const token = readStaffTokens().token ?? readSessionTokens().token;
+    if (!token) throw new Error('Not signed in');
+    const range = resolveRange(r?.preset ?? 'today', r?.from, r?.to);
+    const q = new URLSearchParams({ date_from: range.from, date_to: range.to, limit: '500', status: 'completed' });
+    if (cfg?.branch_id) q.set('branch_id', cfg.branch_id);
+    const res = await withinMs(fetch(`${getCloudUrl()}/api/orders?${q}`, {
+      headers: { Authorization: `Bearer ${token}`, 'x-device-id': cfg?.device_id ?? '' },
+    }), 8_000);
+    if (!res.ok) throw new Error(`The cloud did not answer (HTTP ${res.status})`);
+    const body = await res.json() as { orders?: any[] };
+    return cloudBranchOrders(body.orders ?? [], cfg?.device_id ?? null);
+  });
 
   // What the figures cover. Paired with every range query so a till's partial
   // view can never be read as the branch's takings.

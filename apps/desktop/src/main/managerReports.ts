@@ -265,7 +265,8 @@ export function getRecentOrders(limit = 30, range?: ReportRange) {
 
   const orders = db.prepare(`
     SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
-           discount_amount, tip_amount, created_at, cashier_id, shift_id, device_id
+           discount_amount, tip_amount, created_at, cashier_id, shift_id, device_id,
+           origin   -- 'web' = rung on the web POS on this till's drawer (cross-sync stage 1)
     FROM orders
     ${where}
     ORDER BY created_at DESC

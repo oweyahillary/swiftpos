@@ -42,7 +42,8 @@
  */
 /** Schema 53 = branding.receipt_logo_enabled (A311). Pulled only; same convention. */
 /** Schema 54 = branding.theme_id (A325). Pulled only; same convention. */
-export const REQUIRED_DESKTOP_SCHEMA = 54;
+/** Schema 55 = orders.origin (cross-sync stage 1: the web's sales downloaded onto a till). Pulled only; same convention. */
+export const REQUIRED_DESKTOP_SCHEMA = 55;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -257,6 +257,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manager:salesSummary':   { ...rangeArg },
   'manager:topProducts':    { ...rangeArg },
   'manager:recentOrders':   { ...rangeArg },
+  'manager:branchOrders':   { ...rangeArg },
   'manager:reportScope':    NO_PAYLOAD,
   'manager:resolveRange':   rangeArg,
   'manager:exportCsv':      { kind: 'object' },  // req bag

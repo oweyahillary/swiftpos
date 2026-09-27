@@ -572,23 +572,37 @@ function OrdersTab({ currency }: { currency: string }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
+  // Cross-sync stage 1 (2026-09-27): this till's own list (local, works offline) or every till at the
+  // branch (read from the cloud — owner: "Branch view, read from cloud"). Offline → this till, said so.
+  const [scope, setScope] = useState<'till' | 'branch'>('till');
+  const [scopeNote, setScopeNote] = useState('');
 
   // 500 rather than 30: a date range is asked for in order to see the range, and
   // silently showing the newest 30 of a month would be a lie the totals confirm.
   // The CSV export is uncapped — the screen is capped only to stay responsive.
+  const fetchOrders = async (r: ReportRangeArg, sc: 'till' | 'branch'): Promise<{ list: any[]; note: string }> => {
+    if (sc === 'branch') {
+      try { return { list: await posApi.manager.branchOrders({ ...r, limit: 500 }), note: '' }; }
+      catch { /* offline or the cloud did not answer — fall through to this till's own list */ }
+      return { list: await posApi.manager.recentOrders({ ...r, limit: 500 }),
+               note: 'The cloud could not be reached — showing this till only.' };
+    }
+    return { list: await posApi.manager.recentOrders({ ...r, limit: 500 }), note: '' };
+  };
   const load = (r: ReportRangeArg) => {
     setLoading(true);
-    posApi.manager.recentOrders({ ...r, limit: 500 })
-      .then(setOrders).catch(() => {}).finally(() => setLoading(false));
+    fetchOrders(r, scope)
+      .then(({ list, note }) => { setOrders(list); setScopeNote(note); }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => {
     let live = true;
-    posApi.manager.recentOrders({ ...range, limit: 500 })
-      .then(o => { if (live) setOrders(o); }).catch(() => {})
+    setLoading(true);
+    fetchOrders(range, scope)
+      .then(({ list, note }) => { if (live) { setOrders(list); setScopeNote(note); } }).catch(() => {})
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [range.preset, range.from, range.to]);
+  }, [range.preset, range.from, range.to, scope]);
 
   const rangeTotal = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
 
@@ -608,7 +622,15 @@ function OrdersTab({ currency }: { currency: string }) {
         </button>
       </div>
 
-      <ReportRangeBar value={range} onChange={setRange} exportKind="orders" showDailyReport />
+      <SegmentedSelector
+        options={[{ key: 'till', label: 'This till' }, { key: 'branch', label: 'All tills at this branch' }]}
+        value={scope}
+        onChange={v => setScope(v)}
+      />
+
+      <ReportRangeBar value={range} onChange={setRange} exportKind="orders" showDailyReport
+        scopeOverride={scope === 'branch' && !scopeNote ? 'All tills at this branch — read from the cloud' : null} />
+      {scopeNote && <p data-testid="branch-offline" className="text-[11px] text-amber-400/80">⚠ {scopeNote}</p>}
 
       {loading && <Spinner />}
 
@@ -629,7 +651,16 @@ function OrdersTab({ currency }: { currency: string }) {
                   const method = o.payments?.[0]?.method ?? '—';
                   return (
                     <tr key={o.id} className="hover:bg-gray-700/30 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-gray-300">{o.order_number}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-300">
+                        {o.order_number}
+                        {o.origin === 'web' && (
+                          <span className="ml-1.5 font-sans text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400"
+                            title="Rung on the web POS on this till's drawer">web</span>
+                        )}
+                        {scope === 'branch' && !scopeNote && o.this_till && (
+                          <span className="ml-1.5 font-sans text-[10px] text-gray-400">this till</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{timeAgo(o.created_at)}</td>
                       <td className="px-4 py-3 text-gray-300 capitalize">{(o.order_type ?? 'retail').replace(/_/g, ' ')}</td>
                       <td className="px-4 py-3 text-gray-300 capitalize">{method.replace(/_/g, ' ')}</td>
@@ -694,6 +725,12 @@ function ShiftTab({ currency }: { currency: string }) {
         <KpiCard label="Opening float" value={fmt(shift.opening_float, currency)} />
         <KpiCard label="Expected cash" value={fmt(totals.expectedCash, currency)} />
       </div>
+      {(totals as any).foreign?.orders > 0 && (
+        <p data-testid="foreign-note" className="text-gray-300 text-xs">
+          Includes {(totals as any).foreign.orders} web POS sale{(totals as any).foreign.orders !== 1 ? 's' : ''} on this drawer
+          not yet downloaded to this till — they appear in Orders within about 20 seconds when online.
+        </p>
+      )}
 
       {/* Payment split */}
       <Card title="Sales by payment method">

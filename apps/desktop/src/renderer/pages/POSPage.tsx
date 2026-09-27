@@ -1483,7 +1483,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                         `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (
                         <tr key={o.id} className="hover:bg-gray-800/30 transition-colors">
-                          <td className="px-4 py-2.5 font-mono text-xs text-gray-300">{o.order_number}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-300">
+                            {o.order_number}
+                            {o.origin === 'web' && (
+                              <span data-testid="web-sale" className="ml-1.5 font-sans text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400"
+                                title="Rung on the web POS on this till's drawer">web</span>
+                            )}
+                          </td>
                           <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">
                             {ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`}
                           </td>

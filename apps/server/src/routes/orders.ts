@@ -11,6 +11,7 @@ import { fireWebhook } from '../lib/webhooks';
 import { requireAuth } from '../middleware/auth';
 import { branchScope, requirePermission, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { resolveOrderId } from '../lib/resolveOrder';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
@@ -895,7 +896,7 @@ router.get('/', async (req, res) => {
     .from('orders')
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount, discount_amount,
-      loyalty_points_used, total, created_at, branch_id, customer_name,
+      loyalty_points_used, total, created_at, branch_id, customer_name, device_id,
       payments ( method, amount, status )
     `, { count: 'exact' })
     .eq('business_id', req.businessId)
@@ -963,6 +964,12 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/orders/:id/void
 const VOID_WINDOW_MINUTES = 30;
 
+// A335: the till voids and refunds by ITS id (our idempotency_key); the web by ours.
+const cloudOrderId = (ref: string, businessId: string) => resolveOrderId(ref, async (column, value) => {
+  const { data } = await supabase.from('orders').select('id')
+    .eq(column, value).eq('business_id', businessId).limit(1).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+});
 
 // ── POST /api/orders/:id/refund ──────────────────────────────────────────────
 //
@@ -984,7 +991,7 @@ const VOID_WINDOW_MINUTES = 30;
 // than none — staff can refund in full and re-ring what the customer keeps.
 router.post('/:id/refund', requirePermission('orders.void'), async (req, res) => {
   const { reason, override_pin, supervisor_pin, authorizer_id } = req.body;
-  const orderId = req.params.id;
+  const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
   if (!reason || !String(reason).trim()) {
     res.status(400).json({ error: 'A reason is required to refund an order' });
@@ -1180,7 +1187,7 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
 
 router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   const { reason, supervisor_pin, override_pin, authorizer_id } = req.body;
-  const orderId = req.params.id;
+  const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
   if (!reason) {
     res.status(400).json({ error: 'A reason is required to void an order' });
