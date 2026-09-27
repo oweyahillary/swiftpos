@@ -155,7 +155,6 @@
   }
 
   /* Focus rings */
-  :root:not(.dark) .focus\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; } /* A328: same rule for the themed class */
   :root:not(.dark) .ring-gray-700 { --tw-ring-color: #e2e8f0; }
 
   /* Divide lines */
@@ -223,6 +222,10 @@
 :root:not(.dark) .text-yellow-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #854d0e !important; }
 :root:not(.dark) .text-yellow-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #854d0e !important; }
 :root:not(.dark) .text-yellow-500\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #854d0eb3 !important; }
+:root:not(.dark) .bg-action-600.text-white, :root:not(.dark) .bg-action-600 .text-white { color: #ffffff !important; }
+:root:not(.dark) .bg-red-600.text-white, :root:not(.dark) .bg-red-600 .text-white { color: #ffffff !important; }
+:root:not(.dark) .hover\:bg-action-400:hover, [data-pos-theme="light"] .hover\:bg-action-400:hover { background-color: rgb(var(--action-d-400, 45 212 191)) !important; }
+:root:not(.dark) .focus\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; }
 :root:not(.dark) [data-theme-lock="dark"] .text-white { color: #ffffff !important; }
 /* ── END light-colours ── */
 

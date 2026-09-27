@@ -13,6 +13,13 @@
  * Scope: light mode only, and NOT inside a web POS set to dark ([data-pos-theme="dark"]) or a screen that is always dark
  * ([data-theme-lock="dark"] — sign-in, onboarding, password change). Inside a locked screen it also RESTORES the classes the
  * older gray overrides had turned dark (their white text turned slate on navy).
+ * A332 (2026-09-27) — also, for light mode:
+ *   - WHITE LABELS STAY WHITE on a solid fill where white reads better than the slate the light theme turns .text-white
+ *     into (computed per fill the source pairs with text-white: red-600, the theme's action-600 …; green-500 etc. read
+ *     better in slate and are left to it);
+ *   - the web POS's action-button HOVER (hover:bg-action-400 on dark-label 500 fills) uses the theme's 400 FILL
+ *     (--action-d-400), not the link-text shade light mode gives --action-400 (teal 700: 3.26:1 under a dark label);
+ *   - the themed focus ring (focus:border-action-500) — A328's rule sat inside @layer base and never reached the build.
  * OUTSIDE @layer base on purpose: Tailwind drops rules written for variant classes there (A329).
  *
  *   node scripts/build-light-colours.mjs          # rewrite the block
@@ -43,6 +50,38 @@ const TW_DARK = { 'text-white': '#ffffff', 'text-gray-300': '#d1d5db', 'text-gra
   'border-gray-700': '#374151', 'border-gray-800': '#1f2937', 'placeholder-gray-600': '#4b5563', 'placeholder-gray-500': '#6b7280' };
 const LOCKED = ['pages/LoginPage.tsx', 'pages/OnboardingPage.tsx', 'pages/ForcePasswordChangePage.tsx'];
 
+// Solid fills (Tailwind v3 hex) a white label can sit on; the theme fills are CSS variables — their white-label shade is
+// the theme's 700, proven >= 5.36:1 for all seven themes (A328), so white always wins there.
+export const FILL_HEX = {
+  'red-500': '#ef4444', 'red-600': '#dc2626', 'red-700': '#b91c1c', 'green-500': '#22c55e', 'green-600': '#16a34a', 'green-700': '#15803d',
+  'amber-500': '#f59e0b', 'amber-600': '#d97706', 'blue-500': '#3b82f6', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8',
+  'purple-600': '#9333ea', 'orange-500': '#f97316', 'orange-600': '#ea580c', 'emerald-600': '#059669', 'indigo-600': '#4f46e5',
+  'yellow-500': '#eab308', 'teal-600': '#0d9488', 'teal-700': '#0f766e',
+};
+export const THEME_WHITE_FILLS = ['action-600'];
+export const SLATE = '#0f172a';   // what the light theme turns .text-white into (index.css)
+export function contrast(a, b) {
+  const lum = (h) => { const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4)); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** Solid fills the source pairs with text-white in the SAME class string. */
+export function whiteLabelFills() {
+  const found = new Set();
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.tsx$/.test(e.name)) continue;
+      for (const line of fs.readFileSync(p, 'utf8').split('\n')) for (const seg of line.split(/['"`]/)) {
+        if (!/(?<![\w:-])text-white(?![\w/-])/.test(seg)) continue;
+        for (const m of seg.matchAll(/(?<![\w:-])bg-((?:[a-z]+-[5-9]00)|action-600)(?![\w/-])/g)) found.add(m[1]);
+      }
+    }
+  })(SRC);
+  return [...found].sort();
+}
+
 const esc = (c) => c.replace(/([:/.[\]#])/g, '\\$1');
 const NOT = ':not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *)';
 
@@ -54,7 +93,7 @@ export function usedClasses() {
       if (e.isDirectory()) { walk(p); continue; }
       if (!/\.tsx?$/.test(e.name)) continue;
       const rel = path.relative(SRC, p).split(path.sep).join('/');
-      for (const m of fs.readFileSync(p, 'utf8').matchAll(/(?<![\w:-])((?:hover:|group-hover:)?)(text|border|divide|bg)(-[lrtbxy])?-([a-z]+)-(\d{2,3})(\/\d+)?(?![\w/-])/g)) {
+      for (const m of fs.readFileSync(p, 'utf8').matchAll(/(?<![\w:-])((?:hover:|group-hover:|focus:)?)(text|border|divide|bg)(-[lrtbxy])?-([a-z]+)-(\d{2,3})(\/\d+)?(?![\w/-])/g)) {
         const c = m[0]; if (!used.has(c)) used.set(c, new Set()); used.get(c).add(rel);
       }
     }
@@ -71,6 +110,7 @@ export function buildBlock(css = fs.readFileSync(CSS, 'utf8')) {
   for (const c of [...used.keys()].sort()) {
     if (handled.has(c)) continue;
     const m = c.match(/^((?:hover:|group-hover:)?)(text|border|divide|bg)(-[lrtbxy])?-([a-z]+)-(\d{2,3})(\/\d+)?$/);
+    if (!m) continue;   // focus: classes are only collected for the A332 rules below
     const [, pre, util, side = '', colour, shadeS, alphaS] = m; const shade = +shadeS;
     const a = alphaS ? +alphaS.slice(1) / 100 : null;
     const state = pre === 'hover:' ? ':hover' : '';
@@ -90,6 +130,17 @@ export function buildBlock(css = fs.readFileSync(CSS, 'utf8')) {
     const s = util === 'divide' ? sel.replace(`.${esc(c)}`, `.${esc(c)} > * + *`) : sel;
     rules.push(`${s} { ${decl} !important; }`);
   }
+  // A332: white labels stay white where white beats slate on that fill.
+  for (const f of whiteLabelFills()) {
+    const white = THEME_WHITE_FILLS.includes(f) || (FILL_HEX[f] && contrast('#ffffff', FILL_HEX[f]) >= contrast(SLATE, FILL_HEX[f]));
+    if (!white) continue;
+    const c = esc(`bg-${f}`);
+    rules.push(`:root:not(.dark) .${c}.text-white, :root:not(.dark) .${c} .text-white { color: #ffffff !important; }`);
+  }
+  // A332: the action hover fill under a dark label = the theme's 400 FILL in light mode too (not the link-text shade).
+  if (used.has('hover:bg-action-400')) rules.push(`:root:not(.dark) .hover\\:bg-action-400:hover, [data-pos-theme="light"] .hover\\:bg-action-400:hover { background-color: rgb(var(--action-d-400, 45 212 191)) !important; }`);
+  // A332: the themed focus ring in light mode (A328's rule sat inside @layer base and never compiled).
+  if (used.has('focus:border-action-500') || [...used.keys()].some((k) => k === 'focus:border-action-500')) rules.push(`:root:not(.dark) .focus\\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; }`);
   // Always-dark screens: undo the older gray overrides for the classes they use.
   const restore = new Set();
   for (const f of LOCKED) {

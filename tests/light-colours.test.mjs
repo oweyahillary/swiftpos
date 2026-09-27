@@ -18,6 +18,11 @@
  *   - the dark-POS exclusion dropped                 → "never inside a web POS set to dark" fails
  *   - pale labels (100–200) darkened too             → "teal-100 labels on the accent cards are left alone" fails
  *   - a sign-in screen loses data-theme-lock          → "the always-dark screens carry the marker" fails
+ *   A332: keep white on every fill (green-500 too)    → "white labels stay white only where white beats slate" fails
+ *         the hover rule dropped                       → "the action hover fill uses the theme's 400 FILL" fails
+ *         the focus rule back inside @layer base       → "the themed focus ring rule … no longer inside @layer" fails
+ * A332 in Chromium, light mode, worst of themes OFF + 7: action hover 2.51 → 6.56, white on action-600 2.51 → 5.36,
+ * red Delete 3.70 → 4.83, focus ring gray → themed.
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -63,9 +68,15 @@ ok('the owner\'s screen: active / OUT / low-stock / All branches / Import CSV al
   assert.match(block, /\.border-gray-800\\\/50:not\(/);                                  // the row lines
 });
 ok('never inside a web POS set to dark, nor a screen that is always dark', () => {
-  const rules = block.split('\n').filter((l) => l.startsWith(':root:not(.dark) .'));
+  // The DARKENING rules (coloured → 700/800, pale gray → slate, gray lines/fills). The A332 rules are not darkening —
+  // white stays white, the hover fill is the same --action-d-400 a dark POS uses, the focus ring is the theme colour —
+  // and are asserted on their own below.
+  const a332 = (r) => /\.text-white[ ,{]|action-400:hover|border-action-500:focus/.test(r);
+  const rules = block.split('\n').filter((l) => l.startsWith(':root:not(.dark) .') && !a332(l));
   assert.ok(rules.length > 30);
   for (const r of rules) assert.ok(r.includes(':not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *)'), r.slice(0, 80));
+  assert.equal(block.split('\n').filter(a332).length, block.split('\n').filter((l) => /\.bg-[a-z]+-\d{3}\.text-white/.test(l)).length + 2 + 1,
+    'A332 rules: one per white-keeping fill + hover + focus (+ the sign-in restore)');
 });
 ok('teal-100 labels on the accent cards are left alone (pale labels on coloured fills)', () => {
   assert.doesNotMatch(block, /\.text-(?:teal|blue|green|red|amber)-(?:100|200):not/);
@@ -82,6 +93,35 @@ ok('the always-dark screens carry the marker, and keep their white text white', 
 ok('outside @layer base (inside it, Tailwind drops rules like these — A329)', () => {
   const layer = css.slice(css.indexOf('@layer base {'), css.indexOf('\n}\n', css.indexOf('@layer base {')));
   assert.ok(!layer.includes('BEGIN light-colours'));
+});
+
+// ── A332 (2026-09-27): the web POS's themed buttons in light mode ──
+const T = await import(pathToFileURL(path.join(ROOT, 'apps/dashboard/src/lib/themes.ts')).href);
+ok('white labels stay white only where white beats slate on that fill (red-600, the theme\'s action-600 — not green-500)', () => {
+  assert.match(block, /\.bg-action-600\.text-white, :root:not\(\.dark\) \.bg-action-600 \.text-white \{ color: #ffffff !important; \}/);
+  assert.match(block, /\.bg-red-600\.text-white/);
+  for (const f of G.whiteLabelFills()) {
+    const hex = G.FILL_HEX[f]; if (!hex) continue;
+    const keep = G.contrast('#ffffff', hex) >= G.contrast(G.SLATE, hex);
+    assert.equal(block.includes(`.bg-${f}.text-white`), keep, `${f}: white ${G.contrast('#ffffff', hex).toFixed(2)} vs slate ${G.contrast(G.SLATE, hex).toFixed(2)}`);
+  }
+});
+ok('every theme: white labels on action-600 (its 700) and dark labels on the light-mode hover (its 400 fill) ≥ 4.5', () => {
+  const bad = [];
+  for (const t of T.THEMES) {
+    const k = T.themeTokens(t);
+    if (T.contrast('#ffffff', k.pressedLight) < 4.5) bad.push(`${t.id ?? t} white on 700 ${T.contrast('#ffffff', k.pressedLight).toFixed(2)}`);
+    for (const d of ['#000000', '#030712']) if (T.contrast(d, k.textDark) < 4.5) bad.push(`${t.id ?? t} dark on its 400 ${T.contrast(d, k.textDark).toFixed(2)}`);
+  }
+  assert.deepEqual(bad, []);
+});
+ok('the action hover fill uses the theme\'s 400 FILL in light mode (and in a light web POS), not the link-text shade', () => {
+  assert.match(block, /:root:not\(\.dark\) \.hover\\:bg-action-400:hover, \[data-pos-theme="light"\] \.hover\\:bg-action-400:hover \{ background-color: rgb\(var\(--action-d-400, 45 212 191\)\) !important; \}/);
+});
+ok('the themed focus ring rule is in the block, and no longer inside @layer base (where it never compiled)', () => {
+  assert.match(block, /:root:not\(\.dark\) \.focus\\:border-action-500:focus \{ border-color: rgb\(var\(--action-500\)\) !important; \}/);
+  const layer = css.slice(css.indexOf('@layer base {'), css.indexOf('\n}\n', css.indexOf('@layer base {')));
+  assert.ok(!layer.includes('border-action-500'));
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
