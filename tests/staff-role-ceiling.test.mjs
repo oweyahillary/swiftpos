@@ -19,6 +19,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -33,9 +34,10 @@ if (!fs.existsSync(path.join(DIST, 'routes/staff.js'))) {
 }
 process.env.SUPABASE_URL ??= 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-only';
-process.env.JWT_SECRET = 'test-secret-for-a340-0123456789';
-process.env.ADMIN_JWT_SECRET ??= 'test-admin-secret-0123456789';
-process.env.SUPABASE_JWT_SECRET ??= 'test-supabase-secret-0123456789';
+// Signing keys made up per run (never a literal — the secret scan rightly refuses those, and no real key is needed).
+process.env.JWT_SECRET = randomBytes(24).toString('hex');
+process.env.ADMIN_JWT_SECRET ??= randomBytes(24).toString('hex');
+process.env.SUPABASE_JWT_SECRET ??= randomBytes(24).toString('hex');
 
 const require = createRequire(path.join(ROOT, 'apps/server/package.json'));
 const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
