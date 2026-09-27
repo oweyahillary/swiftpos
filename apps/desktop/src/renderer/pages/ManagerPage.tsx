@@ -44,6 +44,8 @@ const FALLBACK_STATIONS = [
 import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
+import MethodDot from '../components/MethodDot';
+import { methodColour } from '../../shared/paymentColours';
 import ReportRangeBar from '../components/ReportRangeBar';
 import type { ReportRangeArg, ShiftSummary, ExpenseRow } from '../lib/posApi';
 import { modeFlags } from '../lib/posMode';
@@ -183,11 +185,11 @@ function RestaurantOverview({ currency }: { currency: string }) {
                     return (
                       <div key={method}>
                         <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
+                          <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
                           <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                         </div>
                         <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
                         </div>
                       </div>
                     );
@@ -365,11 +367,11 @@ function PetrolOverview({ currency }: { currency: string }) {
                 return (
                   <div key={method}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
+                      <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
                       <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                     </div>
                     <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} />
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
                     </div>
                   </div>
                 );
@@ -428,11 +430,11 @@ function RetailOverview({ currency }: { currency: string }) {
                   return (
                     <div key={method}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
+                        <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
                         <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                       </div>
                       <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
                       </div>
                     </div>
                   );
@@ -664,7 +666,7 @@ function OrdersTab({ currency }: { currency: string }) {
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{timeAgo(o.created_at)}</td>
                       <td className="px-4 py-3 text-gray-300 capitalize">{(o.order_type ?? 'retail').replace(/_/g, ' ')}</td>
-                      <td className="px-4 py-3 text-gray-300 capitalize">{method.replace(/_/g, ' ')}</td>
+                      <td className="px-4 py-3 text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</td>
                       <td className="px-4 py-3 font-semibold text-white tabular-nums">{fmt(Number(o.total), currency)}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -741,7 +743,7 @@ function ShiftTab({ currency }: { currency: string }) {
             <div className="divide-y divide-gray-700">
               {byMethod.map(m => (
                 <div key={m.method} className="flex items-center justify-between py-2.5">
-                  <span className="text-gray-300 capitalize text-sm">{m.method.replace(/_/g, ' ')}</span>
+                  <span className="text-gray-300 capitalize text-sm"><MethodDot method={m.method} />{m.method.replace(/_/g, ' ')}</span>
                   <div className="text-right">
                     <p className="text-white font-semibold tabular-nums text-sm">{fmt(m.amount, currency)}</p>
                     <p className="text-gray-300 text-xs">{m.orders} order{m.orders !== 1 ? 's' : ''}</p>

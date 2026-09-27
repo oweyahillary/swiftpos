@@ -1215,3 +1215,11 @@ Near-black / navy surfaces the hue filter caught.
 | `pages/settings/BusinessProfileTab.tsx` | 7 | `pages/settings/UsersAccessPage.tsx` | 0 |
 | `pages/stock/BulkIngredientImport.tsx` | 7 | `types/index.ts` | 0 |
 | `pages/products/BulkImageUpload.tsx` | 6 | `vite-env.d.ts` | 0 |
+
+## Addendum 2026-09-27 — A344 payment method colours (`lib/paymentColours.ts`, baseline 5)
+
+Reviewed: the 5 hits are the **identity** colours of payment methods (data, not actions) — M-Pesa green `#2a904c` (its
+familiar colour, which is why SwiftPOS actions moved to teal in A329), Card blue `#4879ed`, custom-tender lime `#5e8c10`, and the
+words 'green' / 'blue' naming them. They are drawn only as a dot beside a method name, a tint behind an UNSELECTED method button,
+and a method's bar in a breakdown; a selected method button keeps the theme / `swift-*` highlight. Byte-identical with
+`shared/paymentColours.ts` and the till's copy (check-shared-sync).

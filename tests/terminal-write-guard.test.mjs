@@ -30,7 +30,7 @@ const ALLOW = [
   /^\/api\/orders(\/|$|\?)/,
   /^\/api\/sync\/push(\/|$|\?)/,
   /^\/api\/branch-prices\/sync(\/|$|\?)/,
-  /^\/api\/shifts\/[^/]+\/(close|force-close)(\/|$|\?)/,
+  /^\/api\/shifts\/[^/]+\/(close|force-close|foreign-cash|foreign-orders)(\/|$|\?)/,
   /^\/api\/auth\//,
   /^\/api\/tech\//,
 ];
@@ -56,6 +56,10 @@ ok('till tech audit is allowed', () => assert.equal(denied('desktop','POST','/ap
 // A164 audit: shift close/force-close are the till's own server-reconciled writes.
 ok('till shift close is allowed',       () => assert.equal(denied('desktop','POST','/api/shifts/abc123/close'), false));
 ok('till shift force-close is allowed', () => assert.equal(denied('desktop','POST','/api/shifts/abc123/force-close'), false));
+ok('till foreign-cash / foreign-orders (read-only POSTs, A342) are allowed', () => {
+  assert.equal(denied('desktop','POST','/api/shifts/abc123/foreign-cash'), false);
+  assert.equal(denied('desktop','POST','/api/shifts/abc123/foreign-orders'), false);
+});
 // ...but the allowance is TIGHT — a shift delete/edit from a till is still denied.
 ok('till shift DELETE is still DENIED', () => assert.equal(denied('desktop','DELETE','/api/shifts/abc123'), true));
 ok('till shift create is still DENIED',  () => assert.equal(denied('desktop','POST','/api/shifts'), true));

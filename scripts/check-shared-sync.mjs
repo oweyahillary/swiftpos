@@ -36,6 +36,15 @@ const SHARED = [
     ],
   },
   {
+    // A344: one fixed colour per payment method — the till's and the web's payment buttons and method labels.
+    name: 'paymentColours.ts',
+    copies: [
+      'shared/paymentColours.ts',
+      'apps/desktop/src/shared/paymentColours.ts',
+      'apps/dashboard/src/lib/paymentColours.ts',
+    ],
+  },
+  {
     // A324 (client branding Phase 2, slice 1): the curated action themes + the brand-colour rule. One registry
     // for the till, the web and the cloud (which validates theme ids on write — A325).
     name: 'themes.ts',

@@ -1,3 +1,5 @@
+import MethodDot from './MethodDot';
+import { methodColour, methodTint } from '../../shared/paymentColours';
 import { useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
@@ -227,9 +229,11 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     <button
                       key={m.code}
                       onClick={() => setLeg(i, { method: m.code })}
-                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-action-500/10 border-action-500 text-action-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
+                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-action-500/10 border-action-500 text-action-400' : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'}`}
+                      // A344: each method in its own colour; the SELECTED one keeps the theme highlight (action-*).
+                      style={leg.method === m.code ? undefined : { backgroundColor: methodTint(m.code), borderColor: methodColour(m.code).dot }}
                     >
-                      {m.icon} {m.label}
+                      <MethodDot method={m.code} />{m.icon} {m.label}
                     </button>
                   ))}
                 </div>

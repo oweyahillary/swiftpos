@@ -1,3 +1,4 @@
+import MethodDot from '../components/MethodDot';
 import { useEffect, useRef, useState } from 'react';
 import { printShiftReport } from '../lib/printShiftReport';
 import { posApi } from '../lib/posApi';
@@ -272,7 +273,16 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                   <p className="text-xs text-gray-400" data-testid="foreign-cash">
                     Includes the web POS on this drawer: {webPart(report).sales} sale{webPart(report).sales === 1 ? '' : 's'}, {money(webPart(report).cash)} cash.
                   </p>
-                ) : report && report.totals.foreign === null ? (
+                ) : null}
+                {(report?.totals.foreign?.siblings?.count ?? 0) > 0 && (
+                  <p className="text-xs text-amber-300" data-testid="sibling-shifts">
+                    {/* A342: one count covers both — the cloud closes the web's shift with this close. */}
+                    Also counted in this drawer: the web POS's own shift on this till
+                    ({report!.totals.foreign!.siblings!.shifts?.map(x => x.opened_by_name ?? 'another cashier').join(', ') || 'another cashier'}),
+                    expected {money(report!.totals.foreign!.siblings!.expected)}. Closing here closes it too.
+                  </p>
+                )}
+                {report && report.totals.foreign === null ? (
                   <p className="text-xs text-gray-500" data-testid="foreign-cash-unknown">
                     Web POS sales on this drawer could not be checked (offline) — the cloud reconciles them after sync.
                   </p>
@@ -423,9 +433,9 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
 // Compact on-screen rows (the printable version is ZReportView).
 function ZReportRows({ report, money }: { report: ZReport; money: (n: number) => string }) {
   const { shift, byMethod, totals } = report;
-  const Line = ({ l, v, strong }: { l: string; v: string; strong?: boolean }) => (
+  const Line = ({ l, v, strong, dot }: { l: string; v: string; strong?: boolean; dot?: string }) => (
     <div className={`flex justify-between text-sm ${strong ? 'font-semibold text-white' : 'text-gray-400'}`}>
-      <span>{l}</span><span>{v}</span>
+      <span>{dot && <MethodDot method={dot} />}{l}</span><span>{v}</span>
     </div>
   );
   return (
@@ -437,7 +447,7 @@ function ZReportRows({ report, money }: { report: ZReport; money: (n: number) =>
       {byMethod.length === 0
         ? <p className="text-xs text-gray-400">No sales yet this shift</p>
         : byMethod.map(m => (
-          <Line key={m.method} l={`${m.method === 'mpesa' ? 'M-Pesa' : m.method[0].toUpperCase() + m.method.slice(1)} (${m.orders})`} v={money(m.amount)} />
+          <Line key={m.method} dot={m.method} l={`${m.method === 'mpesa' ? 'M-Pesa' : m.method[0].toUpperCase() + m.method.slice(1)} (${m.orders})`} v={money(m.amount)} />
         ))}
       <div className="border-t border-gray-800 my-2" />
       <Line l="Opening float" v={money(shift.opening_float)} />

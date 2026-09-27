@@ -5,6 +5,7 @@
  * Permission required: orders.view_all
  */
 
+import MethodDot from '../../components/MethodDot';
 import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
@@ -125,7 +126,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   </span>
                 </div>
                 <div style={s.cardRight}>
-                  <span style={s.methodBadge}>{METHOD_ICON[method] ?? '💰'} {method}</span>
+                  <span style={s.methodBadge}><MethodDot method={method} />{METHOD_ICON[method] ?? '💰'} {method}</span>
                   <span style={{ ...s.statusDot, color: STATUS_COLOR[order.status] ?? '#94a3b8' }}>
                     ●
                   </span>
@@ -157,7 +158,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   </div>
                   {order.payments.map((p, i) => (
                     <div key={i} style={{ ...s.detailRow, marginTop: 2 }}>
-                      <span style={s.detailLabel}>{METHOD_ICON[p.method] ?? '💰'} {p.method}</span>
+                      <span style={s.detailLabel}><MethodDot method={p.method} />{METHOD_ICON[p.method] ?? '💰'} {p.method}</span>
                       <span style={s.detailVal}>{fmt(p.amount, currency)}</span>
                     </div>
                   ))}

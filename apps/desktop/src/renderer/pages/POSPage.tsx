@@ -16,6 +16,7 @@ import { printReceipt } from '../lib/printReceipt';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import VariantModal from '../components/VariantModal';
 import ReceiptView from '../components/ReceiptView';
+import MethodDot from '../components/MethodDot';
 import PaymentModal from '../components/PaymentModal';
 import type { PaymentResult } from '../components/PaymentModal';
 import PrinterSettingsModal from '../components/PrinterSettingsModal';
@@ -1497,7 +1498,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                             {(o.order_type ?? 'retail').replace(/_/g, ' ')}
                           </td>
                           <td className="px-4 py-2.5 text-gray-300 capitalize text-xs">
-                            {method.replace(/_/g, ' ')}
+                            <MethodDot method={method} />{method.replace(/_/g, ' ')}
                           </td>
                           <td className="px-4 py-2.5 font-semibold text-white tabular-nums">
                             {fmtMoney(Number(o.total))}

@@ -5,6 +5,8 @@
  * Permission required: reports.view
  */
 
+import MethodDot from '../../components/MethodDot';
+import { methodColour } from '../../lib/paymentColours';
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { localDateStr } from '../../lib/localDate';
@@ -113,9 +115,9 @@ export default function POSReportsTab({ currency }: { currency: string }) {
                   : 0;
                 return (
                   <div key={method} style={s.methodRow}>
-                    <span style={s.methodLabel}>{METHOD_LABELS[method] ?? method}</span>
+                    <span style={s.methodLabel}><MethodDot method={method} />{METHOD_LABELS[method] ?? method}</span>
                     <div style={s.barTrack}>
-                      <div style={{ ...s.barFill, width: `${pct}%` }} />
+                      <div style={{ ...s.barFill, width: `${pct}%`, background: methodColour(method).dot }} />
                     </div>
                     <span style={s.methodAmt}>{fmt(amount, currency)}</span>
                   </div>

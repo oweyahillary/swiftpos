@@ -55,6 +55,8 @@ export interface ShiftReportData {
   floatOut: Cents;
   /** 0.6.11: cash paid out as expenses, already taken off expectedCash. null/absent = not reported (older caller). */
   expenses?: Cents | null;
+  /** A342: the web POS's own shift on this till, counted in this drawer and closed with it. null/absent = none. */
+  siblingCash?: Cents | null;
   /** 0.6.11: the expense lines behind it. */
   expenseLines?: { description: string; amount: Cents }[];
   expectedCash: Cents;
@@ -131,6 +133,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   d.line(pair(cols, '- Float out', money(r.floatOut)));
   // 0.6.11: expenses were always deducted from expected cash but never printed, so the column did not add up.
   if (r.expenses != null) d.line(pair(cols, '- Expenses', money(r.expenses)));
+  if (r.siblingCash != null) d.line(pair(cols, '+ Web shift, this till', money(r.siblingCash)));
   d.line(pair(cols, '= Expected cash', money(r.expectedCash)), { bold: true });
 
   if (isClosed) {

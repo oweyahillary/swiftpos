@@ -484,6 +484,7 @@ function renderShiftReport(r, paperWidthMm) {
   d.line(pair(cols, "+ Float in", money(r.floatIn)));
   d.line(pair(cols, "- Float out", money(r.floatOut)));
   if (r.expenses != null) d.line(pair(cols, "- Expenses", money(r.expenses)));
+  if (r.siblingCash != null) d.line(pair(cols, "+ Web shift, this till", money(r.siblingCash)));
   d.line(pair(cols, "= Expected cash", money(r.expectedCash)), { bold: true });
   if (isClosed) {
     d.line(pair(cols, "Counted cash", money(r.countedCash)));

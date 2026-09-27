@@ -9,7 +9,9 @@ import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
+import { webTillName } from '../lib/terminalLabel';
 import { foreignCash, foreignOrders, type CloudOrder } from '../lib/foreignCash';
+import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -109,6 +111,37 @@ router.get('/terminals/open', async (req, res) => {
     for (const u of users ?? []) nameById[(u as any).id] = (u as any).name;
   }
   res.json(openDrawersByTill(open, nameById));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/web-till?branch_id=
+// A343 (2026-09-27): the branch's WEB till — its name ("<Branch> Web Till") and whether its drawer is open (who, since
+// when; no amounts). The web POS offers it as the place a cashier starts their OWN shift instead of joining a till's.
+// Its drawer is the branch's web:<branchId> session: shifts opened on the web while covering no till.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/web-till', async (req, res) => {
+  const branchId = (req.query.branch_id as string | undefined)?.trim() || '';
+  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  const { data: branch } = await supabase
+    .from('branches').select('id, name').eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('id, device_id, terminal_code, branch_id, opened_at, opened_by, cashier_id')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', branchId)
+    .eq('status', 'open')
+    .order('opened_at', { ascending: false });
+  if (error) { sendError(res, error); return; }
+  const webKey = terminalKey('', '', branchId);
+  const mine = (data ?? []).find((s: any) => terminalKey(s.device_id ?? '', s.terminal_code ?? '', s.branch_id ?? '') === webKey) as any;
+  let open_shift: { id: string; opened_at: string; opened_by: string | null; opened_by_name: string | null } | null = null;
+  if (mine) {
+    const who = mine.opened_by ?? mine.cashier_id ?? null;
+    const { data: u } = who ? await supabase.from('users').select('name').eq('id', who).eq('business_id', req.businessId).maybeSingle() : { data: null };
+    open_shift = { id: mine.id, opened_at: mine.opened_at, opened_by: who, opened_by_name: (u as any)?.name ?? null };
+  }
+  res.json({ name: webTillName((branch as any).name), open_shift });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +255,7 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
 router.post('/:id/foreign-cash', async (req, res) => {
   const { id } = req.params;
   const { data: shift } = await supabase
-    .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
+    .from('shifts').select('id, status, device_id, terminal_code, branch_id, opened_by, cashier_id')
     .eq('id', id).eq('business_id', req.businessId).maybeSingle();
   if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
 
@@ -251,10 +284,15 @@ router.post('/:id/foreign-cash', async (req, res) => {
       : [];
     const { data: floats }   = await supabase.from('float_transactions').select('id, type, amount').eq('shift_id', id);
     const { data: expenses } = await supabase.from('expenses').select('id, amount').eq('shift_id', id);
-    res.json(foreignCash(
-      { orders: orderIds.map(o => ({ id: o, status: 'completed', idempotency_key: keyById.get(o) ?? null })), payments, floats: floats ?? [], expenses: expenses ?? [] },
-      { order_ids: ids(req.body?.order_ids), float_ids: ids(req.body?.float_ids), expense_ids: ids(req.body?.expense_ids) },
-    ));
+    // A342: other shifts open on this same till (the web standing in as it) — the till's count covers them too.
+    const siblings = siblingSummary(await openSiblingCash(shift as any, req.businessId!));
+    res.json({
+      ...foreignCash(
+        { orders: orderIds.map(o => ({ id: o, status: 'completed', idempotency_key: keyById.get(o) ?? null })), payments, floats: floats ?? [], expenses: expenses ?? [] },
+        { order_ids: ids(req.body?.order_ids), float_ids: ids(req.body?.float_ids), expense_ids: ids(req.body?.expense_ids) },
+      ),
+      siblings,
+    });
   } catch (e) { sendError(res, e as Error); }
 });
 
@@ -409,11 +447,23 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
 
   const expensesOut   = await shiftExpenses(id);
-  const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut;
+  // A342: closed FROM THE TILL (a desktop token), the till's count also covers any other shift open on this same till —
+  // the web POS standing in as it. Owner, 2026-09-27: "Till's count covers both". A web close never closes the till's.
+  const siblings = req.surface === 'desktop' ? await openSiblingCash(shift, req.businessId!) : [];
+  const siblingExpected = siblings.reduce((s2, x) => s2 + x.expected, 0);
+  const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut + siblingExpected;
   const cashVariance  = Number(closing_float) - expectedCash;
 
   // Require an explanatory note whenever the count doesn't match expected cash.
-  if (Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())) {
+  //
+  // A342: NOT for a till's close. The till already required a note against its own figures when the cashier counted;
+  // this is the cloud replaying that close later (reconcileClosedShifts), and the web may have sold on the till's other
+  // shift in between. Refusing it would make the till retry the close forever — the blocking A338 removed. Record the
+  // difference and say where it came from instead.
+  let closeNotes: string | null = notes ?? null;
+  if (req.surface === 'desktop' && Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())) {
+    closeNotes = 'Variance recorded when the till\'s close reached the cloud — figures on this till moved after the count.';
+  } else if (Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())) {
     res.status(400).json({
       error: 'A note is required to close a shift with a cash variance',
       variance: cashVariance,
@@ -432,7 +482,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       closing_float: Number(closing_float),
       expected_cash: expectedCash,
       cash_variance: cashVariance,
-      notes: notes ?? null,
+      notes: closeNotes,
       denomination_breakdown: denomination_breakdown ?? null,
     })
     .eq('id', id)
@@ -440,7 +490,21 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     .single();
 
   if (closeErr) { sendError(res, closeErr); return; }
-  res.json(closed);
+
+  // A342: the till's count closed the web's shift(s) on this till too — recorded as counted, inside that drawer, no variance.
+  const tillLabel = shift.terminal_code || 'the till';
+  for (const sib of siblings) {
+    const { error: sibErr } = await supabase
+      .from('shifts')
+      .update({
+        status: 'closed', closed_at: new Date().toISOString(), closed_by: req.userId, close_method: 'counted',
+        closing_float: sib.expected, expected_cash: sib.expected, cash_variance: 0,
+        notes: closedWithTillNote(tillLabel, id),
+      })
+      .eq('id', sib.id).eq('business_id', req.businessId).eq('status', 'open');
+    if (sibErr) console.error('[shifts] A342 could not close sibling shift', sib.id, sibErr.message);
+  }
+  res.json({ ...closed, closed_with: siblings.map(x => x.id) });
 });
 
 
@@ -479,6 +543,28 @@ async function shiftExpenses(shiftId: string): Promise<number> {
  * amount — an unexplained shortage, which is the most corrosive thing a till can
  * report. Audit finding M8.
  */
+/**
+ * A342: the other shifts open on the same till as `shift`, with the cash each should hold. Empty for a closed shift.
+ * Declared as a function (hoisted) so the routes above can use it.
+ */
+async function openSiblingCash(shift: { id: string; status: string; business_id?: string; device_id?: string | null; terminal_code?: string | null; branch_id?: string | null }, businessId: string): Promise<SiblingCash[]> {
+  if (shift.status !== 'open') return [];
+  const { data: open } = await supabase
+    .from('shifts').select('id, status, device_id, terminal_code, branch_id, opening_float, opened_at, opened_by, cashier_id')
+    .eq('business_id', businessId).eq('status', 'open');
+  const sibs = siblingsOf(shift, (open ?? []) as any[]);
+  if (!sibs.length) return [];
+  const ids = [...new Set(sibs.map((x: any) => x.opened_by ?? x.cashier_id).filter(Boolean))] as string[];
+  const { data: users } = ids.length ? await supabase.from('users').select('id, name').in('id', ids) : { data: [] as any[] };
+  const nameById = new Map((users ?? []).map((u: any) => [u.id, u.name]));
+  const out: SiblingCash[] = [];
+  for (const x of sibs as any[]) {
+    out.push({ id: x.id, opened_by_name: nameById.get(x.opened_by ?? x.cashier_id) ?? null, opened_at: x.opened_at ?? null,
+               expected: await computeExpectedCash(x.id, Number(x.opening_float) || 0) });
+  }
+  return out;
+}
+
 async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {
   // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
   // expected cash computed from a TRUNCATED order list reports a large phantom

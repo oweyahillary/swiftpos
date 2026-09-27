@@ -23,7 +23,12 @@ import { v4 as uuid } from 'uuid';
  * same arithmetic as its own close). Owner: the till's close INCLUDES them. Added to the till's own
  * figures; never replaces them, so offline the till still closes on what it knows.
  */
-export interface ForeignCash { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number }
+export interface ForeignCash {
+  orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number;
+  /** A342: OTHER shifts open on this same till (the web standing in as it). The till's count covers them: their expected
+   *  cash is added to this drawer's, and the cloud closes them with this close. Absent from an older cloud. */
+  siblings?: { count: number; expected: number; shifts?: Array<{ id: string; opened_by_name: string | null; opened_at: string | null; expected: number }> } | null;
+}
 
 /** The order / float / expense ids this till holds for a shift — what it tells the cloud it already knows. */
 export function localShiftIds(shiftId: string): { order_ids: string[]; float_ids: string[]; expense_ids: string[] } {
@@ -279,8 +284,10 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     SELECT COALESCE(SUM(amount), 0) AS amt FROM expenses WHERE shift_id = ?
   `).get(shiftId) as { amt: number } | undefined)?.amt ?? 0) + (f ? Number(f.expenses) : 0);
 
+  // A342: the web's own shift on this till, counted in the same drawer (owner: "Till's count covers both").
+  const siblingExpected = f?.siblings ? Number(f.siblings.expected) || 0 : 0;
   const expectedCash =
-    Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut);
+    Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut) + siblingExpected;
 
   // 0.6.11: the lines behind expensesOut (this till's own; a web expense is in the total via `foreign`).
   const expenseLines = (db.prepare(`

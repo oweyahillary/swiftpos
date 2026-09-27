@@ -1,3 +1,5 @@
+import MethodDot from '../../components/MethodDot';
+import { methodColour, methodTint } from '../../lib/paymentColours';
 import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
@@ -717,9 +719,11 @@ export default function PaymentModal({
                     className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                       method === m
                         ? 'bg-action-500/10 border-action-500 text-action-400'
-                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-                    }`}>
-                    {m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
+                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                    }`}
+                    // A344: each method in its own colour; the SELECTED one keeps the theme highlight (action-*).
+                    style={method === m ? undefined : { backgroundColor: methodTint(m), borderColor: methodColour(m).dot }}>
+                    <MethodDot method={m} />{m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
                     <span className="capitalize">{m === 'mpesa' ? 'M-Pesa' : m === 'credit' ? 'On Account' : m}</span>
                   </button>
                 ))}
@@ -729,9 +733,10 @@ export default function PaymentModal({
                     className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                       method === cm.code
                         ? 'bg-action-500/10 border-action-500 text-action-400'
-                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-                    }`}>
-                    🏦<br />
+                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                    }`}
+                    style={method === cm.code ? undefined : { backgroundColor: methodTint(cm.code), borderColor: methodColour(cm.code).dot }}>
+                    <MethodDot method={cm.code} />🏦<br />
                     <span>{cm.name}</span>
                   </button>
                 ))}

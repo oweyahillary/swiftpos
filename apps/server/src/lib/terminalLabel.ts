@@ -34,3 +34,13 @@ export function labelFor(role: string | null, given?: unknown): string {
     default:       return GENERIC_TERMINAL_LABELS[0];
   }
 }
+
+/**
+ * A343 (2026-09-27): the name of a branch's WEB till — the web POS's own register when a cashier starts their own shift on the
+ * web instead of joining a till's. Owner: "this can be called branchname_web_till". Its drawer is the branch's existing
+ * `web:<branchId>` session (lib/terminalKey.ts).
+ */
+export function webTillName(branchName: string | null | undefined): string {
+  const b = cleanLabel(branchName ?? '');
+  return b ? `${b} Web Till` : 'Web Till';
+}

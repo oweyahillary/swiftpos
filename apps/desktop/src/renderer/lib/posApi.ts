@@ -104,7 +104,9 @@ export interface ZReport {
     floatOut: number;
     expectedCash: number;
     /** A334: the web POS's cash on this (shared) drawer, already inside the totals. null = could not be checked. */
-    foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number } | null;
+    foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number;
+      /** A342: the web's own shift(s) on this till, counted in this drawer. */
+      siblings?: { count: number; expected: number; shifts?: Array<{ id: string; opened_by_name: string | null; opened_at: string | null; expected: number }> } | null } | null;
     /** Cross-sync stage 1: the web's sales downloaded onto the till — already inside the totals. */
     webSales?: { orders: number; cash_sales: number };
     /** 0.6.11: cash paid out as expenses — already taken off expectedCash. Absent on reports from older builds. */

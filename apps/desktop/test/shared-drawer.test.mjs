@@ -87,5 +87,12 @@ ok('the stored expected cash includes the web (what the day close sums)',
   db.prepare(`SELECT expected_cash FROM shifts WHERE id='sh-web-1'`).get().expected_cash === 2050,
   String(db.prepare(`SELECT expected_cash FROM shifts WHERE id='sh-web-1'`).get().expected_cash));
 
+// A342 (0.6.14): the web POS's OWN shift on this till (a second drawer on T1) is counted in this drawer too —
+// owner: "Till's count covers both". Its expected cash arrives with the foreign-cash answer as `siblings`.
+const zSib = S.computeZReport('sh-web-1', { ...foreign, siblings: { count: 1, expected: 730, shifts: [{ id: 'sh-web-2', opened_by_name: 'Jane', opened_at: null, expected: 730 }] } });
+ok('A342: the web\'s own shift on this till is added to expected cash (2050 + 730 = 2780)', zSib.totals.expectedCash === 2780, String(zSib.totals.expectedCash));
+ok('A342: …and reported, so the panel and the paper can say so', zSib.totals.foreign?.siblings?.count === 1);
+ok('A342: an older cloud that sends no siblings changes nothing (2050)', S.computeZReport('sh-web-1', foreign).totals.expectedCash === 2050);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

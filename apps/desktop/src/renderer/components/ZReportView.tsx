@@ -72,6 +72,8 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {row('− Float out', money(totals.floatOut))}
       {/* 0.6.11: expenses were always taken off expected cash but never shown, so the lines did not add up. */}
       {totals.expenses != null && row('− Expenses', money(totals.expenses))}
+      {/* A342: the web POS's own shift on this till — counted in this drawer, closed with it. */}
+      {(totals.foreign?.siblings?.count ?? 0) > 0 && row('+ Web shift on this till', money(totals.foreign!.siblings!.expected))}
       {row('= Expected cash', money(shift.expected_cash), { bold: true })}
       {isClosed && row('Counted cash', money(shift.closing_float))}
       {isClosed && variance != null && row(

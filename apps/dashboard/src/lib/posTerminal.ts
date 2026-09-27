@@ -120,3 +120,65 @@ export async function loadTills(
   ]);
   return withOpenShifts(tills ?? [], open);
 }
+
+// ── A343 (2026-09-27): the branch's WEB till, and who goes straight in ──────────────────────────────────────────────────
+// Owner: on the web, a cashier who did not open the running shift "are asked to join cashier A shift or proceed to create a
+// shift" — their own, on the branch's web till ("branchname_web_till"). The opener, and a cashier who already chose, go
+// straight in next time. On the desktop nothing changes: whoever signs in on a till sells into its running shift.
+
+/** The branch's web till: its name and whether its drawer (web:<branch>) is open. */
+export interface WebTill { name: string; open_shift: TillOpenShift | null }
+
+/** GET /api/shifts/web-till. An older cloud has no such route → null (the picker simply shows no web till). */
+export async function loadWebTill(get: <R>(path: string) => Promise<R>, branchId: string): Promise<WebTill | null> {
+  try {
+    return (await get<WebTill>(`/api/shifts/web-till?branch_id=${encodeURIComponent(branchId)}`)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The picker's value for the web till (tills are keyed by device_id, which the web till has none of). */
+export const WEB_TILL_VALUE = '__web_till__';
+
+/**
+ * Where this cashier should go without being asked: the ONE open drawer they opened — a till's or the web till's.
+ * Two of theirs, or none → null (the picker decides).
+ */
+export function ownOpenDrawer<T extends CoveredTerminal>(
+  tills: T[], webTill: WebTill | null, userId: string | null | undefined,
+): { kind: 'till'; till: T } | { kind: 'web' } | null {
+  if (!userId) return null;
+  const tillsMine = tills.filter((t) => t.open_shift && t.open_shift.opened_by === userId);
+  const webMine = webTill?.open_shift?.opened_by === userId ? 1 : 0;
+  if (tillsMine.length + webMine !== 1) return null;
+  return webMine ? { kind: 'web' } : { kind: 'till', till: tillsMine[0] };
+}
+
+// Who has already CHOSEN to sell into a shift on this browser (joined it from the picker) — they go straight in next time.
+// Per browser tab, like the covered till: a shared tab at the counter is the case this is for.
+const JOINED_KEY = 'swiftpos_pos_joined';
+function readJoined(): Record<string, string[]> {
+  try { return JSON.parse(sessionStorage.getItem(JOINED_KEY) || '{}') ?? {}; } catch { return {}; }
+}
+export function markJoined(shiftId: string | null | undefined, userId: string | null | undefined): void {
+  if (!shiftId || !userId) return;
+  try {
+    const j = readJoined();
+    j[shiftId] = [...new Set([...(j[shiftId] ?? []), userId])];
+    sessionStorage.setItem(JOINED_KEY, JSON.stringify(j));
+  } catch { /* storage unavailable — they will simply be asked again */ }
+}
+
+/**
+ * May this cashier sell into `shift` without being asked? Yes if they opened it (opened_by / cashier_id) or already joined it
+ * on this browser. Anyone else is asked to join it or start their own shift on the web till.
+ */
+export function mayEnterSilently(
+  shift: { id: string; opened_by?: string | null; cashier_id?: string | null } | null | undefined,
+  userId: string | null | undefined,
+): boolean {
+  if (!shift || !userId) return false;
+  if (shift.opened_by === userId || shift.cashier_id === userId) return true;
+  return (readJoined()[shift.id] ?? []).includes(userId);
+}

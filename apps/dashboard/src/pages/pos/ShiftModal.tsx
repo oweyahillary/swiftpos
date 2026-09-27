@@ -19,7 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
-import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, type CoveredTerminal } from '../../lib/posTerminal';
+import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -80,6 +80,8 @@ export default function ShiftModal({
   const [terminals, setTerminals]             = useState<CoveredTerminal[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [terminalsLoading, setTerminalsLoading] = useState(false);
+  // A343: the branch's web till — where a cashier starts their OWN shift on the web instead of joining a till's.
+  const [webTill, setWebTill] = useState<WebTill | null>(null);
 
   // Close shift
   const [closeFloat, setCloseFloat] = useState('');
@@ -109,14 +111,15 @@ export default function ShiftModal({
     Promise.all([
       posApi.get<CoveredTerminal[]>(`/api/shifts/terminals?branch_id=${encodeURIComponent(branchId)}`),
       loadOpenDrawers((path) => posApi.get(path), branchId),   // A273 follow-up: which drawers are open
+      loadWebTill((path) => posApi.get(path), branchId),       // A343: the branch's web till
     ])
-      .then(([tills, open]) => withOpenShifts(tills ?? [], open))
+      .then(([tills, open, web]) => { setWebTill(web); return withOpenShifts(tills ?? [], open); })
       .then((rows) => {
         const list = rows ?? [];
         setTerminals(list);
         const covered = getCoveredTerminal();
         if (covered && list.some(r => r.device_id === covered.device_id)) setSelectedDeviceId(covered.device_id);
-        else if (list.length === 1) setSelectedDeviceId(list[0].device_id);
+        else if (list.length === 1 && !list[0].open_shift) setSelectedDeviceId(list[0].device_id);
       })
       .catch(() => setTerminals([]))
       .finally(() => setTerminalsLoading(false));
@@ -126,7 +129,14 @@ export default function ShiftModal({
   // web tab) — join it. No opening float: the drawer's float was counted when it opened
   // (the 2026-09-15 target finding). Adopt the till's identity, then /current returns
   // that drawer's shift.
-  const selectedTill = terminals.find(t => t.device_id === selectedDeviceId);
+  // A343: the web till as a pickable row. device_id '' → covering no till, so setCoveredTerminal() clears the identity and
+  // every request keys to the branch's web:<branch> drawer.
+  const webTillRow: CoveredTerminal | null = webTill
+    ? { device_id: '', terminal_code: null, device_label: webTill.name, open_shift: webTill.open_shift } : null;
+  const pick = (id: string) => (id === WEB_TILL_VALUE ? webTillRow : terminals.find(t => t.device_id === id)) ?? undefined;
+  // Another cashier's shift is running → spell out the choice (owner, 2026-09-27: join it or create your own).
+  const othersOpen = terminals.filter(t => t.open_shift);
+  const selectedTill = pick(selectedDeviceId);
   const joining = !!selectedTill?.open_shift;
   const handleJoin = async (till: CoveredTerminal) => {
     setLoading(true);
@@ -147,8 +157,8 @@ export default function ShiftModal({
 
   const handleOpen = async () => {
     if (!branchId) { setError('Branch not found'); return; }
-    const till = terminals.find(t => t.device_id === selectedDeviceId);
-    if (!till) { setError('Select which till you are covering'); return; }
+    const till = pick(selectedDeviceId);
+    if (!till) { setError('Choose a till — or your own shift on the web till'); return; }
     if (till.open_shift) { await handleJoin(till); return; }
     const amount = parseFloat(openFloat);
     if (isNaN(amount) || amount < 0) { setError('Enter a valid opening float (0 or more)'); return; }
@@ -265,13 +275,24 @@ export default function ShiftModal({
 
             {/* A273 — pick the till this web POS is covering so the shift folds
                 into that till's drawer, not the shared web session. */}
-            <label style={s.label}>Which till are you covering?</label>
+            {othersOpen.length > 0 && webTill && (
+              <p style={s.subtitle} data-testid="join-or-own">
+                {othersOpen.map(t => `${t.open_shift?.opened_by_name ?? 'Another cashier'}'s shift is running on ${tillName(t)}`).join(' · ')}.
+                {' '}Join it, or start your own shift on <b>{webTill.name}</b>.
+              </p>
+            )}
+            <label style={s.label}>Which till are you selling on?</label>
             <select
               style={s.input}
               value={selectedDeviceId}
               onChange={e => setSelectedDeviceId(e.target.value)}
             >
               <option value="">{terminalsLoading ? 'Loading tills…' : 'Select a till…'}</option>
+              {webTill && (
+                <option value={WEB_TILL_VALUE}>
+                  {webTill.name}{webTill.open_shift ? ` · ${openShiftLine({ device_id: '', terminal_code: null, device_label: webTill.name, open_shift: webTill.open_shift })}` : ' · your own shift'}
+                </option>
+              )}
               {terminals.map(t => (
                 <option key={t.device_id} value={t.device_id}>
                   {tillName(t)}{t.open_shift ? ` · ${openShiftLine(t)}` : ''}
