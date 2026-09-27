@@ -429,7 +429,8 @@ export function StaffTab({ branchId }: { branchId?: string }) {
               <select value={form.role_id} onChange={e => setForm({ ...form, role_id: e.target.value })}
                 className={input}>
                 <option value="">— choose —</option>
-                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {/* A340: only roles the cloud says this manager may hand out — never Owner. */}
+                {roles.filter(r => r.assignable !== false).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
           </div>

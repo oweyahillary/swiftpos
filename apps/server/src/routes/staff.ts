@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
+import { isElevatedRoleName, canAssignRole, overridesBeyondCaller } from '../lib/roleCeiling';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -29,7 +30,7 @@ function hashOverridePin(pin: string): Promise<string> {
 // grant — otherwise a manager with staff.manage could escalate by creating or
 // promoting a user into an owner/admin/manager role. The dashboard hides these
 // in the role picker, but that is client-side only; this is the server guard.
-const ELEVATED_ROLE_NAMES = ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'];
+// A340: the list and the rule now live in lib/roleCeiling.ts, shared with the role list the pickers use.
 
 // Returns true if role_id refers to an elevated role.
 //
@@ -49,7 +50,23 @@ async function roleIsElevated(roleId: string, _businessId: string): Promise<bool
   const { data: role, error } = await supabase
     .from('roles').select('name').eq('id', roleId).maybeSingle();
   if (error || !role) return true;
-  return ELEVATED_ROLE_NAMES.includes(String(role.name).toLowerCase());
+  return isElevatedRoleName(role.name);
+}
+
+// A340: a non-owner may grant a staff member only permissions they hold themselves. Returns a refusal reason, or null.
+// `overrides` is [{ permission_id, granted }]; only GRANTS are checked (taking a permission away is never an escalation).
+async function refuseOverridesBeyondCaller(req: any, overrides: unknown): Promise<{ error: string; missing: string[] } | null> {
+  if (req.isOwner || !Array.isArray(overrides)) return null;
+  const grantIds = overrides.filter((o: any) => o && o.granted === true && typeof o.permission_id === 'string').map((o: any) => o.permission_id);
+  if (!grantIds.length) return null;
+  const { data: rows, error } = await supabase.from('permissions').select('id, key').in('id', grantIds);
+  if (error) return { error: 'Could not check the permissions being granted', missing: [] };
+  // An id that is not a known permission is refused too — fail closed.
+  const keys = (rows ?? []).map((r: any) => r.key as string);
+  const unknown = grantIds.length - (rows ?? []).length;
+  const missing = overridesBeyondCaller(false, req.permissionKeys ?? [], keys);
+  if (missing.length || unknown > 0) return { error: 'You cannot grant permissions you do not hold', missing };
+  return null;
 }
 
 // Blocks a non-owner from touching a proprietor account at all.
@@ -197,6 +214,8 @@ router.post('/', requirePermission('staff.manage'), validate(CreateStaffSchema),
     res.status(403).json({ error: 'You are not allowed to assign this role' });
     return;
   }
+  const overRefusal = await refuseOverridesBeyondCaller(req, req.body.overrides);   // A340
+  if (overRefusal) { res.status(403).json(overRefusal); return; }
 
   const pin_hash = hashPin(pin, req.businessId);
 
@@ -251,6 +270,20 @@ router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
     return;
   }
 
+  // A340: the invite path had NO role or branch guard — a manager could invite anyone as the owner, the one gap in
+  // an otherwise guarded set (POST /, PATCH, DELETE). Same rules as POST /.
+  if (!req.isOwner) {
+    if (await roleIsElevated(role_id, req.businessId)) {
+      res.status(403).json({ error: 'You are not allowed to assign this role' });
+      return;
+    }
+    if (branch_ids?.length && !branch_ids.every((bid: string) => bid === req.branchId)) {
+      res.status(403).json({ error: 'You can only assign staff to your own branch' });
+      return;
+    }
+  }
+  const inviteBranchIds: string[] = req.isOwner ? (branch_ids ?? []) : (req.branchId ? [req.branchId] : []);
+
   const { data: user, error: uErr } = await supabase
     .from('users')
     .insert({ business_id: req.businessId, name, email, role_id, status: 'inactive' })
@@ -259,9 +292,9 @@ router.post('/invite', requirePermission('staff.manage'), async (req, res) => {
 
   if (uErr) { sendError(res, uErr); return; }
 
-  if (branch_ids?.length) {
+  if (inviteBranchIds.length) {
     await supabase.from('user_branches').insert(
-      branch_ids.map((bid: string) => ({ user_id: user.id, branch_id: bid }))
+      inviteBranchIds.map((bid: string) => ({ user_id: user.id, branch_id: bid }))
     );
   }
 
@@ -325,6 +358,8 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
       res.status(403).json({ error: 'You are not allowed to manage this staff member' });
       return;
     }
+    const overRefusal = await refuseOverridesBeyondCaller(req, req.body.overrides);   // A340
+    if (overRefusal) { res.status(403).json(overRefusal); return; }
   }
 
   const updates: any = { updated_at: new Date().toISOString() };
@@ -445,7 +480,9 @@ router.get('/roles', async (req, res) => {
     .order('name');
 
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  // A340: which of these THIS caller may hand out — the dashboard's and the till's role pickers show only these, so a
+  // manager is never offered Owner (the routes refuse it regardless).
+  res.json((data ?? []).map((r: any) => ({ ...r, assignable: canAssignRole(!!req.isOwner, r.name) })));
 });
 
 // GET /api/staff/permissions — list all available permissions
@@ -485,7 +522,7 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.manage'), asyn
   //      with) — otherwise a manager could silently strip another manager's
   //      or a role-based "owner" account's access.
   if (!req.isOwner) {
-    if (ELEVATED_ROLE_NAMES.includes(String(role.name).toLowerCase())) {
+    if (isElevatedRoleName(role.name)) {
       res.status(403).json({ error: "Only the owner can edit an elevated role's permissions" });
       return;
     }
@@ -518,6 +555,11 @@ router.put('/roles/:roleId/permissions', requirePermission('staff.manage'), asyn
 router.post('/roles', requirePermission('staff.manage'), async (req, res) => {
   const { name, description } = req.body;
   if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+  // A340: a non-owner may not mint a role carrying an elevated name ("Owner", "Admin" …).
+  if (!req.isOwner && isElevatedRoleName(name)) {
+    res.status(403).json({ error: 'Only the owner can create this role' });
+    return;
+  }
 
   const { data, error } = await supabase
     .from('roles')

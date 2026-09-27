@@ -512,6 +512,10 @@ export function registerIpcHandlers() {
       configureStaffSession('', '');
       return {
         staff: { id: staff.staffId, name: staff.name, role: staff.roleName },
+        // The PIN screen routes on the TOP-LEVEL role (App.tsx hasManagerRights), exactly as the online answer gives it
+        // (`role: data.staff?.role` below). Without it an offline manager — no '*' and, since migration 59, no
+        // settings.manage — was sent to the cashier screen (owner, 2026-09-27; A339).
+        role: staff.roleName,
         permissions: staff.permissions,
         branch: { id: branch_id, name: branchRowOff?.name ?? null },
         business: { name: session?.business_name ?? null, currency: session?.currency ?? null },

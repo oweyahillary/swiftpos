@@ -48,9 +48,11 @@ export default function StaffTab({ branches, excludeRoles }: Props) {
       ]);
       setStaff(staffData ?? []);
       // Filter out roles the current context shouldn't be able to assign
-      const filteredRoles = excludeRoles?.length
-        ? (rolesData ?? []).filter(r => !excludeRoles.includes(r.name.toLowerCase()))
-        : (rolesData ?? []);
+      // A340: the cloud marks the roles THIS user may hand out (a manager is never offered Owner/Admin/Manager/…);
+      // excludeRoles stays for the manager dashboard's own narrower list.
+      const filteredRoles = (rolesData ?? [])
+        .filter(r => (r as { assignable?: boolean }).assignable !== false)
+        .filter(r => !excludeRoles?.length || !excludeRoles.includes(r.name.toLowerCase()));
       setRoles(filteredRoles);
       setPermissions(permsData ?? []);
     } catch (err) { console.error(err); }
