@@ -90,8 +90,9 @@ export function validateEnv(): ServerEnv {
   // Advisory, not fatal: these degrade a feature rather than break the server,
   // and refusing to trade because nobody configured WhatsApp would be absurd.
   const optional: Array<[string, string]> = [
-    // A352: SendGrid is the email provider (HTTPS; Render blocks SMTP — A54). Resend / SMTP only as fallbacks.
-    ['SENDGRID_API_KEY',   'daily summary, low-stock and test emails are not sent through SendGrid'],
+    // Email: Resend is the primary; SendGrid (A352, HTTPS) and SMTP are the backups — Render blocks SMTP (A54).
+    ['RESEND_API_KEY',     'the primary email provider is missing; emails go through the backups (SendGrid / SMTP) only'],
+    ['SENDGRID_API_KEY',   'no SendGrid backup: if Resend refuses an email, only SMTP (blocked on Render) is left'],
     ['APP_ENCRYPTION_KEY', 'stored M-Pesa credentials cannot be decrypted'],
     ['CORS_ORIGINS',       'the dashboard origin allowlist falls back to its built-in default'],
     // A348: the tills' update feed reads the releases with it; not needed while the repository is public.

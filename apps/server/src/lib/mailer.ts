@@ -20,8 +20,8 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SENDGRID (A352, 2026-09-28) — owner: "on emails i want to use sendgrid".
-// Tried FIRST when SENDGRID_API_KEY is set; Resend and SMTP stay as fallbacks.
+// SENDGRID (A352, 2026-09-28) — owner: "resend is the primary, if it fails sendgrid kicks in or smtp, the two
+// work as backup". Order: Resend → SendGrid → SMTP; each is tried only when the one before it is not set or fails.
 // Over HTTPS (api.sendgrid.com:443), never SMTP: Render filters outbound SMTP
 // (A54 — the reason no mail has been delivered), and 443 is always open. Plain
 // fetch, so no new dependency. SendGrid only sends from a VERIFIED sender: a
@@ -197,7 +197,7 @@ async function getSmtpTransport(portOverride?: number) {
 // platform to the SMTP fallback. That is a config mistake with no symptom until
 // you read the logs, so name it once at boot instead.
 const FREE_MAIL = /@(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|aol)\./i;
-// SendGrid will verify a free-mail Single Sender, but Gmail/Yahoo's DMARC policy then sends the mail to spam or
+// SendGrid (a backup) will verify a free-mail Single Sender, but Gmail/Yahoo's DMARC policy then sends the mail to spam or
 // rejects it at the recipient — the same silent non-delivery. Say so at boot.
 if (SENDGRID_KEY && FREE_MAIL.test(DEFAULT_FROM)) {
   console.warn(
@@ -319,35 +319,40 @@ export interface MailOptions {
 export async function reportMailReadiness(): Promise<void> {
   const smtp = await getSmtpTransport();
 
-  if (!SENDGRID_KEY && !resend && !smtp) {
+  if (!resend && !SENDGRID_KEY && !smtp) {
     console.warn(
       '[mailer] NO EMAIL PROVIDER CONFIGURED. Daily summaries and low-stock '
-      + 'alerts will not be delivered. Set SENDGRID_API_KEY (or RESEND_API_KEY, '
-      + 'or SMTP_HOST + SMTP_USER + SMTP_PASS).',
+      + 'alerts will not be delivered. Set RESEND_API_KEY (primary), and '
+      + 'SENDGRID_API_KEY or SMTP_HOST + SMTP_USER + SMTP_PASS as backup.',
     );
     return;
   }
 
-  if (SENDGRID_KEY) {
-    // No send at boot (it would email someone on every deploy); the owner's "Send test email" proves delivery.
-    console.info(`[mailer] SendGrid configured (primary), sending as ${DEFAULT_FROM}.`);
-    return;
-  }
-
+  // No send at boot for any provider (it would email someone on every deploy); "Send test email" proves delivery.
   if (resend) {
     console.info('[mailer] Resend configured (primary).');
   } else {
+    console.warn('[mailer] RESEND_API_KEY not set — the primary is missing, so the backups carry every email.');
+  }
+  if (SENDGRID_KEY) {
+    console.info(`[mailer] SendGrid configured (backup${resend ? '' : ', standing in for Resend'}), sending as ${DEFAULT_FROM}.`);
+  }
+  if (!resend && !SENDGRID_KEY) {
     console.info(
-      '[mailer] RESEND_API_KEY not set — SMTP is the ONLY path, so a failure '
-      + 'here means no email is delivered at all.',
+      '[mailer] Neither Resend nor SendGrid is set — SMTP is the ONLY path, so a '
+      + 'failure here means no email is delivered at all.',
     );
   }
 
   if (!smtp) {
-    console.warn(
-      '[mailer] No SMTP fallback configured. If Resend rejects a message '
-      + '(unverified domain is the usual cause) it will not be delivered.',
-    );
+    if (!SENDGRID_KEY) {
+      console.warn(
+        '[mailer] No backup configured (neither SendGrid nor SMTP). If Resend rejects '
+        + 'a message (unverified domain is the usual cause) it will not be delivered.',
+      );
+    } else if (!resend) {
+      console.warn('[mailer] SendGrid is the only provider — if it refuses a message, it is not delivered.');
+    }
     return;
   }
 
@@ -358,7 +363,7 @@ export async function reportMailReadiness(): Promise<void> {
       + `via ${_pinnedIPv4 ?? 'hostname'} (IPv4 pinned).`,
     );
   } catch (err: any) {
-    const onlyPath = !resend;
+    const onlyPath = !resend && !SENDGRID_KEY;
     console.error(
       `[mailer] SMTP ${onlyPath ? 'IS DEAD AND IS THE ONLY PATH' : 'FALLBACK IS DEAD'}`
       + ` — ${SMTP_HOST}:${SMTP_PORT} `
@@ -396,21 +401,14 @@ export async function reportMailReadiness(): Promise<void> {
 }
 
 /**
- * Send an email: SendGrid (primary, A352), then Resend, then Nodemailer SMTP.
+ * Send an email: Resend (primary), then SendGrid (backup, A352), then Nodemailer SMTP (backup).
  * Logs a warning if neither provider is configured (dev/test environments).
  */
 export async function sendEmail(opts: MailOptions): Promise<void> {
   const from = opts.from ?? DEFAULT_FROM;
+  const failures: string[] = [];
 
-  // ── Primary: SendGrid (A352) ──────────────────────────────
-  let sgError: string | null = null;
-  if (SENDGRID_KEY) {
-    sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
-    if (!sgError) return;
-    console.warn('[mailer] SendGrid error, falling back:', sgError);
-  }
-
-  // ── Next: Resend ──────────────────────────────────────────
+  // ── Primary: Resend ───────────────────────────────────────
   if (resend) {
     try {
       const { error } = await resend.emails.send({
@@ -420,13 +418,23 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
         html: opts.html,
       });
       if (!error) return;
-      console.warn('[mailer] Resend error, falling back to SMTP:', error.message);
+      failures.push(`Resend: ${error.message}`);
+      console.warn('[mailer] Resend error, falling back to SendGrid / SMTP:', error.message);
     } catch (err: any) {
-      console.warn('[mailer] Resend threw, falling back to SMTP:', err.message);
+      failures.push(`Resend: ${err?.message ?? err}`);
+      console.warn('[mailer] Resend threw, falling back to SendGrid / SMTP:', err?.message);
     }
   }
 
-  // ── Fallback: Nodemailer SMTP ─────────────────────────────
+  // ── Backup 1: SendGrid (A352) ─────────────────────────────
+  if (SENDGRID_KEY) {
+    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    if (!sgError) return;
+    failures.push(`SendGrid: ${sgError}`);
+    console.warn('[mailer] SendGrid error, falling back to SMTP:', sgError);
+  }
+
+  // ── Backup 2: Nodemailer SMTP ─────────────────────────────
   const smtp = await getSmtpTransport();
   if (smtp) {
     await smtp.sendMail({
@@ -438,11 +446,11 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
     return;
   }
 
-  // ── SendGrid refused and nothing to fall back to: a FAILURE, not "no provider" — throw so the job's
-  //    per-business catch logs it (A352), exactly as an SMTP failure throws below.
-  if (sgError) throw new Error(`SendGrid did not send "${opts.subject}" to ${opts.to}: ${sgError}`);
+  // ── Every configured provider refused: a FAILURE, not "no provider" — throw so the job's per-business catch
+  //    logs it with each provider's reason (A352), exactly as an SMTP failure throws above.
+  if (failures.length) throw new Error(`Email "${opts.subject}" to ${opts.to} was not sent — ${failures.join('; ')}`);
 
-  // ── Neither configured ────────────────────────────────────
+  // ── Nothing configured ────────────────────────────────────
   console.warn('[mailer] No email provider configured. Email not sent:', opts.subject, '→', opts.to);
 }
 
@@ -464,14 +472,7 @@ export interface SendResult {
  */
 export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
   const from = opts.from ?? DEFAULT_FROM;
-  let resendError: string | undefined;
-  let sendgridError: string | undefined;
-
-  if (SENDGRID_KEY) {
-    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
-    if (!sgError) return { ok: true, provider: 'sendgrid' };
-    sendgridError = sgError;
-  }
+  const failures: string[] = [];
 
   if (resend) {
     try {
@@ -479,10 +480,16 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
         from, to: opts.to, subject: opts.subject, html: opts.html,
       });
       if (!error) return { ok: true, provider: 'resend' };
-      resendError = error.message;
+      failures.push(`Resend: ${error.message}`);
     } catch (err: any) {
-      resendError = err?.message ?? String(err);
+      failures.push(`Resend: ${err?.message ?? String(err)}`);
     }
+  }
+
+  if (SENDGRID_KEY) {
+    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    if (!sgError) return { ok: true, provider: 'sendgrid' };
+    failures.push(`SendGrid: ${sgError}`);
   }
 
   const smtp = await getSmtpTransport();
@@ -493,21 +500,19 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
     } catch (err: any) {
       return {
         ok: false, provider: 'smtp',
-        error: `${sendgridError ? `SendGrid: ${sendgridError}. ` : ''}${err?.message ?? err} — ${classifySmtpFailure(err, SMTP_HOST!, SMTP_PORT)}`,
+        error: `${failures.length ? `${failures.join('; ')}; ` : ''}SMTP: ${err?.message ?? err} — ${classifySmtpFailure(err, SMTP_HOST!, SMTP_PORT)}`,
       };
     }
   }
 
-  if (sendgridError) {
+  if (failures.length) {
     return {
-      ok: false, provider: 'sendgrid',
-      error: `SendGrid rejected the message (${sendgridError})${resendError ? `; Resend too (${resendError})` : ''} and no SMTP fallback is configured.`,
+      ok: false, provider: SENDGRID_KEY ? 'sendgrid' : 'resend',
+      error: `${failures.join('; ')} — and no SMTP fallback is configured.`,
     };
   }
   return {
     ok: false, provider: 'none',
-    error: resendError
-      ? `Resend rejected the message (${resendError}) and no SMTP fallback is configured.`
-      : 'No email provider configured. Set SENDGRID_API_KEY (or RESEND_API_KEY, or SMTP_HOST + SMTP_USER + SMTP_PASS).',
+    error: 'No email provider configured. Set RESEND_API_KEY (primary), and SENDGRID_API_KEY or SMTP_HOST + SMTP_USER + SMTP_PASS as backup.',
   };
 }
