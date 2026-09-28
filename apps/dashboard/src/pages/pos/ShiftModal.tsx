@@ -35,7 +35,7 @@ export interface Shift {
   notes?: string;
 }
 
-export type ShiftModalMode = 'open' | 'close' | 'float' | 'clockin';
+export type ShiftModalMode = 'open' | 'close' | 'float' | 'clockin' | 'expense';
 
 interface Props {
   mode: ShiftModalMode;
@@ -93,6 +93,13 @@ export default function ShiftModal({
   const [floatAmount, setFloatAmount] = useState('');
   const [floatReason, setFloatReason] = useState('');
   const [floatDone, setFloatDone]   = useState(false);
+
+  // A362: petty-cash expense out of this drawer (the till's Shift → Expenses, on the web)
+  const [expTypes, setExpTypes]   = useState<{ id: string; name: string }[]>([]);
+  const [expTypeId, setExpTypeId] = useState('');
+  const [expDesc, setExpDesc]     = useState('');
+  const [expAmount, setExpAmount] = useState('');
+  const [expDone, setExpDone]     = useState<{ description: string; amount: number } | null>(null);
 
   // Clock in/out
   const [clockPin, setClockPin]       = useState('');
@@ -235,6 +242,39 @@ export default function ShiftModal({
       setLoading(false);
     }
   };
+
+  // A362: the types list is readable by any signed-in account (A360); an empty list still lets the expense through untyped.
+  useEffect(() => {
+    if (mode !== 'expense') return;
+    posApi.get<{ id: string; name: string }[]>('/api/expenses/categories')
+      .then((rows) => setExpTypes(Array.isArray(rows) ? rows : []))
+      .catch(() => setExpTypes([]));
+  }, [mode, posApi]);
+
+  const handleExpense = async () => {
+    if (!shiftId) return;
+    const description = expDesc.trim();
+    const amount = parseFloat(expAmount);
+    if (!description) { setError('Say what the money was for'); return; }
+    if (isNaN(amount) || amount <= 0) { setError('Enter an amount greater than zero'); return; }
+
+    setLoading(true);
+    setError('');
+    try {
+      await posApi.post(`/api/shifts/${shiftId}/expense`, {
+        description,
+        amount,
+        expense_category_id: expTypeId || undefined,
+      });
+      setExpDone({ description, amount });
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not record the expense');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const anotherExpense = () => { setExpDone(null); setExpDesc(''); setExpAmount(''); setExpTypeId(''); setError(''); };
 
   // ── Clock in/out handler ────────────────────────────────────────────────────
 
@@ -478,6 +518,69 @@ export default function ShiftModal({
               <button style={s.primaryBtn} onClick={handleFloat} disabled={loading}>
                 {loading ? 'Saving…' : 'Record'}
               </button>
+            </div>
+          </>
+        )}
+
+        {/* ── EXPENSE (A362) ──────────────────────────────────── */}
+        {mode === 'expense' && !expDone && (
+          <>
+            <div style={s.iconRow}><span style={s.icon}>🧾</span></div>
+            <h2 style={s.title}>Record an Expense</h2>
+            <p style={s.subtitle}>Cash paid out of this drawer — it comes off the shift's expected cash.</p>
+
+            <label style={s.label}>Expense type</label>
+            <select
+              style={s.input}
+              value={expTypeId}
+              onChange={e => setExpTypeId(e.target.value)}
+              data-testid="expense-type"
+            >
+              <option value="">{expTypes.length ? '— Select a type —' : 'No types yet (a manager adds them)'}</option>
+              {expTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+
+            <label style={s.label}>What was it for?</label>
+            <input
+              style={s.input}
+              type="text"
+              maxLength={255}
+              placeholder="e.g. Gas refill"
+              value={expDesc}
+              onChange={e => setExpDesc(e.target.value)}
+              autoFocus
+            />
+
+            <label style={s.label}>Amount ({currency})</label>
+            <input
+              style={s.input}
+              type="number"
+              min="1"
+              step="any"
+              placeholder="e.g. 500"
+              value={expAmount}
+              onChange={e => setExpAmount(e.target.value)}
+            />
+
+            {error && <p style={s.error}>{error}</p>}
+
+            <div style={s.actions}>
+              <button style={s.cancelBtn} onClick={onClose} disabled={loading}>Cancel</button>
+              <button style={s.primaryBtn} onClick={handleExpense} disabled={loading}>
+                {loading ? 'Saving…' : 'Record'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === 'expense' && expDone && (
+          <>
+            <div style={s.iconRow}><span style={s.icon}>✅</span></div>
+            <h2 style={s.title}>Expense recorded</h2>
+            <p style={s.subtitle}>{expDone.description} — {fmt(expDone.amount, currency)}, recorded under your name.</p>
+            <div style={s.actions}>
+              <button style={s.cancelBtn} onClick={anotherExpense}>Record another</button>
+              <button style={s.primaryBtn} onClick={onClose}>Close</button>
             </div>
           </>
         )}

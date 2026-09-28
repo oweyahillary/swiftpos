@@ -11,7 +11,7 @@
  *   expenses.manage — create / edit / delete
  */
 
-import { Router, type Request } from 'express';
+import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -19,6 +19,7 @@ import { requirePermission, branchScope, assertBranchAccess } from '../middlewar
 import { validate } from '../middleware/validate';
 import { CreateExpenseSchema } from '../lib/schemas';
 import { supabase } from '../lib/supabase';
+import { recorderId } from '../lib/expenseRecorder';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -200,17 +201,6 @@ router.get('/summary', requirePermission('expenses.view'), async (req, res) => {
 
   res.json({ total, breakdown });
 });
-
-// A361 (2026-09-28, owner: "expense should also capture who recorded it"): the signed-in account, never the form.
-// Staff: req.userId is always a users.id. An owner signed in through Supabase may have no users row (see inventory.ts),
-// so theirs is used only when it names a users row of this business — otherwise NULL rather than a broken foreign key.
-async function recorderId(req: Request): Promise<string | null> {
-  if (!req.userId) return null;
-  if (!req.isOwner) return req.userId;
-  const { data } = await supabase.from('users').select('id')
-    .eq('id', req.userId).eq('business_id', req.businessId).maybeSingle();
-  return (data as { id?: string } | null)?.id ?? null;
-}
 
 // POST /api/expenses
 router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSchema), async (req, res) => {

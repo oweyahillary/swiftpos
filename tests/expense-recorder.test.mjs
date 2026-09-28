@@ -54,8 +54,10 @@ ok('A361: a web expense is stamped from the signed-in account, never from the fo
   assert.ok(!/recorded_by,\s*$/m.test(post.slice(0, post.indexOf('} = req.body'))), 'not destructured from the body');
 });
 ok('A361: an owner without a users row records NULL, never a broken foreign key; staff always themselves', () => {
-  assert.match(code, /if \(!req\.isOwner\) return req\.userId;/);
-  assert.match(code, /\.eq\('id', req\.userId\)\.eq\('business_id', req\.businessId\)\.maybeSingle\(\);/);
+  const lib = read('apps/server/src/lib/expenseRecorder.ts');   // shared with POST /api/shifts/:id/expense (A362)
+  assert.match(lib, /if \(!req\.isOwner\) return req\.userId;/);
+  assert.match(lib, /\.eq\('id', req\.userId\)\.eq\('business_id', req\.businessId\)\.maybeSingle\(\);/);
+  assert.match(code, /import \{ recorderId \} from '\.\.\/lib\/expenseRecorder';/);
 });
 ok('A361: nobody edits the recorder afterwards (PATCH never names it)', () => {
   const patch = code.slice(code.indexOf("router.patch('/:id'"), code.indexOf("router.delete('/:id'"));

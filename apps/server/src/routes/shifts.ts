@@ -11,6 +11,7 @@ import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib
 import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
 import { webTillName } from '../lib/terminalLabel';
 import { foreignCash, foreignOrders, type CloudOrder } from '../lib/foreignCash';
+import { recorderId } from '../lib/expenseRecorder';
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 
 const router = safeRouter();
@@ -739,6 +740,63 @@ router.post('/:id/float', async (req, res) => {
       reason: reason ?? null,
     })
     .select()
+    .single();
+
+  if (error) { sendError(res, error); return; }
+  res.status(201).json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/shifts/:id/expense
+// A362 (2026-09-28, owner: "web pos cannot record expences on cashier"): petty cash paid out of an open drawer, recorded
+// from the web POS — the web twin of the till's Shift → Expenses, which any signed-in cashier may use. Same rule as a
+// float above (an open shift of this business, no key): the cash leaves THIS drawer, so it is the drawer's record, and the
+// shift's expected cash (and the till's count, A334 foreign cash) subtracts it. The back office's POST /api/expenses
+// (any date, any branch, a chosen Paid By) stays expenses.manage.
+// paid_by and recorded_by (A361) are both the signed-in person — at the till they are the same person too.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/:id/expense', async (req, res) => {
+  const { id } = req.params;
+  const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
+  const amount = Number(req.body?.amount);
+  const categoryId = typeof req.body?.expense_category_id === 'string' && req.body.expense_category_id
+    ? req.body.expense_category_id : null;
+
+  if (!description) { res.status(400).json({ error: 'Say what the money was for (description).' }); return; }
+  if (description.length > 255) { res.status(400).json({ error: 'Description is too long (255 characters at most).' }); return; }
+  if (!Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: 'Enter an amount greater than zero.' }); return; }
+
+  const { data: shift, error: shiftErr } = await supabase
+    .from('shifts')
+    .select('id, branch_id, status')
+    .eq('id', id)
+    .eq('business_id', req.businessId)
+    .eq('status', 'open')
+    .maybeSingle();
+  if (shiftErr) { sendError(res, shiftErr); return; }
+  if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
+
+  if (categoryId) {
+    const { data: cat } = await supabase.from('expense_categories').select('id')
+      .eq('id', categoryId).eq('business_id', req.businessId).maybeSingle();
+    if (!cat) { res.status(400).json({ error: 'That expense type no longer exists — pick another.' }); return; }
+  }
+
+  const who = await recorderId(req);
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert({
+      business_id:         req.businessId,
+      branch_id:           (shift as { branch_id: string }).branch_id,
+      shift_id:            id,
+      expense_category_id: categoryId,
+      description,
+      amount,
+      paid_by:             who,
+      recorded_by:         who,
+      expense_date:        new Date().toISOString().slice(0, 10),   // as the till and POST /api/expenses do
+    })
+    .select('id, description, amount, expense_date, expense_category_id, created_at')
     .single();
 
   if (error) { sendError(res, error); return; }

@@ -1050,6 +1050,12 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('float')}
                 title="Cash In/Out"
               >💵 Float</button>
+              {/* A362: petty cash out of this drawer — any cashier on the shift, as at the till */}
+              <button
+                style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
+                onClick={() => setShiftModal('expense')}
+                title="Record an expense"
+              >🧾 Expense</button>
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', marginRight: 4 }}
                 onClick={() => setShiftModal('close')}
