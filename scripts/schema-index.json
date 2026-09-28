@@ -187,7 +187,8 @@
     "etims_onboarded": "\"boolean\" NOT NULL",
     "web_access_expires_at": "\"timestamp with time zone\"",
     "ctl_rate": "\"numeric\" NOT NULL",
-    "suspended_at": "\"timestamp with time zone\""
+    "suspended_at": "\"timestamp with time zone\"",
+    "desktop_approved_version": "\"text\""
   },
   "categories": {
     "id": "\"uuid\" NOT NULL",
