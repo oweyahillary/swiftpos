@@ -19,6 +19,61 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SENDGRID (A352, 2026-09-28) — owner: "on emails i want to use sendgrid".
+// Tried FIRST when SENDGRID_API_KEY is set; Resend and SMTP stay as fallbacks.
+// Over HTTPS (api.sendgrid.com:443), never SMTP: Render filters outbound SMTP
+// (A54 — the reason no mail has been delivered), and 443 is always open. Plain
+// fetch, so no new dependency. SendGrid only sends from a VERIFIED sender: a
+// Single Sender (one address) or, better, an authenticated domain; anything
+// else is refused with 403 "does not match a verified Sender Identity".
+// ─────────────────────────────────────────────────────────────────────────────
+const SENDGRID_KEY = process.env.SENDGRID_API_KEY || null;
+const SENDGRID_URL = 'https://api.sendgrid.com/v3/mail/send';
+
+/** "SwiftPOS <noreply@x.co.ke>" → { name: 'SwiftPOS', email: 'noreply@x.co.ke' }; a bare address → { email }. */
+export function parseFrom(from: string): { email: string; name?: string } {
+  const m = /^\s*(?:"?([^"<]*?)"?\s*)?<([^<>\s]+@[^<>\s]+)>\s*$/.exec(from);
+  if (m) return m[1] ? { name: m[1].trim(), email: m[2] } : { email: m[2] };
+  return { email: from.trim() };
+}
+
+/** "a@x.com, b@y.com" (or ;-separated) → ['a@x.com', 'b@y.com'], blanks and duplicates dropped. */
+export function splitRecipients(to: string): string[] {
+  return [...new Set(String(to ?? '').split(/[,;]/).map((t) => t.trim()).filter(Boolean))];
+}
+
+/**
+ * One send through SendGrid's v3 API. Resolves null on success (SendGrid answers 202 Accepted), else the
+ * provider's own error text — SendGrid returns { errors: [{ message }] } — so the caller can log it or fall back.
+ * Never throws: a network failure comes back as its message, like a refusal.
+ */
+export async function sendViaSendGrid(opts: { from: string; to: string; subject: string; html: string }): Promise<string | null> {
+  if (!SENDGRID_KEY) return 'SENDGRID_API_KEY is not set';
+  try {
+    const res = await fetch(SENDGRID_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${SENDGRID_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        // One "a@x, b@y" string (dailySummary joins its recipients) → one entry per address; SendGrid refuses the joined form.
+        personalizations: [{ to: splitRecipients(opts.to).map((email) => ({ email })) }],
+        from: parseFrom(opts.from),
+        subject: opts.subject,
+        content: [{ type: 'text/html', value: opts.html }],
+      }),
+    });
+    if (res.status >= 200 && res.status < 300) return null;
+    let detail = '';
+    try {
+      const j: any = await res.json();
+      detail = Array.isArray(j?.errors) ? j.errors.map((e: any) => e?.message).filter(Boolean).join('; ') : '';
+    } catch { /* not JSON */ }
+    return `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+  } catch (err: any) {
+    return err?.message ?? String(err);
+  }
+}
+
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = parseInt(process.env.SMTP_PORT ?? '587');
 
@@ -142,6 +197,15 @@ async function getSmtpTransport(portOverride?: number) {
 // platform to the SMTP fallback. That is a config mistake with no symptom until
 // you read the logs, so name it once at boot instead.
 const FREE_MAIL = /@(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|aol)\./i;
+// SendGrid will verify a free-mail Single Sender, but Gmail/Yahoo's DMARC policy then sends the mail to spam or
+// rejects it at the recipient — the same silent non-delivery. Say so at boot.
+if (SENDGRID_KEY && FREE_MAIL.test(DEFAULT_FROM)) {
+  console.warn(
+    `[mailer] NOTIFY_FROM_EMAIL is "${DEFAULT_FROM}" — a free-mail sender through SendGrid fails ` +
+    'the recipient\'s DMARC check (spam or rejected). Authenticate your own domain in SendGrid ' +
+    '(Settings → Sender Authentication) and send from an address on it.',
+  );
+}
 if (resend && FREE_MAIL.test(DEFAULT_FROM)) {
   console.warn(
     `[mailer] NOTIFY_FROM_EMAIL is "${DEFAULT_FROM}" — Resend cannot send from a ` +
@@ -255,12 +319,18 @@ export interface MailOptions {
 export async function reportMailReadiness(): Promise<void> {
   const smtp = await getSmtpTransport();
 
-  if (!resend && !smtp) {
+  if (!SENDGRID_KEY && !resend && !smtp) {
     console.warn(
       '[mailer] NO EMAIL PROVIDER CONFIGURED. Daily summaries and low-stock '
-      + 'alerts will not be delivered. Set RESEND_API_KEY, or SMTP_HOST + '
-      + 'SMTP_USER + SMTP_PASS.',
+      + 'alerts will not be delivered. Set SENDGRID_API_KEY (or RESEND_API_KEY, '
+      + 'or SMTP_HOST + SMTP_USER + SMTP_PASS).',
     );
+    return;
+  }
+
+  if (SENDGRID_KEY) {
+    // No send at boot (it would email someone on every deploy); the owner's "Send test email" proves delivery.
+    console.info(`[mailer] SendGrid configured (primary), sending as ${DEFAULT_FROM}.`);
     return;
   }
 
@@ -326,13 +396,21 @@ export async function reportMailReadiness(): Promise<void> {
 }
 
 /**
- * Send an email via Resend (primary) with Nodemailer SMTP as fallback.
+ * Send an email: SendGrid (primary, A352), then Resend, then Nodemailer SMTP.
  * Logs a warning if neither provider is configured (dev/test environments).
  */
 export async function sendEmail(opts: MailOptions): Promise<void> {
   const from = opts.from ?? DEFAULT_FROM;
 
-  // ── Primary: Resend ───────────────────────────────────────
+  // ── Primary: SendGrid (A352) ──────────────────────────────
+  let sgError: string | null = null;
+  if (SENDGRID_KEY) {
+    sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    if (!sgError) return;
+    console.warn('[mailer] SendGrid error, falling back:', sgError);
+  }
+
+  // ── Next: Resend ──────────────────────────────────────────
   if (resend) {
     try {
       const { error } = await resend.emails.send({
@@ -360,13 +438,17 @@ export async function sendEmail(opts: MailOptions): Promise<void> {
     return;
   }
 
+  // ── SendGrid refused and nothing to fall back to: a FAILURE, not "no provider" — throw so the job's
+  //    per-business catch logs it (A352), exactly as an SMTP failure throws below.
+  if (sgError) throw new Error(`SendGrid did not send "${opts.subject}" to ${opts.to}: ${sgError}`);
+
   // ── Neither configured ────────────────────────────────────
   console.warn('[mailer] No email provider configured. Email not sent:', opts.subject, '→', opts.to);
 }
 
 export interface SendResult {
   ok: boolean;
-  provider: 'resend' | 'smtp' | 'none';
+  provider: 'sendgrid' | 'resend' | 'smtp' | 'none';
   error?: string;
 }
 
@@ -383,6 +465,13 @@ export interface SendResult {
 export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
   const from = opts.from ?? DEFAULT_FROM;
   let resendError: string | undefined;
+  let sendgridError: string | undefined;
+
+  if (SENDGRID_KEY) {
+    const sgError = await sendViaSendGrid({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    if (!sgError) return { ok: true, provider: 'sendgrid' };
+    sendgridError = sgError;
+  }
 
   if (resend) {
     try {
@@ -404,15 +493,21 @@ export async function sendEmailChecked(opts: MailOptions): Promise<SendResult> {
     } catch (err: any) {
       return {
         ok: false, provider: 'smtp',
-        error: `${err?.message ?? err} — ${classifySmtpFailure(err, SMTP_HOST!, SMTP_PORT)}`,
+        error: `${sendgridError ? `SendGrid: ${sendgridError}. ` : ''}${err?.message ?? err} — ${classifySmtpFailure(err, SMTP_HOST!, SMTP_PORT)}`,
       };
     }
   }
 
+  if (sendgridError) {
+    return {
+      ok: false, provider: 'sendgrid',
+      error: `SendGrid rejected the message (${sendgridError})${resendError ? `; Resend too (${resendError})` : ''} and no SMTP fallback is configured.`,
+    };
+  }
   return {
     ok: false, provider: 'none',
     error: resendError
       ? `Resend rejected the message (${resendError}) and no SMTP fallback is configured.`
-      : 'No email provider configured. Set RESEND_API_KEY, or SMTP_HOST + SMTP_USER + SMTP_PASS.',
+      : 'No email provider configured. Set SENDGRID_API_KEY (or RESEND_API_KEY, or SMTP_HOST + SMTP_USER + SMTP_PASS).',
   };
 }
