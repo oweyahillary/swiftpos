@@ -246,7 +246,8 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // D3: check the release feed on launch and every 6h; install on next quit.
+  // D3 / A348: on launch and every hour, ask the cloud which version this business is approved for (null = hold) and
+  // download only an approved newer one; install on next quit.
   // No-op in dev (app.isPackaged) and on the "SwiftPOS Dev" flavour, so
   // `npm run dev` and dev-flavour tills are unaffected. Never throws — a failed
   // update must not stop a till trading.

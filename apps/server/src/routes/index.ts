@@ -8,6 +8,7 @@ import categoriesRoutes    from './categories';
 import stationsRoutes      from './stations';
 import productsRoutes      from './products';
 import posRoutes           from './pos';
+import desktopUpdateRoutes from './desktopUpdate';   // A348: per-business desktop update feed
 import variantsRoutes      from './variants';
 import modifiersRoutes     from './modifiers';
 import ordersRoutes        from './orders';
@@ -72,6 +73,7 @@ router.use('/stations',       stationsRoutes);
 router.use('/products',       productsRoutes);
 router.use('/branch-prices',  branchPricesRoutes);
 router.use('/pos',            posRoutes);
+router.use('/desktop-update', desktopUpdateRoutes);
 router.use('/variants',       variantsRoutes);
 router.use('/modifiers',      modifiersRoutes);
 router.use('/orders',         ordersRoutes);

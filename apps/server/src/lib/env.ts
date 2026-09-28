@@ -93,6 +93,8 @@ export function validateEnv(): ServerEnv {
     ['RESEND_API_KEY',     'daily summary and notification emails will fall back to SMTP'],
     ['APP_ENCRYPTION_KEY', 'stored M-Pesa credentials cannot be decrypted'],
     ['CORS_ORIGINS',       'the dashboard origin allowlist falls back to its built-in default'],
+    // A348: the tills' update feed reads the releases with it; not needed while the repository is public.
+    ['GITHUB_RELEASES_TOKEN', 'desktop updates work only while the repository is public'],
   ];
   const absent = optional.filter(([k]) => !process.env[k]);
   if (absent.length) {

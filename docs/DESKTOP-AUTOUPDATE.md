@@ -1,5 +1,16 @@
 # Desktop auto-update (register D3)
 
+> **A348 (desktop 0.6.16, 2026-09-28) — updates are approved per business; held by default.** From 0.6.16 a till never
+> polls GitHub. At launch and hourly it asks the cloud (`GET /api/desktop-update/status`) which version its business is
+> approved for; `null` = hold. Only a NEWER approved version is downloaded, through the cloud's generic feed
+> (`/api/desktop-update/v/<version>/…`, which redirects to the GitHub release file). Approve or hold per client in the
+> admin portal (client detail → Desktop updates). Every build is published as a **pre-release**, which tills on 0.6.15
+> and older ignore (they follow GitHub's latest non-pre-release). **0.6.16 itself must be published once as a normal
+> release** so old tills pick up the approval check; after that, never untick pre-release again — approve in the portal.
+> The repository can go private once every till runs 0.6.16+ and the cloud has `GITHUB_RELEASES_TOKEN` (read-only).
+> Code: `apps/desktop/src/main/autoUpdate.ts`, `apps/server/src/routes/desktopUpdate.ts`, `apps/server/src/lib/desktopReleases.ts`.
+> The sections below describe the original (0.6.x ≤ 0.6.15) GitHub-feed setup, which still builds the files.
+
 **Status: WIRED (2026-09-10).** `electron-updater` is a dependency, `autoUpdate.ts`
 is built and called from `index.ts`, the prod flavour publishes to GitHub Releases
 (`oweyahillary/swiftpos`), and a tag-triggered `.github/workflows/release.yml`

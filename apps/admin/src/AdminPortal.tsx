@@ -624,6 +624,10 @@ function ClientDetailPage({ client, req, onBack }) {
   const [error, setError] = useState("");
   const [expiryDraft, setExpiryDraft] = useState("");   // A147: web-access expiry setter
   const [savingExpiry, setSavingExpiry] = useState(false);
+  // A348: desktop updates per business — releases the cloud can serve, the version picked, saving.
+  const [desktopReleases, setDesktopReleases] = useState(null);   // null = loading; { error } on failure
+  const [desktopPick, setDesktopPick] = useState("");
+  const [savingDesktop, setSavingDesktop] = useState(false);
   const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
@@ -642,6 +646,9 @@ function ClientDetailPage({ client, req, onBack }) {
       setDevices((dev && dev.devices) || []);
     }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
+    req("GET", "/desktop-releases")
+      .then(r => setDesktopReleases(Array.isArray(r) ? r : []))
+      .catch(e => setDesktopReleases({ error: e.message }));
   }, [client.id]);
 
   async function toggleFeature(key, enabled) {
@@ -709,6 +716,21 @@ function ClientDetailPage({ client, req, onBack }) {
       setExpiryDraft("");
     } catch (e) { setError(e.message); }
     finally { setSavingExpiry(false); }
+  }
+
+  // A348: approve one desktop version for this business (its tills update to it within the hour), or hold (null).
+  async function setDesktopVersion(version) {
+    const msg = version
+      ? `Approve desktop ${version} for ${detail?.name ?? 'this client'}? Their tills download it within the hour and install it the next time each till is closed.`
+      : `Hold desktop updates for ${detail?.name ?? 'this client'}? Their tills stay on the version they run now.`;
+    if (!(await askConfirm(msg))) return;
+    setSavingDesktop(true);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/desktop-version`, { version });
+      setDetail(prev => prev ? { ...prev, desktop_approved_version: updated?.desktop_approved_version ?? null } : prev);
+      setDesktopPick("");
+    } catch (e) { setError(e.message); }
+    finally { setSavingDesktop(false); }
   }
 
   async function toggleWebHosting(enable) {
@@ -1063,6 +1085,47 @@ function ClientDetailPage({ client, req, onBack }) {
             onClick={() => setWebAccessExpiry(null)}
             style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>
             Clear
+          </button>
+        )}
+      </div>
+
+      {/* ── Desktop updates (A348) — per business, held by default ── */}
+      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Desktop updates</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {detail?.desktop_approved_version
+              ? `Approved: ${detail.desktop_approved_version}. Tills on 0.6.16 or later update to it within the hour; it installs when each till is next closed.`
+              : "Held — tills stay on the version they run. (Tills older than 0.6.16 still follow the published GitHub release.)"}
+          </div>
+          {desktopReleases && desktopReleases.error && (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
+          )}
+        </div>
+        <select
+          value={desktopPick}
+          disabled={savingDesktop || !Array.isArray(desktopReleases)}
+          onChange={e => setDesktopPick(e.target.value)}
+          style={{ ...S.input, width: "auto" } as React.CSSProperties}>
+          <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
+          {Array.isArray(desktopReleases) && desktopReleases.map(r => (
+            <option key={r.version} value={r.version} disabled={!r.complete}>
+              {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
+            </option>
+          ))}
+        </select>
+        <button
+          disabled={savingDesktop || !desktopPick}
+          onClick={() => setDesktopVersion(desktopPick)}
+          style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingDesktop || !desktopPick) ? 0.4 : 1 }}>
+          {savingDesktop ? "Saving…" : "Approve"}
+        </button>
+        {detail?.desktop_approved_version && (
+          <button
+            disabled={savingDesktop}
+            onClick={() => setDesktopVersion(null)}
+            style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingDesktop ? 0.4 : 1 }}>
+            Hold
           </button>
         )}
       </div>

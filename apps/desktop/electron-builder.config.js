@@ -37,7 +37,12 @@ module.exports = {
   // the updater polls. Unsigned for now: the loop works; Windows SmartScreen shows
   // on first install until a signing cert is added (CSC_LINK/CSC_KEY_PASSWORD env
   // at build time — a config flip, not a code change). See docs/DESKTOP-AUTOUPDATE.md.
-  publish: dev ? null : [{ provider: 'github', owner: 'oweyahillary', repo: 'swiftpos' }],
+  // A348 (0.6.16): every build is published as a PRE-RELEASE. Tills on 0.6.16+ never poll GitHub — they update only to
+  // the version the cloud approved for their business (/api/desktop-update); tills on 0.6.15 and older follow GitHub's
+  // latest NON-pre-release, so a pre-release reaches none of them. The cloud reads pre-releases with no token (public
+  // repo) or a read-only one (private). To send a version to EVERY old till, untick "pre-release" on GitHub (done once,
+  // for 0.6.16, so old tills pick up the approval check).
+  publish: dev ? null : [{ provider: 'github', owner: 'oweyahillary', repo: 'swiftpos', releaseType: 'prerelease' }],
   files: [
     'dist/**/*',
     'resources/**/*',
