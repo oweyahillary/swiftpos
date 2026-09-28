@@ -2131,6 +2131,11 @@ export function registerIpcHandlers() {
     } catch { return []; }
   });
 
+  // A341: a manager adds an expense type from the till — saved on the cloud (the dashboard's own route and
+  // permission, expenses.manage); manageFetch gives the offline / role messages.
+  handle('expense:addCategory', async (_e, { name }: { name: string }) =>
+    manageFetch('/api/expenses/categories', 'POST', { name: String(name ?? '').trim() }));
+
   // Save expense locally (syncs up on next push pass)
   handle('expense:create', async (_event, {
     description, amount, expense_category_id, paid_by,

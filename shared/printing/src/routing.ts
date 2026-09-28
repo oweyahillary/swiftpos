@@ -107,6 +107,36 @@ export function isExcludedFromKitchen(name: string, exclusions: string[]): boole
 }
 
 /**
+ * A276 (2026-09-28): drinks never print on the KITCHEN ticket — the owner's field rule (04 Aug 2026: "sauces and soft
+ * drinks NEVER appear on the KITCHEN ticket; they always appear on the dispatcher/packing ticket"), applied to WHOLE
+ * lines, not only to a line's units.
+ *
+ * Found reading the live path (not a bench guess): both the till (escposBridge.printSale) and the web
+ * (printRouted.ts) stripped kitchen stations from excluded UNITS only. A plain line — a standalone soda has no units —
+ * routes by its own `stationIds`, so a soda in a category flagged for the kitchen (or mapped to the kitchen station)
+ * printed there whatever the exclusions said. And those paths applied only the owner's typed terms (Printers →
+ * Exclusions), never the built-in rule, which lived in the till's prose-note filter alone.
+ *
+ * The built-in list here is the DRINKS part of that rule. Sauces and dips are deliberately NOT applied to whole lines:
+ * cooked dishes are named after their sauce ("Wings in BBQ Sauce"), and taking one of those off the kitchen ticket is
+ * far worse than a stray soda. The owner's own terms apply to lines and units alike, as before for units.
+ */
+export const KITCHEN_DRINK_TERMS: readonly string[] = [
+  'soda', 'sodas', 'soft drink', 'soft drinks', 'drink', 'drinks', 'juice', 'juices', 'water',
+  'coke', 'fanta', 'sprite', 'krest', 'stoney', 'minute maid',
+];
+
+/** The terms that keep a line or unit off the kitchen: the built-in drinks plus the owner's exclusions. */
+export function kitchenExclusionTerms(ownerTerms: string[] = []): string[] {
+  return [...KITCHEN_DRINK_TERMS, ...ownerTerms];
+}
+
+/** `stationIds` without the kitchen stations when `name` is excluded from the kitchen; unchanged otherwise. */
+export function stripKitchenIfExcluded(name: string, stationIds: string[], ids: StationIds, terms: string[]): string[] {
+  return isExcludedFromKitchen(name, terms) ? stationIds.filter(id => !ids.kitchen.includes(id)) : stationIds;
+}
+
+/**
  * Expand a cart line into printable units. Verbatim from escposBridge.toUnits,
  * with `stationsForCategory` taking `routing` instead of reading SQLite.
  */

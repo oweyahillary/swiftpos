@@ -15,6 +15,8 @@ import { resolveOrderId } from '../lib/resolveOrder';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
+import { verifyPin } from './auth';
+import { findApprover, type ApproverRow } from '../lib/approver';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
@@ -98,42 +100,41 @@ async function verifySupervisorPin(
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Verify a per-user override authorizer for a privileged action (e.g. voiding a
-// paid order). Looks up active staff in the business who have an override PIN
-// configured and bcrypt-compares the entered PIN.
-//   - If `authorizerId` is supplied (supervisor picked from a list), only that
-//     user is checked, giving an unambiguous audit trail.
-//   - Returns { ok:true, userId } on success.
-//   - Returns reason 'no_authorizers' when nobody has an override PIN set, so the
-//     caller can fall back to the legacy business-wide supervisor PIN.
+// Who approves a void or refund (A355, lib/approver.ts): an override PIN, or the approver's OWN sign-in PIN when their
+// role may approve (owner, owner/admin role, '*', or orders.void — managers by default, never cashiers). If
+// `authorizerId` is supplied (a supervisor picked from a list), only that person is checked. 'no_authorizers' = nobody
+// in the business can approve with a PIN, so the caller tries the legacy business-wide supervisor PIN.
 async function verifyOverrideAuthorizer(
   businessId:   string,
   authorizerId: string | undefined,
   pin:          string | undefined,
 ): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers'; userId?: string }> {
-  const { data: authorizers } = await supabase
-    .from('users')
-    .select('id, override_pin_hash')
-    .eq('business_id', businessId)
-    .eq('status', 'active')
-    .not('override_pin_hash', 'is', null);
-
-  if (!authorizers || authorizers.length === 0) {
-    return { result: 'no_authorizers' };
-  }
-  if (!pin) return { result: 'invalid' };
-
-  const candidates = authorizerId
-    ? authorizers.filter((a: any) => a.id === authorizerId)
-    : authorizers;
-
-  for (const a of candidates as any[]) {
-    if (a.override_pin_hash && await bcrypt.compare(String(pin), String(a.override_pin_hash))) {
-      return { result: 'ok', userId: a.id };
-    }
-  }
-  return { result: 'invalid' };
+  const [{ data: rows }, { data: biz }] = await Promise.all([
+    supabase
+      .from('users')
+      .select('id, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+      .eq('business_id', businessId)
+      .eq('status', 'active'),
+    supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
+  ]);
+  const found = await findApprover((rows ?? []) as ApproverRow[], { pin, authorizerId, ownerId: (biz as any)?.owner_id ?? null }, {
+    loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
+    overridePin: (p, h) => bcrypt.compare(p, h),
+  });
+  if (found.result === 'ok') return { result: 'ok', userId: found.userId };
+  return { result: found.result === 'none' ? 'no_authorizers' : 'invalid' };
 }
+
+// What the till/web is told when no approval matched (A355). The legacy business-wide supervisor PIN is still tried
+// first by the caller; this is the answer when it does not match either. One wording for void and refund.
+const APPROVER_PIN_REFUSED = {
+  error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.',
+  code:  'INVALID_APPROVER_PIN',
+} as const;
+const NO_APPROVER = {
+  error: 'Nobody can approve this yet. Give a staff member a manager role and a PIN in Staff.',
+  code:  'NO_OVERRIDE_CONFIGURED',
+} as const;
 
 // ── Authoritative order pricing (shared by POST / and POST /open) ────────────
 // Rebuilds every line from the catalogue so client-sent prices/totals can't be
@@ -1059,22 +1060,18 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
     // and refund_authorized_by = the same owner (set below).
     authorizedBy = req.userId ?? null;
   } else {
-    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
+    const pin = (override_pin ?? supervisor_pin) as string | undefined;
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
     if (ov.result === 'ok') {
       authorizedBy = ov.userId ?? null;
-    } else if (ov.result === 'no_authorizers') {
-      const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
-      if (legacy === 'not_configured') {
-        res.status(400).json({
-          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
-          code:  'NO_OVERRIDE_CONFIGURED',
-        });
+    } else {
+      // A355: the legacy business-wide supervisor PIN is still accepted (authorizedBy stays null — no one person).
+      const legacy = await verifySupervisorPin(req.businessId, pin);
+      if (legacy !== true) {
+        if (ov.result === 'no_authorizers' && legacy === 'not_configured') { res.status(400).json(NO_APPROVER); return; }
+        res.status(403).json(APPROVER_PIN_REFUSED);
         return;
       }
-      if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
-    } else {
-      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
-      return;
     }
   }
 
@@ -1254,25 +1251,15 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
 
     if (ov.result === 'ok') {
       authorizedBy = ov.userId ?? null;
-    } else if (ov.result === 'no_authorizers') {
-      // Transition fallback: no per-user override PINs configured yet — accept
-      // the legacy business-wide supervisor PIN so existing installs keep working.
-      const legacy = await verifySupervisorPin(req.businessId, pin);
-      if (legacy === 'not_configured') {
-        res.status(400).json({
-          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
-          code:  'NO_OVERRIDE_CONFIGURED',
-        });
-        return;
-      }
-      if (!legacy) {
-        res.status(403).json({ error: 'Invalid supervisor PIN' });
-        return;
-      }
-      // legacy PIN valid — authorizedBy stays null (no identifiable supervisor)
     } else {
-      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
-      return;
+      // A355: the legacy business-wide supervisor PIN is still accepted so existing installs keep working
+      // (authorizedBy stays null — no identifiable supervisor).
+      const legacy = await verifySupervisorPin(req.businessId, pin);
+      if (legacy !== true) {
+        if (ov.result === 'no_authorizers' && legacy === 'not_configured') { res.status(400).json(NO_APPROVER); return; }
+        res.status(403).json(APPROVER_PIN_REFUSED);
+        return;
+      }
     }
   }
 

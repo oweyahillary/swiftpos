@@ -135,6 +135,25 @@ ok('a refund on the web reaches the till (1 changed): the cash goes back out →
   W.applyWebOrders(shiftRow, [refunded]) === 1 && S.computeZReport('sh-1').totals.expectedCash === 1400,
   String(S.computeZReport('sh-1').totals.expectedCash));
 
+// A355 / A336 stage 2: a web sale REFUNDED FROM THE TILL. The till writes what order:refund writes (a negative row per
+// leg, refunded_amount), then the next download brings the cloud's copy of the same refund — counted once, not twice.
+const tillRefunded = { ...web, id: 'c-web-3', idempotency_key: 'web-key-19', order_number: 'W-19', total: 300, subtotal: 300,
+  order_items: [], payments: [{ id: 'wp3-1', method: 'cash', amount: 300, amount_tendered: 300, change_given: 0, status: 'completed', created_at: '2026-09-27T10:30:00Z' }] };
+W.applyWebOrders(shiftRow, [tillRefunded]);
+ok('web sale W-19 on the drawer: 1400 + 300 = 1700', S.computeZReport('sh-1').totals.expectedCash === 1700);
+db.prepare(`INSERT INTO payments (id, order_id, method, amount, amount_tendered, change_given, reference, status, created_at, sync_status)
+            VALUES ('local-r', 'c-web-3', 'cash', -300, 0, 0, 'REFUND-W-19', 'refunded', '2026-09-27T10:40:00Z', 'synced')`).run();
+db.prepare(`UPDATE orders SET refunded_at='2026-09-27T10:40:00Z', refunded_amount=300, refund_reason='returned' WHERE id='c-web-3'`).run();
+ok('refunded from the till: the cash goes out at once → 1400', S.computeZReport('sh-1').totals.expectedCash === 1400,
+  String(S.computeZReport('sh-1').totals.expectedCash));
+W.applyWebOrders(shiftRow, [{ ...tillRefunded, refunded_amount: 300, refunded_at: '2026-09-27T10:40:00Z', refund_reason: 'returned',
+  payments: [...tillRefunded.payments, { id: 'cloud-r', method: 'cash', amount: -300, status: 'refunded', created_at: '2026-09-27T10:40:00Z' }] }]);
+ok('…and the cloud\'s copy of that refund does not count it twice → still 1400; still refunded',
+  S.computeZReport('sh-1').totals.expectedCash === 1400
+  && db.prepare(`SELECT COUNT(*) AS c FROM payments WHERE order_id='c-web-3' AND amount < 0`).get().c === 1
+  && db.prepare(`SELECT refunded_amount FROM orders WHERE id='c-web-3'`).get().refunded_amount === 300,
+  String(S.computeZReport('sh-1').totals.expectedCash));
+
 // The branch node is fed by the till that RANG a sale.
 N.fillNodeOutbox();
 const offered = db.prepare(`SELECT row_id FROM node_queue WHERE table_name='orders'`).all().map((r) => r.row_id);

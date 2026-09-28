@@ -276,6 +276,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
 
   // ── expense ───────────────────────────────────────────────────────────────
   'expense:categories': NO_PAYLOAD,
+  'expense:addCategory': { name: { t: 'string', min: 1 } },   // A341
   'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true } },
   'expense:list':       NO_PAYLOAD,
   'expense:range':      { ...rangeArg },

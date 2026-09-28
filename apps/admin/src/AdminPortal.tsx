@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
+import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -627,6 +628,9 @@ function ClientDetailPage({ client, req, onBack }) {
   // A348: desktop updates per business — releases the cloud can serve, the version picked, saving.
   const [desktopReleases, setDesktopReleases] = useState(null);   // null = loading; { error } on failure
   const [desktopPick, setDesktopPick] = useState("");
+  // A356: GitHub's refusal, when the list shown is the last good one; and the short list's "show all" switch.
+  const [desktopWarning, setDesktopWarning] = useState(null);
+  const [showAllVersions, setShowAllVersions] = useState(false);
   const [savingDesktop, setSavingDesktop] = useState(false);
   const { askConfirm, askPrompt, modal } = useModal();
 
@@ -646,8 +650,12 @@ function ClientDetailPage({ client, req, onBack }) {
       setDevices((dev && dev.devices) || []);
     }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
-    req("GET", "/desktop-releases")
-      .then(r => setDesktopReleases(Array.isArray(r) ? r : []))
+    req("GET", "/desktop-releases?meta=1")
+      .then(r => {
+        // A356: { releases, warning } from a 0.6.18 cloud; a bare array from an older one.
+        setDesktopReleases(Array.isArray(r) ? r : Array.isArray(r?.releases) ? r.releases : []);
+        setDesktopWarning(Array.isArray(r) ? null : (r?.warning ?? null));
+      })
       .catch(e => setDesktopReleases({ error: e.message }));
   }, [client.id]);
 
@@ -1101,6 +1109,15 @@ function ClientDetailPage({ client, req, onBack }) {
           {desktopReleases && desktopReleases.error && (
             <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
           )}
+          {desktopWarning && (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{desktopWarning}</div>
+          )}
+          {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
+            <button type="button" onClick={() => setShowAllVersions(v => !v)}
+              style={{ ...S.btn, ...S.btnGhost, fontSize: 11, marginTop: 6, padding: "2px 8px" }}>
+              {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
+            </button>
+          )}
         </div>
         <select
           value={desktopPick}
@@ -1108,7 +1125,7 @@ function ClientDetailPage({ client, req, onBack }) {
           onChange={e => setDesktopPick(e.target.value)}
           style={{ ...S.input, width: "auto" } as React.CSSProperties}>
           <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
-          {Array.isArray(desktopReleases) && desktopReleases.map(r => (
+          {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
             <option key={r.version} value={r.version} disabled={!r.complete}>
               {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
             </option>

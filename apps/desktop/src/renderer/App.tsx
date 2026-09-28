@@ -6,6 +6,8 @@ import PinPage from './pages/PinPage';
 import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
+import { mayVoidRefund } from './lib/voidRefund';
+import { mayAddExpenseType } from './lib/expenseTypes';
 import TechPage from './pages/TechPage';
 import UpdateBanner from './pages/UpdateBanner';
 import { computeThemeVars, applyThemeVars } from './lib/themeVars';
@@ -213,6 +215,8 @@ export default function App() {
       // visible, and ManagerPage gates each tab on its own permission anyway.
       onOpenManager={hasManagerRights(staff) ? () => setState('manager') : undefined}
       canManagePrinters={hasManagerRights(staff)}
+      canVoidRefund={mayVoidRefund(staff)}
+      canAddExpenseType={mayAddExpenseType(staff)}
     />
     {curtain}
     {updateBanner}

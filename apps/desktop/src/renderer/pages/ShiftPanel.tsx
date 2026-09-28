@@ -2,12 +2,15 @@ import MethodDot from '../components/MethodDot';
 import { useEffect, useRef, useState } from 'react';
 import { printShiftReport } from '../lib/printShiftReport';
 import { posApi } from '../lib/posApi';
+import { checkTypeName } from '../lib/expenseTypes';
 import type { ZReport } from '../lib/posApi';
 import ZReportView from '../components/ZReportView';
 
 interface Props {
   business: { name: string; currency: string };
   canForceClose?: boolean;
+  /** A341: may this person add an expense type (expenses.manage)? */
+  canAddExpenseType?: boolean;
   onClose: () => void;
   onShiftChange: (report: ZReport | null) => void;
 }
@@ -21,7 +24,7 @@ function webPart(report: { totals: { webSales?: { orders: number; cash_sales: nu
   return { sales, cash, show: sales > 0 || !!(f && (f.float_in || f.float_out || f.expenses)) };
 }
 
-export default function ShiftPanel({ business, canForceClose = false, onClose, onShiftChange }: Props) {
+export default function ShiftPanel({ business, canForceClose = false, canAddExpenseType = false, onClose, onShiftChange }: Props) {
   const [report, setReport] = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -55,6 +58,30 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
   const [expBusy, setExpBusy]           = useState(false);
   const [expError, setExpError]         = useState('');
   const [expSuccess, setExpSuccess]     = useState('');
+  // A341: adding an expense type from the picker.
+  const [addingType, setAddingType]     = useState(false);
+  const [newTypeName, setNewTypeName]   = useState('');
+  const [typeBusy, setTypeBusy]         = useState(false);
+
+  const saveNewType = async () => {
+    const check = checkTypeName(newTypeName, categories);
+    if (check.ok === false) { setExpError(check.error); return; }
+    if (check.ok === 'exists') {           // already there: pick it, no duplicate
+      setExpCatId(check.id); setAddingType(false); setNewTypeName(''); setExpError('');
+      return;
+    }
+    setTypeBusy(true); setExpError('');
+    try {
+      const created = await posApi.expense.addCategory(check.name);
+      const list = await posApi.expense.categories().catch(() => [] as { id: string; name: string }[]);
+      setCategories(list.length ? list : [...categories, created]);
+      setExpCatId(created.id);
+      setAddingType(false); setNewTypeName('');
+      setExpSuccess(`Expense type "${created.name}" added`);
+    } catch (e: any) {
+      setExpError(e?.message ?? 'Could not add the expense type.');
+    } finally { setTypeBusy(false); }
+  };
 
   const printRef = useRef<HTMLDivElement>(null);
   const currency = business.currency ?? 'KES';
@@ -351,16 +378,44 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Record expense</p>
 
-                {/* Category picker */}
-                <select
-                  value={expCatId}
-                  onChange={e => setExpCatId(e.target.value)}
-                  className={inputCls + ' appearance-none'}>
-                  <option value="">— No category —</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                {/* Category picker (+ A341: a manager adds a type) */}
+                <div className="flex gap-2">
+                  <select
+                    value={expCatId}
+                    onChange={e => setExpCatId(e.target.value)}
+                    className={inputCls + ' appearance-none'}>
+                    <option value="">— No category —</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  {canAddExpenseType && !addingType && (
+                    <button type="button" onClick={() => { setAddingType(true); setExpError(''); }}
+                      className="flex-shrink-0 text-sm text-gray-200 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg px-3 transition-colors">
+                      + Add type
+                    </button>
+                  )}
+                </div>
+                {canAddExpenseType && addingType && (
+                  <div data-testid="add-expense-type" className="flex gap-2">
+                    <input
+                      type="text" autoFocus maxLength={60}
+                      value={newTypeName}
+                      onChange={e => setNewTypeName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') void saveNewType(); if (e.key === 'Escape') setAddingType(false); }}
+                      placeholder="New expense type (e.g. Gas refill)"
+                      className={inputCls}
+                    />
+                    <button type="button" disabled={typeBusy} onClick={() => void saveNewType()}
+                      className="flex-shrink-0 text-sm font-medium bg-action-500 hover:bg-action-400 disabled:opacity-50 text-gray-950 rounded-lg px-3 transition-colors">
+                      {typeBusy ? 'Saving…' : 'Save'}
+                    </button>
+                    <button type="button" disabled={typeBusy} onClick={() => { setAddingType(false); setNewTypeName(''); }}
+                      className="flex-shrink-0 text-sm text-gray-300 hover:text-white px-2 transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                )}
 
                 <input
                   type="text"

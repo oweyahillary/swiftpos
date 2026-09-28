@@ -770,6 +770,29 @@ function isExcludedFromKitchen(name, exclusions) {
     return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`, "i").test(hay);
   });
 }
+var KITCHEN_DRINK_TERMS = [
+  "soda",
+  "sodas",
+  "soft drink",
+  "soft drinks",
+  "drink",
+  "drinks",
+  "juice",
+  "juices",
+  "water",
+  "coke",
+  "fanta",
+  "sprite",
+  "krest",
+  "stoney",
+  "minute maid"
+];
+function kitchenExclusionTerms(ownerTerms = []) {
+  return [...KITCHEN_DRINK_TERMS, ...ownerTerms];
+}
+function stripKitchenIfExcluded(name, stationIds, ids, terms) {
+  return isExcludedFromKitchen(name, terms) ? stationIds.filter((id) => !ids.kitchen.includes(id)) : stationIds;
+}
 function toUnits(line, ids, lineStationIds, routing) {
   const lineProductId = line.product.id;
   const lineName = line.product.name;
@@ -930,6 +953,7 @@ export {
   RECEIPT_LOGO_MAX_WIDTH,
   idsByKind,
   isExcludedFromKitchen,
+  kitchenExclusionTerms,
   monoRasterFromRGBA,
   monoRasterFromString,
   monoRasterToAscii,
@@ -940,5 +964,6 @@ export {
   renderStationEscPos,
   stationHasContent,
   stationsForCategory,
+  stripKitchenIfExcluded,
   toUnits
 };

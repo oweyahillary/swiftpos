@@ -123,15 +123,55 @@ function ghHeaders(accept = 'application/vnd.github+json'): Record<string, strin
   return h;
 }
 
+/**
+ * A356 (2026-09-28): what a GitHub refusal MEANS, in words the owner can act on. The admin portal showed "GitHub
+ * releases: HTTP 403" on 2026-09-28 — anonymous calls from Render's shared addresses had used up GitHub's 60-an-hour
+ * allowance; the fix was GITHUB_RELEASES_TOKEN, which nothing on screen said.
+ */
+export function describeGitHubFailure(status: number, rateRemaining: string | null, bodyMessage: string, hasToken: boolean): string {
+  const rateLimited = status === 429 || (status === 403 && (rateRemaining === '0' || /rate limit/i.test(bodyMessage)));
+  if (rateLimited) {
+    return hasToken
+      ? 'GitHub rate limit reached, even with GITHUB_RELEASES_TOKEN — try again in a few minutes.'
+      : 'GitHub rate limit reached — set GITHUB_RELEASES_TOKEN on the cloud (a read-only token, 5,000 requests an hour).';
+  }
+  if (status === 401) return 'GitHub refused GITHUB_RELEASES_TOKEN (expired or revoked?) — replace it on the cloud.';
+  if (status === 403) return `GitHub refused the request (HTTP 403${bodyMessage ? `: ${bodyMessage}` : ''}).`;
+  if (status === 404) return 'GitHub cannot see the releases — check DESKTOP_RELEASES_REPO and the token\'s repository access.';
+  return `GitHub releases: HTTP ${status}`;
+}
+
 /** Every desktop release (drafts too when a token is set). Cached 5 min so a fleet of tills costs GitHub one call. */
 export async function listDesktopReleases(opts: { fresh?: boolean } = {}): Promise<DesktopRelease[]> {
   const repo = releasesRepo();
   if (!opts.fresh && cache && cache.repo === repo && Date.now() - cache.at < CACHE_MS) return cache.releases;
   const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=50`, { headers: ghHeaders() });
-  if (!res.ok) throw new Error(`GitHub releases: HTTP ${res.status}`);
+  if (!res.ok) {
+    let bodyMessage = '';
+    try { bodyMessage = String(((await res.json()) as any)?.message ?? ''); } catch { /* not JSON */ }
+    throw new Error(describeGitHubFailure(res.status, res.headers.get('x-ratelimit-remaining'), bodyMessage, !!token()));
+  }
   const releases = summariseReleases((await res.json()) as GhRelease[]);
   cache = { at: Date.now(), repo, releases };
   return releases;
+}
+
+/**
+ * A356: the list, or — when GitHub refuses — the LAST list read successfully, with a warning saying so. Approving a
+ * version seen minutes ago is safe (the till still fetches the files by their GitHub id); a portal that goes blank
+ * because GitHub hiccuped is not. Throws only when there has never been a good read.
+ */
+export async function listDesktopReleasesOrStale(opts: { fresh?: boolean } = {}): Promise<{ releases: DesktopRelease[]; warning: string | null }> {
+  try {
+    return { releases: await listDesktopReleases(opts), warning: null };
+  } catch (e: any) {
+    const repo = releasesRepo();
+    if (cache && cache.repo === repo) {
+      const mins = Math.max(1, Math.round((Date.now() - cache.at) / 60000));
+      return { releases: cache.releases, warning: `${e?.message ?? e} Showing the list read ${mins} minute${mins === 1 ? '' : 's'} ago.` };
+    }
+    throw e;
+  }
 }
 
 export function clearReleaseCache(): void { cache = null; }

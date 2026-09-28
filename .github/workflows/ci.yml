@@ -662,6 +662,16 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/manager-nav.test.mjs
 
+      # A355 — reversing a sale from History: "Void / Refund", then "Refund" (never gone); cashiers get no buttons.
+      - name: Desktop void and refund from History
+        working-directory: apps/desktop
+        run: node --no-warnings test/void-refund.test.mjs
+
+      # A279 / A341 / A357 — the POS says which filter it shows; a manager adds an expense type; VAT once on the Overview.
+      - name: Desktop 0.6.18 till extras
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-extras-0618.test.mjs
+
       # A326 — the till's colours follow the theme only when themes are on (real themeVars.ts, real compiled CSS).
       - name: Desktop theme variables
         working-directory: apps/desktop

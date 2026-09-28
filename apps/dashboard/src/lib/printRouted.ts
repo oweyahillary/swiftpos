@@ -15,7 +15,7 @@
  */
 import type { MonoRaster } from './escposRenderer';
 import {
-  renderStationEscPos, stationHasContent, toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen,
+  renderStationEscPos, stationHasContent, toUnits, stationsForCategory, idsByKind, kitchenExclusionTerms, stripKitchenIfExcluded,
   type StationIds, type CategoryRouting,
 } from './escposRenderer';
 import { buildReceiptBusinessConfig } from './buildReceiptOrder';
@@ -112,21 +112,17 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
       selectedModifiers: item.selectedModifiers,
       comboComponents: a.comboItems?.[item.product?.id ?? ''],
     };
-    let units = toUnits(routable, ids, lineStationIds, routing);
-    // Owner exclusions: drop kitchen station ids from an excluded unit, exactly as
-    // the desktop's stripKitchen does (dispatch/receipt keep it).
-    const exc = a.kitchenExclusions ?? [];
-    if (exc.length) {
-      units = units.map(u => isExcludedFromKitchen(u.name, exc)
-        ? { ...u, stationIds: u.stationIds.filter((id: string) => !ids.kitchen.includes(id)) }
-        : u);
-    }
+    // A276: the built-in drinks rule + the owner's exclusions drop the kitchen from an excluded LINE and from each
+    // excluded unit, exactly as the desktop's printSale does (dispatch/receipt keep it).
+    const exc = kitchenExclusionTerms(a.kitchenExclusions ?? []);
+    const units = toUnits(routable, ids, lineStationIds, routing)
+      .map(u => ({ ...u, stationIds: stripKitchenIfExcluded(u.name, u.stationIds, ids, exc) }));
     return {
       name: item.product?.name ?? 'Item',
       quantity: item.quantity,
       unitPrice: toCents(item.unitPrice),
       lineTotal: toCents(item.lineTotal),
-      stationIds: lineStationIds,
+      stationIds: stripKitchenIfExcluded(item.product?.name ?? 'Item', lineStationIds, ids, exc),
       units,
     };
   });

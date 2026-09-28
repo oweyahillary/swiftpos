@@ -65,7 +65,7 @@ import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/a
 import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
-import { isVersion, listDesktopReleases } from '../lib/desktopReleases';
+import { isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
 
 const router = safeRouter();
 
@@ -892,8 +892,11 @@ router.patch('/clients/:id/web-access', requireAdmin, async (req, res) => {
 // installer.
 router.get('/desktop-releases', requireAdmin, async (req, res) => {
   try {
-    const releases = await listDesktopReleases({ fresh: req.query.fresh === '1' });
-    res.json(releases.map((r) => ({ version: r.version, draft: r.draft, prerelease: r.prerelease, complete: r.complete, missing: r.missing, copies: r.copies, published_at: r.publishedAt })));
+    // A356: GitHub refusing falls back to the last good list, with a warning. `?meta=1` (the 0.6.18 portal) gets
+    // { releases, warning }; without it the answer stays a bare array, so an older portal keeps working.
+    const { releases, warning } = await listDesktopReleasesOrStale({ fresh: req.query.fresh === '1' });
+    const list = releases.map((r) => ({ version: r.version, draft: r.draft, prerelease: r.prerelease, complete: r.complete, missing: r.missing, copies: r.copies, published_at: r.publishedAt }));
+    res.json(req.query.meta === '1' ? { releases: list, warning } : list);
   } catch (e: any) {
     res.status(502).json({ error: `Could not read the releases from GitHub: ${e?.message ?? e}` });
   }
@@ -910,7 +913,7 @@ router.patch('/clients/:id/desktop-version', requireAdmin, async (req, res) => {
   // Approving a version the tills cannot download would leave them failing every check — refuse it here instead.
   if (version !== null) {
     let rel;
-    try { rel = (await listDesktopReleases({ fresh: true })).find((r) => r.version === version); }
+    try { rel = (await listDesktopReleasesOrStale({ fresh: true })).releases.find((r) => r.version === version); }
     catch (e: any) { res.status(502).json({ error: `Could not read the releases from GitHub: ${e?.message ?? e}` }); return; }
     if (!rel) { res.status(400).json({ error: `There is no release ${version}.` }); return; }
     if (!rel.complete) { res.status(400).json({ error: `Release ${version} is missing ${rel.missing.join(', ')} — rebuild it first.` }); return; }

@@ -12,7 +12,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
-import { assetDownloadUrl, assetFor, isVersion, listDesktopReleases } from '../lib/desktopReleases';
+import { assetDownloadUrl, assetFor, isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -46,7 +46,8 @@ router.get('/v/:version/:file', async (req, res) => {
     return;
   }
   let releases;
-  try { releases = await listDesktopReleases(); }
+  // A356: a GitHub refusal falls back to the last good list — an approved update keeps flowing through a hiccup.
+  try { releases = (await listDesktopReleasesOrStale()).releases; }
   catch (e: any) { res.status(502).json({ error: `Update source unavailable: ${e?.message ?? e}` }); return; }
   const rel = releases.find((r) => r.version === want);
   if (!rel || !rel.complete) {

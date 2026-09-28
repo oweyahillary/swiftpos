@@ -457,6 +457,8 @@ declare global {
       };
       expense: {
         categories: () => Promise<{ id: string; name: string }[]>;
+        /** A341: add an expense type on the cloud (expenses.manage). */
+        addCategory: (name: string) => Promise<{ id: string; name: string }>;
         create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) => Promise<{ id: string }>;
         list: () => Promise<any[]>;
         /** 0.6.11: expenses paid out on this till in a date range. */

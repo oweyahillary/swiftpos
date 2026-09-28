@@ -34,7 +34,7 @@ import type { PrintContext, StationConfig, OrderLine, OrderUnit,
   PaymentLeg, OrderType } from '@swiftpos/printing';
 // Routing + unit expansion now live in shared/printing (A249) so web and desktop
 // run ONE copy. The desktop supplies the routing tables from its local DB (A250b).
-import { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen,
+import { toUnits, stationsForCategory, idsByKind, kitchenExclusionTerms, stripKitchenIfExcluded,
   type CategoryRouting } from '@swiftpos/printing';
 
 /** Money crosses into shared/printing as integer cents, never as a float. */
@@ -327,23 +327,24 @@ export function printSale(
     // synthesised variant units alike. Filtering only the text fallback would
     // mean a properly-configured menu still sent drinks to the kitchen, which is
     // the wrong way round.
-    const excluded = kitchenExclusions();
+    // A276: the built-in drinks rule + the owner's exclusions, applied to whole LINES as well as units — a
+    // standalone soda has no units and used to route by its category alone.
+    const excluded = kitchenExclusionTerms(kitchenExclusions());
     const stripKitchen = (u: OrderUnit): OrderUnit =>
-      isExcludedFromKitchen(u.name, excluded)
-        ? { ...u, stationIds: u.stationIds.filter(id => !ids.kitchen.includes(id)) }
-        : u;
+      ({ ...u, stationIds: stripKitchenIfExcluded(u.name, u.stationIds, ids, excluded) });
 
-    const lines: OrderLine[] = sale.cart.map(l => ({
-      name:       l.product.name,
-      quantity:   l.quantity,
-      stationIds: stationsForCategory(
-        l.product.category_id ?? l.product.categories?.id, ids, routing),
-      unitPrice:  toCents(l.unitPrice),
-      lineTotal:  toCents(l.lineTotal),
-      units:      toUnits(l, ids, stationsForCategory(
-        l.product.category_id ?? l.product.categories?.id, ids, routing), routing).map(stripKitchen),
-      note:       l.note,
-    }));
+    const lines: OrderLine[] = sale.cart.map(l => {
+      const lineStationIds = stationsForCategory(l.product.category_id ?? l.product.categories?.id, ids, routing);
+      return {
+        name:       l.product.name,
+        quantity:   l.quantity,
+        stationIds: stripKitchenIfExcluded(l.product.name, lineStationIds, ids, excluded),
+        unitPrice:  toCents(l.unitPrice),
+        lineTotal:  toCents(l.lineTotal),
+        units:      toUnits(l, ids, lineStationIds, routing).map(stripKitchen),
+        note:       l.note,
+      };
+    });
 
     const payments: PaymentLeg[] = sale.payments.map(p => ({
       label:  p.method.toUpperCase(),

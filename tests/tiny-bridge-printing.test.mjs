@@ -166,8 +166,9 @@ ok('Phase 1: combo components flow from comboItems into ticket units (A248)', ()
 ok('Phase 3: kitchen exclusions applied (drinks off the kitchen ticket) (A250)', () => {
   assert.match(rend, /isExcludedFromKitchen/);   // shared rule bundled for the web
   const pr = r('apps/dashboard/src/lib/printRouted.ts');
-  assert.match(pr, /isExcludedFromKitchen\(u\.name, exc\)/);
-  assert.match(pr, /stationIds: u\.stationIds\.filter\(\(id: string\) => !ids\.kitchen\.includes\(id\)\)/);
+  // A276 (2026-09-28): the same strip, now through the shared helper and applied to the LINE too (kitchen-drinks.test).
+  assert.match(pr, /stationIds: stripKitchenIfExcluded\(u\.name, u\.stationIds, ids, exc\)/);
+  assert.match(pr, /stripKitchenIfExcluded\(item\.product\?\.name \?\? 'Item', lineStationIds, ids, exc\)/);
   const hook = r('apps/dashboard/src/pages/pos/cashier/usePOSData.ts');
   assert.match(hook, /setKitchenExclusions\(init\.kitchenExclusions \?\? \[\]\)/);
 });

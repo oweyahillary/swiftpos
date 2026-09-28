@@ -12,12 +12,13 @@
  * will certainly fail — the previous behaviour was to let them fill in a reason,
  * enter a PIN, and only then be told no.
  *
- * Both require a reason. Both require supervisor authorisation once money has
+ * Both require a reason. Both require a manager's authorisation (A355: their own PIN) once money has
  * changed hands. The server enforces all of it; this collects it.
  */
 
 import { useState } from 'react';
 import { posApi } from '../lib/posApi';
+import { ageMinutes, VOID_WINDOW_MIN, reverseErrorMessage } from '../lib/voidRefund';
 
 interface Order {
   id: string;
@@ -57,8 +58,8 @@ const REFUND_REASONS = [
 
 export default function VoidModal({ order, currency, onSuccess, onClose }: Props) {
   const isPaid    = (order.payments ?? []).length > 0;
-  const ageMin    = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
-  const isExpired = ageMin > 30;
+  const ageMin    = ageMinutes(order);
+  const isExpired = ageMin > VOID_WINDOW_MIN;
 
   // Past the window, void is not an option the server will honour — open in the
   // mode that can actually succeed.
@@ -81,7 +82,7 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
     // A refund always moves money, so it always needs authorising — unlike a
     // void, which can be free on an unpaid order.
     if ((isPaid || isRefund) && !pin.trim()) {
-      setError(isRefund ? 'Supervisor PIN is required to refund' : 'Supervisor PIN is required for paid orders');
+      setError(isRefund ? 'A manager PIN is required to refund' : 'A manager PIN is required for paid orders');
       return;
     }
     setLoading(true); setError('');
@@ -98,11 +99,12 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
         // Don't leave them stuck — switch to the thing that will work.
         setMode('refund');
         setError(`This order is ${ageMin} minutes old, past the 30-minute void window. Refund it instead.`);
-      } else if (msg.includes('supervisor') || msg.includes('PIN')) {
-        setError('Invalid supervisor PIN. Try again.');
-        setPin('');
       } else {
-        setError(msg);
+        // A355: the cloud's own words (a wrong PIN, a missing permission, an already-refunded sale) — this used to
+        // turn anything mentioning "PIN" into "Invalid supervisor PIN", hiding the real reason.
+        const shown = reverseErrorMessage(msg, isRefund ? 'Refund failed' : 'Void failed');
+        setError(shown.message);
+        if (shown.clearPin) setPin('');
       }
     } finally {
       setLoading(false);
@@ -130,7 +132,7 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
           <div className="flex gap-2 mt-3">
             {isPaid && (
               <span className="text-xs px-2.5 py-1 bg-amber-500/15 text-amber-400 rounded-full font-medium border border-amber-500/20">
-                Paid — supervisor PIN needed
+                Paid — manager PIN needed
               </span>
             )}
             {isExpired && (
@@ -213,19 +215,20 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
             </div>
           )}
 
-          {/* Supervisor PIN — for any paid void, and for every refund. */}
+          {/* Manager PIN (A355) — for any paid void, and for every refund. A manager's (or the owner's) own sign-in
+              PIN; an override PIN set up before 0.6.18 still works. */}
           {(isPaid || isRefund) && (
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5 font-medium">Supervisor PIN</label>
+              <label className="block text-sm text-gray-400 mb-1.5 font-medium">Manager PIN</label>
               <input
                 type="password"
                 inputMode="numeric"
                 value={pin}
                 onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter supervisor PIN"
+                placeholder="Manager or owner PIN"
                 className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm placeholder-gray-400 focus:outline-none focus:border-amber-500/50 tracking-widest"
               />
-              <p className="text-xs text-gray-400 mt-1">This is logged and audited on the server.</p>
+              <p className="text-xs text-gray-400 mt-1">The PIN of the manager approving this — recorded with the sale.</p>
             </div>
           )}
 

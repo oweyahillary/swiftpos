@@ -15,7 +15,7 @@
  * Run: tsc -p tsconfig.test.json && node test-dist/test/a276-soda-routing.test.js
  */
 import assert from 'node:assert';
-import { stationsForCategory, toUnits, type CategoryRouting, type StationIds } from '../src/routing';
+import { stationsForCategory, toUnits, kitchenExclusionTerms, stripKitchenIfExcluded, type CategoryRouting, type StationIds } from '../src/routing';
 import { renderTicket, toPreview, kitchenPreset, dispatchPreset } from '../src/index';
 import type { BusinessConfig, OrderLine } from '../src/types';
 
@@ -108,6 +108,65 @@ ok('MUTATION GUARD: soda in a kitchen category DOES reach the kitchen ticket', (
   assert.deepEqual(soda.stationIds, ['kitchen'], 'mutated soda line should route to kitchen');
   const t = kitchenText(lines);
   assert.ok(/SODA/i.test(t), 'with drinks flagged kitchen, the soda SHOULD appear — render can detect it');
+});
+
+// ── A276 FIX (2026-09-28): the whole-LINE drinks rule, exactly as escposBridge.printSale and printRouted now build
+//    lines. The mutation guard above shows the old path: a soda in a kitchen-flagged category reached the kitchen,
+//    because exclusions only ever touched a line's UNITS and a standalone soda has none. ────────────────────────────
+function buildLinesFixed(routing: CategoryRouting, cart: any[], ownerTerms: string[] = []): OrderLine[] {
+  const terms = kitchenExclusionTerms(ownerTerms);
+  return cart.map(item => {
+    const lineStationIds = stationsForCategory((item.product as any).category_id ?? null, ids, routing);
+    return {
+      name: item.product.name, quantity: item.quantity,
+      stationIds: stripKitchenIfExcluded(item.product.name, lineStationIds, ids, terms),
+      unitPrice: 0, lineTotal: 0,
+      units: toUnits(item as any, ids, lineStationIds, routing)
+        .map(u => ({ ...u, stationIds: stripKitchenIfExcluded(u.name, u.stationIds, ids, terms) })),
+    };
+  });
+}
+const drinksFlaggedKitchen: CategoryRouting = { byCategory: {}, kitchenCategories: new Set([CHICKEN, FRIES, SOFT_DRINKS]) };
+const cartWithSoda = [
+  { product: { id: 'combo', name: '3PC Combo' }, quantity: 1,
+    comboComponents: [{ name: '3PC Chicken', quantity: 1, category_id: CHICKEN }, { name: 'Fries', quantity: 1, category_id: FRIES }],
+    selectedVariants: [{ groupName: 'Spice', optionName: 'Spicy' }] },
+  { product: { id: 'soda', name: 'Soda', category_id: SOFT_DRINKS }, quantity: 1 },
+];
+
+ok('FIX: a soda in a KITCHEN-flagged category still stays off the kitchen ticket (and reaches dispatch)', () => {
+  const lines = buildLinesFixed(drinksFlaggedKitchen, cartWithSoda);
+  assert.deepEqual(lines.find(l => l.name === 'Soda')!.stationIds, [], 'kitchen stripped from the soda line');
+  const k = kitchenText(lines), d = dispatchText(lines);
+  assert.ok(/CHICKEN/i.test(k) && !/SODA/i.test(k), 'kitchen: chicken yes, soda no\n' + k);
+  assert.ok(/SODA/i.test(d), 'dispatch still packs the soda\n' + d);
+});
+ok('FIX: a soda MAPPED to the kitchen station (category_stations) stays off it too', () => {
+  const mapped: CategoryRouting = { byCategory: { [SOFT_DRINKS]: ['kitchen'] }, kitchenCategories: new Set([CHICKEN, FRIES]) };
+  assert.ok(!/SODA/i.test(kitchenText(buildLinesFixed(mapped, cartWithSoda))));
+});
+ok('FIX: named drinks (Coke 500ml, Minute Maid, Water) — lines and combo components — never on the kitchen', () => {
+  const cart = [
+    { product: { id: 'c1', name: 'Coke 500ml', category_id: CHICKEN }, quantity: 2 },
+    { product: { id: 'c2', name: 'Minute Maid Mango', category_id: CHICKEN }, quantity: 1 },
+    { product: { id: 'c3', name: 'Water 1L', category_id: CHICKEN }, quantity: 1 },
+    { product: { id: 'cmb', name: 'Family Meal' }, quantity: 1,
+      comboComponents: [{ name: '8PC Chicken', quantity: 1, category_id: CHICKEN }, { name: 'Fanta 2L', quantity: 1, is_kitchen: true }] },
+  ];
+  const k = kitchenText(buildLinesFixed(drinksFlaggedKitchen, cart));
+  assert.ok(/8PC CHICKEN|8PC Chicken/i.test(k), k);
+  assert.ok(!/COKE|MINUTE MAID|WATER|FANTA/i.test(k), 'no drink on the kitchen ticket\n' + k);
+});
+ok('SAFETY: a cooked dish named after its sauce stays ON the kitchen ticket (sauces are not a whole-line rule)', () => {
+  const cart = [{ product: { id: 'w', name: 'Wings in BBQ Sauce', category_id: CHICKEN }, quantity: 1 }];
+  const lines = buildLinesFixed(drinksFlaggedKitchen, cart);
+  assert.deepEqual(lines[0].stationIds, ['kitchen']);
+  assert.ok(/WINGS IN BBQ SAUCE/i.test(kitchenText(lines)));
+});
+ok('the owner\'s own exclusion terms apply to whole lines as well (e.g. "shake")', () => {
+  const cart = [{ product: { id: 's', name: 'Chocolate Shake', category_id: CHICKEN }, quantity: 1 }];
+  assert.ok(/SHAKE/i.test(kitchenText(buildLinesFixed(drinksFlaggedKitchen, cart))), 'without the term it is cooked-category');
+  assert.ok(!/SHAKE/i.test(kitchenText(buildLinesFixed(drinksFlaggedKitchen, cart, ['shake']))), 'with it, off the kitchen');
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'} (${pass} passed)`);

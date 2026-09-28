@@ -117,15 +117,20 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
  * A349: the money behind the headline revenue — VAT and, where levied, CTL (both reduced by any refund, as the cloud
  * reports them), refunds, tips and discounts. Owner: "does it [CTL] appear on … reports? add it in overview".
  */
-function MoneyStrip({ s, currency }: { s: any; currency: string }) {
+// A357 (2026-09-28): `hideVat` where the layout already has a "VAT collected" box above — the owner saw VAT twice on
+// the Overview. The strip then carries only what the boxes do not (CTL, refunds, discounts, tips), and is not drawn at
+// all when none of those apply.
+function MoneyStrip({ s, currency, hideVat = false }: { s: any; currency: string; hideVat?: boolean }) {
   if (!s) return null;
+  const extras = s.ctlLevied || (s.totalRefunded ?? 0) > 0 || (s.totalDiscount ?? 0) > 0 || (s.totalTips ?? 0) > 0;
+  if (hideVat && !extras) return null;
   const item = (label: string, value: number) => (
     <span className="whitespace-nowrap"><span className="text-gray-400">{label}</span>{' '}
       <span className="text-white font-medium tabular-nums">{fmt(value, currency)}</span></span>
   );
   return (
     <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm bg-gray-800/60 border border-gray-700 rounded-xl px-4 py-2.5">
-      {item('VAT', s.totalVat ?? 0)}
+      {!hideVat && item('VAT', s.totalVat ?? 0)}
       {s.ctlLevied && item('CTL', s.totalCtl ?? 0)}
       {(s.totalRefunded ?? 0) > 0 && item('Refunds', -(s.totalRefunded ?? 0))}
       {(s.totalDiscount ?? 0) > 0 && item('Discounts', s.totalDiscount ?? 0)}
@@ -195,7 +200,7 @@ function RestaurantOverview({ currency }: { currency: string }) {
         <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
-      <MoneyStrip s={s} currency={currency} />
+      <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Payment split */}
@@ -448,7 +453,7 @@ function RetailOverview({ currency }: { currency: string }) {
         <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
-      <MoneyStrip s={s} currency={currency} />
+      <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Payment methods — today">

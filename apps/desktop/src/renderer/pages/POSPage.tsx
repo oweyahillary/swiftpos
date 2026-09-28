@@ -23,6 +23,8 @@ import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
+import { reverseAction, isRefunded, ageMinutes } from '../lib/voidRefund';
+import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import ShiftPanel from './ShiftPanel';
 import type { ZReport } from '../lib/posApi';
 
@@ -42,9 +44,13 @@ interface Props {
    * button.
    */
   canManagePrinters?: boolean;
+  /** A355: may this person void or refund (orders.void / owner)? Cashiers get no History reversal buttons. */
+  canVoidRefund?: boolean;
+  /** A341: may this person add an expense type from the Shift panel (expenses.manage)? */
+  canAddExpenseType?: boolean;
 }
 
-export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false }: Props) {
+export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -175,9 +181,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [voidTarget, setVoidTarget] = useState<any | null>(null);
 
-  // Server enforces orders.void permission — show UI for all, server returns
-  // 403 with a clear message if the role lacks the permission.
-  const canVoid = true;
+  // A355: only people who may void/refund (orders.void, or the owner) see History's reversal buttons — the owner's
+  // rule (A336): voids and refunds by owner / manager, cashiers neither. The cloud enforces it too.
+  const canVoid = canVoidRefund;
 
   const currency = business.currency ?? 'KES';
 
@@ -825,6 +831,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       : !(p as any).is_fuel;
     return p.status === 'active' && matchCat && matchSearch && matchFuel;
   });
+  // A279: which filter the grid is showing, and one Clear back to everything.
+  const gridFilter = {
+    categoryName: activeCategory === 'all' ? null : (categories.find((c: any) => c.id === activeCategory)?.name ?? null),
+    search, count: filtered.length,
+  };
+  const gridFilterSummary = filterSummary(gridFilter);
+  const clearGridFilter = () => { setActiveCategory('all'); setSearch(''); };
 
   // ── Receipt screen ─────────────────────────────────────
   if (completedOrder) {
@@ -1096,6 +1109,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         <ShiftPanel
           business={business}
           canForceClose={canForceClose}
+          canAddExpenseType={canAddExpenseType}
           onClose={() => setShowShift(false)}
           onShiftChange={setShift}
         />
@@ -1170,10 +1184,29 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               </button>
             ))}
           </div>
+          {gridFilterSummary && (
+            <div data-testid="grid-filter" className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-gray-800 bg-gray-900/60 text-xs text-gray-300">
+              <span className="truncate">{gridFilterSummary}</span>
+              <button onClick={clearGridFilter}
+                className="flex-shrink-0 text-gray-200 hover:text-white border border-gray-600 hover:border-gray-400 rounded-md px-2 py-0.5 transition-colors">
+                Clear ✕
+              </button>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto p-4">
             {filtered.length === 0 ? (
-              <div className="text-center py-20 text-gray-400 text-sm">No products found</div>
+              <div className="text-center py-20 text-gray-400 text-sm">
+                {emptyGridMessage(gridFilter)}
+                {gridFilterSummary && (
+                  <div className="mt-3">
+                    <button onClick={clearGridFilter}
+                      className="text-gray-200 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg px-3 py-1.5 text-sm transition-colors">
+                      Show all products
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 {filtered.map((product: any) => {
@@ -1459,7 +1492,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-300 text-xs mt-0.5">Last 30 orders · tap a completed order to void</p>
+                <p className="text-gray-300 text-xs mt-0.5">Last 30 orders · void within 30 minutes of the sale, refund any time after</p>
                 {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
               <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
@@ -1483,8 +1516,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   <tbody className="divide-y divide-gray-800/50">
                     {recentOrders.map(o => {
                       const method   = o.payments?.[0]?.method ?? '—';
-                      const ageMin   = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
-                      const canVoidThis = o.status === 'completed' && ageMin <= 30;
+                      const ageMin   = ageMinutes(o);
+                      // A355: "Void / Refund" inside the void window, "Refund" after it (it used to vanish at 30 min).
+                      const reverse  = reverseAction(o);
                       const fmtMoney = (n: number) =>
                         `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (
@@ -1514,6 +1548,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                               o.status === 'voided'    ? 'bg-red-500/15 text-red-400' :
                                                          'bg-gray-700 text-gray-400'
                             }`}>{o.status}</span>
+                            {isRefunded(o) && (
+                              <span data-testid="refunded" className="ml-1.5 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-400">refunded</span>
+                            )}
                             {o.sync_status === 'pending' && (
                               <span className="ml-1.5 text-[10px] text-amber-400" title="Not yet synced to server">●</span>
                             )}
@@ -1532,16 +1569,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                                   Reprint
                                 </button>
                               )}
-                              {canVoidThis && (
+                              {reverse && (
                                 <button
                                   onClick={() => { setVoidTarget(o); setShowHistory(false); }}
-                                  className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors"
+                                  className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors whitespace-nowrap"
                                 >
-                                  Void
+                                  {reverse.label}
                                 </button>
-                              )}
-                              {o.status === 'completed' && ageMin > 30 && (
-                                <span className="text-xs text-gray-400">expired</span>
                               )}
                             </div>
                           </td>

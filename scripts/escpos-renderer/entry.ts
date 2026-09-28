@@ -4,7 +4,7 @@
 import { renderTicket, hasPrintableContent } from '../../shared/printing/src/render';
 import { renderShiftReport } from '../../shared/printing/src/shiftReport';
 import { toEscPos } from '../../shared/printing/src/escpos';
-import { isExcludedFromKitchen, toUnits, stationsForCategory, idsByKind } from '../../shared/printing/src/routing';
+import { isExcludedFromKitchen, toUnits, stationsForCategory, idsByKind, kitchenExclusionTerms, stripKitchenIfExcluded } from '../../shared/printing/src/routing';
 
 const withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : new Date() });
 
@@ -72,7 +72,7 @@ export function renderShiftReportEscPos(data, paperWidthMm) {
   return toEscPos(renderShiftReport(data, paperWidthMm), { cut: true, feedBeforeCut: 3, openDrawer: false });
 }
 
-export { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen };
+export { toUnits, stationsForCategory, idsByKind, isExcludedFromKitchen, kitchenExclusionTerms, stripKitchenIfExcluded };
 
 // A313: the receipt-logo raster helpers, so the web Branding page thresholds with the SAME
 // rule the till uses (shared/printing raster.ts) and previews the SAME bytes it will store.

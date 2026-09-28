@@ -23,6 +23,10 @@ export const renderKitchenEscPos: Render;  // kitchen ticket (all items, no pric
 export const renderDispatchEscPos: Render; // dispatch/packaging ticket
 
 export function isExcludedFromKitchen(name: string, exclusions: string[]): boolean;
+/** A276: the built-in drinks terms plus the owner's exclusions. */
+export function kitchenExclusionTerms(ownerTerms?: string[]): string[];
+/** A276: `stationIds` without the kitchen stations when `name` is excluded from the kitchen. */
+export function stripKitchenIfExcluded(name: string, stationIds: string[], ids: StationIds, terms: string[]): string[];
 
 // A web printer row rendered as a station. `type` is the branch_printers.type
 // (receipt/kitchen/bar/expeditor/kot); the bundle maps it to a station config.

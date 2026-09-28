@@ -306,6 +306,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
 
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
+    addCategory: (name: string) => ipcRenderer.invoke('expense:addCategory', { name }),   // A341
     create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) =>
               ipcRenderer.invoke('expense:create', payload),
     list: () => ipcRenderer.invoke('expense:list'),
