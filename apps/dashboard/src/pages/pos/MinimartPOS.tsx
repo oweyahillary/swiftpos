@@ -362,11 +362,11 @@ export default function MinimartPOS({
 
   // ── Cart totals ────────────────────────────────────────────────────────────
   const subtotal = cartSubtotal(cart);
-  // A349: the business's own VAT (and levy, if any) — was a fixed 16 %.
+  // A349: the business's own VAT rate (was a fixed 16 %). VAT only — the catering levy (CTL) is for hotels, never a
+  // minimart (owner, 2026-09-28: "thats only for hotels not any other business only do VAT").
   const { business: biz } = useBusiness();
   const vatRate  = Number(biz?.vat_rate ?? VAT_RATE);
-  const ctlRate  = Number(biz?.ctl_rate ?? 0) || 0;
-  const { vat, ctl } = extractTaxes(subtotal, vatRate, ctlRate);
+  const { vat } = extractTaxes(subtotal, vatRate, 0);
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   // ── Scan bar status colour ─────────────────────────────────────────────────
@@ -620,14 +620,8 @@ export default function MinimartPOS({
               <div style={s.totalsBlock}>
                 <div style={s.totalRow}>
                   <span style={s.totalLabel}>Subtotal</span>
-                  <span style={s.totalValue}>{fmt(subtotal - vat - ctl, currency)}</span>
+                  <span style={s.totalValue}>{fmt(subtotal - vat, currency)}</span>
                 </div>
-                {ctl > 0 && (
-                  <div style={s.totalRow}>
-                    <span style={s.totalLabel}>CTL ({ctlRate}%)</span>
-                    <span style={s.totalValue}>{fmt(ctl, currency)}</span>
-                  </div>
-                )}
                 <div style={s.totalRow}>
                   <span style={s.totalLabel}>VAT ({vatRate}%)</span>
                   <span style={s.totalValue}>{fmt(vat, currency)}</span>

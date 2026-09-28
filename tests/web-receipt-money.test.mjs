@@ -95,5 +95,11 @@ ok('the web cart and receipt show VAT and CTL at the business\'s rates, after th
   assert.match(read('apps/dashboard/src/pages/pos/ReceiptView.tsx'), /ctlRate > 0 && line\(`incl\. CTL/);
 });
 
+ok('the Minimart shows VAT only — CTL is for hotels, never a minimart (owner, 2026-09-28)', () => {
+  const mm = read('apps/dashboard/src/pages/pos/MinimartPOS.tsx');
+  assert.match(mm, /const \{ vat \} = extractTaxes\(subtotal, vatRate, 0\);/);
+  assert.ok(!/ctl/i.test(mm.replace(/\/\/[^\n]*/g, '')), 'no CTL in the Minimart code');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

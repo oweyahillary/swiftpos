@@ -241,8 +241,9 @@ report a failure instead of `ok`. On-screen receipt: round off excludes the tip.
 orderTax rule in SQL (refund clamped, VAT/CTL × kept fraction) — used by the Overview (revenue kept, VAT, CTL, refunds, tips,
 discounts in a new strip on all three layouts; local-time hours; payment shares of what was paid), the Z-report (refunds, net
 sales, incl. VAT, incl. CTL, tips — screen and paper), the Daily report (headline, hourly, dine-in) and the CSV (CTL, refunds,
-tips; Refunded column; 2 dp). Web: receipts get the bill + discount + tip, the business's own CTL; cart, Minimart, payment and
-on-screen receipt use `extractTaxes` (business rates, after discount); the web bundle rebuilt.
+tips; Refunded column; 2 dp). Web: receipts get the bill + discount + tip, the business's own CTL; cart, payment and on-screen
+receipt use `extractTaxes` (business rates, after discount); the Minimart shows VAT only at the business's rate — CTL is for
+hotels, never a minimart (owner, 2026-09-28); the web bundle rebuilt.
 **Reviewed and correct, unchanged:** change is never counted as cash (legs store the applied amount; tendered/change apart);
 refunds leave the drawer as negative payment rows (expected cash right); discount capped to the same ceiling as the cloud; the
 till's and the cloud's VAT/CTL formula identical; the cloud's reports already refund-true (`lib/orderTax.ts`); `console.error`
