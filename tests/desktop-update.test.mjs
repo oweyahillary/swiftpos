@@ -12,7 +12,8 @@
  *
  * MUTATIONS TO CONFIRM BITE:
  *   - /v/… serves any version (no `version !== want` check)        → "a version the business is not approved for → 403" fails
- *   - summariseReleases prefers the newest id over the complete one → "split drafts: the complete copy is served" fails
+ *   - summariseReleases back to one copy per version (no merge)       → "the real v0.6.16 split …" fails
+ *   - assetDownloadUrl back to the public link without a token        → "…BY FILE ID (no token needed)" fails
  *   - assetFor accepts any file name                                → "a file that is not an updater file → 404" fails
  *   - the admin route accepts an incomplete release                 → "approving an incomplete release is refused" fails
  *   - summariseReleases skips pre-releases again                     → "a pre-release … is listed and servable" fails
@@ -110,23 +111,39 @@ try {
     assert.equal(L.compareVersions('0.6.16', '0.6.16'), 0);
     assert.ok(L.isVersion('0.6.16') && !L.isVersion('v0.6.16') && !L.isVersion('0.6') && !L.isVersion('0.6.16-beta'));
   });
-  await ok('a release is complete only with latest.yml + installer + its blockmap', () => {
+  await ok('a release is complete with latest.yml + the installer (the blockmap is optional — A350)', () => {
     assert.deepEqual(L.missingFiles(fullRelease(1, '0.6.16').assets), []);
-    assert.deepEqual(L.missingFiles([asset(1, 'SwiftPOS-0.6.16-x64.exe')]), ['latest.yml', '.blockmap']);
+    assert.deepEqual(L.missingFiles([asset(1, 'latest.yml'), asset(2, 'SwiftPOS-0.6.16-x64.exe')]), []);
+    assert.deepEqual(L.missingFiles([asset(1, 'SwiftPOS-0.6.16-x64.exe')]), ['latest.yml']);
+    assert.deepEqual(L.missingFiles([asset(1, 'latest.yml')]), ['installer (.exe)']);
   });
-  await ok('split drafts (v0.6.15 on 2026-09-27): the complete copy is served, whatever the order', () => {
-    const broken = { id: 99, tag_name: 'v0.6.15', draft: true, assets: [asset(991, 'SwiftPOS-0.6.15-x64.exe')] };
-    const good = fullRelease(98, '0.6.15', true);
-    for (const list of [[broken, good], [good, broken]]) {
+  await ok('the real v0.6.16 split (blockmap in one copy, latest.yml + installer in the other) is ONE complete release, whatever the order', () => {
+    const a = { id: 398098724, tag_name: 'v0.6.16', prerelease: true, assets: [asset(9001, 'SwiftPOS-0.6.16-x64.exe.blockmap')] };
+    const b = { id: 398098725, tag_name: 'v0.6.16', prerelease: true, assets: [asset(9002, 'latest.yml'), asset(9003, 'SwiftPOS-0.6.16-x64.exe')] };
+    for (const list of [[a, b], [b, a]]) {
       const [r] = L.summariseReleases(list);
-      assert.equal(r.releaseId, 98); assert.equal(r.complete, true);
+      assert.equal(r.complete, true); assert.equal(r.copies, 2);
+      assert.deepEqual(r.assets.map((x) => [x.name, x.id]).sort(), [['SwiftPOS-0.6.16-x64.exe', 9003], ['SwiftPOS-0.6.16-x64.exe.blockmap', 9001], ['latest.yml', 9002]]);
     }
+  });
+  await ok('the same file in two copies: the published copy wins over a draft, then the newest', () => {
+    const draft = { id: 50, tag_name: 'v0.6.17', draft: true, assets: [asset(501, 'latest.yml'), asset(502, 'SwiftPOS-0.6.17-x64.exe')] };
+    const pub = { id: 40, tag_name: 'v0.6.17', draft: false, assets: [asset(401, 'latest.yml'), asset(402, 'SwiftPOS-0.6.17-x64.exe')] };
+    const [r] = L.summariseReleases([draft, pub]);
+    assert.equal(r.releaseId, 40); assert.equal(r.draft, false); assert.equal(L.assetFor(r, 'latest.yml').id, 401);
   });
   await ok('a pre-release (every build from 0.6.16) is listed and servable — tills on 0.6.15 and older never see one', () => {
     const [r] = L.summariseReleases([{ ...fullRelease(5, '0.6.17'), prerelease: true }]);
     assert.equal(r.version, '0.6.17'); assert.equal(r.prerelease, true); assert.equal(r.complete, true);
     const cfg = fs.readFileSync(path.join(ROOT, 'apps/desktop/electron-builder.config.js'), 'utf8');
     assert.match(cfg, /publish: dev \? null : \[\{ provider: 'github', owner: 'oweyahillary', repo: 'swiftpos', releaseType: 'prerelease' \}\]/);
+  });
+  await ok('the release workflow creates the release BEFORE the build uploads, then verifies one copy with latest.yml + installer (A350)', () => {
+    const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/release.yml'), 'utf8');
+    const create = wf.indexOf('gh release create "$TAG"'), build = wf.indexOf('npx electron-builder --win nsis'), verify = wf.indexOf('releases exist for $TAG');
+    assert.ok(create > 0 && build > create && verify > build, 'create → build → verify');
+    assert.match(wf, /--prerelease/); assert.match(wf, /EP_GH_IGNORE_TIME: 'true'/);
+    assert.match(wf, /\[ "\$COPIES" = "1" \]/);
   });
   await ok('a file that is not an updater file → no asset (the route answers 404)', () => {
     const [r] = L.summariseReleases([{ ...fullRelease(1, '0.6.16'), assets: [...fullRelease(1, '0.6.16').assets, asset(9, 'notes.txt')] }]);
@@ -142,13 +159,28 @@ try {
     assert.deepEqual(s.body, { approvedVersion: null, held: true });
     assert.equal((await till(A, '/v/0.6.16/latest.yml')).status, 403);
   });
-  await ok('approved 0.6.16 → status names it; latest.yml, installer and blockmap redirect to GitHub', async () => {
+  await ok('approved 0.6.16 → status names it; each file redirects to GitHub BY FILE ID (no token needed) — A350', async () => {
     db.businesses[0].desktop_approved_version = '0.6.16';
     assert.deepEqual((await till(A, '/status')).body, { approvedVersion: '0.6.16', held: false });
-    for (const f of ['latest.yml', 'SwiftPOS-0.6.16-x64.exe', 'SwiftPOS-0.6.16-x64.exe.blockmap']) {
+    gh.calls = [];
+    for (const [f, id] of [['latest.yml', 11], ['SwiftPOS-0.6.16-x64.exe', 12], ['SwiftPOS-0.6.16-x64.exe.blockmap', 13]]) {
       const r = await till(A, `/v/0.6.16/${f}`);
-      assert.equal(r.status, 302, f); assert.ok(r.location.endsWith(`/${f}`), r.location);
+      assert.equal(r.status, 302, f);
+      assert.equal(r.location, `https://objects.githubusercontent.com/signed/${id}?X-Amz-Signature=abc`, r.location);
     }
+    // never the ambiguous public /releases/download/<tag>/<file> link, and no token sent (none set)
+    assert.ok(gh.calls.filter((c) => /\/releases\/assets\//.test(c.url)).every((c) => c.auth === null && c.accept === 'application/octet-stream'));
+  });
+  await ok('the real v0.6.16 split, served: each file from the copy that has it', async () => {
+    const saved = gh.releases;
+    gh.releases = [
+      { id: 398098724, tag_name: 'v0.6.16', prerelease: true, assets: [asset(9001, 'SwiftPOS-0.6.16-x64.exe.blockmap')] },
+      { id: 398098725, tag_name: 'v0.6.16', prerelease: true, assets: [asset(9002, 'latest.yml'), asset(9003, 'SwiftPOS-0.6.16-x64.exe')] },
+    ]; fresh();
+    assert.match((await till(A, '/v/0.6.16/latest.yml')).location, /signed\/9002\?/);
+    assert.match((await till(A, '/v/0.6.16/SwiftPOS-0.6.16-x64.exe')).location, /signed\/9003\?/);
+    assert.match((await till(A, '/v/0.6.16/SwiftPOS-0.6.16-x64.exe.blockmap')).location, /signed\/9001\?/);
+    gh.releases = saved; fresh();
   });
   await ok('a version the business is not approved for → 403 (older or newer alike)', async () => {
     assert.equal((await till(A, '/v/0.6.15/latest.yml')).status, 403);
@@ -195,7 +227,7 @@ try {
   await ok('the admin list: every version, draft or not, with what is missing', async () => {
     const r = await admin('GET', '/desktop-releases?fresh=1');
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.map((x) => [x.version, x.complete, x.draft]), [['0.6.18', false, true], ['0.6.16', true, false]]);
+    assert.deepEqual(r.body.map((x) => [x.version, x.complete, x.draft, x.copies]), [['0.6.18', false, true, 1], ['0.6.16', true, false, 1]]);
   });
   await ok('approve 0.6.16 for the other client → saved, audited', async () => {
     const r = await admin('PATCH', `/clients/${B}/desktop-version`, { version: '0.6.16' });

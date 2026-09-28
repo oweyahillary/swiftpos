@@ -888,11 +888,12 @@ router.patch('/clients/:id/web-access', requireAdmin, async (req, res) => {
 // ─── DESKTOP UPDATES (A348: per-business approval; null = hold) ───────────────
 // Owner, 2026-09-28: "hold by default, per business". Tills on 0.6.16+ update only to the version their business is
 // approved for (routes/desktopUpdate.ts). The list shows every release the cloud can serve — pre-releases (every build
-// from 0.6.16), published ones, and drafts when the token can see them — and whether each has all three updater files.
+// from 0.6.16), published ones, and drafts when the token can see them — merged across split copies (A350), and whether each has latest.yml and the
+// installer.
 router.get('/desktop-releases', requireAdmin, async (req, res) => {
   try {
     const releases = await listDesktopReleases({ fresh: req.query.fresh === '1' });
-    res.json(releases.map((r) => ({ version: r.version, draft: r.draft, prerelease: r.prerelease, complete: r.complete, missing: r.missing, published_at: r.publishedAt })));
+    res.json(releases.map((r) => ({ version: r.version, draft: r.draft, prerelease: r.prerelease, complete: r.complete, missing: r.missing, copies: r.copies, published_at: r.publishedAt })));
   } catch (e: any) {
     res.status(502).json({ error: `Could not read the releases from GitHub: ${e?.message ?? e}` });
   }

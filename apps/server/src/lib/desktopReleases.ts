@@ -11,9 +11,10 @@
  * (public repo) or a read-only one (private), and ignored by tills on 0.6.15 and older, which follow GitHub's latest
  * non-pre-release. Drafts are listed too when the token can see them (GitHub shows drafts only to push access).
  *
- * A release is COMPLETE when it carries the three files electron-updater needs: latest.yml, the installer (.exe) and its
- * .blockmap. electron-builder has been seen to create a tag's draft twice with the files split between them (v0.6.15,
- * 2026-09-27); the complete copy is served and an incomplete one is reported, never half-served.
+ * A release is COMPLETE when it carries what electron-updater needs: latest.yml and the installer (.exe); the .blockmap is
+ * optional (differential downloads are off on 0.6.16+ tills). A350: electron-builder split v0.6.15 and v0.6.16 each into
+ * two releases with the files divided between them — the copies of a version are merged into one here, and the release
+ * workflow now creates the release first so it stops happening.
  */
 
 export const DEFAULT_RELEASES_REPO = 'oweyahillary/swiftpos';
@@ -30,7 +31,10 @@ export interface DesktopRelease {
   /** Which of the three files are missing (empty when complete). */
   missing: string[];
   releaseId: number;
+  /** Every file of the version, merged across its copies (A350). */
   assets: GhAsset[];
+  /** How many GitHub releases carry this version (1 normally; 2+ = a split, merged here). */
+  copies: number;
   publishedAt: string | null;
 }
 
@@ -51,39 +55,49 @@ export function versionOfTag(tag: string): string | null {
   return isVersion(v) ? v : null;
 }
 
-/** Which of the three updater files a release is missing. */
+/**
+ * Which REQUIRED updater files a release is missing: latest.yml and the installer. A350: the .blockmap is not required —
+ * it only serves differential downloads, which 0.6.16+ tills switch off (autoUpdate.ts), and v0.6.13/0.6.14 were
+ * published without one; requiring it would refuse to approve a release a till can install perfectly well.
+ */
 export function missingFiles(assets: GhAsset[]): string[] {
   const names = assets.map((a) => a.name);
   const out: string[] = [];
   if (!names.includes('latest.yml')) out.push('latest.yml');
-  const exe = names.filter((n) => /\.exe$/i.test(n));
-  if (exe.length === 0) out.push('installer (.exe)');
-  if (!exe.some((e) => names.includes(`${e}.blockmap`))) out.push('.blockmap');
+  if (!names.some((n) => /\.exe$/i.test(n))) out.push('installer (.exe)');
   return out;
 }
 
 /**
- * GitHub's release list → one entry per version, newest first. Where a version has several releases (the split-draft
- * case), the complete one wins; among equals, a published one, then the newest.
+ * GitHub's release list → one entry per version, newest first.
+ *
+ * A350: where a version has SEVERAL releases (electron-builder's split — v0.6.15 and v0.6.16 each came out as two
+ * releases with the files divided between them), they are one logical release: their files are MERGED, each file taken
+ * from the preferred copy that has it (published before draft, then the newest). So a split never blocks an approval
+ * and never makes a till fetch half a release. The draft / pre-release flags and the id are the preferred copy's.
  */
 export function summariseReleases(releases: GhRelease[]): DesktopRelease[] {
-  const byVersion = new Map<string, DesktopRelease>();
+  const groups = new Map<string, GhRelease[]>();
   for (const r of releases) {
     const version = versionOfTag(r.tag_name);
     if (!version) continue;
-    const missing = missingFiles(r.assets ?? []);
-    const cand: DesktopRelease = {
-      version, draft: !!r.draft, prerelease: !!r.prerelease, complete: missing.length === 0, missing, releaseId: r.id, assets: r.assets ?? [],
-      publishedAt: r.published_at ?? null,
-    };
-    const prev = byVersion.get(version);
-    const better = !prev
-      || (cand.complete && !prev.complete)
-      || (cand.complete === prev.complete && !cand.draft && prev.draft)
-      || (cand.complete === prev.complete && cand.draft === prev.draft && cand.releaseId > prev.releaseId);
-    if (better) byVersion.set(version, cand);
+    if (!groups.has(version)) groups.set(version, []);
+    groups.get(version)!.push(r);
   }
-  return [...byVersion.values()].sort((a, b) => compareVersions(b.version, a.version));
+  const out: DesktopRelease[] = [];
+  for (const [version, copies] of groups) {
+    copies.sort((a, b) => (Number(!!a.draft) - Number(!!b.draft)) || (b.id - a.id));   // preferred copy first
+    const byName = new Map<string, GhAsset>();
+    for (const c of copies) for (const a of c.assets ?? []) if (!byName.has(a.name)) byName.set(a.name, a);
+    const assets = [...byName.values()];
+    const missing = missingFiles(assets);
+    const head = copies[0];
+    out.push({
+      version, draft: !!head.draft, prerelease: !!head.prerelease, complete: missing.length === 0, missing,
+      releaseId: head.id, assets, publishedAt: head.published_at ?? null, copies: copies.length,
+    });
+  }
+  return out.sort((a, b) => compareVersions(b.version, a.version));
 }
 
 /**
@@ -123,12 +137,12 @@ export async function listDesktopReleases(opts: { fresh?: boolean } = {}): Promi
 export function clearReleaseCache(): void { cache = null; }
 
 /**
- * Where the till should download `asset` from. With a token: GitHub's API asset URL answers with a short-lived signed
- * link (works for drafts and a private repo) — returned here, the token never leaves the cloud. Without one: the public
- * download link (published releases of a public repo only).
+ * Where the till should download `asset` from: GitHub's API asset URL, which answers with a short-lived signed link.
+ * A350: ALWAYS this, token or not. The public `/releases/download/<tag>/<file>` link is ambiguous when a tag has two
+ * releases — for v0.6.16 it resolved to the copy without latest.yml and answered Not Found (verified); the API URL names
+ * the file by its id. With a token (private repo, higher rate limit) it is sent here and never leaves the cloud.
  */
 export async function assetDownloadUrl(asset: GhAsset): Promise<string> {
-  if (!token()) return asset.browser_download_url;
   const res = await fetch(asset.url, { headers: ghHeaders('application/octet-stream'), redirect: 'manual' });
   const loc = res.headers.get('location');
   if ((res.status === 301 || res.status === 302 || res.status === 307) && loc) return loc;
