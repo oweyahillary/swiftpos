@@ -140,7 +140,8 @@ console.log('\n0.6.11 — the screens (source; React not run here)');
 const mp = read('src/renderer/pages/ManagerPage.tsx');
 ok('Shift report: a picker of this till\'s previous shifts, each opened via shift:zreport and printable',
   /posApi\.shift\.history\(\)/.test(mp) && /selected \? posApi\.shift\.zreport\(selected\)/.test(mp) && /Print report/.test(mp));
-ok('Expenses: its own manager tab, by date range', /\{ key: 'expenses', label: 'Expenses'/.test(mp) && /posApi\.expense\.range\(range\)/.test(mp));
+// A351: the sidebar is built in lib/managerNav.ts now; Expenses stays its own sidebar item there.
+ok('Expenses: its own manager tab, by date range', /\{ key: 'expenses', label: 'Expenses', tabs: \[\{ key: 'expenses', label: 'Expenses' \}\] \}/.test(read('src/renderer/lib/managerNav.ts')) && /posApi\.expense\.range\(range\)/.test(mp));
 const zv = read('src/renderer/components/ZReportView.tsx');
 ok('the on-screen report shows "− Expenses" and the EXPENSES lines', /row\('− Expenses', money\(totals\.expenses\)\)/.test(zv) && /EXPENSES \(\{report\.expenseLines!\.length\}\)/.test(zv));
 ok('the print payload sends them', /expenses:\s+totals\.expenses == null \? null : toCents\(totals\.expenses\)/.test(read('src/renderer/lib/printShiftReport.ts')));

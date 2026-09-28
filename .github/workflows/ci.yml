@@ -657,6 +657,11 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/money-reports.test.mjs
 
+      # A351 — the manager sidebar in groups (Sales, Close, Settings); each tab keeps its own permission.
+      - name: Desktop manager menu groups
+        working-directory: apps/desktop
+        run: node --no-warnings test/manager-nav.test.mjs
+
       # A326 — the till's colours follow the theme only when themes are on (real themeVars.ts, real compiled CSS).
       - name: Desktop theme variables
         working-directory: apps/desktop

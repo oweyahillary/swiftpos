@@ -19,6 +19,7 @@ import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
+import { buildManagerNav, groupOf, openGroup, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
@@ -564,45 +565,8 @@ function SegmentedSelector<T extends string>({ options, value, onChange }: {
   );
 }
 
-// #7 (A105): Orders and Item Mix under one nav item. Item Mix is restaurant-only,
-// so a non-restaurant business sees just Orders with no selector.
-function OrdersAndMixTab({ currency, isRestaurant }: { currency: string; isRestaurant: boolean }) {
-  const [view, setView] = useState<'orders' | 'mix'>('orders');
-  return (
-    <div className="space-y-4">
-      {isRestaurant && (
-        <SegmentedSelector
-          options={[{ key: 'orders', label: 'Orders' }, { key: 'mix', label: 'Item Mix' }]}
-          value={view}
-          onChange={v => setView(v)}
-        />
-      )}
-      {view === 'orders' || !isRestaurant
-        ? <OrdersTab currency={currency} />
-        : <TopItemsTab currency={currency} />}
-    </div>
-  );
-}
-
-// #6 (A105): the shift and its report under one "Shift" nav item. The manager
-// sees the open shift, then switches to "Shift report" to view (and print) the
-// Z-report — instead of two separate tabs that never referenced each other.
-function ShiftAndReportTab({ currency, businessName }: { currency: string; businessName: string }) {
-  const [view, setView] = useState<'shift' | 'report'>('shift');
-  return (
-    <div className="space-y-4">
-      <SegmentedSelector
-        options={[{ key: 'shift', label: 'Current shift' }, { key: 'report', label: 'Shift report' }]}
-        value={view}
-        onChange={v => setView(v)}
-      />
-      {view === 'shift'
-        ? <ShiftTab currency={currency} />
-        : <ZReportTab businessName={businessName} currency={currency} />}
-    </div>
-  );
-}
-
+// A351: Orders, Item Mix, Current shift and Shift report are the tabs of the Sales page (lib/managerNav.ts); before
+// that A105 had put them in pairs under Orders and Shift.
 function OrdersTab({ currency }: { currency: string }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1336,59 +1300,39 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     return () => { live = false; };
   }, []);
 
-  // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'expenses' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers' | 'settings';
-
-  const navItems: { key: TabKey; label: string; icon: string }[] = [
-    { key: 'overview', label: 'Overview',     icon: I.overview },
-    { key: 'orders',   label: 'Orders',       icon: I.orders   },
-    { key: 'shift',    label: 'Shift',        icon: I.shift    },
-    { key: 'expenses', label: 'Expenses',     icon: I.expenses },   // 0.6.11
-    // #6 (A105): the Shift Report is now a view INSIDE the Shift tab, not its own
-    // nav item.
-    // Manager-only: this is the escape route for the trading-day gate. Without
-    // it a till stays frozen the first morning nobody closed the day.
-    ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
-    // Phase 4. Registered for every manager; the tab itself explains when this
-    // till is not the branch server, which beats an option that silently is not there.
-    ...(isManagerRole ? [{ key: 'branchclose' as TabKey, label: 'Close Branch', icon: I.shift }] : []),
-    // #7 (A105): Item Mix is now a view INSIDE the Orders tab (restaurant only),
-    // selected with a segmented control, not its own nav item.
-    // Editing, not just viewing. Without these the owner has to phone us to add
-    // a product or fix a price, which for fast food is a daily event.
-    // ONE Menu tab. Prices, Combos and Import were three views of the same menu,
-    // organised around database tables rather than around a menu item — and a
-    // combo was never a different kind of thing, only a different query. To change
-    // a combo's price and its contents you had to visit three tabs, and none of
-    // them mentioned the other two. Import stays reachable from inside the Menu
-    // screen rather than as a sibling nobody connects to the menu they are editing.
-    ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
-    ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
-    ...((canManageSettings || canManageProducts) ? [{ key: 'settings' as TabKey, label: 'Settings', icon: I.receipt }] : []),
-    // Gated like the other configuration tabs. It was briefly left open on the
-    // reasoning that printer bindings are per-device, so whoever stands at the
-    // till is who needs them. That was wrong: re-pointing a printer mid-service
-    // sends receipts to the wrong station and nobody notices until the queue
-    // backs up. Cashiers keep the read-only view on the POS screen, where they
-    // can see connection status and fire a test print.
-    //
-    // A59 / permission-model · Gated on stations.manage. NOT settings.manage,
-    // which migration 59 makes owner/admin-only — keying Printers there would
-    // hide it from every manager. Migration 79 grants stations.manage to the
-    // manager roles, so this is additive: everyone who reached Printers via the
-    // role gate still does. Ships in the same batch as 79; without that grant,
-    // managers would lose the tab.
-    // Now holds Receipt too (A90), so it shows for anyone who can manage EITHER
-    // stations OR the receipt text; PrintersScreen then shows only the sub-tabs
-    // each permission allows. A manager with only receipt.manage keeps Receipt.
-    ...((has('stations.manage') || canManageReceipt)
-      ? [{ key: 'printers' as TabKey, label: 'Printing', icon: I.printer }] : []),
-    // Hidden without the web POS (A346), and when nothing is stock-tracked — an owner who turned stock off
-    // shouldn't be shown an empty Stock screen and conclude it's broken.
-    ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
-  ];
+  // A351 (2026-09-28): the sidebar in groups — Sales, Close and Settings open as one page with tabs across the top.
+  // The rules (which tabs each role sees, where a tap lands) live in lib/managerNav.ts; every gate below is the one each
+  // page had as its own sidebar item. Why each gate is what it is:
+  //  - Close Day / Close Branch — isManagerRole: closing the trading day is a CASH operation and the escape route for
+  //    the day gate, so it never hides behind settings.manage alone.
+  //  - Printing — stations.manage OR the receipt text (A59/A90). NOT settings.manage, which migration 59 makes
+  //    owner/admin-only; re-pointing a printer mid-service sends receipts to the wrong station, so cashiers keep only
+  //    the read-only view on the POS screen. PrintersScreen shows the sub-tabs each permission allows.
+  //  - Stock — only with the web POS and something stock-tracked (A346).
+  //  - Menu — ONE Menu page (prices, combos and import are reached from inside it).
+  const nav = buildManagerNav({
+    isRestaurant: flags.isRestaurant,
+    isManagerRole,
+    canManageProducts,
+    canManageStaff,
+    canManageSettings,
+    canPrinting: has('stations.manage') || canManageReceipt,
+    showStock,
+  });
+  const GROUP_ICON: Record<GroupKey, string> = {
+    overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
+    menu: I.menu, settings: I.receipt, stock: I.stock,
+  };
 
   const [active, setActive] = useState<TabKey>('overview');
+  // The tab last used in each group, so Settings reopens on Printing if that is where the manager was.
+  const [lastTab, setLastTab] = useState<Partial<Record<GroupKey, TabKey>>>({});
+  const activeGroup = groupOf(nav, active);
+  const openTab = (tab: TabKey) => {
+    setActive(tab);
+    const g = groupOf(nav, tab);
+    if (g && g.tabs.some(t => t.key === tab)) setLastTab(prev => ({ ...prev, [g.key]: tab }));
+  };
 
   function renderContent() {
     switch (active) {
@@ -1396,17 +1340,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         if (flags.isPetrol)     return <PetrolOverview     currency={currency} />;
         if (flags.isRestaurant) return <RestaurantOverview currency={currency} />;
         return <RetailOverview currency={currency} />;
-      case 'orders':  return <OrdersAndMixTab currency={currency} isRestaurant={flags.isRestaurant} />;
-      case 'shift':   return <ShiftAndReportTab currency={currency} businessName={businessName} />;
+      case 'orders':  return <OrdersTab currency={currency} />;
+      case 'shift':   return <ShiftTab currency={currency} />;
       case 'expenses': return <ExpensesTab currency={currency} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
-      // Reachable only as a fallback now — the nav folds these into Orders/Shift
-      // (A105). Kept so any direct setActive still resolves.
+      // Tabs of Sales (A351): Shift report, Item Mix (restaurant).
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
-      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => setActive('import')} />;
+      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} />;
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
@@ -1445,16 +1388,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {navItems.map(item => (
-            <button key={item.key} onClick={() => setActive(item.key)}
-              title={!sidebarOpen ? item.label : undefined}
+          {nav.map(group => (
+            <button key={group.key} onClick={() => openTab(openGroup(group, lastTab))}
+              title={!sidebarOpen ? group.label : undefined}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                active === item.key
+                activeGroup?.key === group.key
                   ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}>
-              <Icon d={item.icon} size={18} cls="flex-shrink-0" />
-              {sidebarOpen && <span className="truncate">{item.label}</span>}
+              <Icon d={GROUP_ICON[group.key]} size={18} cls="flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">{group.label}</span>}
             </button>
           ))}
         </nav>
@@ -1506,7 +1449,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
               <Icon d={I.menu} size={20} />
             </button>
             <h1 className="text-base font-semibold text-white">
-              {navItems.find(n => n.key === active)?.label ?? 'Overview'}
+              {activeGroup?.label ?? 'Overview'}
             </h1>
           </div>
           <div className="text-right">
@@ -1517,6 +1460,12 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6">
+          {/* A351: a group's tabs; none when the role sees only one of them. */}
+          {activeGroup && activeGroup.tabs.length > 1 && (
+            <div className="mb-5">
+              <SegmentedSelector options={activeGroup.tabs} value={active} onChange={openTab} />
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>
