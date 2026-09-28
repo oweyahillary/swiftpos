@@ -27,6 +27,10 @@ export interface ReceiptOrder {
   payments: ReceiptPaymentLeg[];
   changeGiven: number;
   total: number;
+  /** A349: discount off the lines (cents); the lines sum to total + discount. */
+  discount?: number;
+  /** A349: tip on top of the bill (cents); printed after the total, PAY = total + tip. */
+  tip?: number;
   kotCount: number;
 }
 export interface ReceiptBusinessConfig {
@@ -54,7 +58,12 @@ export function buildReceiptOrder(a: {
   orderType: string;
   cashierName: string;
   cart: CartItem[];
+  /** The BILL: after the discount, WITHOUT the tip. */
   total: number;
+  /** A349: the discount taken off the cart lines. */
+  discount?: number;
+  /** A349: the tip on top of the bill. */
+  tip?: number;
   change: number;
   payments: { method: string; amount: number }[];
   tableNumber?: string;
@@ -98,6 +107,8 @@ export function buildReceiptOrder(a: {
     payments:    a.payments.map(p => ({ label: p.method, amount: toCents(p.amount) })),
     changeGiven: toCents(a.change),
     total:       toCents(a.total),
+    discount:    toCents(a.discount ?? 0),
+    tip:         toCents(a.tip ?? 0),
     kotCount:    0,
   };
 }
@@ -127,6 +138,8 @@ export function buildReceiptBusinessConfig(
     // the desktop's. vat_rate comes from the business; CTL defaults to 0 unless
     // the business levies it (pass ctlRate through when it does).
     vatRate:         typeof b.vat_rate === 'number' ? b.vat_rate : 16,
-    ctlRate:         ctlRate,
+    // A349: the business's own levy whenever a caller passes none — every web print passed 0, so a CTL business's
+    // receipt showed no CTL and split the VAT on the wrong net.
+    ctlRate:         ctlRate || Number((b as any)?.ctl_rate ?? 0) || 0,
   };
 }

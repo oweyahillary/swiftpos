@@ -103,6 +103,13 @@ export interface ZReport {
   totals: {
     orderCount: number;
     grossSales: number;
+    /** A349: refunds, sales kept, taxes (refund-reduced), CTL levied?, tips — see main/shiftService.ts. */
+    refunds?: number;
+    netSales?: number;
+    vat?: number;
+    ctl?: number;
+    ctlLevied?: boolean;
+    tips?: number;
     voidCount: number;
     cashSales: number;
     floatIn: number;
@@ -241,7 +248,8 @@ declare global {
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
-        create: (payload: any) => Promise<{ orderId: string }>;
+        /** A349: printFailed names tickets that could not be produced (shown to the cashier); [] when all went out. */
+        create: (payload: any) => Promise<{ orderId: string; printFailed?: string[] }>;
         void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number }>;
       };

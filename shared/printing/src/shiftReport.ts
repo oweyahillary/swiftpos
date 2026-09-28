@@ -47,6 +47,13 @@ export interface ShiftReportData {
   byMethod: ShiftReportMethodLine[];
   orderCount: number;
   grossSales: Cents;
+  /** A349: refunds on the shift's orders, sales kept, the taxes in them (refund-reduced), and tips. null/absent =
+   *  not reported (an older caller) → no line. `ctl` is printed only when given (the business levies it). */
+  refunds?: Cents | null;
+  netSales?: Cents | null;
+  vat?: Cents | null;
+  ctl?: Cents | null;
+  tips?: Cents | null;
   voidCount: number;
 
   openingFloat: Cents;
@@ -120,6 +127,14 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
 
   d.line(pair(cols, 'Orders', String(r.orderCount)));
   d.line(pair(cols, 'Gross sales', money(r.grossSales)));
+  // A349: the shift's money in full — refunds, what was kept, the taxes in it (CTL where levied), tips.
+  if (r.refunds != null && r.refunds > 0) {
+    d.line(pair(cols, '- Refunds', money(r.refunds)));
+    d.line(pair(cols, '= Net sales', money(r.netSales ?? r.grossSales - r.refunds)));
+  }
+  if (r.vat != null) d.line(pair(cols, 'incl. VAT', money(r.vat)));
+  if (r.ctl != null) d.line(pair(cols, 'incl. CTL', money(r.ctl)));
+  if (r.tips != null && r.tips > 0) d.line(pair(cols, 'Tips (in payments)', money(r.tips)));
   d.line(pair(cols, 'Voids', String(r.voidCount)));
   d.line(rule(cols));
 

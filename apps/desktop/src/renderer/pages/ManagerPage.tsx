@@ -112,6 +112,27 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
   );
 }
 
+/**
+ * A349: the money behind the headline revenue — VAT and, where levied, CTL (both reduced by any refund, as the cloud
+ * reports them), refunds, tips and discounts. Owner: "does it [CTL] appear on … reports? add it in overview".
+ */
+function MoneyStrip({ s, currency }: { s: any; currency: string }) {
+  if (!s) return null;
+  const item = (label: string, value: number) => (
+    <span className="whitespace-nowrap"><span className="text-gray-400">{label}</span>{' '}
+      <span className="text-white font-medium tabular-nums">{fmt(value, currency)}</span></span>
+  );
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm bg-gray-800/60 border border-gray-700 rounded-xl px-4 py-2.5">
+      {item('VAT', s.totalVat ?? 0)}
+      {s.ctlLevied && item('CTL', s.totalCtl ?? 0)}
+      {(s.totalRefunded ?? 0) > 0 && item('Refunds', -(s.totalRefunded ?? 0))}
+      {(s.totalDiscount ?? 0) > 0 && item('Discounts', s.totalDiscount ?? 0)}
+      {(s.totalTips ?? 0) > 0 && item('Tips (not revenue)', s.totalTips ?? 0)}
+    </div>
+  );
+}
+
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
@@ -173,6 +194,7 @@ function RestaurantOverview({ currency }: { currency: string }) {
         <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
+      <MoneyStrip s={s} currency={currency} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Payment split */}
@@ -184,7 +206,8 @@ function RestaurantOverview({ currency }: { currency: string }) {
                 {Object.entries(sales.paymentMethods as Record<string, number>)
                   .sort(([, a], [, b]) => b - a)
                   .map(([method, amount]) => {
-                    const total = s?.totalRevenue ?? 1;
+                    // A349: share of what was PAID (tips included, refunds out) — against revenue a tip pushed it past 100 %.
+                    const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
                     const pct   = total > 0 ? Math.round((amount / total) * 100) : 0;
                     return (
                       <div key={method}>
@@ -359,6 +382,8 @@ function PetrolOverview({ currency }: { currency: string }) {
         </Card>
       )}
 
+      <MoneyStrip s={sales?.summary} currency={currency} />
+
       {/* Payment split */}
       {sales?.paymentMethods && Object.keys(sales.paymentMethods).length > 0 && (
         <Card title="Payment methods — today">
@@ -366,7 +391,8 @@ function PetrolOverview({ currency }: { currency: string }) {
             {Object.entries(sales.paymentMethods as Record<string, number>)
               .sort(([, a], [, b]) => b - a)
               .map(([method, amount]) => {
-                const total = sales.summary?.totalRevenue ?? 1;
+                // A349: share of what was PAID (tips included, refunds out).
+                const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
                 const pct   = total > 0 ? Math.round((amount / total) * 100) : 0;
                 return (
                   <div key={method}>
@@ -421,6 +447,7 @@ function RetailOverview({ currency }: { currency: string }) {
         <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
+      <MoneyStrip s={s} currency={currency} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Payment methods — today">
@@ -429,7 +456,8 @@ function RetailOverview({ currency }: { currency: string }) {
             : (
               <div className="space-y-2">
                 {Object.entries(sales.paymentMethods as Record<string, number>).sort(([, a], [, b]) => b - a).map(([method, amount]) => {
-                  const total = s?.totalRevenue ?? 1;
+                  // A349: share of what was PAID (tips included, refunds out).
+                  const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
                   const pct = total > 0 ? Math.round((amount / total) * 100) : 0;
                   return (
                     <div key={method}>

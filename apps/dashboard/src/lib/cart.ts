@@ -29,6 +29,18 @@ export function extractVat(total: number, vatRate: number): number {
   return total - total / (1 + vatRate / 100);
 }
 
+/**
+ * A349: VAT and the catering levy inside a tax-inclusive BILL (after any discount) — the same arithmetic as the till
+ * (desktop payment.ts) and the cloud (orders.ts taxSplit), which stores the authoritative figures:
+ *   net = bill / (1 + (vat + ctl)/100);  vat = round2(net·vat%);  ctl = round2(net·ctl%)
+ * VAT is on the net, never on net-plus-levy. ctlRate 0 gives the VAT-only figure.
+ */
+export function extractTaxes(bill: number, vatRate: number, ctlRate = 0): { vat: number; ctl: number } {
+  const net = bill / (1 + (vatRate + ctlRate) / 100);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return { vat: r2(net * (vatRate / 100)), ctl: r2(net * (ctlRate / 100)) };
+}
+
 let __orderSeq = 0;
 
 export function generateOrderNumber(): string {

@@ -44,6 +44,12 @@ export async function printShiftReport(
     })),
     orderCount: totals.orderCount,
     grossSales: toCents(totals.grossSales),
+    // A349: refunds / net / taxes / tips (absent on an older report → no line).
+    refunds:    totals.refunds == null ? null : toCents(totals.refunds),
+    netSales:   totals.netSales == null ? null : toCents(totals.netSales),
+    vat:        totals.vat == null ? null : toCents(totals.vat),
+    ctl:        totals.ctlLevied ? toCents(totals.ctl ?? 0) : null,
+    tips:       totals.tips == null ? null : toCents(totals.tips),
     voidCount:  totals.voidCount,
 
     openingFloat: toCents(shift.opening_float),

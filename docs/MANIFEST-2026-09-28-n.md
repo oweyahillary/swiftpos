@@ -1,4 +1,4 @@
-# MANIFEST 2026-09-28-n — A348 desktop updates approved per client (held by default) · A347 teal icon
+# MANIFEST 2026-09-28-n — A348 desktop updates approved per client (held by default) · A349 money review · A347 teal icon
 
 **Base:** origin/dev `cb3e315` (v0.6.15; CI #418 green; Release desktop #31 green), plus `d355bed` (A347 teal icon, on the
 session branch). The owner fast-forwards `dev` onto this commit, then bumps **0.6.16**.
@@ -33,6 +33,24 @@ want to turn the repo into a private repo can that still work with auto update?"
    - Once every till is on 0.6.16 or later, the repository can go private and updates keep working.
 6. **A347:** teal app icon (committed earlier as `d355bed`; ships in this version).
 
+7. **A349 — pre-release money review.** Owner, before pushing: "make sure Catering levy(CTL) especially on the desktop app,
+   does it appear on receipt? or reports? add it in overview … money math and reporting they have to be spot on … check of
+   errors how they are captured … i dont want surprices".
+   - **Fixed: a discounted sale's receipt never printed on the till.** It failed silently, and could drop the order's later
+     tickets. It now prints with a Discount line, and the taxes are on the discounted amount (the figures stored).
+   - **Fixed on the web POS:** thermal receipts failed for tipped or discounted sales and never showed CTL. The web's VAT display
+     was a fixed 16% before discount.
+   - **Tips:** now on the printed receipt (after Total; PAY = total + tip). The on-screen "Round Off −tip" is gone.
+   - **CTL** is now in the Overview and the Z-report (screen and paper). No "CTL (0%)" line for businesses without it.
+   - **Refunds** are now taken off everywhere on the till: Overview, Z-report, Daily report (headline, hours, dine-in) and CSV.
+     VAT and CTL are reduced by the refunded share, the same rule as the cloud (`main/orderMoney.ts`).
+   - **The Overview hourly chart** is in local time (it was UTC, 3 hours off).
+   - **Payment shares** are of what was paid. **The CSV** has CTL, refunds and tips.
+   - **Errors:** a ticket that can't be produced is now told to the cashier ("The sale is saved, but this did not print: …"), and
+     never takes the other tickets down.
+   - **Checked and correct, unchanged:** change handling, refund cash, the discount ceiling, the till's and the cloud's tax
+     formula, and the cloud's reports.
+
 ## Files
 | Area | Files |
 |---|---|
@@ -42,7 +60,8 @@ want to turn the repo into a private repo can that still work with auto update?"
 | Till | `main/autoUpdate.ts` (cloud approval check, generic feed, hourly), `main/index.ts` (comment), `electron-builder.config.js` (pre-release), `resources/icon*` (A347) |
 | CI | `.github/workflows/ci.yml` step "Desktop updates only when approved" (migration test glob-discovered) |
 | Tests | NEW `tests/desktop-update.test.mjs` (20), NEW `apps/desktop/test/update-approval.test.mjs` (16), NEW `scripts/test-migration-108.mjs` (5) |
-| Docs | `docs/AUDIT-REGISTER.md` (A348, Tree v0.6.16, migrations → 108), `docs/DESKTOP-AUTOUPDATE.md` (A348 note), `docs/checklists/VERIFY-CHECKLIST-v0.6.16.html` + `docs/VERIFY-CHECKLIST-v0.6.16.md` (NEW), this file |
+| A349 (money) | `shared/printing/src/{types,money,render,shiftReport}.ts`, `apps/desktop/src/main/{orderMoney.ts (NEW),managerReports,shiftService,dailySalesReport,reportExport,escposBridge,print/printWorker,ipcHandlers}.ts`, `renderer/{pages/ManagerPage,pages/POSPage,components/ReceiptView,components/ZReportView,lib/printShiftReport,lib/posApi}.tsx?`, web `lib/{cart,buildReceiptOrder,printRouted,reprintReceipt,escposRenderer.js}`, `pages/pos/{CashierScreen,PaymentModal,ReceiptView,MinimartPOS}.tsx`, `types/index.ts`; tests `shared/printing/test/receipt-money.test.ts` (8), `apps/desktop/test/money-reports.test.mjs` (17), `tests/web-receipt-money.test.mjs` (5) |
+| Docs | `docs/AUDIT-REGISTER.md` (A349, A348, Tree v0.6.16, migrations → 108), `docs/DESKTOP-AUTOUPDATE.md` (A348 note), `docs/checklists/VERIFY-CHECKLIST-v0.6.16.html` + `docs/VERIFY-CHECKLIST-v0.6.16.md` (NEW), this file |
 
 ## Verification (bench: Linux, Node 22)
 ```
@@ -54,7 +73,9 @@ apps/desktop test/update-approval.test.mjs → 16 (compiled runUpdateCheck, fake
   token to exactly /v/<approved>/, no downgrade, 401 refreshed once, offline / older cloud → hold, no token → nothing asked;
   no GitHub poll left; hourly; no differential). 4 mutations bite.
 scripts/test-migration-108.mjs → 5 (PGlite: all held, new held, x.y.z only, idempotent). 2 mutations bite.
-Every desktop test (34) · tests/*.test.mjs (134) · all 31 migration tests · every static gate · ratchet · server, desktop
+A349: receipt-money 8/8 · money-reports 17/17 (Nairobi time) · web-receipt-money 5/5 · 11 mutations bite; golden receipt
+samples byte-identical.
+Every desktop test (35) · tests/*.test.mjs (135) · shared/printing npm test · all 31 migration tests · every static gate · ratchet · server, desktop
 (main + renderer), admin and dashboard builds.
 Library behaviour read in node_modules (electron-updater 6.8.9): the Authorization header is stripped on a cross-host
 redirect; with allowPrerelease=false the GitHub provider follows /releases/latest (pre-releases and drafts excluded).
@@ -67,7 +88,7 @@ signed-link redirect with a real token.
 2. Deploy the **cloud** and the **admin portal** from `dev`.
 3. Tag **v0.6.16**. On GitHub, keep the complete copy if there are two, **untick "pre-release"**, set it as latest, and publish.
    Old tills update to it on their next close.
-4. Run `docs/checklists/VERIFY-CHECKLIST-v0.6.16.html` (28 checks).
+4. Run `docs/checklists/VERIFY-CHECKLIST-v0.6.16.html` (36 checks — §M is the money review).
 5. From then on: tag → the pre-release reaches nobody → approve your own business → test → approve each client when ready.
 6. Before making the repository private: set `GITHUB_RELEASES_TOKEN` on Render (fine-grained, this repository, Contents: read
    only), and confirm every till reads 0.6.16 or later.

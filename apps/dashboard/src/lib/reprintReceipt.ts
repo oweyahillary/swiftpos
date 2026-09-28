@@ -47,6 +47,9 @@ function toReceiptOrder(o: any) {
     payments:    (o.payments ?? []).map((p: any) => ({ label: p.method, amount: cents(p.amount) })),
     changeGiven: cents(o.change_given ?? o.change ?? 0),
     total:       cents(o.total),
+    // A349: a discounted order's lines sum to total + discount — without it the duplicate could not be rendered.
+    discount:    cents(o.discount_amount ?? 0),
+    tip:         cents(o.tip_amount ?? 0),
     kotCount:    0,
   };
 }

@@ -45,6 +45,7 @@ import { dialog, BrowserWindow } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
+import { refundedSql, vatKeptSql, ctlKeptSql } from './orderMoney';
 
 const FONT = 'Arial';
 const MONEY = '#,##0.00;(#,##0.00);-';
@@ -123,9 +124,11 @@ function readTotals(from: string, to: string, deviceId: string | null): Totals {
   const r = db.prepare(`
     SELECT COUNT(*) AS bills,
            COALESCE(SUM(total), 0)                        AS gross_before_refunds,
-           COALESCE(SUM(COALESCE(refunded_amount, 0)), 0) AS refunded,
-           COALESCE(SUM(vat_amount), 0)                   AS vat,
-           COALESCE(SUM(ctl_amount), 0)                   AS ctl
+           COALESCE(SUM(${refundedSql()}), 0)             AS refunded,
+           -- A349: VAT and CTL reduced by the refunded share (orderMoney.ts — the cloud's orderTax rule). At full
+           -- value, a fully refunded bill still counted its tax and pushed net sales below zero.
+           COALESCE(SUM(${vatKeptSql()}), 0)              AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0)              AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
            ${scopeClause(deviceId)}
@@ -169,9 +172,9 @@ function readTotals(from: string, to: string, deviceId: string | null): Totals {
 function dineInNet(from: string, to: string, deviceId: string | null): number {
   const db = getLocalDb();
   const r = db.prepare(`
-    SELECT COALESCE(SUM(total), 0) AS gross,
-           COALESCE(SUM(vat_amount), 0) AS vat,
-           COALESCE(SUM(ctl_amount), 0) AS ctl
+    SELECT COALESCE(SUM(total - ${refundedSql()}), 0) AS gross,
+           COALESCE(SUM(${vatKeptSql()}), 0) AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0) AS ctl
       FROM orders
      WHERE status = 'completed' AND order_type = 'dine_in'
        AND created_at >= ? AND created_at <= ?
@@ -198,9 +201,10 @@ function readHourly(from: string, to: string, deviceId: string | null) {
   return db.prepare(`
     SELECT strftime('%H', created_at, 'localtime') AS hour,
            COUNT(*) AS bills,
-           COALESCE(SUM(total), 0) AS gross,
-           COALESCE(SUM(vat_amount), 0) AS vat,
-           COALESCE(SUM(ctl_amount), 0) AS ctl
+           -- A349: net of refunds, so the hours add up to the day's figure above them.
+           COALESCE(SUM(total - ${refundedSql()}), 0) AS gross,
+           COALESCE(SUM(${vatKeptSql()}), 0) AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0) AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
            ${scopeClause(deviceId)}

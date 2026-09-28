@@ -701,7 +701,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       // of leaving the till wedged with the Pay button disabled forever.
       const num = await ensureOrderNumberAsync();
 
-      await posApi.order.create({
+      const created = await posApi.order.create({
         branch_id: branchId,
         order_number: num,
         // Production tickets already queued by Send to kitchen, so order:create
@@ -754,6 +754,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
       setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim() });
       setShowPayment(false);
+      // A349: the sale is saved either way; a ticket that could not be produced is said, never left to the log.
+      const failed = Array.isArray(created?.printFailed) ? created.printFailed : [];
+      setPrintMsg(failed.length
+        ? `The sale is saved, but this did not print: ${failed.join(', ')}. Press Reprint, or check the printer set-up.`
+        : '');
 
       // Refresh sync status
       posApi.sync.status().then(setSyncStatus);

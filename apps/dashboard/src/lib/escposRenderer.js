@@ -64,24 +64,29 @@ function grossToNetMicros(gross, vatRate, ctlRate) {
 function microsToCents(m) {
   return Math.round(m / MICROS);
 }
-function splitTax(lineGrosses, total, vatRate, ctlRate) {
+function splitTax(lineGrosses, total, vatRate, ctlRate, discount = 0) {
   if (!Number.isInteger(total)) {
     throw new Error(`total must be integer cents, got ${total}`);
   }
   if (Math.abs(total) > MAX_SAFE_CENTS) {
     throw new Error(`total ${total} exceeds the safe integer range for micro-cent arithmetic`);
   }
+  if (!Number.isInteger(discount) || discount < 0) {
+    throw new Error(`discount must be non-negative integer cents, got ${discount}`);
+  }
   const summed = lineGrosses.reduce((a, b) => a + b, 0);
-  if (summed !== total) {
-    throw new Error(`line grosses sum to ${summed} but order total is ${total}`);
+  if (summed - discount !== total) {
+    throw new Error(`line grosses sum to ${summed}${discount ? ` less a discount of ${discount}` : ""} but order total is ${total}`);
   }
   const netMicrosPerLine = lineGrosses.map((g) => grossToNetMicros(g, vatRate, ctlRate));
-  const netMicrosTotal = netMicrosPerLine.reduce((a, b) => a + b, 0);
+  const discountMicros = discount ? grossToNetMicros(discount, vatRate, ctlRate) : 0;
+  const netMicrosTotal = netMicrosPerLine.reduce((a, b) => a + b, 0) - discountMicros;
   const subtotal = microsToCents(netMicrosTotal);
   const ctl = microsToCents(Math.round(netMicrosTotal * Math.round(ctlRate * 100) / 1e4));
   const vat = microsToCents(Math.round(netMicrosTotal * Math.round(vatRate * 100) / 1e4));
   return {
     subtotal,
+    discount: microsToCents(discountMicros),
     ctl,
     vat,
     roundOff: total - (subtotal + ctl + vat),
@@ -341,8 +346,10 @@ function renderReceipt(ctx) {
     order.lines.map((l) => l.lineTotal),
     order.total,
     business.vatRate,
-    business.ctlRate
+    business.ctlRate,
+    order.discount ?? 0
   );
+  const tip = Math.max(0, order.tip ?? 0);
   let totalQty = 0;
   let lastHadSubLines = false;
   order.lines.forEach((line, i) => {
@@ -377,15 +384,17 @@ function renderReceipt(ctx) {
   });
   d.line(rule(cols));
   d.line(pair(cols, "Total Qty:", String(totalQty)));
+  if (tax.discount > 0) d.line(pair(cols, "Discount:", `-${formatCents(tax.discount)}`));
   d.line(pair(cols, "SubTotal:", formatCents(tax.subtotal)));
   d.line(rule(cols));
-  d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
+  if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
   d.line(rule(cols));
   d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
   d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
+  if (tip > 0) d.line(pair(cols, "Tip:", formatCents(tip)));
   d.line(rule(cols));
-  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total)}`, { size: "tall", bold: true });
+  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip)}`, { size: "tall", bold: true });
   d.line(rule(cols));
   d.line("Payment Detail:", { bold: true });
   d.line(rule(cols));
@@ -476,6 +485,13 @@ function renderShiftReport(r, paperWidthMm) {
   d.line(rule(cols));
   d.line(pair(cols, "Orders", String(r.orderCount)));
   d.line(pair(cols, "Gross sales", money(r.grossSales)));
+  if (r.refunds != null && r.refunds > 0) {
+    d.line(pair(cols, "- Refunds", money(r.refunds)));
+    d.line(pair(cols, "= Net sales", money(r.netSales ?? r.grossSales - r.refunds)));
+  }
+  if (r.vat != null) d.line(pair(cols, "incl. VAT", money(r.vat)));
+  if (r.ctl != null) d.line(pair(cols, "incl. CTL", money(r.ctl)));
+  if (r.tips != null && r.tips > 0) d.line(pair(cols, "Tips (in payments)", money(r.tips)));
   d.line(pair(cols, "Voids", String(r.voidCount)));
   d.line(rule(cols));
   d.line("CASH RECONCILIATION", { bold: true });

@@ -50,7 +50,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type { CartItem } from '../../lib/cart';
-import { cartSubtotal, extractVat } from '../../lib/cart';
+import { cartSubtotal, extractTaxes } from '../../lib/cart';
+import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category } from '../../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -361,7 +362,11 @@ export default function MinimartPOS({
 
   // ── Cart totals ────────────────────────────────────────────────────────────
   const subtotal = cartSubtotal(cart);
-  const vat      = extractVat(subtotal, VAT_RATE);
+  // A349: the business's own VAT (and levy, if any) — was a fixed 16 %.
+  const { business: biz } = useBusiness();
+  const vatRate  = Number(biz?.vat_rate ?? VAT_RATE);
+  const ctlRate  = Number(biz?.ctl_rate ?? 0) || 0;
+  const { vat, ctl } = extractTaxes(subtotal, vatRate, ctlRate);
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   // ── Scan bar status colour ─────────────────────────────────────────────────
@@ -615,10 +620,16 @@ export default function MinimartPOS({
               <div style={s.totalsBlock}>
                 <div style={s.totalRow}>
                   <span style={s.totalLabel}>Subtotal</span>
-                  <span style={s.totalValue}>{fmt(subtotal - vat, currency)}</span>
+                  <span style={s.totalValue}>{fmt(subtotal - vat - ctl, currency)}</span>
                 </div>
+                {ctl > 0 && (
+                  <div style={s.totalRow}>
+                    <span style={s.totalLabel}>CTL ({ctlRate}%)</span>
+                    <span style={s.totalValue}>{fmt(ctl, currency)}</span>
+                  </div>
+                )}
                 <div style={s.totalRow}>
-                  <span style={s.totalLabel}>VAT ({VAT_RATE}%)</span>
+                  <span style={s.totalLabel}>VAT ({vatRate}%)</span>
                   <span style={s.totalValue}>{fmt(vat, currency)}</span>
                 </div>
                 <div style={{ ...s.totalRow, ...s.totalRowGrand }}>

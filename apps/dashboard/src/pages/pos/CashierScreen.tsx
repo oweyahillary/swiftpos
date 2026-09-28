@@ -8,7 +8,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import type { BusinessMode } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { api } from '../../lib/api';
-import { cartSubtotal, extractVat, generateOrderNumber } from '../../lib/cart';
+import { cartSubtotal, extractTaxes, generateOrderNumber } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
 import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, OrderType } from '../../types';
 import PaymentModal from './PaymentModal';
@@ -742,6 +742,7 @@ export default function CashierScreen() {
         orderType: (activeKey && openOrders[activeKey]?.orderType) || (activeKey && openOrders[activeKey]?.tableId ? 'dine_in' : 'retail'),
         cashierName: session?.staffName ?? 'Cashier',
         total: orderTotal,
+        discount: totalDiscount,   // A349: the lines sum to total + discount
         tableNumber: tableName,
         footerMessage: printerSettings.footerMessage,
         comboItems,
@@ -800,6 +801,7 @@ export default function CashierScreen() {
           orderType: otype,
           cashierName: session.staffName ?? 'Cashier',
           total: orderTotal,
+          discount: totalDiscount,
           tableNumber: order.tableId ? order.tableName : undefined,
           comboItems, categories, kitchenExclusions,
           kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
@@ -841,7 +843,6 @@ export default function CashierScreen() {
   const subtotal = isParking && parkingBill
     ? parkingBill.amount
     : cartSubtotal(cart);
-  const vatAmount = extractVat(subtotal, VAT_RATE);
   const loyaltyDiscount = loyaltyState?.discountAmount ?? 0;
   // Auto-applied promotion discount
   const autoPromoDiscount = activePromos.reduce((total, promo) => {
@@ -857,6 +858,11 @@ export default function CashierScreen() {
   const promoDiscount = (discountState?.discount_amount ?? 0) + autoPromoDiscount;
   const totalDiscount = loyaltyDiscount + promoDiscount;
   const orderTotal = Math.max(0, subtotal - totalDiscount);
+  // A349: VAT and CTL at the business's own rates, on the bill AFTER the discount — as the till and the cloud charge it.
+  // (Was a fixed 16 % on the undiscounted subtotal, with no levy: wrong on screen for a CTL business or any discount.)
+  const vatRate = Number(business?.vat_rate ?? VAT_RATE);
+  const ctlRate = Number(business?.ctl_rate ?? 0) || 0;
+  const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(orderTotal, vatRate, ctlRate);
 
   // ── Product filter ─────────────────────────────────────────────────────────
   const filtered = products.filter((p) => {
@@ -1556,9 +1562,15 @@ export default function CashierScreen() {
                 <span style={s.totalValue}>{fmt(subtotal, currency)}</span>
               </div>
               <div style={s.totalRow}>
-                <span style={{ ...s.totalLabel, color: '#475569' }}>VAT ({VAT_RATE}%)</span>
+                <span style={{ ...s.totalLabel, color: '#475569' }}>incl. VAT ({vatRate}%)</span>
                 <span style={{ ...s.totalValue, color: '#475569' }}>{fmt(vatAmount, currency)}</span>
               </div>
+              {ctlRate > 0 && (
+                <div style={s.totalRow}>
+                  <span style={{ ...s.totalLabel, color: '#475569' }}>incl. CTL ({ctlRate}%)</span>
+                  <span style={{ ...s.totalValue, color: '#475569' }}>{fmt(ctlAmount, currency)}</span>
+                </div>
+              )}
               {activePromos.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
                   {activePromos.map(p => (
@@ -2065,6 +2077,7 @@ export default function CashierScreen() {
                 orderType: getOrderType(),
                 cashierName: session?.staffName ?? 'Cashier',
                 total: orderTotal,
+                discount: totalDiscount,
                 tableNumber: activeKey && openOrders[activeKey]?.tableName
                   ? openOrders[activeKey].tableName : undefined,
                 comboItems, categories, kitchenExclusions,

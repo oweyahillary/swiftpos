@@ -930,9 +930,9 @@ export function registerIpcHandlers() {
     // bound on this terminal was skipped in silence. That is register D8, and
     // with the HTML fallback gone there is no second system to catch it: the
     // cashier must be told, or a bag leaves with items missing.
-  ): { skipped: string[] } {
+  ): { skipped: string[]; failed: string[] } {
     try {
-      if (!escposEnabled()) return { skipped: [] };
+      if (!escposEnabled()) return { skipped: [], failed: [] };
 
       const db = getLocalDb();
       const cfg = getDeviceConfig();
@@ -985,6 +985,9 @@ export function registerIpcHandlers() {
           payments:       payload.payments ?? [],
           changeGiven:    Number(payload.change_given ?? 0),
           total:          Number(payload.total ?? 0),
+          // A349: the BILL is after the discount and excludes the tip; the receipt needs both to reconcile and print.
+          discount:       Number(payload.discount_amount ?? 0),
+          tip:            Number(payload.tip_amount ?? 0),
           // "How many kitchen tickets did this order produce" — the number the
           // expeditor counts against what arrives at the pass. Counted from
           // stations that will ACTUALLY print here; a station with no printer
@@ -1025,12 +1028,11 @@ export function registerIpcHandlers() {
         kinds,
       );
 
-      return { skipped: saleResult?.skipped ?? [] };
+      return { skipped: saleResult?.skipped ?? [], failed: saleResult?.failed ?? [] };
     } catch (e) {
       console.error('[escpos] queueing tickets failed (non-blocking):', e);
-      // NEVER THROWS — it runs after the money is taken. An empty list is not a
-      // claim that everything printed; the console line above is the record.
-      return { skipped: [] };
+      // NEVER THROWS — it runs after the money is taken. A349: the failure is also returned so the cashier is told.
+      return { skipped: [], failed: ['all tickets'] };
     }
   }
 
@@ -1089,8 +1091,9 @@ export function registerIpcHandlers() {
     // `skipped` reaches the renderer so the cashier is told which station
     // produced nothing. Previously this returned a bare { ok: true } and the
     // information was discarded here — D8.
-    const { skipped } = queueThermal(payload, ['kitchen', 'dispatch']);
-    return { ok: true, skipped };
+    const { skipped, failed } = queueThermal(payload, ['kitchen', 'dispatch']);
+    // A349: a ticket that could not be produced is named alongside the stations with no printer.
+    return { ok: true, skipped: [...skipped, ...failed.map((f) => `${f} (could not be produced)`)] };
   });
 
   /**
@@ -1108,7 +1111,8 @@ export function registerIpcHandlers() {
     reprintCount += 1;
     // Marked as a duplicate on the paper itself. An unmarked second copy of a
     // receipt is the thing an auditor cannot tell from a second sale.
-    queueThermal(lastOrderPayload, ['receipt'], { at: new Date(), count: reprintCount });
+    const r = queueThermal(lastOrderPayload, ['receipt'], { at: new Date(), count: reprintCount });
+    if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the till log.' };
     return { ok: true };
   });
 
@@ -1124,7 +1128,8 @@ export function registerIpcHandlers() {
       return { ok: false, error: 'No stored receipt for this order on this terminal.' };
     }
     try {
-      queueThermal(JSON.parse(row.payload), ['receipt'], { at: new Date(), count: 1 });
+      const r = queueThermal(JSON.parse(row.payload), ['receipt'], { at: new Date(), count: 1 });
+      if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the till log.' };
       return { ok: true };
     } catch {
       return { ok: false, error: 'Could not rebuild this receipt.' };
@@ -1152,12 +1157,14 @@ export function registerIpcHandlers() {
     // here — its production tickets were queued when it was sent, which is the
     // whole reason the split exists. A counter sale has no send step, so it
     // gets everything at once, which is correct there.
-    queueThermal(
+    const printed = queueThermal(
       orderPayload,
       orderPayload?.kot_sent ? ['receipt'] : ['kitchen', 'dispatch', 'receipt'],
     );
 
-    return { orderId };
+    // A349: a ticket that could not be produced reaches the sale screen (a missing printer is not a failure — that is
+    // "skipped", and a till with no receipt printer would otherwise be nagged on every sale).
+    return { orderId, printFailed: printed.failed };
   });
 
   // ── Printing (native — replaces QZ Tray on the desktop) ──

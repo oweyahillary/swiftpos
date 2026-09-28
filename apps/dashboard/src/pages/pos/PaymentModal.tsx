@@ -3,7 +3,7 @@ import { methodColour, methodTint } from '../../lib/paymentColours';
 import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
-import { generateOrderNumber } from '../../lib/cart';
+import { generateOrderNumber, extractTaxes } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
 import { capDiscountPct } from './cashier/types';
 import type { Business, OrderType } from '../../types';
@@ -207,6 +207,10 @@ export default function PaymentModal({
   // The total actually charged: subtotal minus the capped discount. `total` came
   // in reflecting the uncapped discount, so recompute rather than trust it.
   const chargedTotal  = Math.round((subtotal - cappedDiscount) * 100) / 100;
+  // A349: VAT and the levy on what is actually CHARGED (after the capped discount), at the business's own rates — the
+  // figures the receipt shows and the payload carries (the cloud recomputes and stores its own; they now agree).
+  const taxes = extractTaxes(chargedTotal, Number(business?.vat_rate ?? 16), Number(business?.ctl_rate ?? 0) || 0);
+  const chargedVat = taxes.vat, chargedCtl = taxes.ctl;
 
   // Tip is added on top of the order total — this is what the customer pays.
   const grandTotal    = chargedTotal + tipAmount;
@@ -271,7 +275,8 @@ export default function PaymentModal({
       order_type:      orderType,
       table_number:    tableNumber ?? null,
       subtotal,
-      vat_amount:      vatAmount,
+      vat_amount:      chargedVat,
+      ctl_amount:      chargedCtl,
       discount_amount: cappedDiscount,
       discount_id:     discountState?.discount.id ?? null,
       total:           chargedTotal,
@@ -446,7 +451,9 @@ export default function PaymentModal({
       const order = buildReceiptOrder({
         orderNumber: completedOrder.orderNumber,
         orderType, cashierName: session?.staffName ?? 'Cashier',
-        cart, total: grandTotal, change: completedOrder.change,
+        // A349: the BILL (after discount, before tip) with the discount and tip beside it — grandTotal (bill + tip)
+        // could never reconcile with the lines, so the thermal receipt threw and fell back to the browser dialog.
+        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, change: completedOrder.change,
         payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
         tableNumber,
       });
@@ -528,7 +535,9 @@ export default function PaymentModal({
               cart={cart}
               total={chargedTotal}
               subtotal={subtotal}
-              vatAmount={vatAmount}
+              vatAmount={chargedVat}
+              ctlAmount={chargedCtl}
+              ctlRate={Number(business?.ctl_rate ?? 0) || 0}
               currency={currency}
               payments={completedOrder.payments}
               tendered={completedOrder.tendered}

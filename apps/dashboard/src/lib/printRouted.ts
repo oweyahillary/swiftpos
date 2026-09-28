@@ -46,7 +46,12 @@ export interface PrintRoutedArgs {
   orderNumber: string;
   orderType: string;
   cashierName: string;
+  /** The BILL: after the discount, without any tip. */
   total: number;
+  /** A349: the discount taken off the cart lines (the lines sum to total + discount). */
+  discount?: number;
+  /** A349: tip on top of the bill. */
+  tip?: number;
   change?: number;
   payments?: { method: string; amount: number }[];
   tableNumber?: string;
@@ -136,6 +141,8 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
     payments: (a.payments ?? []).map(p => ({ label: p.method, amount: toCents(p.amount) })),
     changeGiven: toCents(a.change ?? 0),
     total: toCents(a.total),
+    discount: toCents(a.discount ?? 0),
+    tip: toCents(a.tip ?? 0),
     kotCount: 0,
   } as any;
   const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0,

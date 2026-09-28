@@ -2,7 +2,7 @@
 
 Interactive copy: `docs/checklists/VERIFY-CHECKLIST-v0.6.16.html` (Pass / Fail / Skip, a note required on a Fail, progress kept in the browser, results in the `R1: PASS — note … Summary … Failed:` format). This markdown is the same list, generated from it.
 
-0.6.16 adds A348 (desktop updates approved per client in the admin portal, held by default; tills ask the cloud, never GitHub) and A347 (teal icon), and carries every 0.6.15 check (Stock only with the web POS, a manager signed in offline) plus the 3 skipped on 0.6.14. Migration 108, then the cloud and admin portal, then 0.6.16 on the tills. Do §R first. **Record** = send a screenshot/photo. A **Fail** needs a note.
+0.6.16 adds A348 (desktop updates approved per client in the admin portal, held by default; tills ask the cloud, never GitHub) A349 (money: discounted receipts print, tips on receipts, CTL in the Overview and Z-report, reports refund-true, web receipts with CTL) and A347 (teal icon), and carries every 0.6.15 check (Stock only with the web POS, a manager signed in offline) plus the 3 skipped on 0.6.14. Migration 108, then the cloud and admin portal, then 0.6.16 on the tills. Do §R first. **Record** = send a screenshot/photo. A **Fail** needs a note.
 
 ## §R — Rollout (do these first, in order) — prerequisite for everything below
 
@@ -67,6 +67,52 @@ Admin portal → Clients → a client → the “Desktop updates” box (under W
 1. On a till on 0.6.16: desktop shortcut, taskbar, the window’s title-bar icon. (Restart the PC if Windows still shows the old one.)
 
 **Expected:** The S and border are **teal**, not green.
+
+## §M — Money on receipts and reports (pre-release review) — closes A349
+
+On a till of a CTL business (e.g. VAT 16 %, CTL 2 %) unless a check says otherwise. Keep the receipts.
+
+### M1 — A DISCOUNTED sale prints its receipt · **Record**
+1. Ring 2–3 items, apply a 10 % discount, take cash.
+2. Compare the printed receipt with the screen.
+
+**Expected:** The receipt **prints** (it used not to). It shows Discount, SubTotal, CTL, VAT, Round Off, Total — and they add up to the Total.
+
+### M2 — A TIP is on the receipt · **Record**
+1. Ring a sale, add a tip (e.g. 50), pay.
+
+**Expected:** Paper: **Tip 50.00** after Total, and **PAY = Total + tip**. Screen receipt: Round Off 0.00 (not −50).
+
+### M3 — Overview shows VAT and CTL · **Record**
+1. Manager → Overview (today).
+
+**Expected:** Under the four boxes: **VAT … CTL …** (and Tips / Discounts when there were any).
+
+### M4 — A refund is taken off everywhere · **Record**
+1. Refund one sale (online, owner/manager).
+2. Look at Overview, then Orders → export the Daily Sales Report.
+
+**Expected:** Overview revenue drops by the refund and shows **Refunds −…**; VAT and CTL drop by the refund's share. The Daily report's **Total Gross** equals the Overview revenue; its Total Sale is not negative.
+
+### M5 — Z-report shows the shift's money in full · **Record**
+1. Shift → the Z-report, on screen and printed.
+
+**Expected:** Gross sales, − Refunds, = Net sales, incl. VAT, incl. **CTL**, Tips (when any). Expected cash as before.
+
+### M6 — Overview hours are local time
+1. Look at the hourly chart.
+
+**Expected:** A sale at 10:15 is in the **10:00** bar (it used to show 07:00).
+
+### M7 — Web POS receipt (CTL business) · **Record**
+1. On the web POS, ring a discounted sale with a tip and print to the thermal printer.
+
+**Expected:** It prints straight to the printer (no browser dialog), with the **CTL** line, and the same VAT/CTL as the till would show.
+
+### M8 — A business WITHOUT CTL
+1. On a VAT-only business (or a test one), print a receipt.
+
+**Expected:** No “CTL (0%)” line.
 
 ## §N — Stock only with the web POS — closes A346
 

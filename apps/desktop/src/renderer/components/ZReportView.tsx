@@ -62,6 +62,12 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {rule}
       {row('Orders', String(totals.orderCount))}
       {row('Gross sales', money(totals.grossSales))}
+      {/* A349: refunds, what was kept, the taxes in it (CTL where levied) and tips — the shift's money in full. */}
+      {(totals.refunds ?? 0) > 0 && row('− Refunds', money(totals.refunds!))}
+      {(totals.refunds ?? 0) > 0 && row('= Net sales', money(totals.netSales ?? totals.grossSales - totals.refunds!))}
+      {totals.vat != null && row('incl. VAT', money(totals.vat))}
+      {totals.ctlLevied && row('incl. CTL', money(totals.ctl ?? 0))}
+      {(totals.tips ?? 0) > 0 && row('Tips (in payments)', money(totals.tips!))}
       {row('Voids', String(totals.voidCount))}
 
       {rule}

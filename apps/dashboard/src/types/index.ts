@@ -9,6 +9,8 @@ export interface Business {
   phone?: string | null;
   tax_pin?: string | null;
   vat_rate?: number;
+  /** Catering/Tourism Levy % (A349: the web's printed receipts use it; 0 / absent = not levied). */
+  ctl_rate?: number | null;
   logo_url?: string | null;
 }
 

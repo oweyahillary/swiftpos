@@ -16,6 +16,7 @@ import { getOpenShift } from './syncEngine';
 import { getDeviceConfig, canSell } from './deviceConfig';
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
+import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
 
 /**
  * A334 (2026-09-26): cash on a SHARED drawer that this till does not hold — sales, floats and
@@ -59,6 +60,15 @@ export interface ZReport {
   totals: {
     orderCount: number;
     grossSales: number;
+    /** A349: refunded on this shift's orders (already out of the drawer as negative payment rows), sales kept, the
+     *  taxes on them (reduced by any refund — the cloud's rule), whether CTL is levied, and tips (in the payments, not
+     *  revenue). Optional so an older caller or a stored report still renders. */
+    refunds?: number;
+    netSales?: number;
+    vat?: number;
+    ctl?: number;
+    ctlLevied?: boolean;
+    tips?: number;
     voidCount: number;
     cashSales: number;
     floatIn: number;
@@ -259,10 +269,16 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
   const floatIn  = (floats.find(x => x.type === 'float_in')?.amt  ?? 0) + (f ? Number(f.float_in) : 0);
   const floatOut = (floats.find(x => x.type === 'float_out')?.amt ?? 0) + (f ? Number(f.float_out) : 0);
 
+  // A349: refunds, the taxes (reduced by the refunded share — the cloud's rule) and tips, so the Z-report states the
+  // shift's money in full. Cash reconciliation is unchanged: refunds already leave the drawer as negative payment rows.
   const agg = db.prepare(`
-    SELECT COUNT(*) AS orderCount, COALESCE(SUM(total), 0) AS grossSales
+    SELECT COUNT(*) AS orderCount, COALESCE(SUM(total), 0) AS grossSales,
+           COALESCE(SUM(${refundedSql()}), 0) AS refunds,
+           COALESCE(SUM(${vatKeptSql()}), 0) AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0) AS ctl,
+           COALESCE(SUM(COALESCE(tip_amount, 0)), 0) AS tips
     FROM orders WHERE shift_id=? AND status != 'voided'
-  `).get(shiftId) as { orderCount: number; grossSales: number };
+  `).get(shiftId) as { orderCount: number; grossSales: number; refunds: number; vat: number; ctl: number; tips: number };
 
   const voids = db.prepare(`
     SELECT COUNT(*) AS c FROM orders WHERE shift_id=? AND status='voided'
@@ -326,6 +342,13 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     totals: {
       orderCount: agg.orderCount + (f ? Number(f.orders) : 0),
       grossSales: Number(agg.grossSales),
+      // A349 (this till's own orders, and web sales already downloaded onto it).
+      refunds:    money2(Number(agg.refunds)),
+      netSales:   money2(Number(agg.grossSales) - Number(agg.refunds)),
+      vat:        money2(Number(agg.vat)),
+      ctl:        money2(Number(agg.ctl)),
+      ctlLevied:  Number(getDeviceConfig()?.ctl_rate ?? 0) > 0 || Number(agg.ctl) > 0,
+      tips:       money2(Number(agg.tips)),
       voidCount: voids.c,
       cashSales,
       floatIn,

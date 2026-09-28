@@ -16,6 +16,9 @@ interface Props {
   total: number;
   subtotal: number;
   vatAmount: number;
+  /** A349: the catering levy inside the bill, and its rate (0 = not levied → no line). */
+  ctlAmount?: number;
+  ctlRate?: number;
   currency: string;
   payments: PaymentLine[];
   tendered: number;
@@ -47,7 +50,7 @@ function fmtMethod(method: string) {
 
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
   {
-    business, branchName, orderNumber, cart, total, subtotal, vatAmount, currency,
+    business, branchName, orderNumber, cart, total, subtotal, vatAmount, ctlAmount = 0, ctlRate = 0, currency,
     payments, tendered, change, tip = 0,
     loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName,
     footerMessage = 'Thank you for your business!',
@@ -126,9 +129,11 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
 
       {/* Totals */}
       {line('Subtotal', `${currency} ${fmtMoney(subtotal)}`)}
-      {line(vatLabel, `${currency} ${fmtMoney(vatAmount)}`)}
       {promoDiscount > 0 && line(`${promoName ?? 'Promo discount'}`, `- ${currency} ${fmtMoney(promoDiscount)}`, false, '#92400e')}
       {loyaltyDiscount > 0 && line('Loyalty discount', `- ${currency} ${fmtMoney(loyaltyDiscount)}`, false, '#065f46')}
+      {/* A349: the taxes INSIDE the total (after any discount) — the figures the cloud stores for this sale. */}
+      {line(`incl. ${vatLabel}`, `${currency} ${fmtMoney(vatAmount)}`)}
+      {ctlRate > 0 && line(`incl. CTL (${ctlRate}%)`, `${currency} ${fmtMoney(ctlAmount)}`)}
       <div style={{ borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px' }}>
         {line('TOTAL', `${currency} ${fmtMoney(total)}`, true)}
         {tip > 0 && line('Tip', `${currency} ${fmtMoney(tip)}`)}

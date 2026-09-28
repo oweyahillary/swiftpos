@@ -95,8 +95,12 @@ export interface Order {
   lines: OrderLine[];
   payments: PaymentLeg[];
   changeGiven: Cents;
-  /** Gross tax-inclusive total actually charged. The source of truth. */
+  /** Gross tax-inclusive total actually charged. The source of truth. The BILL: after any discount, never the tip. */
   total: Cents;
+  /** Discount taken off the lines (gross, tax-inclusive). The lines sum to total + discount. Omitted = none. */
+  discount?: Cents;
+  /** Tip on top of the bill. Not a sale and not taxed — printed after the total; the customer pays total + tip. */
+  tip?: Cents;
   /** How many kitchen tickets this order produced, for the Kots line. */
   kotCount: number;
 }

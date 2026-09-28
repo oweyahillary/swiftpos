@@ -53,8 +53,10 @@ function microsToCents(m: Micros): Cents {
 }
 
 export interface TaxBreakdown {
-  /** Net of every line, summed exactly then rounded once. */
+  /** Net of every line, summed exactly then rounded once — less the net of any discount (the taxable net). */
   subtotal: Cents;
+  /** Net of the discount (0 when none). Printed as its own line; already taken out of `subtotal`. */
+  discount: Cents;
   ctl: Cents;
   vat: Cents;
   /** total - (subtotal + ctl + vat). Usually 0 or +/- 1 cent. */
@@ -66,7 +68,7 @@ export interface TaxBreakdown {
 }
 
 /**
- * `lineGrosses` must sum to `total`. It is asserted rather than trusted,
+ * `lineGrosses` must sum to `total` + `discount`. It is asserted rather than trusted,
  * because a receipt whose lines do not add up to its total is worse than no
  * receipt at all — it is evidence in an argument the operator will lose.
  */
@@ -75,6 +77,8 @@ export function splitTax(
   total: Cents,
   vatRate: number,
   ctlRate: number,
+  /** Gross discount taken off the lines (A349). The taxes are charged on what is left, exactly as the sale did. */
+  discount: Cents = 0,
 ): TaxBreakdown {
   if (!Number.isInteger(total)) {
     throw new Error(`total must be integer cents, got ${total}`);
@@ -82,13 +86,19 @@ export function splitTax(
   if (Math.abs(total) > MAX_SAFE_CENTS) {
     throw new Error(`total ${total} exceeds the safe integer range for micro-cent arithmetic`);
   }
+  if (!Number.isInteger(discount) || discount < 0) {
+    throw new Error(`discount must be non-negative integer cents, got ${discount}`);
+  }
   const summed = lineGrosses.reduce((a, b) => a + b, 0);
-  if (summed !== total) {
-    throw new Error(`line grosses sum to ${summed} but order total is ${total}`);
+  if (summed - discount !== total) {
+    throw new Error(`line grosses sum to ${summed}${discount ? ` less a discount of ${discount}` : ''} but order total is ${total}`);
   }
 
   const netMicrosPerLine = lineGrosses.map(g => grossToNetMicros(g, vatRate, ctlRate));
-  const netMicrosTotal = netMicrosPerLine.reduce((a, b) => a + b, 0);
+  // The taxable net: every line's net, less the discount's net (0 when there is none — the arithmetic is then
+  // identical to the undiscounted receipt, byte for byte).
+  const discountMicros = discount ? grossToNetMicros(discount, vatRate, ctlRate) : 0;
+  const netMicrosTotal = netMicrosPerLine.reduce((a, b) => a + b, 0) - discountMicros;
 
   const subtotal = microsToCents(netMicrosTotal);
   const ctl = microsToCents(Math.round((netMicrosTotal * Math.round(ctlRate * 100)) / 10_000));
@@ -96,6 +106,7 @@ export function splitTax(
 
   return {
     subtotal,
+    discount: microsToCents(discountMicros),
     ctl,
     vat,
     roundOff: total - (subtotal + ctl + vat),

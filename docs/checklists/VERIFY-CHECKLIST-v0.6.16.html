@@ -88,7 +88,7 @@
 <body>
 <div class="wrap">
   <h1>SwiftPOS v0.6.16 — rollout verification</h1>
-  <p class="sub">0.6.16: updates approved per client (held by default) · teal icon — plus the 0.6.15 checks (Stock only with the web POS, a manager signed in offline) and the 3 skipped on 0.6.14 · one till (manager + cashier PINs), the admin portal, Supabase · ~50 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
+  <p class="sub">0.6.16: updates approved per client (held by default) · money review (discounted receipts, tips, CTL in reports, refunds) · teal icon — plus the 0.6.15 checks (Stock only with the web POS, a manager signed in offline) and the 3 skipped on 0.6.14 · one till (manager + cashier PINs), the admin portal, Supabase · ~50 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
 
   <div class="card">
     <div class="meta">
@@ -132,6 +132,17 @@ const DATA = [
     ["U3", "Hold again", ["Press <b>Hold</b> on your business → confirm."], "Back to “Held”; the audit log has <b>desktop_update.hold</b>. Leave it held or approved — your choice.", false],
     ["U4", "A new build reaches nobody until approved (do when the next version exists)", ["When the next build (e.g. 0.6.17) is tagged: it appears on GitHub as a <b>pre-release</b> — do NOT untick it.", "Leave every client held; approve only your own business.", "Wait up to an hour with your till open (or restart it)."], "Your till shows “update ready” and installs on close. Another client’s till stays on 0.6.16. Mark SKIP until a newer build exists.", false],
     ["U5", "The new teal icon", ["On a till on 0.6.16: desktop shortcut, taskbar, the window’s title-bar icon. (Restart the PC if Windows still shows the old one.)"], "The S and border are <b>teal</b>, not green.", true],
+  ]],
+
+  ["§M — Money on receipts and reports (pre-release review)", "closes A349", "On a till of a CTL business (e.g. VAT 16 %, CTL 2 %) unless a check says otherwise. Keep the receipts.", [
+    ["M1", "A DISCOUNTED sale prints its receipt", ["Ring 2–3 items, apply a 10 % discount, take cash.", "Compare the printed receipt with the screen."], "The receipt <b>prints</b> (it used not to). It shows Discount, SubTotal, CTL, VAT, Round Off, Total — and they add up to the Total.", true],
+    ["M2", "A TIP is on the receipt", ["Ring a sale, add a tip (e.g. 50), pay."], "Paper: <b>Tip 50.00</b> after Total, and <b>PAY = Total + tip</b>. Screen receipt: Round Off 0.00 (not −50).", true],
+    ["M3", "Overview shows VAT and CTL", ["Manager → Overview (today)."], "Under the four boxes: <b>VAT … CTL …</b> (and Tips / Discounts when there were any).", true],
+    ["M4", "A refund is taken off everywhere", ["Refund one sale (online, owner/manager).", "Look at Overview, then Orders → export the Daily Sales Report."], "Overview revenue drops by the refund and shows <b>Refunds −…</b>; VAT and CTL drop by the refund's share. The Daily report's <b>Total Gross</b> equals the Overview revenue; its Total Sale is not negative.", true],
+    ["M5", "Z-report shows the shift's money in full", ["Shift → the Z-report, on screen and printed."], "Gross sales, − Refunds, = Net sales, incl. VAT, incl. <b>CTL</b>, Tips (when any). Expected cash as before.", true],
+    ["M6", "Overview hours are local time", ["Look at the hourly chart."], "A sale at 10:15 is in the <b>10:00</b> bar (it used to show 07:00).", false],
+    ["M7", "Web POS receipt (CTL business)", ["On the web POS, ring a discounted sale with a tip and print to the thermal printer."], "It prints straight to the printer (no browser dialog), with the <b>CTL</b> line, and the same VAT/CTL as the till would show.", true],
+    ["M8", "A business WITHOUT CTL", ["On a VAT-only business (or a test one), print a receipt."], "No “CTL (0%)” line.", false],
   ]],
 
   ["§N — Stock only with the web POS", "closes A346", "Stock is a web POS (pro) feature. The till learns whether the business has the web POS on its catalogue sync — after installing, sign in online once (or Technician → Force sync) before N1.", [

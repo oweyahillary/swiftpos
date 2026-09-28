@@ -39,6 +39,7 @@
 import { isNodeRole } from './deviceConfig';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
+import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
 
 export type RangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
 
@@ -165,17 +166,23 @@ export function getSalesSummary(range?: ReportRange) {
   const db = getLocalDb();
   const { from, to } = range ?? todayRange();
 
+  // A349: refund-true, with the levy. Revenue is what was KEPT (gross − refunds) — the same figure the Daily Sales
+  // Report and the dashboard call gross sales; VAT and CTL are the stored amounts reduced by the refunded share
+  // (orderMoney.ts, the cloud's orderTax rule). Before: refunds ignored, no CTL at all.
   const row = db.prepare(`
     SELECT
-      COUNT(*)                        AS order_count,
-      COALESCE(SUM(total), 0)        AS total_revenue,
-      COALESCE(SUM(vat_amount), 0)   AS total_vat,
-      COALESCE(SUM(discount_amount),0) AS total_discount,
-      COALESCE(AVG(total), 0)        AS avg_order_value
+      COUNT(*)                                   AS order_count,
+      COALESCE(SUM(total), 0)                    AS gross_before_refunds,
+      COALESCE(SUM(${refundedSql()}), 0)         AS total_refunded,
+      COALESCE(SUM(${vatKeptSql()}), 0)          AS total_vat,
+      COALESCE(SUM(${ctlKeptSql()}), 0)          AS total_ctl,
+      COALESCE(SUM(discount_amount),0)           AS total_discount,
+      COALESCE(SUM(COALESCE(tip_amount, 0)), 0)  AS total_tips
     FROM orders
     WHERE status = 'completed'
       AND created_at >= ? AND created_at <= ?
   `).get(from, to) as any;
+  const netRevenue = Number(row.gross_before_refunds) - Number(row.total_refunded);
 
   // Payment method split — isolated: a schema-drift throw here (e.g. an old local
   // payments table on a migrated db) must NOT take the revenue row down with it.
@@ -199,13 +206,13 @@ export function getSalesSummary(range?: ReportRange) {
   try {
     hourly = db.prepare(`
     SELECT
-      strftime('%H', created_at) AS hour,
+      strftime('%H', created_at, 'localtime') AS hour,
       COUNT(*)                   AS order_count,
-      COALESCE(SUM(total), 0)   AS revenue
+      COALESCE(SUM(total - ${refundedSql()}), 0) AS revenue
     FROM orders
     WHERE status = 'completed'
       AND created_at >= ? AND created_at <= ?
-    GROUP BY strftime('%H', created_at)
+    GROUP BY strftime('%H', created_at, 'localtime')
     ORDER BY hour
   `).all(from, to) as { hour: string; order_count: number; revenue: number }[];
   } catch (err) {
@@ -214,11 +221,19 @@ export function getSalesSummary(range?: ReportRange) {
 
   return {
     summary: {
-      totalRevenue:   Number(row.total_revenue),
+      // A349: net of refunds (was the gross before refunds).
+      totalRevenue:   money2(netRevenue),
       totalOrders:    Number(row.order_count),
-      avgOrderValue:  Number(row.avg_order_value),
-      totalVat:       Number(row.total_vat),
-      totalDiscount:  Number(row.total_discount),
+      avgOrderValue:  Number(row.order_count) > 0 ? money2(netRevenue / Number(row.order_count)) : 0,
+      totalVat:       money2(Number(row.total_vat)),
+      // A349: the catering levy, and whether this business levies it (so the screen shows the line only then).
+      totalCtl:       money2(Number(row.total_ctl)),
+      ctlLevied:      Number(getDeviceConfig()?.ctl_rate ?? 0) > 0 || Number(row.total_ctl) > 0,
+      totalRefunded:  money2(Number(row.total_refunded)),
+      grossBeforeRefunds: money2(Number(row.gross_before_refunds)),
+      totalDiscount:  money2(Number(row.total_discount)),
+      // Tips ride in the payment legs but are not revenue — shown so the payment total reconciles.
+      totalTips:      money2(Number(row.total_tips)),
     },
     paymentMethods: Object.fromEntries(methods.map(m => [m.method, Number(m.amount)])),
     hourly: hourly.map(h => ({ hour: parseInt(h.hour), revenue: Number(h.revenue), orders: Number(h.order_count) })),
@@ -265,7 +280,7 @@ export function getRecentOrders(limit = 30, range?: ReportRange) {
 
   const orders = db.prepare(`
     SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
-           discount_amount, tip_amount, created_at, cashier_id, shift_id, device_id,
+           discount_amount, tip_amount, refunded_amount, created_at, cashier_id, shift_id, device_id,
            origin   -- 'web' = rung on the web POS on this till's drawer (cross-sync stage 1)
     FROM orders
     ${where}

@@ -256,7 +256,9 @@ function renderReceipt(ctx: PrintContext): Document {
     order.total,
     business.vatRate,
     business.ctlRate,
+    order.discount ?? 0,
   );
+  const tip = Math.max(0, order.tip ?? 0);
 
   let totalQty = 0;
 
@@ -307,16 +309,21 @@ function renderReceipt(ctx: PrintContext): Document {
 
   d.line(rule(cols));
   d.line(pair(cols, 'Total Qty:', String(totalQty)));
+  // A349: the discount, net of tax like every figure above it; SubTotal is what is left, and the taxes below are on it.
+  if (tax.discount > 0) d.line(pair(cols, 'Discount:', `-${formatCents(tax.discount)}`));
   d.line(pair(cols, 'SubTotal:', formatCents(tax.subtotal)));
   d.line(rule(cols));
-  d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
+  // A349: the levy only where it is levied — a business without CTL no longer prints "CTL (0%) 0.00".
+  if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
   d.line(rule(cols));
   d.line(pair(cols, 'Round Off:', formatCents(tax.roundOff)));
   d.line(pair(cols, 'Total:', formatCents(tax.total)), { bold: true });
+  // A349: a tip is not a sale and carries no tax — shown after the total, and the customer pays both.
+  if (tip > 0) d.line(pair(cols, 'Tip:', formatCents(tip)));
   d.line(rule(cols));
 
-  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total)}`, { size: 'tall', bold: true });
+  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip)}`, { size: 'tall', bold: true });
   d.line(rule(cols));
 
   d.line('Payment Detail:', { bold: true });

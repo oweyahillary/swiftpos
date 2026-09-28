@@ -246,6 +246,10 @@ export interface SaleForPrint {
   payments: Array<{ method: string; amount: number }>;
   changeGiven: number;
   total: number;
+  /** A349: the discount taken off the cart lines (the lines sum to total + discount). 0 = none. */
+  discount?: number;
+  /** A349: the tip on top of the bill (printed after the total; PAY = total + tip). 0 = none. */
+  tip?: number;
   kotCount: number;
   /** Set on any copy after the first. Drives the Duplicate Print banner. */
   reprint?: { at: Date; count: number };
@@ -302,12 +306,12 @@ export function printSale(
    * comes out together, which is correct there.
    */
   kinds: Array<'kitchen' | 'dispatch' | 'receipt'> = ['kitchen', 'dispatch', 'receipt'],
-): { queued: number; skipped: string[] } {
+): { queued: number; skipped: string[]; failed: string[] } {
   try {
-    if (!escposEnabled()) return { queued: 0, skipped: [] };
+    if (!escposEnabled()) return { queued: 0, skipped: [], failed: [] };
 
     const targets = stations.filter(s => kinds.includes(s.kind));
-    if (targets.length === 0) return { queued: 0, skipped: [] };
+    if (targets.length === 0) return { queued: 0, skipped: [], failed: [] };
 
     // Routing is computed against ALL stations, not just the ones being printed
     // now: a line's stationIds must mean the same thing on the kitchen ticket
@@ -360,14 +364,18 @@ export function printSale(
         payments,
         changeGiven:    toCents(sale.changeGiven),
         total:          toCents(sale.total),
+        // A349: without these a discounted sale's receipt could not reconcile its lines and never printed.
+        discount:       toCents(sale.discount ?? 0),
+        tip:            toCents(sale.tip ?? 0),
         kotCount:       sale.kotCount,
       },
     };
 
-    const { queued, skipped } = queueTickets([ctx], targets);
-    return { queued: queued.length, skipped };
+    const { queued, skipped, failed } = queueTickets([ctx], targets);
+    return { queued: queued.length, skipped, failed };
   } catch (err) {
     console.error('[escpos] printSale failed (non-blocking):', err);
-    return { queued: 0, skipped: [] };
+    // A349: named, so the cashier is told the order's tickets did not print (it used to be the log only).
+    return { queued: 0, skipped: [], failed: ['all tickets'] };
   }
 }

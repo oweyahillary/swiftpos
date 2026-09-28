@@ -143,9 +143,12 @@ function assignmentFor(stationId: string): Assignment | null {
 export function queueTickets(
   contexts: Omit<PrintContext, 'station'>[],
   stations: StationConfig[],
-): { queued: string[]; skipped: string[] } {
+): { queued: string[]; skipped: string[]; failed: string[] } {
   const queued: string[] = [];
   const skipped: string[] = [];
+  // A349: a ticket that cannot be RENDERED (bad data) is named here and the loop goes on — it never takes the other
+  // stations' tickets down with it, and the cashier is told (order:create → the sale screen), not just the log.
+  const failed: string[] = [];
 
   for (const station of stations) {
     const assignment = assignmentFor(station.id);
@@ -166,12 +169,19 @@ export function queueTickets(
         continue;
       }
 
-      const doc = renderTicket({ ...base, station: resolved });
-      const bytes = toEscPos(doc, {
-        cut: resolved.cutPaper,
-        openDrawer: resolved.openCashDrawer,
-        feedBeforeCut: resolved.feedBeforeCut,
-      });
+      let bytes: ReturnType<typeof toEscPos>;
+      try {
+        const doc = renderTicket({ ...base, station: resolved });
+        bytes = toEscPos(doc, {
+          cut: resolved.cutPaper,
+          openDrawer: resolved.openCashDrawer,
+          feedBeforeCut: resolved.feedBeforeCut,
+        });
+      } catch (err) {
+        console.error(`[escpos] ${station.name} ticket for ${base.order.billNumber} could not be rendered:`, err);
+        failed.push(station.name);
+        continue;
+      }
       queued.push(spool!.enqueue({
         stationId: station.id,
         stationName: station.name,
@@ -182,7 +192,7 @@ export function queueTickets(
       }));
     }
   }
-  return { queued, skipped };
+  return { queued, skipped, failed };
 }
 
 function registerIpc(): void {
