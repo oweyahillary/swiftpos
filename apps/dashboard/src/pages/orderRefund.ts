@@ -12,3 +12,19 @@
 export function isRefunded(payments: { status?: string }[] | null | undefined): boolean {
   return Array.isArray(payments) && payments.some((p) => p?.status === 'refunded');
 }
+
+/**
+ * A359 (2026-09-28): may this order be refunded from the web POS / manager dashboard order list? Owner, on v0.6.18:
+ * "no refund option in orders or order history" (POS Menu → Orders and the manager dashboard's Orders both render
+ * POSOrderHistoryTab, which only reprinted). A completed sale, not already refunded, by someone holding orders.void;
+ * the cloud (POST /api/orders/:id/refund) decides the rest and asks a manager's own PIN (A355).
+ */
+export function canRefundOrder(
+  order: { status?: string; payments?: { status?: string }[] | null },
+  mayVoid: boolean,
+): boolean {
+  return mayVoid && order.status === 'completed' && !isRefunded(order.payments);
+}
+
+/** The reasons offered — the till's refund list (VoidModal), so both surfaces record the same words. */
+export const REFUND_REASONS = ['Item returned', 'Wrong order given', 'Quality complaint', 'Charged twice', 'Order not delivered', 'Other'];

@@ -78,10 +78,17 @@ const pos = read('src/renderer/pages/POSPage.tsx');
 ok('POSPage: History buttons from reverseAction, gated on canVoidRefund (no more "canVoid = true")', () => {
   assert.match(pos, /const canVoid = canVoidRefund;/);
   assert.ok(!/const canVoid = true;/.test(pos));
-  assert.match(pos, /const reverse  = reverseAction\(o\);/);
+  assert.match(pos, /const reverse  = canVoid \? reverseAction\(o\) : null;/);
   assert.match(pos, /\{reverse && \(\s*<button[\s\S]*?\{reverse\.label\}/);
   assert.ok(!/ageMin <= 30/.test(pos) && !/>expired</.test(pos), 'the 30-minute cut-off and the "expired" label are gone');
   assert.match(pos, /\{isRefunded\(o\) && \(/);
+});
+ok('A358: History ITSELF is for everyone (0.6.18 hid it from cashiers) — only its reversal buttons are gated', () => {
+  const i = pos.indexOf('{/* Order history (everyone)');
+  assert.ok(i > 0, 'the History button block');
+  const block = pos.slice(i, pos.indexOf('History\n', i) + 8);
+  assert.ok(!/canVoid &&/.test(block), 'the History button is not wrapped in canVoid');
+  assert.match(pos, /max-w-4xl max-h-\[80vh\]/, 'the wider window (the longer buttons no longer scroll sideways)');
 });
 ok('App passes canVoidRefund from the signed-in staff\'s permissions', () => {
   assert.match(read('src/renderer/App.tsx'), /canVoidRefund=\{mayVoidRefund\(staff\)\}/);

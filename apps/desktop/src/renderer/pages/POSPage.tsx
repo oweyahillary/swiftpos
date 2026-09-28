@@ -181,8 +181,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [voidTarget, setVoidTarget] = useState<any | null>(null);
 
-  // A355: only people who may void/refund (orders.void, or the owner) see History's reversal buttons — the owner's
+  // A355: only people who may void/refund (orders.void, or the owner) see History's reversal BUTTONS — the owner's
   // rule (A336): voids and refunds by owner / manager, cashiers neither. The cloud enforces it too.
+  // A358 (0.6.19): History ITSELF is for everyone — 0.6.18 gated the History button on this too, and cashiers lost
+  // their order list (owner: "The cashier should be able to see their orders", all orders).
   const canVoid = canVoidRefund;
 
   const currency = business.currency ?? 'KES';
@@ -998,24 +1000,22 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               <span className={heldOrders.length > 0 ? 'text-amber-400' : ''}>held</span>
             </button>
           )}
-          {/* Order history + void */}
-          {canVoid && (
-            <button
-              onClick={async () => {
-                setShowHistory(true);
-                setLoadingHistory(true);
-                try {
-                  const orders = await posApi.manager.recentOrders();
-                  setRecentOrders(orders);
-                } catch { setRecentOrders([]); }
-                finally { setLoadingHistory(false); }
-              }}
-              className="text-xs text-gray-300 hover:text-white transition-colors"
-              title="Order history / void"
-            >
-              History
-            </button>
-          )}
+          {/* Order history (everyone) + void/refund (canVoid only, per row) */}
+          <button
+            onClick={async () => {
+              setShowHistory(true);
+              setLoadingHistory(true);
+              try {
+                const orders = await posApi.manager.recentOrders();
+                setRecentOrders(orders);
+              } catch { setRecentOrders([]); }
+              finally { setLoadingHistory(false); }
+            }}
+            className="text-xs text-gray-300 hover:text-white transition-colors"
+            title={canVoid ? 'Order history / void / refund' : 'Order history'}
+          >
+            History
+          </button>
           {/* Printer settings */}
           <button
             onClick={() => setShowPrinters(true)}
@@ -1488,11 +1488,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       {showHistory && (
         <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-40 p-4"
           onClick={e => e.target === e.currentTarget && setShowHistory(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-300 text-xs mt-0.5">Last 30 orders · void within 30 minutes of the sale, refund any time after</p>
+                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? 'Last 30 orders · void within 30 minutes of the sale, refund any time after' : 'Last 30 orders on this till'}</p>
                 {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
               <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
@@ -1518,7 +1518,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                       const method   = o.payments?.[0]?.method ?? '—';
                       const ageMin   = ageMinutes(o);
                       // A355: "Void / Refund" inside the void window, "Refund" after it (it used to vanish at 30 min).
-                      const reverse  = reverseAction(o);
+                      const reverse  = canVoid ? reverseAction(o) : null;
                       const fmtMoney = (n: number) =>
                         `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (

@@ -38,6 +38,8 @@ ok('the committed web bundle ships the rule: a soda loses the kitchen, BBQ-sauce
   const terms = E.kitchenExclusionTerms([]);
   assert.deepEqual(E.stripKitchenIfExcluded('Soda 500ml', ['k'], ids, terms), []);
   assert.deepEqual(E.stripKitchenIfExcluded('Wings in BBQ Sauce', ['k'], ids, terms), ['k']);
+  // A358: a standalone sauce leaves the kitchen on the web too.
+  assert.deepEqual(E.stripKitchenIfExcluded('Honey Mustard Sauce', ['k', 'd'], ids, terms), ['d']);
   assert.deepEqual(E.stripKitchenIfExcluded('Chocolate Shake', ['k', 'd'], ids, E.kitchenExclusionTerms(['shake'])), ['d']);
 });
 

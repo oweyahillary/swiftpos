@@ -9,6 +9,7 @@ import MethodDot from '../../components/MethodDot';
 import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
+import { canRefundOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,33 @@ const PAGE_SIZE = 20;
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSOrderHistoryTab({ currency }: { currency: string }) {
-  const { posApi, session } = usePOSAuth();
+  const { posApi, session, hasPermission } = usePOSAuth();
+  // A359: refund from this list (web POS → Orders, manager dashboard → Orders) — orders.void holders only; the cloud
+  // asks a manager's (or the owner's) own PIN and records who approved (A355).
+  const mayVoid = hasPermission('orders.void');
+  const [refunding, setRefunding]     = useState<string | null>(null);   // order id with the refund form open
+  const [refundReason, setRefundReason] = useState('');
+  const [refundOther, setRefundOther] = useState('');
+  const [refundPin, setRefundPin]     = useState('');
+  const [refundBusy, setRefundBusy]   = useState(false);
+  const [refundMsg, setRefundMsg]     = useState<{ id: string; text: string; ok: boolean } | null>(null);
+
+  const submitRefund = async (order: Order) => {
+    const reason = (refundReason === 'Other' ? refundOther : refundReason).trim();
+    if (!reason) { setRefundMsg({ id: order.id, text: 'A reason is required.', ok: false }); return; }
+    if (!refundPin.trim()) { setRefundMsg({ id: order.id, text: 'A manager PIN is required to refund.', ok: false }); return; }
+    setRefundBusy(true); setRefundMsg(null);
+    try {
+      await posApi.post(`/api/orders/${order.id}/refund`, { reason, override_pin: refundPin.trim() });
+      setRefunding(null); setRefundReason(''); setRefundOther(''); setRefundPin('');
+      setRefundMsg({ id: order.id, text: `Refunded ${fmt(order.total, currency)} — hand it back in the tender it came in.`, ok: true });
+      await load(page);
+    } catch (e: any) {
+      // The cloud's own words (a wrong PIN, a missing permission, already refunded).
+      setRefundMsg({ id: order.id, text: e?.message ?? 'Refund failed', ok: false });
+      setRefundPin('');
+    } finally { setRefundBusy(false); }
+  };
 
   const [orders, setOrders]       = useState<Order[]>([]);
   const [total, setTotal]         = useState(0);
@@ -130,6 +157,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   <span style={{ ...s.statusDot, color: STATUS_COLOR[order.status] ?? '#94a3b8' }}>
                     ●
                   </span>
+                  {isRefunded(order.payments) && <span style={s.refundedBadge}>refunded</span>}
                   <span style={s.total}>{fmt(order.total, currency)}</span>
                   <span style={s.chevron}>{isOpen ? '▲' : '▼'}</span>
                 </div>
@@ -176,6 +204,43 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   >{reprintingId === order.id ? 'Printing…' : 'Reprint receipt'}</button>
                   {reprintMsg?.id === order.id && (
                     <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>{reprintMsg.text}</div>
+                  )}
+                  {/* A359: Refund (orders.void; completed, not refunded). */}
+                  {canRefundOrder(order, mayVoid) && refunding !== order.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRefunding(order.id); setRefundReason(''); setRefundOther(''); setRefundPin(''); setRefundMsg(null); }}
+                      style={s.refundBtn}
+                    >Refund</button>
+                  )}
+                  {refunding === order.id && (
+                    <div style={s.refundForm} onClick={e => e.stopPropagation()}>
+                      <div style={{ fontSize: 12, color: '#cbd5e1', marginBottom: 6 }}>
+                        Refund {fmt(order.total, currency)} — the sale stays on the books; only the money goes back.
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                        {REFUND_REASONS.map(r => (
+                          <button key={r} type="button" onClick={() => setRefundReason(r)}
+                            style={{ ...s.reasonBtn, ...(refundReason === r ? s.reasonOn : {}) }}>{r}</button>
+                        ))}
+                      </div>
+                      {refundReason === 'Other' && (
+                        <input style={{ ...s.searchInput, width: '100%', marginBottom: 6 }} placeholder="Reason"
+                          value={refundOther} onChange={e => setRefundOther(e.target.value)} />
+                      )}
+                      <input type="password" inputMode="numeric" maxLength={6} placeholder="Manager or owner PIN"
+                        style={{ ...s.searchInput, width: '100%', marginBottom: 6, letterSpacing: 4 }}
+                        value={refundPin} onChange={e => setRefundPin(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" disabled={refundBusy} onClick={() => void submitRefund(order)}
+                          style={{ ...s.refundBtn, marginTop: 0, opacity: refundBusy ? 0.5 : 1 }}>
+                          {refundBusy ? 'Refunding…' : `Refund ${fmt(order.total, currency)}`}
+                        </button>
+                        <button type="button" disabled={refundBusy} onClick={() => setRefunding(null)} style={s.searchBtn}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {refundMsg?.id === order.id && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: refundMsg.ok ? '#94a3b8' : '#fca5a5' }}>{refundMsg.text}</div>
                   )}
                 </div>
               )}
@@ -250,4 +315,11 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 7, color: '#94a3b8', fontSize: 12, cursor: 'pointer',
   },
   pageInfo:   { fontSize: 12, color: '#475569' },
+  // A359
+  refundedBadge: { fontSize: 10, fontWeight: 700, color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 999, padding: '1px 6px' },
+  refundBtn:  { marginTop: 10, marginLeft: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 8,
+                border: '1px solid rgba(239,68,68,0.45)', color: '#f87171', background: 'transparent', cursor: 'pointer' },
+  refundForm: { marginTop: 10, padding: 10, border: '1px solid #334155', borderRadius: 8, background: '#0b1220' },
+  reasonBtn:  { padding: '4px 8px', fontSize: 11, borderRadius: 6, border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', cursor: 'pointer' },
+  reasonOn:   { borderColor: 'rgba(245,158,11,0.6)', color: '#fbbf24', background: 'rgba(245,158,11,0.1)' },
 };

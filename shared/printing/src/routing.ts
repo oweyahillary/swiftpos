@@ -131,9 +131,27 @@ export function kitchenExclusionTerms(ownerTerms: string[] = []): string[] {
   return [...KITCHEN_DRINK_TERMS, ...ownerTerms];
 }
 
-/** `stationIds` without the kitchen stations when `name` is excluded from the kitchen; unchanged otherwise. */
+/**
+ * A358 (2026-09-28): an item that IS a sauce or dip — its name ends in "sauce(s)" / "dip(s)": "BBQ Sauce", "Honey
+ * Mustard Sauce", "Garlic Dip" — never goes to the kitchen (owner, on v0.6.18: "sauces still print in kitchen printer";
+ * B Foods sells them as their own items in a "Sauces" category). A dish named after its sauce stays: "Wings in BBQ
+ * Sauce", "Chicken with Pepper Sauce" contain "in" / "with" before it, and a cooked dish must never leave the kitchen
+ * ticket — that is why sauces are not a plain word rule like the drinks.
+ */
+export function isStandaloneSauce(name: string): boolean {
+  const n = String(name ?? '').trim();
+  if (!/(^|[^a-z0-9])(sauces?|dips?)$/i.test(n)) return false;
+  return !/(^|[^a-z0-9])(in|with)([^a-z0-9])/i.test(n);
+}
+
+/**
+ * `stationIds` without the kitchen stations when `name` is excluded from the kitchen (a drink or an owner term — the
+ * `terms` — or a standalone sauce/dip); unchanged otherwise.
+ */
 export function stripKitchenIfExcluded(name: string, stationIds: string[], ids: StationIds, terms: string[]): string[] {
-  return isExcludedFromKitchen(name, terms) ? stationIds.filter(id => !ids.kitchen.includes(id)) : stationIds;
+  return isExcludedFromKitchen(name, terms) || isStandaloneSauce(name)
+    ? stationIds.filter(id => !ids.kitchen.includes(id))
+    : stationIds;
 }
 
 /**

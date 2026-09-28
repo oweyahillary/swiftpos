@@ -15,7 +15,7 @@
  * Run: tsc -p tsconfig.test.json && node test-dist/test/a276-soda-routing.test.js
  */
 import assert from 'node:assert';
-import { stationsForCategory, toUnits, kitchenExclusionTerms, stripKitchenIfExcluded, type CategoryRouting, type StationIds } from '../src/routing';
+import { stationsForCategory, toUnits, kitchenExclusionTerms, stripKitchenIfExcluded, isStandaloneSauce, type CategoryRouting, type StationIds } from '../src/routing';
 import { renderTicket, toPreview, kitchenPreset, dispatchPreset } from '../src/index';
 import type { BusinessConfig, OrderLine } from '../src/types';
 
@@ -162,6 +162,25 @@ ok('SAFETY: a cooked dish named after its sauce stays ON the kitchen ticket (sau
   const lines = buildLinesFixed(drinksFlaggedKitchen, cart);
   assert.deepEqual(lines[0].stationIds, ['kitchen']);
   assert.ok(/WINGS IN BBQ SAUCE/i.test(kitchenText(lines)));
+});
+ok('A358: a standalone sauce or dip (BBQ Sauce, Honey Mustard Sauce, Garlic Dip) goes to dispatch, never the kitchen', () => {
+  const SAUCES = 'cat-sauces';
+  const sauceRouting: CategoryRouting = { byCategory: {}, kitchenCategories: new Set([CHICKEN, SAUCES]) };
+  const cart = [
+    { product: { id: 'w', name: 'Wings Combo 8PC', category_id: CHICKEN }, quantity: 1 },
+    { product: { id: 's1', name: 'BBQ Sauce', category_id: SAUCES }, quantity: 1 },
+    { product: { id: 's2', name: 'Honey Mustard Sauce', category_id: SAUCES }, quantity: 2 },
+    { product: { id: 's3', name: 'Garlic Dip', category_id: SAUCES }, quantity: 1 },
+  ];
+  const lines = buildLinesFixed(sauceRouting, cart);
+  const k = kitchenText(lines), d = dispatchText(lines);
+  assert.ok(/WINGS COMBO/i.test(k), k);
+  assert.ok(!/BBQ SAUCE|HONEY MUSTARD|GARLIC DIP/i.test(k), 'no sauce on the kitchen ticket\n' + k);
+  assert.ok(/BBQ SAUCE/i.test(d) && /HONEY MUSTARD SAUCE/i.test(d) && /GARLIC DIP/i.test(d), 'all on dispatch\n' + d);
+});
+ok('A358: isStandaloneSauce — the sauce itself yes; a dish named after its sauce no', () => {
+  for (const n of ['BBQ Sauce', 'Honey Mustard Sauce', 'Sauce', 'Extra Sauces', 'Garlic Dip', 'Chilli dips']) assert.equal(isStandaloneSauce(n), true, n);
+  for (const n of ['Wings in BBQ Sauce', 'Chicken with Pepper Sauce', 'Saucy Wings', 'Sauce Pot Chicken', 'Dipped Tenders', 'Soda']) assert.equal(isStandaloneSauce(n), false, n);
 });
 ok('the owner\'s own exclusion terms apply to whole lines as well (e.g. "shake")', () => {
   const cart = [{ product: { id: 's', name: 'Chocolate Shake', category_id: CHICKEN }, quantity: 1 }];

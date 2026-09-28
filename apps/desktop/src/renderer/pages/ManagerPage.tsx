@@ -19,6 +19,8 @@ import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
+import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
+import { mayAddExpenseType } from '../lib/expenseTypes';
 import { buildManagerNav, groupOf, openGroup, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 
@@ -851,7 +853,7 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
 // ── Expenses Tab (0.6.11) ─────────────────────────────────────────────────────
 // Owner (2026-09-27): "I should be able to see expenses". Cash this till's drawers paid out, by date range —
 // the same rows the shift report deducts. Recorded from the POS (Shift → Expenses); this screen only reads.
-function ExpensesTab({ currency }: { currency: string }) {
+function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: boolean }) {
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
   const [data, setData] = useState<{ rows: ExpenseRow[]; total: number; label: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -873,6 +875,8 @@ function ExpensesTab({ currency }: { currency: string }) {
           {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(data?.total ?? 0, currency)} paid out`}
         </p>
       </div>
+      {/* A358: the expense types, and "+ Add type" here as well as in Shift → Expenses (owner, on v0.6.18). */}
+      <ExpenseTypesPanel canAdd={canAddType} />
       <ReportRangeBar value={range} onChange={setRange} />
       {loading ? <Spinner /> : rows.length === 0 ? (
         <div className="text-center py-12 text-gray-300">No expenses in this date range. Record one from the POS: Shift → Expenses.</div>
@@ -1347,7 +1351,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         return <RetailOverview currency={currency} />;
       case 'orders':  return <OrdersTab currency={currency} />;
       case 'shift':   return <ShiftTab currency={currency} />;
-      case 'expenses': return <ExpensesTab currency={currency} />;
+      case 'expenses': return <ExpensesTab currency={currency} canAddType={mayAddExpenseType(staff as any)} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
       // Tabs of Sales (A351): Shift report, Item Mix (restaurant).

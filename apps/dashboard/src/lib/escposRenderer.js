@@ -790,8 +790,13 @@ var KITCHEN_DRINK_TERMS = [
 function kitchenExclusionTerms(ownerTerms = []) {
   return [...KITCHEN_DRINK_TERMS, ...ownerTerms];
 }
+function isStandaloneSauce(name) {
+  const n = String(name ?? "").trim();
+  if (!/(^|[^a-z0-9])(sauces?|dips?)$/i.test(n)) return false;
+  return !/(^|[^a-z0-9])(in|with)([^a-z0-9])/i.test(n);
+}
 function stripKitchenIfExcluded(name, stationIds, ids, terms) {
-  return isExcludedFromKitchen(name, terms) ? stationIds.filter((id) => !ids.kitchen.includes(id)) : stationIds;
+  return isExcludedFromKitchen(name, terms) || isStandaloneSauce(name) ? stationIds.filter((id) => !ids.kitchen.includes(id)) : stationIds;
 }
 function toUnits(line, ids, lineStationIds, routing) {
   const lineProductId = line.product.id;

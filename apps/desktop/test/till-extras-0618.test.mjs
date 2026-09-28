@@ -57,6 +57,10 @@ ok('A341: only expenses.manage (managers, owner) may add a type — never a cash
   assert.equal(X.mayAddExpenseType({ permissions: { '*': true } }), true);
   assert.equal(X.mayAddExpenseType({ permissions: { 'expenses.manage': true } }), true);
   assert.equal(X.mayAddExpenseType({ permissions: { 'orders.create': true, 'expenses.view': true } }), false);
+  // A358: a manager-level role sees it even without the key (the cloud still decides); a cashier role never.
+  assert.equal(X.mayAddExpenseType({ role: 'Manager', permissions: { 'orders.create': true } }), true);
+  assert.equal(X.mayAddExpenseType({ role: 'Branch Manager', permissions: {} }), true);
+  assert.equal(X.mayAddExpenseType({ role: 'Cashier', permissions: { 'orders.create': true } }), false);
   assert.equal(X.mayAddExpenseType(null), false);
 });
 ok('A341: a name is tidied; empty or too long is refused', () => {
@@ -81,6 +85,17 @@ ok('A341: the Shift panel shows "+ Add type" only to those who may, and selects 
   assert.match(sp, /setExpCatId\(created\.id\);/);
   assert.match(read('src/renderer/App.tsx'), /canAddExpenseType=\{mayAddExpenseType\(staff\)\}/);
   assert.match(pos, /canAddExpenseType=\{canAddExpenseType\}/);
+});
+
+ok('A358: the manager\'s Expenses page lists the types and has "+ Add type" (Shift keeps its own)', () => {
+  const mp = read('src/renderer/pages/ManagerPage.tsx');
+  assert.match(mp, /<ExpenseTypesPanel canAdd=\{canAddType\} \/>/);
+  assert.match(mp, /case 'expenses': return <ExpensesTab currency=\{currency\} canAddType=\{mayAddExpenseType\(staff as any\)\} \/>;/);
+  const panel = read('src/renderer/components/ExpenseTypesPanel.tsx');
+  assert.match(panel, /const check = checkTypeName\(name, types\);/);
+  assert.match(panel, /const created = await posApi\.expense\.addCategory\(check\.name\);/);
+  assert.match(panel, /\{canAdd && !adding && \(/);
+  assert.match(read('src/renderer/pages/ShiftPanel.tsx'), /\{canAddExpenseType && !addingType && \(/, 'Shift keeps its "+ Add type"');
 });
 
 // ── A357 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
