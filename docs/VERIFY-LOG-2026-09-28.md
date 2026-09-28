@@ -81,3 +81,26 @@ A356 (A1), A357 (M1).
 - K2 — the web's kitchen printer was a whole-order type; a Kitchen station with categories fixed it (no code).
 **Still open:** A349 (M1, M2, M7, M8 — printed receipts with a discount / tip / web CTL / no CTL), A355 (V1 → 0.6.19),
 A336 (stage 3, offline reversals), A341 (E1 → 0.6.19).
+
+## Checklist v0.6.19 on target (tester Eugene, T1 0.6.19, web POS, printer)
+Results as returned (`docs/checklists/VERIFY-CHECKLIST-v0.6.19.html`), with five screenshots (the till's History as a manager —
+"Void / Refund" / "Refund" on every completed sale, web-tagged ones included, "refunded" on T1--46; a web-POS refund
+"Refunded KES 2,500.00 — hand it back in the tender it came in." with the −2,500 cash leg and the "refunded" tag; the
+Expenses page: "Expense types" with "+ Add type", "\"Transport\" is already an expense type.", "Expense type \"Sugar\" added"):
+
+```
+R1 PASS · R2 PASS (one pre-release — verified) · R3 PASS
+H1 PASS · H2 PASS · H3 PASS
+W1 PASS · W2 PASS · W3 PASS · W4 PASS · W5 PASS
+K1 PASS · K2 PASS · K3 PASS
+E1 PASS · E2 PASS · E3 PASS · E4 PASS
+P1 PASS · P2 PASS · P3 PASS · P4 PASS
+X1 PASS · X2 PASS · X3 PASS · X4 PASS · X5 SKIP
+Summary: 26 pass / 0 fail / 1 skip (of 27) · Failed: none
+```
+
+**Closed:** A355 (refunds from History, the manager's own PIN — V2–V4 on 0.6.18 + H1–H3), A358 (H1–H3, K1–K3, E1–E4), A359
+(W1–W5), A341 (E1–E4 — expense types from the till), A349 (P1–P4 — the printed receipts: discount, tip, web CTL, no CTL — the
+last open part of the 0.6.16 money review).
+**Still open:** A336 — stage 2 verified (the till's History reversing web sales, H2 + 0.6.18 V5 screenshot; the web lists,
+W1–W5); stage 3 (offline void/refund queued on the till) not built. X5 (a second till) not run this round.
