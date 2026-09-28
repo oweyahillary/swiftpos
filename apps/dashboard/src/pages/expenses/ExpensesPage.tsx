@@ -29,6 +29,7 @@ interface Expense {
   category_name: string | null;
   paid_by: string | null;
   paid_by_name: string | null;
+  recorded_by_name?: string | null;   // A361: who entered it (stamped by the cloud)
 }
 
 interface Branch {
@@ -396,6 +397,7 @@ export default function ExpensesPage() {
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Category</th>
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Branch</th>
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid By</th>
+                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Recorded By</th>
                     <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
                     {canManage && <th className="px-4 py-3" />}
                   </tr>
@@ -424,6 +426,7 @@ export default function ExpensesPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
                         {fmt(e.amount, currency)}
                       </td>
@@ -446,7 +449,7 @@ export default function ExpensesPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-gray-700">
-                    <td colSpan={canManage ? 5 : 5} className="px-4 py-3 text-gray-500 text-xs font-semibold">
+                    <td colSpan={6} className="px-4 py-3 text-gray-500 text-xs font-semibold">
                       {expenses.length} expense{expenses.length !== 1 ? 's' : ''}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-red-300">

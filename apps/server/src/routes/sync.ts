@@ -488,6 +488,9 @@ router.post('/push', async (req, res) => {
             description:         e.description,
             amount:              Number(e.amount),
             paid_by:             e.paid_by ?? null,
+            // A361: who entered it. The till stamps paid_by with its signed-in staff and offers no pick, so paid_by IS
+            // the recorder; an explicit recorded_by (a later till) wins.
+            recorded_by:         e.recorded_by ?? e.paid_by ?? null,
             expense_date:        e.expense_date,
             shift_id:            e.shift_id ?? null,
           };

@@ -104,3 +104,31 @@ Summary: 26 pass / 0 fail / 1 skip (of 27) · Failed: none
 last open part of the 0.6.16 money review).
 **Still open:** A336 — stage 2 verified (the till's History reversing web sales, H2 + 0.6.18 V5 screenshot; the web lists,
 W1–W5); stage 3 (offline void/refund queued on the till) not built. X5 (a second till) not run this round.
+
+## Backlog checklist on target (`docs/checklists/VERIFY-CHECKLIST-backlog-2026-09-29.html`, desktop 0.6.19, ONE till)
+Twenty-nine checks for items built but never checked on a real till. Results as returned:
+
+```
+S1 PASS · S2 PASS ("it passes but cashier cannot select expense type") · S3 PASS · S4 PASS · S5 PASS
+B1 PASS · B2 PASS · B3 PASS
+M1 PASS · M2 PASS · M3 PASS · M4 PASS · M5 PASS · M6 PASS · M7 PASS
+T1 PASS · T2 PASS · T3 PASS
+C1 PASS · C2 PASS · C3 PASS
+W1 PASS · W2 PASS
+N1 SKIP · N2 SKIP · N3 PASS* · N4 PASS* · N5 SKIP · N6 SKIP
+Summary: 25 pass / 0 fail / 4 skip (of 29)
+* run on one till only — no peer (T2) on the network.
+```
+
+**N3/N4 do not count for the node.** §N needs a second till; with one till, a "peer" sign-in and a long "peer" session prove only
+what the single till already does (the 0.6.13 offline sign-in, S3). So the node items stay open: A19, A20, A22, A24, A160–A164, D9.
+
+**Closed (27):** A129 (S1) · A179 (S2) · A267 (S3, S4) · A168 (S5) · A277 (B1) · A209 (B2) · A139 (B3) · A296 (M1) · A258
+(the v0.6.18/0.6.19 Overview screenshots) · A259 (M2) · A262 (M3) · A58 (M4) · A211 (M5) · A256 (M4, M5) · A257, A157 (M6) · A141
+(M7) · A298 (T1) · A299 (T2) · A306 (T3) · A331 (C1) · A330 (C2) · A329 (C3) · A273 (W1, W2) · on code evidence, nothing to see on a
+till: A300, A305, A234 (each re-read in the tree on 2026-09-28).
+**Read and fixed (delivery 2026-09-28-x, cloud + web, migration 109):**
+- S2 note: a cashier's expense-type picker was empty, because the list needed `expenses.view` → A360 (the list needs only sign-in).
+- Owner, same day: "expense should also capture who recorded it" → A361 (`expenses.recorded_by`, stamped by the cloud).
+**Still open:** A280 (needs a production check), A281 (dev auto-promote not confirmed), A236/A237 (old print-bridge tidy-up), the
+node items above, and A336 stage 3.

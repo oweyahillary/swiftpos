@@ -363,7 +363,8 @@
     "expense_date": "\"date\" NOT NULL",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "sync_status": "\"character varying\" NOT NULL",
-    "shift_id": "\"uuid\""
+    "shift_id": "\"uuid\"",
+    "recorded_by": "\"uuid\""
   },
   "feature_flags": {
     "id": "\"uuid\" NOT NULL",
