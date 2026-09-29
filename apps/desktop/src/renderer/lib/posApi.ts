@@ -132,6 +132,8 @@ export interface ZReport {
   confirmation?: {
     status: 'awaiting' | 'confirmed';
     confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
+    /** 0.6.23: awaiting — what the manager recounts (names only). */
+    methods?: string[];
     lines: ConfirmLine[];
   } | null;
   businessName: string;
@@ -406,7 +408,9 @@ declare global {
         /** A365: this till's shifts awaiting a manager's confirmation. */
         awaiting: () => Promise<AwaitingShift[]>;
         /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
-        confirm: (shiftId: string, pin: string, counts: Record<string, number>) => Promise<Confirmation>;
+        confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>) => Promise<Confirmation>;
+        /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
+        canConfirm: () => Promise<boolean>;
         zreport: (shiftId: string) => Promise<ZReport>;
         /** 0.6.11: this till's shifts, newest first (previous shift reports). */
         history: () => Promise<ShiftSummary[]>;

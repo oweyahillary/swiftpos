@@ -45,6 +45,15 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.23: the mouse wheel never changes a number field (the till and the web).
+    name: 'numberInputs.ts',
+    copies: [
+      'shared/numberInputs.ts',
+      'apps/desktop/src/shared/numberInputs.ts',
+      'apps/dashboard/src/lib/numberInputs.ts',
+    ],
+  },
+  {
     // A365: the shift-confirmation rules the till and the web POS share (methods to declare, amounts, labels, paper).
     name: 'shiftConfirm.ts',
     copies: [

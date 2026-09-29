@@ -161,7 +161,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
     // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).
     awaiting: ()                                                         => ipcRenderer.invoke('shift:awaiting'),
-    confirm: (shiftId: string, pin: string, counts: Record<string, number>) => ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts }),
+    confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>) => ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts }),
+    // 0.6.23: a manager already signed in confirms without a PIN.
+    canConfirm: ()                                                       => ipcRenderer.invoke('shift:canConfirm'),
     zreport: (shiftId: string)                                           => ipcRenderer.invoke('shift:zreport', shiftId),
     history: ()                                                          => ipcRenderer.invoke('shift:history'),
   },

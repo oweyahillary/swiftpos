@@ -2,6 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { stopWheelOnNumberInputs } from '../shared/numberInputs';
+
+stopWheelOnNumberInputs(document);
 
 // A299: forward renderer-side errors to the main-process log (swiftpos.log).
 // This is the piece that would have caught "[Overview] salesSummary failed" in

@@ -101,6 +101,9 @@ ok('the cashier\'s declaration is stored — every method, cash = the counted dr
 ok('the Z-report says it awaits a manager', z.confirmation?.status === 'awaiting', JSON.stringify(z.confirmation));
 ok('it is listed as awaiting a manager', S.awaitingConfirmation().map((a) => a.id).join() === sh.id
   && S.awaitingConfirmation()[0].cashier_name === 'Test Cashier');
+ok('0.6.23 — the manager is asked for cash, card (recorded 700, the cashier said 0) and M-Pesa; not Glovo (nothing recorded)',
+  JSON.stringify(S.awaitingConfirmation()[0].methods) === '["cash","card","mpesa"]' && JSON.stringify(z.confirmation?.methods) === '["cash","card","mpesa"]',
+  JSON.stringify(S.awaitingConfirmation()[0].methods));
 
 signIn('u-mary', 'Mary', 'manager');
 const refused = threw(() => D.closeDay(2500));
@@ -169,8 +172,13 @@ ok('a later pass sends nothing again', cloud.confirms.length === before);
 
 // ── The renderer helper (type-stripped) ──
 const H = await import(pathToFileURL(path.join(here, '..', 'src/shared/shiftConfirm.ts')).href);
-ok('methods to declare: M-Pesa, card, Glovo, every custom tender, plus any the shift took — never cash',
-  JSON.stringify(H.methodsToDeclare([{ code: 'cash', name: 'Cash' }, { code: 'Voucher', name: 'Voucher' }], [{ method: 'bank' }, { method: 'cash' }])) === '["bank","card","glovo","mpesa","voucher"]');
+ok('0.6.23 — methods to declare: only those the shift recorded money on, never cash (a method at 0 does not appear)',
+  JSON.stringify(H.methodsToDeclare([{ method: 'mpesa', amount: 0 }, { method: 'Card', amount: 200 }, { method: 'cash', amount: 500 }, { method: 'glovo', amount: 100 }])) === '["card","glovo"]');
+ok('0.6.23 — the manager counts cash, what the cashier declared money on, and what the shift recorded (even if declared 0)',
+  JSON.stringify(H.methodsToCount({ cash: 2500, mpesa: 0, card: 200 }, [{ method: 'glovo', amount: 100 }, { method: 'mpesa', amount: 0 }])) === '["cash","card","glovo"]');
+ok('0.6.23 — a signed-in manager confirms without a PIN; a cashier does not',
+  H.maySignedInConfirm({ role: 'Manager', permissions: {} }) === true && H.maySignedInConfirm({ role: 'Cashier', permissions: { 'orders.void': true } }) === true
+  && H.maySignedInConfirm({ role: 'Cashier', permissions: { 'orders.create': true } }) === false && H.maySignedInConfirm(null) === false);
 ok('every method must be entered (0 is an answer, blank is not)',
   JSON.stringify(H.readAmounts({ card: '0', mpesa: '' }, ['card', 'mpesa'])) === '{"ok":false,"missing":["mpesa"]}'
   && JSON.stringify(H.readAmounts({ card: '0', mpesa: '3250.004' }, ['card', 'mpesa'])) === '{"ok":true,"map":{"card":0,"mpesa":3250}}');
@@ -181,11 +189,68 @@ const pl = H.confirmationPrintLines(zc.confirmation, (x) => String(x));
 ok('the printed lines spell out the shortage and the cashier\'s different figure',
   pl[0].startsWith('CONFIRMED BY MARY') && pl.includes('Cash: counted 2400 / expected 2500 (short 100)') && pl.includes('  cashier said 2500'), JSON.stringify(pl));
 
+// 0.6.23: the owner's Shift Reports (dashboard) — the rules, from the shared file.
+{
+  const running = { status: 'open' };
+  const awaiting = { status: 'closed', declared_methods: { cash: 2500, card: 0 }, closing_float: 2500, expected_cash: 2500, cash_variance: 0 };
+  const done = { status: 'closed', declared_methods: { cash: 2500, card: 0, mpesa: 3250 }, expected_methods: { cash: 2500, card: 700, mpesa: 3250 },
+                 confirmed_methods: { cash: 2400, card: 700, mpesa: 3250 }, confirmed_at: '2026-09-29T15:02:00Z', confirm_self: false };
+  const legacy = { status: 'closed', closing_float: 24740, expected_cash: 24740, cash_variance: 0 };
+  ok('Shift Reports — status: running / awaiting / confirmed / self / force-closed / before confirmation',
+    H.shiftReportStatus(running) === 'running' && H.shiftReportStatus(awaiting) === 'awaiting' && H.shiftReportStatus(done) === 'confirmed'
+    && H.shiftReportStatus({ ...done, confirm_self: true }) === 'self' && H.shiftReportStatus({ status: 'closed_unreconciled' }) === 'force_closed'
+    && H.shiftReportStatus(legacy) === 'not_required' && H.shiftStatusLabel('self', 'Mary') === 'Self-confirmed by Mary');
+  const lines = H.shiftReportLines(done);
+  const L = (m) => lines.find((l) => l.method === m);
+  ok('Shift Reports — View: cashier said / manager counted / till recorded / variance per method, cash first',
+    lines.map((l) => l.method).join() === 'cash,card,mpesa'
+    && JSON.stringify(L('cash')) === JSON.stringify({ method: 'cash', cashier: 2500, manager: 2400, recorded: 2500, variance: -100, mismatch: true })
+    && L('card').mismatch === true && L('card').variance === 0 && L('mpesa').mismatch === false, JSON.stringify(lines));
+  const aw = H.shiftReportLines(awaiting, [{ method: 'card', amount: 200 }, { method: 'cash', amount: 500 }, { method: 'glovo', amount: 0 }]);
+  ok('Shift Reports — before confirmation: the cashier\'s variance against what the cloud recorded; card the cashier missed shows −200',
+    JSON.stringify(aw.map((l) => [l.method, l.cashier, l.manager, l.recorded, l.variance])) === '[["cash",2500,null,2500,0],["card",0,null,200,-200]]', JSON.stringify(aw));
+  ok('Shift Reports — a shift closed before confirmation still shows its cash line',
+    JSON.stringify(H.shiftReportLines(legacy).map((l) => [l.method, l.cashier, l.recorded, l.variance])) === '[["cash",24740,24740,0]]');
+  ok('Shift Reports — a force-closed shift still has its cash line; unknown expected cash shows as unknown, never 0',
+    JSON.stringify(H.shiftReportLines({ status: 'closed_unreconciled', expected_cash: 0 }).map((l) => [l.method, l.cashier, l.recorded])) === '[["cash",null,0]]'
+    && JSON.stringify(H.shiftReportLines({ status: 'closed', declared_methods: { cash: 900 } }, [{ method: 'cash', amount: 500 }]).map((l) => [l.method, l.recorded, l.variance])) === '[["cash",null,null]]');
+  const f = (n) => String(n);
+  ok('Shift Reports — Difference column: what is off, "Balanced", or nothing while running',
+    H.shiftDifference(done, f) === 'Cash −100' && H.shiftDifference(running, f) === '' && H.shiftDifference(legacy, f) === 'Balanced'
+    && H.shiftDifference({ ...done, confirmed_methods: { cash: 2500, card: 0, mpesa: 3250 }, expected_methods: { cash: 2500, card: 0, mpesa: 3250 } }, f) === 'Balanced'
+    && H.shiftDifference({ ...awaiting, cash_variance: -50 }, f) === 'Cash −50' && H.shiftDifference({ status: 'closed_unreconciled' }, f) === 'Not counted');
+}
+
+// 0.6.23: the wheel blocker itself, on a stand-in document.
+const W = await import(pathToFileURL(path.join(here, '..', 'src/shared/numberInputs.ts')).href);
+{
+  let listener = null; const doc = { activeElement: null, addEventListener: (_t, fn) => { listener = fn; }, removeEventListener: () => { listener = null; } };
+  let blurred = 0; const num = { tagName: 'INPUT', type: 'number', blur: () => { blurred++; } };
+  const text = { tagName: 'INPUT', type: 'text', blur: () => { blurred += 100; } };
+  const off = W.stopWheelOnNumberInputs(doc);
+  doc.activeElement = num; listener({ target: num });
+  doc.activeElement = text; listener({ target: text });
+  doc.activeElement = null; listener({ target: num });
+  ok('0.6.23 — a wheel turn over the focused number field takes focus off it (so the value cannot move); nothing else is touched',
+    blurred === 1, String(blurred));
+  off(); ok('…and it can be removed', listener === null);
+}
+
 // ── The screens (pinned; React is not run) ──
 const src = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
 ok('End Shift asks for every other method and sends them with the close',
   /toDeclare\.map\(\(m\) => \(/.test(src('renderer/pages/ShiftPanel.tsx'))
   && /posApi\.shift\.close\(counted, closeNotes\.trim\(\) \|\| undefined, declaredRead\.map\)/.test(src('renderer/pages/ShiftPanel.tsx')));
+ok('0.6.23 — End Shift asks only for methods with money on them, and says to include the float',
+  /const toDeclare = methodsToDeclare\(report\?\.byMethod \?\? \[\]\);/.test(src('renderer/pages/ShiftPanel.tsx'))
+  && /Counted cash in drawer \(\{currency\}\) — include the opening float/.test(src('renderer/pages/ShiftPanel.tsx')));
+ok('0.6.23 — a signed-in manager is not asked for a PIN (the till checks the signed-in staff in main)',
+  /\{!signedInManager && \(\s*<div data-testid="confirm-pin">/.test(src('renderer/components/ConfirmShiftModal.tsx'))
+  && /const confirmer = signedIn && !String\(pin \?\? ''\)\.trim\(\) \? signedIn : await identifyConfirmer\(String\(pin\)\);/.test(src('main/ipcHandlers.ts'))
+  && /if \(!signedIn && !String\(pin \?\? ''\)\.trim\(\)\) throw/.test(src('main/ipcHandlers.ts')));
+ok('0.6.23 — the mouse wheel never changes a number field; no spinner arrows',
+  /stopWheelOnNumberInputs\(document\);/.test(src('renderer/main.tsx'))
+  && /input\[type='number'\]::-webkit-inner-spin-button \{ -webkit-appearance: none;/.test(src('renderer/index.css')));
 ok('the closed shift offers "Manager: confirm now"', /data-testid="confirm-now"/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('the confirm screen is blind: no expected or cashier figure before it is saved',
   !/expected|declared/i.test(src('renderer/components/ConfirmShiftModal.tsx').split('{!result && (')[1].split('{result && (')[0]));

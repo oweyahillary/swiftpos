@@ -207,7 +207,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true } },
   'shift:close':            { closing_float: { t: 'number' }, notes: { t: 'string', optional: true }, declared: { t: 'any', optional: true } },
   'shift:awaiting':         NO_PAYLOAD,
-  'shift:confirm':          { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', min: 1 }, counts: { t: 'any' } },
+  'shift:canConfirm':       NO_PAYLOAD,
+  'shift:confirm':          { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' } },
   'shift:zreport':          { kind: 'string' },
   'shift:history':          NO_PAYLOAD,
 

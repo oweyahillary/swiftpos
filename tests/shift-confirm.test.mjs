@@ -229,7 +229,22 @@ try {
     assert.match(m, /toDeclare\.map\(\(m\) => \(/);
     assert.match(m, /declared_methods: declared\.map,/);
     assert.match(m, /data-testid="confirm-now"/);
-    assert.match(m, /posApi\.post<any>\(`\/api\/shifts\/\$\{closeResult\.id\}\/confirm`, \{ confirmed_methods: r\.map, pin: confirmPin\.trim\(\) \}\)/);
+    assert.match(m, /signedInManager \? \{ confirmed_methods: r\.map \} : \{ confirmed_methods: r\.map, pin: confirmPin\.trim\(\) \}/);
+  });
+  await ok('0.6.23 web POS: only methods with money on them; the float reminder; a signed-in manager is not asked for a PIN; no wheel', () => {
+    const m = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/ShiftModal.tsx'), 'utf8');
+    assert.match(m, /const toDeclare = methodsToDeclare\(taken\);/);
+    assert.match(m, /posApi\.get<\{ by_method\?: \{ method: string; amount: number \}\[\] \}>\(`\/api\/shifts\/\$\{shiftId\}`\)/);
+    assert.match(m, /Cash Counted \(\{currency\}\) — include the opening float/);
+    assert.match(m, /const signedInManager = maySignedInConfirm\(session\);/);
+    assert.match(m, /\{!signedInManager && \(/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/main.tsx'), 'utf8'), /stopWheelOnNumberInputs\(document\);/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/index.css'), 'utf8'), /input\[type='number'\]::-webkit-inner-spin-button/);
+  });
+  await ok('0.6.23 cloud: a manager signed in on the web POS confirms without a PIN', async () => {
+    await closeFirst();
+    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500, mpesa: 3250, card: 700 } }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(shift().confirmed_by, MANAGER);
   });
   await ok('the dashboard lists shifts awaiting a manager and confirms them blind; mismatches and self-confirms shown', () => {
     const c = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/components/ShiftConfirmations.tsx'), 'utf8');
@@ -238,6 +253,17 @@ try {
     assert.ok(!/expected_methods|declared_methods\[|money\(target/.test(dialog), 'the recount dialog shows no figures');
     assert.match(c, /data-testid="self-confirmed"/);
     assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/OpenShiftsPage.tsx'), 'utf8'), /<ShiftConfirmations \/>/);
+  });
+  await ok('0.6.23 Shift Reports page: list (cashier, till, shift, status, difference, View), filters, CSV; View = the per-method table', () => {
+    const pg = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/ShiftReportsPage.tsx'), 'utf8');
+    assert.match(pg, /api\.get<ShiftRow\[\]>\(`\/api\/shifts\?\$\{qs\}`\)/);
+    assert.match(pg, /<th className="px-3 py-2">Cashier<\/th><th>Till<\/th><th>Shift<\/th><th>Status<\/th><th>Difference<\/th>/);
+    assert.match(pg, /api\.get<\{ by_method\?: \{ method: string; amount: number \}\[\] \}>\(`\/api\/shifts\/\$\{s\.id\}`\)/);
+    assert.match(pg, /<th className="py-1">Method<\/th><th className="text-right">Cashier said<\/th><th className="text-right">Manager counted<\/th><th className="text-right">Till recorded<\/th><th className="text-right">Variance<\/th>/);
+    assert.match(pg, /\['problems', `Problems \(\$\{counts\.problems\}\)`\]/);
+    assert.match(pg, /const exportCsv = \(\) =>/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/App.tsx'), 'utf8'), /<Route path="shift-reports"\s+element=\{<ShiftReportsPage \/>\} \/>/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/components/DashboardLayout.tsx'), 'utf8'), /\{ to: '\/dashboard\/shift-reports', label: 'Shift Reports'/);
   });
 } finally { server.close(); }
 

@@ -93,6 +93,8 @@ export interface ZReport {
   confirmation?: {
     status: 'awaiting' | 'confirmed';
     confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
+    /** 0.6.23: awaiting — what the manager recounts (names only). */
+    methods?: string[];
     lines: { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean }[];
   } | null;
   businessName: string;
@@ -517,8 +519,19 @@ export function awaitingConfirmation(dayId?: string | null): AwaitingShift[] {
   `).all(getDeviceConfig()?.device_id ?? null, dayId ?? null, dayId ?? null) as any[];
   return rows.map((r) => ({
     id: r.id, cashier_id: r.cashier_id, cashier_name: r.cashier_name, opened_at: r.opened_at, closed_at: r.closed_at,
-    business_day_id: r.business_day_id, methods: Object.keys(parseMap(r.declared_methods) ?? { cash: 0 }),
+    business_day_id: r.business_day_id, methods: methodsToCount(r.id, parseMap(r.declared_methods)),
   }));
+}
+
+/**
+ * What a manager recounts on a shift: cash, every method the cashier declared money on, and every method this till
+ * recorded money on (0.6.23 — owner: a method at 0 does not appear). Names only; the recount stays blind.
+ */
+export function methodsToCount(shiftId: string, declared: MethodMap | null): string[] {
+  const set = new Set<string>();
+  for (const [m, v] of Object.entries(declared ?? {})) if (m !== 'cash' && Math.round(v * 100) !== 0) set.add(m);
+  for (const [m, v] of Object.entries(expectedMethods(shiftId))) if (m !== 'cash' && Math.round(v * 100) !== 0) set.add(m);
+  return ['cash', ...[...set].sort((a, b) => a.localeCompare(b))];
 }
 
 export interface Confirmation {
@@ -537,11 +550,13 @@ export function confirmShift(shiftId: string, confirmer: { id: string; name: str
   if (!shift || (shift.device_id ?? '') !== (getDeviceConfig()?.device_id ?? '')) throw new Error('Shift not found on this till');
   if (shift.status === 'open') throw new Error('The cashier has not closed this shift yet.');
   if (shift.confirmed_at) throw new Error('This shift is already confirmed.');
-  const recount = cleanMethods(counts);
-  if (!recount) throw new Error('Enter the counted amount for every payment method.');
+  const given = cleanMethods(counts);
+  if (!given) throw new Error('Enter the counted amount for every payment method.');
   const declared = parseMap(shift.declared_methods);
-  const missing = Object.keys(declared ?? { cash: 0 }).filter((m) => !(m in recount)).sort();
+  // 0.6.23: the manager counts what was shown (cash + methods with money on them); a declared method not shown is 0.
+  const missing = methodsToCount(shiftId, declared).filter((m) => !(m in given)).sort();
   if (missing.length) throw new Error(`Enter the counted amount for: ${missing.join(', ')}.`);
+  const recount: MethodMap = { ...Object.fromEntries(Object.keys(declared ?? {}).map((m) => [m, 0])), ...given };
 
   const expected = expectedMethods(shiftId);
   const self = confirmer.id === shift.cashier_id || confirmer.id === shift.opened_by;
@@ -559,7 +574,7 @@ export function confirmShift(shiftId: string, confirmer: { id: string; name: str
 export function shiftConfirmation(shift: any): ZReport['confirmation'] {
   const declared = parseMap(shift.declared_methods);
   if (!declared && !shift.confirmed_at) return null;
-  if (!shift.confirmed_at) return { status: 'awaiting', lines: confirmLines(declared, null, null) };
+  if (!shift.confirmed_at) return { status: 'awaiting', methods: methodsToCount(shift.id, declared), lines: confirmLines(declared, null, null) };
   const who = shift.confirmed_by
     ? (getLocalDb().prepare(`SELECT name FROM users WHERE id=?`).get(shift.confirmed_by) as { name?: string } | undefined)?.name ?? null
     : null;

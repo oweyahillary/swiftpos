@@ -4,6 +4,9 @@ import App from './App';
 import { ThemeProvider } from './context/ThemeContext';
 import { applyAppFlavor } from './lib/appFlavor';
 import './index.css';
+import { stopWheelOnNumberInputs } from './lib/numberInputs';
+
+stopWheelOnNumberInputs(document);
 
 applyAppFlavor(); // A68: badge tab per deployment (VITE_APP_ENV), before render
 

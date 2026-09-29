@@ -139,6 +139,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/orders',   label: 'Orders',   icon: 'reports' },
       { to: '/dashboard/expenses', label: 'Expenses', icon: 'expenses' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: 'reports' },
+      // A365 (0.6.23): every cashier's shift — running, awaiting a manager, confirmed — and View for the per-method table.
+      { to: '/dashboard/shift-reports', label: 'Shift Reports', icon: 'reports' },
       // Table Turnover moved out of Settings — it is a report, not configuration.
       { to: '/dashboard/turnover', label: 'Table Turnover', icon: 'turnover', verticals: FOOD_VERTICALS },
       // Under Finance rather than Settings: it is a cash-custody action, and it is

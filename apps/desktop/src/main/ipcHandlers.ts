@@ -1660,10 +1660,24 @@ export function registerIpcHandlers() {
 
   handle('shift:awaiting', async () => awaitingConfirmation());
 
+  // 0.6.23 (owner: "since its the manager who is logged in do they need to key in their password?"): a manager already
+  // signed in on this till confirms as themselves — no PIN. Anyone else still needs a manager's PIN.
+  const signedInConfirmer = (): { id: string; name: string | null } | null => {
+    const st = getLocalDb().prepare(`SELECT staff_id, staff_name, role_name, permissions FROM staff_session WHERE id=1`).get() as
+      { staff_id: string; staff_name: string; role_name: string | null; permissions: string | null } | undefined;
+    if (!st?.staff_id) return null;
+    let permissions: unknown = {};
+    try { permissions = JSON.parse(st.permissions || '{}'); } catch { /* none */ }
+    return mayConfirmLocal({ roleName: st.role_name, permissions }) ? { id: st.staff_id, name: st.staff_name } : null;
+  };
+  handle('shift:canConfirm', async () => signedInConfirmer() !== null);
+
   handle('shift:confirm', async (_event, payload) => {
-    const { shiftId, pin, counts } = assertPayload<{ shiftId: string; pin: string; counts: Record<string, number> }>(
-      { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', min: 1 }, counts: { t: 'any' } }, payload);
-    const confirmer = await identifyConfirmer(String(pin));
+    const { shiftId, pin, counts } = assertPayload<{ shiftId: string; pin?: string; counts: Record<string, number> }>(
+      { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' } }, payload);
+    const signedIn = signedInConfirmer();
+    if (!signedIn && !String(pin ?? '').trim()) throw new Error('Enter the PIN of a manager (or the owner) on duty.');
+    const confirmer = signedIn && !String(pin ?? '').trim() ? signedIn : await identifyConfirmer(String(pin));
     const c = confirmShift(shiftId, confirmer, counts);
     logLine('shift', `A365 shift ${shiftId} confirmed by ${confirmer.name ?? confirmer.id}${c.self ? ' (self-confirmed)' : ''}` +
       `${c.lines.some((l) => l.mismatch) ? ' — recount differs from the cashier' : ''}`);

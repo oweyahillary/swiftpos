@@ -12,3 +12,9 @@
   --brand-400: 45 212 191;   --brand-500: 20 184 166;   --brand-600: 15 118 110;  --brand-700: 17 94 89;
   --on-brand: 255 255 255;
 }
+
+/* 0.6.23 (owner: "remove the feature were scroll up or down reduces or increases the value"): no spinner arrows on
+   number fields; the wheel is stopped in shared/numberInputs.ts. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }

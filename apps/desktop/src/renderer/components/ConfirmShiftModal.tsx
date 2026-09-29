@@ -25,19 +25,24 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<Confirmation | null>(null);
+  // 0.6.23: a manager already signed in confirms as themselves — no PIN (owner: "do they need to key in their password?").
+  const [signedInManager, setSignedInManager] = useState(false);
   const codes = [...new Set(['cash', ...methods.map((m) => m.toLowerCase())])];
 
-  useEffect(() => { posApi.pos.paymentMethods().then(setOptions).catch(() => {}); }, []);
+  useEffect(() => {
+    posApi.pos.paymentMethods().then(setOptions).catch(() => {});
+    posApi.shift.canConfirm().then((v) => setSignedInManager(v === true)).catch(() => setSignedInManager(false));
+  }, []);
 
   const money = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const submit = async () => {
     const r = readAmounts(inputs, codes);
     if (r.ok === false) { setError(`Enter the counted amount for: ${r.missing.map((m) => methodName(m, options)).join(', ')}.`); return; }
-    if (!pin.trim()) { setError('Enter your manager PIN.'); return; }
+    if (!signedInManager && !pin.trim()) { setError('Enter your manager PIN.'); return; }
     setBusy(true); setError('');
     try {
-      const c = await posApi.shift.confirm(shiftId, pin.trim(), r.map);
+      const c = await posApi.shift.confirm(shiftId, signedInManager ? undefined : pin.trim(), r.map);
       setResult(c); setPin('');
     } catch (e: any) { setError(e?.message ?? 'Could not confirm the shift.'); }
     finally { setBusy(false); }
@@ -69,10 +74,12 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
                     onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} />
                 </div>
               ))}
-              <div>
-                <label className="block text-xs text-gray-300 mb-1">Your manager PIN</label>
-                <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} className={inputCls} />
-              </div>
+              {!signedInManager && (
+                <div data-testid="confirm-pin">
+                  <label className="block text-xs text-gray-300 mb-1">Manager PIN</label>
+                  <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} className={inputCls} />
+                </div>
+              )}
               <button onClick={() => void submit()} disabled={busy}
                 className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-2.5 text-sm">
                 {busy ? 'Confirming…' : 'Confirm shift'}

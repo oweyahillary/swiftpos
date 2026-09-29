@@ -157,8 +157,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const hasCount   = closingFloat.trim() !== '' && !Number.isNaN(counted);
   const variance   = hasCount ? counted - expected : 0;
   const noteRequired = hasCount && Math.round(variance * 100) !== 0 && !closeNotes.trim();
-  // A365: every other method the business takes (or this shift took), declared from the slips / statement.
-  const toDeclare = methodsToDeclare(methodOptions, report?.byMethod ?? []);
+  // A365: every other method this shift recorded money on (0.6.23: a method at 0 is not asked — it counts as 0).
+  const toDeclare = methodsToDeclare(report?.byMethod ?? []);
   const declaredRead = readAmounts(declaredInputs, toDeclare);
 
   const handleForceClose = async () => {
@@ -312,7 +312,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Close shift</p>
                 <div>
-                  <label className="block text-xs text-gray-300 mb-1">Counted cash in drawer ({currency})</label>
+                  <label className="block text-xs text-gray-300 mb-1">Counted cash in drawer ({currency}) — include the opening float</label>
                   <input type="number" inputMode="decimal" value={closingFloat} onChange={e => setClosingFloat(e.target.value)} placeholder="0.00" className={inputCls} />
                 </div>
                 {/* A365: every other method, from the M-Pesa statement, the card machine's total, the delivery app. */}
@@ -516,7 +516,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
         <ConfirmShiftModal
           shiftId={finalReport.shift.id}
           cashierName={finalReport.shift.cashier_name}
-          methods={finalReport.confirmation?.lines.map((l) => l.method) ?? ['cash']}
+          methods={finalReport.confirmation?.methods ?? finalReport.confirmation?.lines.map((l) => l.method) ?? ['cash']}
           currency={currency}
           onClose={() => setConfirming(false)}
           onDone={async () => {

@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { methodName, readAmounts, confirmationLabel } from '../lib/shiftConfirm';
+import { methodName, methodsToCount, readAmounts, confirmationLabel } from '../lib/shiftConfirm';
 
 interface ClosedShift {
   id: string;
@@ -60,7 +60,7 @@ export default function ShiftConfirmations() {
 
   const confirm = async () => {
     if (!target) return;
-    const codes = order(Object.keys(target.declared_methods ?? { cash: 0 }));
+    const codes = methodsToCount(target.declared_methods);
     const r = readAmounts(inputs, codes);
     if (r.ok === false) { setMsg(`Enter the counted amount for: ${r.missing.map((m) => methodName(m)).join(', ')}.`); return; }
     setBusy(true); setMsg('');
@@ -129,7 +129,7 @@ export default function ShiftConfirmations() {
               Count every payment method yourself — the drawer, the M-Pesa statement, the card machine's total — and enter
               what you find. The cashier's figures are shown after you save. {confirmationLabel({ status: 'awaiting' })}.
             </p>
-            {order(Object.keys(target.declared_methods ?? { cash: 0 })).map((m) => (
+            {methodsToCount(target.declared_methods).map((m) => (
               <div key={m}>
                 <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">{methodName(m)} counted</label>
                 <input type="number" min={0} step="0.01" inputMode="decimal" value={inputs[m] ?? ''} data-testid={`confirm-input-${m}`}

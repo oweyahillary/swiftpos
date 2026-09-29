@@ -19,7 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
-import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
+import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
 import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -74,7 +74,9 @@ export default function ShiftModal({
   onClose,
   currency = 'KES',
 }: Props) {
-  const { posApi } = usePOSAuth();
+  const { posApi, session } = usePOSAuth();
+  // 0.6.23: a manager signed in on the web POS confirms as themselves — no PIN.
+  const signedInManager = maySignedInConfirm(session);
 
   // Shared
   const [loading, setLoading] = useState(false);
@@ -211,23 +213,31 @@ export default function ShiftModal({
   };
 
 
+  // 0.6.23: only the methods this shift recorded money on are asked (owner: a method at 0 does not appear).
+  const [taken, setTaken] = useState<{ method: string; amount: number }[]>([]);
   useEffect(() => {
     if (mode !== 'close') return;
     posApi.get<{ code: string; name: string; is_active?: boolean }[]>('/api/payment-methods')
       .then((rows) => setMethodOptions((Array.isArray(rows) ? rows : []).filter((r) => r.is_active !== false)))
       .catch(() => setMethodOptions([]));
-  }, [mode, posApi]);
-  const toDeclare = methodsToDeclare(methodOptions, []);
+    if (shiftId) {
+      posApi.get<{ by_method?: { method: string; amount: number }[] }>(`/api/shifts/${shiftId}`)
+        .then((r) => setTaken(Array.isArray(r?.by_method) ? r.by_method : []))
+        .catch(() => setTaken([]));
+    }
+  }, [mode, posApi, shiftId]);
+  const toDeclare = methodsToDeclare(taken);
 
   const handleConfirm = async () => {
     if (!closeResult) return;
-    const codes = Object.keys(closeResult.declared_methods ?? { cash: 0 });
+    const codes = methodsToCount(closeResult.declared_methods, taken);
     const r = readAmounts(confirmInputs, codes);
     if (r.ok === false) { setError(`Enter the counted amount for: ${r.missing.map((m) => methodName(m, methodOptions)).join(', ')}.`); return; }
-    if (!confirmPin.trim()) { setError('Enter the manager\'s PIN.'); return; }
+    if (!signedInManager && !confirmPin.trim()) { setError('Enter the manager\'s PIN.'); return; }
     setLoading(true); setError('');
     try {
-      const res = await posApi.post<any>(`/api/shifts/${closeResult.id}/confirm`, { confirmed_methods: r.map, pin: confirmPin.trim() });
+      const res = await posApi.post<any>(`/api/shifts/${closeResult.id}/confirm`,
+        signedInManager ? { confirmed_methods: r.map } : { confirmed_methods: r.map, pin: confirmPin.trim() });
       setConfirmed({ lines: res.lines ?? [], confirmer_name: res.confirmer_name ?? null, confirmed_at: res.confirmed_at, confirm_self: !!res.confirm_self });
       setConfirmPin('');
     } catch (e: any) {
@@ -419,7 +429,7 @@ export default function ShiftModal({
             <h2 style={s.title}>Close Shift</h2>
             <p style={s.subtitle}>Count the cash in the drawer. We'll calculate the variance for you.</p>
 
-            <label style={s.label}>Cash Counted ({currency})</label>
+            <label style={s.label}>Cash Counted ({currency}) — include the opening float</label>
             <input
               style={s.input}
               type="number"
@@ -526,7 +536,7 @@ export default function ShiftModal({
                   Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine's
                   total — and enter what you find. The cashier's figures are shown after you save.
                 </p>
-                {Object.keys(closeResult.declared_methods ?? { cash: 0 }).sort((a, b) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b))).map((m) => (
+                {methodsToCount(closeResult.declared_methods, taken).map((m) => (
                   <div key={m}>
                     <label style={s.label}>{methodName(m, methodOptions)} counted ({currency})</label>
                     <input style={s.input} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
@@ -534,8 +544,12 @@ export default function ShiftModal({
                       value={confirmInputs[m] ?? ''} onChange={e => setConfirmInputs({ ...confirmInputs, [m]: e.target.value })} />
                   </div>
                 ))}
-                <label style={s.label}>Manager PIN</label>
-                <input style={s.input} type="password" inputMode="numeric" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} />
+                {!signedInManager && (
+                  <>
+                    <label style={s.label}>Manager PIN</label>
+                    <input style={s.input} type="password" inputMode="numeric" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} data-testid="confirm-pin" />
+                  </>
+                )}
                 {error && <p style={s.error}>{error}</p>}
                 <button style={{ ...s.primaryBtn, width: '100%', marginTop: 8 }} onClick={handleConfirm} disabled={loading}>
                   {loading ? 'Confirming…' : 'Confirm shift'}

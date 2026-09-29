@@ -258,3 +258,9 @@ input, textarea, select, button, a, [role="button"] {
 :root:not(.dark) ::-webkit-scrollbar-track  { background: transparent; }
 :root:not(.dark) ::-webkit-scrollbar-thumb  { background: #cbd5e1; border-radius: 3px; }
 :root:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* 0.6.23 (owner: "remove the feature were scroll up or down reduces or increases the value"): no spinner arrows on
+   number fields; the wheel is stopped in shared/numberInputs.ts. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
