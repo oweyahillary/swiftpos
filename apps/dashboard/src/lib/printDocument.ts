@@ -110,7 +110,7 @@ export function printDocument(spec: PrintDocSpec): void {
   table.totals { margin-left:auto; margin-top:12px; border-collapse:collapse; font-size:12px; min-width:220px; }
   table.totals td { padding:4px 8px; }
   table.totals tr.grand td { border-top:1.5px solid #111; font-weight:700; font-size:13px; padding-top:7px; }
-  .note { margin-top:20px; font-size:12px; } .note .nl { color:#666; font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
+  .note { margin-top:20px; font-size:12px; white-space:pre-line; } .note .nl { color:#666; font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
   .sigs { display:flex; gap:48px; margin-top:44px; }
   .sig { flex:1; } .sigline { border-top:1px solid #999; } .sigl { font-size:10px; color:#666; margin-top:4px; }
   @media print { @page { margin:14mm; } .accentbar { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }

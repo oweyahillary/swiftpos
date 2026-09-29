@@ -60,7 +60,7 @@ On T1 and the web POS.
 ### F8 — Shift Reports: View · **Record**
 1. Click View on the shift confirmed in M2.
 
-**Expected:** A table per method: Cashier said · Manager counted · Till recorded · Variance — cash −100 in red, the cashier’s different figure highlighted; who confirmed and when. Print works.
+**Expected:** A table per method: Cashier said · Manager counted · Till recorded · Variance — cash −100 in red, the cashier’s different figure highlighted; who confirmed and when. **Print report** gives an A4 “SHIFT REPORT” document (business header, the table, totals, Cashier / Manager signatures) — not a picture of the page. On the list, **Print report** gives the “SHIFT REPORTS” document.
 
 ### F9 — Shift Reports: filters and CSV
 1. Click Problems, then Running; then Export CSV.

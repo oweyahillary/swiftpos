@@ -8,7 +8,8 @@
  * Self-confirmed / Force-closed / before confirmation) · Difference (what is over or short, so a problem shows without
  * opening it) · View. Filters: dates, status, "problems only". CSV of the list.
  * View: the per-method table — Cashier said · Manager counted · Till recorded · Variance — with the shift's float, times,
- * who confirmed and when, and the notes; printable.
+ * who confirmed and when, and the notes. "Print report" builds an A4 document from the data (lib/documentSpecs shiftDocSpec /
+ * shiftListDocSpec, the same printer as purchase orders) — never a picture of the page.
  *
  * Reads only existing routes: GET /api/shifts (the list, with the confirmation columns) and GET /api/shifts/:id (what the
  * cloud recorded per method). The rules are shared/shiftConfirm.ts, the same file the till and the web POS use.
@@ -17,6 +18,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { localDateStr } from '../lib/localDate';
 import { useBusiness } from '../context/BusinessContext';
+import { printDocument } from '../lib/printDocument';
+import { shiftDocSpec, shiftListDocSpec } from '../lib/documentSpecs';
 import {
   methodName, shiftReportStatus, shiftStatusLabel, shiftReportLines, shiftDifference, type ShiftReportStatus,
 } from '../lib/shiftConfirm';
@@ -130,6 +133,30 @@ export default function ShiftReportsPage() {
     URL.revokeObjectURL(a.href);
   };
 
+  // Owner: the printout "should not be the page screenshot but a report" — an A4 document built from the data.
+  const biz = business ?? { name: 'SwiftPOS' };
+  const filterLabel = ({ all: 'All shifts', running: 'Running', awaiting: 'Awaiting a manager', confirmed: 'Confirmed', problems: 'Need a look' } as const)[filter];
+  const printList = () => printDocument(shiftListDocSpec({
+    business: biz, from, to, filterLabel,
+    rows: shown.map((s) => ({
+      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: when(s.opened_at), closed: s.closed_at ? when(s.closed_at) : 'running',
+      status: shiftStatusLabel(shiftReportStatus(s), s.confirmer_name), difference: shiftDifference(s, fmtNum),
+    })),
+    awaiting: shown.filter((s) => shiftReportStatus(s) === 'awaiting').length,
+    problems: shown.filter(isProblem).length,
+  }));
+  const printShift = (s: ShiftRow, byMethod: { method: string; amount: number }[]) => {
+    const st = shiftReportStatus(s);
+    printDocument(shiftDocSpec({
+      business: biz, currency,
+      cashier: s.cashier_name, till: s.terminal_code ?? 'Web', opened: when(s.opened_at), closed: s.closed_at ? when(s.closed_at) : 'still running',
+      openingFloat: Number(s.opening_float) || 0, status: shiftStatusLabel(st, s.confirmer_name),
+      confirmedAt: s.confirmed_at ? when(s.confirmed_at) : null, self: st === 'self',
+      confirmed: st === 'confirmed' || st === 'self', running: st === 'running',
+      lines: shiftReportLines(s, byMethod), methodName: (m) => methodName(m), notes: s.notes,
+    }));
+  };
+
   const inputCls = 'rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-1.5 text-sm text-gray-900 dark:text-white';
 
   return (
@@ -139,9 +166,14 @@ export default function ShiftReportsPage() {
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Shift Reports</h1>
           <p className="text-sm text-gray-500">Every cashier's shift — whether it is still running, awaiting a manager's check or confirmed, and what was over or short.</p>
         </div>
-        <button onClick={exportCsv} disabled={!shown.length} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40">
-          Export CSV
-        </button>
+        <div className="flex gap-2">
+          <button onClick={printList} disabled={!shown.length} data-testid="print-list" className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40">
+            Print report
+          </button>
+          <button onClick={exportCsv} disabled={!shown.length} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40">
+            Export CSV
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -198,7 +230,7 @@ export default function ShiftReportsPage() {
         const lines = shiftReportLines(view, viewByMethod);
         const confirmed = st === 'confirmed' || st === 'self';
         return (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 print:static print:bg-white">
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 p-5 space-y-4" data-testid="shift-view">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -246,7 +278,7 @@ export default function ShiftReportsPage() {
               </div>
 
               <div className="flex justify-end gap-2 print:hidden">
-                <button onClick={() => window.print()} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">Print</button>
+                <button onClick={() => printShift(view, viewByMethod)} data-testid="print-shift" className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">Print report</button>
                 <button onClick={() => setView(null)} className="px-4 py-1.5 text-sm rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium">Close</button>
               </div>
             </div>

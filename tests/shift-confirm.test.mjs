@@ -265,6 +265,18 @@ try {
     assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/App.tsx'), 'utf8'), /<Route path="shift-reports"\s+element=\{<ShiftReportsPage \/>\} \/>/);
     assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/components/DashboardLayout.tsx'), 'utf8'), /\{ to: '\/dashboard\/shift-reports', label: 'Shift Reports'/);
   });
+  await ok('Shift Reports print a REPORT (an A4 document built from the data), never the page', () => {
+    const pg = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/ShiftReportsPage.tsx'), 'utf8');
+    assert.ok(!/window\.print\(\)/.test(pg), 'no page print');
+    assert.match(pg, /printDocument\(shiftDocSpec\(\{/);
+    assert.match(pg, /printDocument\(shiftListDocSpec\(\{/);
+    const ds = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/lib/documentSpecs.ts'), 'utf8');
+    assert.match(ds, /docType: 'SHIFT REPORT',/);
+    assert.match(ds, /\{ label: 'Method' \}, \{ label: 'Cashier said', align: 'right' \}, \{ label: 'Manager counted', align: 'right' \},/);
+    assert.match(ds, /signatures: \['Cashier', 'Manager'\],/);
+    assert.match(ds, /docType: 'SHIFT REPORTS',/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8'), /\.note \{ margin-top:20px; font-size:12px; white-space:pre-line; \}/);
+  });
 } finally { server.close(); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
