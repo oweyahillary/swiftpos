@@ -86,6 +86,9 @@ export interface ZReport {
   };
   /** 0.6.11: this till's expense lines on the shift (newest last), for the report's EXPENSES section. */
   expenseLines: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
+  /** A363 (owner: "add the note on the zreport"): what of this shift is not yet on the cloud — its sales still queued
+   *  or failed, and whether the cloud refused the drawer itself. Optional so an older caller or a stored report renders. */
+  notBackedUp?: { sales: number; drawerRefused: boolean };
   businessName: string;
   currency: string;
 }
@@ -313,6 +316,15 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
   `).all(shiftId) as { description: string; amount: number; created_at: string; paid_by_name: string | null }[])
     .map((x) => ({ ...x, amount: Number(x.amount) }));
 
+  // A363: what of this shift has not reached the cloud yet — shown on the report so a close never hides it.
+  const notBackedUp = {
+    sales: (db.prepare(`
+      SELECT COUNT(*) AS n FROM sync_queue q JOIN orders o ON o.id = q.order_id
+       WHERE o.shift_id = ? AND q.status IN ('pending', 'failed')
+    `).get(shiftId) as { n: number }).n,
+    drawerRefused: shift.sync_status === 'conflict',
+  };
+
   // Cross-sync stage 1: the web's sales held on the till (downloaded) — already in the sums above.
   const webHeld = db.prepare(`
     SELECT COUNT(DISTINCT o.id) AS orders,
@@ -339,6 +351,7 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       notes: shift.notes ?? null,
     },
     byMethod,
+    notBackedUp,
     totals: {
       orderCount: agg.orderCount + (f ? Number(f.orders) : 0),
       grossSales: Number(agg.grossSales),

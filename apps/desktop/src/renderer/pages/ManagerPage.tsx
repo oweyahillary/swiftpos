@@ -59,6 +59,7 @@ import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printShiftReport } from '../lib/printShiftReport';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
+import { lastSyncedLabel } from '../lib/syncNotice';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
 function Icon({ d, size = 18, cls = '' }: { d: string; size?: number; cls?: string }) {
@@ -1218,6 +1219,15 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   const flags        = modeFlags(business.type);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // A363: a neutral "Last synced" — information, not an alarm (the red notice on the POS is for refusals only).
+  const [lastSynced, setLastSynced] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    const read = () => posApi.sync.status().then(st => setLastSynced(st.lastSyncedAt ?? null)).catch(() => {});
+    read();
+    const t = setInterval(read, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   /**
    * The business's own print stations, pulled down with the catalogue.
    * Empty until loaded, and empty on a business that has configured none —
@@ -1464,6 +1474,9 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
           <div className="text-right">
             <p className="text-sm font-medium text-white">{staff.staff?.name ?? 'Manager'}</p>
             <p className="text-xs text-gray-300 capitalize">{staff.role} · {staff.branchName}</p>
+            {lastSynced !== undefined && (
+              <p data-testid="last-synced" className="text-[11px] text-gray-400">Last synced: {lastSyncedLabel(lastSynced)}</p>
+            )}
           </div>
         </header>
 

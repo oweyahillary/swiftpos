@@ -25,6 +25,7 @@ import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
 import { reverseAction, isRefunded, ageMinutes } from '../lib/voidRefund';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
+import { syncNotice } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
 import type { ZReport } from '../lib/posApi';
 
@@ -48,9 +49,11 @@ interface Props {
   canVoidRefund?: boolean;
   /** A341: may this person add an expense type from the Shift panel (expenses.manage)? */
   canAddExpenseType?: boolean;
+  /** A363: may this person see the till's sync status (managers, supervisors, owner)? A cashier sees none of it. */
+  canSeeSync?: boolean;
 }
 
-export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false }: Props) {
+export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -166,7 +169,20 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [syncStatus, setSyncStatus] = useState<{
     online: boolean; pendingCount: number; failedCount: number;
     failedReason?: string; failedSince?: string;
+    parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null;
   }>({ online: true, pendingCount: 0, failedCount: 0 });
+  // A363: the manager's bottom notice (null when nothing waits); `noticeBusy` while its button runs.
+  const notice = canSeeSync ? syncNotice(syncStatus) : null;
+  const [noticeBusy, setNoticeBusy] = useState(false);
+  const runNotice = async () => {
+    if (!notice) return;
+    setNoticeBusy(true);
+    try {
+      if (notice.action === 'retry-failed') await posApi.sync.retryFailed();
+      else await posApi.sync.trigger();
+    } catch { /* the refreshed status says what is still waiting */ }
+    finally { setSyncStatus(await posApi.sync.status()); setNoticeBusy(false); }
+  };
   // Shown after a retry, so the cashier learns whether it worked instead of
   // watching the same number sit there.
   const [retryMsg, setRetryMsg] = useState('');
@@ -906,6 +922,24 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   return (
     <div className="h-screen flex flex-col bg-gray-950">
 
+      {/* A363: the manager's notice — only when something waits; red when the cloud refused a record or sales failed. */}
+      {notice && (
+        <div
+          data-testid="sync-notice"
+          className={`fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg shadow-lg text-xs max-w-[90vw] border ${
+            notice.tone === 'alert' ? 'bg-red-950 border-red-700 text-red-100' : 'bg-gray-900 border-gray-700 text-gray-200'}`}
+        >
+          <span className="truncate" title={notice.text}>{notice.text}</span>
+          <button
+            onClick={runNotice}
+            disabled={noticeBusy}
+            className={`shrink-0 px-2 py-1 rounded font-medium ${notice.tone === 'alert' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'} disabled:opacity-50`}
+          >
+            {noticeBusy ? 'Syncing…' : notice.action === 'retry-failed' ? 'Retry' : 'Sync now'}
+          </button>
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900">
         <span className="text-teal-400 font-bold text-sm">
@@ -913,6 +947,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         </span>
         <span className="text-gray-200 text-sm">{business.name}</span>
         <div className="flex items-center gap-3">
+          {/* A363: sync status is for managers only — a cashier's selling does not change offline. */}
+          {canSeeSync && (<>
           {/* Sync indicator */}
           <button
             onClick={() => posApi.sync.trigger().then(() => {
@@ -977,6 +1013,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               {retryMsg}
             </span>
           )}
+          </>)}
 
           {/* Shift pill — open the cash-up panel */}
           <button

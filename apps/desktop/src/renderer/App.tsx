@@ -7,6 +7,7 @@ import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
 import { mayVoidRefund } from './lib/voidRefund';
+import { maySeeSync } from './lib/syncNotice';
 import { mayAddExpenseType } from './lib/expenseTypes';
 import TechPage from './pages/TechPage';
 import UpdateBanner from './pages/UpdateBanner';
@@ -216,6 +217,7 @@ export default function App() {
       onOpenManager={hasManagerRights(staff) ? () => setState('manager') : undefined}
       canManagePrinters={hasManagerRights(staff)}
       canVoidRefund={mayVoidRefund(staff)}
+      canSeeSync={maySeeSync(staff as any)}
       canAddExpenseType={mayAddExpenseType(staff)}
     />
     {curtain}

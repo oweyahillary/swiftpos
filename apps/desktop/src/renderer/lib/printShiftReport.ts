@@ -16,6 +16,7 @@
  * guess, and 58mm is laid out by the same code as 80mm.
  */
 import type { ZReport } from './posApi';
+import { zBackupNote } from './syncNotice';
 
 /** Money crosses into shared/printing as integer cents, never as a float. */
 const toCents = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
@@ -59,6 +60,8 @@ export async function printShiftReport(
     // 0.6.11: the expenses already taken off expected cash, and their lines — so the paper adds up.
     expenses:     totals.expenses == null ? null : toCents(totals.expenses),
     expenseLines: (report.expenseLines ?? []).map(e => ({ description: e.description, amount: toCents(e.amount) })),
+    // A363: what of the shift is not on the cloud yet — the same words as the on-screen report.
+    backupNote: zBackupNote(report.notBackedUp),
     // A342: the web's own shift on this till, counted in this drawer (absent → no line).
     siblingCash:  (totals.foreign?.siblings?.count ?? 0) > 0 ? toCents(totals.foreign!.siblings!.expected) : null,
     // The shift's own figure, not the totals block: once a shift is closed the

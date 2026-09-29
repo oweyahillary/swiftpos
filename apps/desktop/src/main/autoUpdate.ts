@@ -136,7 +136,13 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
   if (decision !== 'update' || !approved || !token) return { decision, approved };
   d.updater.setFeedURL({ provider: 'generic', url: feedUrlFor(cloud, approved) });
   d.updater.requestHeaders = { Authorization: `Bearer ${token}` };
-  try { await d.updater.checkForUpdates(); }
+  try {
+    const result = await d.updater.checkForUpdates() as { downloadPromise?: Promise<unknown> } | null | undefined;
+    // A363: with autoDownload the check hands back a download promise that REJECTS when the network drops mid-download
+    // (net::ERR_NETWORK_IO_SUSPENDED / ERR_CONNECTION_RESET in the log) — nobody caught it, so every drop was an
+    // UnhandledPromiseRejection. The 'error' event already reports it; this only stops the rejection going unhandled.
+    result?.downloadPromise?.catch((e: any) => d.log?.(`update download interrupted: ${e?.message ?? e} — it retries on the next check`));
+  }
   catch (e: any) { d.log?.(`update check failed: ${e?.message ?? e}`); }
   return { decision, approved };
 }

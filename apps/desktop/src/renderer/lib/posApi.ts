@@ -126,6 +126,8 @@ export interface ZReport {
   };
   /** 0.6.11: this till's expense lines on the shift. */
   expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
+  /** A363: what of this shift is not on the cloud yet. */
+  notBackedUp?: { sales: number; drawerRefused: boolean };
   businessName: string;
   currency: string;
 }
@@ -256,7 +258,9 @@ declare global {
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
         status: () => Promise<{ online: boolean; pendingCount: number; failedCount: number;
-                                failedReason?: string; failedSince?: string }>;
+                                failedReason?: string; failedSince?: string;
+                                /** A363: records the cloud refused (parked), why, and when the till last had nothing waiting. */
+                                parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null }>;
         retryFailed: () => Promise<{ requeued: number; pushed: number; errors: string[] }>;
         notifyNetworkChange: (online: boolean) => Promise<{ online: boolean; pendingCount: number; failedCount: number }>;
       };

@@ -8,6 +8,7 @@ import { normaliseDeviceRole, isNodeRole } from '../lib/deviceRegistry';
 import { confirmServingRole } from '../lib/deviceRole';
 
 import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
+import { closesFirst } from '../lib/dayOrder';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -249,12 +250,17 @@ router.post('/push', async (req, res) => {
 
       // Per-row, for the same reason as shifts: business_days_one_open_per_till
       // can reject a row, and a batch call would take the whole push down with it.
-      const results = await Promise.all(
-        rows.map(async row => {
-          const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
-          return { id: row.id, error };
-        }),
-      );
+      // A363: closing days are written BEFORE open ones — an offline close-and-reopen arrives in one batch, and a new
+      // open day written first would collide with yesterday's still-open row (one open day per till).
+      const results: { id: string; error: any }[] = [];
+      for (const group of closesFirst<(typeof rows)[number]>(rows)) {
+        results.push(...await Promise.all(
+          group.map(async row => {
+            const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
+            return { id: row.id, error };
+          }),
+        ));
+      }
       for (const r of results) {
         if (!r.error) { upserted.businessDays++; syncedDayIds.add(r.id); continue; }
         if ((r.error as { code?: string }).code === '23505') {

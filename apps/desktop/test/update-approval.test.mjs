@@ -112,6 +112,21 @@ ok('decide: garbage → hold', U.decideUpdate('latest', '0.6.16') === 'hold' && 
 
 // ── Source pins: the old GitHub poll is gone ──
 const src = fs.readFileSync(path.join(here, '..', 'src', 'main', 'autoUpdate.ts'), 'utf8');
+{
+  // A363: the network drops mid-download — electron-updater's downloadPromise rejects; it must never go unhandled.
+  const { deps } = make({ approved: '0.6.20', running: '0.6.19' });
+  const lines = [];
+  deps.log = (l) => lines.push(l);
+  deps.updater.checkForUpdates = async () => ({ downloadPromise: Promise.reject(new Error('net::ERR_NETWORK_IO_SUSPENDED')) });
+  const unhandled = [];
+  const onUnhandled = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  await U.runUpdateCheck(deps);
+  await new Promise((r) => setTimeout(r, 20));
+  process.off('unhandledRejection', onUnhandled);
+  ok('A363: a dropped download is caught and logged, never an unhandled rejection',
+    unhandled.length === 0 && lines.some((l) => /update download interrupted: net::ERR_NETWORK_IO_SUSPENDED/.test(l)), JSON.stringify({ unhandled: unhandled.map(String), lines }));
+}
 ok('no GitHub poll left: the only checkForUpdates is inside runUpdateCheck', (src.match(/\.checkForUpdates\(\)/g) || []).length === 1
   && /await d\.updater\.checkForUpdates\(\)/.test(src) && !/autoUpdater\.checkForUpdates\(/.test(src));
 ok('initAutoUpdate runs the cloud check at launch and hourly; no differential download', /void check\(\);\s*setInterval\(\(\) => \{ void check\(\); \}, ONE_HOUR\);/.test(src)

@@ -521,6 +521,10 @@ function renderShiftReport(r, paperWidthMm) {
       }
     }
   }
+  if (r.backupNote && r.backupNote.trim()) {
+    d.line(rule(cols));
+    d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
+  }
   if (isClosed && r.notes && r.notes.trim()) {
     d.line(rule(cols));
     d.line("NOTES", { bold: true });

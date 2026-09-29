@@ -631,6 +631,17 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/drawer-clash-sync.test.mjs
 
+      # A363 — an offline close-and-reopen never strands a drawer: the till re-sends a day/shift parked by a trading-day
+      # clash once; refusals reach the log; the web-sales pull renews its token; "last synced"; the Z-report note.
+      - name: Desktop trading-day clash never strands a drawer
+        working-directory: apps/desktop
+        run: node --no-warnings test/day-clash-sync.test.mjs
+
+      # A363 — sync status for managers only (a bottom notice, red for refusals), "Last synced", the Z-report note.
+      - name: Desktop sync notice for managers
+        working-directory: apps/desktop
+        run: node --no-warnings test/sync-notice.test.mjs
+
       # A339 — a manager signing in OFFLINE lands on the manager screen (the real compiled auth:verifyPin, saved credential).
       - name: Desktop offline manager sign-in
         working-directory: apps/desktop

@@ -66,6 +66,8 @@ export interface ShiftReportData {
   siblingCash?: Cents | null;
   /** 0.6.11: the expense lines behind it. */
   expenseLines?: { description: string; amount: Cents }[];
+  /** A363: what of the shift is not on the cloud yet, in words (desktop lib/syncNotice zBackupNote). null/absent = all on it. */
+  backupNote?: string | null;
   expectedCash: Cents;
 
   /** Present once the drawer has been counted. */
@@ -173,6 +175,12 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
       if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
       else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
     }
+  }
+
+  // A363 (owner: "add the note on the zreport"): never close a day without seeing what is still only on this till.
+  if (r.backupNote && r.backupNote.trim()) {
+    d.line(rule(cols));
+    d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
   }
 
   if (isClosed && r.notes && r.notes.trim()) {

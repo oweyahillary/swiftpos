@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import type { ZReport } from '../lib/posApi';
+import { zBackupNote } from '../lib/syncNotice';
 
 interface Props {
   report: ZReport;
@@ -97,6 +98,14 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
               <span>{e.description}{e.paid_by_name ? ` (${e.paid_by_name})` : ''}</span><span>{money(e.amount)}</span>
             </div>
           ))}
+        </>
+      )}
+
+      {/* A363: never close a day without seeing what is still only on this till. */}
+      {zBackupNote(report.notBackedUp) && (
+        <>
+          {rule}
+          <p data-testid="z-not-backed-up" style={{ fontWeight: 'bold' }}>{zBackupNote(report.notBackedUp)}</p>
         </>
       )}
 
