@@ -830,6 +830,12 @@ const EVENT_WHITELIST: Record<string, { table: ReplicatedTable; columns: string[
     columns: ['status', 'closed_at', 'closed_by', 'counted_cash',
               'expected_cash', 'cash_variance', 'notes'],
   },
+  // A364: a shift opened after today's cash-up reopens the day (dayService.reopenDay).
+  day_reopened: {
+    table: 'business_days',
+    columns: ['status', 'closed_at', 'closed_by', 'counted_cash',
+              'expected_cash', 'cash_variance', 'notes'],
+  },
   order_voided: {
     table: 'orders',
     columns: ['status', 'void_reason', 'voided_at', 'voided_by'],

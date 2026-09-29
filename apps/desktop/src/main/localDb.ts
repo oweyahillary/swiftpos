@@ -888,7 +888,7 @@ function initSchema(db: Database.Database) {
       branch_id    TEXT,
       device_id    TEXT,
       seq          INTEGER,
-      kind         TEXT NOT NULL,        -- shift_closed | day_closed | order_voided
+      kind         TEXT NOT NULL,        -- shift_closed | day_closed | day_reopened | order_voided
       target_table TEXT NOT NULL,
       target_id    TEXT NOT NULL,
       payload      TEXT NOT NULL,        -- JSON column:value, applied through a per-kind whitelist

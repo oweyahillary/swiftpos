@@ -240,6 +240,14 @@ export function ensureDayOpen(openedByStaffId?: string | null): BusinessDay {
   if (!staff) throw new Error('No cashier — sign in with a PIN first');
 
   const { device_id, terminal_code } = deviceIdentity();
+
+  // A364: today's day already cashed up on this till → reopen it (one day row per till per date, here and on the cloud).
+  const closedToday = db.prepare(`
+    SELECT * FROM business_days
+     WHERE status = 'closed' AND branch_id = ? AND COALESCE(device_id,'') = COALESCE(?,'') AND business_date = ?
+  `).get(staff.branch_id, device_id, businessDateNow()) as BusinessDay | undefined;
+  if (closedToday) return reopenDay(closedToday, staff.staff_name);
+
   const id = uuid();
   const now = new Date().toISOString();
 
@@ -252,6 +260,70 @@ export function ensureDayOpen(openedByStaffId?: string | null): BusinessDay {
          businessDateNow(), now, openedByStaffId ?? staff.staff_id, now);
 
   return db.prepare(`SELECT * FROM business_days WHERE id=?`).get(id) as BusinessDay;
+}
+
+/**
+ * A364 (2026-09-29) — a day close is a CASH-UP, never the end of trading for the date.
+ *
+ * Owner, T1: closed the morning shift, a manager closed the day, and the next cashier's "Start selling" failed with
+ * "That record already exists." — ensureDayOpen tried a second day row for the same date, which business_days_till_date
+ * (here and on the cloud) refuses. Owner: shifts follow the staff's hours ("one cashier from 9am to 5pm, another from
+ * 2pm to 10pm …"), so a day "should not even limit" them.
+ *
+ * So a shift opened after today's close REOPENS today's row (same id — the cloud upserts by id). What the close
+ * counted is kept: in the notes, readable, and in maintenance_state as the running totals, so the next close
+ *   - shows the manager only the shifts since the reopen (the cash already counted is not counted again), and
+ *   - stores the WHOLE day's counted / expected / variance on the row (earlier cash-ups + this one).
+ */
+export const REOPEN_KEY = (dayId: string) => `day_reopened:${dayId}`;
+
+interface ReopenState { reopened_at: string; counted: number; expected: number; variance: number }
+
+export function reopenState(dayId: string): ReopenState | null {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(REOPEN_KEY(dayId)) as
+      { value: string | null } | undefined;
+    return row?.value ? JSON.parse(row.value) as ReopenState : null;
+  } catch { return null; }
+}
+
+function reopenDay(day: BusinessDay, reopenedByName: string | null): BusinessDay {
+  const db = getLocalDb();
+  const now = new Date().toISOString();
+  const hm = (iso: string | null) => {
+    if (!iso) return '?';
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const n = (v: number | null) => (v == null ? 'none' : String(v));
+  const note = `Cashed up ${hm(day.closed_at)}: counted ${n(day.counted_cash)}, expected ${n(day.expected_cash)}, ` +
+               `variance ${n(day.cash_variance)}. Reopened ${hm(now)}${reopenedByName ? ` by ${reopenedByName}` : ''} for a new shift.`;
+  const state: ReopenState = {
+    reopened_at: now,
+    counted:  day.counted_cash ?? 0,
+    expected: day.expected_cash ?? 0,
+    variance: day.cash_variance ?? 0,
+  };
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE business_days
+         SET status='open', closed_at=NULL, closed_by=NULL,
+             counted_cash=NULL, expected_cash=NULL, cash_variance=NULL,
+             notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || char(10) || ? END,
+             sync_status='pending'
+       WHERE id=?
+    `).run(note, note, day.id);
+    db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+      .run(REOPEN_KEY(day.id), JSON.stringify(state), now);
+    const after = db.prepare(`SELECT notes FROM business_days WHERE id=?`).get(day.id) as { notes: string | null };
+    emitEvent('day_reopened', day.id, {
+      status: 'open', closed_at: null, closed_by: null,
+      counted_cash: null, expected_cash: null, cash_variance: null, notes: after.notes,
+    });
+  })();
+
+  return db.prepare(`SELECT * FROM business_days WHERE id=?`).get(day.id) as BusinessDay;
 }
 
 export interface ConflictedShift {
@@ -361,11 +433,13 @@ export function getDayCloseSummary(): DayCloseSummary | null {
   const day = getOpenDay();
   if (!day) return null;
 
+  // A364: after a reopen, only the shifts since — the cash before it was already counted at the earlier cash-up.
+  const since = reopenState(day.id)?.reopened_at ?? '';
   const rows = db.prepare(`
     SELECT status, expected_cash, closing_float
       FROM shifts
-     WHERE business_day_id = ?
-  `).all(day.id) as { status: string; expected_cash: number | null; closing_float: number | null }[];
+     WHERE business_day_id = ? AND opened_at >= ?
+  `).all(day.id, since) as { status: string; expected_cash: number | null; closing_float: number | null }[];
 
   const expectedCash = rows.reduce((s, r) => s + (r.expected_cash ?? 0), 0);
   const countedCash = rows.reduce((s, r) => s + (r.closing_float ?? 0), 0);
@@ -440,6 +514,11 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
 
   const now = new Date().toISOString();
   const variance = countedCash - summary.expectedCash;
+  // A364: the row carries the WHOLE day — earlier cash-ups (kept at the reopen) plus this one.
+  const prior = reopenState(day.id);
+  const dayCounted  = countedCash + (prior?.counted ?? 0);
+  const dayExpected = summary.expectedCash + (prior?.expected ?? 0);
+  const dayVariance = variance + (prior?.variance ?? 0);
 
   db.prepare(`
     UPDATE business_days
@@ -449,15 +528,17 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
                         ELSE TRIM(COALESCE(notes,'') || char(10) || ?) END,
            sync_status='pending'
      WHERE id=?
-  `).run(now, closedByStaffId, countedCash, summary.expectedCash, variance,
+  `).run(now, closedByStaffId, dayCounted, dayExpected, dayVariance,
          notes ?? null, notes ?? null, notes ?? null, day.id);
   // Phase 2b: the day close is a fact for the branch. Replicas of this trading
   // day stop reading 'open' forever, and the Close Branch screen's per-till
   // day state stops depending solely on the live poll.
   emitEvent('day_closed', day.id, {
     status: 'closed', closed_at: now, closed_by: closedByStaffId,
-    counted_cash: countedCash, expected_cash: summary.expectedCash,
-    cash_variance: variance, notes: notes ?? null,
+    counted_cash: dayCounted, expected_cash: dayExpected,
+    // A364: the row's notes, whole — a replica must not lose an earlier cash-up's line to this close's note.
+    cash_variance: dayVariance,
+    notes: (db.prepare(`SELECT notes FROM business_days WHERE id=?`).get(day.id) as { notes: string | null }).notes,
   });
 
   return {

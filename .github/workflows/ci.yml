@@ -637,6 +637,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/day-clash-sync.test.mjs
 
+      # A364 — a day close is a cash-up: a shift opened after it reopens the day (was "That record already exists.");
+      # the next close counts only the shifts since, the row keeps the whole day.
+      - name: Desktop day close is a cash-up, a later shift reopens the day
+        working-directory: apps/desktop
+        run: node --no-warnings test/day-reopen.test.mjs
+
       # A363 — sync status for managers only (a bottom notice, red for refusals), "Last synced", the Z-report note.
       - name: Desktop sync notice for managers
         working-directory: apps/desktop

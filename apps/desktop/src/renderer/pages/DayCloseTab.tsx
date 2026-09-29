@@ -181,6 +181,10 @@ export default function DayCloseTab({ currency }: Props) {
         <p className="text-sm text-gray-400">
           Trading date <span className="text-white">{summary.day.business_date}</span> on this till.
         </p>
+        {/* A364: a cash-up, not the end of trading — a later shift reopens the day. */}
+        <p data-testid="day-close-cashup" className="text-xs text-gray-500">
+          This is a cash-up. A shift opened later today reopens the day, and the next close counts only the cash since.
+        </p>
       </div>
 
       {loadError && (
