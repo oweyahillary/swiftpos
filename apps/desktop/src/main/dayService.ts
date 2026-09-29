@@ -509,6 +509,27 @@ function closeDayCore(countedCash: number, notes: string | undefined, closedBySt
     );
   }
 
+  // A365: every shift of the day must be confirmed by a manager first (owner: "it should block").
+  const unconfirmed = db.prepare(`
+    SELECT COALESCE(u.name, 'Cashier') AS name, s.opened_at, s.closed_at
+      FROM shifts s LEFT JOIN users u ON u.id = s.cashier_id
+     WHERE s.business_day_id = ? AND s.status = 'closed' AND s.declared_methods IS NOT NULL AND s.confirmed_at IS NULL
+     ORDER BY s.closed_at
+  `).all(day.id) as { name: string; opened_at: string; closed_at: string | null }[];
+  if (unconfirmed.length) {
+    const hm = (iso: string | null) => {
+      if (!iso) return '?';
+      const d = new Date(iso);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    const err: any = new Error(
+      `${unconfirmed.length === 1 ? 'A shift must' : `${unconfirmed.length} shifts must`} be confirmed by a manager before the day can close: ` +
+      unconfirmed.map((x) => `${x.name} ${hm(x.opened_at)}–${hm(x.closed_at)}`).join(', ') + '.',
+    );
+    err.code = 'SHIFTS_UNCONFIRMED';
+    throw err;
+  }
+
   const summary = getDayCloseSummary();
   if (!summary) throw new Error('No open trading day on this till');
 

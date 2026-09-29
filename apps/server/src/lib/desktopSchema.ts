@@ -44,7 +44,9 @@
 /** Schema 54 = branding.theme_id (A325). Pulled only; same convention. */
 /** Schema 55 = orders.origin (cross-sync stage 1: the web's sales downloaded onto a till). Pulled only; same convention. */
 /** Schema 56 = device_config.web_pos_enabled (A346: the till shows Stock only with the web POS). Pulled only; same convention. */
-export const REQUIRED_DESKTOP_SCHEMA = 56;
+/** Schema 57 = A365 shift confirmation (declared / confirmed methods on shifts). A till on 56 keeps trading and syncing;
+ *  its closes simply carry no declaration, so nothing of its awaits a manager. */
+export const REQUIRED_DESKTOP_SCHEMA = 57;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -19,6 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
 import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -33,7 +34,13 @@ export interface Shift {
   opened_at: string;
   closed_at?: string;
   notes?: string;
+  /** A365: the cashier's declaration of every payment method; the shift then awaits a manager. */
+  declared_methods?: Record<string, number> | null;
+  confirmed_at?: string | null;
 }
+
+/** A365: one method on a manager's confirmation (the cloud's confirmationLines). */
+interface ConfirmLine { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean }
 
 export type ShiftModalMode = 'open' | 'close' | 'float' | 'clockin' | 'expense';
 
@@ -87,6 +94,13 @@ export default function ShiftModal({
   const [closeFloat, setCloseFloat] = useState('');
   const [notes, setNotes]           = useState('');
   const [closeResult, setCloseResult] = useState<Shift | null>(null);
+  // A365: every other payment method declared at close; then a manager confirms (PIN + blind recount), now or later.
+  const [methodOptions, setMethodOptions] = useState<MethodOption[]>([]);
+  const [declaredInputs, setDeclaredInputs] = useState<Record<string, string>>({});
+  const [confirmStep, setConfirmStep] = useState(false);
+  const [confirmPin, setConfirmPin] = useState('');
+  const [confirmInputs, setConfirmInputs] = useState<Record<string, string>>({});
+  const [confirmed, setConfirmed] = useState<{ lines: ConfirmLine[]; confirmer_name: string | null; confirmed_at: string; confirm_self: boolean } | null>(null);
 
   // Float in/out
   const [floatType, setFloatType]   = useState<'float_in' | 'float_out'>('float_in');
@@ -197,10 +211,39 @@ export default function ShiftModal({
   };
 
 
+  useEffect(() => {
+    if (mode !== 'close') return;
+    posApi.get<{ code: string; name: string; is_active?: boolean }[]>('/api/payment-methods')
+      .then((rows) => setMethodOptions((Array.isArray(rows) ? rows : []).filter((r) => r.is_active !== false)))
+      .catch(() => setMethodOptions([]));
+  }, [mode, posApi]);
+  const toDeclare = methodsToDeclare(methodOptions, []);
+
+  const handleConfirm = async () => {
+    if (!closeResult) return;
+    const codes = Object.keys(closeResult.declared_methods ?? { cash: 0 });
+    const r = readAmounts(confirmInputs, codes);
+    if (r.ok === false) { setError(`Enter the counted amount for: ${r.missing.map((m) => methodName(m, methodOptions)).join(', ')}.`); return; }
+    if (!confirmPin.trim()) { setError('Enter the manager\'s PIN.'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await posApi.post<any>(`/api/shifts/${closeResult.id}/confirm`, { confirmed_methods: r.map, pin: confirmPin.trim() });
+      setConfirmed({ lines: res.lines ?? [], confirmer_name: res.confirmer_name ?? null, confirmed_at: res.confirmed_at, confirm_self: !!res.confirm_self });
+      setConfirmPin('');
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not confirm the shift');
+    } finally { setLoading(false); }
+  };
+
   const handleClose = async () => {
     if (!shiftId) return;
     const amount = parseFloat(closeFloat);
     if (isNaN(amount) || amount < 0) { setError('Enter the cash counted in the drawer'); return; }
+    const declared = readAmounts(declaredInputs, toDeclare);
+    if (declared.ok === false) {
+      setError(`Enter the total for: ${declared.missing.map((m) => methodName(m, methodOptions)).join(', ')} (0 if none).`);
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -208,6 +251,7 @@ export default function ShiftModal({
       const shift = await posApi.post<Shift>(`/api/shifts/${shiftId}/close`, {
         closing_float: amount,
         notes: notes || null,
+        declared_methods: declared.map,   // A365
       });
       setCloseResult(shift);
       // A273: drawer closed — drop the covered-till identity so the next open
@@ -388,6 +432,16 @@ export default function ShiftModal({
               autoFocus
             />
 
+            {/* A365: every other method, from the M-Pesa statement, the card machine's total, the delivery app. */}
+            {toDeclare.map((m) => (
+              <div key={m}>
+                <label style={s.label}>{methodName(m, methodOptions)} total ({currency})</label>
+                <input style={s.input} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
+                  data-testid={`declare-${m}`}
+                  value={declaredInputs[m] ?? ''} onChange={e => setDeclaredInputs({ ...declaredInputs, [m]: e.target.value })} />
+              </div>
+            ))}
+
             <label style={s.label}>Notes (required if cash doesn't match)</label>
             <textarea
               style={s.textarea}
@@ -456,6 +510,55 @@ export default function ShiftModal({
               <p style={{ ...s.subtitle, color: '#86efac', marginTop: 8 }}>
                 Cash is over — check for any unrecorded float transactions.
               </p>
+            )}
+
+            {/* A365: a manager confirms now (recommended) — or later from the dashboard's Shifts. */}
+            {closeResult.declared_methods && !confirmed && !confirmStep && (
+              <div data-testid="shift-awaiting" style={{ ...s.subtitle, marginTop: 12 }}>
+                Awaiting manager check.
+                <button style={{ ...s.primaryBtn, width: '100%', marginTop: 8 }} data-testid="confirm-now"
+                  onClick={() => { setConfirmStep(true); setError(''); }}>Manager: confirm now</button>
+              </div>
+            )}
+            {confirmStep && !confirmed && (
+              <div data-testid="confirm-shift" style={{ marginTop: 12 }}>
+                <p style={s.subtitle}>
+                  Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine's
+                  total — and enter what you find. The cashier's figures are shown after you save.
+                </p>
+                {Object.keys(closeResult.declared_methods ?? { cash: 0 }).sort((a, b) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b))).map((m) => (
+                  <div key={m}>
+                    <label style={s.label}>{methodName(m, methodOptions)} counted ({currency})</label>
+                    <input style={s.input} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
+                      data-testid={`confirm-${m}`}
+                      value={confirmInputs[m] ?? ''} onChange={e => setConfirmInputs({ ...confirmInputs, [m]: e.target.value })} />
+                  </div>
+                ))}
+                <label style={s.label}>Manager PIN</label>
+                <input style={s.input} type="password" inputMode="numeric" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} />
+                {error && <p style={s.error}>{error}</p>}
+                <button style={{ ...s.primaryBtn, width: '100%', marginTop: 8 }} onClick={handleConfirm} disabled={loading}>
+                  {loading ? 'Confirming…' : 'Confirm shift'}
+                </button>
+              </div>
+            )}
+            {confirmed && (
+              <div data-testid="shift-confirmed" style={{ ...s.summaryBox, marginTop: 12 }}>
+                <p style={{ ...s.subtitle, fontWeight: 700 }}>
+                  {confirmationLabel({ status: 'confirmed', confirmed_by_name: confirmed.confirmer_name, confirmed_at: confirmed.confirmed_at, self: confirmed.confirm_self })}
+                </p>
+                {confirmed.lines.map((l) => (
+                  <div key={l.method} style={s.summaryRow}>
+                    <span style={{ ...s.summaryLabel, fontWeight: l.mismatch ? 700 : undefined }}>
+                      {methodName(l.method, methodOptions)}{l.mismatch ? ` (cashier ${fmt(l.declared ?? 0, currency)})` : ''}
+                    </span>
+                    <span style={s.summaryValue}>
+                      {fmt(l.confirmed ?? 0, currency)} / {fmt(l.expected ?? 0, currency)}
+                      {Math.round((l.variance ?? 0) * 100) !== 0 ? ` (${(l.variance ?? 0) > 0 ? 'over' : 'short'} ${fmt(Math.abs(l.variance ?? 0), currency)})` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
 
             <button

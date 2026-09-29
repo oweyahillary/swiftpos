@@ -38,6 +38,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import Toast from '../components/Toast';
+import ShiftConfirmations from '../components/ShiftConfirmations';
 import { useToast } from '../hooks/useToast';
 
 interface OpenShift {
@@ -189,6 +190,9 @@ export default function OpenShiftsPage() {
         float and no variance, because nobody counted it. Only use it when the
         terminal cannot be reached. If the till still works, count the drawer there.
       </p>
+
+      {/* A365: shifts awaiting a manager's check (confirm here, blind), and who confirmed what. */}
+      <ShiftConfirmations />
 
       {/* Confirmation. Shows the figure being written off, and will not proceed
           without a reason: an unexplained hole in the cash record is worse than

@@ -42,7 +42,7 @@ const D = require(path.join(dist, 'deviceConfig.js'));
 const R = require(path.join(dist, 'referenceBundle.js'));
 const db = L.getLocalDb();
 
-ok('local schema 56: device_config.web_pos_enabled exists', L.LOCAL_SCHEMA_VERSION === 56
+ok('local schema 56+: device_config.web_pos_enabled exists', L.LOCAL_SCHEMA_VERSION >= 56
   && db.prepare(`PRAGMA table_info(device_config)`).all().some((c) => c.name === 'web_pos_enabled'), String(L.LOCAL_SCHEMA_VERSION));
 
 D.saveDeviceConfig({ deploy_mode: 'cloud', server_url: 'http://cloud', branch_id: 'br-1', device_role: 'till', terminal_code: 'T1' });

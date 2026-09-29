@@ -40,7 +40,7 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, type ForeignCash } from './shiftService';
+import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { cloudBranchOrders } from './webSales';
 import { exportReportCsv } from './reportExport';
@@ -1601,14 +1601,74 @@ export function registerIpcHandlers() {
     return currentShiftReport();
   });
 
-  handle('shift:close', async (_event, { closing_float, notes }: { closing_float: number; notes?: string }) => {
+  handle('shift:close', async (_event, { closing_float, notes, declared }: { closing_float: number; notes?: string; declared?: Record<string, number> }) => {
     // Returns the final Z-report. Throws (with .variance/.expected_cash) if a
     // variance note is required — the renderer surfaces that message.
     // A334: a shared drawer's web cash is part of what the cashier counted.
-    const z = closeShift(Number(closing_float), notes, await fetchForeignCash(currentShiftReport()?.shift.id));
+    // A365: `declared` — the cashier's figure for every payment method; the shift then awaits a manager.
+    const z = closeShift(Number(closing_float), notes, await fetchForeignCash(currentShiftReport()?.shift.id), declared ?? null);
     logLine('shift', `close float ${Number(closing_float) || 0}`);
     pushNow();
     return z;
+  });
+
+  // ── A365: a manager confirms a closed shift (blind recount of every payment method) ──────────────────────────
+  // Who may confirm: owner/admin/manager/supervisor roles, '*', orders.void, shifts.manage, settings.manage — the
+  // cloud's mayConfirm. The PIN goes to an AUTHORITY first (the branch node, then the cloud); only when none can be
+  // reached does the till's own saved sign-in answer. A "no" from an authority is final (same chain as sign-in, A17).
+  const mayConfirmLocal = (staff: { roleName?: string | null; permissions?: unknown }) => {
+    const role = String(staff.roleName ?? '').toLowerCase();
+    if (['owner', 'admin', 'manager', 'supervisor', 'branch_manager'].includes(role)) return true;
+    const p = (staff.permissions ?? {}) as Record<string, unknown>;
+    return p['*'] === true || p['orders.void'] === true || p['shifts.manage'] === true || p['settings.manage'] === true;
+  };
+  const NOT_A_CONFIRMER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
+  async function identifyConfirmer(pin: string): Promise<{ id: string; name: string | null }> {
+    const cfg = getDeviceConfig();
+    const branchId = cfg?.branch_id ?? '';
+    const local = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
+      if (!mayConfirmLocal(staff)) throw new Error(NOT_A_CONFIRMER);
+      return { id: staff.staffId, name: staff.name };
+    };
+    if (cfg?.node_url && !isNodeRole(cfg?.device_role)) {
+      const r = await verifyPinAtNodeClient(pin, branchId);
+      if (r.status === 'ok') return local(r.staff);
+      if (r.status === 'rejected') throw new Error(NOT_A_CONFIRMER);
+    }
+    let res: Response | null = null;
+    try {
+      res = await ownerFetch('/api/shifts/confirmer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
+      });
+    } catch { res = null; }
+    if (res && !isUnreachableStatus(res.status)) {
+      if (res.ok) { const b = await res.json() as { id: string; name: string | null }; return { id: b.id, name: b.name ?? null }; }
+      if (res.status === 403) throw new Error(NOT_A_CONFIRMER);
+      const b = await res.json().catch(() => ({} as any));
+      throw new Error(b?.error ?? `Could not check the PIN (HTTP ${res.status}).`);
+    }
+    // No authority could be reached: the node's own roster, or this till's saved sign-ins.
+    if (isNodeRole(cfg?.device_role)) {
+      const v = verifyPinAtNode(pin, branchId);
+      if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_A_CONFIRMER : v.message);
+      return local(v.staff);
+    }
+    const v = verifyPinOffline(pin, branchId);
+    if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_A_CONFIRMER : v.message);
+    return local(v.staff);
+  }
+
+  handle('shift:awaiting', async () => awaitingConfirmation());
+
+  handle('shift:confirm', async (_event, payload) => {
+    const { shiftId, pin, counts } = assertPayload<{ shiftId: string; pin: string; counts: Record<string, number> }>(
+      { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', min: 1 }, counts: { t: 'any' } }, payload);
+    const confirmer = await identifyConfirmer(String(pin));
+    const c = confirmShift(shiftId, confirmer, counts);
+    logLine('shift', `A365 shift ${shiftId} confirmed by ${confirmer.name ?? confirmer.id}${c.self ? ' (self-confirmed)' : ''}` +
+      `${c.lines.some((l) => l.mismatch) ? ' — recount differs from the cashier' : ''}`);
+    pushNow();
+    return c;
   });
 
   handle('shift:zreport', async (_event, shiftId: string) => {

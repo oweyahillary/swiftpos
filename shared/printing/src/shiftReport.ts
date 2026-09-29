@@ -68,6 +68,8 @@ export interface ShiftReportData {
   expenseLines?: { description: string; amount: Cents }[];
   /** A363: what of the shift is not on the cloud yet, in words (desktop lib/syncNotice zBackupNote). null/absent = all on it. */
   backupNote?: string | null;
+  /** A365: the manager's confirmation, in lines ("CONFIRMED BY …", one per method; desktop lib/shiftConfirm). */
+  confirmLines?: string[] | null;
   expectedCash: Cents;
 
   /** Present once the drawer has been counted. */
@@ -181,6 +183,14 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   if (r.backupNote && r.backupNote.trim()) {
     d.line(rule(cols));
     d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
+  }
+
+  // A365: who confirmed the shift and each method's recount — or that it still awaits a manager.
+  if (r.confirmLines && r.confirmLines.length) {
+    d.line(rule(cols));
+    const [head, ...rest] = r.confirmLines;
+    d.lines(wrap(head, cols), { bold: true });
+    for (const l of rest) d.lines(wrap(l, cols));
   }
 
   if (isClosed && r.notes && r.notes.trim()) {

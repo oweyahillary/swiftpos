@@ -643,6 +643,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/day-reopen.test.mjs
 
+      # A365 — a manager confirms every shift (blind recount of every payment method); Close Day waits for them; the
+      # close carries the cashier's declaration and the confirmation reaches the cloud.
+      - name: Desktop shift confirmation by a manager
+        working-directory: apps/desktop
+        run: node --no-warnings test/shift-confirm.test.mjs
+
       # A363 — sync status for managers only (a bottom notice, red for refusals), "Last synced", the Z-report note.
       - name: Desktop sync notice for managers
         working-directory: apps/desktop

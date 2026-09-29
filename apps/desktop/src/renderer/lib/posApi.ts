@@ -128,8 +128,30 @@ export interface ZReport {
   expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
   /** A363: what of this shift is not on the cloud yet. */
   notBackedUp?: { sales: number; drawerRefused: boolean };
+  /** A365: the manager's confirmation — awaiting, or confirmed (who, when, self) with per-method lines. */
+  confirmation?: {
+    status: 'awaiting' | 'confirmed';
+    confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
+    lines: ConfirmLine[];
+  } | null;
   businessName: string;
   currency: string;
+}
+
+/** A365: one payment method on a shift's confirmation — cashier's figure, what the till recorded, the manager's recount. */
+export interface ConfirmLine {
+  method: string; declared: number | null; expected: number | null; confirmed: number | null;
+  variance: number | null; mismatch: boolean;
+}
+/** A365: a closed shift waiting for a manager's recount. */
+export interface AwaitingShift {
+  id: string; cashier_id: string | null; cashier_name: string; opened_at: string; closed_at: string | null;
+  business_day_id: string | null; methods: string[];
+}
+/** A365: the result of a manager's confirmation. */
+export interface Confirmation {
+  shift_id: string; confirmed_by: string; confirmed_by_name: string | null; confirmed_at: string; self: boolean;
+  lines: ConfirmLine[];
 }
 
 /** 0.6.11: a row in the previous-shift-reports list. */
@@ -380,7 +402,11 @@ declare global {
         current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         float: (type: 'float_in' | 'float_out', amount: number, reason?: string) => Promise<ZReport | null>;
-        close: (closing_float: number, notes?: string) => Promise<ZReport>;
+        close: (closing_float: number, notes?: string, declared?: Record<string, number>) => Promise<ZReport>;
+        /** A365: this till's shifts awaiting a manager's confirmation. */
+        awaiting: () => Promise<AwaitingShift[]>;
+        /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
+        confirm: (shiftId: string, pin: string, counts: Record<string, number>) => Promise<Confirmation>;
         zreport: (shiftId: string) => Promise<ZReport>;
         /** 0.6.11: this till's shifts, newest first (previous shift reports). */
         history: () => Promise<ShiftSummary[]>;

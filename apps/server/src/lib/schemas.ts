@@ -172,6 +172,9 @@ export const CloseShiftSchema = z.object({
   // { "1000": 3, "500": 5 }. When present, the server verifies it sums to
   // closing_float. Keys are denomination values as strings.
   denomination_breakdown: z.record(z.string(), z.number().nonnegative()).optional(),
+  // A365: the cashier's declaration of every payment method at End Shift ({"cash": n, "mpesa": n, …}). Cash is always
+  // the counted closing_float. Absent from an older till or web build — then nothing awaits a manager's confirmation.
+  declared_methods: z.record(z.string(), z.number().nonnegative()).optional(),
 });
 
 // ── Discounts ─────────────────────────────────────────────────────────────────

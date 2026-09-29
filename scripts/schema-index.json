@@ -998,7 +998,13 @@
     "drawer_label": "\"text\"",
     "opened_by": "\"uuid\"",
     "closed_by": "\"uuid\"",
-    "close_method": "\"text\""
+    "close_method": "\"text\"",
+    "declared_methods": "\"jsonb\"",
+    "expected_methods": "\"jsonb\"",
+    "confirmed_methods": "\"jsonb\"",
+    "confirmed_by": "\"uuid\"",
+    "confirmed_at": "\"timestamp with time zone\"",
+    "confirm_self": "\"boolean\" NOT NULL DEFAULT false"
   },
   "slot_options": {
     "id": "\"uuid\" NOT NULL",

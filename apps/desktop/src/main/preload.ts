@@ -158,7 +158,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     stale: () => ipcRenderer.invoke('shift:stale'),
     forceClose: (reason: string) => ipcRenderer.invoke('shift:forceClose', { reason }),
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason }),
-    close:   (closing_float: number, notes?: string)                     => ipcRenderer.invoke('shift:close', { closing_float, notes }),
+    close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
+    // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).
+    awaiting: ()                                                         => ipcRenderer.invoke('shift:awaiting'),
+    confirm: (shiftId: string, pin: string, counts: Record<string, number>) => ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts }),
     zreport: (shiftId: string)                                           => ipcRenderer.invoke('shift:zreport', shiftId),
     history: ()                                                          => ipcRenderer.invoke('shift:history'),
   },

@@ -612,6 +612,19 @@ function initSchema(db: Database.Database) {
     ['opened_by', 'TEXT'],
   ]);
 
+  // A365 (schema 57): a manager confirms every shift. The cashier's per-method declaration at End Shift, then the
+  // manager's blind recount, what the till recorded, who and when (JSON maps {"cash": n, "mpesa": n, …}).
+  // confirm_sync: 'pending' until the confirmation reaches the cloud (syncEngine pushShiftConfirmations).
+  migrateColumns(db, 'shifts', [
+    ['declared_methods', 'TEXT'],
+    ['expected_methods', 'TEXT'],
+    ['confirmed_methods', 'TEXT'],
+    ['confirmed_by', 'TEXT'],
+    ['confirmed_at', 'TEXT'],
+    ['confirm_self', 'INTEGER NOT NULL DEFAULT 0'],
+    ['confirm_sync', 'TEXT'],
+  ]);
+
   // Records what this install has applied. Two jobs: it makes a terminal's
   // schema reportable, and it lets one-off backfills be skipped once done —
   // without it every backfill re-runs on every boot, which is tolerable while
@@ -1094,7 +1107,9 @@ function initSchema(db: Database.Database) {
 // never pushed; REQUIRED moves with it by convention.
 // 56 adds device_config.web_pos_enabled (A346) — whether the business has the web POS, which decides whether the
 // manager screen shows Stock. Pulled, never pushed; REQUIRED moves with it by convention.
-export const LOCAL_SCHEMA_VERSION = 56;
+// 57 adds the A365 shift-confirmation columns on shifts (declared / expected / confirmed methods, confirmed_by/at,
+// confirm_self, confirm_sync). Pushed through POST /api/shifts/:id/close and /confirm, not /api/sync/push.
+export const LOCAL_SCHEMA_VERSION = 57;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

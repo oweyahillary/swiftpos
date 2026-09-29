@@ -89,6 +89,12 @@ export interface ZReport {
   /** A363 (owner: "add the note on the zreport"): what of this shift is not yet on the cloud — its sales still queued
    *  or failed, and whether the cloud refused the drawer itself. Optional so an older caller or a stored report renders. */
   notBackedUp?: { sales: number; drawerRefused: boolean };
+  /** A365: the manager's confirmation — awaiting, or who/when/self and the per-method lines. null = closed before A365. */
+  confirmation?: {
+    status: 'awaiting' | 'confirmed';
+    confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
+    lines: { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean }[];
+  } | null;
   businessName: string;
   currency: string;
 }
@@ -352,6 +358,7 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     },
     byMethod,
     notBackedUp,
+    confirmation: shift.status === 'open' ? null : shiftConfirmation(shift),
     totals: {
       orderCount: agg.orderCount + (f ? Number(f.orders) : 0),
       grossSales: Number(agg.grossSales),
@@ -379,7 +386,8 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
 
 // Close the open shift with a counted cash amount. Mirrors the server: requires
 // a note when the count doesn't match expected cash.
-export function closeShift(closing_float: number, notes?: string, foreign: ForeignCash | null = null): ZReport {
+export function closeShift(closing_float: number, notes?: string, foreign: ForeignCash | null = null,
+                           declared: Record<string, number> | null = null): ZReport {
   const db = getLocalDb();
   const shift = getOpenShift();
   if (!shift) throw new Error('No open shift to close');
@@ -396,14 +404,17 @@ export function closeShift(closing_float: number, notes?: string, foreign: Forei
     throw err;
   }
 
+  // A365: the cashier declares every method; cash is always the counted drawer. The shift then awaits a manager.
+  const declaredMap = declared ? { ...(cleanMethods(declared) ?? {}), cash: money2(Number(closing_float)) } : null;
+
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE shifts SET
       status='closed', closed_at=?, closing_float=?, expected_cash=?, cash_variance=?,
-      notes=?, close_method='counted', closed_by=?, sync_status='pending'
+      notes=?, close_method='counted', closed_by=?, sync_status='pending', declared_methods=?
     WHERE id=?
   `).run(now, Number(closing_float), expectedCash, variance, notes ?? null,
-         sessionInfo().staff?.staff_id ?? null, shift.id);
+         sessionInfo().staff?.staff_id ?? null, declaredMap ? JSON.stringify(declaredMap) : null, shift.id);
   // Phase 2b: the close is a fact other tills need — without it, every replica
   // of this drawer stays 'open' forever (the staleness the Close Branch screen
   // currently papers over with live polling).
@@ -414,6 +425,148 @@ export function closeShift(closing_float: number, notes?: string, foreign: Forei
   });
 
   return computeZReport(shift.id, foreign);
+}
+
+// ── A365 (2026-09-29): a manager confirms every shift, on every payment method ────────────────────────────────────
+//
+// Owner: "the managers should confirm shift before closing the day … it should block … They should recount incase the
+// cashier submitted less than the amount … on all payment method not just mpesa"; a manager's own shift: "allowed,
+// flagged". The cashier declares every method at End Shift (closeShift above); a manager recounts every method BLIND,
+// now or later, with their PIN (verified by the caller — ipcHandlers shift:confirm). The till's figures are kept; the
+// confirmation reaches the cloud through POST /api/shifts/:id/confirm (syncEngine pushShiftConfirmations).
+
+export type MethodMap = Record<string, number>;
+
+/** A clean method map (codes trimmed + lower-case, amounts ≥ 0 to the cent), or null. Same rule as the cloud's. */
+export function cleanMethods(input: unknown): MethodMap | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const out: MethodMap = {};
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length === 0 || entries.length > 30) return null;
+  for (const [k, v] of entries) {
+    const code = String(k).trim().toLowerCase();
+    const n = Number(v);
+    if (!code || code.length > 40 || v === null || v === '' || !Number.isFinite(n) || n < 0) return null;
+    out[code] = money2(n);
+  }
+  return out;
+}
+
+const parseMap = (json: string | null | undefined): MethodMap | null => {
+  if (!json) return null;
+  try { return cleanMethods(JSON.parse(json)); } catch { return null; }
+};
+
+export interface ConfirmLine {
+  method: string; declared: number | null; expected: number | null; confirmed: number | null;
+  variance: number | null; mismatch: boolean;
+}
+
+/** One line per method: cash first. variance = confirmed − expected; mismatch = the recount differs from the declaration. */
+export function confirmLines(declared: MethodMap | null, expected: MethodMap | null, confirmed: MethodMap | null): ConfirmLine[] {
+  const codes = new Set<string>([...Object.keys(declared ?? {}), ...Object.keys(expected ?? {}), ...Object.keys(confirmed ?? {})]);
+  return [...codes].sort((a, b) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b))).map((m) => {
+    const d = declared ? (declared[m] ?? 0) : null;
+    const e = expected ? (expected[m] ?? 0) : null;
+    const c = confirmed ? (confirmed[m] ?? 0) : null;
+    return { method: m, declared: d, expected: e, confirmed: c,
+      variance: c !== null && e !== null ? money2(c - e) : null,
+      mismatch: d !== null && c !== null && Math.round(d * 100) !== Math.round(c * 100) };
+  });
+}
+
+/** What this till recorded per method on a closed shift: cash = the stored expected cash; the rest from its payments. */
+export function expectedMethods(shiftId: string): MethodMap {
+  const db = getLocalDb();
+  const shift = db.prepare(`SELECT expected_cash FROM shifts WHERE id=?`).get(shiftId) as { expected_cash: number | null } | undefined;
+  const rows = db.prepare(`
+    SELECT p.method AS method, COALESCE(SUM(p.amount), 0) AS amount
+      FROM payments p JOIN orders o ON o.id = p.order_id
+     WHERE o.shift_id = ? AND o.status != 'voided'
+     GROUP BY p.method
+  `).all(shiftId) as { method: string; amount: number }[];
+  const out: MethodMap = {};
+  for (const r of rows) {
+    const m = String(r.method ?? '').trim().toLowerCase();
+    if (m && m !== 'cash') out[m] = money2((out[m] ?? 0) + Number(r.amount));
+  }
+  out.cash = money2(Number(shift?.expected_cash ?? computeZReport(shiftId).totals.expectedCash));
+  return out;
+}
+
+export interface AwaitingShift {
+  id: string; cashier_id: string | null; cashier_name: string; opened_at: string; closed_at: string | null;
+  business_day_id: string | null; methods: string[];
+}
+
+/**
+ * This till's shifts awaiting a manager: closed with a declaration (A365), not yet confirmed. Shifts closed before
+ * A365 (no declaration) and force-closed ones never wait. `dayId` narrows to one trading day.
+ */
+export function awaitingConfirmation(dayId?: string | null): AwaitingShift[] {
+  const db = getLocalDb();
+  const rows = db.prepare(`
+    SELECT s.id, s.cashier_id, s.opened_at, s.closed_at, s.business_day_id, s.declared_methods,
+           COALESCE(u.name, 'Cashier') AS cashier_name
+      FROM shifts s LEFT JOIN users u ON u.id = s.cashier_id
+     -- own: a manager confirms the drawers THIS till holds.
+     WHERE s.status = 'closed' AND s.declared_methods IS NOT NULL AND s.confirmed_at IS NULL
+       AND COALESCE(s.device_id,'') = COALESCE(?,'')
+       AND (? IS NULL OR s.business_day_id = ?)
+     ORDER BY s.closed_at ASC
+  `).all(getDeviceConfig()?.device_id ?? null, dayId ?? null, dayId ?? null) as any[];
+  return rows.map((r) => ({
+    id: r.id, cashier_id: r.cashier_id, cashier_name: r.cashier_name, opened_at: r.opened_at, closed_at: r.closed_at,
+    business_day_id: r.business_day_id, methods: Object.keys(parseMap(r.declared_methods) ?? { cash: 0 }),
+  }));
+}
+
+export interface Confirmation {
+  shift_id: string; confirmed_by: string; confirmed_by_name: string | null; confirmed_at: string; self: boolean;
+  lines: ConfirmLine[];
+}
+
+/**
+ * Record a manager's blind recount of a closed shift. `confirmer` is the person whose PIN the caller verified and
+ * whose right to confirm it checked. Refuses: an open shift, another till's shift, a second confirmation, a recount
+ * missing any declared method.
+ */
+export function confirmShift(shiftId: string, confirmer: { id: string; name: string | null }, counts: unknown): Confirmation {
+  const db = getLocalDb();
+  const shift = db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shiftId) as any;
+  if (!shift || (shift.device_id ?? '') !== (getDeviceConfig()?.device_id ?? '')) throw new Error('Shift not found on this till');
+  if (shift.status === 'open') throw new Error('The cashier has not closed this shift yet.');
+  if (shift.confirmed_at) throw new Error('This shift is already confirmed.');
+  const recount = cleanMethods(counts);
+  if (!recount) throw new Error('Enter the counted amount for every payment method.');
+  const declared = parseMap(shift.declared_methods);
+  const missing = Object.keys(declared ?? { cash: 0 }).filter((m) => !(m in recount)).sort();
+  if (missing.length) throw new Error(`Enter the counted amount for: ${missing.join(', ')}.`);
+
+  const expected = expectedMethods(shiftId);
+  const self = confirmer.id === shift.cashier_id || confirmer.id === shift.opened_by;
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE shifts SET confirmed_methods=?, expected_methods=?, confirmed_by=?, confirmed_at=?, confirm_self=?,
+                      confirm_sync='pending'
+     WHERE id=? AND confirmed_at IS NULL
+  `).run(JSON.stringify(recount), JSON.stringify(expected), confirmer.id, now, self ? 1 : 0, shiftId);
+  return { shift_id: shiftId, confirmed_by: confirmer.id, confirmed_by_name: confirmer.name, confirmed_at: now, self,
+           lines: confirmLines(declared, expected, recount) };
+}
+
+/** The Z-report's confirmation block: awaiting, confirmed (who, when, self, lines), or null (closed before A365). */
+export function shiftConfirmation(shift: any): ZReport['confirmation'] {
+  const declared = parseMap(shift.declared_methods);
+  if (!declared && !shift.confirmed_at) return null;
+  if (!shift.confirmed_at) return { status: 'awaiting', lines: confirmLines(declared, null, null) };
+  const who = shift.confirmed_by
+    ? (getLocalDb().prepare(`SELECT name FROM users WHERE id=?`).get(shift.confirmed_by) as { name?: string } | undefined)?.name ?? null
+    : null;
+  return {
+    status: 'confirmed', confirmed_by_name: who, confirmed_at: shift.confirmed_at, self: !!shift.confirm_self,
+    lines: confirmLines(declared, parseMap(shift.expected_methods), parseMap(shift.confirmed_methods)),
+  };
 }
 
 /**

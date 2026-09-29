@@ -254,11 +254,13 @@ const TILL_WRITE_ALLOWLIST: RegExp[] = [
   /^\/api\/orders(\/|$|\?)/,              // sales push (incl. /:id/void, /:id/refund)
   /^\/api\/sync\/push(\/|$|\?)/,          // business_days / shifts / floats / expenses
   /^\/api\/branch-prices\/sync(\/|$|\?)/, // price reconciliation
-  /^\/api\/shifts\/[^/]+\/(close|force-close|foreign-cash|foreign-orders)(\/|$|\?)/, // shift close / force-close — the till's own,
+  /^\/api\/shifts\/[^/]+\/(close|force-close|foreign-cash|foreign-orders|confirm)(\/|$|\?)/, // shift close / force-close — the till's own,
+                                          // A365: + confirm — the till replays a manager's confirmation it took
                                           // A342: + foreign-cash / foreign-orders, the till's READ-ONLY POSTs for the
                                           // web's part of its drawer (A334, A336) — dry-run logged "would block" for them
                                           // server-reconciled action (expected_cash/variance); NOT a
                                           // blanket /api/shifts open, so a shift DELETE from a till stays denied
+  /^\/api\/shifts\/confirmer(\/|$|\?)/,    // A365: who a manager's PIN belongs to (read-only; the till confirms locally)
   /^\/api\/auth\//,                       // verify-pin, set-pin, refresh, logout (no dashboard mutations live here)
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];

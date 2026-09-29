@@ -391,6 +391,8 @@ async function runPushStages(errors: string[]): Promise<number> {
   await stage('price push', () => pushBranchPriceEdits(errors));
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
   await stage('reconcile', () => reconcileClosedShifts(errors));
+  // A365: then a manager's confirmation of a shift whose close is on the cloud.
+  await stage('confirm', () => pushShiftConfirmations(errors));
   await stage('node push', () => pushToNode(errors));
   // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
   await stage('last synced', async () => noteSyncedIfClear());
@@ -2079,14 +2081,14 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
   // someone edits the database by hand. Force-close is the path every forgotten
   // drawer takes, so this sat on the common route, not an edge case.
   const closed = db.prepare(`
-    SELECT id, status, closing_float, notes
+    SELECT id, status, closing_float, notes, declared_methods
       FROM shifts
      -- own: reconciling a closed shift means asking the server to compute the
      -- close for a drawer THIS till owns. A peer reconciles its own.
      WHERE status IN ('closed', 'closed_unreconciled')
        AND sync_status = 'pending'
        AND COALESCE(device_id,'') = COALESCE(?,'')
-  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null }[];
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null; declared_methods: string | null }[];
   if (!closed.length) return 0;
 
   let reconciled = 0;
@@ -2109,7 +2111,9 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
       : `${_serverUrl}/api/shifts/${shift.id}/close`;
     const body = forced
       ? { reason: shift.notes?.trim() || 'Force-closed on terminal; no cash count was taken' }
-      : { closing_float: shift.closing_float, notes: shift.notes };
+      : { closing_float: shift.closing_float, notes: shift.notes,
+          // A365: the cashier's declaration of every method — the cloud then shows the shift as awaiting a manager.
+          ...(shift.declared_methods ? { declared_methods: safeJson(shift.declared_methods) } : {}) };
 
     const doPost = () => syncFetch(url, {
       method: 'POST',
@@ -2145,6 +2149,56 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
     }
   }
   return reconciled;
+}
+
+const safeJson = (t: string): unknown => { try { return JSON.parse(t); } catch { return undefined; } };
+
+/**
+ * A365: send a manager's confirmation of a shift to the cloud — after the shift's close is there (sync_status
+ * 'synced'). The till verified the manager's PIN; the cloud re-checks that person may confirm. 409 ALREADY_CONFIRMED
+ * (an earlier pass landed, its answer lost) is done. A refusal that no retry fixes (403) is logged and parked; anything
+ * else (incl. 404 from a cloud not yet deployed) stays pending for the next pass.
+ */
+async function pushShiftConfirmations(errors: string[]): Promise<number> {
+  const db = getLocalDb();
+  const rows = db.prepare(`
+    SELECT id, confirmed_methods, expected_methods, confirmed_by, confirmed_at
+      FROM shifts
+     -- own: a till sends the confirmations of the drawers it holds.
+     WHERE confirm_sync = 'pending' AND confirmed_at IS NOT NULL AND sync_status = 'synced'
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; confirmed_methods: string; expected_methods: string | null; confirmed_by: string; confirmed_at: string }[];
+  let sent = 0;
+  for (const r of rows) {
+    const post = () => syncFetch(`${_serverUrl}/api/shifts/${r.id}/confirm`, {
+      method: 'POST', headers: pushAuthHeaders(),
+      body: JSON.stringify({
+        confirmed_methods: safeJson(r.confirmed_methods), expected_methods: r.expected_methods ? safeJson(r.expected_methods) : undefined,
+        confirmed_by: r.confirmed_by, confirmed_at: r.confirmed_at,
+      }),
+    });
+    try {
+      let res = await post();
+      if (res.status === 401 && await refreshStaffToken()) res = await post();
+      const body = await res.json().catch(() => ({} as any));
+      if (res.ok || (res.status === 409 && body?.code === 'ALREADY_CONFIRMED')) {
+        db.prepare(`UPDATE shifts SET confirm_sync='synced' WHERE id=?`).run(r.id);
+        sent++;
+      } else if (res.status === 403) {
+        // 403 only: the named person may not confirm, or the wrong till — no retry fixes that. A 404 is retried: a
+        // cloud not yet deployed with /confirm answers 404 too, and parking then would lose the confirmation.
+        db.prepare(`UPDATE shifts SET confirm_sync='refused' WHERE id=?`).run(r.id);
+        logLine('sync', `A365 shift confirmation refused by the cloud (shift ${r.id}): ${describeServerError(body, res.status)}`);
+        errors.push(`Shift confirmation: ${describeServerError(body, res.status)}`);
+      } else {
+        errors.push(`Shift confirmation: ${describeServerError(body, res.status)}`);
+      }
+    } catch (err: any) {
+      errors.push(`Shift confirmation: ${err.message}`);
+    }
+  }
+  if (sent) logLine('sync', `A365 pushed ${sent} shift confirmation(s)`);
+  return sent;
 }
 
 // Returns the currently open shift row (most recent), or null if none is open.

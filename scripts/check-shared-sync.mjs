@@ -45,6 +45,15 @@ const SHARED = [
     ],
   },
   {
+    // A365: the shift-confirmation rules the till and the web POS share (methods to declare, amounts, labels, paper).
+    name: 'shiftConfirm.ts',
+    copies: [
+      'shared/shiftConfirm.ts',
+      'apps/desktop/src/shared/shiftConfirm.ts',
+      'apps/dashboard/src/lib/shiftConfirm.ts',
+    ],
+  },
+  {
     // A324 (client branding Phase 2, slice 1): the curated action themes + the brand-colour rule. One registry
     // for the till, the web and the cloud (which validates theme ids on write — A325).
     name: 'themes.ts',

@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import type { ZReport } from '../lib/posApi';
 import { zBackupNote } from '../lib/syncNotice';
+import { confirmationPrintLines } from '../../shared/shiftConfirm';
 
 interface Props {
   report: ZReport;
@@ -106,6 +107,17 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
         <>
           {rule}
           <p data-testid="z-not-backed-up" style={{ fontWeight: 'bold' }}>{zBackupNote(report.notBackedUp)}</p>
+        </>
+      )}
+
+      {/* A365: the manager's confirmation — who, when, each method's recount; or that it awaits a manager. */}
+      {report.confirmation && (
+        <>
+          {rule}
+          <div data-testid="z-confirmation">
+            {confirmationPrintLines(report.confirmation, (n) => n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+              .map((l, i) => <p key={i} style={i === 0 ? { fontWeight: 'bold' } : undefined}>{l}</p>)}
+          </div>
         </>
       )}
 

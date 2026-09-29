@@ -17,6 +17,7 @@
  */
 import type { ZReport } from './posApi';
 import { zBackupNote } from './syncNotice';
+import { confirmationPrintLines } from '../../shared/shiftConfirm';
 
 /** Money crosses into shared/printing as integer cents, never as a float. */
 const toCents = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
@@ -62,6 +63,8 @@ export async function printShiftReport(
     expenseLines: (report.expenseLines ?? []).map(e => ({ description: e.description, amount: toCents(e.amount) })),
     // A363: what of the shift is not on the cloud yet — the same words as the on-screen report.
     backupNote: zBackupNote(report.notBackedUp),
+    // A365: the manager's confirmation (or "AWAITING MANAGER CHECK") — the same lines as the on-screen report.
+    confirmLines: confirmationPrintLines(report.confirmation, (n) => n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })),
     // A342: the web's own shift on this till, counted in this drawer (absent → no line).
     siblingCash:  (totals.foreign?.siblings?.count ?? 0) > 0 ? toCents(totals.foreign!.siblings!.expected) : null,
     // The shift's own figure, not the totals block: once a shift is closed the

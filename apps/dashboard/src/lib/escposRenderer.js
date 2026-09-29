@@ -525,6 +525,12 @@ function renderShiftReport(r, paperWidthMm) {
     d.line(rule(cols));
     d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
   }
+  if (r.confirmLines && r.confirmLines.length) {
+    d.line(rule(cols));
+    const [head, ...rest] = r.confirmLines;
+    d.lines(wrap(head, cols), { bold: true });
+    for (const l of rest) d.lines(wrap(l, cols));
+  }
   if (isClosed && r.notes && r.notes.trim()) {
     d.line(rule(cols));
     d.line("NOTES", { bold: true });

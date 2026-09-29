@@ -47,7 +47,11 @@ export function mayApprove(row: ApproverRow, ownerId: string | null | undefined)
 
 export async function findApprover(
   rows: ApproverRow[],
-  opts: { pin?: string | null; authorizerId?: string | null; ownerId?: string | null },
+  opts: {
+    pin?: string | null; authorizerId?: string | null; ownerId?: string | null;
+    /** Who may approve with their own sign-in PIN. Default: mayApprove (voids, refunds). A365 passes mayConfirm. */
+    may?: (row: ApproverRow, ownerId: string | null | undefined) => boolean;
+  },
   checks: {
     /** The sign-in PIN check (bcrypt, legacy SHA-256 fallback) — routes/auth.ts verifyPin. */
     loginPin: (pin: string, storedHash: string) => Promise<boolean>;
@@ -57,7 +61,8 @@ export async function findApprover(
 ): Promise<ApproverResult> {
   const candidates = opts.authorizerId ? rows.filter((r) => r.id === opts.authorizerId) : rows;
   const withOverride = candidates.filter((r) => !!r.override_pin_hash);
-  const withLogin = candidates.filter((r) => !!r.pin_hash && mayApprove(r, opts.ownerId));
+  const may = opts.may ?? mayApprove;
+  const withLogin = candidates.filter((r) => !!r.pin_hash && may(r, opts.ownerId));
   if (withOverride.length === 0 && withLogin.length === 0) return { result: 'none' };
 
   const pin = String(opts.pin ?? '').trim();

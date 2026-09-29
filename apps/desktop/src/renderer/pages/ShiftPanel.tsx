@@ -5,6 +5,8 @@ import { posApi } from '../lib/posApi';
 import { checkTypeName } from '../lib/expenseTypes';
 import type { ZReport } from '../lib/posApi';
 import ZReportView from '../components/ZReportView';
+import ConfirmShiftModal from '../components/ConfirmShiftModal';
+import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
 
 interface Props {
   business: { name: string; currency: string };
@@ -42,6 +44,10 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   // Close form
   const [closingFloat, setClosingFloat] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
+  // A365: the cashier declares every other payment method too; a manager then confirms (now, or later from Close).
+  const [methodOptions, setMethodOptions] = useState<MethodOption[]>([]);
+  const [declaredInputs, setDeclaredInputs] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
   // Forced close: a manager ending a shift nobody counted. Kept behind a second
   // click and a reason, because it writes an UNRECONCILED shift and that record
   // is permanent.
@@ -96,6 +102,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     (async () => { await refresh(); setLoading(false); })();
     // Load expense categories (online only — falls back to empty list offline)
     posApi.expense.categories().then(setCategories).catch(() => {});
+    posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
   }, []);
 
   // Reload expense list whenever the expenses tab is opened
@@ -150,6 +157,9 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const hasCount   = closingFloat.trim() !== '' && !Number.isNaN(counted);
   const variance   = hasCount ? counted - expected : 0;
   const noteRequired = hasCount && Math.round(variance * 100) !== 0 && !closeNotes.trim();
+  // A365: every other method the business takes (or this shift took), declared from the slips / statement.
+  const toDeclare = methodsToDeclare(methodOptions, report?.byMethod ?? []);
+  const declaredRead = readAmounts(declaredInputs, toDeclare);
 
   const handleForceClose = async () => {
     if (!forceReason.trim()) return;
@@ -166,9 +176,13 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const handleClose = async () => {
     if (!hasCount)    { setError('Enter the counted cash amount'); return; }
     if (noteRequired) { setError('A note is required to close with a variance'); return; }
+    if (declaredRead.ok === false) {
+      setError(`Enter the total for: ${declaredRead.missing.map((m) => methodName(m, methodOptions)).join(', ')} (0 if none).`);
+      return;
+    }
     setBusy(true); setError('');
     try {
-      const r = await posApi.shift.close(counted, closeNotes.trim() || undefined);
+      const r = await posApi.shift.close(counted, closeNotes.trim() || undefined, declaredRead.map);
       setFinalReport(r);
       onShiftChange(null);
     } catch (e: any) { setError(e?.message ?? 'Could not close shift'); }
@@ -233,6 +247,18 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
               <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
                 <ZReportRows report={finalReport} money={money} />
               </div>
+              {/* A365: a manager confirms now (recommended) — or later from Manager → Close. */}
+              {finalReport.confirmation && (
+                <div data-testid="shift-confirmation" className={`text-sm rounded-lg px-3 py-2 border ${finalReport.confirmation.status === 'awaiting' ? 'text-amber-300 bg-amber-400/10 border-amber-400/20' : 'text-gray-200 bg-gray-800 border-gray-700'}`}>
+                  {confirmationLabel(finalReport.confirmation)}
+                  {finalReport.confirmation.status === 'awaiting' && (
+                    <button onClick={() => setConfirming(true)} data-testid="confirm-now"
+                      className="block w-full mt-2 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-lg py-2 text-sm">
+                      Manager: confirm now
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="flex gap-3">
                 <button onClick={() => void handlePrint()} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
                 <button onClick={onClose} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
@@ -289,6 +315,15 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   <label className="block text-xs text-gray-300 mb-1">Counted cash in drawer ({currency})</label>
                   <input type="number" inputMode="decimal" value={closingFloat} onChange={e => setClosingFloat(e.target.value)} placeholder="0.00" className={inputCls} />
                 </div>
+                {/* A365: every other method, from the M-Pesa statement, the card machine's total, the delivery app. */}
+                {toDeclare.map((m) => (
+                  <div key={m}>
+                    <label className="block text-xs text-gray-300 mb-1"><MethodDot method={m} />{methodName(m, methodOptions)} total ({currency})</label>
+                    <input type="number" inputMode="decimal" value={declaredInputs[m] ?? ''} placeholder="0.00" className={inputCls}
+                      data-testid={`declare-${m}`}
+                      onChange={e => setDeclaredInputs({ ...declaredInputs, [m]: e.target.value })} />
+                  </div>
+                ))}
                 {hasCount && (
                   <div className={`text-sm rounded-lg px-3 py-2 border ${variance === 0 ? 'text-green-400 bg-green-400/10 border-green-400/20' : 'text-amber-400 bg-amber-400/10 border-amber-400/20'}`}>
                     Expected {money(expected)} · {variance === 0 ? 'balances' : `${variance > 0 ? 'over' : 'short'} ${money(Math.abs(variance))}`}
@@ -317,7 +352,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 {(noteRequired || closeNotes) && (
                   <textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder={noteRequired ? 'Note required to explain the variance' : 'Notes (optional)'} rows={2} className={inputCls} />
                 )}
-                <button onClick={handleClose} disabled={busy || !hasCount || noteRequired} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
+                <button onClick={handleClose} disabled={busy || !hasCount || noteRequired || declaredRead.ok === false} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
                   {busy ? 'Closing…' : 'Close shift & print Z-report'}
                 </button>
 
@@ -476,6 +511,20 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
           )}
         </div>
       </div>
+
+      {confirming && finalReport && (
+        <ConfirmShiftModal
+          shiftId={finalReport.shift.id}
+          cashierName={finalReport.shift.cashier_name}
+          methods={finalReport.confirmation?.lines.map((l) => l.method) ?? ['cash']}
+          currency={currency}
+          onClose={() => setConfirming(false)}
+          onDone={async () => {
+            setConfirming(false);
+            try { setFinalReport(await posApi.shift.zreport(finalReport.shift.id)); } catch { /* keep the closed report */ }
+          }}
+        />
+      )}
 
       {/* Hidden printable Z-report */}
       <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>

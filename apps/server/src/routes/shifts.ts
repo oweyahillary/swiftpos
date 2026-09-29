@@ -13,6 +13,10 @@ import { webTillName } from '../lib/terminalLabel';
 import { foreignCash, foreignOrders, type CloudOrder } from '../lib/foreignCash';
 import { recorderId } from '../lib/expenseRecorder';
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
+import { findApprover, type ApproverRow } from '../lib/approver';
+import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
+import { verifyPin } from './auth';
+import bcrypt from 'bcrypt';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -346,7 +350,9 @@ router.post('/:id/foreign-orders', async (req, res) => {
 
 router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const { id } = req.params;
-  const { closing_float, notes, denomination_breakdown } = req.body;
+  const { closing_float, notes, denomination_breakdown, declared_methods } = req.body;
+  // A365: every method the cashier declared; cash is always the counted drawer.
+  const declared = declared_methods ? { ...(methodMap(declared_methods) ?? {}), cash: Number(closing_float) } : null;
 
   if (closing_float === undefined || closing_float === null) {
     res.status(400).json({ error: 'closing_float is required' });
@@ -485,6 +491,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       cash_variance: cashVariance,
       notes: closeNotes,
       denomination_breakdown: denomination_breakdown ?? null,
+      ...(declared ? { declared_methods: declared } : {}),
     })
     .eq('id', id)
     .select()
@@ -508,6 +515,134 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   res.json({ ...closed, closed_with: siblings.map(x => x.id) });
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A365 — a manager confirms a closed shift: a blind recount of every payment method.
+//
+// Three ways in, one record:
+//   * the TILL replays a confirmation it took offline (desktop surface, same till, `confirmed_by` = the manager whose
+//     PIN the till verified). The cloud re-checks that person may confirm; it does not see the PIN.
+//   * a manager's PIN typed at the web POS (the cashier is signed in) — the refund rule's lookup, widened to mayConfirm.
+//   * a manager signed in on the dashboard confirms as themselves.
+// A second confirmation is refused (409 ALREADY_CONFIRMED) — the till treats that as done.
+// ─────────────────────────────────────────────────────────────────────────────
+async function confirmerRows(businessId: string) {
+  const [{ data: rows }, { data: biz }] = await Promise.all([
+    supabase
+      .from('users')
+      .select('id, name, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+      .eq('business_id', businessId)
+      .eq('status', 'active'),
+    supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
+  ]);
+  return { rows: (rows ?? []) as (ApproverRow & { name?: string | null })[], ownerId: ((biz as any)?.owner_id ?? null) as string | null };
+}
+
+async function confirmerByPin(businessId: string, pin: string, authorizerId?: string) {
+  const { rows, ownerId } = await confirmerRows(businessId);
+  const found = await findApprover(rows, { pin, authorizerId, ownerId, may: mayConfirm }, {
+    loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
+    overridePin: (p, h) => bcrypt.compare(p, h),
+  });
+  if (found.result !== 'ok') return null;
+  const row = rows.find((r) => r.id === found.userId);
+  return { id: found.userId, name: row?.name ?? null };
+}
+
+/** What the system recorded per payment method on a closed shift; cash = the stored expected cash in the drawer. */
+async function expectedByMethod(shift: { id: string; expected_cash?: number | string | null; opening_float?: number | string | null }): Promise<MethodMap> {
+  const out: MethodMap = {};
+  const orderIds = await fetchAllIds('orders', q => q.eq('shift_id', shift.id).eq('status', 'completed'));
+  if (orderIds.length) {
+    const pays = await chunkIn<{ method: string; amount: number | string }>(
+      'payments', 'order_id', orderIds,
+      q => q.select('method, amount').in('status', ['completed', 'refunded']),
+    );
+    for (const p of pays) {
+      const m = String(p.method ?? '').trim().toLowerCase();
+      if (!m || m === 'cash') continue;
+      out[m] = Math.round(((out[m] ?? 0) + Number(p.amount)) * 100) / 100;
+    }
+  }
+  out.cash = shift.expected_cash != null
+    ? Number(shift.expected_cash)
+    : await computeExpectedCash(shift.id, Number(shift.opening_float) || 0);
+  return out;
+}
+
+// POST /api/shifts/confirmer — the till asks who a manager's PIN belongs to (the till then confirms locally and syncs).
+router.post('/confirmer', async (req, res) => {
+  const pin = String(req.body?.pin ?? '').trim();
+  if (!pin) { res.status(400).json({ error: 'Enter the manager\'s PIN.' }); return; }
+  const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined);
+  if (!who) {
+    res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
+    return;
+  }
+  res.json(who);
+});
+
+// POST /api/shifts/:id/confirm
+router.post('/:id/confirm', async (req, res) => {
+  const { id } = req.params;
+  const counts = methodMap(req.body?.confirmed_methods);
+  if (!counts) { res.status(400).json({ error: 'Enter the counted amount for every payment method.' }); return; }
+
+  const { data: shift, error } = await supabase
+    .from('shifts').select('*').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (shift.status === 'open') { res.status(409).json({ error: 'The cashier has not closed this shift yet.', code: 'SHIFT_OPEN' }); return; }
+  if (shift.confirmed_at) { res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED' }); return; }
+
+  let confirmer: { id: string; name: string | null } | null = null;
+  let at = new Date().toISOString();
+  let expected: MethodMap | null = null;
+  const sameTill =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
+
+  if (req.surface === 'desktop' && typeof req.body?.confirmed_by === 'string') {
+    // The till's replay: its manager was verified by PIN on the till.
+    if (!sameTill) { res.status(403).json({ error: 'Only the till that holds this shift can send its confirmation.' }); return; }
+    const { rows, ownerId } = await confirmerRows(req.businessId!);
+    const row = rows.find((r) => r.id === req.body.confirmed_by);
+    if (!row || !mayConfirm(row, ownerId)) {
+      res.status(403).json({ error: 'The person who confirmed this shift may not confirm shifts.', code: 'NOT_A_CONFIRMER' });
+      return;
+    }
+    confirmer = { id: row.id, name: row.name ?? null };
+    at = replayTime(req.body?.confirmed_at);
+    expected = methodMap(req.body?.expected_methods);
+  } else if (req.body?.pin) {
+    confirmer = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined);
+    if (!confirmer) {
+      res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
+      return;
+    }
+  } else if (callerMayConfirm(req)) {
+    confirmer = { id: req.userId!, name: null };
+  } else {
+    res.status(403).json({ error: 'A manager must confirm this shift — enter a manager\'s PIN.', code: 'CONFIRMER_REQUIRED' });
+    return;
+  }
+
+  if (!expected) {
+    try { expected = await expectedByMethod(shift); } catch (e) { sendError(res, e as Error); return; }
+  }
+  const self = isSelfConfirm(confirmer.id, shift);
+  const { data: updated, error: upErr } = await supabase
+    .from('shifts')
+    .update({ confirmed_methods: counts, expected_methods: expected, confirmed_by: confirmer.id, confirmed_at: at, confirm_self: self })
+    .eq('id', id).eq('business_id', req.businessId).is('confirmed_at', null)
+    .select().maybeSingle();
+  if (upErr) { sendError(res, upErr); return; }
+  if (!updated) { res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED' }); return; }
+  res.json({
+    ...updated,
+    confirmer_name: confirmer.name,
+    lines: confirmationLines(methodMap(shift.declared_methods), expected, counts),
+  });
+});
 
 /**
  * Cash paid out of a drawer as recorded EXPENSES.
@@ -830,7 +965,8 @@ router.get('/', async (req, res) => {
   if (!shifts?.length) { res.json([]); return; }
 
   // Fetch cashier names separately (avoid FK join issues on users table)
-  const cashierIds = [...new Set(shifts.map(s => s.cashier_id))];
+  // A365: the confirming manager's name too.
+  const cashierIds = [...new Set([...shifts.map(s => s.cashier_id), ...shifts.map(s => s.confirmed_by).filter(Boolean)])];
   const { data: users } = await supabase
     .from('users')
     .select('id, name')
@@ -855,6 +991,9 @@ router.get('/', async (req, res) => {
   const enriched = shifts.map(s => ({
     ...s,
     cashier_name: nameMap[s.cashier_id] ?? 'Unknown',
+    confirmer_name: s.confirmed_by ? (nameMap[s.confirmed_by] ?? null) : null,
+    // A365: closed under the new rule (declared every method) and not yet confirmed by a manager.
+    awaiting_confirmation: s.status !== 'open' && s.declared_methods != null && s.confirmed_at == null,
     expected_cash_live: expectedById.has(s.id) ? expectedById.get(s.id) : null,
   }));
 
