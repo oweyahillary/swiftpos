@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     init:         ()                  => ipcRenderer.invoke('pos:init'),
     getVariants:  (productId: string) => ipcRenderer.invoke('pos:getVariants', productId),
     getModifiers: (productId: string) => ipcRenderer.invoke('pos:getModifiers', productId),
+    notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
@@ -164,6 +165,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>) => ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts }),
     // 0.6.23: a manager already signed in confirms without a PIN.
     canConfirm: ()                                                       => ipcRenderer.invoke('shift:canConfirm'),
+    // A366: may the signed-in person close the open shift (its owner or a manager)?
+    closeRights: ()                                                      => ipcRenderer.invoke('shift:closeRights'),
     zreport: (shiftId: string)                                           => ipcRenderer.invoke('shift:zreport', shiftId),
     history: ()                                                          => ipcRenderer.invoke('shift:history'),
   },

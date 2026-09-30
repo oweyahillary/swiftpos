@@ -87,7 +87,7 @@ globalThis.fetch = async (url, init = {}) => {
 E.configureSyncEngine('http://cloud', 'tok', 'refresh');
 
 console.log('A365 — a manager confirms every shift, on every method\n');
-ok('local schema 57: the confirmation columns exist on shifts', L.LOCAL_SCHEMA_VERSION === 57
+ok('local schema 57+: the confirmation columns exist on shifts', L.LOCAL_SCHEMA_VERSION >= 57
   && ['declared_methods', 'expected_methods', 'confirmed_methods', 'confirmed_by', 'confirmed_at', 'confirm_self', 'confirm_sync']
     .every((c) => db.prepare(`PRAGMA table_info(shifts)`).all().some((x) => x.name === c)));
 
@@ -251,6 +251,10 @@ ok('0.6.23 — a signed-in manager is not asked for a PIN (the till checks the s
 ok('0.6.23 — the mouse wheel never changes a number field; no spinner arrows',
   /stopWheelOnNumberInputs\(document\);/.test(src('renderer/main.tsx'))
   && /input\[type='number'\]::-webkit-inner-spin-button \{ -webkit-appearance: none;/.test(src('renderer/index.css')));
+ok('A366 — End Shift: another cashier sees who owns the shift, not the count form (the owner or a manager closes it)',
+  /posApi\.shift\.closeRights\(\)\.then\(setCloseRights\)/.test(src('renderer/pages/ShiftPanel.tsx'))
+  && /\{!closeRights\.allowed && \(\s*<div className="[^"]*" data-testid="close-not-yours">/.test(src('renderer/pages/ShiftPanel.tsx'))
+  && /\{closeRights\.allowed && \(\s*<div className="border border-gray-800 rounded-xl p-4 space-y-3">\s*<p className="text-sm text-gray-300 font-medium">Close shift<\/p>/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('the closed shift offers "Manager: confirm now"', /data-testid="confirm-now"/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('the confirm screen is blind: no expected or cashier figure before it is saved',
   !/expected|declared/i.test(src('renderer/components/ConfirmShiftModal.tsx').split('{!result && (')[1].split('{result && (')[0]));

@@ -31,6 +31,9 @@ export interface CartItem {
   // line wins — one fill-up per order in practice), it is what per-pump fuel
   // reports and tank deduction key on.
   pumpId?: string;
+  // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Travels
+  // to the kitchen ticket, the receipt, the till's order_items.notes and the cloud's.
+  notes?: string | null;
 }
 
 // The price this till charges for a product: the per-branch override if one was

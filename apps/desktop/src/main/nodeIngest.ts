@@ -55,6 +55,7 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
     'status', 'subtotal', 'vat_amount', 'ctl_amount', 'discount_amount', 'tip_amount',
     'total', 'covers', 'cashier_id', 'shift_id', 'customer_id', 'customer_name',
     'customer_phone', 'created_at', 'device_id', 'pump_id', 'seq',
+    'notes',   // A367 (58): the order's note. An older node ignores it; an older peer sends none (NULL).
   ],
   shifts: [
     'id', 'business_id', 'branch_id', 'cashier_id', 'opened_at', 'closed_at', 'status',
@@ -103,6 +104,7 @@ export function replicatedColumns(table: ReplicatedTable): string[] {
 const ORDER_ITEM_COLUMNS = [
   'id', 'order_id', 'product_id', 'product_name', 'category_name',
   'unit_price', 'quantity', 'subtotal', 'course', 'fire_status',
+  'notes',   // A367 (58): the line's note ("3 normal, 2 spicy"). Same tolerance as the order's.
 ];
 
 /**

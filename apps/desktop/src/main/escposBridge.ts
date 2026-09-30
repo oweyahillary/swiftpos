@@ -27,6 +27,7 @@
  * reinstall, which is the entire point: the first hardware test must not be
  * able to take the counter down.
  */
+import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, saveDeviceConfig } from './deviceConfig';
 import { queueTickets } from './print/printWorker';
@@ -80,6 +81,9 @@ interface CartLine {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  /** A367: the cashier's note on the line. `notes` is what the order payload carries (and the cloud stores);
+   *  `note` is the older name, still read so a payload from before 0.6.24 prints unchanged. */
+  notes?: string | null;
   note?: string;
   selectedVariants?: Array<{ groupName?: string; optionName?: string }>;
   selectedModifiers?: Array<{ name?: string; price?: number }>;
@@ -251,6 +255,8 @@ export interface SaleForPrint {
   /** A349: the tip on top of the bill (printed after the total; PAY = total + tip). 0 = none. */
   tip?: number;
   kotCount: number;
+  /** A367: the cashier's note on the whole order. */
+  note?: string | null;
   /** Set on any copy after the first. Drives the Duplicate Print banner. */
   reprint?: { at: Date; count: number };
 }
@@ -342,7 +348,7 @@ export function printSale(
         unitPrice:  toCents(l.unitPrice),
         lineTotal:  toCents(l.lineTotal),
         units:      toUnits(l, ids, lineStationIds, routing).map(stripKitchen),
-        note:       l.note,
+        note:       cleanNote(l.notes ?? l.note) ?? undefined,   // A367
       };
     });
 
@@ -369,6 +375,7 @@ export function printSale(
         discount:       toCents(sale.discount ?? 0),
         tip:            toCents(sale.tip ?? 0),
         kotCount:       sale.kotCount,
+        note:           cleanNote(sale.note, ORDER_NOTE_MAX) ?? undefined,   // A367
       },
     };
 

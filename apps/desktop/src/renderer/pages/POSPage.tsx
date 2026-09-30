@@ -27,6 +27,8 @@ import { reverseAction, isRefunded, ageMinutes } from '../lib/voidRefund';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import { syncNotice } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
+import NoteModal from '../components/NoteModal';
+import { noteLines } from '../../shared/orderNotes';
 import type { ZReport } from '../lib/posApi';
 
 interface Props {
@@ -113,6 +115,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Rider name, only meaningful on a delivery. Cleared whenever the type changes
   // so a name can never leak onto a counter sale.
   const [deliveryPerson, setDeliveryPerson] = useState('');
+  // A367: the note on the whole order, and which note the editor has open (a line index, or 'order').
+  const [orderNote, setOrderNote] = useState('');
+  const [noteFor, setNoteFor] = useState<number | 'order' | null>(null);
+  const [notePicks, setNotePicks] = useState<string[]>([]);
+  useEffect(() => { posApi.pos.notePicks().then(setNotePicks).catch(() => setNotePicks([])); }, []);
   const [tableNumber, setTableNumber] = useState('');
   // Diners on this bill, for Average Per Cover. Dine-in only: a takeaway bag is
   // one transaction, not one diner, and a forced headcount there would fill APC
@@ -353,7 +360,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
   const addSimple = (product: any) => {
     setCart(prev => {
-      const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0);
+      // A367: never into a line that carries a note — "2 spicy" plus a tap is not 3 spicy; the tap is a new line.
+      const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
       if (existing) {
         return prev.map(i => i === existing
           ? { ...i, quantity: i.quantity + 1, lineTotal: i.unitPrice * (i.quantity + 1), kotSent: false }
@@ -417,7 +425,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   };
 
   const removeItem = (index: number) => setCart(prev => prev.filter((_, i) => i !== index));
-  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); };
+  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setOrderNote(''); };
+
+  // A367: a note on one line. A changed note un-sends the line, so the kitchen hears the new instruction on the next
+  // ticket (same rule as a changed quantity).
+  const setLineNote = (index: number, note: string | null) => {
+    setCart(prev => prev.map((item, i) => i === index && (item.notes ?? null) !== note
+      ? { ...item, notes: note, kotSent: false } : item));
+  };
 
   // ── Restaurant: kitchen / tabs ─────────────────────────
 
@@ -549,7 +564,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             selectedVariants: item.selectedVariants,
             selectedModifiers: item.selectedModifiers,
             comboComponents: comboItems[item.product.id] ?? undefined,
+            notes: item.notes ?? null,   // A367
           })),
+          notes: orderNote.trim() || null,   // A367: the order's note heads the ticket
         });
 
         setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
@@ -589,7 +606,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       : orderType === 'delivery'
         ? `Delivery ${deliveryPerson.trim() || num.slice(-4)}`
         : `Takeaway ${num.slice(-4)}`;
-    await holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined });
+    await holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined,
+      orderNote: orderNote.trim() || undefined });
     setHeldOrders(await listHeldOrders());
     clearCart();
     setOrderType(flags.defaultOrderType);
@@ -608,6 +626,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         setCart(held.cart);
         setOrderType(held.orderType);
         setDeliveryPerson(held.deliveryPerson ?? '');
+        setOrderNote(held.orderNote ?? '');
         setTableNumber(held.tableNumber);
         setOrderNumber(held.orderNumber);
         setHeldOrders(await listHeldOrders());
@@ -676,6 +695,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setCart(held.cart);
     setOrderType(held.orderType);
     setDeliveryPerson(held.deliveryPerson ?? '');
+    setOrderNote(held.orderNote ?? '');
     setTableNumber(held.tableNumber);
     setOrderNumber(held.orderNumber);
     setHeldOrders(await listHeldOrders());
@@ -772,7 +792,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           // kitchen as one opaque line and the cooks cannot see the 3PC Chicken
           // inside it.
           comboComponents: comboItems[item.product.id] ?? undefined,
+          // A367: the line's note — kitchen ticket, receipt, the till's order_items.notes and the cloud's.
+          notes: item.notes ?? null,
         })),
+        // A367: the note on the whole order.
+        notes: orderNote.trim() || null,
         payments: payment.legs,
       });
 
@@ -860,7 +884,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // ── Receipt screen ─────────────────────────────────────
   if (completedOrder) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+      <div className="app-screen-min bg-gray-950 flex items-center justify-center px-4">
         <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden">
           <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-center justify-between">
             <div>
@@ -920,13 +944,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
   // ── Main POS screen ────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-gray-950">
+    <div className="app-screen flex flex-col bg-gray-950">
 
       {/* A363: the manager's notice — only when something waits; red when the cloud refused a record or sales failed. */}
       {notice && (
         <div
           data-testid="sync-notice"
-          className={`fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg shadow-lg text-xs max-w-[90vw] border ${
+          style={{ bottom: 'calc(0.75rem + var(--update-banner-h, 0px))' }}
+          className={`fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 rounded-lg shadow-lg text-xs max-w-[90vw] border ${
             notice.tone === 'alert' ? 'bg-red-950 border-red-700 text-red-100' : 'bg-gray-900 border-gray-700 text-gray-200'}`}
         >
           <span className="truncate" title={notice.text}>{notice.text}</span>
@@ -1416,12 +1441,35 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     ))}
                   </div>
                 )}
+                {/* A367: the line's note, and the button that edits it. */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1" data-testid="line-note">
+                    {noteLines(item.notes).map((l, k) => (
+                      <p key={k} className="text-xs text-amber-300 break-words">{l}</p>
+                    ))}
+                  </div>
+                  {!item.isFuel && (
+                    <button onClick={() => setNoteFor(index)} data-testid="line-note-btn"
+                            className="text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded-md px-2 py-0.5 flex-shrink-0">
+                      {item.notes ? '✎ Note' : '+ Note'}
+                    </button>
+                  )}
+                </div>
                 <p className="text-right text-sm text-gray-200 font-medium">{currency} {item.lineTotal.toLocaleString()}</p>
               </div>
             ))}
           </div>
 
           <div className="px-4 py-4 border-t border-gray-800 space-y-2">
+            {/* A367: the note on the whole order. */}
+            {cart.length > 0 && (
+              <button onClick={() => setNoteFor('order')} data-testid="order-note-btn"
+                      className="w-full text-left text-xs rounded-lg border border-dashed border-gray-700 hover:border-gray-500 px-3 py-2">
+                {orderNote.trim()
+                  ? <span className="text-amber-300 whitespace-pre-line">Order note: {orderNote.trim()}</span>
+                  : <span className="text-gray-400">+ Note for the order</span>}
+              </button>
+            )}
             <div className="flex justify-between text-sm text-gray-200">
               <span>{vatRate > 0 ? 'Subtotal (incl. VAT)' : 'Subtotal'}</span><span>{currency} {subtotal.toLocaleString()}</span>
             </div>
@@ -1451,6 +1499,21 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           </div>
         </div>
       </div>
+
+      {/* A367: the note editor — one line, or the whole order */}
+      {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
+        <NoteModal
+          kind={noteFor === 'order' ? 'order' : 'item'}
+          title={noteFor === 'order' ? 'The whole order' : `${cart[noteFor].product.name} ×${cart[noteFor].quantity}`}
+          initial={noteFor === 'order' ? orderNote : cart[noteFor].notes}
+          picks={notePicks}
+          onSave={(note) => {
+            if (noteFor === 'order') setOrderNote(note ?? ''); else setLineNote(noteFor, note);
+            setNoteFor(null);
+          }}
+          onClose={() => setNoteFor(null)}
+        />
+      )}
 
       {/* Variant modal */}
       {variantProduct && (

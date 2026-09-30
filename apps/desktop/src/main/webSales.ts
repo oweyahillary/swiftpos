@@ -27,8 +27,10 @@ export interface WebOrder {
   created_at: string; void_reason?: string | null; voided_at?: string | null; voided_by?: string | null;
   refunded_at?: string | null; refunded_amount?: number | string | null; refund_reason?: string | null;
   delivery_person?: string | null;
+  notes?: string | null;   // A367
   order_items?: Array<{ id: string; product_id?: string | null; product_name: string; category_name?: string | null;
-    unit_price: number | string; quantity: number | string; subtotal: number | string; course?: string | null; fire_status?: string | null }>;
+    unit_price: number | string; quantity: number | string; subtotal: number | string; course?: string | null; fire_status?: string | null;
+    notes?: string | null }>;
   payments?: Array<{ id: string; method: string; amount: number | string; amount_tendered?: number | string | null;
     change_given?: number | string | null; reference?: string | null; status: string; created_at: string }>;
 }
@@ -64,11 +66,11 @@ export function applyWebOrders(
     INSERT INTO orders (id, business_id, branch_id, order_number, order_type, status, subtotal, vat_amount,
       discount_amount, total, created_at, device_id, sync_status, covers, tip_amount, customer_id, customer_name,
       customer_phone, idempotency_key, cashier_id, shift_id, void_reason, voided_at, voided_by, refunded_at,
-      refunded_amount, refund_reason, delivery_person, ctl_amount, origin)
+      refunded_amount, refund_reason, delivery_person, ctl_amount, notes, origin)
     VALUES (@id, @business_id, @branch_id, @order_number, @order_type, @status, @subtotal, @vat_amount,
       @discount_amount, @total, @created_at, @device_id, 'synced', @covers, @tip_amount, @customer_id, @customer_name,
       @customer_phone, @idempotency_key, @cashier_id, @shift_id, @void_reason, @voided_at, @voided_by, @refunded_at,
-      @refunded_amount, @refund_reason, @delivery_person, @ctl_amount, 'web')
+      @refunded_amount, @refund_reason, @delivery_person, @ctl_amount, @notes, 'web')
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status, void_reason = excluded.void_reason, voided_at = excluded.voided_at,
       voided_by = excluded.voided_by, refunded_at = excluded.refunded_at, refunded_amount = excluded.refunded_amount,
@@ -77,8 +79,8 @@ export function applyWebOrders(
   const delItems = db.prepare(`DELETE FROM order_items WHERE order_id = ?`);
   const delPays = db.prepare(`DELETE FROM payments WHERE order_id = ?`);
   const addItem = db.prepare(`
-    INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const addPay = db.prepare(`
     INSERT INTO payments (id, order_id, method, amount, amount_tendered, change_given, reference, status, created_at, sync_status)
@@ -110,11 +112,12 @@ export function applyWebOrders(
         void_reason: o.void_reason ?? null, voided_at: o.voided_at ?? null, voided_by: o.voided_by ?? null,
         refunded_at: o.refunded_at ?? null, refunded_amount: n(o.refunded_amount), refund_reason: o.refund_reason ?? null,
         delivery_person: o.delivery_person ?? null, ctl_amount: n(o.ctl_amount),
+        notes: o.notes ?? null,   // A367
       });
       delItems.run(o.id); delPays.run(o.id);
       for (const it of o.order_items ?? []) {
         addItem.run(it.id, o.id, it.product_id ?? '', it.product_name, it.category_name ?? null, n(it.unit_price),
-          n(it.quantity), n(it.subtotal), it.course ?? null, it.fire_status ?? 'fired');
+          n(it.quantity), n(it.subtotal), it.course ?? null, it.fire_status ?? 'fired', it.notes ?? null);
       }
       for (const p of pays) {
         addPay.run(p.id, o.id, p.method, n(p.amount), n(p.amount_tendered), n(p.change_given), p.reference ?? null,

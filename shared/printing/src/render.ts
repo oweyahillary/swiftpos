@@ -95,6 +95,11 @@ function visibleUnits(line: OrderLine, ctx: PrintContext): OrderUnit[] {
   return units;
 }
 
+/** A367: a typed note as printed rows — the cashier's line breaks kept, blank lines dropped. */
+function noteRows(note: string | undefined): string[] {
+  return (note ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+}
+
 /** ─── Production tickets: kitchen, dispatch, and anything shaped like them ─── */
 function renderProduction(ctx: PrintContext): Document {
   const { order, station } = ctx;
@@ -117,6 +122,8 @@ function renderProduction(ctx: PrintContext): Document {
   if (order.orderType === 'delivery' && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
+  // A367: the order's note, bold, before any dish — the cook reads it first.
+  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `NOTE: ${ln}`, undefined, 0), { bold: true });
   if (ctx.reprint) {
     d.line(`REPRINT  ${fullStamp(ctx.reprint.at)}  (#${ctx.reprint.count})`);
   }
@@ -158,6 +165,8 @@ function renderProduction(ctx: PrintContext): Document {
     // A flat product with attributes but no units carries them directly.
     if (line.units.length === 0) {
       unitRows++;
+      // A367: its note too — this `continue` used to skip the note block below, so a plain dish lost its note.
+      for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 6), { bold: true });
       continue;
     }
 
@@ -175,9 +184,8 @@ function renderProduction(ctx: PrintContext): Document {
       }
     }
 
-    if (line.note) {
-      d.lines(subRow(cols, `** ${line.note}`, undefined, 6));
-    }
+    // A367: one row per line the cashier typed ("3 normal" / "2 spicy"), bold so it is not read as a component.
+    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 6), { bold: true });
   }
 
   d.line(rule(cols));
@@ -246,6 +254,7 @@ function renderReceipt(ctx: PrintContext): Document {
   if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
   if (ctx.voided) d.line(`Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`);
   d.line(`Kots: ${order.kotCount}`);
+  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, undefined, 0));   // A367
   d.line(rule(cols));
 
   d.line('Item'.padEnd(c.name) + 'Qty'.padStart(c.qty) + 'Amt'.padStart(c.amt));
@@ -302,7 +311,7 @@ function renderReceipt(ctx: PrintContext): Document {
     }
     if (plain.length) d.lines(subRow(cols, plain.join(', '), undefined, 2));
 
-    if (line.note) d.lines(subRow(cols, `** ${line.note}`, undefined, 2));
+    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 2));   // A367
 
     lastHadSubLines = d.length > before;
   });

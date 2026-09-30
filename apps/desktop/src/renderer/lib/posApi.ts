@@ -268,6 +268,8 @@ declare global {
           receiptHeader: string; receiptFooter: string }>;
         getVariants: (productId: string) => Promise<any[]>;
         getModifiers: (productId: string) => Promise<any[]>;
+        /** A367: the owner's quick picks for order notes (cached from the cloud; the defaults until told). */
+        notePicks: () => Promise<string[]>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
@@ -411,6 +413,8 @@ declare global {
         confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>) => Promise<Confirmation>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;
+        /** A366: may the signed-in person close the open shift — its owner or a manager? */
+        closeRights: () => Promise<{ allowed: boolean; ownerName: string | null }>;
         zreport: (shiftId: string) => Promise<ZReport>;
         /** 0.6.11: this till's shifts, newest first (previous shift reports). */
         history: () => Promise<ShiftSummary[]>;

@@ -138,6 +138,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:init':           NO_PAYLOAD,
   'pos:getVariants':    { kind: 'string' },
   'pos:getModifiers':   { kind: 'string' },
+  'pos:notePicks':      NO_PAYLOAD,
 
   // ── escpos (kitchen exclusions + production + spool) ──────────────────────
   'escpos:kitchenExclusions':      NO_PAYLOAD,
@@ -208,6 +209,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'shift:close':            { closing_float: { t: 'number' }, notes: { t: 'string', optional: true }, declared: { t: 'any', optional: true } },
   'shift:awaiting':         NO_PAYLOAD,
   'shift:canConfirm':       NO_PAYLOAD,
+  'shift:closeRights':      NO_PAYLOAD,
   'shift:confirm':          { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' } },
   'shift:zreport':          { kind: 'string' },
   'shift:history':          NO_PAYLOAD,

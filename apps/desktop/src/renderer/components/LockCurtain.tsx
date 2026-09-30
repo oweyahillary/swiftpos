@@ -39,6 +39,18 @@ export default function LockCurtain({
   const [pin, setPin]         = useState('');
   const [error, setError]     = useState<string | null>(null);
   const [busy, setBusy]       = useState(false);
+  // 0.6.24 (owner: "add the organization logo where the till is"): the client's logo, read like the PIN screen reads
+  // it (branding:get, refreshed when a pull lands). None → the padlock, as before.
+  const [logo, setLogo]       = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      posApi.branding.get().then((b) => { if (!cancelled) setLogo(b?.logoPng ?? null); }).catch(() => { /* keep what is shown */ });
+    };
+    load();
+    const unsubscribe = posApi.pos.onCatalogueChanged(load);
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
 
   // Focus is taken by the hidden input so a physical keypad works without the
   // cashier having to click first — tills are often used keyboard-only.
@@ -91,24 +103,34 @@ export default function LockCurtain({
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-gray-950/98 backdrop-blur-sm flex items-center justify-center">
+    // Opaque (0.6.24, owner: "the small wordings are not readable"): the old `bg-gray-950/98` is not a Tailwind opacity
+    // step, so no background was generated and the blurred screen showed through the text.
+    <div data-testid="lock-curtain" className="fixed inset-0 z-[9999] bg-gray-950 flex items-center justify-center">
       <div className="w-full max-w-xs px-6 text-center">
         <div className="mb-8">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-900 flex items-center justify-center">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" strokeWidth="2" className="text-gray-400">
-              <rect x="3" y="11" width="18" height="11" rx="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          </div>
+          {logo ? (
+            // The client's logo on a white card, as on the PIN screen (logos are made for a light background).
+            <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl mb-4"
+                  style={{ padding: '12px 18px' }}>
+              <img src={logo} alt="" style={{ maxHeight: 88, maxWidth: 220, objectFit: 'contain', display: 'block' }} />
+            </span>
+          ) : (
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-900 flex items-center justify-center">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+          )}
           <h1 className="text-xl font-semibold text-white">Till locked</h1>
           {/* Naming who is still signed in matters: it tells the next person
               whether they can PIN in here or need Lock till, without making
               them guess and fail twice. */}
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-base text-gray-200 mt-1">
             Enter {staffName}&apos;s PIN to continue
           </p>
-          <p className="text-xs text-gray-600 mt-3">
+          <p className="text-sm text-gray-400 mt-3">
             Nothing was lost — the screen is exactly as you left it.
           </p>
         </div>

@@ -81,6 +81,8 @@ interface Props {
    * symptom the desktop fix was written to close, still live on the other client.
    */
   pumpId?: string | null;
+  /** A367: the note on the whole order (the lines' notes ride on the cart items). */
+  orderNote?: string | null;
 }
 
 function fmt(n: number) {
@@ -95,6 +97,7 @@ export default function PaymentModal({
   initialEvenSplit,
   pumpId,
   customMethods = [],
+  orderNote = null,
 }: Props) {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
@@ -297,7 +300,9 @@ export default function PaymentModal({
         lineTotal:          item.lineTotal,
         selectedVariants:   item.selectedVariants,
         selectedModifiers:  item.selectedModifiers,
+        notes:              item.notes ?? null,   // A367
       })),
+      notes: orderNote?.trim() || null,   // A367
       payments,
     };
   }
@@ -456,6 +461,7 @@ export default function PaymentModal({
         cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, change: completedOrder.change,
         payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
         tableNumber,
+        orderNote,   // A367
       });
       const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
         { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo });

@@ -649,6 +649,21 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/shift-confirm.test.mjs
 
+      # A367 — notes on an item ("3 normal, 2 spicy", "No salt") and on the whole order: stored, pushed, printed, held.
+      - name: Desktop order notes
+        working-directory: apps/desktop
+        run: node --no-warnings test/order-notes.test.mjs
+
+      # 0.6.24 — the locked till shows the client's logo; its text is readable (opaque background).
+      - name: Desktop lock screen logo and readability
+        working-directory: apps/desktop
+        run: node --no-warnings test/lock-curtain-brand.test.mjs
+
+      # 0.6.24 — the update bar never covers the till's controls: the screens stop above it (owner, 2026-09-30).
+      - name: Desktop update bar does not cover the screen
+        working-directory: apps/desktop
+        run: node --no-warnings test/update-banner-layout.test.mjs
+
       # A363 — sync status for managers only (a bottom notice, red for refusals), "Last synced", the Z-report note.
       - name: Desktop sync notice for managers
         working-directory: apps/desktop

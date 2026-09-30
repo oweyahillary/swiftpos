@@ -54,6 +54,17 @@ const SHARED = [
     ],
   },
   {
+    // A367 (0.6.24): notes on an item and on the order — cleaning, the owner's quick picks, the ticket lines.
+    name: 'orderNotes.ts',
+    copies: [
+      'shared/orderNotes.ts',
+      'apps/desktop/src/shared/orderNotes.ts',
+      'apps/desktop/src/main/orderNotes.ts',   // the main process cleans what it stores (rootDir is src/main)
+      'apps/dashboard/src/lib/orderNotes.ts',
+      'apps/server/src/lib/orderNotes.ts',     // the cloud cleans what it stores
+    ],
+  },
+  {
     // A365: the shift-confirmation rules the till and the web POS share (methods to declare, amounts, labels, paper).
     name: 'shiftConfirm.ts',
     copies: [

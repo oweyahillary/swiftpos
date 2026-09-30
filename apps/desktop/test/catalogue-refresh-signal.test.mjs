@@ -87,7 +87,9 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      saveDeviceConfig: () => {}, getServerUrl: () => 'http://127.0.0.1:1',
                      canSell: () => true, isNodeRole: () => false,
                      // A346: the pull stores the cloud's web POS answer through this.
-                     setWebPosEnabled: () => {} };`);
+                     setWebPosEnabled: () => {},
+                     // A367: the pull caches the owner's quick picks for order notes through this.
+                     setOrderNotePicks: () => {} };`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

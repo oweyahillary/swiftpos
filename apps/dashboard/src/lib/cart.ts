@@ -18,6 +18,10 @@ export interface CartItem {
   // litre-aware display and suppresses the qty stepper.
   isFuel?: boolean;
   fire_status?: 'held' | 'fired';
+
+  // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Sent as
+  // order_items.notes; printed on the kitchen ticket and the receipt.
+  notes?: string | null;
 }
 
 export function cartSubtotal(items: CartItem[]): number {

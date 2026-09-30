@@ -35,6 +35,7 @@ function toReceiptOrder(o: any) {
       name: it.product_name, quantity: Number(it.quantity) || 1,
       unitPrice: cents(it.unit_price), lineTotal: cents(it.subtotal),
       stationIds: [], units,
+      note: it.notes || undefined,   // A367: a duplicate carries the notes the original did
     };
   });
   return {
@@ -51,6 +52,7 @@ function toReceiptOrder(o: any) {
     discount:    cents(o.discount_amount ?? 0),
     tip:         cents(o.tip_amount ?? 0),
     kotCount:    0,
+    note:        o.notes || undefined,   // A367
   };
 }
 

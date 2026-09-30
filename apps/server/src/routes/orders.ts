@@ -21,6 +21,7 @@ import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
+import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -396,6 +397,8 @@ router.post('/', async (req, res) => {
     discount_id = null,
     shift_id = null,
     tip_amount = 0,
+    // A367: a note on the whole order ("deliver to gate B"). Free; trimmed and capped.
+    notes: orderNoteRaw = null,
   } = req.body;
 
   // Normalise to array — support both old single `payment` and new `payments` array
@@ -596,7 +599,7 @@ router.post('/', async (req, res) => {
         unit_price: authLines[idx].unitPrice,
         quantity: item.quantity,
         subtotal: authLines[idx].lineTotal,
-        notes: item.notes ?? null,
+        notes: cleanNote(item.notes),   // A367: trimmed and capped, never refused
       },
       variants: (item.selectedVariants ?? []).map((v: { groupName: string; optionName: string; priceAdjustment?: number }) => ({
         variant_group_name: v.groupName,
@@ -747,6 +750,14 @@ router.post('/', async (req, res) => {
     }
 
     const createdRow = Array.isArray(created) ? created[0] : created;
+    // A367: the order's note. create_order_atomic (migration 69) does not carry orders.notes, so it is written right
+    // after the order exists — a note is an instruction, not money, and a failure here is logged, never the sale's.
+    const orderNote = cleanNote(orderNoteRaw, ORDER_NOTE_MAX);
+    if (orderNote) {
+      const { error: noteErr } = await supabase.from('orders').update({ notes: orderNote })
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (noteErr) console.error('[order-create] the order note was not saved:', noteErr.message);
+    }
     const order = {
       id: createdRow.order_id,
       order_number: createdRow.order_number,
@@ -1468,6 +1479,7 @@ router.post('/open', async (req, res) => {
     customer_id = null,
     customer_name = null,
     shift_id = null,
+    notes: orderNoteRaw = null,   // A367
   } = req.body;
 
   if (!branch_id || !order_number || !items?.length) {
@@ -1514,6 +1526,7 @@ router.post('/open', async (req, res) => {
         customer_id,
         customer_name,
         shift_id,
+        notes:           cleanNote(orderNoteRaw, ORDER_NOTE_MAX),   // A367
         seated_at:       order_type === 'dine_in' ? new Date().toISOString() : null,
         // This path set no idempotency_key whatsoever, so every dine-in order
         // carried NULL and duplicated on replay. See the note on POST / above.
@@ -1545,7 +1558,7 @@ router.post('/open', async (req, res) => {
       unit_price: authLines[idx].unitPrice,
       quantity:   item.quantity,
       subtotal:   authLines[idx].lineTotal,
-      notes:      item.notes ?? null,
+      notes:      cleanNote(item.notes),   // A367: trimmed and capped, never refused
       course:      item.course ?? null,
       fire_status: item.fire_status === 'held' ? 'held' : 'fired',
     }));

@@ -1387,7 +1387,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   }
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex app-screen bg-gray-950 text-white overflow-hidden">
 
       {/* Sidebar */}
       {/* A326: tinted by the business's brand colour (or theme) when themes are ON; the fallback IS gray-900, so OFF is unchanged. */}

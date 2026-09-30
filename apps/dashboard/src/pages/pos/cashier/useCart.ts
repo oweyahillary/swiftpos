@@ -79,7 +79,8 @@ export function useCart(): CartActions {
       return;
     }
     setCart(prev => {
-      const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0);
+      // A367: never into a line that carries a note — a tap after "2 spicy" is a new, plain line.
+      const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
       if (existing) {
         return prev.map(i => i === existing
           ? { ...i, quantity: i.quantity + 1, lineTotal: i.unitPrice * (i.quantity + 1) }

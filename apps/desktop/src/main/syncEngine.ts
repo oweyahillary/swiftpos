@@ -13,7 +13,8 @@ import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled } from './deviceConfig';
+import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -931,6 +932,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (c.themeId !== undefined) applyPulledTheme(c.themeId);
   // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.
   setWebPosEnabled(c.webPosEnabled);
+  // A367: the quick picks for order notes. undefined = not said → keep.
+  setOrderNotePicks(c.noteQuickPicks);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -1038,6 +1041,7 @@ async function pullCatalogue(): Promise<boolean> {
       themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
       // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
       webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
+      noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
@@ -2265,8 +2269,8 @@ export function createLocalOrder(orderPayload: any): string {
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -2285,15 +2289,17 @@ export function createLocalOrder(orderPayload: any): string {
       // Pump attribution (fuel). Present in Postgres since migration 15 and in
       // SQLite since v45's migrateColumns — this write is the missing link.
       orderPayload.pump_id ?? null,
+      // A367: the order's note, cleaned the same way the cloud cleans it (shared/orderNotes.ts).
+      cleanNote(orderPayload.notes, ORDER_NOTE_MAX),
     );
 
     for (const item of orderPayload.items) {
       const itemId = uuid();
       db.prepare(`
-        INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(itemId, orderId, item.product.id, item.product.name, item.product.categories?.name ?? null, item.unitPrice, item.quantity, item.lineTotal,
-        item.course ?? null, item.fire_status === 'held' ? 'held' : 'fired');
+        item.course ?? null, item.fire_status === 'held' ? 'held' : 'fired', cleanNote(item.notes));
 
       for (const v of item.selectedVariants ?? []) {
         db.prepare(`

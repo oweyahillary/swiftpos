@@ -72,6 +72,8 @@ const READABLE_SETTING_KEYS = new Set([
   // than inferred from the item name: a keyword guess is wrong occasionally and
   // silently, and the cook is the one who finds out mid-service.
   'kitchen_exclusions',
+  // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
+  'order_note_picks',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something

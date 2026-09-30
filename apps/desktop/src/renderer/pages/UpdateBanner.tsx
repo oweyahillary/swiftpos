@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { posApi } from '../lib/posApi';
 
 /**
@@ -12,6 +12,10 @@ import { posApi } from '../lib/posApi';
  *
  * Gentle reminder (owner decision): "Later" only hides it for a while; it re-surfaces after
  * REMIND_AFTER_MS so a ready update isn't forgotten.
+ *
+ * 0.6.24 (owner: "make the update banner not block user activity"): the bar no longer floats over the page. It
+ * publishes its height as --update-banner-h and the working screens (.app-screen) shrink by that much, so nothing —
+ * the Close Day button, the cart's Pay button — sits under it. It stays below modals (z-40), which keep the full screen.
  */
 
 // Mirrors MANAGER_ROLES in App.tsx — the restart is a manager/tech action.
@@ -29,6 +33,7 @@ export default function UpdateBanner({ branchId }: Props) {
   const [pin, setPin] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const barRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     posApi.update.getStatus().then(setStatus).catch(() => {});
@@ -45,7 +50,21 @@ export default function UpdateBanner({ branchId }: Props) {
 
   const downloading = status.state === 'downloading';
   const ready = status.state === 'downloaded';
-  if ((!downloading && !ready) || dismissed) return null;
+  const shown = (downloading || ready) && !dismissed;
+
+  // Reserve the bar's height for the page (see .app-screen in index.css); 0 whenever the bar is gone.
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = barRef.current;
+    if (!shown || !el) { root.style.setProperty('--update-banner-h', '0px'); return; }
+    const publish = () => root.style.setProperty('--update-banner-h', `${el.offsetHeight}px`);
+    publish();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    ro?.observe(el);
+    return () => { ro?.disconnect(); root.style.setProperty('--update-banner-h', '0px'); };
+  }, [shown]);
+
+  if (!shown) return null;
 
   const restartNow = async () => {
     setMsg(''); setBusy(true);
@@ -66,8 +85,9 @@ export default function UpdateBanner({ branchId }: Props) {
   };
 
   return (
-    <div className="fixed bottom-0 inset-x-0 z-50 bg-[#0d1424] border-t border-green-700/50 px-4 py-3 flex items-center gap-3 text-sm text-gray-200"
-         style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
+    <div ref={barRef} data-testid="update-banner"
+         className="fixed bottom-0 inset-x-0 z-40 bg-[#0d1424] border-t border-green-700/50 px-4 py-2 flex items-center gap-3 text-sm text-gray-200"
+         style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}>
       {downloading ? (
         <>
           <span className="font-semibold text-green-400">Updating…</span>

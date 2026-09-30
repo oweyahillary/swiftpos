@@ -388,11 +388,45 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
 
 // Close the open shift with a counted cash amount. Mirrors the server: requires
 // a note when the count doesn't match expected cash.
+/**
+ * A366 (0.6.24) — who may close a shift. Owner, 2026-09-30: "only the shift owner can close the shift not any other
+ * cashier, maybe the manager should be able to close it". The cashier who opened it (cashier_id / opened_by), or a
+ * manager (the same rule that may confirm a shift). Another cashier signed in on the till may sell, pay in/out and record
+ * expenses on the drawer, but not count it out.
+ */
+export function shiftCloseRights(shift: { cashier_id?: string | null; opened_by?: string | null } | null):
+  { allowed: boolean; ownerName: string | null } {
+  if (!shift) return { allowed: false, ownerName: null };
+  const db = getLocalDb();
+  const ownerId = shift.cashier_id ?? shift.opened_by ?? null;
+  const ownerName = ownerId ? ((db.prepare(`SELECT name FROM users WHERE id=?`).get(ownerId) as { name?: string } | undefined)?.name ?? null) : null;
+  const st = db.prepare(`SELECT staff_id, staff_name, role_name, permissions FROM staff_session WHERE id=1`).get() as
+    { staff_id: string; staff_name: string; role_name: string | null; permissions: string | null } | undefined;
+  if (!st?.staff_id) return { allowed: false, ownerName };
+  const isOwner = st.staff_id === shift.cashier_id || st.staff_id === shift.opened_by;
+  return { allowed: isOwner || isShiftManager(st.role_name, st.permissions), ownerName: ownerName ?? (isOwner ? st.staff_name : null) };
+}
+
+/** A manager for shift purposes (close someone else's shift, confirm a shift) — the cloud's mayConfirm rule. */
+export function isShiftManager(roleName: string | null | undefined, permissionsJson: string | Record<string, unknown> | null | undefined): boolean {
+  if (['owner', 'admin', 'manager', 'supervisor', 'branch_manager'].includes(String(roleName ?? '').toLowerCase())) return true;
+  let p: Record<string, unknown> = {};
+  try { p = typeof permissionsJson === 'string' ? JSON.parse(permissionsJson || '{}') : (permissionsJson ?? {}); } catch { p = {}; }
+  return p['*'] === true || p['orders.void'] === true || p['shifts.manage'] === true || p['settings.manage'] === true;
+}
+
 export function closeShift(closing_float: number, notes?: string, foreign: ForeignCash | null = null,
                            declared: Record<string, number> | null = null): ZReport {
   const db = getLocalDb();
   const shift = getOpenShift();
   if (!shift) throw new Error('No open shift to close');
+  // A366: only the cashier who opened it, or a manager.
+  const rights = shiftCloseRights(shift);
+  if (!rights.allowed) {
+    const err: any = new Error(`Only ${rights.ownerName ?? 'the cashier who opened this shift'} or a manager can close this shift.`);
+    err.code = 'SHIFT_NOT_YOURS';
+    throw err;
+  }
   if (closing_float === undefined || closing_float === null) throw new Error('closing_float is required');
 
   const pre = computeZReport(shift.id, foreign);   // A334: a shared drawer's web cash included

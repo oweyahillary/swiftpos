@@ -72,7 +72,7 @@ export interface OrderLine {
   /** Gross, tax-inclusive, for the whole line INCLUDING unit deltas. */
   lineTotal: Cents;
   units: OrderUnit[];
-  /** Free-text kitchen note the cashier typed. */
+  /** Free-text kitchen note the cashier typed ("3 normal, 2 spicy", "No salt"). One printed row per typed line (A367). */
   note?: string;
 }
 
@@ -103,6 +103,8 @@ export interface Order {
   tip?: Cents;
   /** How many kitchen tickets this order produced, for the Kots line. */
   kotCount: number;
+  /** A367: the cashier's note on the whole order ("deliver to gate B"). Printed under the header. Omitted = none. */
+  note?: string;
 }
 
 /** ─── Configuration ────────────────────────────────────────────────────────

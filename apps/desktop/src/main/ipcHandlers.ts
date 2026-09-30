@@ -38,9 +38,10 @@ import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCach
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, type ForeignCash } from './shiftService';
+import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
+import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
 import { cloudBranchOrders } from './webSales';
 import { exportReportCsv } from './reportExport';
@@ -226,6 +227,7 @@ export function registerIpcHandlers() {
   type HeldRow = {
     id: string; order_number: string; label: string; order_type: string;
     table_number: string; delivery_person: string | null; cart: string; held_at: string;
+    order_note?: string | null;   // A367 (58)
   };
 
   // A tab whose cart JSON will not parse is returned with an EMPTY cart rather
@@ -247,6 +249,7 @@ export function registerIpcHandlers() {
       orderType: r.order_type,
       tableNumber: r.table_number,
       deliveryPerson: r.delivery_person ?? undefined,
+      orderNote: r.order_note ?? undefined,   // A367
       cart,
       heldAt: r.held_at,
       corrupt: corrupt || undefined,
@@ -269,12 +272,13 @@ export function registerIpcHandlers() {
       ...order,
     };
     db.prepare(`
-      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       held.id, held.orderNumber, held.label, held.orderType,
       held.tableNumber ?? '', held.deliveryPerson ?? null,
       JSON.stringify(held.cart ?? []), held.heldAt,
+      cleanNote(held.orderNote, ORDER_NOTE_MAX),   // A367: the order's note survives a hold (the lines' notes ride in the cart)
     );
     return { ...held, cart: held.cart ?? [] };
   });
@@ -882,6 +886,9 @@ export function registerIpcHandlers() {
     }));
   });
 
+  // A367: the quick picks for order notes — the owner's list cached by the catalogue pull, else the defaults.
+  handle('pos:notePicks', async () => parseNotePicks(getDeviceConfig()?.order_note_picks ?? null));
+
   handle('pos:getModifiers', async (_event, productId: string) => {
     const db = getLocalDb();
     const groups = db.prepare(`
@@ -981,6 +988,7 @@ export function registerIpcHandlers() {
           soldAt:         new Date(),
           tableNumber:    payload.table_number ?? undefined,
           deliveryPerson: payload.delivery_person ?? undefined,
+          note:           payload.notes ?? null,   // A367: the order's note, on the kitchen ticket and the receipt
           cart:           payload.items ?? [],
           payments:       payload.payments ?? [],
           changeGiven:    Number(payload.change_given ?? 0),
@@ -1616,12 +1624,8 @@ export function registerIpcHandlers() {
   // Who may confirm: owner/admin/manager/supervisor roles, '*', orders.void, shifts.manage, settings.manage — the
   // cloud's mayConfirm. The PIN goes to an AUTHORITY first (the branch node, then the cloud); only when none can be
   // reached does the till's own saved sign-in answer. A "no" from an authority is final (same chain as sign-in, A17).
-  const mayConfirmLocal = (staff: { roleName?: string | null; permissions?: unknown }) => {
-    const role = String(staff.roleName ?? '').toLowerCase();
-    if (['owner', 'admin', 'manager', 'supervisor', 'branch_manager'].includes(role)) return true;
-    const p = (staff.permissions ?? {}) as Record<string, unknown>;
-    return p['*'] === true || p['orders.void'] === true || p['shifts.manage'] === true || p['settings.manage'] === true;
-  };
+  const mayConfirmLocal = (staff: { roleName?: string | null; permissions?: unknown }) =>
+    isShiftManager(staff.roleName, (staff.permissions ?? {}) as Record<string, unknown>);
   const NOT_A_CONFIRMER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
   async function identifyConfirmer(pin: string): Promise<{ id: string; name: string | null }> {
     const cfg = getDeviceConfig();
@@ -1659,6 +1663,10 @@ export function registerIpcHandlers() {
   }
 
   handle('shift:awaiting', async () => awaitingConfirmation());
+
+  // A366: may the signed-in person close the open shift (its owner or a manager)? The screen asks first; closeShift
+  // enforces it regardless.
+  handle('shift:closeRights', async () => shiftCloseRights(getOpenShift()));
 
   // 0.6.23 (owner: "since its the manager who is logged in do they need to key in their password?"): a manager already
   // signed in on this till confirms as themselves — no PIN. Anyone else still needs a manager's PIN.

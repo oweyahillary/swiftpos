@@ -716,6 +716,11 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'orders', [
     ['origin', 'TEXT'],
   ]);
+  // A367 (58): notes — one on each line ("3 normal, 2 spicy", "no salt") and one on the whole order. Both columns have
+  // been in Postgres since the baseline; they travel in the order payload (POST /api/orders), not /api/sync/push.
+  migrateColumns(db, 'orders', [['notes', 'TEXT']]);
+  migrateColumns(db, 'order_items', [['notes', 'TEXT']]);
+  migrateColumns(db, 'held_orders', [['order_note', 'TEXT']]);   // a held tab keeps its order note (local only)
 
   migrateColumns(db, 'categories', [
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
@@ -1026,6 +1031,8 @@ function initSchema(db: Database.Database) {
     ['kitchen_exclusions_override', 'TEXT'],
     // A346: does the business have the web POS? Pulled (webPosEnabled), never pushed. NULL = not told yet = no.
     ['web_pos_enabled', 'INTEGER'],
+    // A367 (58): the owner's quick picks for order notes, a JSON array. Pulled (noteQuickPicks), never pushed.
+    ['order_note_picks', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1109,7 +1116,9 @@ function initSchema(db: Database.Database) {
 // manager screen shows Stock. Pulled, never pushed; REQUIRED moves with it by convention.
 // 57 adds the A365 shift-confirmation columns on shifts (declared / expected / confirmed methods, confirmed_by/at,
 // confirm_self, confirm_sync). Pushed through POST /api/shifts/:id/close and /confirm, not /api/sync/push.
-export const LOCAL_SCHEMA_VERSION = 57;
+// 58 adds A367 order notes: orders.notes and order_items.notes (in the order payload, POST /api/orders), and
+// device_config.order_note_picks (the owner's quick picks, pulled). REQUIRED moves with it by convention.
+export const LOCAL_SCHEMA_VERSION = 58;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

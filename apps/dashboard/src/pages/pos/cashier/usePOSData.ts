@@ -8,6 +8,7 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
+import { parseNotePicks } from '../../../lib/orderNotes';
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
@@ -33,6 +34,8 @@ export interface POSData {
   variantsByProduct: Record<string, VariantGroup[]>;
   comboItems:        Record<string, ComboComponent[]>;
   kitchenExclusions: string[];
+  /** A367: the owner's quick picks for order notes. */
+  notePicks:         string[];
   receiptHeader:     string;
   /** A313: the receipt logo to print, already gated on the client's toggle; null = none. */
   receiptLogo:       MonoRaster | null;
@@ -61,6 +64,7 @@ export function usePOSData(): POSData {
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
+  const [notePicks, setNotePicks] = useState<string[]>([]);
   const [receiptHeader,     setReceiptHeader]     = useState('');
   const [receiptLogo,       setReceiptLogo]       = useState<MonoRaster | null>(null);
   const [receiptFooter,     setReceiptFooter]     = useState('');
@@ -93,6 +97,7 @@ export function usePOSData(): POSData {
       setVariantsByProduct(init.variantsByProduct ?? {});
       setComboItems(init.comboItems ?? {});
       setKitchenExclusions(init.kitchenExclusions ?? []);
+      setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
       setReceiptHeader(init.receiptHeader ?? '');
       // A313: resolve the receipt logo ONCE here, the same gate the till applies
       // (resolveReceiptLogo in ipcHandlers): toggle ON and a decodable raster.
@@ -164,7 +169,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct, comboItems, kitchenExclusions, receiptHeader, receiptLogo, receiptFooter,
+    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, receiptHeader, receiptLogo, receiptFooter,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
     loading, error,

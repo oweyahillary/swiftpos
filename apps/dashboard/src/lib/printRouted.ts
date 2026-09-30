@@ -68,6 +68,8 @@ export interface PrintRoutedArgs {
   kinds?: Kind[];
   /** A269: render the receipt as a proforma BILL (Print Bill), not a fiscal receipt. */
   proforma?: boolean;
+  /** A367: the note on the whole order (heads the kitchen ticket; on the receipt). */
+  orderNote?: string | null;
 }
 
 export interface PrintRoutedResult { printed: number; failed: number; configured: number }
@@ -124,6 +126,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
       lineTotal: toCents(item.lineTotal),
       stationIds: stripKitchenIfExcluded(item.product?.name ?? 'Item', lineStationIds, ids, exc),
       units,
+      note: item.notes || undefined,   // A367
     };
   });
 
@@ -140,6 +143,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
     discount: toCents(a.discount ?? 0),
     tip: toCents(a.tip ?? 0),
     kotCount: 0,
+    note: a.orderNote || undefined,   // A367
   } as any;
   const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0,
     { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter, logoRaster: a.receiptLogo });

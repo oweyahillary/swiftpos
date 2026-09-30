@@ -102,7 +102,7 @@ router.get('/tickets', async (req, res) => {
       id, order_id, station, status,
       created_at, preparing_at, ready_at, collected_at,
       orders (
-        order_number, order_type,
+        order_number, order_type, notes,
         order_items ( product_name, quantity, notes, course, fire_status,
           order_item_variants ( variant_group_name, variant_option_name ),
           order_item_modifiers ( modifier_group_name, modifier_option_name )

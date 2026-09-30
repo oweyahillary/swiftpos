@@ -75,7 +75,15 @@ ok('…and in the sale count and cash sales; foreign is reported', zAll.totals.o
 ok('offline (foreign unknown) → null is reported, not zero', S.computeZReport('sh-web-1', null).totals.foreign === null);
 ok('localShiftIds lists what this till holds', JSON.stringify(S.localShiftIds('sh-web-1').order_ids) === '["o-till-1"]');
 
-// The drawer holds 2050. Counted with the web's part → balances, no note needed.
+// A366 (0.6.24): only the shift's owner (Jane, who opened it on the web) or a manager may close it — not Tom.
+const notTom = threw(() => S.closeShift(2050, undefined, null));
+ok('A366: Tom (another cashier at the till) cannot close Jane\'s drawer', notTom?.code === 'SHIFT_NOT_YOURS'
+  && /^Only .* or a manager can close this shift\.$/.test(notTom.message), notTom?.message);
+ok('A366: the till tells the screen so before the count', S.shiftCloseRights(db.prepare(`SELECT * FROM shifts WHERE id='sh-web-1'`).get()).allowed === false);
+db.prepare(`UPDATE staff_session SET staff_id='u-mgr', staff_name='Mary', role_name='manager' WHERE id=1`).run();
+ok('A366: a manager may', S.shiftCloseRights(db.prepare(`SELECT * FROM shifts WHERE id='sh-web-1'`).get()).allowed === true);
+
+// The drawer holds 2050. Counted with the web's part → balances, no note needed (a manager counts it).
 const noNote = threw(() => S.closeShift(2050, undefined, null));
 ok('WITHOUT the web\'s part, counting the real drawer (2050) shows a false 650 over and demands a note',
   noNote && Math.round(noNote.variance) === 650, String(noNote?.variance));

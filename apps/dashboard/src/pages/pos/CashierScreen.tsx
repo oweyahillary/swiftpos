@@ -25,6 +25,8 @@ import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 import { type BranchPrinter } from '../../lib/printKOT';
 import { printRoutedStations } from '../../lib/printRouted';
 import POSDrawer from './POSDrawer';
+import NoteModal from './NoteModal';
+import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -181,6 +183,7 @@ export default function CashierScreen() {
     branchPrinters,
     comboItems,
     kitchenExclusions,
+    notePicks,
     receiptLogo,
     receiptHeader,
     receiptFooter,
@@ -271,6 +274,25 @@ export default function CashierScreen() {
   // ── Order state ────────────────────────────────────────────────────────────
   const [openOrders, setOpenOrders] = useState<Record<string, OpenOrder>>({});
   const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  // ── A367: notes — one on each line (on the cart item) and one on the whole order, kept per open order (the table,
+  // bay or pump; '' for a quick sale). An order with no items has no note, so an emptied cart drops it.
+  const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
+  const [noteFor, setNoteFor] = useState<number | 'order' | null>(null);
+  const noteKey = activeKey ?? '';
+  const orderNote = orderNotes[noteKey] ?? '';
+  const setOrderNote = (note: string | null) => setOrderNotes(prev => {
+    const n = { ...prev };
+    if (note) n[noteKey] = note; else delete n[noteKey];
+    return n;
+  });
+  useEffect(() => {
+    if (cart.length === 0 && orderNotes[noteKey]) setOrderNote(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.length, noteKey]);
+  const setLineNote = (index: number, note: string | null) =>
+    setCart(prev => prev.map((it, i) => (i === index ? { ...it, notes: note } : it)));
+
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState('all');
@@ -748,6 +770,7 @@ export default function CashierScreen() {
         comboItems,
         kitchenExclusions,
         categories,
+        orderNote,   // A367
         branchName: session?.branchName,
         receiptHeader, receiptFooter,
         receiptLogo,
@@ -787,8 +810,9 @@ export default function CashierScreen() {
           subtotal,
           vat_amount:   vatAmount,
           total:        orderTotal,
-          items:        cart,
+          items:        cart,   // each line carries its notes (A367)
           shift_id:     currentShift?.id ?? null,
+          notes:        orderNote.trim() || null,   // A367
         }
       );
       // Remember the DB order id — PaymentModal will use /pay instead of creating a new order
@@ -804,6 +828,7 @@ export default function CashierScreen() {
           discount: totalDiscount,
           tableNumber: order.tableId ? order.tableName : undefined,
           comboItems, categories, kitchenExclusions,
+          orderNote,   // A367
           kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
         }).catch(err => console.error('[KOT]', err));
       }
@@ -1526,6 +1551,21 @@ export default function CashierScreen() {
                   </div>
                   <div style={s.cartItemTotal}>{fmt(item.lineTotal, currency)}</div>
                 </div>
+                {/* A367: the line's note, and the button that edits it */}
+                {!item.isFuel && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '0 0 6px 0', marginTop: -2 }}>
+                    <div style={{ flex: 1, minWidth: 0 }} data-testid="line-note">
+                      {noteLines(item.notes).map((l, k) => (
+                        <div key={k} style={{ fontSize: 11, color: '#fcd34d', wordBreak: 'break-word' }}>{l}</div>
+                      ))}
+                    </div>
+                    <button onClick={() => setNoteFor(index)} data-testid="line-note-btn"
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', background: 'transparent',
+                                     border: '1px solid #334155', color: '#94a3b8', flexShrink: 0 }}>
+                      {item.notes ? '✎ Note' : '+ Note'}
+                    </button>
+                  </div>
+                )}
                 {isRestaurant && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 0 6px 0', marginTop: -2 }}>
                     <select
@@ -1563,6 +1603,15 @@ export default function CashierScreen() {
           {/* Totals */}
           {(cart.length > 0 || (isParking && activeKey && parkingBill)) && (
             <div style={s.cartFooter}>
+              {/* A367: the note on the whole order */}
+              {cart.length > 0 && (
+                <button onClick={() => setNoteFor('order')} data-testid="order-note-btn"
+                        style={{ width: '100%', textAlign: 'left', fontSize: 12, borderRadius: 8, padding: '6px 10px', marginBottom: 6,
+                                 cursor: 'pointer', background: 'transparent', border: '1px dashed #334155',
+                                 color: orderNote ? '#fcd34d' : '#94a3b8', whiteSpace: 'pre-line' }}>
+                  {orderNote ? `Order note: ${orderNote}` : '+ Note for the order'}
+                </button>
+              )}
               <div style={s.totalRow}>
                 <span style={s.totalLabel}>Subtotal (incl. VAT)</span>
                 <span style={s.totalValue}>{fmt(subtotal, currency)}</span>
@@ -2040,6 +2089,21 @@ export default function CashierScreen() {
         </div>
       )}
 
+      {/* A367: the note editor — one line, or the whole order */}
+      {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
+        <NoteModal
+          kind={noteFor === 'order' ? 'order' : 'item'}
+          title={noteFor === 'order' ? 'The whole order' : `${cart[noteFor].product.name} ×${cart[noteFor].quantity}`}
+          initial={noteFor === 'order' ? orderNote : cart[noteFor].notes}
+          picks={notePicks}
+          onSave={(note) => {
+            if (noteFor === 'order') setOrderNote(note); else setLineNote(noteFor, note);
+            setNoteFor(null);
+          }}
+          onClose={() => setNoteFor(null)}
+        />
+      )}
+
       {showPayment && session && (
         <PaymentModal
           cart={cart}
@@ -2062,6 +2126,7 @@ export default function CashierScreen() {
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
+          orderNote={orderNote}
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
@@ -2087,6 +2152,7 @@ export default function CashierScreen() {
                 tableNumber: activeKey && openOrders[activeKey]?.tableName
                   ? openOrders[activeKey].tableName : undefined,
                 comboItems, categories, kitchenExclusions,
+                orderNote,   // A367
                 kinds: ['kitchen', 'dispatch'],   // A253: pay-first has no send step
               }).catch(err => console.error('[KOT]', err));
             }
@@ -2282,7 +2348,9 @@ export default function CashierScreen() {
                         lineTotal:         i.lineTotal,
                         selectedVariants:  i.selectedVariants,
                         selectedModifiers: i.selectedModifiers,
+                        notes:             i.notes ?? null,   // A367
                       })),
+                      notes: orderNote.trim() || null,   // A367
                       payments: [{
                         method:    'other',
                         amount:    orderTotal,

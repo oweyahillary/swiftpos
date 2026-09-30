@@ -85,6 +85,9 @@ export interface DeviceConfig {
    *  cloud has not said yet (an older cloud, or never synced) → treated as NO. Read-only here: written only by
    *  setWebPosEnabled() from the pull, never by saveDeviceConfig / config:save. */
   web_pos_enabled: boolean | null;
+  /** A367: the owner's quick picks for order notes (a JSON array), pulled with the catalogue. NULL = not told yet →
+   *  the defaults (shared/orderNotes.ts parseNotePicks). Written only by setOrderNotePicks() from the pull. */
+  order_note_picks: string | null;
   configured: boolean;
 }
 
@@ -117,6 +120,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     kitchen_exclusions: row.kitchen_exclusions ?? null,
     kitchen_exclusions_override: row.kitchen_exclusions_override ?? null,
     web_pos_enabled: row.web_pos_enabled == null ? null : row.web_pos_enabled === 1,
+    order_note_picks: row.order_note_picks ?? null,
     configured: row.configured === 1,
   };
 }
@@ -167,6 +171,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     kitchen_exclusions_override: patch.kitchen_exclusions_override !== undefined ? patch.kitchen_exclusions_override : (current?.kitchen_exclusions_override ?? null),
     // A346: never from the patch — only setWebPosEnabled() (the cloud pull) writes it; the INSERT below leaves it alone.
     web_pos_enabled: current?.web_pos_enabled ?? null,
+    // A367: never from the patch — only setOrderNotePicks() (the pull) writes it; the INSERT below leaves it alone.
+    order_note_picks: current?.order_note_picks ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -266,4 +272,10 @@ export function clearDeviceConfig(): void {
 export function setWebPosEnabled(enabled: boolean | undefined): void {
   if (typeof enabled !== 'boolean') return;
   getLocalDb().prepare(`UPDATE device_config SET web_pos_enabled = ? WHERE id = 1`).run(enabled ? 1 : 0);
+}
+
+/** A367: cache the owner's quick picks for order notes. undefined/null = not said (older cloud or node) → keep. */
+export function setOrderNotePicks(picks: string[] | null | undefined): void {
+  if (!Array.isArray(picks)) return;
+  getLocalDb().prepare(`UPDATE device_config SET order_note_picks = ? WHERE id = 1`).run(JSON.stringify(picks.map(String)));
 }

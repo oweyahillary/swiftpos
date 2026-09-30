@@ -45,6 +45,7 @@ const BZ = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222
 const T1 = 'ed377ee4-bbe6-46c1-8fd7-e851d9edadb9', T2 = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const CASHIER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', MANAGER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', OWNER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const S1 = '33333333-3333-4333-8333-333333333333';
+const OTHER = '44444444-4444-4444-8444-444444444444';
 const pinHash = (p) => bcrypt.hashSync(p, 4);
 const role = (name, keys) => ({ name, role_permissions: keys.map((k) => ({ permissions: { key: k } })) });
 
@@ -56,6 +57,7 @@ const reset = () => {
       { id: CASHIER, business_id: BZ, status: 'active', name: 'Test Cashier', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
       { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary Manager', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [] },
       { id: OWNER, business_id: BZ, status: 'active', name: 'Eugene', pin_hash: pinHash('3333'), roles: role('Owner', []), user_permissions: [] },
+      { id: OTHER, business_id: BZ, status: 'active', name: 'Other Cashier', pin_hash: pinHash('4444'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
     ],
     shifts: [{ id: S1, business_id: BZ, branch_id: BR, device_id: T1, terminal_code: 'T1', cashier_id: CASHIER, opened_by: CASHIER,
                status: 'open', opening_float: 2000, opened_at: '2026-09-29T10:41:00Z' }],
@@ -234,7 +236,7 @@ try {
   await ok('0.6.23 web POS: only methods with money on them; the float reminder; a signed-in manager is not asked for a PIN; no wheel', () => {
     const m = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/ShiftModal.tsx'), 'utf8');
     assert.match(m, /const toDeclare = methodsToDeclare\(taken\);/);
-    assert.match(m, /posApi\.get<\{ by_method\?: \{ method: string; amount: number \}\[\] \}>\(`\/api\/shifts\/\$\{shiftId\}`\)/);
+    assert.match(m, /posApi\.get<\{ by_method\?: \{ method: string; amount: number \}\[\];[^>]*\}>\(`\/api\/shifts\/\$\{shiftId\}`\)/);
     assert.match(m, /Cash Counted \(\{currency\}\) — include the opening float/);
     assert.match(m, /const signedInManager = maySignedInConfirm\(session\);/);
     assert.match(m, /\{!signedInManager && \(/);
@@ -276,6 +278,36 @@ try {
     assert.match(ds, /signatures: \['Cashier', 'Manager'\],/);
     assert.match(ds, /docType: 'SHIFT REPORTS',/);
     assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8'), /\.note \{ margin-top:20px; font-size:12px; white-space:pre-line; \}/);
+  });
+  // ── A366 (0.6.24): only the shift's owner or a manager closes it ──
+  await ok('A366 — the web POS: another cashier cannot close someone else\'s shift, even on the same till', async () => {
+    reset();
+    const r = await call(`/${S1}/close`, { closing_float: 2500 }, { user: OTHER, surface: 'web' });
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body.code, 'SHIFT_NOT_YOURS');
+    assert.equal(shift().status, 'open');
+  });
+  await ok('A366 — the owner closes it; so does a manager', async () => {
+    reset();
+    assert.equal((await call(`/${S1}/close`, { closing_float: 2500 }, { user: CASHIER, surface: 'web' })).status, 200);
+    reset();
+    const m = await call(`/${S1}/close`, { closing_float: 2500 }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });
+    assert.equal(m.status, 200, JSON.stringify(m.body)); assert.equal(shift().closed_by, MANAGER);
+  });
+  await ok('A366 — the till\'s own replay (desktop, same till) still lands whoever is signed in when it syncs', async () => {
+    reset();
+    const r = await call(`/${S1}/close`, { closing_float: 2500 }, { user: OTHER, surface: 'desktop' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  });
+  await ok('A366 — the web POS shows who owns the shift instead of the count form, unless you own it or are a manager', () => {
+    const m = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/ShiftModal.tsx'), 'utf8');
+    assert.match(m, /const mayClose = !shiftOwner \|\| signedInManager \|\| \(!!session\?\.staffId && shiftOwner\.ids\.includes\(session\.staffId\)\);/);
+    assert.match(m, /\{mode === 'close' && !closeResult && !mayClose && \(\s*<div data-testid="close-not-yours">/);
+    assert.match(m, /\{mode === 'close' && !closeResult && mayClose && \(/);
+  });
+  await ok('A366 — another till cannot close it', async () => {
+    reset();
+    const r = await call(`/${S1}/close`, { closing_float: 2500 }, { user: OTHER, surface: 'desktop', device: T2 });
+    assert.equal(r.status, 403); assert.equal(shift().status, 'open');
   });
 } finally { server.close(); }
 

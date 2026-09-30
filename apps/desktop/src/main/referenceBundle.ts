@@ -51,6 +51,8 @@ export interface ReferenceBundle {
     continuousOperation: boolean | null;
     /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
     webPosEnabled?: boolean | null;
+    /** A367: the owner's quick picks for order notes; null = the node has not been told. */
+    noteQuickPicks?: string[] | null;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -93,6 +95,7 @@ export interface ReferenceRows {
     kitchenExclusions: string[] | null;
     continuousOperation: boolean | null;
     webPosEnabled?: boolean | null;   // A346
+    noteQuickPicks?: string[] | null; // A367
   };
 }
 
@@ -195,6 +198,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       paymentMethods,
       continuousOperation: rows.config.continuousOperation,
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
+      noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
     },
     variantGroups: rows.variantGroups,
     variantOptions: rows.variantOptions,
@@ -261,6 +265,10 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         : cfg?.continuous_operation == null ? null
         : asBool(cfg.continuous_operation),
       webPosEnabled: typeof cfg?.web_pos_enabled === 'boolean' ? cfg.web_pos_enabled : null,
+      noteQuickPicks: (() => {   // A367
+        if (typeof cfg?.order_note_picks !== 'string') return null;
+        try { const p = JSON.parse(cfg.order_note_picks); return Array.isArray(p) ? p.map(String) : null; } catch { return null; }
+      })(),
     },
   };
 
@@ -307,6 +315,8 @@ export interface AcquiredReference {
     themeId?: string | null;
     /** A346: does the business have the web POS? undefined = not said (older cloud / older node) → keep the local value. */
     webPosEnabled?: boolean;
+    /** A367: the owner's quick picks for order notes. undefined = not said (older cloud / older node) → keep. */
+    noteQuickPicks?: string[];
   };
 }
 
@@ -349,6 +359,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       continuousOperation: typeof pi.continuousOperation === 'boolean' ? pi.continuousOperation : null,
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
+      noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
     },
   };
 }

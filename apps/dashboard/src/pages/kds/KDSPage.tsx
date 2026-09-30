@@ -43,6 +43,8 @@ interface Ticket {
   orders: {
     order_number: string;
     order_type: string;
+    /** A367: the note on the whole order. */
+    notes?: string | null;
     order_items: OrderItem[];
   };
 }
@@ -358,6 +360,11 @@ export default function KDSPage() {
                     </div>
                   </div>
 
+                  {/* A367: the note on the whole order — read before the dishes */}
+                  {ticket.orders?.notes && (
+                    <p className="text-yellow-400 text-sm font-semibold whitespace-pre-line">⚠ {ticket.orders.notes}</p>
+                  )}
+
                   {/* Items */}
                   <div className="flex-1 space-y-2">
                     {(ticket.orders?.order_items ?? []).map((item, i) => (
@@ -375,7 +382,7 @@ export default function KDSPage() {
                           <p key={mi} className="text-purple-400 text-xs pl-5">+{m.modifier_option_name}</p>
                         ))}
                         {item.notes && (
-                          <p className="text-yellow-400 text-xs pl-5 italic">⚠ {item.notes}</p>
+                          <p className="text-yellow-400 text-xs pl-5 italic whitespace-pre-line">⚠ {item.notes}</p>
                         )}
                       </div>
                     ))}

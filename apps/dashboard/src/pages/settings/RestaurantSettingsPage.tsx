@@ -2,6 +2,7 @@
  * RestaurantSettingsPage.tsx
  * Route: /dashboard/settings/restaurant
  */
+import { parseNotePicks, PICKS_MAX } from '../../lib/orderNotes';
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
@@ -428,6 +429,34 @@ export default function RestaurantSettingsPage() {
             />
             <p className="text-xs text-gray-600 mt-2">
               Takes effect on each till at its next catalogue sync.
+            </p>
+          </div>
+
+          {/* ── A367: QUICK PICKS FOR ORDER NOTES ─────────────────────────── */}
+          <div className="mt-8 pt-6 border-t border-gray-800">
+            <h2 className="text-base font-bold text-white mb-1">Quick notes for orders</h2>
+            <p className="text-sm text-gray-500 mb-1">
+              One per line. The cashier taps these when adding a note to an item — “No salt”, “Extra cheese”, “Spicy”.
+              They can still type anything else.
+            </p>
+            <p className="text-xs text-gray-600 mb-4 italic">
+              A note never changes the price. Anything that costs extra belongs on the product as a modifier.
+            </p>
+            <textarea
+              rows={7}
+              data-testid="note-picks-editor"
+              defaultValue={parseNotePicks(settings['order_note_picks'] ?? null).join('\n')}
+              onBlur={e => {
+                // Stored as a JSON array, like the kitchen list. An emptied box saves [] — no quick picks at all.
+                const list = parseNotePicks(JSON.stringify(e.target.value.split(/\r?\n/)));
+                saveSetting('order_note_picks', JSON.stringify(list));
+              }}
+              className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5
+                         text-white text-sm font-mono leading-relaxed focus:outline-none
+                         focus:border-gray-500"
+            />
+            <p className="text-xs text-gray-600 mt-2">
+              Up to {PICKS_MAX}. Reaches the web POS the next time it opens, and each till at its next catalogue sync.
             </p>
           </div>
         </div>

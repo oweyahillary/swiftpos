@@ -32,6 +32,8 @@ export interface ReceiptOrder {
   /** A349: tip on top of the bill (cents); printed after the total, PAY = total + tip. */
   tip?: number;
   kotCount: number;
+  /** A367: the note on the whole order. */
+  note?: string;
 }
 export interface ReceiptBusinessConfig {
   name: string;
@@ -68,6 +70,8 @@ export function buildReceiptOrder(a: {
   payments: { method: string; amount: number }[];
   tableNumber?: string;
   comboItems?: Record<string, ComboComponent[]>;   // A248: combo_id -> components
+  /** A367: the note on the whole order. */
+  orderNote?: string | null;
 }): ReceiptOrder {
   return {
     billNumber:  a.orderNumber,
@@ -102,6 +106,7 @@ export function buildReceiptOrder(a: {
         lineTotal: toCents(c.lineTotal),
         units,
         stationIds: [] as [],
+        note:      c.notes || undefined,   // A367
       };
     }),
     payments:    a.payments.map(p => ({ label: p.method, amount: toCents(p.amount) })),
@@ -110,6 +115,7 @@ export function buildReceiptOrder(a: {
     discount:    toCents(a.discount ?? 0),
     tip:         toCents(a.tip ?? 0),
     kotCount:    0,
+    note:        a.orderNote || undefined,   // A367
   };
 }
 

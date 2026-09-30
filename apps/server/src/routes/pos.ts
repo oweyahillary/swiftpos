@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
+import { parseNotePicks } from '../lib/orderNotes';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -178,7 +179,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation']),
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'order_note_picks']),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
     // back to when unbound. maybeSingle, not single: one_main_branch_per_business
@@ -393,6 +394,9 @@ router.get('/init', async (req, res) => {
       }
       return [] as string[];
     })(),
+    // A367: the quick picks for order notes, owner-set per business. Unset → the defaults; a saved empty list → none.
+    // Always a list, so a till never has to guess (shared/orderNotes.ts parseNotePicks).
+    noteQuickPicks: parseNotePicks(receiptTextRows?.find((r: any) => r.key === 'order_note_picks')?.value),
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they

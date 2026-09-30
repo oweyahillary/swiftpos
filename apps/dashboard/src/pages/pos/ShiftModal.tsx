@@ -215,18 +215,24 @@ export default function ShiftModal({
 
   // 0.6.23: only the methods this shift recorded money on are asked (owner: a method at 0 does not appear).
   const [taken, setTaken] = useState<{ method: string; amount: number }[]>([]);
+  // A366: only the shift's owner or a manager may close it; null = not known yet.
+  const [shiftOwner, setShiftOwner] = useState<{ ids: string[]; name: string | null } | null>(null);
   useEffect(() => {
     if (mode !== 'close') return;
     posApi.get<{ code: string; name: string; is_active?: boolean }[]>('/api/payment-methods')
       .then((rows) => setMethodOptions((Array.isArray(rows) ? rows : []).filter((r) => r.is_active !== false)))
       .catch(() => setMethodOptions([]));
     if (shiftId) {
-      posApi.get<{ by_method?: { method: string; amount: number }[] }>(`/api/shifts/${shiftId}`)
-        .then((r) => setTaken(Array.isArray(r?.by_method) ? r.by_method : []))
+      posApi.get<{ by_method?: { method: string; amount: number }[]; cashier_id?: string | null; opened_by?: string | null; cashier_name?: string | null }>(`/api/shifts/${shiftId}`)
+        .then((r) => {
+          setTaken(Array.isArray(r?.by_method) ? r.by_method : []);
+          setShiftOwner({ ids: [r?.cashier_id, r?.opened_by].filter(Boolean) as string[], name: r?.cashier_name ?? null });
+        })
         .catch(() => setTaken([]));
     }
   }, [mode, posApi, shiftId]);
   const toDeclare = methodsToDeclare(taken);
+  const mayClose = !shiftOwner || signedInManager || (!!session?.staffId && shiftOwner.ids.includes(session.staffId));
 
   const handleConfirm = async () => {
     if (!closeResult) return;
@@ -423,7 +429,20 @@ export default function ShiftModal({
         )}
 
         {/* ── CLOSE SHIFT ────────────────────────────────────── */}
-        {mode === 'close' && !closeResult && (
+        {/* A366: another cashier cannot count out this drawer — its owner or a manager does (the cloud refuses too). */}
+        {mode === 'close' && !closeResult && !mayClose && (
+          <div data-testid="close-not-yours">
+            <div style={s.iconRow}><span style={s.icon}>🔒</span></div>
+            <h2 style={s.title}>Close Shift</h2>
+            <p style={s.subtitle}>
+              This shift belongs to {shiftOwner?.name ?? 'another cashier'}. Only {shiftOwner?.name ?? 'they'} or a manager can close it — ask them to sign in.
+            </p>
+            <div style={s.actions}>
+              <button style={s.cancelBtn} onClick={onClose}>Back</button>
+            </div>
+          </div>
+        )}
+        {mode === 'close' && !closeResult && mayClose && (
           <>
             <div style={s.iconRow}><span style={s.icon}>🔒</span></div>
             <h2 style={s.title}>Close Shift</h2>

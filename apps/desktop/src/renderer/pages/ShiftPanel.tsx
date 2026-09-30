@@ -48,6 +48,8 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const [methodOptions, setMethodOptions] = useState<MethodOption[]>([]);
   const [declaredInputs, setDeclaredInputs] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
+  // A366: only the shift's owner or a manager may close it (another cashier still sells, pays in/out, records expenses).
+  const [closeRights, setCloseRights] = useState<{ allowed: boolean; ownerName: string | null }>({ allowed: true, ownerName: null });
   // Forced close: a manager ending a shift nobody counted. Kept behind a second
   // click and a reason, because it writes an UNRECONCILED shift and that record
   // is permanent.
@@ -96,6 +98,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     const r = await posApi.shift.current({ includeForeign: true });   // A334: + the web POS's cash on this drawer
     setReport(r);
     onShiftChange(r);
+    if (r) posApi.shift.closeRights().then(setCloseRights).catch(() => setCloseRights({ allowed: true, ownerName: null }));
   };
 
   useEffect(() => {
@@ -308,7 +311,19 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 </button>
               </div>
 
+              {/* A366: another cashier cannot count out this drawer — its owner or a manager does. */}
+              {!closeRights.allowed && (
+                <div className="border border-amber-500/30 bg-amber-500/5 rounded-xl p-4" data-testid="close-not-yours">
+                  <p className="text-sm text-amber-200 font-medium">Close shift</p>
+                  <p className="text-xs text-amber-100/80 mt-1">
+                    This shift belongs to {closeRights.ownerName ?? 'another cashier'}. Only {closeRights.ownerName ?? 'they'} or a manager can close it —
+                    ask them to sign in.
+                  </p>
+                </div>
+              )}
+
               {/* Close shift */}
+              {closeRights.allowed && (
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Close shift</p>
                 <div>
@@ -403,6 +418,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   </div>
                 ))}
               </div>
+              )}
             </>
           )}
 

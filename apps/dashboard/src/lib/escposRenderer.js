@@ -238,6 +238,9 @@ function visibleUnits(line, ctx) {
   }
   return units;
 }
+function noteRows(note) {
+  return (note ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
 function renderProduction(ctx) {
   const { order, station } = ctx;
   const cols = columnsFor(station.paperWidthMm);
@@ -256,6 +259,7 @@ function renderProduction(ctx) {
   if (order.orderType === "delivery" && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
+  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `NOTE: ${ln}`, void 0, 0), { bold: true });
   if (ctx.reprint) {
     d.line(`REPRINT  ${fullStamp(ctx.reprint.at)}  (#${ctx.reprint.count})`);
   }
@@ -278,6 +282,7 @@ function renderProduction(ctx) {
     );
     if (line.units.length === 0) {
       unitRows++;
+      for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 6), { bold: true });
       continue;
     }
     for (const u of units) {
@@ -290,9 +295,7 @@ function renderProduction(ctx) {
         d.lines(subRow(cols, attrs, void 0, 8));
       }
     }
-    if (line.note) {
-      d.lines(subRow(cols, `** ${line.note}`, void 0, 6));
-    }
+    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 6), { bold: true });
   }
   d.line(rule(cols));
   if (station.showFooterCount) {
@@ -339,6 +342,7 @@ function renderReceipt(ctx) {
   if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
   if (ctx.voided) d.line(`Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`);
   d.line(`Kots: ${order.kotCount}`);
+  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, void 0, 0));
   d.line(rule(cols));
   d.line("Item".padEnd(c.name) + "Qty".padStart(c.qty) + "Amt".padStart(c.amt));
   d.line(rule(cols));
@@ -379,7 +383,7 @@ function renderReceipt(ctx) {
       }
     }
     if (plain.length) d.lines(subRow(cols, plain.join(", "), void 0, 2));
-    if (line.note) d.lines(subRow(cols, `** ${line.note}`, void 0, 2));
+    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, void 0, 2));
     lastHadSubLines = d.length > before;
   });
   d.line(rule(cols));
