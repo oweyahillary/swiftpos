@@ -27,7 +27,8 @@ import {
 } from '@swiftpos/printing';
 import { SqliteJobStore } from './spoolStore.sqlite';
 import { escposEnabled, setEscposEnabled } from '../escposBridge';
-import { renderShiftReport, hasPrintableContent } from '@swiftpos/printing';
+import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@swiftpos/printing';
+import { getBranding } from '../localDb';
 import { sampleOrder, sampleBusiness, SAMPLE_KITCHEN, SAMPLE_DISPATCH,
   kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 
@@ -317,9 +318,13 @@ function registerIpc(): void {
       });
       if (!assignment) return { ok: false, error: 'No receipt printer is set up on this terminal.' };
 
+      // 0.6.25: the receipt logo heads the Z-report too (same raster, same switch as the receipt).
+      const brand = getBranding();
+      const logoRaster = brand?.receiptLogoEnabled && brand.logoReceipt ? monoRasterFromString(brand.logoReceipt) ?? undefined : undefined;
       const doc = renderShiftReport(
         {
           ...data,
+          logoRaster,
           openedAt:  new Date(data.openedAt),
           closedAt:  data.closedAt ? new Date(data.closedAt) : null,
           printedAt: new Date(),

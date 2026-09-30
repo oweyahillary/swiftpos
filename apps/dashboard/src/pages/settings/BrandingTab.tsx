@@ -74,12 +74,13 @@ async function prepareLogo(file: File): Promise<{ dataUri: string; warning?: str
   } finally { bmp.close(); }
 }
 
-/** A313: the receipt raster for a prepared logo — decode on a canvas (≤384×240, alpha kept),
+/** A313: the receipt raster for a prepared logo — decode on a canvas (fitted to 384×288, alpha kept; 0.6.25: a small logo is
+ *  scaled UP to fill the box so it does not print tiny),
  *  then threshold with the SAME shared/printing rule the till uses. Returns the stored string. */
 async function receiptRasterFor(dataUri: string): Promise<string> {
   const bmp = await createImageBitmap(await (await fetch(dataUri)).blob());
   try {
-    const scale = Math.min(1, RECEIPT_LOGO_MAX_WIDTH / bmp.width, RECEIPT_LOGO_MAX_HEIGHT / bmp.height);
+    const scale = Math.min(RECEIPT_LOGO_MAX_WIDTH / bmp.width, RECEIPT_LOGO_MAX_HEIGHT / bmp.height);
     const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const ctx = c.getContext('2d', { willReadFrequently: true }); if (!ctx) throw new Error('Could not read the logo pixels.');

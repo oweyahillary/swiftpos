@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { documentLogo } from '../../lib/printDocument';
 import { api } from "../../lib/api";
 import { usePOSAuth } from "../../context/POSAuthContext";
 import { useBusiness } from "../../context/BusinessContext";
@@ -75,6 +76,10 @@ export default function ZReportModal({ onClose }: Props) {
     if (!el) return;
     const w = window.open("", "_blank");
     if (!w) return;
+    // 0.6.25 (owner: "add the logo in all documents"): the client's logo heads the Z-report. The window opens inside the
+    // click (no popup block); the page is written once the (cached) logo is known.
+    void documentLogo().then((logo) => {
+    const logoHtml = logo ? `<div class="center" style="margin-bottom:8px"><img src="${logo.replace(/"/g, '&quot;')}" alt="" style="max-height:72px;max-width:220px;object-fit:contain" /></div>` : '';
     w.document.write(`
       <!DOCTYPE html><html><head>
       <title>Z-Report</title>
@@ -89,13 +94,14 @@ export default function ZReportModal({ onClose }: Props) {
         .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; }
         @media print { body { padding: 0; } }
       </style>
-      </head><body>${el.innerHTML}</body></html>
+      </head><body>${logoHtml}${el.innerHTML}</body></html>
     `);
     w.document.close();
     w.focus();
     setTimeout(() => {
       w.print();
-    }, 300);
+    }, 350);
+    });
   };
 
   const s = data?.summary;

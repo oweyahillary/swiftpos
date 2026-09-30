@@ -355,7 +355,9 @@ declare global {
         set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null;
                    logoRgba?: { width: number; height: number; data: Uint8ClampedArray } | null;
                    receiptLogoEnabled?: boolean })
-          => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null }>;
+          => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
+                       /** 0.6.25: how the cloud copy went (saved / pending until the next sync / refused with why). */
+                       cloud?: { state: 'saved' | 'pending' | 'refused'; message?: string } }>;
       };
       // A306: auto-update status + manager-gated install-now.
       update: {

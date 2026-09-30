@@ -33,8 +33,9 @@ export interface MonoRaster {
 export const RECEIPT_LOGO_MAX_WIDTH = 384;
 /** Hard ceiling: an 80 mm head. Anything wider is a malformed job, never sent. */
 export const PRINTER_MAX_DOTS = 576;
-/** A logo taller than this eats the receipt. ~1/3 of a short receipt. */
-export const RECEIPT_LOGO_MAX_HEIGHT = 240;
+/** A logo taller than this eats the receipt. ~1/3 of a short receipt. 0.6.25: 240 → 288 dots (30 → 36 mm), the owner
+ *  asked that the printed logo not be too small; a square logo now prints 36 mm. */
+export const RECEIPT_LOGO_MAX_HEIGHT = 288;
 export const DEFAULT_THRESHOLD = 128;
 
 export const bytesPerRow = (width: number): number => Math.ceil(width / 8);

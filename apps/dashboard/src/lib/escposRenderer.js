@@ -466,6 +466,7 @@ function renderShiftReport(r, paperWidthMm) {
   const d = new DocBuilder(cols);
   const money = (c) => `${r.currencyCode} ${formatCents(c ?? 0)}`;
   const isClosed = r.status === "closed" || r.status === "closed_unreconciled";
+  if (r.logoRaster) d.image(r.logoRaster, "center");
   d.line(center(cols, r.businessName.toUpperCase()), { size: "tall", bold: true });
   d.line(center(cols, isClosed ? "Z-REPORT (SHIFT CLOSE)" : "SHIFT REPORT (LIVE)"), { bold: true });
   if (r.branchName) d.line(center(cols, r.branchName));
@@ -554,7 +555,7 @@ function renderShiftReport(r, paperWidthMm) {
 // shared/printing/src/raster.ts
 var RECEIPT_LOGO_MAX_WIDTH = 384;
 var PRINTER_MAX_DOTS = 576;
-var RECEIPT_LOGO_MAX_HEIGHT = 240;
+var RECEIPT_LOGO_MAX_HEIGHT = 288;
 var DEFAULT_THRESHOLD = 128;
 var bytesPerRow = (width) => Math.ceil(width / 8);
 function monoRasterFromRGBA(rgba, width, height, opts = {}) {

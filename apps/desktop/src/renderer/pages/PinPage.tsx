@@ -269,8 +269,10 @@ export default function PinPage({ businessName, onStaffLogin, onBackToOwner, onT
             onPointerLeave={cancelPress}
           >
             {logoDataUri ? (
-              <span className="inline-flex items-center justify-center bg-white rounded-xl" style={{ padding: '12px 18px' }}>
-                <img src={logoDataUri} alt="" style={{ maxHeight: 88, maxWidth: 220, objectFit: 'contain', display: 'block' }} />
+              // 0.6.25 (owner: "increase the size of the logo … the white space is big"): up to 160 × 240 on a tighter
+              // card — as tall as the SwiftPOS default mark; was 88 × 220, which left a square logo small in its card.
+              <span data-testid="pin-logo" className="inline-flex items-center justify-center bg-white rounded-xl" style={{ padding: '8px 10px' }}>
+                <img src={logoDataUri} alt="" style={{ maxHeight: 160, maxWidth: 240, objectFit: 'contain', display: 'block' }} />
               </span>
             ) : (
               // No client logo -> the SwiftPOS default mark. Its wordmark is dark

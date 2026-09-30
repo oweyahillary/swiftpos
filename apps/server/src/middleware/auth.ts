@@ -261,6 +261,9 @@ const TILL_WRITE_ALLOWLIST: RegExp[] = [
                                           // server-reconciled action (expected_cash/variance); NOT a
                                           // blanket /api/shifts open, so a shift DELETE from a till stays denied
   /^\/api\/shifts\/confirmer(\/|$|\?)/,    // A365: who a manager's PIN belongs to (read-only; the till confirms locally)
+  /^\/api\/business\/branding(\?|$)/,     // 0.6.25 (owner's decision): a logo uploaded on the till's tech screen is saved to
+                                          // the cloud too, else the next pull put the old one back. Exactly this one route
+                                          // (PUT, receipt.manage / settings.manage / owner); /api/business/settings stays denied
   /^\/api\/auth\//,                       // verify-pin, set-pin, refresh, logout (no dashboard mutations live here)
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];

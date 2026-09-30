@@ -38,7 +38,7 @@ export interface LogoRgba { width: number; height: number; data: ArrayLike<numbe
 
 /** Widest a receipt logo is ever prepared at; raster.ts shrinks further if needed. */
 export const RGBA_MAX_WIDTH = 384;
-export const RGBA_MAX_HEIGHT = 240;
+export const RGBA_MAX_HEIGHT = 288;   // 0.6.25 (was 240) — mirrors shared/printing RECEIPT_LOGO_MAX_HEIGHT
 
 /**
  * Normalised write. `undefined` is preserved to mean "leave this column as-is" for the

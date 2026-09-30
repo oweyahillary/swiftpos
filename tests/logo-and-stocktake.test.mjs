@@ -21,7 +21,9 @@ const ok = (name, fn) => { try { fn(); pass++; console.log(`PASS  ${name}`); } c
 // ── A232 logo ────────────────────────────────────────────────────────────
 ok('A232: engine accepts + renders a logo', () => {
   assert.match(pd, /logo_url\?: string \| null/);
-  assert.match(pd, /business\.logo_url \? `<img class="logo"/);
+  // 0.6.25: the Branding logo first, the profile's logo_url as the fallback.
+  assert.match(pd, /const logoSrc = logo \|\| business\.logo_url \|\| null;/);
+  assert.match(pd, /\$\{logoSrc \? `<img class="logo" src="\$\{esc\(logoSrc\)\}"/);
   assert.match(pd, /\.logo \{/);
 });
 ok('A232: server PATCH whitelist accepts logo_url', () => {

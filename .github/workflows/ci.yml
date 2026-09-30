@@ -654,6 +654,11 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/order-notes.test.mjs
 
+      # 0.6.25 — a logo uploaded on the till is saved to the cloud too (a sync no longer puts the old one back).
+      - name: Desktop branding saved to the cloud
+        working-directory: apps/desktop
+        run: node --no-warnings test/branding-cloud.test.mjs
+
       # 0.6.24 — the locked till shows the client's logo; its text is readable (opaque background).
       - name: Desktop lock screen logo and readability
         working-directory: apps/desktop

@@ -85,7 +85,13 @@ export default function BrandingEditor() {
       setLogoRgba(null);
       await posApi.tech.logAction('tech.branding.set',
         { hasAccent: !!accentHex.trim(), hasLogo: !!logoPng, hasReceiptLogo: !!saved.logoReceipt, receiptLogoEnabled });
-      setMsg('Saved. The lock screen picks it up next time the PIN pad shows.');
+      // 0.6.25: the upload is saved to the cloud too, so a later sync no longer puts the old logo back — say how that went.
+      const cloud = saved.cloud;
+      setMsg(cloud?.state === 'refused'
+        ? `Saved on this till, but the cloud refused it: ${cloud.message ?? 'unknown reason'}. The next sync will bring the cloud's logo back — upload it on the web dashboard instead.`
+        : cloud?.state === 'pending'
+          ? `Saved on this till. ${cloud.message ?? 'It will be saved to the cloud at the next sync.'} Until then, syncing keeps this logo.`
+          : 'Saved on this till and to the cloud — every till and receipt picks it up at its next sync.');
       await load();
     } catch (err: any) {
       setMsg(String(err?.message ?? err));      // e.g. main-side guard rejected the logo
@@ -96,10 +102,12 @@ export default function BrandingEditor() {
     if (!businessId) return;
     setBusy(true); setMsg('');
     try {
-      await posApi.branding.set({ businessId, accentHex: null, logoPng: null, logoRgba: null, receiptLogoEnabled: false });
+      const cleared = await posApi.branding.set({ businessId, accentHex: null, logoPng: null, logoRgba: null, receiptLogoEnabled: false });
       await posApi.tech.logAction('tech.branding.clear');
       setAccentHex(''); setLogoPng(null); setWarnings([]);
-      setMsg('Cleared — back to the SwiftPOS default.');
+      setMsg(cleared.cloud?.state === 'saved'
+        ? 'Cleared on this till and the cloud — back to the SwiftPOS default.'
+        : `Cleared on this till. ${cleared.cloud?.message ?? 'The cloud will be updated at the next sync.'}`);
     } catch (err: any) {
       setMsg(String(err?.message ?? err));
     } finally { setBusy(false); }

@@ -111,8 +111,8 @@ export default function LockCurtain({
           {logo ? (
             // The client's logo on a white card, as on the PIN screen (logos are made for a light background).
             <span data-testid="lock-logo" className="inline-flex items-center justify-center bg-white rounded-xl mb-4"
-                  style={{ padding: '12px 18px' }}>
-              <img src={logo} alt="" style={{ maxHeight: 88, maxWidth: 220, objectFit: 'contain', display: 'block' }} />
+                  style={{ padding: '8px 10px' }}>
+              <img src={logo} alt="" style={{ maxHeight: 150, maxWidth: 240, objectFit: 'contain', display: 'block' }} />
             </span>
           ) : (
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-900 flex items-center justify-center">

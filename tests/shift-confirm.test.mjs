@@ -277,7 +277,7 @@ try {
     assert.match(ds, /\{ label: 'Method' \}, \{ label: 'Cashier said', align: 'right' \}, \{ label: 'Manager counted', align: 'right' \},/);
     assert.match(ds, /signatures: \['Cashier', 'Manager'\],/);
     assert.match(ds, /docType: 'SHIFT REPORTS',/);
-    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8'), /\.note \{ margin-top:20px; font-size:12px; white-space:pre-line; \}/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/lib/printDocument.ts'), 'utf8'), /\.note \{ margin-top:22px; font-size:12px; white-space:pre-line;/);   // 0.6.25 restyle keeps the kept line breaks
   });
   // ── A366 (0.6.24): only the shift's owner or a manager closes it ──
   await ok('A366 — the web POS: another cashier cannot close someone else\'s shift, even on the same till', async () => {

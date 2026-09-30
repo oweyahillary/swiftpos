@@ -51,21 +51,40 @@ const esc = (v: unknown): string =>
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-export function printDocument(spec: PrintDocSpec): void {
+// ── 0.6.25: the client's logo on every document ────────────────────────────────────────────────────────────────
+// Owner, 2026-09-30: "add the logo in all documents being generated from the system beautify the documents make them bit
+// cooporate". Documents read the logo from Branding (the one place a business sets it — A368), falling back to the older
+// Business profile "Logo image URL". Fetched once per page load and cached; a failed read just prints without a logo.
+let brandLogoCache: Promise<string | null> | null = null;
+/** The client's logo (Branding) for any printed page — cached; null when there is none or it cannot be read. */
+export function documentLogo(): Promise<string | null> { return brandLogo(); }
+function brandLogo(): Promise<string | null> {
+  if (!brandLogoCache) {
+    brandLogoCache = import('./api')
+      .then(({ api }) => api.get<{ logo_png: string | null } | null>('/api/business/branding'))
+      .then((b) => b?.logo_png ?? null)
+      .catch(() => { brandLogoCache = null; return null; });
+  }
+  return brandLogoCache;
+}
+
+/** The whole document as HTML — pure, so a test (and a preview) can render it without a browser window. */
+export function buildDocumentHtml(spec: PrintDocSpec, logo?: string | null, printedAt: Date = new Date()): string {
   const {
     docType, number, dateLabel, business,
     meta = [], columns, rows, totals = [], note, signatures = ['Prepared by', 'Authorised by'],
     accent = DOC_ACCENT.default, statusLabel,
   } = spec;
+  const logoSrc = logo || business.logo_url || null;
 
   const metaHtml = meta.length
-    ? `<div class="meta">${meta.map(m => `<div><span class="ml">${esc(m.label)}</span><span class="mv">${esc(m.value)}</span></div>`).join('')}</div>`
+    ? `<div class="meta">${meta.map(m => `<div class="mi"><div class="ml">${esc(m.label)}</div><div class="mv">${esc(m.value)}</div></div>`).join('')}</div>`
     : '';
 
   const head = `<tr>${columns.map(c => `<th class="${c.align === 'right' ? 'r' : 'l'}">${esc(c.label)}</th>`).join('')}</tr>`;
   const body = rows.length
     ? rows.map(r => `<tr>${r.map((cell, i) => `<td class="${columns[i]?.align === 'right' ? 'r' : 'l'}">${esc(cell)}</td>`).join('')}</tr>`).join('')
-    : `<tr><td class="l" colspan="${columns.length}" style="color:#888;padding:14px 8px;">No items.</td></tr>`;
+    : `<tr><td class="l empty" colspan="${columns.length}">No items.</td></tr>`;
 
   const totalsHtml = totals.length
     ? `<table class="totals">${totals.map((t, i) =>
@@ -76,55 +95,68 @@ export function printDocument(spec: PrintDocSpec): void {
     ? `<div class="note"><div class="nl">Notes</div><div>${esc(note)}</div></div>` : '';
 
   const sigHtml = signatures.length
-    ? `<div class="sigs">${signatures.map(s => `<div class="sig"><div class="sigline"></div><div class="sigl">${esc(s)}</div></div>`).join('')}</div>`
+    ? `<div class="sigs">${signatures.map(s => `<div class="sig"><div class="sigline"></div><div class="sigl">${esc(s)}</div><div class="sigd">Name, signature &amp; date</div></div>`).join('')}</div>`
     : '';
 
   const pillHtml = statusLabel
     ? `<span class="pill">${esc(titleCase(statusLabel))}</span>`
     : '';
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docType)} ${esc(number)}</title>
+  const stamp = printedAt.toLocaleString('en-KE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const contact = [
+    business.phone ? 'Tel: ' + esc(business.phone) : '',
+    business.tax_pin ? 'PIN: ' + esc(business.tax_pin) : '',
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docType)} ${esc(number)}</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#111; margin:0; }
+  body { font-family: "Segoe UI", -apple-system, Roboto, Helvetica, Arial, sans-serif; color:#1f2937; margin:0; font-size:12px; }
   .accentbar { height:6px; background:${esc(accent)}; }
-  .page { padding:26px 36px 32px; }
-  .top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #111; padding-bottom:14px; }
-  .biz { font-size:18px; font-weight:700; }
-  .bizblock { display:flex; align-items:flex-start; gap:12px; }
-  .logo { max-height:52px; max-width:180px; object-fit:contain; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .bizsub { font-size:11px; color:#555; margin-top:2px; line-height:1.5; }
+  .page { padding:28px 40px 24px; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:24px; padding-bottom:18px; border-bottom:1px solid #d1d5db; }
+  .bizblock { display:flex; align-items:center; gap:16px; }
+  .logo { max-height:76px; max-width:200px; object-fit:contain; display:block; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .biz { font-size:20px; font-weight:700; color:#111827; letter-spacing:.01em; }
+  .bizsub { font-size:11px; color:#6b7280; margin-top:3px; line-height:1.55; }
   .doc { text-align:right; }
-  .doctype { font-size:15px; font-weight:700; letter-spacing:.06em; }
-  .docnum { font-size:13px; margin-top:2px; }
-  .docdate { font-size:11px; color:#555; margin-top:2px; }
-  .pill { display:inline-block; margin-top:6px; border:1.5px solid ${esc(accent)}; color:${esc(accent)};
-          border-radius:999px; padding:2px 11px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
-  .meta { display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; margin:18px 0; font-size:12px; }
-  .meta .ml { color:#666; display:inline-block; min-width:96px; }
-  .meta .mv { font-weight:600; }
-  table.items { width:100%; border-collapse:collapse; margin-top:6px; font-size:12px; }
-  table.items th { border-bottom:1.5px solid #111; padding:7px 8px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#333; }
-  table.items td { border-bottom:1px solid #e3e3e3; padding:7px 8px; }
+  .doctype { font-size:22px; font-weight:800; letter-spacing:.08em; color:${esc(accent)}; }
+  .docnum { font-size:13px; font-weight:600; margin-top:4px; color:#111827; }
+  .docdate { font-size:11px; color:#6b7280; margin-top:2px; }
+  .pill { display:inline-block; margin-top:8px; border:1.5px solid ${esc(accent)}; color:${esc(accent)};
+          border-radius:999px; padding:2px 12px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+  .meta { display:grid; grid-template-columns:1fr 1fr; gap:0; margin:20px 0 18px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; background:#f9fafb; }
+  .meta .mi { padding:9px 14px; border-bottom:1px solid #e5e7eb; }
+  .meta .mi:nth-child(odd) { border-right:1px solid #e5e7eb; }
+  .meta .ml { color:#6b7280; font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; }
+  .meta .mv { font-weight:600; font-size:12.5px; color:#111827; margin-top:2px; }
+  table.items { width:100%; border-collapse:collapse; margin-top:4px; font-size:12px; }
+  table.items th { background:#f3f4f6; border-top:2px solid ${esc(accent)}; border-bottom:1px solid #d1d5db; padding:8px 10px;
+                   font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:#374151; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table.items td { border-bottom:1px solid #eceef1; padding:8px 10px; font-variant-numeric:tabular-nums; }
+  table.items tbody tr:nth-child(even) td { background:#fafafb; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table.items td.empty { color:#9ca3af; padding:16px 10px; }
   .l { text-align:left; } .r { text-align:right; }
-  table.totals { margin-left:auto; margin-top:12px; border-collapse:collapse; font-size:12px; min-width:220px; }
-  table.totals td { padding:4px 8px; }
-  table.totals tr.grand td { border-top:1.5px solid #111; font-weight:700; font-size:13px; padding-top:7px; }
-  .note { margin-top:20px; font-size:12px; white-space:pre-line; } .note .nl { color:#666; font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
-  .sigs { display:flex; gap:48px; margin-top:44px; }
-  .sig { flex:1; } .sigline { border-top:1px solid #999; } .sigl { font-size:10px; color:#666; margin-top:4px; }
-  @media print { @page { margin:14mm; } .accentbar { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  table.totals { margin-left:auto; margin-top:14px; border-collapse:collapse; font-size:12px; min-width:260px; border:1px solid #e5e7eb; border-radius:8px; }
+  table.totals td { padding:6px 14px; font-variant-numeric:tabular-nums; }
+  table.totals tr.grand td { border-top:2px solid ${esc(accent)}; font-weight:800; font-size:14px; padding-top:9px; padding-bottom:9px; color:#111827; }
+  .note { margin-top:22px; font-size:12px; white-space:pre-line; border-left:3px solid ${esc(accent)}; background:#f9fafb; padding:10px 14px; border-radius:0 6px 6px 0; }
+  .note .nl { color:#6b7280; font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:4px; }
+  .sigs { display:flex; gap:48px; margin-top:52px; }
+  .sig { flex:1; } .sigline { border-top:1px solid #9ca3af; } .sigl { font-size:11px; color:#374151; font-weight:600; margin-top:5px; }
+  .sigd { font-size:9.5px; color:#9ca3af; margin-top:1px; }
+  .foot { margin-top:34px; padding-top:10px; border-top:1px solid #e5e7eb; display:flex; justify-content:space-between; font-size:9.5px; color:#9ca3af; }
+  @media print { @page { margin:12mm; } .accentbar { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
 </style></head><body>
   <div class="accentbar"></div>
   <div class="page">
   <div class="top">
     <div class="bizblock">
-      ${business.logo_url ? `<img class="logo" src="${esc(business.logo_url)}" alt="" />` : ''}
+      ${logoSrc ? `<img class="logo" src="${esc(logoSrc)}" alt="" />` : ''}
       <div>
         <div class="biz">${esc(business.name)}</div>
         <div class="bizsub">
-          ${business.address ? esc(business.address) + '<br>' : ''}
-          ${business.phone ? 'Tel: ' + esc(business.phone) : ''}${business.phone && business.tax_pin ? ' · ' : ''}${business.tax_pin ? 'PIN: ' + esc(business.tax_pin) : ''}
+          ${business.address ? esc(business.address) + '<br>' : ''}${contact}
         </div>
       </div>
     </div>
@@ -140,14 +172,22 @@ export function printDocument(spec: PrintDocSpec): void {
   ${totalsHtml}
   ${noteHtml}
   ${sigHtml}
+  <div class="foot"><span>${esc(business.name)} &nbsp;·&nbsp; ${esc(docType)} ${esc(number)}</span><span>Printed ${esc(stamp)} &nbsp;·&nbsp; SwiftPOS</span></div>
   </div>
 </body></html>`;
+}
 
+export function printDocument(spec: PrintDocSpec): void {
+  // The window opens NOW, inside the click, so a popup blocker allows it; the logo is filled in a moment later.
   const win = window.open('', '_blank', 'width=820,height=900');
   if (!win) return; // popup blocked — caller can surface a message
   win.document.open();
-  win.document.write(html);
-  win.document.close();
-  // Give the browser a tick to lay out before printing.
-  setTimeout(() => { try { win.focus(); win.print(); } catch { /* user can print manually */ } }, 250);
+  win.document.write('<p style="font-family:sans-serif;color:#6b7280;padding:24px">Preparing the document…</p>');
+  void brandLogo().then((logo) => {
+    win.document.open();
+    win.document.write(buildDocumentHtml(spec, logo));
+    win.document.close();
+    // Give the browser a tick to lay out (and the logo to decode) before printing.
+    setTimeout(() => { try { win.focus(); win.print(); } catch { /* user can print manually */ } }, 350);
+  });
 }

@@ -419,6 +419,64 @@ export async function testConnection(): Promise<{ ok: boolean; status: number | 
   }
 }
 
+// ── 0.6.25: a logo uploaded on this till is saved to the cloud too ─────────────────────────────────────────────
+// Owner, 2026-09-30: "when u upload the logo in the desktop app it removes it after a while … is it that the web config
+// overrides it?" — yes: branding is remote-wins, and the tech upload was local only, so the next catalogue pull put the
+// cloud's logo back. Decided: the till's upload ALSO saves to the cloud (PUT /api/business/branding, the owner session).
+// Until it lands the till keeps its own (the pull skips branding while pending); offline → it goes with the next sync.
+const BRANDING_PENDING_KEY = 'branding_push_pending';
+export function brandingPushPending(): boolean {
+  try {
+    return (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(BRANDING_PENDING_KEY) as
+      { value: string } | undefined)?.value === '1';
+  } catch { return false; }
+}
+function setBrandingPending(on: boolean): void {
+  const db = getLocalDb();
+  if (on) db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, '1', ?)`).run(BRANDING_PENDING_KEY, new Date().toISOString());
+  else db.prepare(`DELETE FROM maintenance_state WHERE key = ?`).run(BRANDING_PENDING_KEY);
+}
+export type BrandingPushResult = { state: 'saved' | 'pending' | 'refused'; message?: string };
+/** Mark this till's branding as needing the cloud, then try now. Called by branding:set after the local save. */
+export async function queueBrandingPush(): Promise<BrandingPushResult> {
+  setBrandingPending(true);
+  return pushBrandingNow();
+}
+/** Send the till's branding row to the cloud. saved → pulls resume; pending → retried each sync; refused → pulls resume
+ *  (the cloud's copy will come back) and the editor says why. */
+export async function pushBrandingNow(): Promise<BrandingPushResult> {
+  if (!brandingPushPending()) return { state: 'saved' };
+  const db = getLocalDb();
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id: string } | undefined;
+  const row = sess?.business_id ? db.prepare(
+    `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id = ?`,
+  ).get(sess.business_id) as { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number } | undefined : undefined;
+  if (!row) { setBrandingPending(false); return { state: 'refused', message: 'No business on this till yet.' }; }
+  if (!_accessToken || !_serverUrl || !isOnline()) return { state: 'pending', message: 'Offline — it will be saved to the cloud at the next sync.' };
+  const body = JSON.stringify({
+    accent_hex: row.accent_hex, logo_png: row.logo_png, logo_receipt: row.logo_receipt,
+    receipt_logo_enabled: row.receipt_logo_enabled === 1,
+  });
+  const put = () => syncFetch(`${_serverUrl}/api/business/branding`, { method: 'PUT', headers: authHeaders(), body });
+  try {
+    let res = await put();
+    if (res.status === 401 && await refreshAccessToken()) res = await put();
+    if (res.ok) {
+      setBrandingPending(false);
+      logLine('sync', 'branding saved to the cloud');
+      return { state: 'saved' };
+    }
+    if (res.status >= 500) return { state: 'pending', message: `The cloud did not answer (HTTP ${res.status}) — it will retry at the next sync.` };
+    const err = await res.json().catch(() => ({} as any));
+    setBrandingPending(false);
+    const message = describeServerError(err, res.status);
+    logLine('sync', `branding refused by the cloud (HTTP ${res.status}): ${message}`);
+    return { state: 'refused', message };
+  } catch (e: any) {
+    return { state: 'pending', message: `Could not reach the cloud (${e?.message ?? e}) — it will retry at the next sync.` };
+  }
+}
+
 export async function syncAll(): Promise<{ pulled: boolean; pushed: number; errors: string[] }> {
   if (!_accessToken || !_serverUrl) return { pulled: false, pushed: 0, errors: ['Not configured'] };
   if (!isOnline()) return { pulled: false, pushed: 0, errors: ['Offline'] };
@@ -437,6 +495,8 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     // 401'ing every second pull by construction.
     await refreshDeviceTokenIfExpiring();
 
+    // 0.6.25: this till's own logo upload goes up BEFORE the pull, so the pull brings back the same logo.
+    if (brandingPushPending()) { try { await pushBrandingNow(); } catch { /* stays pending */ } }
     pulled = await pullCatalogue();
     // If pull returns false it may be a 401 — try refreshing once
     if (!pulled && _refreshToken) {
@@ -927,7 +987,9 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
   // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
   // tech-set value (A302) survives until the business actually has cloud branding.
-  if (c.branding) applyPulledBranding(c.branding);
+  // 0.6.25: NOT while this till's own upload is still on its way to the cloud — the pull would put the old logo back
+  // (the owner's "it removes it after a while"). The upload goes first (syncAll → pushBrandingNow), then pulls resume.
+  if (c.branding && !brandingPushPending()) applyPulledBranding(c.branding);
   // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
   if (c.themeId !== undefined) applyPulledTheme(c.themeId);
   // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.

@@ -131,9 +131,9 @@ if (db) {
 // ── A312: receipt-raster pixels + toggle through the REAL guard ────────────────────────────
 console.log('\nA312 — logoRgba + receiptLogoEnabled');
 const px = (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
-ok('A312: valid pixels pass through untouched', (() => { const c = validateBrandingWrite({ logoRgba: px(384, 240) }); return c.logoRgba && c.logoRgba.width === 384 && c.logoRgba.data.length === 384 * 240 * 4; })());
-throwsMsg('A312: too wide is refused at the door', /exceed 384x240/, () => validateBrandingWrite({ logoRgba: px(385, 10) }));
-throwsMsg('A312: too tall is refused at the door', /exceed 384x240/, () => validateBrandingWrite({ logoRgba: px(10, 241) }));
+ok('A312: valid pixels pass through untouched', (() => { const c = validateBrandingWrite({ logoRgba: px(384, 288) }); return c.logoRgba && c.logoRgba.width === 384 && c.logoRgba.data.length === 384 * 288 * 4; })());
+throwsMsg('A312: too wide is refused at the door', /exceed 384x288/, () => validateBrandingWrite({ logoRgba: px(385, 10) }));
+throwsMsg('A312: too tall is refused at the door (0.6.25: 288 high)', /exceed 384x288/, () => validateBrandingWrite({ logoRgba: px(10, 289) }));
 throwsMsg('A312: data length must be w*h*4', /RGBA bytes/, () => validateBrandingWrite({ logoRgba: { width: 8, height: 1, data: new Uint8ClampedArray(31) } }));
 throwsMsg('A312: non-integer dims refused', /bad dimensions/, () => validateBrandingWrite({ logoRgba: { width: 8.5, height: 1, data: new Uint8ClampedArray(34) } }));
 ok('A312: undefined pixels = keep stored raster', validateBrandingWrite({ accentHex: '#0d9488' }).logoRgba === undefined);

@@ -71,7 +71,7 @@ console.log('\n4. Downsample — shrink-not-crop to the 58 mm head');
   ok('height scales by the same factor (100 → 50)', r.height === 50, `${r.height}`);
   ok('bytes match the new geometry', r.bytes.length === bytesPerRow(384) * 50);
   const tall = monoRasterFromRGBA(rgba(100, 960, () => [0, 0, 0, 255]), 100, 960);
-  ok('tall logos are capped by height, aspect kept (100x960 → 25x240)', tall.width === 25 && tall.height === 240, `${tall.width}x${tall.height}`);
+  ok('tall logos are capped by height, aspect kept (100x960 → 30x288; 0.6.25 height 288)', tall.width === 30 && tall.height === 288, `${tall.width}x${tall.height}`);
   ok('bad RGBA length throws', (() => { try { monoRasterFromRGBA(new Uint8Array(3), 1, 1); return false; } catch { return true; } })());
 }
 

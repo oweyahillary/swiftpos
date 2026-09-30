@@ -5,7 +5,7 @@
  * maps it into ShiftReportData, and sends the bytes to the branch receipt printer
  * via the bridge (till only). Not a redesign — the desktop's report on web. (A262)
  */
-import { renderShiftReportEscPos } from './escposRenderer';
+import { renderShiftReportEscPos, monoRasterFromString } from './escposRenderer';
 import { getQZStatus, printBytesToServer } from './localPrintServer';
 import { api } from './api';
 import type { BranchPrinter } from './printKOT';
@@ -21,8 +21,10 @@ export async function printShiftReport(shiftId: string): Promise<{ ok: boolean; 
   try { shift = await api.get<any>(`/api/shifts/${shiftId}`); }
   catch (e: any) { return { ok: false, message: e?.message ?? 'Could not load the shift.' }; }
 
-  const [business, printers] = await Promise.all([
+  const [business, branding, printers] = await Promise.all([
     api.get<any>('/api/business').catch(() => ({ name: 'SwiftPOS', currency: 'KES' })),
+    // 0.6.25: the receipt logo heads the Z-report too — same raster and switch as the receipt (A313).
+    api.get<{ logo_receipt: string | null; receipt_logo_enabled: boolean } | null>('/api/business/branding').catch(() => null),
     api.get<BranchPrinter[]>(`/api/printers?branch_id=${shift.branch_id}`).catch(() => [] as BranchPrinter[]),
   ]);
 
@@ -30,6 +32,7 @@ export async function printShiftReport(shiftId: string): Promise<{ ok: boolean; 
   if (!receipt) return { ok: false, message: 'No receipt printer is configured for this branch.' };
 
   const data = {
+    logoRaster:   branding?.receipt_logo_enabled && branding.logo_receipt ? monoRasterFromString(branding.logo_receipt) ?? undefined : undefined,
     businessName: business?.name ?? 'SwiftPOS',
     branchName:   shift.branch_name ?? undefined,
     currencyCode: business?.currency ?? 'KES',

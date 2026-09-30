@@ -19,6 +19,7 @@
  * order, same labels, same wording. Changing it while also changing the
  * mechanism would make a mis-print impossible to attribute.
  */
+import type { MonoRaster } from './raster';
 import { DocBuilder, type Document } from './document';
 import { columnsFor, center, rule, pair, wrap } from './layout';
 import { formatCents } from './money';
@@ -32,6 +33,9 @@ export interface ShiftReportMethodLine {
 }
 
 export interface ShiftReportData {
+  /** 0.6.25 (owner: "add the logo in all documents"): the client's receipt logo, printed centred above the name — the same
+   *  raster and the same switch as the receipt's. Absent = no logo, the report byte-identical to before. */
+  logoRaster?: MonoRaster;
   businessName: string;
   branchName?: string;
   currencyCode: string;
@@ -103,6 +107,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   const isClosed = r.status === 'closed' || r.status === 'closed_unreconciled';
 
   // ── Heading ───────────────────────────────────────────────────────────────
+  if (r.logoRaster) d.image(r.logoRaster, 'center');   // 0.6.25
   d.line(center(cols, r.businessName.toUpperCase()), { size: 'tall', bold: true });
   d.line(center(cols, isClosed ? 'Z-REPORT (SHIFT CLOSE)' : 'SHIFT REPORT (LIVE)'), { bold: true });
   if (r.branchName) d.line(center(cols, r.branchName));

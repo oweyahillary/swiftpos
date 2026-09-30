@@ -113,11 +113,11 @@ export async function prepareRasterLogo(file: File): Promise<PreparedLogo> {
 }
 
 
-/** A312: the receipt-raster input — RGBA pixels of the logo scaled (never cropped, never
- *  upscaled) to fit 384×240, the 58 mm head. Main thresholds these into `logo_receipt`;
+/** A312: the receipt-raster input — RGBA pixels of the logo scaled (never cropped) to fit 384×288, the 58 mm head.
+ *  0.6.25: a small logo is now scaled UP to fill that box (it printed at its own tiny size), and the height is 288. Main thresholds these into `logo_receipt`;
  *  thresholding is deliberately NOT done here so there is one rule (shared/printing raster.ts). */
 export const RECEIPT_MAX_W = 384;
-export const RECEIPT_MAX_H = 240;
+export const RECEIPT_MAX_H = 288;
 
 export interface LogoPixels { width: number; height: number; data: Uint8ClampedArray }
 
@@ -125,7 +125,7 @@ export async function logoPixelsForReceipt(source: File | Blob | string): Promis
   const blob = typeof source === 'string' ? await (await fetch(source)).blob() : source;
   const bitmap = await createImageBitmap(blob);
   try {
-    const scale = Math.min(1, RECEIPT_MAX_W / bitmap.width, RECEIPT_MAX_H / bitmap.height);
+    const scale = Math.min(RECEIPT_MAX_W / bitmap.width, RECEIPT_MAX_H / bitmap.height);   // 0.6.25: up as well as down
     const w = Math.max(1, Math.round(bitmap.width * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement('canvas');

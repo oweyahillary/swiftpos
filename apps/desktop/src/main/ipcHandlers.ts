@@ -38,7 +38,7 @@ import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCach
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, type ForeignCash } from './shiftService';
@@ -1265,7 +1265,12 @@ export function registerIpcHandlers() {
       { businessId: string; accentHex?: string | null; logoPng?: string | null;
         logoRgba?: { width: number; height: number; data: ArrayLike<number> } | null;
         receiptLogoEnabled?: boolean },
-  ) => setBranding(businessId, { accentHex, logoPng, logoRgba, receiptLogoEnabled }));
+  ) => {
+    const saved = setBranding(businessId, { accentHex, logoPng, logoRgba, receiptLogoEnabled });
+    // 0.6.25: and to the cloud (owner's decision), so the next pull does not put the old logo back. Never fails the save.
+    const cloud = await queueBrandingPush().catch((e: any) => ({ state: 'pending' as const, message: String(e?.message ?? e) }));
+    return { ...saved, cloud };
+  });
 
   // A306: auto-update status for the renderer banner. Push is via update:status
   // (webContents.send from autoUpdate.ts); this is the poll the renderer runs on mount.

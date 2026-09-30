@@ -9,7 +9,7 @@
  * SQLite (node:sqlite stand-in — not the app's better-sqlite3 driver, A13).
  *
  * MUTATIONS TO CONFIRM BITE:
- *   - drop `if (c.branding) applyPulledBranding` in syncEngine  -> "applyReferenceConfig applies branding" fails
+ *   - drop `if (c.branding && !brandingPushPending()) applyPulledBranding` in syncEngine -> "applyReferenceConfig applies branding" fails
  *   - stop selecting business_branding in pos /init             -> "server /init selects business_branding" fails
  *   - remove business_branding from the catalogue-version list  -> "server catalogue-version includes branding" fails
  *   - make applyPulled ignore the session business_id           -> "remote-wins keyed by session business" fails
@@ -31,7 +31,8 @@ const refb = r('apps/desktop/src/main/referenceBundle.ts');
 const pos  = r('apps/server/src/routes/pos.ts');
 
 ok('syncEngine imports applyPulledBranding', /import\s*\{[^}]*applyPulledBranding[^}]*\}\s*from\s*['"]\.\/localDb['"]/.test(sync));
-ok('applyReferenceConfig applies branding (guarded)', /if\s*\(\s*c\.branding\s*\)\s*applyPulledBranding\(\s*c\.branding\s*\)/.test(sync));
+// 0.6.25 (A368): …except while this till's own upload is still on its way to the cloud.
+ok('applyReferenceConfig applies branding (guarded; not while a till upload is pending)', /if\s*\(\s*c\.branding\s*&&\s*!brandingPushPending\(\)\s*\)\s*applyPulledBranding\(\s*c\.branding\s*\)/.test(sync));
 ok('cloud path sets branding from the init response', /branding:\s*\(\s*_j\.branding/.test(sync));
 ok('referenceBundle config carries optional branding', /branding\?:\s*\{[^}]*accentHex[^}]*logoPng/.test(refb));
 ok('applyPulledBranding is keyed by the session business', /applyPulledBranding/.test(ldb) && /FROM session WHERE id\s*=\s*1/.test(ldb) && /ON CONFLICT\(business_id\)/.test(ldb));
