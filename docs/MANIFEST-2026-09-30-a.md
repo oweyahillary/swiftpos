@@ -43,7 +43,7 @@ they want exta cheese if it pizza or no salt etc". Decided: free text + quick pi
 - **The cloud** stores both (cleaned and capped, never refused), sends the quick picks to the tills and the web POS, and the KDS
   shows the order note above the dishes and each line's note.
 - **The web POS** (restaurant/café cashier screen) has the same editor and picks; the notes print and reach the cloud.
-- **Back office:** Settings → Business → Service → **Quick notes for orders** (beside "Keep off the kitchen ticket"). One per line;
+- **Back office:** Settings → Business → **Restaurant setup** → **🍽 Service** → **Quick notes for orders** (beside "Keep off the kitchen ticket"). One per line;
   empty = no quick picks; never set = the defaults (No salt, Spicy, Mild, Extra cheese, No onions, No sauce, Well done, Takeaway
   pack).
 - **Not changed:** the on-screen till receipt (owner-approved format). The retail, petrol and parking web screens.
@@ -83,7 +83,7 @@ migration tests · server, desktop (typecheck + main + renderer) and dashboard b
 ## Rollout (owner)
 1. Apply, commit, push; CI green. Deploy the **cloud**, then the **dashboard**.
 2. Tag **v0.6.24** → approve B Foods → T1 updates.
-3. Settings → Business → Service → Quick notes for orders: check the list (or keep the defaults).
+3. Settings → Business → Restaurant setup → 🍽 Service → Quick notes for orders: check the list (or keep the defaults).
 4. Checklist v0.6.24 — §C (C5: the update bar), §N (notes).
 
 ## Rollback

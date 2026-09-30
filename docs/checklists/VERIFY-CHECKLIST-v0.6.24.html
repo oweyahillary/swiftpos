@@ -88,7 +88,7 @@
 <body>
 <div class="wrap">
   <h1>SwiftPOS v0.6.24 — rollout verification</h1>
-  <p class="sub">0.6.24: only the cashier who opened a shift, or a manager, can close it (A366); the update bar no longer covers the till (C5); notes on an item and on the order (A367). Nothing carried — every earlier check has passed except D2–D4 (0.6.21).</p>
+  <p class="sub">0.6.24: only the cashier who opened a shift, or a manager, can close it (A366); the update bar no longer covers the till (C5); notes on an item and on the order (A367). Nothing carried — every earlier check has passed.</p>
 
   <div class="card">
     <div class="meta">
@@ -138,7 +138,7 @@ const DATA = [
     ["N4", "A note on the whole order", ["+ Note for the order → “Deliver to gate B” → Save. Send to kitchen, then charge."], "Kitchen: NOTE: Deliver to gate B under the header, ** 3 normal / ** 2 spicy under the chicken. Receipt: Note: … and the ** lines. No notes → prints as before.", true],
     ["N5", "Hold and recall", ["Notes on a line and the order → Hold → recall."], "Both notes come back. A changed note after Send to kitchen sends that line again.", false],
     ["N6", "The cloud and the KDS", ["After N4 syncs: KDS; Supabase: select order_number, notes from orders order by created_at desc limit 1;"], "The KDS shows the order note and each line's note; the query shows “Deliver to gate B”.", true],
-    ["N7", "The owner’s quick picks", ["Dashboard → Settings → Business → Service → Quick notes for orders: edit, click outside.", "T1: Sync → open a note."], "The till offers the new list. An emptied box → no quick picks (typing still works).", false],
+    ["N7", "The owner’s quick picks", ["Dashboard → Settings → Business → Restaurant setup → 🍽 Service → Quick notes for orders: edit, click outside.", "T1: Sync → open a note."], "The till offers the new list. An emptied box → no quick picks (typing still works).", false],
     ["N8", "The web POS", ["Restaurant cashier screen: note on a line and the order → Send to kitchen / charge."], "Same editor and picks; kitchen print and receipt carry the notes; the KDS shows them.", false],
   ]],
 ];

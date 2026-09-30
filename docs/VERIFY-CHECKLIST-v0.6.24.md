@@ -2,7 +2,7 @@
 
 Interactive copy: `docs/checklists/VERIFY-CHECKLIST-v0.6.24.html` (Pass / Fail / Skip, a note required on a Fail, progress kept in the browser, results in the `R1: PASS — note … Summary … Failed:` format). This markdown is the same list, generated from it.
 
-0.6.24: only the cashier who opened a shift, or a manager, can close it (A366); the update bar no longer covers the till (C5); notes on an item and on the order (A367, §N). Nothing carried — every earlier check has passed except D2–D4 (0.6.21). **Record** = send a screenshot/photo. A **Fail** needs a note.
+0.6.24: only the cashier who opened a shift, or a manager, can close it (A366); the update bar no longer covers the till (C5); notes on an item and on the order (A367, §N). Nothing carried — every earlier check has passed. **Record** = send a screenshot/photo. A **Fail** needs a note.
 
 ## §R — Rollout
 
@@ -96,7 +96,7 @@ chicken; the receipt shows `Note: Deliver to gate B` and the `**` lines. A sale 
 **Expected:** The KDS shows the order note above the dishes and each line's note. The query shows `Deliver to gate B`.
 
 ### N7 — The owner's quick picks
-1. Dashboard → Settings → Business → Service → **Quick notes for orders**: remove one, add `Half portion`, click outside the box.
+1. Dashboard → Settings → Business → **Restaurant setup** → **🍽 Service** → **Quick notes for orders** (below "Keep off the kitchen ticket"): remove one, add `Half portion`, click outside the box.
 2. On T1: Sync (or wait for the next sync) → open a note.
 
 **Expected:** The till offers the new list. Emptying the box and syncing leaves no quick picks (typing still works).
@@ -108,4 +108,4 @@ chicken; the receipt shows `Note: Deliver to gate B` and the `**` lines. A sale 
 
 ## Recorded before this build (2026-09-30)
 0.6.23 F1–F9 PASS · 0.6.22 M1–M9 PASS · carried S1–S4, O1, L1, X1–X5 PASS — no longer carried (A365, A363, A360–A362 closed).
-Still open from 0.6.21: **D2–D4** (A364, the day close as a cash-up) — on the 0.6.21 checklist.
+0.6.21 D1–D5 all PASS (A364 closed).
