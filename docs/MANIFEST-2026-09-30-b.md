@@ -58,6 +58,12 @@ Every desktop test · every gate · desktop typecheck, main and renderer builds.
 3. Re-save the logo once (web Settings → Branding, or the till's tech screen) so the receipt version is regenerated bigger.
 4. Checklist v0.6.25 (and v0.6.24's §C and §N, which ride along).
 
+## CI fix (after `0673b03`)
+CI #440 failed in *Server suites → Run offline suites*: `tests/document-branding.test.mjs` loaded `shared/printing/dist`,
+which that job never builds (my bench had it built). The runtime check moved to `shared/printing/test/shift-report-logo.test.ts`
+(the package's `npm test`, run by CI's *Receipt closing block* step); the cloud suite now pins the source line. Re-run on a clean
+copy of dev with `shared/printing` NOT built: all `tests/*.test.mjs` pass.
+
 ## Rollback
 ```bash
 git revert <the owner's commit>   # screen sizes only

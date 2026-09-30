@@ -6,8 +6,8 @@
  *
  *   node tests/document-branding.test.mjs
  *
- * RUNS the real A4 engine (apps/dashboard/src/lib/printDocument.ts buildDocumentHtml, type-stripped) and the real thermal
- * Z-report renderer (shared/printing, compiled); pins the callers that fetch the logo.
+ * RUNS the real A4 engine (apps/dashboard/src/lib/printDocument.ts buildDocumentHtml, type-stripped); pins the thermal
+ * Z-report line (its runtime check is shared/printing/test/shift-report-logo.test.ts) and the callers that fetch the logo.
  *
  * MUTATIONS TO CONFIRM BITE: the Branding logo ignored (logo_url only) → "the Branding logo is used" fails; the footer
  * dropped → "a footer" fails; escaping dropped → "user text is escaped" fails; the Z-report's logo line removed →
@@ -17,7 +17,6 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const [maj, min] = process.versions.node.split('.').map(Number);
@@ -79,17 +78,11 @@ ok('the web end-of-day Z-report is headed by the logo', () => {
 });
 
 // ── The thermal Z-report ─────────────────────────────────────────────────────
-const require = createRequire(import.meta.url);
-const P = require(path.join(ROOT, 'shared/printing/dist/index.js'));
-const base = { businessName: 'B Foods', currencyCode: 'KES', cashierName: 'T', shiftRef: 'abc', openedAt: new Date(), closedAt: null,
-  status: 'open', byMethod: [], orderCount: 0, grossSales: 0, voidCount: 0, openingFloat: 0, cashSales: 0, floatIn: 0, floatOut: 0,
-  expectedCash: 0, countedCash: null, variance: null, printedAt: new Date() };
-ok('the thermal Z-report prints the logo first when given, and nothing extra without it', () => {
-  const logo = { width: 8, height: 2, bytes: new Uint8Array([0xff, 0xff]) };
-  const withLogo = P.renderShiftReport({ ...base, logoRaster: logo }, 80);
-  const without = P.renderShiftReport(base, 80);
-  assert.equal(withLogo.blocks?.[0]?.kind ?? withLogo[0]?.kind, 'image');
-  assert.notEqual(without.blocks?.[0]?.kind ?? without[0]?.kind, 'image');
+// Its runtime check lives in shared/printing/test/shift-report-logo.test.ts (that package's npm test builds it); this
+// suite runs where shared/printing is NOT built, so here the renderer line is pinned in the source.
+ok('the thermal Z-report prints the logo first when given', () => {
+  assert.match(read('shared/printing/src/shiftReport.ts'),
+    /\/\/ ── Heading ─+\n  if \(r\.logoRaster\) d\.image\(r\.logoRaster, 'center'\);/);
 });
 ok('the till and the web pass the receipt logo to the Z-report (same switch as the receipt)', () => {
   assert.match(read('apps/desktop/src/main/print/printWorker.ts'), /const logoRaster = brand\?\.receiptLogoEnabled && brand\.logoReceipt \? monoRasterFromString\(brand\.logoReceipt\)/);
