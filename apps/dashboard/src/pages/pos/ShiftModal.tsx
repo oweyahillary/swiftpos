@@ -21,6 +21,7 @@ import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { methodName, methodsToDeclare, methodsToCount, maySignedInConfirm, readAmounts, confirmationLabel, type MethodOption } from '../../lib/shiftConfirm';
 import { getCoveredTerminal, setCoveredTerminal, tillName, openShiftLine, loadOpenDrawers, withOpenShifts, loadWebTill, WEB_TILL_VALUE, type CoveredTerminal, type WebTill } from '../../lib/posTerminal';
+import { reasonsNeeded, missingReasons, REASON_MAX } from '../../lib/confirmReasons';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ export interface Shift {
 }
 
 /** A365: one method on a manager's confirmation (the cloud's confirmationLines). */
-interface ConfirmLine { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean }
+interface ConfirmLine { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean; reason?: string | null }
 
 export type ShiftModalMode = 'open' | 'close' | 'float' | 'clockin' | 'expense';
 
@@ -103,6 +104,12 @@ export default function ShiftModal({
   const [confirmPin, setConfirmPin] = useState('');
   const [confirmInputs, setConfirmInputs] = useState<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState<{ lines: ConfirmLine[]; confirmer_name: string | null; confirmed_at: string; confirm_self: boolean } | null>(null);
+  // 0.6.27: a blind close ('blind_shift_close', a cashier) — no figures; which methods to declare come from the cloud.
+  const [blind, setBlind] = useState(false);
+  const [blindMethods, setBlindMethods] = useState<string[]>([]);
+  // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figures at confirm, and the manager's reasons.
+  const [confirmView, setConfirmView] = useState<{ showCashier: boolean; declared: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [confirmReasons, setConfirmReasons] = useState<Record<string, string>>({});
 
   // Float in/out
   const [floatType, setFloatType]   = useState<'float_in' | 'float_out'>('float_in');
@@ -113,6 +120,8 @@ export default function ShiftModal({
   // A362: petty-cash expense out of this drawer (the till's Shift → Expenses, on the web)
   const [expTypes, setExpTypes]   = useState<{ id: string; name: string }[]>([]);
   const [expTypeId, setExpTypeId] = useState('');
+  // 0.6.27 (request 5): how the expense was paid — only cash comes out of the drawer.
+  const [expMethod, setExpMethod] = useState('cash');
   const [expDesc, setExpDesc]     = useState('');
   const [expAmount, setExpAmount] = useState('');
   const [expDone, setExpDone]     = useState<{ description: string; amount: number } | null>(null);
@@ -223,27 +232,35 @@ export default function ShiftModal({
       .then((rows) => setMethodOptions((Array.isArray(rows) ? rows : []).filter((r) => r.is_active !== false)))
       .catch(() => setMethodOptions([]));
     if (shiftId) {
-      posApi.get<{ by_method?: { method: string; amount: number }[]; cashier_id?: string | null; opened_by?: string | null; cashier_name?: string | null }>(`/api/shifts/${shiftId}`)
+      posApi.get<{ by_method?: { method: string; amount: number }[]; cashier_id?: string | null; opened_by?: string | null; cashier_name?: string | null;
+                   blind?: boolean; declare_methods?: string[] }>(`/api/shifts/${shiftId}`)
         .then((r) => {
           setTaken(Array.isArray(r?.by_method) ? r.by_method : []);
+          setBlind(r?.blind === true);
+          setBlindMethods(Array.isArray(r?.declare_methods) ? r.declare_methods : []);
           setShiftOwner({ ids: [r?.cashier_id, r?.opened_by].filter(Boolean) as string[], name: r?.cashier_name ?? null });
         })
         .catch(() => setTaken([]));
     }
   }, [mode, posApi, shiftId]);
-  const toDeclare = methodsToDeclare(taken);
+  const toDeclare = blind ? blindMethods : methodsToDeclare(taken);
   const mayClose = !shiftOwner || signedInManager || (!!session?.staffId && shiftOwner.ids.includes(session.staffId));
 
   const handleConfirm = async () => {
     if (!closeResult) return;
-    const codes = methodsToCount(closeResult.declared_methods, taken);
+    const codes = methodsToCount(closeResult.declared_methods, blind ? blindMethods.map((m) => ({ method: m, amount: 1 })) : taken);
     const r = readAmounts(confirmInputs, codes);
     if (r.ok === false) { setError(`Enter the counted amount for: ${r.missing.map((m) => methodName(m, methodOptions)).join(', ')}.`); return; }
+    if (confirmView.showCashier) {
+      const missing = missingReasons(reasonsNeeded(confirmView.declared, r.map), confirmReasons);
+      if (missing.length) { setError(`Give a reason where your count differs from the cashier's: ${missing.map((m) => methodName(m, methodOptions)).join(', ')}.`); return; }
+    }
     if (!signedInManager && !confirmPin.trim()) { setError('Enter the manager\'s PIN.'); return; }
     setLoading(true); setError('');
     try {
+      const reasonsBody = confirmView.showCashier ? { confirm_reasons: confirmReasons } : {};
       const res = await posApi.post<any>(`/api/shifts/${closeResult.id}/confirm`,
-        signedInManager ? { confirmed_methods: r.map } : { confirmed_methods: r.map, pin: confirmPin.trim() });
+        signedInManager ? { confirmed_methods: r.map, ...reasonsBody } : { confirmed_methods: r.map, pin: confirmPin.trim(), ...reasonsBody });
       setConfirmed({ lines: res.lines ?? [], confirmer_name: res.confirmer_name ?? null, confirmed_at: res.confirmed_at, confirm_self: !!res.confirm_self });
       setConfirmPin('');
     } catch (e: any) {
@@ -325,6 +342,7 @@ export default function ShiftModal({
         description,
         amount,
         expense_category_id: expTypeId || undefined,
+        payment_method: expMethod,   // 0.6.27
       });
       setExpDone({ description, amount });
     } catch (e: any) {
@@ -334,7 +352,7 @@ export default function ShiftModal({
     }
   };
 
-  const anotherExpense = () => { setExpDone(null); setExpDesc(''); setExpAmount(''); setExpTypeId(''); setError(''); };
+  const anotherExpense = () => { setExpDone(null); setExpDesc(''); setExpAmount(''); setExpTypeId(''); setExpMethod('cash'); setError(''); };
 
   // ── Clock in/out handler ────────────────────────────────────────────────────
 
@@ -446,7 +464,7 @@ export default function ShiftModal({
           <>
             <div style={s.iconRow}><span style={s.icon}>🔒</span></div>
             <h2 style={s.title}>Close Shift</h2>
-            <p style={s.subtitle}>Count the cash in the drawer. We'll calculate the variance for you.</p>
+            <p style={s.subtitle}>{blind ? 'Count the drawer and enter each method\'s total. A manager checks them.' : 'Count the cash in the drawer. We\'ll calculate the variance for you.'}</p>
 
             <label style={s.label}>Cash Counted ({currency}) — include the opening float</label>
             <input
@@ -471,7 +489,7 @@ export default function ShiftModal({
               </div>
             ))}
 
-            <label style={s.label}>Notes (required if cash doesn't match)</label>
+            <label style={s.label}>{blind ? 'Notes (optional)' : 'Notes (required if cash doesn\'t match)'}</label>
             <textarea
               style={s.textarea}
               placeholder="Any discrepancies, handover notes…"
@@ -497,6 +515,10 @@ export default function ShiftModal({
             <div style={s.iconRow}><span style={s.icon}>✅</span></div>
             <h2 style={s.title}>Shift Closed</h2>
 
+            {(closeResult as any).blind && (
+              <p style={s.subtitle} data-testid="blind-closed">Your count is saved. A manager checks it against the till's figures.</p>
+            )}
+            {!(closeResult as any).blind && <>
             <div style={s.summaryBox}>
               <div style={s.summaryRow}>
                 <span style={s.summaryLabel}>Opening Float</span>
@@ -540,29 +562,46 @@ export default function ShiftModal({
                 Cash is over — check for any unrecorded float transactions.
               </p>
             )}
+            </>}
 
             {/* A365: a manager confirms now (recommended) — or later from the dashboard's Shifts. */}
             {closeResult.declared_methods && !confirmed && !confirmStep && (
               <div data-testid="shift-awaiting" style={{ ...s.subtitle, marginTop: 12 }}>
                 Awaiting manager check.
                 <button style={{ ...s.primaryBtn, width: '100%', marginTop: 8 }} data-testid="confirm-now"
-                  onClick={() => { setConfirmStep(true); setError(''); }}>Manager: confirm now</button>
+                  onClick={() => {
+                    setConfirmStep(true); setError('');
+                    posApi.get<{ showCashier: boolean; declared: Record<string, number> | null }>(`/api/shifts/${closeResult.id}/confirm-view`)
+                      .then(setConfirmView).catch(() => {});
+                  }}>Manager: confirm now</button>
               </div>
             )}
             {confirmStep && !confirmed && (
               <div data-testid="confirm-shift" style={{ marginTop: 12 }}>
                 <p style={s.subtitle}>
-                  Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine's
-                  total — and enter what you find. The cashier's figures are shown after you save.
+                  {confirmView.showCashier
+                    ? 'Manager: count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
+                    : 'Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
                 </p>
-                {methodsToCount(closeResult.declared_methods, taken).map((m) => (
-                  <div key={m}>
-                    <label style={s.label}>{methodName(m, methodOptions)} counted ({currency})</label>
-                    <input style={s.input} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
-                      data-testid={`confirm-${m}`}
-                      value={confirmInputs[m] ?? ''} onChange={e => setConfirmInputs({ ...confirmInputs, [m]: e.target.value })} />
-                  </div>
-                ))}
+                {methodsToCount(closeResult.declared_methods, blind ? blindMethods.map((m) => ({ method: m, amount: 1 })) : taken).map((m) => {
+                  const cashierSaid = confirmView.showCashier && confirmView.declared ? (confirmView.declared[m] ?? 0) : null;
+                  const typed = confirmInputs[m] ?? '';
+                  const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                  return (
+                    <div key={m}>
+                      <label style={s.label}>{methodName(m, methodOptions)} counted ({currency})</label>
+                      {cashierSaid !== null && <p style={{ ...s.subtitle, margin: '0 0 4px' }} data-testid={`cashier-${m}`}>Cashier entered {fmt(cashierSaid, currency)}</p>}
+                      <input style={s.input} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
+                        data-testid={`confirm-${m}`} onWheel={e => (e.target as HTMLInputElement).blur()}
+                        value={typed} onChange={e => setConfirmInputs({ ...confirmInputs, [m]: e.target.value })} />
+                      {differs && (
+                        <input style={{ ...s.input, borderColor: '#f59e0b' }} type="text" maxLength={REASON_MAX} data-testid={`reason-${m}`}
+                          placeholder={`Why is it ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's?`}
+                          value={confirmReasons[m] ?? ''} onChange={e => setConfirmReasons({ ...confirmReasons, [m]: e.target.value })} />
+                      )}
+                    </div>
+                  );
+                })}
                 {!signedInManager && (
                   <>
                     <label style={s.label}>Manager PIN</label>
@@ -590,6 +629,9 @@ export default function ShiftModal({
                       {Math.round((l.variance ?? 0) * 100) !== 0 ? ` (${(l.variance ?? 0) > 0 ? 'over' : 'short'} ${fmt(Math.abs(l.variance ?? 0), currency)})` : ''}
                     </span>
                   </div>
+                ))}
+                {confirmed.lines.filter((l) => l.reason).map((l) => (
+                  <p key={`r-${l.method}`} style={{ ...s.subtitle, margin: '4px 0 0' }}>{methodName(l.method, methodOptions)} — reason: {l.reason}</p>
                 ))}
               </div>
             )}
@@ -663,7 +705,7 @@ export default function ShiftModal({
           <>
             <div style={s.iconRow}><span style={s.icon}>🧾</span></div>
             <h2 style={s.title}>Record an Expense</h2>
-            <p style={s.subtitle}>Cash paid out of this drawer — it comes off the shift's expected cash.</p>
+            <p style={s.subtitle}>Paid in cash, it comes off the drawer's expected cash; paid by M-Pesa or another method, it comes off that method's total.</p>
 
             <label style={s.label}>Expense type</label>
             <select
@@ -697,6 +739,14 @@ export default function ShiftModal({
               value={expAmount}
               onChange={e => setExpAmount(e.target.value)}
             />
+
+            {/* 0.6.27: paid with */}
+            <label style={s.label}>Paid with</label>
+            <select style={s.input} value={expMethod} onChange={e => setExpMethod(e.target.value)} data-testid="expense-method">
+              {[...new Set(['cash', 'mpesa', 'card', ...methodOptions.map(o => String(o.code).toLowerCase())])].map(m => (
+                <option key={m} value={m}>{methodName(m, methodOptions)}</option>
+              ))}
+            </select>
 
             {error && <p style={s.error}>{error}</p>}
 

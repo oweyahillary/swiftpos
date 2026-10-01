@@ -231,11 +231,12 @@ try {
     assert.match(m, /toDeclare\.map\(\(m\) => \(/);
     assert.match(m, /declared_methods: declared\.map,/);
     assert.match(m, /data-testid="confirm-now"/);
-    assert.match(m, /signedInManager \? \{ confirmed_methods: r\.map \} : \{ confirmed_methods: r\.map, pin: confirmPin\.trim\(\) \}/);
+    // 0.6.27: with the manager's reasons when the client shows the cashier's figures.
+    assert.match(m, /signedInManager \? \{ confirmed_methods: r\.map, \.\.\.reasonsBody \} : \{ confirmed_methods: r\.map, pin: confirmPin\.trim\(\), \.\.\.reasonsBody \}/);
   });
   await ok('0.6.23 web POS: only methods with money on them; the float reminder; a signed-in manager is not asked for a PIN; no wheel', () => {
     const m = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/pos/ShiftModal.tsx'), 'utf8');
-    assert.match(m, /const toDeclare = methodsToDeclare\(taken\);/);
+    assert.match(m, /const toDeclare = blind \? blindMethods : methodsToDeclare\(taken\);/);   // 0.6.27: blind close
     assert.match(m, /posApi\.get<\{ by_method\?: \{ method: string; amount: number \}\[\];[^>]*\}>\(`\/api\/shifts\/\$\{shiftId\}`\)/);
     assert.match(m, /Cash Counted \(\{currency\}\) — include the opening float/);
     assert.match(m, /const signedInManager = maySignedInConfirm\(session\);/);
@@ -250,7 +251,7 @@ try {
   });
   await ok('the dashboard lists shifts awaiting a manager and confirms them blind; mismatches and self-confirms shown', () => {
     const c = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/components/ShiftConfirmations.tsx'), 'utf8');
-    assert.match(c, /api\.post\(`\/api\/shifts\/\$\{target\.id\}\/confirm`, \{ confirmed_methods: r\.map \}\)/);
+    assert.match(c, /api\.post\(`\/api\/shifts\/\$\{target\.id\}\/confirm`, \{ confirmed_methods: r\.map, \.\.\.\(view\.showCashier \? \{ confirm_reasons: reasons \} : \{\}\) \}\)/);
     const dialog = c.split('{target && (')[1];
     assert.ok(!/expected_methods|declared_methods\[|money\(target/.test(dialog), 'the recount dialog shows no figures');
     assert.match(c, /data-testid="self-confirmed"/);

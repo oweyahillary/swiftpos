@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import type { ZReport } from '../lib/posApi';
 import { zBackupNote } from '../lib/syncNotice';
 import { confirmationPrintLines } from '../../shared/shiftConfirm';
+import { kitchenVoidText } from '../../shared/kitchenLines';
 
 interface Props {
   report: ZReport;
@@ -70,14 +71,18 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {totals.vat != null && row('incl. VAT', money(totals.vat))}
       {totals.ctlLevied && row('incl. CTL', money(totals.ctl ?? 0))}
       {(totals.tips ?? 0) > 0 && row('Tips (in payments)', money(totals.tips!))}
+      {/* 0.6.27: delivery fees — on top of the bills, not sales; the method the customer paid with carries them. */}
+      {(totals.deliveryFees ?? 0) > 0 && row('Delivery fees (in payments)', money(totals.deliveryFees!))}
       {row('Voids', String(totals.voidCount))}
 
       {rule}
       <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>CASH RECONCILIATION</p>
       {row('Opening float', money(shift.opening_float))}
       {row('+ Cash sales', money(totals.cashSales))}
-      {row('+ Float in', money(totals.floatIn))}
-      {row('− Float out', money(totals.floatOut))}
+      {row('+ Float in', money(totals.floatIn - (totals.riderReturned ?? 0)))}
+      {row('− Float out', money(totals.floatOut - (totals.riderPayouts ?? 0)))}
+      {/* 0.6.27: the riders' fees, paid in cash from this drawer (net of any put back by a void). */}
+      {((totals.riderPayouts ?? 0) > 0) && row('− Paid to riders', money((totals.riderPayouts ?? 0) - (totals.riderReturned ?? 0)))}
       {/* 0.6.11: expenses were always taken off expected cash but never shown, so the lines did not add up. */}
       {totals.expenses != null && row('− Expenses', money(totals.expenses))}
       {/* A342: the web POS's own shift on this till — counted in this drawer, closed with it. */}
@@ -90,15 +95,39 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
         { bold: true, size: '14px' },
       )}
 
+      {/* 0.6.27: expenses paid by M-Pesa etc. — not from the drawer; they come off that method's expected total. */}
+      {Object.keys(totals.expensesByMethod ?? {}).length > 0 && (
+        <>
+          {rule}
+          <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>EXPENSES NOT FROM THE DRAWER</p>
+          {Object.entries(totals.expensesByMethod!).map(([m, v]) => row(`− ${m === 'mpesa' ? 'M-PESA' : m.toUpperCase()}`, money(v)))}
+        </>
+      )}
+
       {(report.expenseLines?.length ?? 0) > 0 && (
         <>
           {rule}
           <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>EXPENSES ({report.expenseLines!.length})</p>
           {report.expenseLines!.map((e, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-              <span>{e.description}{e.paid_by_name ? ` (${e.paid_by_name})` : ''}</span><span>{money(e.amount)}</span>
+              <span>{e.label ?? e.description}{e.paid_by_name ? ` (${e.paid_by_name})` : ''}</span><span>{money(e.amount)}</span>
             </div>
           ))}
+        </>
+      )}
+
+      {/* 0.6.28: items sent to the kitchen and taken back — why, made or not, who approved. */}
+      {(report.kitchenVoids?.lines.length ?? 0) > 0 && (
+        <>
+          {rule}
+          <p data-testid="z-kitchen-voids" style={{ fontWeight: 'bold', marginBottom: '4px' }}>KITCHEN VOIDS ({report.kitchenVoids!.lines.length})</p>
+          {report.kitchenVoids!.lines.map((v) => (
+            <div key={v.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+              <span>{kitchenVoidText(v)}</span><span>{money(v.amount)}</span>
+            </div>
+          ))}
+          {row('Total voided', money(report.kitchenVoids!.summary.value))}
+          {report.kitchenVoids!.summary.cookedValue > 0 && row('Of which already made', money(report.kitchenVoids!.summary.cookedValue))}
         </>
       )}
 

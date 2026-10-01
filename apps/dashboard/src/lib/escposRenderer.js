@@ -354,6 +354,7 @@ function renderReceipt(ctx) {
     order.discount ?? 0
   );
   const tip = Math.max(0, order.tip ?? 0);
+  const deliveryFee = Math.max(0, order.deliveryFee ?? 0);
   let totalQty = 0;
   let lastHadSubLines = false;
   order.lines.forEach((line, i) => {
@@ -397,8 +398,9 @@ function renderReceipt(ctx) {
   d.line(pair(cols, "Round Off:", formatCents(tax.roundOff)));
   d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
   if (tip > 0) d.line(pair(cols, "Tip:", formatCents(tip)));
+  if (deliveryFee > 0) d.line(pair(cols, "Delivery fee:", formatCents(deliveryFee)));
   d.line(rule(cols));
-  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip)}`, { size: "tall", bold: true });
+  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: "tall", bold: true });
   d.line(rule(cols));
   d.line("Payment Detail:", { bold: true });
   d.line(rule(cols));
@@ -497,6 +499,7 @@ function renderShiftReport(r, paperWidthMm) {
   if (r.vat != null) d.line(pair(cols, "incl. VAT", money(r.vat)));
   if (r.ctl != null) d.line(pair(cols, "incl. CTL", money(r.ctl)));
   if (r.tips != null && r.tips > 0) d.line(pair(cols, "Tips (in payments)", money(r.tips)));
+  if (r.deliveryFees != null && r.deliveryFees > 0) d.line(pair(cols, "Delivery fees (in payments)", money(r.deliveryFees)));
   d.line(pair(cols, "Voids", String(r.voidCount)));
   d.line(rule(cols));
   d.line("CASH RECONCILIATION", { bold: true });
@@ -504,6 +507,7 @@ function renderShiftReport(r, paperWidthMm) {
   d.line(pair(cols, "+ Cash sales", money(r.cashSales)));
   d.line(pair(cols, "+ Float in", money(r.floatIn)));
   d.line(pair(cols, "- Float out", money(r.floatOut)));
+  if (r.riderPayouts != null && r.riderPayouts > 0) d.line(pair(cols, "- Paid to riders", money(r.riderPayouts)));
   if (r.expenses != null) d.line(pair(cols, "- Expenses", money(r.expenses)));
   if (r.siblingCash != null) d.line(pair(cols, "+ Web shift, this till", money(r.siblingCash)));
   d.line(pair(cols, "= Expected cash", money(r.expectedCash)), { bold: true });
@@ -512,6 +516,14 @@ function renderShiftReport(r, paperWidthMm) {
     if (r.variance != null) {
       const label = r.variance === 0 ? "Variance" : r.variance > 0 ? "Variance (over)" : "Variance (short)";
       d.line(pair(cols, label, money(r.variance)), { size: "tall", bold: true });
+    }
+  }
+  if (r.otherExpenses && r.otherExpenses.length) {
+    d.line(rule(cols));
+    d.line("EXPENSES NOT FROM THE DRAWER", { bold: true });
+    for (const e of r.otherExpenses) {
+      const label = METHOD_LABELS[e.method] ?? e.method.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      d.line(pair(cols, `- ${label}`, money(e.amount)));
     }
   }
   if (r.expenseLines && r.expenseLines.length) {
@@ -525,6 +537,20 @@ function renderShiftReport(r, paperWidthMm) {
         d.line(" ".repeat(Math.max(0, cols - amt.length)) + amt);
       }
     }
+  }
+  if (r.kitchenVoids && r.kitchenVoids.lines.length) {
+    d.line(rule(cols));
+    d.line(`KITCHEN VOIDS (${r.kitchenVoids.lines.length})`, { bold: true });
+    for (const e of r.kitchenVoids.lines) {
+      const amt = money(e.amount);
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else {
+        d.lines(wrap(e.description, cols));
+        d.line(" ".repeat(Math.max(0, cols - amt.length)) + amt);
+      }
+    }
+    d.line(pair(cols, "Total voided", money(r.kitchenVoids.total)), { bold: true });
+    if (r.kitchenVoids.madeTotal > 0) d.line(pair(cols, "Of which already made", money(r.kitchenVoids.madeTotal)));
   }
   if (r.backupNote && r.backupNote.trim()) {
     d.line(rule(cols));
@@ -884,8 +910,15 @@ function toUnits(line, ids, lineStationIds, routing) {
 
 // scripts/escpos-renderer/entry.ts
 var withDate = (order) => ({ ...order, soldAt: order.soldAt ? new Date(order.soldAt) : /* @__PURE__ */ new Date() });
-function emit(station, order, business, reprint, proforma) {
-  const doc = renderTicket({ order: withDate(order), business, station, reprint, proforma });
+function emit(station, order, business, reprint, proforma, voided) {
+  const doc = renderTicket({
+    order: withDate(order),
+    business,
+    station,
+    reprint,
+    proforma,
+    voided: voided ? { at: /* @__PURE__ */ new Date(), by: String(voided.by ?? ""), reason: voided.reason } : void 0
+  });
   return toEscPos(doc, {
     cut: station.cutPaper,
     feedBeforeCut: station.feedBeforeCut,
@@ -959,7 +992,7 @@ function stationConfigForType(type, id, paperWidthMm) {
   };
 }
 function renderStationEscPos(order, business, station) {
-  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business, void 0, station.proforma);
+  return emit(stationConfigForType(station.type, station.id, station.paperWidthMm), order, business, void 0, station.proforma, station.voided);
 }
 function stationHasContent(order, business, station) {
   const cfg = stationConfigForType(station.type, station.id, station.paperWidthMm);

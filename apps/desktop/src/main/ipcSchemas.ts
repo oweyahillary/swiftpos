@@ -125,6 +125,11 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'held:delete': { id: { t: 'string' } },
   'held:import': { orders: { t: 'objectArray', item: {} } },
 
+  // ── 0.6.28: kitchen ledger and kitchen voids ──────────────────────────────
+  'kitchen:sent': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
+  'kitchen:void': { order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, reason: { t: 'string', min: 1 }, note: { t: 'string', optional: true }, cooked: { t: 'boolean', optional: true }, pin: { t: 'string', optional: true }, order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true } },
+  'kitchen:open': NO_PAYLOAD,
+
   // ── idle ──────────────────────────────────────────────────────────────────
   'idle:setSurface': { kind: 'nullableEnum', values: ['manager','pos'] },
   'idle:clear':      NO_PAYLOAD,
@@ -139,6 +144,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:getVariants':    { kind: 'string' },
   'pos:getModifiers':   { kind: 'string' },
   'pos:notePicks':      NO_PAYLOAD,
+  'pos:features':       NO_PAYLOAD,
+  'pos:history':        NO_PAYLOAD,
 
   // ── escpos (kitchen exclusions + production + spool) ──────────────────────
   'escpos:kitchenExclusions':      NO_PAYLOAD,
@@ -210,7 +217,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'shift:awaiting':         NO_PAYLOAD,
   'shift:canConfirm':       NO_PAYLOAD,
   'shift:closeRights':      NO_PAYLOAD,
-  'shift:confirm':          { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' } },
+  'shift:confirm':          { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },
+  'shift:confirmView':      { kind: 'string' },
   'shift:zreport':          { kind: 'string' },
   'shift:history':          NO_PAYLOAD,
 
@@ -282,7 +290,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── expense ───────────────────────────────────────────────────────────────
   'expense:categories': NO_PAYLOAD,
   'expense:addCategory': { name: { t: 'string', min: 1 } },   // A341
-  'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true } },
+  'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, category_name: { t: 'string', optional: true } },
   'expense:list':       NO_PAYLOAD,
   'expense:range':      { ...rangeArg },
 

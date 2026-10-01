@@ -39,11 +39,15 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
-import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures } from './deviceConfig';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, type ForeignCash } from './shiftService';
+import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
-import { cloudBranchOrders } from './webSales';
+import { cloudBranchOrders, mirrorTillRefund, reverseRiderPayout } from './webSales';
+import { cleanExpenseMethod } from './expenseMethod';
+import { cleanDeliveryFee } from './delivery';
+import { recordKitchenSend, markKitchenPaid, recordKitchenVoid, openKitchenOrders, kitchenCloseBlock } from './kitchenService';
+import { anySent, voidReasonLabel } from './kitchenLines';
 import { exportReportCsv } from './reportExport';
 import { exportDailySalesReport } from './dailySalesReport';
 
@@ -228,6 +232,7 @@ export function registerIpcHandlers() {
     id: string; order_number: string; label: string; order_type: string;
     table_number: string; delivery_person: string | null; cart: string; held_at: string;
     order_note?: string | null;   // A367 (58)
+    delivery_fee?: number | null; // 0.6.27 (59)
   };
 
   // A tab whose cart JSON will not parse is returned with an EMPTY cart rather
@@ -250,6 +255,7 @@ export function registerIpcHandlers() {
       tableNumber: r.table_number,
       deliveryPerson: r.delivery_person ?? undefined,
       orderNote: r.order_note ?? undefined,   // A367
+      deliveryFee: r.delivery_fee ? Number(r.delivery_fee) : undefined,   // 0.6.27
       cart,
       heldAt: r.held_at,
       corrupt: corrupt || undefined,
@@ -272,13 +278,14 @@ export function registerIpcHandlers() {
       ...order,
     };
     db.prepare(`
-      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note, delivery_fee)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       held.id, held.orderNumber, held.label, held.orderType,
       held.tableNumber ?? '', held.deliveryPerson ?? null,
       JSON.stringify(held.cart ?? []), held.heldAt,
       cleanNote(held.orderNote, ORDER_NOTE_MAX),   // A367: the order's note survives a hold (the lines' notes ride in the cart)
+      cleanDeliveryFee(held.deliveryFee) || null,  // 0.6.27: a held delivery keeps its fee with its rider
     );
     return { ...held, cart: held.cart ?? [] };
   });
@@ -298,7 +305,19 @@ export function registerIpcHandlers() {
   });
 
   handle('held:delete', async (_event, { id }: { id: string }) => {
-    getLocalDb().prepare(`DELETE FROM held_orders WHERE id = ?`).run(id);
+    // 0.6.28: a tab with items on a kitchen ticket is not deleted — it is recalled and its items voided (with a manager
+    // where the client requires one). Deleting it was the quiet way to make a sent order disappear.
+    const db = getLocalDb();
+    const row = db.prepare(`SELECT order_number, cart FROM held_orders WHERE id = ?`).get(id) as { order_number: string; cart: string } | undefined;
+    if (row) {
+      let cart: unknown = [];
+      try { cart = JSON.parse(row.cart); } catch { cart = []; }
+      const ledgerOpen = openKitchenOrders().some((o) => o.order_number === row.order_number);
+      if (ledgerOpen || anySent(Array.isArray(cart) ? cart : [])) {
+        throw new Error('This tab has items already sent to the kitchen. Recall it, then remove the items (a kitchen void).');
+      }
+    }
+    db.prepare(`DELETE FROM held_orders WHERE id = ?`).run(id);
     return true;
   });
 
@@ -889,6 +908,9 @@ export function registerIpcHandlers() {
   // A367: the quick picks for order notes — the owner's list cached by the catalogue pull, else the defaults.
   handle('pos:notePicks', async () => parseNotePicks(getDeviceConfig()?.order_note_picks ?? null));
 
+  // 0.6.27: the per-client POS switches (admin portal), as the till last heard them — all off until told.
+  handle('pos:features', async () => getPosFeatures());
+
   handle('pos:getModifiers', async (_event, productId: string) => {
     const db = getLocalDb();
     const groups = db.prepare(`
@@ -996,10 +1018,15 @@ export function registerIpcHandlers() {
           // A349: the BILL is after the discount and excludes the tip; the receipt needs both to reconcile and print.
           discount:       Number(payload.discount_amount ?? 0),
           tip:            Number(payload.tip_amount ?? 0),
+          deliveryFee:    Number(payload.delivery_fee ?? 0),   // 0.6.27: after the total with the tip; PAY includes it
           // "How many kitchen tickets did this order produce" — the number the
           // expeditor counts against what arrives at the pass. Counted from
           // stations that will ACTUALLY print here; a station with no printer
           // on this terminal produces no ticket. Receipts are not KOTs.
+          // 0.6.28: a kitchen void reprints the taken-back items under a VOID banner (kitchen and dispatch only).
+          voided:         payload.kitchen_void
+            ? { at: new Date(), by: String(payload.kitchen_void.by ?? ''), reason: String(payload.kitchen_void.reason ?? '') }
+            : undefined,
           kotCount:       effective.filter(
             st => st.kind !== 'receipt' && assignedIds.has(st.id)).length,
           reprint,
@@ -1129,6 +1156,8 @@ export function registerIpcHandlers() {
   // Print". Only orders created on THIS terminal (after the feature shipped) have
   // a stored payload; anything else reports honestly rather than printing wrong.
   handle('escpos:reprintReceiptForOrder', (_e, orderId: string) => {
+    // 0.6.27: History's Reprint is for managers when the client has 'cashier_no_reprint' on — refused here too.
+    if (!historyScope().canReprint) return { ok: false, error: 'Reprinting is for managers on this till.' };
     const row = getLocalDb()
       .prepare('SELECT payload FROM receipt_payloads WHERE order_id = ?')
       .get(orderId) as { payload?: string } | undefined;
@@ -1146,6 +1175,7 @@ export function registerIpcHandlers() {
 
   handle('order:create', async (_event, orderPayload: any) => {
     const orderId = createLocalOrder(orderPayload);
+    markKitchenPaid(orderPayload?.order_number);   // 0.6.28: its sent lines are paid for
     // A299: event summary — id, total, method, item count. No line-item detail
     // or customer data (the DB + cloud are the record; this is the trail).
     logLine('sale', `created ${orderId} ${orderPayload?.total ?? '?'} `
@@ -1497,10 +1527,12 @@ export function registerIpcHandlers() {
   // includeForeign (A334): the close screen and the manager report add the web's cash on a shared
   // drawer. The POS sell gate calls this WITHOUT it — it must never wait on the cloud.
   handle('shift:current', async (_e, opts?: { includeForeign?: boolean }) => {
-    if (!opts?.includeForeign) return currentShiftReport();
+    // 0.6.27: a cashier on a blind close gets the report without its figures (blindReport).
+    const view = (z: ReturnType<typeof currentShiftReport>) => (z && blindClose() ? blindReport(z) : z);
+    if (!opts?.includeForeign) return view(currentShiftReport());
     const local = currentShiftReport();
     if (!local) return null;
-    return currentShiftReport(await fetchForeignCash(local.shift.id));
+    return view(currentShiftReport(await fetchForeignCash(local.shift.id)));
   });
 
   // A shift left open past ~18h. Reported, never auto-closed — see
@@ -1619,10 +1651,14 @@ export function registerIpcHandlers() {
     // variance note is required — the renderer surfaces that message.
     // A334: a shared drawer's web cash is part of what the cashier counted.
     // A365: `declared` — the cashier's figure for every payment method; the shift then awaits a manager.
+    // 0.6.28: with 'kitchen_void_approval', not while an order sent to the kitchen on this shift is unpaid.
+    const openShiftId = currentShiftReport()?.shift.id;
+    const kitchenBlock = openShiftId ? kitchenCloseBlock(openShiftId) : null;
+    if (kitchenBlock) throw new Error(kitchenBlock);
     const z = closeShift(Number(closing_float), notes, await fetchForeignCash(currentShiftReport()?.shift.id), declared ?? null);
     logLine('shift', `close float ${Number(closing_float) || 0}`);
     pushNow();
-    return z;
+    return blindClose() ? blindReport(z) : z;   // 0.6.27: a blind close hands back no figures
   });
 
   // ── A365: a manager confirms a closed shift (blind recount of every payment method) ──────────────────────────
@@ -1671,7 +1707,7 @@ export function registerIpcHandlers() {
 
   // A366: may the signed-in person close the open shift (its owner or a manager)? The screen asks first; closeShift
   // enforces it regardless.
-  handle('shift:closeRights', async () => shiftCloseRights(getOpenShift()));
+  handle('shift:closeRights', async () => ({ ...shiftCloseRights(getOpenShift()), blind: blindClose() }));   // 0.6.27: blind
 
   // 0.6.23 (owner: "since its the manager who is logged in do they need to key in their password?"): a manager already
   // signed in on this till confirms as themselves — no PIN. Anyone else still needs a manager's PIN.
@@ -1686,16 +1722,71 @@ export function registerIpcHandlers() {
   handle('shift:canConfirm', async () => signedInConfirmer() !== null);
 
   handle('shift:confirm', async (_event, payload) => {
-    const { shiftId, pin, counts } = assertPayload<{ shiftId: string; pin?: string; counts: Record<string, number> }>(
-      { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' } }, payload);
+    const { shiftId, pin, counts, reasons } = assertPayload<{ shiftId: string; pin?: string; counts: Record<string, number>; reasons?: Record<string, string> }>(
+      { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } }, payload);
     const signedIn = signedInConfirmer();
     if (!signedIn && !String(pin ?? '').trim()) throw new Error('Enter the PIN of a manager (or the owner) on duty.');
     const confirmer = signedIn && !String(pin ?? '').trim() ? signedIn : await identifyConfirmer(String(pin));
-    const c = confirmShift(shiftId, confirmer, counts);
+    const c = confirmShift(shiftId, confirmer, counts, reasons ?? null);   // 0.6.27: reasons
     logLine('shift', `A365 shift ${shiftId} confirmed by ${confirmer.name ?? confirmer.id}${c.self ? ' (self-confirmed)' : ''}` +
       `${c.lines.some((l) => l.mismatch) ? ' — recount differs from the cashier' : ''}`);
     pushNow();
     return c;
+  });
+
+  // 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')?
+  handle('shift:confirmView', async (_event, shiftId: string) => confirmView(String(shiftId)));
+
+  // ── 0.6.28: Send to kitchen is recorded; sent items come back only as a recorded kitchen void ────────────────────
+  // Owner, 2026-10-01: a sent order cancelled after the customer paid in cash — "the cashier pockets the money". Every
+  // sent item ends paid (order:create → markKitchenPaid) or voided here. See kitchenService.ts.
+  handle('kitchen:sent', async (_event, payload) => {
+    const { order_number, lines, order_type, table_number } = assertPayload<{
+      order_number: string; lines: unknown; order_type?: string; table_number?: string;
+    }>({ order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, order_type: { t: 'string', optional: true },
+         table_number: { t: 'string', optional: true } }, payload);
+    return { recorded: recordKitchenSend(order_number, lines, { order_type: order_type ?? null, table_number: table_number ?? null }) };
+  });
+
+  /**
+   * Take sent items back. With 'kitchen_void_approval' a manager approves: a manager signed in on this till as
+   * themselves, or a manager's PIN (node → cloud → this till's saved sign-ins, as shift:confirm). Without the switch the
+   * cashier may — it is still recorded, and the kitchen still gets the VOID ticket.
+   */
+  handle('kitchen:void', async (_event, payload) => {
+    const p = assertPayload<{ order_number: string; lines: unknown; reason: string; note?: string; cooked?: boolean;
+                              pin?: string; order_type?: string; table_number?: string }>({
+      order_number: { t: 'string', min: 1 }, lines: { t: 'any' }, reason: { t: 'string', min: 1 },
+      note: { t: 'string', optional: true }, cooked: { t: 'boolean', optional: true }, pin: { t: 'string', optional: true },
+      order_type: { t: 'string', optional: true }, table_number: { t: 'string', optional: true },
+    }, payload);
+    let approver: { id: string; name: string | null } | null = null;
+    if (getPosFeatures().kitchen_void_approval) {
+      const signedIn = signedInConfirmer();
+      if (!signedIn && !String(p.pin ?? '').trim()) throw new Error('A manager must approve this. Enter a manager’s PIN.');
+      approver = signedIn && !String(p.pin ?? '').trim() ? signedIn : await identifyConfirmer(String(p.pin));
+    }
+    const v = recordKitchenVoid(p, approver);
+    // The VOID ticket: the same stations the items went to, under a VOID banner, so the kitchen stops cooking them.
+    const printed = queueThermal({
+      order_number: p.order_number, order_type: p.order_type ?? 'retail', table_number: p.table_number,
+      items: v.lines.map((l) => (l.item && typeof l.item === 'object')
+        ? { ...(l.item as object), quantity: l.qty, lineTotal: l.unit_price * l.qty }
+        : { product: { id: l.product_id, name: l.product_name }, quantity: l.qty, unitPrice: l.unit_price,
+            lineTotal: l.unit_price * l.qty, selectedVariants: [], selectedModifiers: [] }),
+      kitchen_void: { by: approver?.name ?? '', reason: voidReasonLabel(v.reason) },
+    }, ['kitchen', 'dispatch']);
+    logLine('sale', `kitchen void #${p.order_number} ${v.lines.map((l) => `${l.qty}x ${l.product_name}`).join(', ')} ` +
+      `${v.total} — ${v.reason}${v.cooked ? ' (cooked)' : ''}${approver ? ` approved by ${approver.name ?? approver.id}` : ''}`);
+    pushNow();
+    return { ok: true, total: v.total, approvedBy: approver?.name ?? null,
+             skipped: [...printed.skipped, ...printed.failed.map((f) => `${f} (could not be produced)`)] };
+  });
+
+  /** Sent orders not yet paid: `shift` — this shift's (End Shift lists them); `all` — every one (recovery). */
+  handle('kitchen:open', async () => {
+    const shiftId = getOpenShift()?.id ?? null;
+    return { all: openKitchenOrders(), shift: shiftId ? openKitchenOrders(shiftId) : [] };
   });
 
   handle('shift:zreport', async (_event, shiftId: string) => {
@@ -2162,6 +2253,13 @@ export function registerIpcHandlers() {
     getSalesSummary(r ? resolveRange(r.preset, r.from, r.to) : undefined));
   handle('manager:topProducts',   async (_e, r?: RangeArg) =>
     getTopProducts(r?.limit ?? 8, r ? resolveRange(r.preset, r.from, r.to) : undefined));
+  // 0.6.27: the POS History — the last 30 sales, narrowed to the signed-in cashier's own when the client has
+  // 'cashier_own_history' on (a manager sees all); says whether Reprint is offered ('cashier_no_reprint').
+  handle('pos:history', async () => {
+    const scope = historyScope();
+    if (scope.ownOnly && !scope.staffId) return { scope, orders: [] };
+    return { scope, orders: getRecentOrders(30, undefined, scope.ownOnly ? scope.staffId : null) };
+  });
   handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
     getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));
 
@@ -2225,8 +2323,9 @@ export function registerIpcHandlers() {
 
   // Save expense locally (syncs up on next push pass)
   handle('expense:create', async (_event, {
-    description, amount, expense_category_id, paid_by,
-  }: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) => {
+    description, amount, expense_category_id, paid_by, payment_method, category_name,
+  }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
+       payment_method?: string; category_name?: string }) => {
     const db = getLocalDb();
     const session  = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
     const staff    = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
@@ -2245,8 +2344,8 @@ export function registerIpcHandlers() {
     db.prepare(`
       INSERT INTO expenses
         (id, business_id, branch_id, expense_category_id, description, amount,
-         paid_by, expense_date, shift_id, created_at, device_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+         paid_by, expense_date, shift_id, created_at, device_id, payment_method, expense_type_name, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       id, session.business_id, staff.branch_id,
       expense_category_id ?? null, description, amount,
@@ -2256,6 +2355,9 @@ export function registerIpcHandlers() {
       // nothing under COALESCE(device_id,'') = COALESCE(own,''), so it is never
       // collected by the push and the expense silently never leaves the till.
       getDeviceConfig()?.device_id ?? null,
+      // 0.6.27: how it was paid (only cash leaves the drawer) and the type's name (the Z-report shows it, offline too).
+      cleanExpenseMethod(payment_method),
+      expense_category_id ? (String(category_name ?? '').trim().slice(0, 100) || null) : null,
     );
     return { id };
   });
@@ -2274,7 +2376,8 @@ export function registerIpcHandlers() {
      ORDER BY created_at DESC LIMIT 1`).get(getDeviceConfig()?.device_id ?? null) as any;
     if (!shift) return [];
     return db.prepare(`
-      SELECT id, description, amount, expense_category_id, paid_by, created_at, sync_status
+      SELECT id, description, amount, expense_category_id, paid_by, created_at, sync_status,
+             expense_type_name AS category_name, COALESCE(payment_method, 'cash') AS payment_method
       FROM expenses WHERE shift_id=? ORDER BY created_at DESC
     `).all(shift.id);
   });
@@ -2334,6 +2437,7 @@ export function registerIpcHandlers() {
     // voided_at is written too — the column existed and nothing ever set it.
     const voidedAt = new Date().toISOString();
     db.prepare(`UPDATE orders SET status='voided', voided_at=? WHERE id=?`).run(voidedAt, orderId);
+    reverseRiderPayout(String(orderId), db);   // 0.6.27: a voided delivery's rider pay-out goes back in
     // Phase 2b: without the event, every replica of this order stays
     // 'completed' and the branch revenue on other tills counts a voided sale.
     emitEvent('order_voided', String(orderId), { status: 'voided', voided_at: voidedAt });
@@ -2346,7 +2450,6 @@ export function registerIpcHandlers() {
   // mean trusting a PIN this till cannot verify.
   handle('order:refund', async (_event, { orderId, reason, override_pin, authorizer_id }:
     { orderId: string; reason: string; override_pin?: string; authorizer_id?: string }) => {
-    const db = getLocalDb();
     const cfg = getDeviceConfig();
     if (!cfg?.server_url) throw new Error('Device not configured');
     // A345: an offline sign-in has no cloud token yet — make it a cloud sign-in first if the network is back.
@@ -2380,22 +2483,9 @@ export function registerIpcHandlers() {
     // shift query sums every payment row for a non-voided order, so the money
     // out cancels the money in. Without them the drawer would read short by the
     // refunded amount — audit M8.
-    const now = new Date().toISOString();
+    // 0.6.26: skipped when the web-sales pull already stored the cloud's copy of this refund (mirrorTillRefund).
     const legs: Array<{ method: string; amount: number }> = Array.isArray(data?.byMethod) ? data.byMethod : [];
-    const insert = db.prepare(`
-      INSERT INTO payments (id, order_id, method, amount, amount_tendered, change_given, reference, status, created_at, sync_status)
-      VALUES (?, ?, ?, ?, 0, 0, ?, 'refunded', ?, 'synced')
-    `);
-    const orderRow = db.prepare(`SELECT order_number FROM orders WHERE id=?`).get(orderId) as any;
-    const applyLocal = db.transaction(() => {
-      for (const leg of legs) {
-        insert.run(uuid(), orderId, leg.method, -Math.abs(Number(leg.amount) || 0),
-          `REFUND-${orderRow?.order_number ?? ''}`, now);
-      }
-      db.prepare(`UPDATE orders SET refunded_at=?, refunded_amount=?, refund_reason=? WHERE id=?`)
-        .run(now, Number(data?.refunded) || 0, String(reason ?? ''), orderId);
-    });
-    applyLocal();
+    mirrorTillRefund(String(orderId), legs, Number(data?.refunded) || 0, String(reason ?? ''));
 
     logLine('sale', `refund ${orderId} ${Number(data?.refunded) || 0}`
       + `${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`);

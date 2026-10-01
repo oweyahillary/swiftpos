@@ -18,6 +18,7 @@
 import type { ZReport } from './posApi';
 import { zBackupNote } from './syncNotice';
 import { confirmationPrintLines } from '../../shared/shiftConfirm';
+import { kitchenVoidText } from '../../shared/kitchenLines';
 
 /** Money crosses into shared/printing as integer cents, never as a float. */
 const toCents = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
@@ -52,17 +53,28 @@ export async function printShiftReport(
     vat:        totals.vat == null ? null : toCents(totals.vat),
     ctl:        totals.ctlLevied ? toCents(totals.ctl ?? 0) : null,
     tips:       totals.tips == null ? null : toCents(totals.tips),
+    deliveryFees: totals.deliveryFees ? toCents(totals.deliveryFees) : null,   // 0.6.27
     voidCount:  totals.voidCount,
 
     openingFloat: toCents(shift.opening_float),
     cashSales:    toCents(totals.cashSales),
-    floatIn:      toCents(totals.floatIn),
-    floatOut:     toCents(totals.floatOut),
+    // 0.6.27: the riders' pay-outs (and a void's pay-in back) on their own line; the other movements as before.
+    floatIn:      toCents(totals.floatIn - (totals.riderReturned ?? 0)),
+    floatOut:     toCents(totals.floatOut - (totals.riderPayouts ?? 0)),
+    riderPayouts: totals.riderPayouts ? toCents(totals.riderPayouts - (totals.riderReturned ?? 0)) : null,
+    otherExpenses: Object.entries(totals.expensesByMethod ?? {}).map(([method, v]) => ({ method, amount: toCents(v) })),
     // 0.6.11: the expenses already taken off expected cash, and their lines — so the paper adds up.
     expenses:     totals.expenses == null ? null : toCents(totals.expenses),
-    expenseLines: (report.expenseLines ?? []).map(e => ({ description: e.description, amount: toCents(e.amount) })),
+    // 0.6.27 (request 9): the expense TYPE first ("Transport — boda · M-Pesa"), not only the description.
+    expenseLines: (report.expenseLines ?? []).map(e => ({ description: e.label ?? e.description, amount: toCents(e.amount) })),
     // A363: what of the shift is not on the cloud yet — the same words as the on-screen report.
     backupNote: zBackupNote(report.notBackedUp),
+    // 0.6.28: kitchen voids — what was sent and taken back, why, and who approved.
+    kitchenVoids: (report.kitchenVoids?.lines.length ?? 0) > 0 ? {
+      lines: report.kitchenVoids!.lines.map(v => ({ description: kitchenVoidText(v), amount: toCents(v.amount) })),
+      total: toCents(report.kitchenVoids!.summary.value),
+      madeTotal: toCents(report.kitchenVoids!.summary.cookedValue),
+    } : null,
     // A365: the manager's confirmation (or "AWAITING MANAGER CHECK") — the same lines as the on-screen report.
     confirmLines: confirmationPrintLines(report.confirmation, (n) => n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })),
     // A342: the web's own shift on this till, counted in this drawer (absent → no line).

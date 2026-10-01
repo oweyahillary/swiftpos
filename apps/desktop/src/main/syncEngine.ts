@@ -14,7 +14,8 @@ import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks } from './deviceConfig';
+import { cleanDeliveryFee, riderPayoutReason } from './delivery';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -26,10 +27,10 @@ import { executeCloseDay } from './branchClose';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
-import { ownOrderIds, webSaleShifts, applyWebOrders, type WebOrder } from './webSales';
+import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
-  nodeQueueDepth,
+  nodeQueueDepth, emitEvent,
 } from './nodeIngest';
 import { v4 as uuid } from 'uuid';
 // ── Sync direction — the single authoritative source of truth ────────────────
@@ -58,6 +59,7 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
   payments: 'push', customer_credit_transactions: 'push',
   shifts: 'push', float_transactions: 'push', expenses: 'push',
   business_days: 'push',
+  kitchen_voids: 'push',   // 0.6.28 (migration 112)
 };
 
 /**
@@ -67,7 +69,7 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
  * came to be marked synced and lost. Keep in step with the server's `rejected`
  * union in apps/server/src/routes/sync.ts.
  */
-type RejectableTable = 'shifts' | 'business_days' | 'float_transactions' | 'expenses';
+type RejectableTable = 'shifts' | 'business_days' | 'float_transactions' | 'expenses' | 'kitchen_voids';
 
 let _serverUrl   = '';
 let _accessToken  = '';   // owner/device token — used for catalogue pull
@@ -75,6 +77,7 @@ let _refreshToken = '';
 let _staffToken   = '';   // per-shift staff token — used for order push
 let _staffRefresh = '';
 let _isSyncing    = false;
+let _kvWaitingLogged = 0;   // 0.6.28: kitchen voids an older cloud would not take (logged once per count)
 // A177: when the current sync started, so a wedged _isSyncing can't block forever.
 let _syncStartedAt = 0;
 // A sync running longer than this is presumed wedged and no longer blocks a new
@@ -611,8 +614,11 @@ export async function pullWebSales(): Promise<number> {
       if (res.status === 401 && await refreshStaffToken()) res = await doPull();
       if (res.status === 404) continue;   // not on the cloud yet (the shift push has not landed) — next pass
       if (!res.ok) { failed = true; noteInboundFailure('web-sales', `web sales pull failed: HTTP ${res.status}`); continue; }
-      const body = await res.json() as { orders?: WebOrder[] };
+      const body = await res.json() as { orders?: WebOrder[]; own_reversals?: OwnReversal[] };
       changed += applyWebOrders(shift, body.orders ?? []);
+      // 0.6.26 (A336 follow-up): a void or refund made on the web of a sale THIS till rang.
+      changed += applyOwnReversals(body.own_reversals ?? [], undefined, (id, at, reason) =>
+        emitEvent('order_voided', id, { status: 'voided', voided_at: at, void_reason: reason }));
     }
     // A363: only a clean pass recovers — this used to run after a failed one too, so every failure was followed a
     // millisecond later by "recovered after: …" and the log could not show a real outage.
@@ -996,6 +1002,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setWebPosEnabled(c.webPosEnabled);
   // A367: the quick picks for order notes. undefined = not said → keep.
   setOrderNotePicks(c.noteQuickPicks);
+  // 0.6.27: the per-client POS switches. undefined = not said → keep.
+  setPosFeatures(c.posFeatures);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -1104,6 +1112,7 @@ async function pullCatalogue(): Promise<boolean> {
       // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
       webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
+      posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
@@ -1559,7 +1568,8 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
   `).all(ownDevice) as any[];
   const expenses = db.prepare(`
     SELECT id, business_id, branch_id, expense_category_id, description, amount,
-           paid_by, expense_date, shift_id, created_at
+           paid_by, expense_date, shift_id, created_at,
+           COALESCE(payment_method, 'cash') AS payment_method   -- 0.6.27 (a cloud before 111 ignores it)
     FROM expenses WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
   // Trading days. Pushed like shifts: the till originates them and the cloud is
@@ -1572,12 +1582,19 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     FROM business_days WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
 
-  if (!shifts.length && !floats.length && !expenses.length && !business_days.length) return 0;
+  // 0.6.28: kitchen voids — sent items taken back (kitchenService.recordKitchenVoid). Cloud table: migration 112.
+  const kitchen_voids = db.prepare(`
+    SELECT id, business_id, branch_id, shift_id, order_number, order_id, product_id, product_name, quantity, unit_price,
+           amount, reason, note, cooked, cashier_id, cashier_name, approved_by, approved_by_name, device_id, created_at
+    FROM kitchen_voids WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(ownDevice) as any[];
+
+  if (!shifts.length && !floats.length && !expenses.length && !business_days.length && !kitchen_voids.length) return 0;
 
   const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
     headers: pushAuthHeaders(),
-    body: JSON.stringify({ shifts, floats, expenses, business_days }),
+    body: JSON.stringify({ shifts, floats, expenses, business_days, kitchen_voids }),
   });
 
   try {
@@ -1630,7 +1647,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     const tableOf = (r: { code: string; table?: string }): RejectableTable | null => {
       const t = r.table ?? TABLE_BY_CODE[r.code];
       return t === 'shifts' || t === 'business_days' ||
-             t === 'float_transactions' || t === 'expenses' ? t : null;
+             t === 'float_transactions' || t === 'expenses' || t === 'kitchen_voids' ? t : null;
     };
 
     // Rejected ids per table. Keyed by table because two rows in different
@@ -1638,7 +1655,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     // loop below has to consult its OWN table's set — not one shared set.
     const rejectedByTable: Record<RejectableTable, Set<string>> = {
       shifts: new Set(), business_days: new Set(),
-      float_transactions: new Set(), expenses: new Set(),
+      float_transactions: new Set(), expenses: new Set(), kitchen_voids: new Set(),
     };
     const unrouted: typeof rejected = [];
 
@@ -1656,6 +1673,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
         business_days:      markWithNote('business_days'),
         float_transactions: db.prepare(`UPDATE float_transactions SET sync_status='conflict' WHERE id=?`),
         expenses:           db.prepare(`UPDATE expenses SET sync_status='conflict' WHERE id=?`),
+        kitchen_voids:      db.prepare(`UPDATE kitchen_voids SET sync_status='conflict' WHERE id=?`),
       };
 
       db.transaction(() => {
@@ -1718,6 +1736,14 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced' WHERE id=?`);
     const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced' WHERE id=?`);
     const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced' WHERE id=?`);
+    const markKv    = db.prepare(`UPDATE kitchen_voids SET sync_status='synced' WHERE id=?`);
+    // 0.6.28: a cloud before migration 112 ignores `kitchen_voids` — marking them synced would lose them. Only a cloud
+    // that counts them (upserted.kitchenVoids) has stored them; otherwise they wait, pending, for the cloud's update.
+    const cloudTakesKv = typeof body?.upserted?.kitchenVoids === 'number';
+    if (kitchen_voids.length && !cloudTakesKv && kitchen_voids.length !== _kvWaitingLogged) {
+      _kvWaitingLogged = kitchen_voids.length;   // once per count, not every pass
+      logLine('sync', `${kitchen_voids.length} kitchen void(s) kept on the till — the cloud does not take them yet (migration 112)`);
+    }
     // Every loop excludes its own table's rejections. Anything absent from
     // `rejected` is still treated as accepted — that design constraint is
     // unchanged and is why the routing above has to be right.
@@ -1726,9 +1752,10 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       for (const f of floats)        if (!rejectedByTable.float_transactions.has(f.id)) markFloat.run(f.id);
       for (const e of expenses)      if (!rejectedByTable.expenses.has(e.id))           markExp.run(e.id);
       for (const d of business_days) if (!rejectedByTable.business_days.has(d.id))      markDay.run(d.id);
+      if (cloudTakesKv) for (const k of kitchen_voids) if (!rejectedByTable.kitchen_voids.has(k.id)) markKv.run(k.id);
     })();
-    const pushedCount = shifts.length + floats.length + expenses.length + business_days.length;
-    if (pushedCount) logLine('sync', `pushed ${pushedCount} cash record(s): ${shifts.length} shift, ${floats.length} float, ${expenses.length} expense, ${business_days.length} day`); // A178
+    const pushedCount = shifts.length + floats.length + expenses.length + business_days.length + kitchen_voids.length;
+    if (pushedCount) logLine('sync', `pushed ${pushedCount} cash record(s): ${shifts.length} shift, ${floats.length} float, ${expenses.length} expense, ${business_days.length} day, ${kitchen_voids.length} kitchen void`); // A178
     return pushedCount;
   } catch (err: any) {
     errors.push(`Shift sync: ${err.message}`);
@@ -2228,12 +2255,12 @@ const safeJson = (t: string): unknown => { try { return JSON.parse(t); } catch {
 async function pushShiftConfirmations(errors: string[]): Promise<number> {
   const db = getLocalDb();
   const rows = db.prepare(`
-    SELECT id, confirmed_methods, expected_methods, confirmed_by, confirmed_at
+    SELECT id, confirmed_methods, expected_methods, confirmed_by, confirmed_at, confirm_reasons
       FROM shifts
      -- own: a till sends the confirmations of the drawers it holds.
      WHERE confirm_sync = 'pending' AND confirmed_at IS NOT NULL AND sync_status = 'synced'
        AND COALESCE(device_id,'') = COALESCE(?,'')
-  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; confirmed_methods: string; expected_methods: string | null; confirmed_by: string; confirmed_at: string }[];
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; confirmed_methods: string; expected_methods: string | null; confirmed_by: string; confirmed_at: string; confirm_reasons: string | null }[];
   let sent = 0;
   for (const r of rows) {
     const post = () => syncFetch(`${_serverUrl}/api/shifts/${r.id}/confirm`, {
@@ -2241,6 +2268,7 @@ async function pushShiftConfirmations(errors: string[]): Promise<number> {
       body: JSON.stringify({
         confirmed_methods: safeJson(r.confirmed_methods), expected_methods: r.expected_methods ? safeJson(r.expected_methods) : undefined,
         confirmed_by: r.confirmed_by, confirmed_at: r.confirmed_at,
+        ...(r.confirm_reasons ? { confirm_reasons: safeJson(r.confirm_reasons) } : {}),   // 0.6.27
       }),
     });
     try {
@@ -2328,11 +2356,15 @@ export function createLocalOrder(orderPayload: any): string {
 
   const orderId = uuid();
   const now = new Date().toISOString();
+  // 0.6.27: a delivery fee only on a delivery (the sale screen sends one only with the client's 'delivery_fee' switch on).
+  const deliveryFee = orderPayload.order_type === 'delivery' ? cleanDeliveryFee(orderPayload.delivery_fee) : 0;
+  // What travels to the cloud is the same cleaned figure (its create_order_atomic reconciles the legs to total + tip + fee).
+  if (deliveryFee > 0) orderPayload.delivery_fee = deliveryFee; else delete orderPayload.delivery_fee;
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -2353,7 +2385,20 @@ export function createLocalOrder(orderPayload: any): string {
       orderPayload.pump_id ?? null,
       // A367: the order's note, cleaned the same way the cloud cleans it (shared/orderNotes.ts).
       cleanNote(orderPayload.notes, ORDER_NOTE_MAX),
+      deliveryFee,   // 0.6.27: on top of the bill, in the legs (like the tip); not in total
     );
+
+    // 0.6.27 (the prospect's request 3): the rider is paid the delivery fee in CASH from this drawer, now — recorded as
+    // a pay-out tied to the sale, so expected cash is the fee lower while the method the customer paid with carries it.
+    // It syncs like any pay-out; voiding the sale puts it back (reverseRiderPayout).
+    if (deliveryFee > 0) {
+      const sh = db.prepare(`SELECT branch_id, cashier_id FROM shifts WHERE id=?`).get(shiftId) as { branch_id: string; cashier_id: string } | undefined;
+      db.prepare(`
+        INSERT INTO float_transactions (id, shift_id, branch_id, cashier_id, type, amount, reason, created_at, device_id, order_id, sync_status)
+        VALUES (?, ?, ?, ?, 'float_out', ?, ?, ?, ?, ?, 'pending')
+      `).run(uuid(), shiftId, sh?.branch_id ?? orderPayload.branch_id, cashierId ?? sh?.cashier_id ?? '', deliveryFee,
+             riderPayoutReason(orderPayload.delivery_person, orderPayload.order_number), now, deviceId, orderId);
+    }
 
     for (const item of orderPayload.items) {
       const itemId = uuid();

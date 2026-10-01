@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.27 — Rollout Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.27 — rollout verification</h1>
+  <p class="sub">0.6.27: a prospect's requests as per-client switches (admin portal) — delivery fee paid to the rider, expense payment method, cashier-only History, no reprint, blind close, the manager's reasons (A369); the dashboard's Add expense fixed (A370). Contains 0.6.26.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.27"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-30"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> §R first, then §S (switch the five on for B Foods). You need two cashier PINs and a manager PIN. A <b>Fail</b> needs a note.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+ [
+  "§R — Rollout",
+  "",
+  "Apply 0.6.26's patch first, then this one. Migration 111 BEFORE the cloud.",
+  [
+   [
+    "R0",
+    "Migration 111, then cloud, dashboard, admin portal",
+    [
+     "Run migration 111 on the database.",
+     "Deploy the cloud, the dashboard and the admin portal; hard-refresh."
+    ],
+    "The web POS signs in; the dashboard and admin portal load.",
+    false
+   ],
+   [
+    "R1",
+    "The tag comes out as ONE pre-release",
+    [
+     "Tag v0.6.27 → Actions → Release desktop green → Releases."
+    ],
+    "One v0.6.27 pre-release with latest.yml and the installer; v0.6.16 stays Latest.",
+    true
+   ],
+   [
+    "R2",
+    "Approve B Foods for 0.6.27",
+    [
+     "Admin portal → B Foods → 0.6.27 → Approve; restart T1, close and reopen when the update is ready."
+    ],
+    "T1 reads 0.6.27.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§S — The switches",
+  "A369",
+  "Admin portal → B Foods → Features.",
+  [
+   [
+    "S1",
+    "Five named POS switches, all off",
+    [
+     "Open Features."
+    ],
+    "“POS switches”: Blind shift close, Delivery fee and rider, Cashiers see only their own sales, No reprint for cashiers, Manager sees the cashier's figures when confirming — each with a line saying what it does, all OFF.",
+    true
+   ],
+   [
+    "S2",
+    "Switch them on for the test",
+    [
+     "Turn all five on.",
+     "On T1 press Sync (or wait 10 minutes); refresh the web POS."
+    ],
+    "They stay on after a page refresh. (Turn them off again after testing if B Foods should not keep them.)",
+    false
+   ]
+  ]
+ ],
+ [
+  "§D — Delivery fee",
+  "A369, A371",
+  "Switch “Delivery fee and rider” on. Restaurant mode, order type Delivery.",
+  [
+   [
+    "D1",
+    "Rider and fee are required",
+    [
+     "On T1: Delivery → add an item → Pay without a rider or fee.",
+     "Enter the rider, still no fee → Pay."
+    ],
+    "“Enter the rider's name for this delivery.” then “Enter the delivery fee for this delivery.” — payment does not open.",
+    false
+   ],
+   [
+    "D2",
+    "A 1,000 order + 300 fee paid by M-Pesa",
+    [
+     "Note T1's expected cash (Shift).",
+     "Delivery, rider Eugene, fee 300, an item of 1,000 → Pay → M-Pesa 1,300.",
+     "Look at the receipt, History and the Shift panel."
+    ],
+    "Payment says Delivery fee — Eugene 300, total due 1,300. Receipt: Total 1,000, Delivery fee 300, PAY 1,300. History type “Delivery — Eugene”. Expected cash 300 lower; Z-report: Delivery fees (in payments) 300, − Paid to riders 300; M-Pesa 1,300.",
+    true
+   ],
+   [
+    "D3",
+    "The on-screen receipt with a tip",
+    [
+     "Ring any sale with a tip of 50 (Discount / tip) and pay."
+    ],
+    "The on-screen receipt shows Tip 50 once and PAY = bill + 50 (no “Round Off” of 50).",
+    false
+   ],
+   [
+    "D4",
+    "Voiding a delivery puts the rider's money back",
+    [
+     "Void the D2 sale (manager, within the window).",
+     "Look at the Shift panel."
+    ],
+    "Expected cash is back where it was before D2 (the 300 pay-out is returned).",
+    false
+   ],
+   [
+    "D5",
+    "The web POS",
+    [
+     "Web POS → a table/order → Delivery → rider + fee 200 → Charge (M-Pesa or cash)."
+    ],
+    "Rider and fee required; the payment total includes 200; the web receipt shows Delivery fee 200; the web POS Z-Report shows Float Out 200 (the rider's pay-out).",
+    true
+   ]
+  ]
+ ],
+ [
+  "§E — Expenses",
+  "A369, A370",
+  "",
+  [
+   [
+    "E1",
+    "An M-Pesa expense is not taken from the drawer",
+    [
+     "On T1: Shift → Expenses → type Transport, description boda, 200, Paid with M-Pesa → Save.",
+     "Look at the Shift panel and print the Z-report."
+    ],
+    "Expected cash unchanged; M-Pesa expected 200 lower (at confirm). Z-report: “Transport — boda · M-Pesa” and EXPENSES NOT FROM THE DRAWER − M-PESA 200.",
+    true
+   ],
+   [
+    "E2",
+    "The Z-report shows the expense type",
+    [
+     "Record a cash expense with a type (e.g. Gas) and a description."
+    ],
+    "The Z-report line reads “Gas — <description>” (the type first).",
+    false
+   ],
+   [
+    "E3",
+    "Adding an expense from the dashboard works",
+    [
+     "Dashboard → Expenses → Add expense (any type, Paid with M-Pesa) → Save."
+    ],
+    "Saved (it used to fail “Validation failed”); the list shows it with Paid With M-Pesa.",
+    true
+   ]
+  ]
+ ],
+ [
+  "§H — History",
+  "A369",
+  "Switches “Cashiers see only their own sales” and “No reprint for cashiers” on.",
+  [
+   [
+    "H1",
+    "A cashier sees only their own sales, no Reprint",
+    [
+     "Sign in on T1 as cashier A, ring a sale; as cashier B, ring one.",
+     "As B open History."
+    ],
+    "Only B's sale; “Your last 30 sales”; no Reprint button.",
+    true
+   ],
+   [
+    "H2",
+    "Filters and order",
+    [
+     "In History pick a payment method, then a type; change “Order by”."
+    ],
+    "The list narrows to that payment / type; Order by Payment method or Type groups them.",
+    false
+   ],
+   [
+    "H3",
+    "A manager sees all and can reprint",
+    [
+     "Sign in as a manager → History."
+    ],
+    "Every sale; Reprint is there.",
+    false
+   ],
+   [
+    "H4",
+    "The web POS",
+    [
+     "Web POS as a cashier → Orders."
+    ],
+    "Only their sales (“Your sales only”), no Reprint receipt; type / payment filters work.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§B — Blind shift close",
+  "A369",
+  "Switch “Blind shift close” on.",
+  [
+   [
+    "B1",
+    "A cashier closes without seeing figures",
+    [
+     "On T1 as a cashier: Shift.",
+     "Enter the counted cash and each method → Close (with a difference on purpose)."
+    ],
+    "No sales, per-method totals or expected cash anywhere; no note is demanded; after closing: “Your count is saved. A manager checks it…”, no Print Z-report.",
+    true
+   ],
+   [
+    "B2",
+    "A manager closing sees everything",
+    [
+     "As a manager, open and close a shift."
+    ],
+    "The usual figures and expected cash.",
+    false
+   ],
+   [
+    "B3",
+    "The web POS",
+    [
+     "Web POS as a cashier → Close Shift."
+    ],
+    "Only a box per method used; the result shows no expected cash or variance.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§C — The manager sees the cashier's figures",
+  "A369",
+  "Switch “Manager sees the cashier's figures when confirming” on.",
+  [
+   [
+    "C1",
+    "Confirm on the till with a reason",
+    [
+     "Confirm B1's shift (Manager: confirm now, or Manager → Close).",
+     "Enter a different cash count than the cashier."
+    ],
+    "“Cashier entered …” beside each box; a reason box appears for the differing method and is required; after saving, the reason shows and prints on the Z-report.",
+    true
+   ],
+   [
+    "C2",
+    "Dashboard and web POS",
+    [
+     "Dashboard → Shift confirmations → Confirm (or web POS → Manager: confirm now)."
+    ],
+    "The same: the cashier's figures, a required reason where different; the dashboard list shows the reason.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§O — Switches off",
+  "A369",
+  "",
+  [
+   [
+    "O1",
+    "Everything as 0.6.26",
+    [
+     "Turn all five off in the admin portal; Sync T1."
+    ],
+    "Delivery without a fee as before; cashiers see all History with Reprint; the close shows figures; the confirm is blind.",
+    false
+   ]
+  ]
+ ]
+];
+
+
+const KEY = "swiftpos-verify-0627";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS v0.6.27 — rollout verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

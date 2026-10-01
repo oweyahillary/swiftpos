@@ -40,6 +40,8 @@ export interface HeldOrder {
   deliveryPerson?: string;
   /** A367: the note on the whole order (the lines' notes ride in the cart). */
   orderNote?: string;
+  /** 0.6.27: a held delivery's fee (with its rider). */
+  deliveryFee?: number;
   cart: CartItem[];           // per-line kotSent flags travel with the items
   heldAt: string;             // ISO
   /**

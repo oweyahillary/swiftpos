@@ -56,6 +56,7 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
     'total', 'covers', 'cashier_id', 'shift_id', 'customer_id', 'customer_name',
     'customer_phone', 'created_at', 'device_id', 'pump_id', 'seq',
     'notes',   // A367 (58): the order's note. An older node ignores it; an older peer sends none (NULL).
+    'delivery_fee',   // 0.6.27 (59): on top of the bill (pass-through). Same rule as notes.
   ],
   shifts: [
     'id', 'business_id', 'branch_id', 'cashier_id', 'opened_at', 'closed_at', 'status',
@@ -66,10 +67,12 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
   float_transactions: [
     'id', 'shift_id', 'branch_id', 'cashier_id', 'type', 'amount', 'reason',
     'created_at', 'device_id', 'seq',
+    'order_id',   // 0.6.27 (59): a rider's pay-out tied to its sale. Same rule as orders.notes.
   ],
   expenses: [
     'id', 'business_id', 'branch_id', 'expense_category_id', 'description', 'amount',
     'paid_by', 'expense_date', 'shift_id', 'created_at', 'device_id', 'seq',
+    'payment_method', 'expense_type_name',   // 0.6.27 (59): how it was paid; the type's name. Same rule as orders.notes.
   ],
   business_days: [
     'id', 'business_id', 'branch_id', 'device_id', 'terminal_code', 'business_date',

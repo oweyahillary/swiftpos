@@ -81,7 +81,8 @@ ok('A361: the web Expenses list shows "Recorded By" next to "Paid By"', () => {
   const pg = read('apps/dashboard/src/pages/expenses/ExpensesPage.tsx');
   assert.match(pg, />Paid By<\/th>\s+<th[^>]*>Recorded By<\/th>/);
   assert.match(pg, /\{e\.recorded_by_name \?\? '—'\}/);
-  assert.match(pg, /<td colSpan=\{6\}/, 'the total row spans the extra column');
+  // 0.6.27: "Paid With" is one more column before the amount → 7.
+  assert.match(pg, /<td colSpan=\{7\}/, 'the total row spans the extra columns');
 });
 ok('A361: the schema index knows the column (schema-audit checks the routes against it)', () => {
   assert.equal(JSON.parse(read('scripts/schema-index.json')).expenses.recorded_by, '"uuid"');

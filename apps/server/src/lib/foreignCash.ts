@@ -76,3 +76,43 @@ export function foreignOrders(orders: CloudOrder[], ownIds: string[]): CloudOrde
       payments: (o.payments ?? []).filter((p) => p.status === 'completed' || p.status === 'refunded'),
     }));
 }
+
+// ── A336 follow-up (0.6.26): a void or refund made on the WEB of a sale the TILL rang ──
+// Known limit of A359: the till downloads only sales it did not ring, so when a manager refunded or voided one of the
+// till's OWN sales on the web, the cloud was right but the till's Z-report, shift and day close still counted it. The
+// till already sends its own ids; this reports which of those were reversed on the cloud, so the till can apply it.
+export interface OwnReversal {
+  /** The till's own id for the sale (the cloud's idempotency_key). */
+  local_id: string;
+  status: 'completed' | 'voided';
+  voided_at: string | null; void_reason: string | null;
+  refunded_at: string | null; refunded_amount: number; refund_reason: string | null;
+  /** The refund's money-out rows (negative amounts), by the cloud's own row id — applied once each. */
+  refund_payments: Array<{ id: string; method: string; amount: number; created_at: string | null }>;
+}
+
+/** The till's own sales (matched by idempotency_key, or by id) that the cloud has voided or refunded. */
+export function ownReversals(orders: CloudOrder[], ownIds: string[]): OwnReversal[] {
+  const own = new Set(ownIds);
+  const out: OwnReversal[] = [];
+  for (const o of orders) {
+    const localId = o.idempotency_key && own.has(o.idempotency_key) ? o.idempotency_key : own.has(o.id) ? o.id : null;
+    if (!localId) continue;
+    const refunded = Number((o as any).refunded_amount ?? 0) || 0;
+    if (o.status !== 'voided' && !(refunded > 0)) continue;
+    out.push({
+      local_id: localId,
+      status: o.status === 'voided' ? 'voided' : 'completed',
+      voided_at: ((o as any).voided_at as string) ?? null,
+      void_reason: ((o as any).void_reason as string) ?? null,
+      refunded_at: ((o as any).refunded_at as string) ?? null,
+      refunded_amount: refunded,
+      refund_reason: ((o as any).refund_reason as string) ?? null,
+      refund_payments: (o.payments ?? [])
+        .filter((p) => p.status === 'refunded' && Number((p as any).amount) < 0)
+        .map((p) => ({ id: String((p as any).id), method: String((p as any).method), amount: Number((p as any).amount),
+          created_at: ((p as any).created_at as string) ?? null })),
+    });
+  }
+  return out;
+}

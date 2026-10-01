@@ -48,7 +48,10 @@
  *  its closes simply carry no declaration, so nothing of its awaits a manager. */
 /** Schema 58 = A367 order notes (orders.notes, order_items.notes, device_config.order_note_picks). A till on 57 keeps
  *  trading; its sales simply carry no notes. */
-export const REQUIRED_DESKTOP_SCHEMA = 58;
+/** 59 = 0.6.27: POS switches, delivery fee, expense method, confirm reasons. Additive; a till on 58 keeps syncing. */
+/** 60 = 0.6.28: kitchen_lines (local) and kitchen_voids (pushed, migration 112). A till on 59 keeps syncing; it simply
+ *  sends no kitchen voids. */
+export const REQUIRED_DESKTOP_SCHEMA = 60;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

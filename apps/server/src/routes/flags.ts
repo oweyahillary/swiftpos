@@ -4,6 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { supabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { POS_FEATURE_KEYS } from '../lib/posFeatures';
 
 const router = safeRouter();
 
@@ -25,6 +26,12 @@ router.get('/', requireAuth, async (req, res) => {
 // PUT /api/flags/:key — enable or disable a flag (owner/settings.manage only)
 router.put('/:key', requireAuth, requirePermission('settings.manage'), async (req, res) => {
   const { enabled } = req.body;
+
+  // 0.6.27: the POS switches are set per client in the admin portal only (owner's decision) — never by the client.
+  if ((POS_FEATURE_KEYS as readonly string[]).includes(req.params.key)) {
+    res.status(403).json({ error: 'This setting is managed by SwiftPOS support.', code: 'ADMIN_ONLY_FEATURE' });
+    return;
+  }
 
   if (typeof enabled !== 'boolean') {
     res.status(400).json({ error: 'enabled (boolean) is required' });

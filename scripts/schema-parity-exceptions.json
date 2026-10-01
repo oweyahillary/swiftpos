@@ -17,14 +17,16 @@
     "synced_at",
     "seq",
     "origin",
-    "confirm_sync"
+    "confirm_sync",
+    "expense_type_name"
   ],
   "_localOnlyColumnReasons": {
     "sync_status": "Per-row push state on the till: pending | synced | conflict. Verified absent from every push payload — pushLocalRecords selects an explicit column list that excludes it, and it is meaningless server-side because the server is the destination.",
     "synced_at": "When the till last pulled this row. Local cache metadata; the server has no concept of a particular terminal's freshness.",
     "seq": "Phase 1 per-device replication sequence (localDb v45): the LAN outbox/cursor checkpoint between a till and its branch node. Verified absent from every cloud push payload — pushLocalRecords and the sync arms name explicit column lists that exclude it (it appears only in WHERE scoping). Cloud replication keys on ids and idempotency, never on this counter; sending it would mean the server storing one terminal's private LAN checkpoint as data.",
     "origin": "orders.origin (local v55, cross-sync stage 1): 'web' marks a sale the till DOWNLOADED from the cloud (rung on the web POS on this till's drawer); NULL = rung on this till. Verified absent from every push: a till's orders go up as the sync_queue payload (buildCloudOrderPayload), downloaded rows never enter sync_queue, and the node relay names an explicit column list (nodeIngest COLUMNS) without it. The cloud already knows where a sale came from; the till needs it only to never push or relay a sale it did not ring.",
-    "confirm_sync": "A365 (localDb v57): whether a manager's shift confirmation has reached the cloud (pending | synced | refused). Verified absent from every push payload — pushLocalRecords selects an explicit shifts column list without it, and the confirmation itself goes through POST /api/shifts/:id/confirm (syncEngine pushShiftConfirmations), which names its own fields."
+    "confirm_sync": "A365 (localDb v57): whether a manager's shift confirmation has reached the cloud (pending | synced | refused). Verified absent from every push payload — pushLocalRecords selects an explicit shifts column list without it, and the confirmation itself goes through POST /api/shifts/:id/confirm (syncEngine pushShiftConfirmations), which names its own fields.",
+    "expense_type_name": "expenses.expense_type_name (local v59, 0.6.27): the expense TYPE's name, stored with the row so the till's Z-report shows the type offline (the till keeps no expense_categories table). Verified absent from every cloud push — pushLocalRecords selects an explicit expenses column list without it; the cloud has expense_category_id and joins expense_categories for the name. It crosses the branch LAN (nodeIngest COLUMNS) so a node's report shows it too."
   },
   "ignoreColumns": {
     "payments": [

@@ -5,6 +5,7 @@ import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { branchScope, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
+import { summariseKitchenVoids, kitchenVoidText } from '../lib/kitchenLines';
 import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
 
 const router = safeRouter();
@@ -526,10 +527,24 @@ router.get('/eod', async (req, res) => {
 
   const netRevenue = totalRevenue - totalVat; // VAT is a liability, not income
 
+  // 0.6.28: items sent to the kitchen and taken back in the period (migration 112) — why, made or not, who approved.
+  // A cloud before 112 has no table: the block is simply empty.
+  let kvQ = supabase.from('kitchen_voids')
+    .select('id, order_number, product_name, quantity, amount, reason, note, cooked, cashier_id, cashier_name, approved_by_name, created_at')
+    .eq('business_id', req.businessId).gte('created_at', start).lte('created_at', end)
+    .order('created_at', { ascending: true }).limit(500);
+  if (scopedBranch) kvQ = kvQ.eq('branch_id', scopedBranch);
+  if (cashier_id) kvQ = kvQ.eq('cashier_id', cashier_id as string);
+  const { data: kvRows } = await kvQ;
+  const kitchenVoidLines = (kvRows ?? []).map((r: any) => ({
+    ...r, quantity: Number(r.quantity) || 0, amount: Number(r.amount) || 0, text: kitchenVoidText(r),
+  }));
+
   res.json({
     period: { from: start, to: end },
     branchName,
     cashierName,
+    kitchenVoids: { summary: summariseKitchenVoids(kitchenVoidLines), lines: kitchenVoidLines },
     summary: {
       totalRevenue,
       netRevenue,

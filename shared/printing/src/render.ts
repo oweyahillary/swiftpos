@@ -268,6 +268,7 @@ function renderReceipt(ctx: PrintContext): Document {
     order.discount ?? 0,
   );
   const tip = Math.max(0, order.tip ?? 0);
+  const deliveryFee = Math.max(0, order.deliveryFee ?? 0);   // 0.6.27
 
   let totalQty = 0;
 
@@ -330,9 +331,11 @@ function renderReceipt(ctx: PrintContext): Document {
   d.line(pair(cols, 'Total:', formatCents(tax.total)), { bold: true });
   // A349: a tip is not a sale and carries no tax — shown after the total, and the customer pays both.
   if (tip > 0) d.line(pair(cols, 'Tip:', formatCents(tip)));
+  // 0.6.27: the delivery fee — like the tip, on top of the bill and outside its taxes.
+  if (deliveryFee > 0) d.line(pair(cols, 'Delivery fee:', formatCents(deliveryFee)));
   d.line(rule(cols));
 
-  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip)}`, { size: 'tall', bold: true });
+  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: 'tall', bold: true });
   d.line(rule(cols));
 
   d.line('Payment Detail:', { bold: true });

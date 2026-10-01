@@ -83,6 +83,9 @@ interface Props {
   pumpId?: string | null;
   /** A367: the note on the whole order (the lines' notes ride on the cart items). */
   orderNote?: string | null;
+  /** 0.6.27: a delivery's rider, and the fee the customer pays on top of the bill (0 = none). */
+  rider?: string | null;
+  deliveryFee?: number;
 }
 
 function fmt(n: number) {
@@ -98,6 +101,8 @@ export default function PaymentModal({
   pumpId,
   customMethods = [],
   orderNote = null,
+  rider = null,
+  deliveryFee = 0,
 }: Props) {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
@@ -216,7 +221,8 @@ export default function PaymentModal({
   const chargedVat = taxes.vat, chargedCtl = taxes.ctl;
 
   // Tip is added on top of the order total — this is what the customer pays.
-  const grandTotal    = chargedTotal + tipAmount;
+  // 0.6.27: and the delivery fee on top (pass-through to the rider — not in the bill or its taxes).
+  const grandTotal    = Math.round((chargedTotal + tipAmount + deliveryFee) * 100) / 100;
   // A blank cash field means "pay exact". Without this the Confirm button stays
   // disabled with no feedback even though the field shows the total as a
   // placeholder — cashiers only type a value when the customer hands over more.
@@ -259,7 +265,7 @@ export default function PaymentModal({
   // a round-up to the next 100. These just fill the tendered field — the manual
   // input remains for odd tenders (mixed notes/coins).
   const quickTenders = (() => {
-    const base = total + tipAmount;
+    const base = total + tipAmount + deliveryFee;
     const notes = [50, 100, 200, 500, 1000];
     const set = new Set<number>();
     set.add(Math.ceil(base));                        // exact
@@ -277,6 +283,9 @@ export default function PaymentModal({
       order_number:    generateOrderNumber(),
       order_type:      orderType,
       table_number:    tableNumber ?? null,
+      // 0.6.27: the rider, and the fee on top (the cloud pays the rider it from this shift's drawer).
+      delivery_person: orderType === 'delivery' ? rider : null,
+      ...(orderType === 'delivery' && deliveryFee > 0 ? { delivery_fee: deliveryFee } : {}),
       subtotal,
       vat_amount:      chargedVat,
       ctl_amount:      chargedCtl,
@@ -304,6 +313,21 @@ export default function PaymentModal({
       })),
       notes: orderNote?.trim() || null,   // A367
       payments,
+    };
+  }
+
+  // ── Build /pay body (order already open, sent to kitchen first) ───────────
+  // The server recomputes the amount due as subtotal − capDiscount(discount_amount)
+  // + tip_amount (+ delivery_fee, 0.6.27) and refuses legs that don't match
+  // (PAYMENT_MISMATCH). The legs carry grandTotal, so the discount, tip and fee
+  // that produced it must travel too — the same money fields buildOrderPayload sends.
+  function buildPayPayload(payments: object[]) {
+    return {
+      payments,
+      discount_amount: cappedDiscount,
+      discount_id:     discountState?.discount.id ?? null,
+      tip_amount:      tipAmount,
+      ...(deliveryFee > 0 ? { delivery_fee: deliveryFee } : {}),
     };
   }
 
@@ -346,7 +370,7 @@ export default function PaymentModal({
         ? `/api/orders/${existingOrderId}/pay`
         : '/api/orders';
       const { orderId, orderNumber } = await api.post<{ orderId: string; orderNumber: string }>(
-        endpoint, existingOrderId ? { payments } : buildOrderPayload(payments)
+        endpoint, existingOrderId ? buildPayPayload(payments) : buildOrderPayload(payments)
       );
       setCompletedOrder(makeCompletedOrder(
         orderNumber,
@@ -413,7 +437,7 @@ export default function PaymentModal({
         ? `/api/orders/${existingOrderId}/pay`
         : '/api/orders';
       const { orderId, orderNumber } = await api.post<{ orderId: string; orderNumber: string }>(
-        endpoint, existingOrderId ? { payments } : buildOrderPayload(payments)
+        endpoint, existingOrderId ? buildPayPayload(payments) : buildOrderPayload(payments)
       );
       setCompletedOrder(makeCompletedOrder(
         orderNumber,
@@ -458,7 +482,7 @@ export default function PaymentModal({
         orderType, cashierName: session?.staffName ?? 'Cashier',
         // A349: the BILL (after discount, before tip) with the discount and tip beside it — grandTotal (bill + tip)
         // could never reconcile with the lines, so the thermal receipt threw and fell back to the browser dialog.
-        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, change: completedOrder.change,
+        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, deliveryFee, change: completedOrder.change,
         payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
         tableNumber,
         orderNote,   // A367
@@ -538,6 +562,7 @@ export default function PaymentModal({
               orderNumber={completedOrder.orderNumber}
               etims={completedOrder.etims}
               tip={tipAmount}
+              deliveryFee={deliveryFee}
               cart={cart}
               total={chargedTotal}
               subtotal={subtotal}
@@ -798,9 +823,9 @@ export default function PaymentModal({
               {/* Cash */}
               {method === 'cash' && (
                 <div className="space-y-3">
-                  {tipAmount > 0 && (
-                    <div className="bg-gray-800 rounded-lg px-4 py-2 flex justify-between text-sm">
-                      <span className="text-gray-400">Total to collect (incl. tip)</span>
+                  {(tipAmount > 0 || deliveryFee > 0) && (
+                    <div className="bg-gray-800 rounded-lg px-4 py-2 flex justify-between text-sm" data-testid="collect-total">
+                      <span className="text-gray-400">Total to collect (incl. {[tipAmount > 0 ? 'tip' : '', deliveryFee > 0 ? `delivery fee ${fmt(deliveryFee)}${rider ? ` — ${rider}` : ''}` : ''].filter(Boolean).join(' and ')})</span>
                       <span className="text-white font-semibold">{currency} {fmt(grandTotal)}</span>
                     </div>
                   )}

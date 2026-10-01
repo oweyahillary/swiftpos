@@ -268,19 +268,24 @@ export function getTopProducts(limit = 8, range?: ReportRange) {
 }
 
 // ── Order history (last N orders) ────────────────────────────────────────────
-export function getRecentOrders(limit = 30, range?: ReportRange) {
+export function getRecentOrders(limit = 30, range?: ReportRange, cashierId?: string | null) {
   const db = getLocalDb();
 
   // The N+1 below is deliberate and bounded for the on-screen list, but an export
   // can span a month. Payments are therefore fetched in ONE pass and grouped in
   // memory: at ~2,000 orders the per-order query was the difference between an
   // instant CSV and a visibly frozen window.
-  const where = range ? 'WHERE created_at >= ? AND created_at <= ?' : '';
-  const params: (string | number)[] = range ? [range.from, range.to] : [];
+  // 0.6.27: `cashierId` narrows to one cashier's sales (History for a cashier when 'cashier_own_history' is on).
+  const conds: string[] = [];
+  const params: (string | number)[] = [];
+  if (range) { conds.push('created_at >= ? AND created_at <= ?'); params.push(range.from, range.to); }
+  if (cashierId) { conds.push('cashier_id = ?'); params.push(cashierId); }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
   const orders = db.prepare(`
     SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
            discount_amount, tip_amount, refunded_amount, created_at, cashier_id, shift_id, device_id,
+           delivery_person, delivery_fee,   -- 0.6.27: History's type reads "Delivery — Eugene"
            origin   -- 'web' = rung on the web POS on this till's drawer (cross-sync stage 1)
     FROM orders
     ${where}

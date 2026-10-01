@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
+import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -1420,8 +1421,27 @@ function ClientDetailPage({ client, req, onBack }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Feature Flags</div>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Toggle features on/off for this client. Changes take effect immediately.</p>
-          {features.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>No feature flags configured yet.</p>}
-          {features.map(f => (
+          {/* 0.6.27: the POS switches — always listed (off until set), named and explained; the till and web POS pick
+              them up at their next catalogue pull. */}
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, margin: "4px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
+          {POS_FEATURES.map(pf => {
+            const on = features.some(f => f.key === pf.key && f.enabled);
+            return (
+              <div key={pf.key} data-testid={`pos-feature-${pf.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{pf.label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pf.description}</div>
+                </div>
+                <button onClick={() => toggleFeature(pf.key, !on)} aria-pressed={on} aria-label={pf.label}
+                  style={{ flex: "0 0 auto", width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: on ? "#22c55e" : C.border, position: "relative", transition: "background 0.2s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 0.2s" }} />
+                </button>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key)).length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>No feature flags configured yet.</p>}
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key)).map(f => (
             <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>

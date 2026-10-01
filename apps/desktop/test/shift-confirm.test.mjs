@@ -242,7 +242,7 @@ ok('End Shift asks for every other method and sends them with the close',
   /toDeclare\.map\(\(m\) => \(/.test(src('renderer/pages/ShiftPanel.tsx'))
   && /posApi\.shift\.close\(counted, closeNotes\.trim\(\) \|\| undefined, declaredRead\.map\)/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('0.6.23 — End Shift asks only for methods with money on them, and says to include the float',
-  /const toDeclare = methodsToDeclare\(report\?\.byMethod \?\? \[\]\);/.test(src('renderer/pages/ShiftPanel.tsx'))
+  /const toDeclare = blind \? \(\(report as any\)\?\.declareMethods \?\? \[\]\) as string\[\] : methodsToDeclare\(report\?\.byMethod \?\? \[\]\);/.test(src('renderer/pages/ShiftPanel.tsx'))
   && /Counted cash in drawer \(\{currency\}\) — include the opening float/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('0.6.23 — a signed-in manager is not asked for a PIN (the till checks the signed-in staff in main)',
   /\{!signedInManager && \(\s*<div data-testid="confirm-pin">/.test(src('renderer/components/ConfirmShiftModal.tsx'))
@@ -256,8 +256,12 @@ ok('A366 — End Shift: another cashier sees who owns the shift, not the count f
   && /\{!closeRights\.allowed && \(\s*<div className="[^"]*" data-testid="close-not-yours">/.test(src('renderer/pages/ShiftPanel.tsx'))
   && /\{closeRights\.allowed && \(\s*<div className="border border-gray-800 rounded-xl p-4 space-y-3">\s*<p className="text-sm text-gray-300 font-medium">Close shift<\/p>/.test(src('renderer/pages/ShiftPanel.tsx')));
 ok('the closed shift offers "Manager: confirm now"', /data-testid="confirm-now"/.test(src('renderer/pages/ShiftPanel.tsx')));
-ok('the confirm screen is blind: no expected or cashier figure before it is saved',
-  !/expected|declared/i.test(src('renderer/components/ConfirmShiftModal.tsx').split('{!result && (')[1].split('{result && (')[0]));
+// 0.6.27: blind unless the client has 'confirm_shows_cashier_figures' — then the CASHIER's figure (never the expected one)
+// shows beside each box, only when the till's main says so (confirmView).
+ok('the confirm screen is blind: no expected figure before it is saved; the cashier\'s only with the switch',
+  !/expected/i.test(src('renderer/components/ConfirmShiftModal.tsx').split('{!result && (')[1].split('{result && (')[0])
+  && /const cashierSaid = view\.showCashier && view\.declared \? \(view\.declared\[c\] \?\? 0\) : null;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
+  && /const showCashier = getPosFeatures\(\)\.confirm_shows_cashier_figures;\s*if \(!showCashier\) return \{ showCashier: false, declared: null \};/.test(src('main/shiftService.ts')));
 ok('Close lists the shifts awaiting a manager and holds the close button',
   /data-testid="awaiting-shifts"/.test(src('renderer/pages/DayCloseTab.tsx'))
   && /disabled=\{!isManager \|\| busy \|\| counted === '' \|\| awaiting\.length > 0\}/.test(src('renderer/pages/DayCloseTab.tsx')));

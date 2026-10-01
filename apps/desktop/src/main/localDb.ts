@@ -548,6 +548,60 @@ function initSchema(db: Database.Database) {
       sync_status         TEXT NOT NULL DEFAULT 'pending'
     );
 
+    -- ── 0.6.28 (60): what went to the kitchen, and what was taken back ─────────
+    -- kitchen_lines — LOCAL ONLY. One row per cart line per order number: how many are on a kitchen ticket (sent_qty)
+    -- and how many were voided since. A row stays 'open' until the order is paid ('paid') or every sent item is voided
+    -- ('voided'). It is what makes a sent order impossible to lose: Clear, a crash or a restart leaves the row, End
+    -- Shift lists it (with 'kitchen_void_approval' it blocks), and item_json rebuilds the line. Never pushed — the sale
+    -- or the void is the record the cloud gets.
+    CREATE TABLE IF NOT EXISTS kitchen_lines (
+      order_number  TEXT NOT NULL,
+      line_id       TEXT NOT NULL,
+      product_id    TEXT,
+      product_name  TEXT NOT NULL,
+      unit_price    REAL NOT NULL DEFAULT 0,
+      sent_qty      REAL NOT NULL DEFAULT 0,
+      voided_qty    REAL NOT NULL DEFAULT 0,
+      item_json     TEXT,
+      order_type    TEXT,
+      table_number  TEXT,
+      shift_id      TEXT,
+      cashier_id    TEXT,
+      device_id     TEXT,
+      status        TEXT NOT NULL DEFAULT 'open',
+      first_sent_at TEXT NOT NULL,
+      updated_at    TEXT NOT NULL,
+      PRIMARY KEY (order_number, line_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_kitchen_lines_open ON kitchen_lines(status, shift_id);
+
+    -- kitchen_voids — PUSHED (/api/sync/push, migration 112). One row per line taken back after it was sent: what, how
+    -- many, what it would have sold for, why, whether it was already cooked, who rang it and who approved it.
+    CREATE TABLE IF NOT EXISTS kitchen_voids (
+      id               TEXT PRIMARY KEY,
+      business_id      TEXT,
+      branch_id        TEXT,
+      shift_id         TEXT,
+      order_number     TEXT NOT NULL,
+      order_id         TEXT,
+      product_id       TEXT,
+      product_name     TEXT NOT NULL,
+      quantity         REAL NOT NULL,
+      unit_price       REAL NOT NULL DEFAULT 0,
+      amount           REAL NOT NULL DEFAULT 0,
+      reason           TEXT NOT NULL,
+      note             TEXT,
+      cooked           INTEGER NOT NULL DEFAULT 0,
+      cashier_id       TEXT,
+      cashier_name     TEXT,
+      approved_by      TEXT,
+      approved_by_name TEXT,
+      device_id        TEXT,
+      created_at       TEXT NOT NULL,
+      sync_status      TEXT NOT NULL DEFAULT 'pending'
+    );
+    CREATE INDEX IF NOT EXISTS idx_kitchen_voids_shift ON kitchen_voids(shift_id);
+
     -- Branch price overrides set by the manager on THIS device (the branch
     -- authority). LOCAL ORIGIN — the manager owns the branch's prices offline.
     -- Kept in its own table (not just products.branch_price) for two reasons:
@@ -721,6 +775,20 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'orders', [['notes', 'TEXT']]);
   migrateColumns(db, 'order_items', [['notes', 'TEXT']]);
   migrateColumns(db, 'held_orders', [['order_note', 'TEXT']]);   // a held tab keeps its order note (local only)
+  // 0.6.27 (59): the prospect's requests.
+  //   orders.delivery_fee — what the customer pays on top of the bill for delivery (pass-through to the rider, like a
+  //     tip: in the payment legs, not in orders.total/sales). held_orders keeps it with the rider.
+  //   expenses.payment_method — the method an expense was paid with; only 'cash' comes out of the drawer, others
+  //     (M-Pesa…) come off that method's expected total. NULL = before 59 = cash (what every expense was).
+  //   expenses.expense_type_name — the expense TYPE's name, stored with the row so the Z-report shows it offline.
+  //   shifts.confirm_reasons — the manager's reason per method where their count differs from the cashier's.
+  //   float_transactions.order_id — a pay-out the till made FOR a sale (the rider's delivery fee): voiding the sale
+  //     cancels it with a matching pay-in.
+  migrateColumns(db, 'orders', [['delivery_fee', 'REAL DEFAULT 0']]);
+  migrateColumns(db, 'held_orders', [['delivery_fee', 'REAL']]);
+  migrateColumns(db, 'expenses', [['payment_method', 'TEXT'], ['expense_type_name', 'TEXT']]);
+  migrateColumns(db, 'shifts', [['confirm_reasons', 'TEXT']]);
+  migrateColumns(db, 'float_transactions', [['order_id', 'TEXT']]);
 
   migrateColumns(db, 'categories', [
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
@@ -1033,6 +1101,8 @@ function initSchema(db: Database.Database) {
     ['web_pos_enabled', 'INTEGER'],
     // A367 (58): the owner's quick picks for order notes, a JSON array. Pulled (noteQuickPicks), never pushed.
     ['order_note_picks', 'TEXT'],
+    // 0.6.27 (59): the per-client POS switches (JSON object). Pulled (posFeatures), never pushed. NULL = all off.
+    ['pos_features', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1118,7 +1188,12 @@ function initSchema(db: Database.Database) {
 // confirm_self, confirm_sync). Pushed through POST /api/shifts/:id/close and /confirm, not /api/sync/push.
 // 58 adds A367 order notes: orders.notes and order_items.notes (in the order payload, POST /api/orders), and
 // device_config.order_note_picks (the owner's quick picks, pulled). REQUIRED moves with it by convention.
-export const LOCAL_SCHEMA_VERSION = 58;
+// 59 adds 0.6.27: device_config.pos_features (pulled), orders.delivery_fee (order payload), expenses.payment_method +
+// expense_type_name (local only; the cloud joins expense_categories), shifts.confirm_reasons (/confirm), float_transactions.order_id (local link; the pay-out
+// itself syncs as before). REQUIRED moves with it by convention.
+// 60 adds 0.6.28: kitchen_lines (local only — what is on a kitchen ticket per order) and kitchen_voids (pushed through
+// /api/sync/push; migration 112). REQUIRED moves with it.
+export const LOCAL_SCHEMA_VERSION = 60;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

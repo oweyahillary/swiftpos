@@ -1,3 +1,4 @@
+import type { PosFeatures } from '../../shared/posFeatures';
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -85,6 +86,24 @@ export interface ConnectionTestResult {
   error?: string;
 }
 
+/** 0.6.28: one kitchen void on the Z-report. */
+export interface KitchenVoidLine {
+  id: string; order_number: string; product_name: string; quantity: number; amount: number; reason: string;
+  note: string | null; cooked: boolean; cashier_name: string | null; approved_by_name: string | null; created_at: string;
+}
+
+/** 0.6.28: a sent order not yet paid (kitchen:open). */
+export interface OpenKitchenOrder {
+  order_number: string; order_type: string | null; table_number: string | null; first_sent_at: string;
+  cashier_id: string | null; held: boolean; value: number;
+  lines: Array<{ line_id: string; product_id: string | null; product_name: string; unit_price: number; qty: number; item: unknown }>;
+}
+
+/** 0.6.28: a line handed to kitchen:sent / kitchen:void. */
+export interface KitchenLinePayload {
+  line_id: string; product_id: string | null; product_name: string; unit_price: number; qty: number; item?: unknown;
+}
+
 export interface ZReport {
   shift: {
     id: string;
@@ -123,11 +142,25 @@ export interface ZReport {
     webSales?: { orders: number; cash_sales: number };
     /** 0.6.11: cash paid out as expenses — already taken off expectedCash. Absent on reports from older builds. */
     expenses?: number;
+    /** 0.6.27: expenses paid by other methods (not from the drawer), per method. */
+    expensesByMethod?: Record<string, number>;
+    /** 0.6.27: delivery fees (pass-through, in the payments); riders paid from the drawer (inside floatOut), and any
+     *  put back by a void (inside floatIn). */
+    deliveryFees?: number;
+    riderPayouts?: number;
+    riderReturned?: number;
   };
-  /** 0.6.11: this till's expense lines on the shift. */
-  expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
+  /** 0.6.11: this till's expense lines on the shift. 0.6.27: `label` = type — description · method. */
+  expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null;
+                   label?: string; category_name?: string | null; payment_method?: string }[];
   /** A363: what of this shift is not on the cloud yet. */
   notBackedUp?: { sales: number; drawerRefused: boolean };
+  /** 0.6.28: items taken back after they were sent to the kitchen on this shift. */
+  kitchenVoids?: {
+    summary: { count: number; quantity: number; value: number; cookedValue: number;
+               byReason: Array<{ reason: string; label: string; quantity: number; value: number }> };
+    lines: KitchenVoidLine[];
+  };
   /** A365: the manager's confirmation — awaiting, or confirmed (who, when, self) with per-method lines. */
   confirmation?: {
     status: 'awaiting' | 'confirmed';
@@ -143,7 +176,7 @@ export interface ZReport {
 /** A365: one payment method on a shift's confirmation — cashier's figure, what the till recorded, the manager's recount. */
 export interface ConfirmLine {
   method: string; declared: number | null; expected: number | null; confirmed: number | null;
-  variance: number | null; mismatch: boolean;
+  variance: number | null; mismatch: boolean; reason?: string | null;   // 0.6.27
 }
 /** A365: a closed shift waiting for a manager's recount. */
 export interface AwaitingShift {
@@ -270,6 +303,10 @@ declare global {
         getModifiers: (productId: string) => Promise<any[]>;
         /** A367: the owner's quick picks for order notes (cached from the cloud; the defaults until told). */
         notePicks: () => Promise<string[]>;
+        /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
+        features: () => Promise<PosFeatures>;
+        /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
+        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
@@ -395,6 +432,15 @@ declare global {
         testConnection: () => Promise<{ ok: boolean; status: number | null; ms: number; error?: string }>;
         logTail: (lines?: number) => Promise<{ path: string | null; text: string }>;
       };
+      /** 0.6.28: what went to the kitchen, and kitchen voids. */
+      kitchen: {
+        sent: (p: { order_number: string; lines: KitchenLinePayload[]; order_type?: string; table_number?: string }) =>
+          Promise<{ recorded: number }>;
+        void: (p: { order_number: string; lines: KitchenLinePayload[]; reason: string; note?: string; cooked?: boolean;
+                    pin?: string; order_type?: string; table_number?: string }) =>
+          Promise<{ ok: true; total: number; approvedBy: string | null; skipped: string[] }>;
+        open: () => Promise<{ all: OpenKitchenOrder[]; shift: OpenKitchenOrder[] }>;
+      };
       shift: {
         // A shift left open past ~18 hours. Null when there is none, or when
         // the open one is still plausibly today's.
@@ -412,7 +458,9 @@ declare global {
         /** A365: this till's shifts awaiting a manager's confirmation. */
         awaiting: () => Promise<AwaitingShift[]>;
         /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
-        confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>) => Promise<Confirmation>;
+        confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
+        /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
+        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null }>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;
         /** A366: may the signed-in person close the open shift — its owner or a manager? */
@@ -499,7 +547,9 @@ declare global {
         categories: () => Promise<{ id: string; name: string }[]>;
         /** A341: add an expense type on the cloud (expenses.manage). */
         addCategory: (name: string) => Promise<{ id: string; name: string }>;
-        create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) => Promise<{ id: string }>;
+        create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
+                  /** 0.6.27: how it was paid ('cash' leaves the drawer) and the type's name. */
+                  payment_method?: string; category_name?: string }) => Promise<{ id: string }>;
         list: () => Promise<any[]>;
         /** 0.6.11: expenses paid out on this till in a date range. */
         range: (range?: ReportRangeArg) => Promise<{ rows: ExpenseRow[]; total: number; label: string }>;

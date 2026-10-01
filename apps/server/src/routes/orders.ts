@@ -22,6 +22,12 @@ import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
 import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
+import { businessPosFeatures } from '../lib/posFeatureFlags';
+import { callerMayConfirm } from '../lib/shiftConfirm';
+import { cleanDeliveryFee } from '../lib/delivery';
+import { payRider, returnRiderPayout } from '../lib/riderPayout';
+import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
+import { confirmerByPin } from '../lib/confirmerLookup';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -399,7 +405,10 @@ router.post('/', async (req, res) => {
     tip_amount = 0,
     // A367: a note on the whole order ("deliver to gate B"). Free; trimmed and capped.
     notes: orderNoteRaw = null,
+    // 0.6.27: the delivery fee paid on top of the bill (pass-through, like the tip). Only on a delivery.
+    delivery_fee: deliveryFeeRaw = 0,
   } = req.body;
+  const deliveryFee = order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
 
   // Normalise to array — support both old single `payment` and new `payments` array
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -678,6 +687,7 @@ router.post('/', async (req, res) => {
       loyalty_points_used: points_redeemed,
       total: authTotal,
       tip_amount: Math.max(0, Number(tip_amount) || 0),
+      delivery_fee: deliveryFee,   // 0.6.27: create_order_atomic (migration 111) reconciles legs to total + tip + fee
       shift_id: resolvedShiftId,
       seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
       idempotency_key: idempotencyKey || crypto.randomUUID(),
@@ -763,6 +773,13 @@ router.post('/', async (req, res) => {
       order_number: createdRow.order_number,
       pump_id: req.body?.pump_id ? String(req.body.pump_id) : null,
     } as { id: string; order_number: string; pump_id: string | null };
+
+    // 0.6.27: a web sale's rider is paid the fee in cash from this shift's drawer. A till's sale is not — the till
+    // recorded that pay-out itself when it sold (it reaches the cloud as an ordinary pay-out).
+    if (deliveryFee > 0 && req.surface !== 'desktop') {
+      await payRider({ orderId: order.id, orderNumber: order.order_number, shiftId: resolvedShiftId, branchId: branch_id,
+                       cashierId: resolvedCashierId ?? req.userId ?? null, fee: deliveryFee, rider: orderPayload.delivery_person });
+    }
 
     // orderItems is re-read for the post-commit steps that need item ids (stock,
     // recipe deduction). One extra read, off the critical write path.
@@ -910,7 +927,7 @@ router.post('/', async (req, res) => {
 
 // GET /api/orders
 router.get('/', async (req, res) => {
-  const { status, date_from, date_to, search, limit = '50', offset = '0' } = req.query;
+  const { status, date_from, date_to, search, limit = '50', offset = '0', order_type, method } = req.query;
 
   // Owner: may filter by any branch_id or get all. Staff: locked to their branch.
   const scopedBranch = branchScope(req);
@@ -920,7 +937,8 @@ router.get('/', async (req, res) => {
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount, discount_amount,
       loyalty_points_used, total, created_at, branch_id, customer_name, device_id,
-      payments ( method, amount, status )
+      cashier_id, delivery_person, delivery_fee,
+      payments ( method, amount, status )${method ? ', pm:payments!inner ( method )' : ''}
     `, { count: 'exact' })
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false })
@@ -931,10 +949,20 @@ router.get('/', async (req, res) => {
   if (date_from)    query = query.gte('created_at', date_from as string);
   if (date_to)      query = query.lte('created_at', date_to as string);
   if (search)       query = query.ilike('order_number', `%${search}%`);
+  // 0.6.27: History narrowed by order type or payment method (the web POS's Orders filters).
+  if (typeof order_type === 'string' && order_type) query = query.eq('order_type', order_type);
+  if (typeof method === 'string' && method)         query = query.eq('pm.method', method.toLowerCase());
+  // 0.6.27: 'cashier_own_history' (admin portal) — a cashier sees only the sales they rang; a manager sees all.
+  const manager = callerMayConfirm(req);
+  const features = await businessPosFeatures(req.businessId);
+  const ownOnly = !manager && features.cashier_own_history;
+  if (ownOnly) query = query.eq('cashier_id', req.userId ?? '00000000-0000-0000-0000-000000000000');
 
   const { data, error, count } = await query;
   if (error) { sendError(res, error); return; }
-  res.json({ orders: data ?? [], total: count ?? 0 });
+  // can_reprint: 'cashier_no_reprint' (admin portal) — the web POS hides Reprint for a cashier.
+  res.json({ orders: (data ?? []).map(({ pm, ...o }: any) => o), total: count ?? 0, own_only: ownOnly,
+             can_reprint: manager || !features.cashier_no_reprint });
 });
 
 // GET /api/orders/:id
@@ -1282,6 +1310,10 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
       .eq('id', orderId);
     if (vErr) throw vErr;
 
+    // 0.6.27: a voided web delivery's rider pay-out goes back in while its shift is open (a till's own sale: the till
+    // puts its pay-out back itself when it hears of the void). Best-effort — the void has happened.
+    if (Number((order as any).delivery_fee ?? 0) > 0) await returnRiderPayout(orderId);
+
     // 1b. Pull the order's kitchen ticket(s) off the KDS (A196). A voided order
     // is cancelled, so its ticket must not stay live on the board — otherwise the
     // kitchen keeps cooking food nobody is paying for. Deleted by order_id so a
@@ -1580,9 +1612,120 @@ router.post('/open', async (req, res) => {
 
     if (ktErr) console.error('Failed to create kitchen ticket:', ktErr.message);
 
-    res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
+    // 0.6.28: the item ids, in the order sent — a line taken back later (POST /:id/kitchen-void) names its item.
+    res.status(201).json({
+      orderId: order.id, orderNumber: order.order_number,
+      items: (insertedItems ?? []).map((it: { id: string; product_id: string | null; quantity: number }) =>
+        ({ id: it.id, product_id: it.product_id, quantity: Number(it.quantity) })),
+    });
   } catch (err) {
     sendError(res, err, { message: 'Failed to open order' });
+  }
+});
+
+// ── POST /api/orders/:id/kitchen-void ───────────────────────────────────────────
+// 0.6.28 — owner, 2026-10-01: a sent order could be cancelled after the customer paid in cash ("the cashier pockets the
+// money"). On the web an order sent to the kitchen is an OPEN order here; its items leave it only through this route:
+// the item and how many, a reason (shared/kitchenLines.ts), whether the kitchen had already made it — and, with the
+// client's 'kitchen_void_approval' switch, a manager (signed in as themselves, or their PIN; no grace period). The
+// order's money is recomputed (no discount exists before payment), the void is recorded in kitchen_voids (migration
+// 112), and an order with nothing left is voided. The web prints the VOID ticket (it holds the printers).
+router.post('/:id/kitchen-void', async (req, res) => {
+  const orderId = req.params.id;
+  const reason = cleanVoidReason(req.body?.reason);
+  if (!reason) { res.status(400).json({ error: 'Choose why these items are being taken back.' }); return; }
+  if (typeof req.body?.cooked !== 'boolean') { res.status(400).json({ error: 'Say whether the kitchen had already made them.' }); return; }
+  const cooked = req.body.cooked === true;
+  const note = cleanVoidNote(req.body?.note);
+  const wanted = new Map<string, number>();
+  for (const l of Array.isArray(req.body?.lines) ? req.body.lines : []) {
+    const id = String(l?.order_item_id ?? ''); const q = Number(l?.qty);
+    if (id && q > 0) wanted.set(id, (wanted.get(id) ?? 0) + q);
+  }
+  if (!wanted.size) { res.status(400).json({ error: 'Nothing to void.' }); return; }
+
+  try {
+    const { data: order, error: oErr } = await supabase
+      .from('orders')
+      .select('id, business_id, branch_id, shift_id, order_number, status, subtotal, order_items ( id, product_id, product_name, unit_price, quantity, subtotal )')
+      .eq('id', orderId).eq('business_id', req.businessId).maybeSingle();
+    if (oErr) { sendError(res, oErr); return; }
+    if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+    if (order.status !== 'open') {
+      res.status(409).json({ error: `This order is ${order.status} — a paid sale is voided or refunded instead.`, code: 'ORDER_NOT_OPEN' });
+      return;
+    }
+
+    let approver: { id: string; name: string | null } | null = null;
+    if ((await businessPosFeatures(req.businessId!)).kitchen_void_approval) {
+      if (req.body?.pin) {
+        approver = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined);
+        if (!approver) {
+          res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
+          return;
+        }
+      } else if (callerMayConfirm(req)) {
+        approver = { id: req.userId!, name: null };
+      } else {
+        res.status(403).json({ error: 'A manager must approve this — enter a manager’s PIN.', code: 'KITCHEN_VOID_APPROVAL_REQUIRED' });
+        return;
+      }
+    }
+
+    type Item = { id: string; product_id: string | null; product_name: string; unit_price: number; quantity: number; subtotal: number };
+    const items = ((order as any).order_items ?? []) as Item[];
+    const plan: Array<{ item: Item; qty: number; unit: number; amount: number; left: number }> = [];
+    for (const [id, qty] of wanted) {
+      const item = items.find((i) => i.id === id);
+      if (!item) { res.status(400).json({ error: 'That item is not on this order.' }); return; }
+      const have = Number(item.quantity) || 0;
+      if (qty > have + 1e-9) { res.status(400).json({ error: `Only ${have} × ${item.product_name} on this order.` }); return; }
+      const unit = have > 0 ? (Number(item.subtotal) || 0) / have : Number(item.unit_price) || 0;
+      plan.push({ item, qty, unit, amount: round2(unit * qty), left: Math.round((have - qty) * 1000) / 1000 });
+    }
+
+    // The names are stored with the void (a report reads the same after a rename or a departure).
+    const ids = [req.userId, approver?.id].filter(Boolean) as string[];
+    const { data: people } = await supabase.from('users').select('id, name').in('id', ids);
+    const nameOf = (id?: string | null) => (people ?? []).find((u: { id: string }) => u.id === id)?.name ?? null;
+
+    for (const p of plan) {
+      const q = p.left > 0
+        ? supabase.from('order_items').update({ quantity: p.left, subtotal: round2(p.unit * p.left) }).eq('id', p.item.id)
+        : supabase.from('order_items').delete().eq('id', p.item.id);
+      const { error } = await q;
+      if (error) { sendError(res, error); return; }
+    }
+    const voidedTotal = round2(plan.reduce((s, p) => s + p.amount, 0));
+    const remainingItems = items.filter((i) => !plan.some((p) => p.item.id === i.id && p.left <= 0));
+    const newSubtotal = Math.max(0, round2((Number(order.subtotal) || 0) - voidedTotal));
+    const nothingLeft = remainingItems.length === 0;
+    const { vat, ctl } = await taxSplit(req.businessId!, newSubtotal);
+    const { error: uErr } = await supabase.from('orders').update({
+      subtotal: newSubtotal, total: newSubtotal, vat_amount: vat, ctl_amount: ctl,
+      ...(nothingLeft ? { status: 'voided', void_reason: `Kitchen void: ${voidReasonLabel(reason)}`,
+                          voided_at: new Date().toISOString(), voided_by: req.userId, authorized_by: approver?.id ?? null } : {}),
+    }).eq('id', orderId);
+    if (uErr) { sendError(res, uErr); return; }
+
+    const at = new Date().toISOString();
+    const { error: kErr } = await supabase.from('kitchen_voids').insert(plan.map((p) => ({
+      business_id: req.businessId, branch_id: order.branch_id, shift_id: order.shift_id ?? null,
+      order_number: order.order_number, order_id: order.id, product_id: p.item.product_id ?? null,
+      product_name: p.item.product_name, quantity: p.qty, unit_price: round2(p.unit), amount: p.amount,
+      reason, note, cooked, cashier_id: req.userId ?? null, cashier_name: nameOf(req.userId),
+      approved_by: approver?.id ?? null, approved_by_name: approver ? (approver.name ?? nameOf(approver.id)) : null,
+      device_id: deviceIdFromRequest(req) ?? null, created_at: at,
+    })));
+    if (kErr) { sendError(res, kErr); return; }
+
+    res.json({
+      ok: true, total: voidedTotal, remaining: newSubtotal, orderVoided: nothingLeft,
+      approvedBy: approver ? (approver.name ?? nameOf(approver.id)) : null,
+    });
+  } catch (err) {
+    sendError(res, err, { message: 'Failed to void the items' });
   }
 });
 
@@ -1600,6 +1743,7 @@ router.post('/:id/pay', async (req, res) => {
     discount_amount = 0,
     discount_id = null,
     tip_amount = 0,
+    delivery_fee: deliveryFeeRaw = 0,   // 0.6.27: on top of the bill on a delivery (pass-through, like the tip)
   } = req.body;
 
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -1706,12 +1850,14 @@ router.post('/:id/pay', async (req, res) => {
     // order paths must agree on what "paid in full" means, or a sale that is
     // accepted at the counter is refused on the dine-in path and vice versa.
     const payTip = Math.max(0, Number(tip_amount) || 0);
-    const amountDue = round2(payTotal + payTip);
+    // 0.6.27: the delivery fee rides on top like the tip (create_order_atomic agrees, migration 111).
+    const payFee = order.order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
+    const amountDue = round2(payTotal + payTip + payFee);
     const legSum = paymentLegs.reduce((s, l) => s + (Number(l.amount) || 0), 0);
     if (Math.abs(legSum - amountDue) > 0.01) {
       res.status(400).json({
         error: `Payment legs sum to ${legSum.toFixed(2)} but the amount due is ${amountDue.toFixed(2)} `
-             + `(total ${payTotal.toFixed(2)} + tip ${payTip.toFixed(2)}).`,
+             + `(total ${payTotal.toFixed(2)} + tip ${payTip.toFixed(2)}${payFee ? ` + delivery fee ${payFee.toFixed(2)}` : ''}).`,
         code: 'PAYMENT_MISMATCH',
       });
       return;
@@ -1765,6 +1911,7 @@ router.post('/:id/pay', async (req, res) => {
       // was money in the drawer that the books had no record of, which reads as
       // an unexplained cash surplus at close.
       tip_amount:      payTip,
+      delivery_fee:    payFee,   // 0.6.27
       // Points redeemed on this order. The counter path has always written this
       // (it is read back by GET /orders); the dine-in path never did, so every
       // table order reported zero points redeemed however many were taken.
@@ -1800,11 +1947,11 @@ router.post('/:id/pay', async (req, res) => {
       // whoever reconciles the day, not in front of the cashier mid-service.
       const { data: settled } = await supabase
         .from('orders')
-        .select('id, order_number, status, total, tip_amount')
+        .select('id, order_number, status, total, tip_amount, delivery_fee')
         .eq('id', order.id)
         .single();
 
-      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0));
+      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0) + Number((settled as any)?.delivery_fee ?? 0));
       if (settled && Math.abs(settledDue - amountDue) > 0.01) {
         await supabase.from('payment_exceptions').insert({
           business_id:     req.businessId,
@@ -1826,6 +1973,13 @@ router.post('/:id/pay', async (req, res) => {
     // ── 2b. We own the order. Now it is safe to write the money. ─────────────
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
     if (pErr) { sendError(res, pErr); return; }
+
+    // 0.6.27: a web tab's rider is paid the fee in cash from its shift's drawer (a till pays its own).
+    if (payFee > 0 && req.surface !== 'desktop') {
+      await payRider({ orderId: order.id, orderNumber: order.order_number, shiftId: (order as any).shift_id ?? null,
+                       branchId: order.branch_id, cashierId: (order as any).cashier_id ?? req.userId ?? null, fee: payFee,
+                       rider: (order as any).delivery_person ?? null });
+    }
 
     checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
 

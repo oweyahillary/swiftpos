@@ -19,6 +19,10 @@ export interface CartItem {
   isFuel?: boolean;
   fire_status?: 'held' | 'fired';
 
+  // 0.6.28: the cloud's order_items.id once the order was sent to the kitchen (POST /api/orders/open). Its presence is
+  // what makes the line SENT: it then leaves the order only as a kitchen void (POST /api/orders/:id/kitchen-void).
+  order_item_id?: string;
+
   // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Sent as
   // order_items.notes; printed on the kitchen ticket and the receipt.
   notes?: string | null;

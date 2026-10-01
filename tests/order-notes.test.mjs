@@ -77,8 +77,9 @@ ok('the kitchen display and the till\'s web-sales download read the notes', () =
   assert.match(shifts, /refund_reason, delivery_person, notes,/);
   assert.match(shifts, /course, fire_status, notes \),/);
 });
-ok('schema 58 is the required desktop schema', () => {
-  assert.match(read('apps/server/src/lib/desktopSchema.ts'), /export const REQUIRED_DESKTOP_SCHEMA = 58;/);
+ok('schema 58 or later is the required desktop schema', () => {
+  const m = read('apps/server/src/lib/desktopSchema.ts').match(/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/);
+  assert.ok(m && Number(m[1]) >= 58, m?.[0]);
 });
 
 // ── The web ──────────────────────────────────────────────────────────────────

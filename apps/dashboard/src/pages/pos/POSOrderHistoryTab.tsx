@@ -10,6 +10,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
 import { canRefundOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
+import { historyView, orderMethod, type HistorySort } from '../../lib/historyView';
+import { orderTypeLabel } from '../../lib/delivery';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,8 +27,15 @@ interface Order {
   customer_name: string | null;
   created_at: string;
   payments: Payment[];
+  delivery_person?: string | null;   // 0.6.27
+  delivery_fee?: number | null;      // 0.6.27
 }
-interface OrdersResponse { orders: Order[]; total: number; }
+/** 0.6.27: own_only — the cloud narrowed the list to this cashier's sales; can_reprint — Reprint is offered. */
+interface OrdersResponse { orders: Order[]; total: number; own_only?: boolean; can_reprint?: boolean; }
+
+// 0.6.27: the types a filter offers (the cloud filters; the list is paged).
+const TYPE_CHOICES = ['dine_in', 'takeaway', 'delivery', 'retail'];
+const METHOD_CHOICES = ['cash', 'mpesa', 'card'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -83,8 +92,14 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   const [expanded, setExpanded]   = useState<string | null>(null);
   const [reprintingId, setReprintingId] = useState<string | null>(null);
   const [reprintMsg, setReprintMsg] = useState<{ id: string; text: string } | null>(null);
+  // 0.6.27: filters (sent to the cloud), the order of the page, and what the cloud allows this person.
+  const [typeFilter, setTypeFilter]     = useState('');
+  const [methodFilter, setMethodFilter] = useState('');
+  const [sortBy, setSortBy]             = useState<HistorySort>('time');
+  const [ownOnly, setOwnOnly]           = useState(false);
+  const [canReprint, setCanReprint]     = useState(true);
 
-  const load = useCallback(async (p = 1, q = search) => {
+  const load = useCallback(async (p = 1, q = search, t = typeFilter, m = methodFilter) => {
     setLoading(true);
     setError('');
     try {
@@ -93,18 +108,22 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
         offset: String((p - 1) * PAGE_SIZE),
       });
       if (q) params.set('search', q);
+      if (t) params.set('order_type', t);
+      if (m) params.set('method', m);
       if (session?.branchId) params.set('branch_id', session.branchId);
 
       const res = await posApi.get<OrdersResponse>(`/api/orders?${params}`);
       setOrders(res.orders ?? []);
       setTotal(res.total ?? 0);
+      setOwnOnly(res.own_only === true);
+      setCanReprint(res.can_reprint !== false);
       setPage(p);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load orders');
     } finally {
       setLoading(false);
     }
-  }, [posApi, session, search]);
+  }, [posApi, session, search, typeFilter, methodFilter]);
 
   useEffect(() => { load(1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -128,6 +147,26 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
         <button style={s.searchBtn} type="submit">Search</button>
       </form>
 
+      {/* 0.6.27: narrow by type or payment (the cloud filters), order this page by time, payment or type. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8, fontSize: 12 }} data-testid="history-filters">
+        <select style={s.searchInput} value={typeFilter} data-testid="history-type"
+          onChange={e => { setTypeFilter(e.target.value); void load(1, search, e.target.value, methodFilter); }}>
+          <option value="">All types</option>
+          {TYPE_CHOICES.map(t => <option key={t} value={t}>{orderTypeLabel(t)}</option>)}
+        </select>
+        <select style={s.searchInput} value={methodFilter} data-testid="history-method"
+          onChange={e => { setMethodFilter(e.target.value); void load(1, search, typeFilter, e.target.value); }}>
+          <option value="">All payments</option>
+          {METHOD_CHOICES.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <select style={s.searchInput} value={sortBy} data-testid="history-sort" onChange={e => setSortBy(e.target.value as HistorySort)}>
+          <option value="time">Order by time</option>
+          <option value="method">Order by payment</option>
+          <option value="type">Order by type</option>
+        </select>
+        {ownOnly && <span style={{ color: '#94a3b8' }}>Your sales only</span>}
+      </div>
+
       {error && <p style={s.error}>{error}</p>}
 
       {loading && <div style={s.center}><span style={s.spinner} /></div>}
@@ -138,9 +177,9 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
 
       {/* Order list */}
       <div style={s.list}>
-        {orders.map(order => {
+        {historyView(orders, { sort: sortBy }).map(order => {
           const isOpen = expanded === order.id;
-          const method = order.payments?.[0]?.method ?? '—';
+          const method = orderMethod(order);
           return (
             <div key={order.id} style={s.card}>
               {/* Row */}
@@ -149,6 +188,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   <span style={s.orderNum}>#{order.order_number}</span>
                   <span style={s.orderMeta}>
                     {fmtTime(order.created_at)}
+                    {` · ${orderTypeLabel(order.order_type, order.delivery_person)}`}
                     {order.customer_name ? ` · ${order.customer_name}` : ''}
                   </span>
                 </div>
@@ -168,7 +208,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                 <div style={s.detail}>
                   <div style={s.detailRow}>
                     <span style={s.detailLabel}>Type</span>
-                    <span style={s.detailVal}>{order.order_type}</span>
+                    <span style={s.detailVal}>{orderTypeLabel(order.order_type, order.delivery_person)}</span>
                   </div>
                   <div style={s.detailRow}>
                     <span style={s.detailLabel}>Subtotal</span>
@@ -190,7 +230,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                       <span style={s.detailVal}>{fmt(p.amount, currency)}</span>
                     </div>
                   ))}
-                  <button
+                  {canReprint && <button
                     onClick={async (e) => {
                       e.stopPropagation();
                       setReprintingId(order.id); setReprintMsg(null);
@@ -201,7 +241,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     style={{ marginTop: 10, padding: '6px 12px', fontSize: 12, fontWeight: 600,
                       borderRadius: 8, border: '1px solid rgb(var(--act-fill, 59 130 246) / 0.4)', color: 'rgb(var(--act-text, 96 165 250))',
                       background: 'transparent', cursor: 'pointer', opacity: reprintingId === order.id ? 0.5 : 1 }}
-                  >{reprintingId === order.id ? 'Printing…' : 'Reprint receipt'}</button>
+                  >{reprintingId === order.id ? 'Printing…' : 'Reprint receipt'}</button>}
                   {reprintMsg?.id === order.id && (
                     <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>{reprintMsg.text}</div>
                   )}

@@ -28,6 +28,8 @@ interface Props {
   subtotal: number;
   discountAmount: number;
   tipAmount: number;
+  /** 0.6.27: the delivery fee on top of the bill (after the total, with the tip). */
+  deliveryFee?: number;
   total: number;
   vatAmount: number;
   vatRate: number;
@@ -59,7 +61,7 @@ const METHOD_LABEL: Record<string, string> = {
 // shows it at true paper width. Every style must stay INLINE — a Tailwind
 // class here renders on screen and silently vanishes on paper.
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
-  { businessName, branchName, orderNumber, cart, subtotal, discountAmount, tipAmount, total,
+  { businessName, branchName, orderNumber, cart, subtotal, discountAmount, tipAmount, deliveryFee = 0, total,
     vatAmount, vatRate, ctlAmount = 0, ctlRate = 0, currency, payments,
     orderType, tableNumber, footerMessage, headerText, footerText, tillNumber, cashierName, billNumber, kots, deliveryPerson },
   ref
@@ -230,10 +232,11 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       {row('Total:', moneyBig(total), { fontWeight: 'bold' })}
       {/* A349: the tip after the bill (not a sale, not taxed); the customer pays both — as on the printed receipt. */}
       {tipAmount > 0 && row('Tip:', money(tipAmount))}
+      {deliveryFee > 0 && row('Delivery fee:', money(deliveryFee))}
       {rule()}
 
       <p style={{ fontSize: '17px', fontWeight: 'bold', margin: '4px 0' }}>
-        PAY: {currency} {moneyBig(total + tipAmount)}
+        PAY: {currency} {moneyBig(total + tipAmount + deliveryFee)}
       </p>
       {rule()}
 

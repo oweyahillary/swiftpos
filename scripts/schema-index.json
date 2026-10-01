@@ -364,7 +364,8 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "sync_status": "\"character varying\" NOT NULL",
     "shift_id": "\"uuid\"",
-    "recorded_by": "\"uuid\""
+    "recorded_by": "\"uuid\"",
+    "payment_method": "\"character varying\" NOT NULL DEFAULT 'cash'::character varying"
   },
   "feature_flags": {
     "id": "\"uuid\" NOT NULL",
@@ -384,7 +385,8 @@
     "type": "\"text\" NOT NULL",
     "amount": "\"numeric\" NOT NULL",
     "reason": "\"text\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL"
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "order_id": "\"uuid\""
   },
   "fuel_tanks": {
     "id": "\"uuid\" NOT NULL",
@@ -489,6 +491,28 @@
     "ready_at": "\"timestamp with time zone\"",
     "collected_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "kitchen_voids": {
+    "id": "\"uuid\" NOT NULL DEFAULT gen_random_uuid()",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "shift_id": "\"uuid\"",
+    "order_number": "\"text\" NOT NULL",
+    "order_id": "\"uuid\"",
+    "product_id": "\"uuid\"",
+    "product_name": "\"text\" NOT NULL",
+    "quantity": "\"numeric\" NOT NULL",
+    "unit_price": "\"numeric\" NOT NULL DEFAULT 0",
+    "amount": "\"numeric\" NOT NULL DEFAULT 0",
+    "reason": "\"text\" NOT NULL",
+    "note": "\"text\"",
+    "cooked": "\"boolean\" NOT NULL DEFAULT false",
+    "cashier_id": "\"uuid\"",
+    "cashier_name": "\"text\"",
+    "approved_by": "\"uuid\"",
+    "approved_by_name": "\"text\"",
+    "device_id": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL DEFAULT now()"
   },
   "loyalty_transactions": {
     "id": "\"uuid\" NOT NULL",
@@ -646,7 +670,8 @@
     "refunded_amount": "\"numeric\" NOT NULL",
     "refund_reason": "\"text\"",
     "refunded_by": "\"uuid\"",
-    "refund_authorized_by": "\"uuid\""
+    "refund_authorized_by": "\"uuid\"",
+    "delivery_fee": "\"numeric\" NOT NULL DEFAULT 0"
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",
@@ -1004,7 +1029,8 @@
     "confirmed_methods": "\"jsonb\"",
     "confirmed_by": "\"uuid\"",
     "confirmed_at": "\"timestamp with time zone\"",
-    "confirm_self": "\"boolean\" NOT NULL DEFAULT false"
+    "confirm_self": "\"boolean\" NOT NULL DEFAULT false",
+    "confirm_reasons": "\"jsonb\""
   },
   "slot_options": {
     "id": "\"uuid\" NOT NULL",

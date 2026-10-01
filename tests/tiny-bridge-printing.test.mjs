@@ -175,7 +175,8 @@ ok('Phase 3: kitchen exclusions applied (drinks off the kitchen ticket) (A250)',
 ok('Phase 4: timing split — Send-to-Kitchen fires kitchen+dispatch, Print Bill fires receipt (A253)', () => {
   const cs = r('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   assert.match(cs, /kinds: \['receipt'\],/);              // Print Bill = customer proforma
-  assert.strictEqual((cs.match(/kinds: \['kitchen', 'dispatch'\],/g) || []).length, 2);  // send + pay-first
+  // send + pay-first + (0.6.28) the VOID ticket of a kitchen void
+  assert.strictEqual((cs.match(/kinds: \['kitchen', 'dispatch'\],/g) || []).length, 3);
   assert.doesNotMatch(cs, /printKOTs\(/);                  // old fan-out retired
 });
 ok('A254: renderers pass cut/feed/drawer to toEscPos (paper cuts + bottom margin)', () => {

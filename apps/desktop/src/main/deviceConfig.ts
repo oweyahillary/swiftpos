@@ -17,6 +17,7 @@
 import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
+import { parsePosFeatures, type PosFeatures } from './posFeatures';
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -88,6 +89,9 @@ export interface DeviceConfig {
   /** A367: the owner's quick picks for order notes (a JSON array), pulled with the catalogue. NULL = not told yet →
    *  the defaults (shared/orderNotes.ts parseNotePicks). Written only by setOrderNotePicks() from the pull. */
   order_note_picks: string | null;
+  /** 0.6.27: the per-client POS switches (a JSON object), pulled with the catalogue. NULL = not told yet → all off
+   *  (shared/posFeatures.ts parsePosFeatures). Written only by setPosFeatures() from the pull. */
+  pos_features: string | null;
   configured: boolean;
 }
 
@@ -121,6 +125,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     kitchen_exclusions_override: row.kitchen_exclusions_override ?? null,
     web_pos_enabled: row.web_pos_enabled == null ? null : row.web_pos_enabled === 1,
     order_note_picks: row.order_note_picks ?? null,
+    pos_features: row.pos_features ?? null,
     configured: row.configured === 1,
   };
 }
@@ -173,6 +178,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     web_pos_enabled: current?.web_pos_enabled ?? null,
     // A367: never from the patch — only setOrderNotePicks() (the pull) writes it; the INSERT below leaves it alone.
     order_note_picks: current?.order_note_picks ?? null,
+    // 0.6.27: never from the patch — only setPosFeatures() (the pull) writes it; the INSERT below leaves it alone.
+    pos_features: current?.pos_features ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -272,6 +279,20 @@ export function clearDeviceConfig(): void {
 export function setWebPosEnabled(enabled: boolean | undefined): void {
   if (typeof enabled !== 'boolean') return;
   getLocalDb().prepare(`UPDATE device_config SET web_pos_enabled = ? WHERE id = 1`).run(enabled ? 1 : 0);
+}
+
+/**
+ * 0.6.27: cache the per-client POS switches the admin portal sets. undefined/null = not said (older cloud or node) →
+ * keep. The ONLY writer, so a renderer's config:save can never switch one on.
+ */
+export function setPosFeatures(features: Record<string, boolean> | null | undefined): void {
+  if (!features || typeof features !== 'object') return;
+  getLocalDb().prepare(`UPDATE device_config SET pos_features = ? WHERE id = 1`).run(JSON.stringify(parsePosFeatures(features)));
+}
+
+/** 0.6.27: the switches as the till last heard them (all off until told). */
+export function getPosFeatures(): PosFeatures {
+  return parsePosFeatures(getDeviceConfig()?.pos_features ?? null);
 }
 
 /** A367: cache the owner's quick picks for order notes. undefined/null = not said (older cloud or node) → keep. */

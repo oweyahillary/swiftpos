@@ -30,6 +30,7 @@ interface Expense {
   paid_by: string | null;
   paid_by_name: string | null;
   recorded_by_name?: string | null;   // A361: who entered it (stamped by the cloud)
+  payment_method?: string;            // 0.6.27: how it was paid (only cash leaves a drawer)
 }
 
 interface Branch {
@@ -50,6 +51,7 @@ interface ExpenseForm {
   paid_by: string;
   receipt_url: string;
   expense_date: string;
+  payment_method: string;   // 0.6.27
 }
 
 const EMPTY_FORM: ExpenseForm = {
@@ -60,9 +62,16 @@ const EMPTY_FORM: ExpenseForm = {
   paid_by: '',
   receipt_url: '',
   expense_date: localDateStr(),
+  payment_method: 'cash',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** 0.6.27: what an expense can be paid with (only cash leaves a drawer). */
+const EXPENSE_METHODS = [
+  { code: 'cash', name: 'Cash' }, { code: 'mpesa', name: 'M-Pesa' }, { code: 'card', name: 'Card' },
+  { code: 'bank', name: 'Bank transfer' },
+];
 
 function fmt(amount: number, currency: string) {
   return new Intl.NumberFormat('en-KE', {
@@ -211,6 +220,7 @@ export default function ExpensesPage() {
       paid_by: e.paid_by ?? '',
       receipt_url: e.receipt_url ?? '',
       expense_date: e.expense_date,
+      payment_method: e.payment_method ?? 'cash',
     });
     setFormError('');
     setExpenseModal(e);
@@ -234,6 +244,7 @@ export default function ExpensesPage() {
         paid_by: form.paid_by || undefined,
         receipt_url: form.receipt_url || undefined,
         expense_date: form.expense_date,
+        payment_method: form.payment_method,   // 0.6.27
       };
 
       if (expenseModal === 'add') {
@@ -396,6 +407,7 @@ export default function ExpensesPage() {
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Description</th>
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Category</th>
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Branch</th>
+                    <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid With</th>
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Paid By</th>
                     <th className="text-left text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Recorded By</th>
                     <th className="text-right text-gray-500 text-xs font-semibold px-4 py-3 uppercase tracking-wider">Amount</th>
@@ -425,6 +437,7 @@ export default function ExpensesPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
@@ -449,7 +462,7 @@ export default function ExpensesPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-gray-700">
-                    <td colSpan={6} className="px-4 py-3 text-gray-500 text-xs font-semibold">
+                    <td colSpan={7} className="px-4 py-3 text-gray-500 text-xs font-semibold">
                       {expenses.length} expense{expenses.length !== 1 ? 's' : ''}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-red-300">
@@ -540,6 +553,19 @@ export default function ExpensesPage() {
                   onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
+              </div>
+
+              {/* 0.6.27: paid with — cash comes out of a drawer; M-Pesa etc. off that method's total */}
+              <div>
+                <label className="block text-gray-400 text-xs mb-1.5">Paid With</label>
+                <select
+                  value={form.payment_method}
+                  onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
+                  data-testid="expense-method"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
+                >
+                  {EXPENSE_METHODS.map(m => <option key={m.code} value={m.code}>{m.name}</option>)}
+                </select>
               </div>
 
               {/* Paid by */}

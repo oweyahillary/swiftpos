@@ -52,6 +52,10 @@
     "order_items.fire_status": {
       "emits": ["held", "fired"],
       "source": "apps/desktop KDS fire path"
+    },
+    "kitchen_voids.reason": {
+      "emits": ["wrong_item", "wrong_quantity", "changed_mind", "out_of_stock", "kitchen_mistake"],
+      "source": "shared/kitchenLines.ts KITCHEN_VOID_REASONS (0.6.28): the till's KitchenVoidModal and kitchenService.recordKitchenVoid (cleanVoidReason refuses anything else); the web's KitchenVoidModal -> POST /api/orders/:id/kitchen-void (cleanVoidReason)"
     }
   }
 }

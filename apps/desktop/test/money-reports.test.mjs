@@ -117,8 +117,14 @@ ok('the Overview shows VAT, CTL (when levied), refunds, discounts and tips under
 const zv = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'components', 'ZReportView.tsx'), 'utf8');
 ok('the Z-report screen shows refunds, net sales, VAT, CTL and tips', /row\('− Refunds'/.test(zv) && /row\('incl\. CTL'/.test(zv) && /row\('incl\. VAT'/.test(zv));
 const rv = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'components', 'ReceiptView.tsx'), 'utf8');
-ok('the on-screen receipt: round off never includes the tip; PAY = total + tip',
-  /const roundOff = total - \(netSubtotal \+ ctlAmount \+ vatAmount\);/.test(rv) && /PAY: \{currency\} \{moneyBig\(total \+ tipAmount\)\}/.test(rv));
+ok('the on-screen receipt: round off never includes the tip; PAY = total + tip (+ delivery fee, 0.6.27)',
+  /const roundOff = total - \(netSubtotal \+ ctlAmount \+ vatAmount\);/.test(rv) && /PAY: \{currency\} \{moneyBig\(total \+ tipAmount \+ deliveryFee\)\}/.test(rv));
+// 0.6.27: the sale screen hands the receipt the BILL (it passed amountDue — bill + tip — so a tip showed as "Round
+// Off" and was counted twice in PAY on the screen; the printed receipt was right).
+const pp = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'POSPage.tsx'), 'utf8');
+ok('0.6.27: the on-screen receipt gets the bill as its total, the fee beside it',
+  /total=\{completedOrder\.payment\.total\}/.test(pp) && /deliveryFee=\{completedOrder\.payment\.deliveryFee\}/.test(pp)
+  && !/total=\{completedOrder\.payment\.amountDue\}/.test(pp));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

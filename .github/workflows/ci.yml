@@ -654,6 +654,23 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/order-notes.test.mjs
 
+      # 0.6.27 — the prospect's requests, per-client switches: delivery fee paid to the rider, expense method, own History,
+      # no reprint, blind close, the manager's reasons (the real compiled main on SQLite).
+      - name: Desktop per-client switches (delivery fee, expenses, History, blind close, reasons)
+        working-directory: apps/desktop
+        run: node --no-warnings test/prospect-features.test.mjs
+
+      # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
+      # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
+      - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)
+        working-directory: apps/desktop
+        run: node --no-warnings test/kitchen-voids.test.mjs
+
+      # A336 follow-up (0.6.26) — a void or refund made on the web of a sale this till rang reaches the till (Z-report, shift).
+      - name: Desktop web reversals of the till's own sales
+        working-directory: apps/desktop
+        run: node --no-warnings test/own-reversals.test.mjs
+
       # 0.6.25 — a logo uploaded on the till is saved to the cloud too (a sync no longer puts the old one back).
       - name: Desktop branding saved to the cloud
         working-directory: apps/desktop

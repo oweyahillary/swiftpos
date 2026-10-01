@@ -58,6 +58,8 @@ export interface ShiftReportData {
   vat?: Cents | null;
   ctl?: Cents | null;
   tips?: Cents | null;
+  /** 0.6.27: delivery fees the customers paid on top of their bills (pass-through, in the payments, not sales). */
+  deliveryFees?: Cents | null;
   voidCount: number;
 
   openingFloat: Cents;
@@ -66,10 +68,18 @@ export interface ShiftReportData {
   floatOut: Cents;
   /** 0.6.11: cash paid out as expenses, already taken off expectedCash. null/absent = not reported (older caller). */
   expenses?: Cents | null;
+  /** 0.6.27: the delivery fees paid to riders in cash from the drawer (a part of the pay-outs, shown on its own line;
+   *  `floatOut` is then the other pay-outs). null/absent = none. */
+  riderPayouts?: Cents | null;
+  /** 0.6.27: expenses paid by another method (M-Pesa…), NOT from the drawer — off that method's total. */
+  otherExpenses?: { method: string; amount: Cents }[] | null;
   /** A342: the web POS's own shift on this till, counted in this drawer and closed with it. null/absent = none. */
   siblingCash?: Cents | null;
   /** 0.6.11: the expense lines behind it. */
   expenseLines?: { description: string; amount: Cents }[];
+  /** 0.6.28: items taken back after they were sent to the kitchen — one line each ("2x Chicken — Wrong item · made ·
+   *  approved Jane"), the total and the part already made (wasted). null/absent = none. */
+  kitchenVoids?: { lines: { description: string; amount: Cents }[]; total: Cents; madeTotal: Cents } | null;
   /** A363: what of the shift is not on the cloud yet, in words (desktop lib/syncNotice zBackupNote). null/absent = all on it. */
   backupNote?: string | null;
   /** A365: the manager's confirmation, in lines ("CONFIRMED BY …", one per method; desktop lib/shiftConfirm). */
@@ -144,6 +154,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   if (r.vat != null) d.line(pair(cols, 'incl. VAT', money(r.vat)));
   if (r.ctl != null) d.line(pair(cols, 'incl. CTL', money(r.ctl)));
   if (r.tips != null && r.tips > 0) d.line(pair(cols, 'Tips (in payments)', money(r.tips)));
+  if (r.deliveryFees != null && r.deliveryFees > 0) d.line(pair(cols, 'Delivery fees (in payments)', money(r.deliveryFees)));
   d.line(pair(cols, 'Voids', String(r.voidCount)));
   d.line(rule(cols));
 
@@ -155,6 +166,8 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   d.line(pair(cols, '+ Cash sales', money(r.cashSales)));
   d.line(pair(cols, '+ Float in', money(r.floatIn)));
   d.line(pair(cols, '- Float out', money(r.floatOut)));
+  // 0.6.27: the riders' delivery fees, paid in cash from this drawer — why cash is lower and M-Pesa higher.
+  if (r.riderPayouts != null && r.riderPayouts > 0) d.line(pair(cols, '- Paid to riders', money(r.riderPayouts)));
   // 0.6.11: expenses were always deducted from expected cash but never printed, so the column did not add up.
   if (r.expenses != null) d.line(pair(cols, '- Expenses', money(r.expenses)));
   if (r.siblingCash != null) d.line(pair(cols, '+ Web shift, this till', money(r.siblingCash)));
@@ -172,6 +185,16 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
     }
   }
 
+  // 0.6.27: expenses paid by M-Pesa etc. — not from the drawer; they come off that method's expected total.
+  if (r.otherExpenses && r.otherExpenses.length) {
+    d.line(rule(cols));
+    d.line('EXPENSES NOT FROM THE DRAWER', { bold: true });
+    for (const e of r.otherExpenses) {
+      const label = METHOD_LABELS[e.method] ?? e.method.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      d.line(pair(cols, `- ${label}`, money(e.amount)));
+    }
+  }
+
   if (r.expenseLines && r.expenseLines.length) {
     d.line(rule(cols));
     d.line(`EXPENSES (${r.expenseLines.length})`, { bold: true });
@@ -182,6 +205,19 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
       if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
       else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
     }
+  }
+
+  // 0.6.28: what was sent to the kitchen and taken back — the owner reads these to see who cancels cooked food.
+  if (r.kitchenVoids && r.kitchenVoids.lines.length) {
+    d.line(rule(cols));
+    d.line(`KITCHEN VOIDS (${r.kitchenVoids.lines.length})`, { bold: true });
+    for (const e of r.kitchenVoids.lines) {
+      const amt = money(e.amount);
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
+    }
+    d.line(pair(cols, 'Total voided', money(r.kitchenVoids.total)), { bold: true });
+    if (r.kitchenVoids.madeTotal > 0) d.line(pair(cols, 'Of which already made', money(r.kitchenVoids.madeTotal)));
   }
 
   // A363 (owner: "add the note on the zreport"): never close a day without seeing what is still only on this till.

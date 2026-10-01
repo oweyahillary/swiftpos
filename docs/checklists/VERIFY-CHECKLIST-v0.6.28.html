@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.28 — Rollout Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.28 — rollout verification</h1>
+  <p class="sub">0.6.28: a sent order is paid or a recorded kitchen void — reason, made or not, a manager with the client's switch, a VOID ticket, the Z-report; End Shift refused while one is unpaid; “Pay before kitchen” (A372); the kitchen no longer cooks a sent dish twice (A373). Contains 0.6.27.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.28"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-10-01"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> §R first. §K, §V run with the switches OFF; then §M and §P with each switch ON. You need a cashier PIN and a manager PIN, and kitchen printing on. A <b>Fail</b> needs a note.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+ [
+  "§R — Rollout",
+  "",
+  "One patch holds 0.6.26, 0.6.27 and 0.6.28 (one release). Migrations 111 and 112 BEFORE the cloud. Run the v0.6.26 and v0.6.27 checklists on this install too (skip their tag/approve steps).",
+  [
+   [
+    "R0",
+    "Migrations 111 and 112, then cloud, dashboard, admin portal",
+    [
+     "Run migration 111 (if not yet), then 112, on the database.",
+     "Deploy the cloud, the dashboard and the admin portal; hard-refresh."
+    ],
+    "The web POS signs in; the dashboard and admin portal load.",
+    false
+   ],
+   [
+    "R1",
+    "The tag comes out as ONE pre-release",
+    [
+     "Tag v0.6.28 → Actions → Release desktop green → Releases."
+    ],
+    "One v0.6.28 pre-release with latest.yml and the installer; v0.6.16 stays Latest.",
+    true
+   ],
+   [
+    "R2",
+    "Approve B Foods for 0.6.28",
+    [
+     "Admin portal → B Foods → 0.6.28 → Approve; restart T1, close and reopen when the update is ready."
+    ],
+    "T1 reads 0.6.28.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§S — The two new switches",
+  "A372",
+  "Admin portal → B Foods → Features.",
+  [
+   [
+    "S1",
+    "Kitchen voids need a manager · Pay before kitchen",
+    [
+     "Open Features."
+    ],
+    "Two new POS switches with a line each saying what they do, both OFF (the five from 0.6.27 are unchanged).",
+    true
+   ]
+  ]
+ ],
+ [
+  "§K — Send to kitchen (every client)",
+  "A373",
+  "Restaurant mode, kitchen printing on. Switches still OFF.",
+  [
+   [
+    "K1",
+    "Only the extra goes to the kitchen",
+    [
+     "Takeaway: Chicken ×2 → Send to kitchen.",
+     "Tap Chicken once more (3) → Send to kitchen."
+    ],
+    "The second ticket says 1 × Chicken (not 3). The line shows 🍳 while all are sent, “🍳 2 sent” while one is not.",
+    true
+   ],
+   [
+    "K2",
+    "A line added after Send reaches the kitchen at payment",
+    [
+     "Send an order, then add a Soda, then Pay (cash)."
+    ],
+    "The kitchen/dispatch print the Soda at payment; the receipt prints once.",
+    false
+   ],
+   [
+    "K3",
+    "No note on a sent line",
+    [
+     "Look at a sent line."
+    ],
+    "No “+ Note” button on it (a new line can carry the instruction).",
+    false
+   ]
+  ]
+ ],
+ [
+  "§V — Kitchen voids on the till (every client)",
+  "A372",
+  "Switches still OFF.",
+  [
+   [
+    "V1",
+    "Removing a sent item is a kitchen void",
+    [
+     "Send Chicken ×2.",
+     "Press − on it."
+    ],
+    "“Take back 1 × Chicken”: reasons, “Had the kitchen already made it?”, a note; Void → the kitchen prints a VOID ticket with 1 × CHICKEN; the line is 1.",
+    true
+   ],
+   [
+    "V2",
+    "Clear with sent items",
+    [
+     "Send an order, press Clear."
+    ],
+    "“Clear the order” asks for a kitchen void of every sent item (Cancel keeps the order; Hold keeps it as a tab).",
+    false
+   ],
+   [
+    "V3",
+    "Unsent items go freely",
+    [
+     "Add an item, do NOT send, press ✕."
+    ],
+    "Removed with no question (as before).",
+    false
+   ],
+   [
+    "V4",
+    "A held tab with sent items cannot be deleted",
+    [
+     "Send an order, Hold it, then delete the tab from the tabs list."
+    ],
+    "“This tab has items already sent to the kitchen. Recall it, then remove the items (a kitchen void).”",
+    false
+   ],
+   [
+    "V5",
+    "A sent order survives a restart",
+    [
+     "Send an order (do not hold it), close SwiftPOS, reopen."
+    ],
+    "With an empty cart: “Sent to the kitchen, not paid — #… · Open”. Open brings it back; it can be charged.",
+    true
+   ]
+  ]
+ ],
+ [
+  "§M — With “Kitchen voids need a manager” ON",
+  "A372",
+  "Turn it on for B Foods; Sync T1; refresh the web POS.",
+  [
+   [
+    "M1",
+    "A cashier needs a manager's PIN",
+    [
+     "As a cashier: send an order, press ✕ on a sent line.",
+     "Try a cashier's PIN, then a manager's."
+    ],
+    "Manager PIN asked; a cashier's PIN is refused; the manager's voids it. The VOID ticket prints.",
+    true
+   ],
+   [
+    "M2",
+    "A manager signed in voids as themselves",
+    [
+     "Sign in as a manager, void a sent item."
+    ],
+    "No PIN asked; recorded as approved by them.",
+    false
+   ],
+   [
+    "M3",
+    "End Shift with an unpaid sent order",
+    [
+     "Leave a sent order unpaid (on hold or on screen); Shift → Close."
+    ],
+    "The panel lists “Sent to the kitchen, not paid”; closing is refused, naming the order. After charging (or voiding) it, the shift closes.",
+    true
+   ],
+   [
+    "M4",
+    "Offline",
+    [
+     "Disconnect T1; void a sent item with a manager's PIN (one who has signed in on T1 before)."
+    ],
+    "Accepted offline; the void reaches the cloud when T1 reconnects (dashboard Z-report shows it).",
+    false
+   ]
+  ]
+ ],
+ [
+  "§P — With “Pay before kitchen” ON",
+  "A372",
+  "Turn it on; Sync T1; refresh the web POS.",
+  [
+   [
+    "P1",
+    "Takeaway: no Send; the ticket prints at payment",
+    [
+     "Takeaway order → look for Send to kitchen → Pay."
+    ],
+    "No Send to kitchen button (Hold still there); the kitchen ticket prints when paid.",
+    true
+   ],
+   [
+    "P2",
+    "Dine-in still sends first",
+    [
+     "A table → add items."
+    ],
+    "Send to kitchen is there for the table.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§W — The web POS",
+  "A372",
+  "Restaurant, order-first.",
+  [
+   [
+    "W1",
+    "A sent web line is voided, not deleted",
+    [
+     "Web POS → a table → items → Send to Kitchen.",
+     "Press − or ✕ on a sent line (with M on: a manager's PIN)."
+    ],
+    "The kitchen-void dialog; after Void the line drops, the total drops by its value, the kitchen prints a VOID ticket; Charge still matches.",
+    true
+   ],
+   [
+    "W2",
+    "A sent tab cannot be dropped",
+    [
+     "Clear the table of a sent order."
+    ],
+    "The kitchen-void dialog for every sent item (or charge it).",
+    false
+   ],
+   [
+    "W3",
+    "Web End Shift with an unpaid sent order (M on)",
+    [
+     "Leave a sent web order unpaid → close the shift."
+    ],
+    "Refused: “… sent to the kitchen and not paid (#ORD-…)”.",
+    false
+   ]
+  ]
+ ],
+ [
+  "§Z — The reports",
+  "A372",
+  "",
+  [
+   [
+    "Z1",
+    "Till Z-report lists the kitchen voids",
+    [
+     "Shift → print / view the Z-report after V1/M1."
+    ],
+    "KITCHEN VOIDS (n): each line “1x Chicken - Customer changed their mind; made; approved Mary, cashier Amy”, Total voided, Of which already made.",
+    true
+   ],
+   [
+    "Z2",
+    "Web Z-Report",
+    [
+     "Web POS → Z-Report for today."
+    ],
+    "A “Kitchen voids” section with the same lines (till and web voids).",
+    true
+   ]
+  ]
+ ]
+];
+
+
+const KEY = "swiftpos-verify-0628";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS v0.6.28 — rollout verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

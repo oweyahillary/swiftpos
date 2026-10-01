@@ -36,6 +36,8 @@ export interface WebStation {
   type: 'receipt' | 'kitchen' | 'bar' | 'expeditor' | 'kot';
   paperWidthMm: 58 | 80;
   proforma?: boolean;
+  /** 0.6.28: a kitchen void — the ticket prints under a VOID banner. */
+  voided?: { by?: string; reason?: string };
 }
 export function renderStationEscPos(order: ReceiptOrder, business: ReceiptBusinessConfig, station: WebStation): Uint8Array;
 // true if this routed station has any printable line for the order (A254: skip blank tickets).

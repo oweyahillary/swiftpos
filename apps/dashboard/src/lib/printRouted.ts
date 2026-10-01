@@ -70,6 +70,8 @@ export interface PrintRoutedArgs {
   proforma?: boolean;
   /** A367: the note on the whole order (heads the kitchen ticket; on the receipt). */
   orderNote?: string | null;
+  /** 0.6.28: a kitchen void — `cart` is what was taken back; kitchen/dispatch print it under a VOID banner. */
+  voided?: { by?: string; reason?: string };
 }
 
 export interface PrintRoutedResult { printed: number; failed: number; configured: number }
@@ -151,7 +153,8 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
   let printed = 0, failed = 0;
   for (const p of printers) {
     try {
-      const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width, proforma: a.proforma && p.type === 'receipt' };
+      const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width, proforma: a.proforma && p.type === 'receipt',
+                     voided: a.voided };
       // A254: don't print a blank kitchen/bar ticket when none of its categories
       // are in this order (all-items stations always have content).
       if (isRouted(p.type) && !stationHasContent(order, biz as any, spec)) continue;

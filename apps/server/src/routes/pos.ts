@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
+import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -397,6 +398,13 @@ router.get('/init', async (req, res) => {
     // A367: the quick picks for order notes, owner-set per business. Unset → the defaults; a saved empty list → none.
     // Always a list, so a till never has to guess (shared/orderNotes.ts parseNotePicks).
     noteQuickPicks: parseNotePicks(receiptTextRows?.find((r: any) => r.key === 'order_note_picks')?.value),
+    // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
+    // switch is off. Older tills ignore it.
+    posFeatures: await (async () => {
+      const { data } = await supabase.from('feature_flags').select('key, enabled')
+        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS]);
+      return parsePosFeatures(data ?? []);
+    })(),
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they

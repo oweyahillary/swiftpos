@@ -31,6 +31,8 @@ export interface ReceiptOrder {
   discount?: number;
   /** A349: tip on top of the bill (cents); printed after the total, PAY = total + tip. */
   tip?: number;
+  /** 0.6.27: delivery fee on top of the bill (cents); printed with the tip, PAY includes it. */
+  deliveryFee?: number;
   kotCount: number;
   /** A367: the note on the whole order. */
   note?: string;
@@ -66,6 +68,8 @@ export function buildReceiptOrder(a: {
   discount?: number;
   /** A349: the tip on top of the bill. */
   tip?: number;
+  /** 0.6.27: the delivery fee on top of the bill. */
+  deliveryFee?: number;
   change: number;
   payments: { method: string; amount: number }[];
   tableNumber?: string;
@@ -114,6 +118,7 @@ export function buildReceiptOrder(a: {
     total:       toCents(a.total),
     discount:    toCents(a.discount ?? 0),
     tip:         toCents(a.tip ?? 0),
+    deliveryFee: toCents(a.deliveryFee ?? 0),   // 0.6.27
     kotCount:    0,
     note:        a.orderNote || undefined,   // A367
   };

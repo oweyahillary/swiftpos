@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { posApi, type Confirmation } from '../lib/posApi';
 import { methodName, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
+import { reasonsNeeded, missingReasons, REASON_MAX } from '../../shared/confirmReasons';
 import MethodDot from './MethodDot';
 
 interface Props {
@@ -27,9 +28,13 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   const [result, setResult] = useState<Confirmation | null>(null);
   // 0.6.23: a manager already signed in confirms as themselves — no PIN (owner: "do they need to key in their password?").
   const [signedInManager, setSignedInManager] = useState(false);
+  // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figure beside each box, and a reason where they differ.
+  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const codes = [...new Set(['cash', ...methods.map((m) => m.toLowerCase())])];
 
   useEffect(() => {
+    posApi.shift.confirmView(shiftId).then(setView).catch(() => {});
     posApi.pos.paymentMethods().then(setOptions).catch(() => {});
     posApi.shift.canConfirm().then((v) => setSignedInManager(v === true)).catch(() => setSignedInManager(false));
   }, []);
@@ -39,10 +44,14 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   const submit = async () => {
     const r = readAmounts(inputs, codes);
     if (r.ok === false) { setError(`Enter the counted amount for: ${r.missing.map((m) => methodName(m, options)).join(', ')}.`); return; }
+    if (view.showCashier) {
+      const missing = missingReasons(reasonsNeeded(view.declared, r.map), reasons);
+      if (missing.length) { setError(`Give a reason where your count differs from the cashier's: ${missing.map((m) => methodName(m, options)).join(', ')}.`); return; }
+    }
     if (!signedInManager && !pin.trim()) { setError('Enter your manager PIN.'); return; }
     setBusy(true); setError('');
     try {
-      const c = await posApi.shift.confirm(shiftId, signedInManager ? undefined : pin.trim(), r.map);
+      const c = await posApi.shift.confirm(shiftId, signedInManager ? undefined : pin.trim(), r.map, view.showCashier ? reasons : undefined);
       setResult(c); setPin('');
     } catch (e: any) { setError(e?.message ?? 'Could not confirm the shift.'); }
     finally { setBusy(false); }
@@ -63,17 +72,32 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
           {!result && (
             <>
               <p className="text-xs text-gray-400">
-                Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine's total —
-                and enter what you find. The cashier's figures are shown after you save.
+                {view.showCashier
+                  ? 'Manager: count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
+                  : 'Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
               </p>
-              {codes.map((c) => (
-                <div key={c}>
-                  <label className="block text-xs text-gray-300 mb-1"><MethodDot method={c} />{methodName(c, options)} counted ({currency})</label>
-                  <input type="number" inputMode="decimal" value={inputs[c] ?? ''} placeholder="0.00" className={inputCls}
-                    data-testid={`confirm-${c}`}
-                    onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} />
-                </div>
-              ))}
+              {codes.map((c) => {
+                const cashierSaid = view.showCashier && view.declared ? (view.declared[c] ?? 0) : null;
+                const typed = inputs[c] ?? '';
+                const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                return (
+                  <div key={c}>
+                    <label className="block text-xs text-gray-300 mb-1"><MethodDot method={c} />{methodName(c, options)} counted ({currency})</label>
+                    {cashierSaid !== null && (
+                      <p className="text-xs text-gray-400 mb-1" data-testid={`cashier-${c}`}>Cashier entered {money(cashierSaid)}</p>
+                    )}
+                    <input type="number" inputMode="decimal" value={typed} placeholder="0.00" className={inputCls}
+                      data-testid={`confirm-${c}`} onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                      onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} />
+                    {differs && (
+                      <input type="text" maxLength={REASON_MAX} value={reasons[c] ?? ''} data-testid={`reason-${c}`}
+                        placeholder={`Why is it ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's?`}
+                        className={inputCls + ' mt-1.5 border-amber-500/50'}
+                        onChange={(e) => setReasons({ ...reasons, [c]: e.target.value })} />
+                    )}
+                  </div>
+                );
+              })}
               {!signedInManager && (
                 <div data-testid="confirm-pin">
                   <label className="block text-xs text-gray-300 mb-1">Manager PIN</label>
@@ -108,6 +132,9 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
               {result.lines.some((l) => l.mismatch) && (
                 <p className="text-xs text-amber-300">Your count differs from the cashier's on the highlighted method(s).</p>
               )}
+              {result.lines.filter((l) => l.reason).map((l) => (
+                <p key={`r-${l.method}`} className="text-xs text-gray-300">{methodName(l.method, options)} — reason: {l.reason}</p>
+              ))}
               {result.lines.filter((l) => Math.round((l.variance ?? 0) * 100) !== 0).map((l) => (
                 <p key={l.method} className="text-xs text-red-300">
                   {methodName(l.method, options)}: {(l.variance ?? 0) > 0 ? 'over' : 'short'} {money(Math.abs(l.variance ?? 0))}

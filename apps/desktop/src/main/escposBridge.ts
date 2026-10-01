@@ -254,11 +254,15 @@ export interface SaleForPrint {
   discount?: number;
   /** A349: the tip on top of the bill (printed after the total; PAY = total + tip). 0 = none. */
   tip?: number;
+  /** 0.6.27: the delivery fee on top of the bill (PAY = total + tip + fee). 0 = none. */
+  deliveryFee?: number;
   kotCount: number;
   /** A367: the cashier's note on the whole order. */
   note?: string | null;
   /** Set on any copy after the first. Drives the Duplicate Print banner. */
   reprint?: { at: Date; count: number };
+  /** 0.6.28: a KITCHEN VOID — the production ticket prints under a VOID banner so the kitchen stops that dish. */
+  voided?: { at: Date; by: string; reason?: string };
 }
 
 const ORDER_TYPES: Record<string, OrderType> = {
@@ -360,6 +364,7 @@ export function printSale(
     const ctx: Omit<PrintContext, 'station'> = {
       business,
       reprint: sale.reprint,
+      voided:  sale.voided,   // 0.6.28: kitchen void
       order: {
         billNumber:     sale.billNumber,
         orderType:      ORDER_TYPES[sale.orderType] ?? 'counter',
@@ -374,6 +379,7 @@ export function printSale(
         // A349: without these a discounted sale's receipt could not reconcile its lines and never printed.
         discount:       toCents(sale.discount ?? 0),
         tip:            toCents(sale.tip ?? 0),
+        deliveryFee:    toCents(sale.deliveryFee ?? 0),   // 0.6.27
         kotCount:       sale.kotCount,
         note:           cleanNote(sale.note, ORDER_NOTE_MAX) ?? undefined,   // A367
       },

@@ -21,6 +21,11 @@ interface EODData {
   paymentMethods: Record<string, number>;
   topProducts: { name: string; qty: number; revenue: number }[];
   expenses: { total: number; breakdown: { category: string; amount: number }[] };
+  /** 0.6.28: items sent to the kitchen and taken back in the period. Absent from a cloud before 0.6.28. */
+  kitchenVoids?: {
+    summary: { count: number; value: number; cookedValue: number };
+    lines: { id: string; text: string; amount: number }[];
+  };
   shifts?: {
     id: string;
     status: string;
@@ -358,6 +363,30 @@ export default function ZReportModal({ onClose }: Props) {
                 <span>TOTAL REVENUE</span>
                 <span>{fmt(s!.totalRevenue, currency)}</span>
               </div>
+
+              {/* 0.6.28: what was sent to the kitchen and taken back — why, made or not, who approved. */}
+              {(data.kitchenVoids?.lines.length ?? 0) > 0 && (
+                <>
+                  <div className="divider" />
+                  <p className="section-title" data-testid="z-kitchen-voids">Kitchen voids ({data.kitchenVoids!.lines.length})</p>
+                  {data.kitchenVoids!.lines.map((v) => (
+                    <div key={v.id} className="row">
+                      <span>{v.text}</span>
+                      <span>{fmt(v.amount, currency)}</span>
+                    </div>
+                  ))}
+                  <div className="row" style={{ fontWeight: 600 }}>
+                    <span>Total voided</span>
+                    <span>{fmt(data.kitchenVoids!.summary.value, currency)}</span>
+                  </div>
+                  {data.kitchenVoids!.summary.cookedValue > 0 && (
+                    <div className="row">
+                      <span>Of which already made</span>
+                      <span>{fmt(data.kitchenVoids!.summary.cookedValue, currency)}</span>
+                    </div>
+                  )}
+                </>
+              )}
 
               {data.expenses && data.expenses.total > 0 && (
                 <>

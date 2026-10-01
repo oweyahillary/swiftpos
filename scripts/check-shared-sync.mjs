@@ -65,6 +65,71 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.27: the manager's reason where their count differs from the cashier's ('confirm_shows_cashier_figures').
+    name: 'confirmReasons.ts',
+    copies: [
+      'shared/confirmReasons.ts',
+      'apps/desktop/src/shared/confirmReasons.ts',
+      'apps/desktop/src/main/confirmReasons.ts',
+      'apps/dashboard/src/lib/confirmReasons.ts',
+      'apps/server/src/lib/confirmReasons.ts',
+    ],
+  },
+  {
+    // 0.6.28: what is on a kitchen ticket (sentQty), kitchen void reasons and their Z-report sums.
+    name: 'kitchenLines.ts',
+    copies: [
+      'shared/kitchenLines.ts',
+      'apps/desktop/src/shared/kitchenLines.ts',
+      'apps/desktop/src/main/kitchenLines.ts',
+      'apps/dashboard/src/lib/kitchenLines.ts',
+      'apps/server/src/lib/kitchenLines.ts',
+    ],
+  },
+  {
+    // 0.6.27: how an expense was paid (only cash leaves the drawer) and its Z-report line (the type first).
+    name: 'expenseMethod.ts',
+    copies: [
+      'shared/expenseMethod.ts',
+      'apps/desktop/src/shared/expenseMethod.ts',
+      'apps/desktop/src/main/expenseMethod.ts',  // the Z-report and expected per method (rootDir is src/main)
+      'apps/dashboard/src/lib/expenseMethod.ts',
+      'apps/server/src/lib/expenseMethod.ts',    // the cloud's expected cash / per method
+    ],
+  },
+  {
+    // 0.6.27: History filtered and ordered by payment method or order type.
+    name: 'historyView.ts',
+    copies: [
+      'shared/historyView.ts',
+      'apps/desktop/src/shared/historyView.ts',
+      'apps/dashboard/src/lib/historyView.ts',
+    ],
+  },
+  {
+    // 0.6.27: the rider and the delivery fee (pass-through, paid to the rider in cash), and "Delivery — Eugene".
+    name: 'delivery.ts',
+    copies: [
+      'shared/delivery.ts',
+      'apps/desktop/src/shared/delivery.ts',
+      'apps/desktop/src/main/delivery.ts',      // the main process records the rider's pay-out
+      'apps/dashboard/src/lib/delivery.ts',
+      'apps/server/src/lib/delivery.ts',        // the cloud stores the fee and pays the rider for a web sale
+    ],
+  },
+  {
+    // 0.6.27: per-client POS switches, set in the admin portal, carried to the till and the web with pos/init.
+    name: 'posFeatures.ts',
+    copies: [
+      'shared/posFeatures.ts',
+      'apps/desktop/src/shared/posFeatures.ts',
+      'apps/desktop/src/main/posFeatures.ts',   // the main process reads the stored switches (rootDir is src/main)
+      'apps/dashboard/src/lib/posFeatures.ts',
+      'apps/server/src/lib/posFeatures.ts',     // the cloud sends them with pos/init
+      'apps/admin/src/lib/posFeatures.ts',      // the admin portal lists and switches them
+    ],
+  },
+  {
     // A365: the shift-confirmation rules the till and the web POS share (methods to declare, amounts, labels, paper).
     name: 'shiftConfirm.ts',
     copies: [

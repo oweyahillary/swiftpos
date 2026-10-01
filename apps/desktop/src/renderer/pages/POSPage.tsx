@@ -29,7 +29,13 @@ import { syncNotice } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
 import { noteLines } from '../../shared/orderNotes';
+import { historyView, historyChoices, orderMethod, type HistorySort } from '../../shared/historyView';
+import { orderTypeLabel, deliveryProblem, cleanDeliveryFee } from '../../shared/delivery';
+import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
 import type { ZReport } from '../lib/posApi';
+import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
+import KitchenVoidModal from '../components/KitchenVoidModal';
+import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '../../shared/kitchenLines';
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -54,6 +60,13 @@ interface Props {
   /** A363: may this person see the till's sync status (managers, supervisors, owner)? A cashier sees none of it. */
   canSeeSync?: boolean;
 }
+
+
+// 0.6.28: every cart line carries an id — the kitchen ledger and kitchen voids key on it. A held tab saved before 0.6.28
+// has none (and only kotSent): each line gets one, and "sent" becomes a count (sentQty).
+const newLineId = () => (globalThis.crypto?.randomUUID?.() ?? `l-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+const withLineIds = (cart: CartItem[]): CartItem[] =>
+  (cart ?? []).map((i) => ({ ...i, lineId: i.lineId ?? newLineId(), sentQty: sentQtyOf(i) }));
 
 export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false }: Props) {
   const [products, setProducts] = useState<any[]>([]);
@@ -120,6 +133,17 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [noteFor, setNoteFor] = useState<number | 'order' | null>(null);
   const [notePicks, setNotePicks] = useState<string[]>([]);
   useEffect(() => { posApi.pos.notePicks().then(setNotePicks).catch(() => setNotePicks([])); }, []);
+  // 0.6.27: the client's POS switches (admin portal) — read at start and after every catalogue pull.
+  const [posFeatures, setPosFeatures] = useState<PosFeatures>(noPosFeatures());
+  useEffect(() => {
+    const load = () => posApi.pos.features().then(setPosFeatures).catch(() => {});
+    load();
+    return posApi.pos.onCatalogueChanged(load);
+  }, []);
+  // 0.6.27: the delivery fee the customer pays on top (with the 'delivery_fee' switch), and why Pay is held back.
+  const [deliveryFee, setDeliveryFee] = useState('');
+  const [deliveryMsg, setDeliveryMsg] = useState('');
+  const feeDue = posFeatures.delivery_fee && orderType === 'delivery' ? cleanDeliveryFee(deliveryFee) : 0;
   const [tableNumber, setTableNumber] = useState('');
   // Diners on this bill, for Average Per Cover. Dine-in only: a takeaway bag is
   // one transaction, not one diner, and a forced headcount there would fill APC
@@ -203,6 +227,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [voidTarget, setVoidTarget] = useState<any | null>(null);
+  // 0.6.27: who sees what in History (per-client switches) and the cashier's filters / order.
+  const [historyCanReprint, setHistoryCanReprint] = useState(true);
+  const [historyOwnOnly, setHistoryOwnOnly] = useState(false);
+  const [historyMethod, setHistoryMethod] = useState('');
+  const [historyType, setHistoryType] = useState('');
+  const [historySort, setHistorySort] = useState<HistorySort>('time');
+  const loadHistory = async () => {
+    const h = await posApi.pos.history();
+    setRecentOrders(h.orders);
+    setHistoryCanReprint(h.scope.canReprint);
+    setHistoryOwnOnly(h.scope.ownOnly);
+  };
 
   // A355: only people who may void/refund (orders.void, or the owner) see History's reversal BUTTONS — the owner's
   // rule (A336): voids and refunds by owner / manager, cashiers neither. The cloud enforces it too.
@@ -363,17 +399,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       // A367: never into a line that carries a note — "2 spicy" plus a tap is not 3 spicy; the tap is a new line.
       const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
       if (existing) {
+        // 0.6.28: the line keeps what is already on a ticket (sentQty); the next send prints only the extra one.
         return prev.map(i => i === existing
-          ? { ...i, quantity: i.quantity + 1, lineTotal: i.unitPrice * (i.quantity + 1), kotSent: false }
+          ? { ...i, sentQty: sentQtyOf(i), quantity: i.quantity + 1, lineTotal: i.unitPrice * (i.quantity + 1), kotSent: false }
           : i
         );
       }
-      return [...prev, { product, quantity: 1, selectedVariants: [], selectedModifiers: [], unitPrice: effectivePrice(product), lineTotal: effectivePrice(product), kotSent: false }];
+      return [...prev, { product, quantity: 1, selectedVariants: [], selectedModifiers: [], unitPrice: effectivePrice(product), lineTotal: effectivePrice(product), kotSent: false, sentQty: 0, lineId: newLineId() }];
     });
   };
 
   const addConfigured = (product: any, selectedVariants: any[], selectedModifiers: any[], unitPrice: number, lineTotal: number) => {
-    setCart(prev => [...prev, { product, quantity: 1, selectedVariants, selectedModifiers, unitPrice, lineTotal, kotSent: false }]);
+    setCart(prev => [...prev, { product, quantity: 1, selectedVariants, selectedModifiers, unitPrice, lineTotal, kotSent: false, sentQty: 0, lineId: newLineId() }]);
     setVariantProduct(null);
   };
 
@@ -398,6 +435,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       lineTotal: amount,
       isFuel: true,
       pumpId: pump.id,   // survives to the order header — fuel reports key on it
+      lineId: newLineId(),
     }]);
   };
 
@@ -409,29 +447,102 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     }
   };
 
-  const updateQty = (index: number, delta: number) => {
+  // 0.6.28: a line's quantity set to `newQty` (0 = gone). sentQty never exceeds what is left — after a kitchen void the
+  // taken-back items are no longer on a ticket. kotSent = all of it is on one.
+  const setLineQty = (lineId: string | undefined, newQty: number) => {
     setCart(prev => prev
-      .map((item, i) => {
-        if (i !== index) return item;
-        if (item.isFuel) return item;   // fuel qty is litres — re-enter via pump, not stepper
-        const newQty = item.quantity + delta;
+      .map((item) => {
+        if (item.lineId !== lineId) return item;
         const modTotal = item.selectedModifiers.reduce((s: number, m: any) => s + m.price, 0);
-        // Qty changed after a kitchen send → clear the flag so the delta
-        // appears on the next KOT.
-        return { ...item, quantity: newQty, lineTotal: (item.unitPrice + modTotal) * newQty, kotSent: false };
+        const sent = Math.min(sentQtyOf(item), Math.max(0, newQty));
+        return { ...item, quantity: newQty, lineTotal: (item.unitPrice + modTotal) * newQty, sentQty: sent, kotSent: newQty > 0 && sent >= newQty };
       })
       .filter(i => i.quantity > 0)
     );
   };
 
-  const removeItem = (index: number) => setCart(prev => prev.filter((_, i) => i !== index));
-  const clearCart = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setOrderNote(''); };
+  // 0.6.28 — owner, 2026-10-01: sent items leave an order only as a recorded kitchen void (KitchenVoidModal: reason,
+  // made or not, a manager with 'kitchen_void_approval'). `apply` runs once the void is recorded.
+  const [kitchenVoid, setKitchenVoid] = useState<null | { title: string; lines: KitchenLinePayload[]; apply: () => void }>(null);
 
-  // A367: a note on one line. A changed note un-sends the line, so the kitchen hears the new instruction on the next
-  // ticket (same rule as a changed quantity).
+  // 0.6.28: sent orders not paid and not on a tab — on screen when the till restarted or crashed. They are listed with
+  // the empty cart so they can be opened and charged (or voided); End Shift lists them too.
+  const [lostKitchen, setLostKitchen] = useState<OpenKitchenOrder[]>([]);
+  const refreshLostKitchen = () => {
+    posApi.kitchen.open().then((r) => setLostKitchen((r?.all ?? []).filter((o) => !o.held))).catch(() => {});
+  };
+  useEffect(() => { refreshLostKitchen(); }, [orderNumber, heldOrders.length]);
+  const openLostKitchen = (o: OpenKitchenOrder) => {
+    if (cart.length > 0) return;
+    setCart(o.lines.map((l): CartItem => {
+      const it = (l.item && typeof l.item === 'object') ? (l.item as CartItem) : null;
+      const lineTotal = Math.round(l.unit_price * l.qty * 100) / 100;
+      return it
+        ? { ...it, quantity: l.qty, lineTotal, sentQty: l.qty, kotSent: true, lineId: l.line_id }
+        : { product: { id: l.product_id, name: l.product_name, base_price: l.unit_price }, quantity: l.qty,
+            selectedVariants: [], selectedModifiers: [], unitPrice: l.unit_price, lineTotal, sentQty: l.qty, kotSent: true,
+            lineId: l.line_id };
+    }));
+    setOrderNumber(o.order_number);
+    const t = o.order_type;
+    setOrderType(t === 'dine_in' || t === 'takeaway' || t === 'delivery' || t === 'retail' ? t : flags.defaultOrderType);
+    setTableNumber(o.table_number ?? '');
+    setView('products');
+  };
+  const linePayload = (item: CartItem, qty: number): KitchenLinePayload => {
+    const unit = item.quantity > 0 ? item.lineTotal / item.quantity : item.unitPrice;
+    return {
+      line_id: item.lineId ?? '', product_id: item.product?.id ?? null, product_name: item.product?.name ?? 'Item',
+      unit_price: Math.round(unit * 100) / 100, qty,
+      item: { ...item, quantity: qty, lineTotal: Math.round(unit * qty * 100) / 100, comboComponents: comboItems[item.product?.id] ?? undefined },
+    };
+  };
+
+  const updateQty = (index: number, delta: number) => {
+    const item = cart[index];
+    if (!item || item.isFuel) return;   // fuel qty is litres — re-enter via pump, not stepper
+    const newQty = item.quantity + delta;
+    const back = voidQtyFor(item, newQty);
+    if (back > 0) {
+      setKitchenVoid({ title: `Take back ${back} × ${item.product.name}`, lines: [linePayload(item, back)],
+                       apply: () => setLineQty(item.lineId, newQty) });
+      return;
+    }
+    setLineQty(item.lineId, newQty);
+  };
+
+  const removeItem = (index: number) => {
+    const item = cart[index];
+    if (!item) return;
+    const sent = sentQtyOf(item);
+    if (sent > 0) {
+      setKitchenVoid({ title: `Remove ${item.product.name}`, lines: [linePayload(item, sent)],
+                       apply: () => setLineQty(item.lineId, 0) });
+      return;
+    }
+    setCart(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // The order surface back to empty. Internal: after a sale, a hold, or a kitchen void of everything sent.
+  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryMsg(''); setOrderNote(''); };
+
+  // The Clear button. 0.6.28: an order with items on a kitchen ticket is cleared only by voiding them — Clear was the
+  // quiet way to make a sent (and paid-in-cash) order disappear. Hold keeps it instead.
+  const clearCart = () => {
+    const sent = cart.filter((i) => sentQtyOf(i) > 0);
+    if (!sent.length || !orderNumber) { resetOrder(); return; }
+    setKitchenVoid({ title: 'Clear the order', lines: sent.map((i) => linePayload(i, sentQtyOf(i))), apply: resetOrder });
+  };
+
+  // A367: a note on one line. 0.6.28: only on a line the kitchen has not seen — a changed note used to un-send the whole
+  // line, and the kitchen cooked it again. A new instruction for a sent dish is a new line (or a word with the kitchen).
   const setLineNote = (index: number, note: string | null) => {
-    setCart(prev => prev.map((item, i) => i === index && (item.notes ?? null) !== note
-      ? { ...item, notes: note, kotSent: false } : item));
+    const item = cart[index];
+    if (item && sentQtyOf(item) > 0) {
+      setKitchenMsg('That item is already with the kitchen — add the instruction as a new line, or tell the kitchen.');
+      return;
+    }
+    setCart(prev => prev.map((it, i) => i === index && (it.notes ?? null) !== note ? { ...it, notes: note } : it));
   };
 
   // ── Restaurant: kitchen / tabs ─────────────────────────
@@ -508,10 +619,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     return n;
   };
 
-  const unsentCount = cart.filter(i => !i.kotSent).length;
+  const unsentCount = cart.filter(i => unsentQtyOf(i) > 0).length;
+  // 0.6.28 ('pay_before_kitchen'): takeaway, delivery and counter orders reach the kitchen only when paid.
+  const maySend = maySendBeforePay(posFeatures.pay_before_kitchen, flags.isRestaurant ? orderType : 'retail');
 
-  const handleSendToKitchen = async () => {
-    const unsent = cart.filter(i => !i.kotSent);
+  // `atPayment`: the charge sends what is left of an order already partly sent — even where 'pay_before_kitchen' would
+  // not offer the button (it is being paid now).
+  const handleSendToKitchen = async (atPayment = false) => {
+    if (!maySend && !atPayment) { setKitchenMsg('This order goes to the kitchen when it is paid.'); return; }
+    // 0.6.28: only what the kitchen has not had — quantity − sentQty — and every line gets an id for the ledger.
+    const withIds = cart.map(i => i.lineId ? i : { ...i, lineId: newLineId() });
+    if (withIds.some((i, k) => i !== cart[k])) setCart(withIds);
+    const unsent = withIds.filter(i => unsentQtyOf(i) > 0).map(i => ({ item: i, qty: unsentQtyOf(i) }));
     if (unsent.length === 0) return;
     const num = await ensureOrderNumberAsync();
     setKitchenMsg('');
@@ -550,7 +669,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           order_number: num,
           order_type:   flags.isRestaurant ? orderType : 'retail',
           table_number: orderType === 'dine_in' ? tableNumber : undefined,
-          items: unsent.map(item => ({
+          items: unsent.map(({ item, qty }) => ({
             product: {
               id: item.product.id,
               name: item.product.name,
@@ -559,8 +678,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               description: item.product.description ?? null,
             },
             unitPrice: item.unitPrice,
-            quantity: item.quantity,
-            lineTotal: item.lineTotal,
+            quantity: qty,
+            lineTotal: item.quantity > 0 ? (item.lineTotal / item.quantity) * qty : item.lineTotal,
             selectedVariants: item.selectedVariants,
             selectedModifiers: item.selectedModifiers,
             comboComponents: comboItems[item.product.id] ?? undefined,
@@ -569,16 +688,31 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           notes: orderNote.trim() || null,   // A367: the order's note heads the ticket
         });
 
-        setCart(prev => prev.map(i => ({ ...i, kotSent: true })));
+        // 0.6.28: the ledger — what is on a ticket now stays on record until it is paid or voided (kitchen_lines).
+        let ledgerMsg = '';
+        try {
+          await posApi.kitchen.sent({
+            order_number: num, lines: unsent.map(({ item, qty }) => linePayload(item, qty)),
+            order_type: flags.isRestaurant ? orderType : 'retail', table_number: orderType === 'dine_in' ? tableNumber : undefined,
+          });
+        } catch { ledgerMsg = ' (not recorded on this till — tell the manager)'; }
+
+        const sentIds = new Map(unsent.map(({ item }) => [item.lineId, item.quantity]));
+        setCart(prev => prev.map(i => {
+          const q = sentIds.get(i.lineId);
+          if (q === undefined) return i;
+          const sent = Math.min(i.quantity, Math.max(sentQtyOf(i), q));
+          return { ...i, sentQty: sent, kotSent: sent >= i.quantity };
+        }));
         setKotCount(n => n + 1);
 
         // D8, closed. A station with no printer bound is NAMED, not skipped in
         // silence. "Sent to kitchen" while a dispatch slip went nowhere is how a
         // bag leaves with items missing.
         const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
-        setKitchenMsg(skipped.length
+        setKitchenMsg((skipped.length
           ? `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'}, but nothing printed for: ${skipped.join(', ')}`
-          : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`);
+          : `Sent ${unsent.length} item${unsent.length === 1 ? '' : 's'} to kitchen`) + ledgerMsg);
         return;
       }
     } catch (err: any) {
@@ -607,9 +741,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         ? `Delivery ${deliveryPerson.trim() || num.slice(-4)}`
         : `Takeaway ${num.slice(-4)}`;
     await holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined,
-      orderNote: orderNote.trim() || undefined });
+      orderNote: orderNote.trim() || undefined, deliveryFee: cleanDeliveryFee(deliveryFee) || undefined });
     setHeldOrders(await listHeldOrders());
-    clearCart();
+    resetOrder();   // held, not cleared — its sent items stay on the ledger with the tab
     setOrderType(flags.defaultOrderType);
   };
 
@@ -623,9 +757,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     if (tab) {
       const held = await recallHeldOrder(tab.id);
       if (held) {
-        setCart(held.cart);
+        setCart(withLineIds(held.cart));
         setOrderType(held.orderType);
         setDeliveryPerson(held.deliveryPerson ?? '');
+        setDeliveryFee(held.deliveryFee ? String(held.deliveryFee) : '');
         setOrderNote(held.orderNote ?? '');
         setTableNumber(held.tableNumber);
         setOrderNumber(held.orderNumber);
@@ -655,7 +790,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // mid-order it leaves the view alone.
   const chooseOrderType = (val: 'dine_in' | 'takeaway' | 'delivery') => {
     setOrderType(val);
-    if (val !== 'delivery') setDeliveryPerson('');
+    if (val !== 'delivery') { setDeliveryPerson(''); setDeliveryFee(''); setDeliveryMsg(''); }
     if (val === 'delivery') {
       setTableNumber('');
       setView('products');
@@ -692,9 +827,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     if (cart.length > 0) return; // guarded in the modal too
     const held = await recallHeldOrder(id);
     if (!held) return;
-    setCart(held.cart);
+    setCart(withLineIds(held.cart));
     setOrderType(held.orderType);
     setDeliveryPerson(held.deliveryPerson ?? '');
+    setDeliveryFee(held.deliveryFee ? String(held.deliveryFee) : '');
     setOrderNote(held.orderNote ?? '');
     setTableNumber(held.tableNumber);
     setOrderNumber(held.orderNumber);
@@ -704,7 +840,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   };
 
   const handleDeleteHeld = async (id: string) => {
-    await deleteHeldOrder(id);
+    // 0.6.28: main refuses a tab with items on a kitchen ticket — recall it and void them.
+    try { await deleteHeldOrder(id); }
+    catch (e: any) { window.alert(e?.message ?? 'This tab could not be deleted.'); return; }
     setHeldOrders(await listHeldOrders());
   };
 
@@ -745,15 +883,22 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       // of leaving the till wedged with the Pay button disabled forever.
       const num = await ensureOrderNumberAsync();
 
+      // 0.6.28: an order partly sent to the kitchen sends the rest now, so nothing paid for is missed by the kitchen
+      // (kot_sent used to stop every production ticket at payment, the unsent lines' too).
+      const someSent = anySent(cart);
+      if (someSent && cart.some(i => unsentQtyOf(i) > 0)) await handleSendToKitchen(true);
+
       const created = await posApi.order.create({
         branch_id: branchId,
         order_number: num,
         // Production tickets already queued by Send to kitchen, so order:create
         // prints the RECEIPT only. Without this the kitchen gets a second copy
         // of everything at payment.
-        kot_sent: cart.some(i => i.kotSent),
+        kot_sent: someSent,
         order_type: flags.isPetrol ? 'fuel_sale' : flags.isRestaurant ? orderType : 'retail',
         delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
+        // 0.6.27: the fee on top of the bill ('delivery_fee' switch) — in the legs like the tip; the till pays the rider it.
+        ...(payment.deliveryFee > 0 ? { delivery_fee: payment.deliveryFee } : {}),
         subtotal,
         discount_amount: payment.discountAmount,
         // The BILL, excluding tip. The tip rides in tip_amount and shows up in
@@ -853,7 +998,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   };
 
   const handleNewOrder = () => {
-    clearCart();
+    resetOrder();   // the sale is rung: its sent items are paid for
+    refreshLostKitchen();
     setCompletedOrder(null);
     setPayError('');
     setPrintMsg('');
@@ -903,7 +1049,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               subtotal={subtotal}
               discountAmount={completedOrder.payment.discountAmount}
               tipAmount={completedOrder.payment.tipAmount}
-              total={completedOrder.payment.amountDue}
+              // 0.6.27: the BILL (ReceiptView adds the tip and the delivery fee after it). amountDue here showed a
+              // tip as "Round Off" and counted it twice in PAY on the screen (the printed receipt was right).
+              total={completedOrder.payment.total}
+              deliveryFee={completedOrder.payment.deliveryFee}
               vatAmount={completedOrder.payment.vatAmount}
               vatRate={vatRate}
               ctlAmount={completedOrder.payment.ctlAmount}
@@ -1067,10 +1216,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             onClick={async () => {
               setShowHistory(true);
               setLoadingHistory(true);
-              try {
-                const orders = await posApi.manager.recentOrders();
-                setRecentOrders(orders);
-              } catch { setRecentOrders([]); }
+              try { await loadHistory(); } catch { setRecentOrders([]); }
               finally { setLoadingHistory(false); }
             }}
             className="text-xs text-gray-300 hover:text-white transition-colors"
@@ -1346,9 +1492,22 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   <input
                     type="text"
                     value={deliveryPerson}
-                    onChange={e => setDeliveryPerson(e.target.value)}
-                    placeholder="Rider name"
+                    onChange={e => { setDeliveryPerson(e.target.value); setDeliveryMsg(''); }}
+                    placeholder={posFeatures.delivery_fee ? 'Rider name (required)' : 'Rider name'}
+                    data-testid="rider-name"
                     className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
+                  />
+                )}
+                {/* 0.6.27: the delivery fee, paid by the customer on top of the bill ('delivery_fee' switch). */}
+                {orderType === 'delivery' && posFeatures.delivery_fee && (
+                  <input
+                    type="number" min={0} inputMode="decimal"
+                    value={deliveryFee}
+                    onChange={e => { setDeliveryFee(e.target.value); setDeliveryMsg(''); }}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                    placeholder="Delivery fee"
+                    data-testid="delivery-fee"
+                    className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
                   />
                 )}
                 {orderType === 'dine_in' && (
@@ -1377,15 +1536,16 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   )
                 )}
               </div>
+              {deliveryMsg && <p className="text-amber-400 text-xs" data-testid="delivery-msg">{deliveryMsg}</p>}
               <div className="flex gap-2">
-                <button
-                  onClick={handleSendToKitchen}
+                {maySend && <button
+                  onClick={() => void handleSendToKitchen()}
                   disabled={unsentCount === 0 || !printerSettings.kitchenEnabled}
                   className="flex-1 bg-amber-500/10 border border-amber-500/40 hover:border-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-amber-400 text-xs font-medium rounded-lg py-2 transition-colors"
                   title={printerSettings.kitchenEnabled ? 'Print a kitchen ticket for unsent items' : 'Kitchen printing disabled in printer settings'}
                 >
                   🍳 Send to kitchen{unsentCount > 0 ? ` (${unsentCount})` : ''}
-                </button>
+                </button>}
                 <button
                   onClick={handleHold}
                   disabled={cart.length === 0}
@@ -1400,6 +1560,19 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           )}
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+            {cart.length === 0 && lostKitchen.filter((o) => o.order_number !== orderNumber).length > 0 && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2" data-testid="lost-kitchen">
+                <p className="text-xs text-amber-300 font-semibold">Sent to the kitchen, not paid</p>
+                {lostKitchen.filter((o) => o.order_number !== orderNumber).map((o) => (
+                  <div key={o.order_number} className="flex items-center justify-between gap-2 text-xs text-gray-200">
+                    <span className="min-w-0 truncate">
+                      #{o.order_number}{o.table_number ? ` · Table ${o.table_number}` : ''} · {o.lines.reduce((n, l) => n + l.qty, 0)} item(s) · {currency} {o.value.toLocaleString()}
+                    </span>
+                    <button onClick={() => openLostKitchen(o)} className="flex-shrink-0 border border-amber-500/50 text-amber-300 hover:text-white rounded-md px-2 py-0.5">Open</button>
+                  </div>
+                ))}
+              </div>
+            )}
             {cart.length === 0 ? (
               <div className="text-center py-16 text-gray-400 text-sm">Add products to get started</div>
             ) : cart.map((item, index) => (
@@ -1408,8 +1581,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm truncate">
                       {item.product.name}
-                      {flags.isRestaurant && item.kotSent && (
-                        <span className="ml-1.5 text-[10px] text-amber-500/80" title="Already sent to kitchen">🍳</span>
+                      {flags.isRestaurant && sentQtyOf(item) > 0 && (
+                        <span className="ml-1.5 text-[10px] text-amber-500/80" title="Already sent to kitchen">
+                          🍳{sentQtyOf(item) < item.quantity ? ` ${sentQtyOf(item)} sent` : ''}
+                        </span>
                       )}
                     </p>
                     <p className="text-gray-300 text-xs">
@@ -1448,7 +1623,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                       <p key={k} className="text-xs text-amber-300 break-words">{l}</p>
                     ))}
                   </div>
-                  {!item.isFuel && (
+                  {!item.isFuel && sentQtyOf(item) === 0 && (
                     <button onClick={() => setNoteFor(index)} data-testid="line-note-btn"
                             className="text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded-md px-2 py-0.5 flex-shrink-0">
                       {item.notes ? '✎ Note' : '+ Note'}
@@ -1487,7 +1662,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               <span>Total</span><span>{currency} {subtotal.toLocaleString()}</span>
             </div>
             <button
-              onClick={() => setShowPayment(true)}
+              onClick={() => {
+                // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment.
+                const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee);
+                if (problem) { setDeliveryMsg(problem); return; }
+                setShowPayment(true);
+              }}
               // Stopped here as well as in the main process. assertCanSell is the
               // real enforcement, but letting a cashier ring a full basket and
               // then fail at payment wastes their time and the customer's.
@@ -1499,6 +1679,27 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           </div>
         </div>
       </div>
+
+      {/* 0.6.28: sent items come back only as a recorded kitchen void. */}
+      {kitchenVoid && orderNumber && (
+        <KitchenVoidModal
+          orderNumber={orderNumber}
+          orderType={flags.isRestaurant ? orderType : 'retail'}
+          tableNumber={orderType === 'dine_in' ? tableNumber : undefined}
+          lines={kitchenVoid.lines}
+          needsManager={posFeatures.kitchen_void_approval}
+          currency={currency}
+          title={kitchenVoid.title}
+          onClose={() => setKitchenVoid(null)}
+          onDone={(r) => {
+            kitchenVoid.apply();
+            setKitchenVoid(null);
+            setKitchenMsg(`Voided ${currency} ${r.total.toLocaleString()}${r.approvedBy ? ` — approved by ${r.approvedBy}` : ''}. ` +
+              (r.skipped.length ? `The VOID ticket did not print for: ${r.skipped.join(', ')} — tell the kitchen.` : 'The kitchen has a VOID ticket.'));
+            refreshLostKitchen();
+          }}
+        />
+      )}
 
       {/* A367: the note editor — one line, or the whole order */}
       {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
@@ -1538,6 +1739,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           placing={placing}
           error={payError}
           customMethods={customMethods}
+          deliveryFee={feeDue}
+          rider={orderType === 'delivery' ? deliveryPerson.trim() || null : null}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
         />
@@ -1592,12 +1795,35 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? 'Last 30 orders · void within 30 minutes of the sale, refund any time after' : 'Last 30 orders on this till'}</p>
+                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? 'Last 30 orders · void within 30 minutes of the sale, refund any time after' : historyOwnOnly ? 'Your last 30 sales' : 'Last 30 orders on this till'}</p>
                 {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
               <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
                 className="text-gray-300 hover:text-white transition-colors text-lg">✕</button>
             </div>
+
+            {/* 0.6.27: narrow by payment method or order type, and order the list by either. */}
+            {recentOrders.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 px-5 py-2.5 border-b border-gray-800 text-xs" data-testid="history-filters">
+                <select value={historyMethod} onChange={e => setHistoryMethod(e.target.value)} data-testid="history-method"
+                  className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
+                  <option value="">All payments</option>
+                  {historyChoices(recentOrders).methods.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
+                </select>
+                <select value={historyType} onChange={e => setHistoryType(e.target.value)} data-testid="history-type"
+                  className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
+                  <option value="">All types</option>
+                  {historyChoices(recentOrders).types.map(t => <option key={t} value={t}>{orderTypeLabel(t)}</option>)}
+                </select>
+                <span className="text-gray-400 ml-auto">Order by</span>
+                <select value={historySort} onChange={e => setHistorySort(e.target.value as HistorySort)} data-testid="history-sort"
+                  className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
+                  <option value="time">Time</option>
+                  <option value="method">Payment method</option>
+                  <option value="type">Type</option>
+                </select>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto">
               {loadingHistory ? (
@@ -1614,8 +1840,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800/50">
-                    {recentOrders.map(o => {
-                      const method   = o.payments?.[0]?.method ?? '—';
+                    {historyView(recentOrders, { method: historyMethod, type: historyType, sort: historySort }).map(o => {
+                      const method   = orderMethod(o);
                       const ageMin   = ageMinutes(o);
                       // A355: "Void / Refund" inside the void window, "Refund" after it (it used to vanish at 30 min).
                       const reverse  = canVoid ? reverseAction(o) : null;
@@ -1634,7 +1860,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                             {ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`}
                           </td>
                           <td className="px-4 py-2.5 text-gray-300 capitalize text-xs">
-                            {(o.order_type ?? 'retail').replace(/_/g, ' ')}
+                            {orderTypeLabel(o.order_type, o.delivery_person)}
                           </td>
                           <td className="px-4 py-2.5 text-gray-300 capitalize text-xs">
                             <MethodDot method={method} />{method.replace(/_/g, ' ')}
@@ -1657,7 +1883,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                           </td>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-2 justify-end">
-                              {o.status === 'completed' && (
+                              {o.status === 'completed' && historyCanReprint && (
                                 <button
                                   onClick={async () => {
                                     const r = await window.swiftpos.escpos.reprintReceiptForOrder(o.id);
@@ -1698,7 +1924,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           onSuccess={() => {
             setVoidTarget(null);
             // Refresh local order list so the voided status shows immediately
-            posApi.manager.recentOrders().then(setRecentOrders).catch(() => {});
+            loadHistory().catch(() => {});
           }}
           onClose={() => setVoidTarget(null)}
         />

@@ -69,7 +69,9 @@ ok('the report carries the expenses total (150)', z.totals.expenses === 150, JSO
 ok('the reconciliation adds up on paper: 1000 + 400 + 0 − 0 − 150 = expected 1250',
   z.shift.opening_float + z.totals.cashSales + z.totals.floatIn - z.totals.floatOut - z.totals.expenses === z.totals.expectedCash
   && z.totals.expectedCash === 1250, String(z.totals.expectedCash));
-ok('…with its lines: description, amount, who paid', JSON.stringify(z.expenseLines) === JSON.stringify([{ description: 'Gas refill', amount: 150, created_at: now, paid_by_name: 'Tom' }]),
+// 0.6.27: each line also carries its type, how it was paid (NULL before 59 = cash) and the label the report prints.
+ok('…with its lines: description, amount, who paid', JSON.stringify(z.expenseLines) === JSON.stringify([{ description: 'Gas refill', amount: 150, created_at: now, paid_by_name: 'Tom',
+  category_name: null, payment_method: 'cash', label: 'Gas refill' }]),
   JSON.stringify(z.expenseLines));
 
 // The printed report — the real shared renderer, as the till's print worker calls it.

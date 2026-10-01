@@ -192,11 +192,18 @@ export const CreateDiscountSchema = z.object({
 
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
+// 0.6.27: matched to what POST /api/expenses reads and the dashboard sends. It asked for `category` and `date`, which no
+// caller sends, so every expense added from the dashboard (Expenses page, manager dashboard) was refused
+// "Validation failed" — and a pass would have stripped expense_category_id / expense_date / paid_by (validate keeps only
+// the schema's keys). The till (sync push) and the web POS (POST /api/shifts/:id/expense) never used this route.
+const optionalId = z.union([uuid, z.literal('')]).optional().nullable();
 export const CreateExpenseSchema = z.object({
   branch_id: uuid,
-  category: nonEmptyString.max(60),
-  description: z.string().optional(),
+  expense_category_id: optionalId,
+  description: nonEmptyString.max(255),
   amount: z.number().positive(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  receipt_url: z.string().url().optional().nullable(),
+  paid_by: optionalId,
+  receipt_url: z.string().max(2000).optional().nullable(),
+  expense_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
+  payment_method: z.string().max(40).optional(),   // 0.6.27: how it was paid — only cash leaves a drawer
 });

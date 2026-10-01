@@ -18,6 +18,7 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission, branchScope, assertBranchAccess } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateExpenseSchema } from '../lib/schemas';
+import { cleanExpenseMethod } from '../lib/expenseMethod';
 import { supabase } from '../lib/supabase';
 import { recorderId } from '../lib/expenseRecorder';
 
@@ -130,7 +131,8 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
       branch_id, branches ( name ),
       expense_category_id, expense_categories ( name ),
       paid_by, payer:users!expenses_paid_by_fkey ( name ),
-      recorded_by, recorder:users!expenses_recorded_by_fkey ( name )
+      recorded_by, recorder:users!expenses_recorded_by_fkey ( name ),
+      payment_method
     `)
     .eq('business_id', req.businessId)
     .gte('expense_date', (from as string) || start.slice(0, 10))
@@ -160,6 +162,7 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
     paid_by_name: e.payer?.name ?? null,
     recorded_by: e.recorded_by ?? null,
     recorded_by_name: e.recorder?.name ?? null,
+    payment_method: e.payment_method ?? 'cash',   // 0.6.27
   }));
 
   const total = expenses.reduce((s: number, e: any) => s + e.amount, 0);
@@ -206,8 +209,9 @@ router.get('/summary', requirePermission('expenses.view'), async (req, res) => {
 router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSchema), async (req, res) => {
   const {
     branch_id, expense_category_id, description, amount,
-    paid_by, receipt_url, expense_date,
+    paid_by, receipt_url, expense_date, payment_method,
   } = req.body as {
+    payment_method?: string;
     branch_id: string;
     expense_category_id?: string;
     description: string;
@@ -238,6 +242,7 @@ router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSch
       recorded_by: recordedBy,
       receipt_url: receipt_url?.trim() || null,
       expense_date: expense_date || new Date().toISOString().slice(0, 10),
+      payment_method: cleanExpenseMethod(payment_method),   // 0.6.27
     })
     .select(`
       id, description, amount, expense_date, receipt_url, created_at,
@@ -260,6 +265,7 @@ router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
   } = req.body;
 
   const updates: Record<string, unknown> = {};
+  if (req.body?.payment_method !== undefined) updates.payment_method = cleanExpenseMethod(req.body.payment_method);   // 0.6.27
   if (description !== undefined)       updates.description = description?.trim();
   if (amount !== undefined)            updates.amount = amount;
   if (expense_category_id !== undefined) updates.expense_category_id = expense_category_id || null;

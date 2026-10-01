@@ -128,7 +128,8 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.FOREIGN_CASH_TS) {
     const pos = read('apps/desktop/src/renderer/pages/POSPage.tsx');
     assert.ok((pos.match(/posApi\.shift\.current\(\)/g) || []).length >= 1);
     assert.doesNotMatch(pos, /includeForeign/);
-    assert.match(ipc, /if \(!opts\?\.includeForeign\) return currentShiftReport\(\);/);
+    // 0.6.27: through view() — a blind close strips the figures, it never adds a cloud call.
+    assert.match(ipc, /if \(!opts\?\.includeForeign\) return view\(currentShiftReport\(\)\);/);
   });
   ok('another cashier signing in is told whose drawer it is before selling', () => {
     const pin = read('apps/desktop/src/renderer/pages/PinPage.tsx');

@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getVariants:  (productId: string) => ipcRenderer.invoke('pos:getVariants', productId),
     getModifiers: (productId: string) => ipcRenderer.invoke('pos:getModifiers', productId),
     notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
+    features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
+    history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
@@ -153,6 +155,13 @@ contextBridge.exposeInMainWorld('swiftpos', {
     importLegacy: (orders: unknown[]) => ipcRenderer.invoke('held:import', { orders }),
   },
 
+  // 0.6.28: what went to the kitchen, and kitchen voids (a manager approves where the client requires it).
+  kitchen: {
+    sent:  (p: unknown) => ipcRenderer.invoke('kitchen:sent', p),
+    void:  (p: unknown) => ipcRenderer.invoke('kitchen:void', p),
+    open:  ()           => ipcRenderer.invoke('kitchen:open'),
+  },
+
   shift: {
     current: (opts?: { includeForeign?: boolean })                       => ipcRenderer.invoke('shift:current', opts),
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
@@ -162,7 +171,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
     // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).
     awaiting: ()                                                         => ipcRenderer.invoke('shift:awaiting'),
-    confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>) => ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts }),
+    confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) =>
+      ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts, reasons }),
+    confirmView: (shiftId: string) => ipcRenderer.invoke('shift:confirmView', shiftId),   // 0.6.27
     // 0.6.23: a manager already signed in confirms without a PIN.
     canConfirm: ()                                                       => ipcRenderer.invoke('shift:canConfirm'),
     // A366: may the signed-in person close the open shift (its owner or a manager)?

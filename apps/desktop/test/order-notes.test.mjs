@@ -81,8 +81,8 @@ ok('noteLines: the printed / on-screen rows', JSON.stringify(N.noteLines('3 norm
 // ── Schema 58 ────────────────────────────────────────────────────────────────
 const db = L.getLocalDb();
 const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
-ok('local schema 58: orders.notes, order_items.notes, held_orders.order_note, device_config.order_note_picks',
-  L.LOCAL_SCHEMA_VERSION === 58 && cols('orders').includes('notes') && cols('order_items').includes('notes')
+ok('local schema 58+: orders.notes, order_items.notes, held_orders.order_note, device_config.order_note_picks',
+  L.LOCAL_SCHEMA_VERSION >= 58 && cols('orders').includes('notes') && cols('order_items').includes('notes')
   && cols('held_orders').includes('order_note') && cols('device_config').includes('order_note_picks'));
 
 // ── A sale with notes ────────────────────────────────────────────────────────
@@ -150,8 +150,11 @@ ok('a web sale downloaded to the till keeps its order and line notes',
 const pos = read('src/renderer/pages/POSPage.tsx');
 ok('a tap never joins a line that carries a note ("2 spicy" + a tap is a new line)',
   /prev\.find\(i => i\.product\.id === product\.id && i\.selectedVariants\.length === 0 && !i\.notes\)/.test(pos));
-ok('a changed note un-sends the line so the kitchen hears it',
-  /\{ \.\.\.item, notes: note, kotSent: false \}/.test(pos));
+// 0.6.28: a note goes only on a line the kitchen has not seen — a changed note used to un-send the WHOLE line and the
+// kitchen cooked it again. A sent line's note button is gone, and setLineNote refuses it.
+ok('a note changes only a line not yet sent (a sent line is refused — it would be cooked twice)',
+  /if \(item && sentQtyOf\(item\) > 0\) \{\s*setKitchenMsg\(/.test(pos)
+  && /\{ \.\.\.it, notes: note \}/.test(pos) && /!item\.isFuel && sentQtyOf\(item\) === 0 &&/.test(pos));
 ok('the sale sends each line\'s note and the order\'s note',
   (pos.match(/notes: item\.notes \?\? null/g) ?? []).length === 2 && (pos.match(/notes: orderNote\.trim\(\) \|\| null/g) ?? []).length === 2);
 ok('a held order keeps its note, and a recall brings it back',
@@ -159,7 +162,7 @@ ok('a held order keeps its note, and a recall brings it back',
 ok('the note editor is on every line (not a fuel line) and on the order',
   /data-testid="line-note-btn"/.test(pos) && /data-testid="order-note-btn"/.test(pos) && /<NoteModal/.test(pos));
 const ipc = read('src/main/ipcHandlers.ts');
-ok('a held tab stores the order note', /INSERT INTO held_orders \(id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note\)/.test(ipc)
+ok('a held tab stores the order note', /INSERT INTO held_orders \(id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note(, delivery_fee)?\)/.test(ipc)
   && /orderNote: r\.order_note \?\? undefined/.test(ipc));
 ok('the receipt and kitchen ticket get the order note', /note:\s+payload\.notes \?\? null/.test(ipc));
 const bridge = read('src/main/escposBridge.ts');

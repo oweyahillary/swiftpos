@@ -28,6 +28,10 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
+import { deliveryProblem, cleanDeliveryFee } from '../../lib/delivery';
+import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
+import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
+import { maySignedInConfirm } from '../../lib/shiftConfirm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -93,6 +97,9 @@ interface OpenOrder {
   covers: number;
   openedAt: number;
   orderType?: string; // e.g. 'takeaway' for non-table orders; undefined = derive from tableId
+  // 0.6.27: a delivery's rider and fee (the fee is required with the client's 'delivery_fee' switch)
+  rider?: string;
+  deliveryFee?: string;
   // parking
   parkingSessionId?: string;
   vehiclePlate?: string;
@@ -184,6 +191,7 @@ export default function CashierScreen() {
     comboItems,
     kitchenExclusions,
     notePicks,
+    posFeatures,   // 0.6.27
     receiptLogo,
     receiptHeader,
     receiptFooter,
@@ -362,6 +370,7 @@ export default function CashierScreen() {
   const orderMode = posDataOrderMode;
   // For order-first: track the DB order id once it's been sent to kitchen
   const [sentOrderIds, setSentOrderIds] = useState<Record<string, string>>({}); // tableKey → orderId
+  const [sentOrderNumbers, setSentOrderNumbers] = useState<Record<string, string>>({}); // 0.6.28: the number on its ticket
 
   // ── Variant modal state — from useCart hook above ───────────────────────────
 
@@ -492,6 +501,7 @@ export default function CashierScreen() {
   }
 
   function clearTable(table: Table) {
+    if (!sentTabGuard(table.id)) { setShowClearTableModal(false); setTableToClear(null); return; }   // 0.6.28
     setOpenOrders(prev => {
       const next = { ...prev };
       delete next[table.id];
@@ -705,8 +715,26 @@ export default function CashierScreen() {
   function setActiveOrderType(val: 'dine_in' | 'takeaway' | 'delivery') {
     if (!activeKey) return;
     setOpenOrders(prev => prev[activeKey]
-      ? { ...prev, [activeKey]: { ...prev[activeKey], orderType: val } }
+      ? { ...prev, [activeKey]: { ...prev[activeKey], orderType: val,
+          ...(val !== 'delivery' ? { rider: undefined, deliveryFee: undefined } : {}) } }
       : prev);
+    setDeliveryMsg('');
+  }
+
+  // 0.6.27: the active delivery's rider / fee, and the check before Charge ('delivery_fee' switch).
+  const [deliveryMsg, setDeliveryMsg] = useState('');
+  function setActiveDelivery(patch: { rider?: string; deliveryFee?: string }) {
+    if (!activeKey) return;
+    setOpenOrders(prev => prev[activeKey] ? { ...prev, [activeKey]: { ...prev[activeKey], ...patch } } : prev);
+    setDeliveryMsg('');
+  }
+  const activeRider = activeKey ? openOrders[activeKey]?.rider ?? '' : '';
+  const activeFeeText = activeKey ? openOrders[activeKey]?.deliveryFee ?? '' : '';
+  /** Open the payment screen — unless a delivery still needs its rider or fee. */
+  function openPayment(evenSplit: boolean) {
+    const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText);
+    if (problem) { setDeliveryMsg(problem); return; }
+    setPaymentEvenSplit(evenSplit); setShowPayment(true);
   }
 
   function resumeParked(key: string) {
@@ -720,6 +748,7 @@ export default function CashierScreen() {
   }
 
   function clearActiveOrder() {
+    if (!sentTabGuard(activeKey)) return;   // 0.6.28: a sent order is voided, not dropped
     if (activeKey) {
       // Release pump if this was a petrol order
       const order = openOrders[activeKey];
@@ -799,7 +828,7 @@ export default function CashierScreen() {
       const order = openOrders[activeKey];
       const orderNumber = `ORD-${Date.now()}`;
       const otype = order.orderType ?? (order.tableId ? 'dine_in' : 'retail');
-      const result = await posApi.post<{ orderId: string; orderNumber: string }>(
+      const result = await posApi.post<{ orderId: string; orderNumber: string; items?: { id: string }[] }>(
         '/api/orders/open',
         {
           branch_id:    session.branchId,
@@ -817,6 +846,11 @@ export default function CashierScreen() {
       );
       // Remember the DB order id — PaymentModal will use /pay instead of creating a new order
       setSentOrderIds(prev => ({ ...prev, [activeKey]: result.orderId }));
+      setSentOrderNumbers(prev => ({ ...prev, [activeKey]: result.orderNumber }));
+      // 0.6.28: each line now names its order item — a sent line leaves the order only as a kitchen void.
+      if (Array.isArray(result.items)) {
+        setCart(prev => prev.map((it, i) => (result.items![i]?.id ? { ...it, order_item_id: result.items![i].id } : it)));
+      }
       // Print KOT if printers configured
       if (branchPrinters.length > 0) {
         printRoutedStations({
@@ -837,6 +871,83 @@ export default function CashierScreen() {
     } finally {
       setSendingToKitchen(false);
     }
+  }
+
+  // ── 0.6.28: sent lines come back only as a recorded kitchen void ─────────────
+  // Owner, 2026-10-01: a sent order could be cancelled after the customer paid in cash ("the cashier pockets the
+  // money"). On the web a sent order is an open order on the cloud; reducing or removing a sent line goes through
+  // KitchenVoidModal → POST /api/orders/:id/kitchen-void (reason, made or not, a manager with 'kitchen_void_approval'),
+  // and the kitchen gets a VOID ticket.
+  const [kitchenVoid, setKitchenVoid] = useState<null | { title: string; lines: KitchenVoidLine[]; apply: (orderVoided: boolean) => void }>(null);
+  const activeSentId = activeKey ? sentOrderIds[activeKey] : undefined;
+  const lineAmount = (it: CartItem, q: number) => (it.quantity > 0 ? Math.round((it.lineTotal / it.quantity) * q * 100) / 100 : 0);
+  const closeVoidedTab = () => {
+    if (!activeKey) return;
+    const key = activeKey;
+    setSentOrderIds(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setOpenOrders(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setActiveKey(null);
+    setCart([]);
+  };
+  function changeQty(index: number, delta: number) {
+    const it = cart[index];
+    if (activeSentId && it?.order_item_id && delta < 0) {
+      setKitchenVoid({ title: `Take back 1 × ${it.product.name}`,
+        lines: [{ order_item_id: it.order_item_id, name: it.product.name, qty: 1, amount: lineAmount(it, 1) }],
+        apply: (gone) => (gone ? closeVoidedTab() : updateQty(index, -1)) });
+      return;
+    }
+    updateQty(index, delta);
+  }
+  function removeLine(index: number) {
+    const it = cart[index];
+    if (activeSentId && it?.order_item_id) {
+      setKitchenVoid({ title: `Remove ${it.product.name}`,
+        lines: [{ order_item_id: it.order_item_id, name: it.product.name, qty: it.quantity, amount: lineAmount(it, it.quantity) }],
+        apply: (gone) => (gone ? closeVoidedTab() : removeItem(index)) });
+      return;
+    }
+    removeItem(index);
+  }
+  /** A sent tab is not dropped: its items are voided (or it is charged). Returns true when the caller may go on. */
+  function sentTabGuard(key: string | null | undefined): boolean {
+    if (!key || !sentOrderIds[key]) return true;
+    const order = openOrders[key];
+    const lines = (key === activeKey ? cart : order?.cart ?? []).filter(it => it.order_item_id);
+    if (key !== activeKey || !lines.length) {
+      window.alert('This order was sent to the kitchen. Open it and charge it, or remove its items (a kitchen void).');
+      return false;
+    }
+    setKitchenVoid({ title: 'Cancel the order',
+      lines: lines.map(it => ({ order_item_id: it.order_item_id!, name: it.product.name, qty: it.quantity, amount: lineAmount(it, it.quantity) })),
+      apply: () => closeVoidedTab() });
+    return false;
+  }
+  async function submitKitchenVoid(v: { reason: string; cooked: boolean; note: string | null; pin?: string }) {
+    if (!kitchenVoid || !activeSentId) return;
+    const r = await posApi.post<{ ok: boolean; total: number; orderVoided: boolean; approvedBy: string | null }>(
+      `/api/orders/${activeSentId}/kitchen-void`,
+      { lines: kitchenVoid.lines.map(l => ({ order_item_id: l.order_item_id, qty: l.qty })), reason: v.reason,
+        cooked: v.cooked, note: v.note, ...(v.pin ? { pin: v.pin } : {}) });
+    // The VOID ticket — the same stations the items went to, so the kitchen stops cooking them.
+    if (branchPrinters.length > 0) {
+      const order = activeKey ? openOrders[activeKey] : undefined;
+      const voidCart = kitchenVoid.lines.map(l => {
+        const it = cart.find(c => c.order_item_id === l.order_item_id)!;
+        return { ...it, quantity: l.qty, lineTotal: l.amount };
+      });
+      printRoutedStations({
+        cart: voidCart, branchPrinters, business: business!,
+        orderNumber: (activeKey ? sentOrderNumbers[activeKey] : undefined) ?? String(activeSentId).slice(0, 8),
+        orderType: order?.orderType ?? (order?.tableId ? 'dine_in' : 'retail'),
+        cashierName: session?.staffName ?? 'Cashier', total: kitchenVoid.lines.reduce((s, l) => s + l.amount, 0),
+        tableNumber: order?.tableId ? order.tableName : undefined, comboItems, categories, kitchenExclusions,
+        kinds: ['kitchen', 'dispatch'], voided: { by: r.approvedBy ?? '', reason: voidReasonLabel(v.reason) },
+      }).catch(err => console.error('[KOT void]', err));
+    }
+    const apply = kitchenVoid.apply;
+    setKitchenVoid(null);
+    apply(r.orderVoided);
   }
 
   // Fire a held course to the kitchen for an already-sent order.
@@ -1106,7 +1217,7 @@ export default function CashierScreen() {
             onUpdateQty={minimartUpdateQty}
             onRemoveItem={minimartRemoveItem}
             onClearCart={() => setCart([])}
-            onCharge={() => setShowPayment(true)}
+            onCharge={() => openPayment(false)}
             onParkOrder={parkOrder}
             parkedOrders={minimartParkedOrders}
             onResumeParked={resumeParked}
@@ -1476,6 +1587,21 @@ export default function CashierScreen() {
               })}
             </div>
           )}
+          {/* 0.6.27: a delivery's rider (and, with the 'delivery_fee' switch, the fee the customer pays on top). */}
+          {isRestaurant && activeKey && getOrderType() === 'delivery' && (
+            <div style={{ display: 'flex', gap: 8, margin: '0 14px 10px' }}>
+              <input value={activeRider} onChange={e => setActiveDelivery({ rider: e.target.value })} data-testid="rider-name"
+                placeholder={posFeatures.delivery_fee ? 'Rider name (required)' : 'Rider name'} maxLength={60}
+                style={{ flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
+              {posFeatures.delivery_fee && (
+                <input type="number" min={0} inputMode="decimal" value={activeFeeText} data-testid="delivery-fee"
+                  onChange={e => setActiveDelivery({ deliveryFee: e.target.value })} onWheel={e => (e.target as HTMLInputElement).blur()}
+                  placeholder="Delivery fee"
+                  style={{ width: 110, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
+              )}
+            </div>
+          )}
+          {deliveryMsg && <p style={{ margin: '0 14px 10px', color: '#f59e0b', fontSize: 12 }} data-testid="delivery-msg">{deliveryMsg}</p>}
 
           {/* Slot picker hint when no active key */}
           {hasSlotPicker && !activeKey && (
@@ -1542,12 +1668,12 @@ export default function CashierScreen() {
                       <span style={s.qtyNum}>{item.quantity.toFixed(2)} L</span>
                     ) : (
                       <>
-                        <button style={s.qtyBtn} onClick={() => updateQty(index, -1)}>−</button>
+                        <button style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
                         <span style={s.qtyNum}>{item.quantity}</span>
                         <button style={s.qtyBtn} onClick={() => updateQty(index, 1)}>+</button>
                       </>
                     )}
-                    <button style={s.removeBtn} onClick={() => removeItem(index)}>✕</button>
+                    <button style={s.removeBtn} onClick={() => removeLine(index)}>✕</button>
                   </div>
                   <div style={s.cartItemTotal}>{fmt(item.lineTotal, currency)}</div>
                 </div>
@@ -1676,10 +1802,11 @@ export default function CashierScreen() {
                     </div>
                   );
                 })()}
-                {/* Send to Kitchen · Hold — shared core, BOTH modes */}
+                {/* Send to Kitchen · Hold — shared core, BOTH modes. 0.6.28 ('pay_before_kitchen'): takeaway, delivery and
+                    counter orders go to the kitchen when paid — no Send. */}
                 {isRestaurant && cart.length > 0 && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button
+                    {maySendBeforePay(posFeatures.pay_before_kitchen, getOrderType()) && <button
                       style={{ flex: 1, padding: '10px 0', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (sendingToKitchen || !currentShift || !!(activeKey && sentOrderIds[activeKey])) ? 0.5 : 1 }}
                       disabled={sendingToKitchen || !currentShift || !!(activeKey && sentOrderIds[activeKey])}
                       onClick={sendToKitchen}
@@ -1689,7 +1816,7 @@ export default function CashierScreen() {
                         : activeKey && sentOrderIds[activeKey]
                           ? '✓ Sent to kitchen'
                           : '🍳 Send to Kitchen'}
-                    </button>
+                    </button>}
                     <button
                       style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                       onClick={parkOrder}
@@ -1707,7 +1834,7 @@ export default function CashierScreen() {
                   disabled={!currentShift}
                   onClick={() => {
                     if (!currentShift) { setShiftModal('open'); return; }
-                    setPaymentEvenSplit(false); setShowPayment(true);
+                    openPayment(false);
                   }}
                 >
                   Charge {fmt(orderTotal, currency)}
@@ -1729,7 +1856,7 @@ export default function CashierScreen() {
                       ↔ Transfer
                     </button>
                     <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                      onClick={() => { setPaymentEvenSplit(true); setShowPayment(true); }}>
+                      onClick={() => openPayment(true)}>
                       👥 Split Bill
                     </button>
                     <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
@@ -2089,6 +2216,20 @@ export default function CashierScreen() {
         </div>
       )}
 
+      {/* 0.6.28: sent items come back only as a recorded kitchen void. */}
+      {kitchenVoid && activeSentId && (
+        <KitchenVoidModal
+          title={kitchenVoid.title}
+          orderNumber={(activeKey ? sentOrderNumbers[activeKey] : undefined) ?? String(activeSentId).slice(0, 8)}
+          lines={kitchenVoid.lines}
+          needsManager={posFeatures.kitchen_void_approval}
+          signedInManager={maySignedInConfirm(session as any)}
+          currency={currency}
+          onSubmit={submitKitchenVoid}
+          onClose={() => setKitchenVoid(null)}
+        />
+      )}
+
       {/* A367: the note editor — one line, or the whole order */}
       {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
         <NoteModal
@@ -2127,6 +2268,8 @@ export default function CashierScreen() {
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
           orderNote={orderNote}
+          rider={getOrderType() === 'delivery' ? (activeRider.trim() || null) : null}
+          deliveryFee={posFeatures.delivery_fee && getOrderType() === 'delivery' ? cleanDeliveryFee(activeFeeText) : 0}
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {

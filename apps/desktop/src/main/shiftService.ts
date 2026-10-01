@@ -13,10 +13,14 @@
 import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
-import { getDeviceConfig, canSell } from './deviceConfig';
+import { getDeviceConfig, canSell, getPosFeatures } from './deviceConfig';
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
+import { nonCashExpenses, expenseLabel } from './expenseMethod';
+import { reasonsNeeded, cleanReasons, missingReasons } from './confirmReasons';
+import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
+import type { KitchenVoidSummary } from './kitchenLines';
 
 /**
  * A334 (2026-09-26): cash on a SHARED drawer that this till does not hold — sales, floats and
@@ -83,12 +87,27 @@ export interface ZReport {
     /** 0.6.11: cash PAID OUT of this drawer as expenses — already taken off expectedCash; shown so the
      *  reconciliation adds up on paper (float + sales + in − out − expenses = expected). Includes the web's. */
     expenses: number;
+    /** 0.6.27: expenses paid by another method (M-Pesa…), per method — NOT out of the drawer; they come off that
+     *  method's expected total. This till's own. */
+    expensesByMethod?: Record<string, number>;
+    /** 0.6.27: delivery fees customers paid on top of their bills (in the payments, not sales), and the part of
+     *  floatOut that paid riders their fees in cash (this till's own pay-outs, net of any put back by a void). */
+    deliveryFees?: number;
+    riderPayouts?: number;
+    /** 0.6.27: pay-ins that put a voided delivery's fee back (inside floatIn; shown with the riders' line). */
+    riderReturned?: number;
   };
-  /** 0.6.11: this till's expense lines on the shift (newest last), for the report's EXPENSES section. */
-  expenseLines: { description: string; amount: number; created_at: string; paid_by_name: string | null }[];
+  /** 0.6.11: this till's expense lines on the shift (newest last), for the report's EXPENSES section.
+   *  0.6.27: `label` is what the report prints — the expense TYPE first, then the description, then the method when
+   *  not cash; `payment_method` how it was paid. */
+  expenseLines: { description: string; amount: number; created_at: string; paid_by_name: string | null;
+                  label?: string; category_name?: string | null; payment_method?: string }[];
   /** A363 (owner: "add the note on the zreport"): what of this shift is not yet on the cloud — its sales still queued
    *  or failed, and whether the cloud refused the drawer itself. Optional so an older caller or a stored report renders. */
   notBackedUp?: { sales: number; drawerRefused: boolean };
+  /** 0.6.28: items taken back after they were sent to the kitchen on this shift — the lines and their sums. Optional
+   *  so an older caller or a stored report still renders. */
+  kitchenVoids?: { summary: KitchenVoidSummary; lines: KitchenVoidLine[] };
   /** A365: the manager's confirmation — awaiting, or who/when/self and the per-method lines. null = closed before A365. */
   confirmation?: {
     status: 'awaiting' | 'confirmed';
@@ -295,6 +314,16 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     SELECT COUNT(*) AS c FROM orders WHERE shift_id=? AND status='voided'
   `).get(shiftId) as { c: number };
 
+  // 0.6.27: delivery fees (pass-through) and what the drawer paid riders — why cash is lower and M-Pesa higher.
+  const deliveryFees = (db.prepare(`
+    SELECT COALESCE(SUM(COALESCE(delivery_fee, 0)), 0) AS n FROM orders WHERE shift_id=? AND status != 'voided'
+  `).get(shiftId) as { n: number }).n;
+  const rider = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN type='float_out' THEN amount ELSE 0 END), 0) AS paid,
+           COALESCE(SUM(CASE WHEN type='float_in'  THEN amount ELSE 0 END), 0) AS back
+      FROM float_transactions WHERE shift_id=? AND order_id IS NOT NULL
+  `).get(shiftId) as { paid: number; back: number };
+
   // Expenses PAID OUT OF THIS DRAWER.
   //
   // This was missing, and it made honesty look like theft. expense:create writes
@@ -307,9 +336,14 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
   // Fixed HERE rather than by making expense:create also write a float_out, for
   // two reasons: one place computes the truth, and a cashier who records both an
   // expense and a matching pay-out would otherwise be debited twice.
+  // 0.6.27: only a CASH expense leaves the drawer (NULL = recorded before 59 = cash); one paid by M-Pesa comes off
+  // M-Pesa's expected total instead (expectedMethods). The web's (f.expenses) is cash only — the cloud's rule.
   const expensesOut = ((db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) AS amt FROM expenses WHERE shift_id = ?
+    SELECT COALESCE(SUM(amount), 0) AS amt FROM expenses
+     WHERE shift_id = ? AND COALESCE(NULLIF(LOWER(TRIM(payment_method)), ''), 'cash') = 'cash'
   `).get(shiftId) as { amt: number } | undefined)?.amt ?? 0) + (f ? Number(f.expenses) : 0);
+  const expensesByMethod = nonCashExpenses(db.prepare(
+    `SELECT amount, payment_method FROM expenses WHERE shift_id = ?`).all(shiftId) as { amount: number; payment_method: string | null }[]);
 
   // A342: the web's own shift on this till, counted in the same drawer (owner: "Till's count covers both").
   const siblingExpected = f?.siblings ? Number(f.siblings.expected) || 0 : 0;
@@ -317,12 +351,18 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     Number(shift.opening_float) + cashSales + floatIn - floatOut - Number(expensesOut) + siblingExpected;
 
   // 0.6.11: the lines behind expensesOut (this till's own; a web expense is in the total via `foreign`).
+  // 0.6.27 (request 9): the report shows the expense TYPE, not only the description.
+  const methodNames = new Map((db.prepare(`SELECT code, name FROM payment_methods`).all() as { code: string; name: string }[])
+    .map((m) => [String(m.code).toLowerCase(), m.name]));
   const expenseLines = (db.prepare(`
-    SELECT e.description, e.amount, e.created_at, u.name AS paid_by_name
+    SELECT e.description, e.amount, e.created_at, u.name AS paid_by_name, e.expense_type_name AS category_name,
+           COALESCE(NULLIF(LOWER(TRIM(e.payment_method)), ''), 'cash') AS payment_method
       FROM expenses e LEFT JOIN users u ON u.id = e.paid_by
      WHERE e.shift_id = ? ORDER BY e.created_at
-  `).all(shiftId) as { description: string; amount: number; created_at: string; paid_by_name: string | null }[])
-    .map((x) => ({ ...x, amount: Number(x.amount) }));
+  `).all(shiftId) as { description: string; amount: number; created_at: string; paid_by_name: string | null;
+                       category_name: string | null; payment_method: string }[])
+    .map((x) => ({ ...x, amount: Number(x.amount),
+                   label: expenseLabel(x.category_name, x.description, x.payment_method, methodNames.get(x.payment_method) ?? null) }));
 
   // A363: what of this shift has not reached the cloud yet — shown on the report so a close never hides it.
   const notBackedUp = {
@@ -379,8 +419,13 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       foreign: f,
       webSales: webHeld,
       expenses: Number(expensesOut),
+      expensesByMethod,
+      deliveryFees: money2(Number(deliveryFees)),
+      riderPayouts: money2(Number(rider.paid)),
+      riderReturned: money2(Number(rider.back)),
     },
     expenseLines,
+    kitchenVoids: kitchenVoidsForShift(shiftId),   // 0.6.28
     businessName: session.business_name,
     currency: session.currency ?? 'KES',
   };
@@ -405,6 +450,66 @@ export function shiftCloseRights(shift: { cashier_id?: string | null; opened_by?
   if (!st?.staff_id) return { allowed: false, ownerName };
   const isOwner = st.staff_id === shift.cashier_id || st.staff_id === shift.opened_by;
   return { allowed: isOwner || isShiftManager(st.role_name, st.permissions), ownerName: ownerName ?? (isOwner ? st.staff_name : null) };
+}
+
+/**
+ * 0.6.27 — what the signed-in person's History shows (prospect's requests 6 and 7, per client in the admin portal):
+ * 'cashier_own_history' → a cashier sees only the sales they rang; 'cashier_no_reprint' → a cashier has no Reprint in
+ * History. A manager (the shift-manager rule) always sees every sale and may reprint. Nobody signed in → own-only
+ * with nobody to match, i.e. nothing, when the switch is on.
+ */
+export interface HistoryScope { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }
+/** The signed-in person, and whether they are a manager for shift purposes (isShiftManager). */
+function signedIn(): { staffId: string | null; manager: boolean } {
+  const st = getLocalDb().prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get() as
+    { staff_id: string | null; role_name: string | null; permissions: string | null } | undefined;
+  return { staffId: st?.staff_id ?? null, manager: !!st?.staff_id && isShiftManager(st.role_name, st.permissions) };
+}
+export function historyScope(): HistoryScope {
+  const f = getPosFeatures();
+  const { staffId, manager } = signedIn();
+  return {
+    staffId,
+    manager,
+    ownOnly: f.cashier_own_history && !manager,
+    canReprint: !(f.cashier_no_reprint && !manager),
+  };
+}
+
+/**
+ * 0.6.27 (the prospect's request 1): 'blind_shift_close' — a CASHIER closing a shift does not see the amount sold, the
+ * per-method totals or expected cash; only a box for each method used. A manager closing sees everything. The close
+ * then needs no variance note from the cashier (they cannot see one); the manager explains it at confirmation.
+ */
+export function blindClose(): boolean {
+  return getPosFeatures().blind_shift_close && !signedIn().manager;
+}
+
+/**
+ * The report a blind close may show: who, when, which methods to count, the cashier's own expenses and the manager's
+ * confirmation status — every sales and cash figure taken out (not merely hidden on the screen).
+ */
+export function blindReport(z: ZReport): ZReport & { blind: true; declareMethods: string[] } {
+  const declareMethods = [...new Set(z.byMethod
+    .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
+    .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));
+  const zero = (n: unknown) => (n == null ? n : 0);
+  return {
+    ...z,
+    blind: true,
+    declareMethods,
+    shift: { ...z.shift, expected_cash: 0, cash_variance: null },
+    byMethod: z.byMethod.map((m) => ({ ...m, amount: 0, orders: 0 })),
+    totals: {
+      ...z.totals,
+      orderCount: 0, grossSales: 0, refunds: zero(z.totals.refunds) as number, netSales: zero(z.totals.netSales) as number,
+      vat: zero(z.totals.vat) as number, ctl: zero(z.totals.ctl) as number, tips: zero(z.totals.tips) as number,
+      cashSales: 0, expectedCash: 0, foreign: z.totals.foreign ? { ...z.totals.foreign, orders: 0, cash_sales: 0 } : z.totals.foreign,
+      webSales: z.totals.webSales ? { orders: 0, cash_sales: 0 } : z.totals.webSales,
+      deliveryFees: zero(z.totals.deliveryFees) as number,
+    },
+    confirmation: z.confirmation ? { ...z.confirmation, lines: z.confirmation.lines.map((l) => ({ ...l, expected: null, variance: null })) } : z.confirmation,
+  };
 }
 
 /** A manager for shift purposes (close someone else's shift, confirm a shift) — the cloud's mayConfirm rule. */
@@ -433,7 +538,8 @@ export function closeShift(closing_float: number, notes?: string, foreign: Forei
   const expectedCash = pre.totals.expectedCash;
   const variance = Number(closing_float) - expectedCash;
 
-  if (Math.round(variance * 100) !== 0 && !(notes && notes.trim())) {
+  // 0.6.27: not on a blind close — the cashier cannot see the variance; the manager explains it at confirmation.
+  if (Math.round(variance * 100) !== 0 && !(notes && notes.trim()) && !blindClose()) {
     const err: any = new Error('A note is required to close a shift with a cash variance');
     err.variance = variance;
     err.expected_cash = expectedCash;
@@ -496,10 +602,13 @@ const parseMap = (json: string | null | undefined): MethodMap | null => {
 export interface ConfirmLine {
   method: string; declared: number | null; expected: number | null; confirmed: number | null;
   variance: number | null; mismatch: boolean;
+  /** 0.6.27: the manager's reason where their count differs from the cashier's. */
+  reason?: string | null;
 }
 
 /** One line per method: cash first. variance = confirmed − expected; mismatch = the recount differs from the declaration. */
-export function confirmLines(declared: MethodMap | null, expected: MethodMap | null, confirmed: MethodMap | null): ConfirmLine[] {
+export function confirmLines(declared: MethodMap | null, expected: MethodMap | null, confirmed: MethodMap | null,
+                             reasons: Record<string, string> | null = null): ConfirmLine[] {
   const codes = new Set<string>([...Object.keys(declared ?? {}), ...Object.keys(expected ?? {}), ...Object.keys(confirmed ?? {})]);
   return [...codes].sort((a, b) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b))).map((m) => {
     const d = declared ? (declared[m] ?? 0) : null;
@@ -507,7 +616,8 @@ export function confirmLines(declared: MethodMap | null, expected: MethodMap | n
     const c = confirmed ? (confirmed[m] ?? 0) : null;
     return { method: m, declared: d, expected: e, confirmed: c,
       variance: c !== null && e !== null ? money2(c - e) : null,
-      mismatch: d !== null && c !== null && Math.round(d * 100) !== Math.round(c * 100) };
+      mismatch: d !== null && c !== null && Math.round(d * 100) !== Math.round(c * 100),
+      ...(reasons?.[m] ? { reason: reasons[m] } : {}) };
   });
 }
 
@@ -526,6 +636,11 @@ export function expectedMethods(shiftId: string): MethodMap {
     const m = String(r.method ?? '').trim().toLowerCase();
     if (m && m !== 'cash') out[m] = money2((out[m] ?? 0) + Number(r.amount));
   }
+  // 0.6.27: an expense paid by M-Pesa (or another method) comes off that method's expected total — the statement shows
+  // the money going out. (A cash expense is already inside expected cash.)
+  const spent = nonCashExpenses(db.prepare(`SELECT amount, payment_method FROM expenses WHERE shift_id = ?`).all(shiftId) as
+    { amount: number; payment_method: string | null }[]);
+  for (const [m, v] of Object.entries(spent)) out[m] = money2((out[m] ?? 0) - v);
   out.cash = money2(Number(shift?.expected_cash ?? computeZReport(shiftId).totals.expectedCash));
   return out;
 }
@@ -578,7 +693,8 @@ export interface Confirmation {
  * whose right to confirm it checked. Refuses: an open shift, another till's shift, a second confirmation, a recount
  * missing any declared method.
  */
-export function confirmShift(shiftId: string, confirmer: { id: string; name: string | null }, counts: unknown): Confirmation {
+export function confirmShift(shiftId: string, confirmer: { id: string; name: string | null }, counts: unknown,
+                             reasonsIn: unknown = null): Confirmation {
   const db = getLocalDb();
   const shift = db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shiftId) as any;
   if (!shift || (shift.device_id ?? '') !== (getDeviceConfig()?.device_id ?? '')) throw new Error('Shift not found on this till');
@@ -591,17 +707,25 @@ export function confirmShift(shiftId: string, confirmer: { id: string; name: str
   const missing = methodsToCount(shiftId, declared).filter((m) => !(m in given)).sort();
   if (missing.length) throw new Error(`Enter the counted amount for: ${missing.join(', ')}.`);
   const recount: MethodMap = { ...Object.fromEntries(Object.keys(declared ?? {}).map((m) => [m, 0])), ...given };
+  // 0.6.27: with 'confirm_shows_cashier_figures', every method counted differently from the cashier needs a reason.
+  const needed = reasonsNeeded(declared, recount);
+  const reasons = cleanReasons(reasonsIn, needed);
+  if (getPosFeatures().confirm_shows_cashier_figures) {
+    const missing = missingReasons(needed, reasons);
+    if (missing.length) throw new Error(`Give a reason where your count differs from the cashier's: ${missing.join(', ')}.`);
+  }
 
   const expected = expectedMethods(shiftId);
   const self = confirmer.id === shift.cashier_id || confirmer.id === shift.opened_by;
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE shifts SET confirmed_methods=?, expected_methods=?, confirmed_by=?, confirmed_at=?, confirm_self=?,
-                      confirm_sync='pending'
+                      confirm_reasons=?, confirm_sync='pending'
      WHERE id=? AND confirmed_at IS NULL
-  `).run(JSON.stringify(recount), JSON.stringify(expected), confirmer.id, now, self ? 1 : 0, shiftId);
+  `).run(JSON.stringify(recount), JSON.stringify(expected), confirmer.id, now, self ? 1 : 0,
+         reasons ? JSON.stringify(reasons) : null, shiftId);
   return { shift_id: shiftId, confirmed_by: confirmer.id, confirmed_by_name: confirmer.name, confirmed_at: now, self,
-           lines: confirmLines(declared, expected, recount) };
+           lines: confirmLines(declared, expected, recount, reasons) };
 }
 
 /** The Z-report's confirmation block: awaiting, confirmed (who, when, self, lines), or null (closed before A365). */
@@ -614,8 +738,25 @@ export function shiftConfirmation(shift: any): ZReport['confirmation'] {
     : null;
   return {
     status: 'confirmed', confirmed_by_name: who, confirmed_at: shift.confirmed_at, self: !!shift.confirm_self,
-    lines: confirmLines(declared, parseMap(shift.expected_methods), parseMap(shift.confirmed_methods)),
+    lines: confirmLines(declared, parseMap(shift.expected_methods), parseMap(shift.confirmed_methods), parseReasons(shift.confirm_reasons)),
   };
+}
+
+/** 0.6.27: stored reasons ({"cash": "…"}), or null. */
+function parseReasons(json: string | null | undefined): Record<string, string> | null {
+  if (!json) return null;
+  try { const v = JSON.parse(json); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch { return null; }
+}
+
+/**
+ * 0.6.27: what the confirm screen may show. With 'confirm_shows_cashier_figures' the manager sees the cashier's figure
+ * per method (and must give a reason where their count differs); without it the recount stays blind (A365).
+ */
+export function confirmView(shiftId: string): { showCashier: boolean; declared: MethodMap | null } {
+  const showCashier = getPosFeatures().confirm_shows_cashier_figures;
+  if (!showCashier) return { showCashier: false, declared: null };
+  const row = getLocalDb().prepare(`SELECT declared_methods FROM shifts WHERE id=?`).get(shiftId) as { declared_methods: string | null } | undefined;
+  return { showCashier: true, declared: parseMap(row?.declared_methods ?? null) };
 }
 
 /**

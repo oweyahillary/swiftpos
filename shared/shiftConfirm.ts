@@ -88,7 +88,7 @@ export function confirmationLabel(c: { status: 'awaiting' | 'confirmed'; confirm
 
 /** The printed Z-report's confirmation lines (paper has no colour, so the mismatch is spelled out). */
 export function confirmationPrintLines(c: { status: 'awaiting' | 'confirmed'; confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
-  lines: { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean }[] } | null | undefined,
+  lines: { method: string; declared: number | null; expected: number | null; confirmed: number | null; variance: number | null; mismatch: boolean; reason?: string | null }[] } | null | undefined,
   fmt: (n: number) => string, options: MethodOption[] = []): string[] {
   if (!c) return [];
   const out = [confirmationLabel(c)!.toUpperCase()];
@@ -99,6 +99,7 @@ export function confirmationPrintLines(c: { status: 'awaiting' | 'confirmed'; co
     out.push(`${name}: counted ${fmt(l.confirmed ?? 0)} / expected ${fmt(l.expected ?? 0)}` +
       (Math.round(v * 100) !== 0 ? ` (${v > 0 ? 'over' : 'short'} ${fmt(Math.abs(v))})` : ''));
     if (l.mismatch) out.push(`  cashier said ${fmt(l.declared ?? 0)}`);
+    if (l.reason) out.push(`  reason: ${l.reason}`);   // 0.6.27: the manager's reason for a differing count
   }
   return out;
 }

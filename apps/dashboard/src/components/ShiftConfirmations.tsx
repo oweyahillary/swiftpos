@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { methodName, methodsToCount, readAmounts, confirmationLabel } from '../lib/shiftConfirm';
+import { reasonsNeeded, missingReasons, REASON_MAX } from '../lib/confirmReasons';
 
 interface ClosedShift {
   id: string;
@@ -23,6 +24,7 @@ interface ClosedShift {
   confirmer_name: string | null;
   confirm_self: boolean;
   awaiting_confirmation: boolean;
+  confirm_reasons?: Record<string, string> | null;   // 0.6.27
 }
 
 const money = (v: number | null | undefined) =>
@@ -44,6 +46,15 @@ export default function ShiftConfirmations() {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figures beside the boxes, and a reason where they differ.
+  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setView({ showCashier: false, declared: null }); setReasons({});
+    if (!target) return;
+    api.get<{ showCashier: boolean; declared: Record<string, number> | null }>(`/api/shifts/${target.id}/confirm-view`)
+      .then(setView).catch(() => {});
+  }, [target]);
 
   const load = useCallback(async () => {
     setError('');
@@ -63,9 +74,13 @@ export default function ShiftConfirmations() {
     const codes = methodsToCount(target.declared_methods);
     const r = readAmounts(inputs, codes);
     if (r.ok === false) { setMsg(`Enter the counted amount for: ${r.missing.map((m) => methodName(m)).join(', ')}.`); return; }
+    if (view.showCashier) {
+      const missing = missingReasons(reasonsNeeded(view.declared, r.map), reasons);
+      if (missing.length) { setMsg(`Give a reason where your count differs from the cashier's: ${missing.map((m) => methodName(m)).join(', ')}.`); return; }
+    }
     setBusy(true); setMsg('');
     try {
-      await api.post(`/api/shifts/${target.id}/confirm`, { confirmed_methods: r.map });
+      await api.post(`/api/shifts/${target.id}/confirm`, { confirmed_methods: r.map, ...(view.showCashier ? { confirm_reasons: reasons } : {}) });
       setTarget(null); setInputs({});
       await load();
     } catch (e: any) {
@@ -112,7 +127,8 @@ export default function ShiftConfirmations() {
                   <td>{s.confirmer_name ?? '—'}{s.confirm_self ? <span className="ml-1 text-xs text-amber-600" data-testid="self-confirmed">(self-confirmed)</span> : null}</td>
                   <td>{money(s.confirmed_methods?.cash)} / {money(s.expected_methods?.cash)}</td>
                   <td className={diff.length ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400'}>
-                    {diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`).join('; ') : '—'}
+                    {diff.length ? diff.map((m) => `${methodName(m)}: ${money(s.declared_methods?.[m])} → ${money(s.confirmed_methods?.[m])}`
+                      + (s.confirm_reasons?.[m] ? ` (${s.confirm_reasons[m]})` : '')).join('; ') : '—'}
                   </td>
                 </tr>
               );
@@ -126,17 +142,31 @@ export default function ShiftConfirmations() {
           <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-md border border-gray-200 dark:border-gray-700 p-5 space-y-3">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Confirm {target.cashier_name}'s shift</h3>
             <p className="text-xs text-gray-500">
-              Count every payment method yourself — the drawer, the M-Pesa statement, the card machine's total — and enter
-              what you find. The cashier's figures are shown after you save. {confirmationLabel({ status: 'awaiting' })}.
+              {view.showCashier
+                ? 'Count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
+                : 'Count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
+              {' '}{confirmationLabel({ status: 'awaiting' })}.
             </p>
-            {methodsToCount(target.declared_methods).map((m) => (
-              <div key={m}>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">{methodName(m)} counted</label>
-                <input type="number" min={0} step="0.01" inputMode="decimal" value={inputs[m] ?? ''} data-testid={`confirm-input-${m}`}
-                  onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-              </div>
-            ))}
+            {methodsToCount(target.declared_methods).map((m) => {
+              const cashierSaid = view.showCashier && view.declared ? (view.declared[m] ?? 0) : null;
+              const typed = inputs[m] ?? '';
+              const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+              return (
+                <div key={m}>
+                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">{methodName(m)} counted</label>
+                  {cashierSaid !== null && <p className="text-xs text-gray-500 mb-1" data-testid={`cashier-${m}`}>Cashier entered {money(cashierSaid)}</p>}
+                  <input type="number" min={0} step="0.01" inputMode="decimal" value={typed} data-testid={`confirm-input-${m}`}
+                    onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })} onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                  {differs && (
+                    <input type="text" maxLength={REASON_MAX} value={reasons[m] ?? ''} data-testid={`reason-${m}`}
+                      placeholder={`Why is it ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's?`}
+                      onChange={(e) => setReasons({ ...reasons, [m]: e.target.value })}
+                      className="mt-1.5 w-full rounded-lg border border-amber-400 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                  )}
+                </div>
+              );
+            })}
             {msg && <p className="text-sm text-red-600 dark:text-red-400">{msg}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setTarget(null)} disabled={busy} className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">Cancel</button>
