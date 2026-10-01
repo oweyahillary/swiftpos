@@ -5,6 +5,7 @@ import { useTheme }    from '../context/ThemeContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
+import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
@@ -501,6 +502,8 @@ export default function DashboardLayout() {
             Sign out
           </button>
           <p className="px-3 pt-1 text-[10px] text-gray-600 select-none">Powered by SwiftPOS</p>
+          {/* 0.6.28: which release this website and the cloud run */}
+          <div className="px-3"><ReleaseBadge getCloud={() => api.get('/api/version')} /></div>
         </div>
       </aside>
 

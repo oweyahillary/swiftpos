@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { RELEASE, releaseLabel } from '../lib/release';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
@@ -292,8 +293,10 @@ export default function LoginPage() {
         <p className="text-center text-[#1e293b] text-xs mt-6">
           No account? Contact your SwiftPOS agent to get set up.
         </p>
-        <p className="text-center text-[#1e293b] text-xs mt-2" title={__WEB_BUILD_TIME__}>
-          web {__WEB_BUILD_SHA__} · {__WEB_BUILD_REF__}
+        {/* 0.6.28: the release (was the commit alone, in near-invisible ink) — "which one am I running?" */}
+        <p className="text-center text-gray-500 text-xs mt-2" title={`${__WEB_BUILD_REF__} · built ${__WEB_BUILD_TIME__}`}
+           data-testid="login-release">
+          SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}
         </p>
       </div>
     </div>

@@ -226,6 +226,7 @@
 :root:not(.dark) .bg-red-600.text-white, :root:not(.dark) .bg-red-600 .text-white { color: #ffffff !important; }
 :root:not(.dark) .hover\:bg-action-400:hover, [data-pos-theme="light"] .hover\:bg-action-400:hover { background-color: rgb(var(--action-d-400, 45 212 191)) !important; }
 :root:not(.dark) .focus\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; }
+:root:not(.dark) [data-theme-lock="dark"] .text-gray-500 { color: #6b7280 !important; }
 :root:not(.dark) [data-theme-lock="dark"] .text-white { color: #ffffff !important; }
 /* ── END light-colours ── */
 

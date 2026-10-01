@@ -20,6 +20,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import ReleaseBadge from '../../components/ReleaseBadge';
 import POSReportsTab       from './POSReportsTab';
 import POSOrderHistoryTab  from './POSOrderHistoryTab';
 import POSInventoryTab     from './POSInventoryTab';
@@ -224,7 +225,7 @@ const gv: Record<string, React.CSSProperties> = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSDrawer({ isOpen, onClose, currency }: Props) {
-  const { session } = usePOSAuth();
+  const { session, posApi } = usePOSAuth();
 
   const groups = buildGroups(session?.permissions ?? {});
 
@@ -342,6 +343,10 @@ export default function POSDrawer({ isOpen, onClose, currency }: Props) {
 
           </div>
         )}
+        {/* 0.6.28: which release this website and the cloud run */}
+        <div style={{ padding: '8px 16px', borderTop: '1px solid #334155', flexShrink: 0 }}>
+          <ReleaseBadge getCloud={() => posApi.get('/api/version')} />
+        </div>
       </div>
     </>
   );

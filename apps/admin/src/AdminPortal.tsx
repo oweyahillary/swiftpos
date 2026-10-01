@@ -3,6 +3,7 @@ import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Ba
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
+import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -317,6 +318,21 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+// 0.6.28 (owner: "add versioning … so that i can tell which one i am running"): this portal's release and build, and the
+// cloud's (GET /api/admin/version). Amber when they differ — one was deployed, the other not yet.
+function ReleaseLine() {
+  const { req } = useAdminApi();
+  const [cloud, setCloud] = useState(null);
+  useEffect(() => { req("GET", "/version", undefined).then((c) => c?.release && setCloud(c)).catch(() => {}); }, [req]);
+  const differ = releasesDiffer(RELEASE, cloud?.release);
+  return (
+    <div data-testid="release-badge" style={{ fontSize: 10, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+      <div>SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}</div>
+      {cloud && <div style={differ ? { color: "#f59e0b" } : undefined}>cloud {releaseLabel(cloud.release, cloud.commit)}{differ ? " — not the same release" : ""}</div>}
+    </div>
+  );
+}
+
 function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
   const nav = [
     { id: "dashboard", icon: "▦", label: "Dashboard" },
@@ -373,6 +389,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
           <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin?.name || "Admin"}</div>
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin?.email}</div>
           <button onClick={onLogout} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "6px 12px", width: "100%" }}>Sign out</button>
+          <ReleaseLine />
         </div>
       </aside>
     </>

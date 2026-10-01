@@ -76,6 +76,16 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.28: the release number every surface shows ("v0.6.28 · <commit>") — moves with apps/desktop's version.
+    name: 'release.ts',
+    copies: [
+      'shared/release.ts',
+      'apps/dashboard/src/lib/release.ts',
+      'apps/server/src/lib/release.ts',
+      'apps/admin/src/lib/release.ts',
+    ],
+  },
+  {
     // 0.6.28: what is on a kitchen ticket (sentQty), kitchen void reasons and their Z-report sums.
     name: 'kitchenLines.ts',
     copies: [
