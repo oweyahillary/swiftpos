@@ -170,14 +170,15 @@ try {
   });
   await ok('a manager\'s PIN at the web POS confirms: every method, expected from the cloud, lines back', async () => {
     await closeFirst();
-    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2400, mpesa: 3250, card: 700 }, pin: '2222' }, { surface: 'web' });
+    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2400, mpesa: 3250, card: 700 }, pin: '2222',
+      confirm_reasons: { cash: '100 short', card: '700 on the card machine' } }, { surface: 'web' });   // 0.6.29: reasons are standard
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const s = shift();
     assert.equal(s.confirmed_by, MANAGER); assert.equal(s.confirm_self, false); assert.ok(s.confirmed_at);
     assert.deepEqual(s.expected_methods, { cash: 2500, mpesa: 3250, card: 700 });
     assert.deepEqual(s.confirmed_methods, { cash: 2400, mpesa: 3250, card: 700 });
     assert.equal(r.body.confirmer_name, 'Mary Manager');
-    assert.deepEqual(r.body.lines.find((x) => x.method === 'cash'), { method: 'cash', declared: 2500, expected: 2500, confirmed: 2400, variance: -100, mismatch: true });
+    assert.deepEqual(r.body.lines.find((x) => x.method === 'cash'), { method: 'cash', declared: 2500, expected: 2500, confirmed: 2400, variance: -100, mismatch: true, reason: '100 short' });
   });
   await ok('a second confirmation is refused', async () => {
     const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500 }, pin: '3333' }, { surface: 'web' });
@@ -186,7 +187,7 @@ try {
   });
   await ok('a manager signed in on the dashboard confirms as themselves (no PIN)', async () => {
     await closeFirst();
-    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500, mpesa: 3250, card: 700 } }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });
+    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500, mpesa: 3250, card: 700 }, confirm_reasons: { card: '700 on the card machine' } }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });   // 0.6.29
     assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(shift().confirmed_by, MANAGER);
   });
   await ok('the owner confirming a shift they worked is allowed — flagged self-confirmed', async () => {
@@ -246,7 +247,7 @@ try {
   });
   await ok('0.6.23 cloud: a manager signed in on the web POS confirms without a PIN', async () => {
     await closeFirst();
-    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500, mpesa: 3250, card: 700 } }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });
+    const r = await call(`/${S1}/confirm`, { confirmed_methods: { cash: 2500, mpesa: 3250, card: 700 }, confirm_reasons: { card: '700 on the card machine' } }, { user: MANAGER, surface: 'web', keys: ['orders.void'] });   // 0.6.29
     assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(shift().confirmed_by, MANAGER);
   });
   await ok('the dashboard lists shifts awaiting a manager and confirms them blind; mismatches and self-confirms shown', () => {

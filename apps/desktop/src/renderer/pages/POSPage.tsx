@@ -12,10 +12,8 @@ import type { DiningTable, Pump } from '../lib/posApi';
 import { buildTicketLines, kitchenOnly, linesForStation, routingIsConfigured, ROUTING_UNCONFIGURED } from '../lib/ticketLines';
 import type { StationRouting } from '../lib/ticketLines';
 import type { ComboMap } from '../lib/ticketLines';
-import { printReceipt } from '../lib/printReceipt';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import VariantModal from '../components/VariantModal';
-import ReceiptView from '../components/ReceiptView';
 import MethodDot from '../components/MethodDot';
 import PaymentModal from '../components/PaymentModal';
 import type { PaymentResult } from '../components/PaymentModal';
@@ -194,7 +192,6 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
-  const receiptRef = useRef<HTMLDivElement>(null);
 
   // Sync status
   const [syncStatus, setSyncStatus] = useState<{
@@ -950,7 +947,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       // A349: the sale is saved either way; a ticket that could not be produced is said, never left to the log.
       const failed = Array.isArray(created?.printFailed) ? created.printFailed : [];
       setPrintMsg(failed.length
-        ? `The sale is saved, but this did not print: ${failed.join(', ')}. Press Reprint, or check the printer set-up.`
+        ? `The sale is saved, but this did not print: ${failed.join(', ')}. Check the printer — a manager can reprint it from History.`
         : '');
 
       // Refresh sync status
@@ -961,40 +958,6 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       setPlacing(false);
       placingRef.current = false;
     }
-  };
-
-  const handlePrint = async () => {
-    const content = receiptRef.current;
-    if (!content) return;
-    setPrintMsg('');
-
-    // With thermal on, the receipt was already queued to the till station when
-    // the order was created — see main/escposBridge.ts. Printing the HTML copy
-    // as well would hand the customer two receipts, and the second one laid out
-    // by a different renderer.
-    try {
-      // canPrint('receipt'), NOT enabled(). The first real install had thermal
-      // switched on with only Kitchen and dispatcher configured — no receipt
-      // station at all. Gating on the flag alone made this report "Receipt sent
-      // to the printer" and print nothing, which is the worst possible failure
-      // here: a cashier who believes the receipt printed hands over goods.
-      if (await window.swiftpos.escpos.canPrint('receipt')) {
-        // A REAL second copy, marked "Duplicate Print" on the paper.
-        //
-        // This used to return a success message and print nothing, which made
-        // the button worse than useless: a cashier pressing it for a customer
-        // who wanted their receipt got told it had gone, and it had not.
-        const r = await window.swiftpos.escpos.reprintReceipt();
-        if (!r.ok) setPrintMsg(r.error ?? 'Could not reprint the receipt.');
-        return;
-      }
-    } catch { /* fall through to the path that has always worked */ }
-
-    // Native silent print, falling back to the OS default printer and finally
-    // to an on-screen preview. It CANNOT be allowed to fail quietly: a cashier
-    // who believes the receipt printed will hand over goods without one.
-    const res = await printReceipt(content.innerHTML, printerSettings, `${business.name} — Receipt`);
-    if (!res.ok) setPrintMsg(res.error ?? 'Receipt did not print.');
   };
 
   const handleNewOrder = () => {
@@ -1027,62 +990,45 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const gridFilterSummary = filterSummary(gridFilter);
   const clearGridFilter = () => { setActiveCategory('all'); setSearch(''); };
 
-  // ── Receipt screen ─────────────────────────────────────
+  // ── After payment: a success screen ─────────────────────
+  // 0.6.29 (owner, 2026-10-01): "should we remove this modal, we replace it with a success modal … since we are getting
+  // rid of the reprint" — and no print button. The receipt prints at payment (the thermal spool); this screen says what
+  // was paid and how, and moves on. It used to show the on-screen receipt with a print button.
   if (completedOrder) {
+    const p = completedOrder.payment;
+    const change = p.legs.reduce((sum, l) => sum + (Number(l.change_given) || 0), 0);
+    const methodLabel = (m: string) => (m === 'mpesa' ? 'M-Pesa' : m ? m[0].toUpperCase() + m.slice(1) : m);
+    const fmtMoney = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const Row = ({ l, v, strong }: { l: string; v: string; strong?: boolean }) => (
+      <div className={`flex justify-between text-sm ${strong ? 'text-white font-semibold' : 'text-gray-300'}`}><span>{l}</span><span className="tabular-nums">{v}</span></div>
+    );
     return (
       <div className="app-screen-min bg-gray-950 flex items-center justify-center px-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden">
-          <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-center justify-between">
-            <div>
-              <p className="text-green-400 font-semibold">Payment successful</p>
-              <p className="text-gray-300 text-xs mt-0.5">{completedOrder.orderNumber}</p>
-            </div>
-            <span className="text-2xl">✓</span>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm overflow-hidden" data-testid="payment-success">
+          <div className="px-6 pt-8 pb-4 text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-3xl text-white">✓</div>
+            <p className="text-green-400 font-semibold text-lg mt-3">Payment successful</p>
+            <p className="text-gray-400 text-xs mt-0.5">{completedOrder.orderNumber}
+              {completedOrder.orderType === 'delivery' && completedOrder.deliveryPerson ? ` · Delivery — ${completedOrder.deliveryPerson}` : ''}
+              {completedOrder.orderType === 'dine_in' && completedOrder.tableNumber ? ` · Table ${completedOrder.tableNumber}` : ''}</p>
           </div>
-          <div className="px-6 py-4 max-h-96 overflow-y-auto">
-            <ReceiptView
-              ref={receiptRef}
-              businessName={business.name}
-              branchName={branchName ?? undefined}
-              orderNumber={completedOrder.orderNumber}
-              cart={cart}
-              subtotal={subtotal}
-              discountAmount={completedOrder.payment.discountAmount}
-              tipAmount={completedOrder.payment.tipAmount}
-              // 0.6.27: the BILL (ReceiptView adds the tip and the delivery fee after it). amountDue here showed a
-              // tip as "Round Off" and counted it twice in PAY on the screen (the printed receipt was right).
-              total={completedOrder.payment.total}
-              deliveryFee={completedOrder.payment.deliveryFee}
-              vatAmount={completedOrder.payment.vatAmount}
-              vatRate={vatRate}
-              ctlAmount={completedOrder.payment.ctlAmount}
-              ctlRate={ctlRate}
-              billNumber={completedOrder.orderNumber}
-              kots={kotCount}
-              deliveryPerson={completedOrder.deliveryPerson}
-              headerText={receiptHeader}
-              footerText={receiptFooter}
-              tillNumber={deviceName ?? undefined}
-              cashierName={cashierName ?? undefined}
-              currency={currency}
-              payments={completedOrder.payment.legs}
-              orderType={flags.isRestaurant ? completedOrder.orderType : undefined}
-              tableNumber={completedOrder.orderType === 'dine_in' ? completedOrder.tableNumber : undefined}
-              footerMessage={printerSettings.footerMessage}
-            />
+          <div className="px-6 pb-4 space-y-1.5">
+            <Row l="Bill" v={fmtMoney(p.total)} />
+            {p.tipAmount > 0 && <Row l="Tip" v={fmtMoney(p.tipAmount)} />}
+            {p.deliveryFee > 0 && <Row l={`Delivery fee${completedOrder.deliveryPerson ? ` (${completedOrder.deliveryPerson})` : ''}`} v={fmtMoney(p.deliveryFee)} />}
+            <div className="border-t border-gray-800 my-1" />
+            <Row l="Paid" v={fmtMoney(p.amountDue)} strong />
+            {p.legs.map((l, i) => <Row key={i} l={`  ${methodLabel(l.method)}`} v={fmtMoney(Number(l.amount) || 0)} />)}
+            {change > 0 && <Row l="Change" v={fmtMoney(change)} strong />}
           </div>
-          {/* Only ever set when something FAILED. A successful print says
-              nothing — the paper is the confirmation. */}
+          {/* Only when the receipt or a ticket did not print — the cashier must know there is no paper. */}
           {printMsg && (
-            <div className="px-6 pb-1">
+            <div className="px-6 pb-2">
               <p className="text-amber-400 text-xs leading-snug">⚠ {printMsg}</p>
             </div>
           )}
-          <div className="px-6 pb-6 flex gap-3">
-            <button onClick={handlePrint} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">
-              🖨 Print receipt
-            </button>
-            <button onClick={handleNewOrder} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
+          <div className="px-6 pb-6">
+            <button onClick={handleNewOrder} className="w-full bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-3 text-sm transition-colors">
               New order
             </button>
           </div>
@@ -1795,7 +1741,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? 'Last 30 orders · void within 30 minutes of the sale, refund any time after' : historyOwnOnly ? 'Your last 30 sales' : 'Last 30 orders on this till'}</p>
+                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? 'Today\'s orders · void within 30 minutes of the sale, refund any time after' : historyOwnOnly ? 'Your sales today' : 'Today\'s orders on this till'}</p>
                 {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
               <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
@@ -1865,8 +1811,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                           <td className="px-4 py-2.5 text-gray-300 capitalize text-xs">
                             <MethodDot method={method} />{method.replace(/_/g, ' ')}
                           </td>
-                          <td className="px-4 py-2.5 font-semibold text-white tabular-nums">
-                            {fmtMoney(Number(o.total))}
+                          {/* 0.6.29 (owner, D2): what the customer PAID — the bill plus any tip and delivery fee (the M-Pesa
+                              received). The bill alone hid the fee: "where is the 400 accounted". */}
+                          <td className="px-4 py-2.5 font-semibold text-white tabular-nums" data-testid="history-paid">
+                            {fmtMoney(Number(o.total) + Number(o.tip_amount ?? 0) + Number(o.delivery_fee ?? 0))}
+                            {Number(o.delivery_fee ?? 0) > 0 && (
+                              <span className="block text-[10px] font-normal text-gray-400">incl. delivery {fmtMoney(Number(o.delivery_fee))}</span>
+                            )}
                           </td>
                           <td className="px-4 py-2.5">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${

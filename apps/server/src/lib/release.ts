@@ -9,7 +9,7 @@
  * otherwise). ONE file: shared/release.ts, copied to the cloud, the dashboard and the admin portal (check-shared-sync).
  */
 
-export const RELEASE = '0.6.28';
+export const RELEASE = '0.6.29';
 
 /** "v0.6.28 · 47a86c9" — the commit when the host told the build it (Vercel / Render); "v0.6.28" alone otherwise. */
 export function releaseLabel(release: string | null | undefined, commit?: string | null): string {

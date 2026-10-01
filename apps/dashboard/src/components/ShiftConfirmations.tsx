@@ -139,7 +139,7 @@ export default function ShiftConfirmations() {
 
       {target && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-md border border-gray-200 dark:border-gray-700 p-5 space-y-3">
+          <div className="bg-white dark:bg-gray-900 rounded-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 p-5 space-y-3">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Confirm {target.cashier_name}'s shift</h3>
             <p className="text-xs text-gray-500">
               {view.showCashier
@@ -147,26 +147,51 @@ export default function ShiftConfirmations() {
                 : 'Count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
               {' '}{confirmationLabel({ status: 'awaiting' })}.
             </p>
-            {methodsToCount(target.declared_methods).map((m) => {
-              const cashierSaid = view.showCashier && view.declared ? (view.declared[m] ?? 0) : null;
-              const typed = inputs[m] ?? '';
-              const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
-              return (
-                <div key={m}>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">{methodName(m)} counted</label>
-                  {cashierSaid !== null && <p className="text-xs text-gray-500 mb-1" data-testid={`cashier-${m}`}>Cashier entered {money(cashierSaid)}</p>}
-                  <input type="number" min={0} step="0.01" inputMode="decimal" value={typed} data-testid={`confirm-input-${m}`}
-                    onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })} onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-                  {differs && (
-                    <input type="text" maxLength={REASON_MAX} value={reasons[m] ?? ''} data-testid={`reason-${m}`}
-                      placeholder={`Why is it ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's?`}
-                      onChange={(e) => setReasons({ ...reasons, [m]: e.target.value })}
-                      className="mt-1.5 w-full rounded-lg border border-amber-400 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-                  )}
-                </div>
-              );
-            })}
+            {/* 0.6.29 (owner): one table — who, when, and per method the cashier's figure, the manager's own count
+                (the confirm or the dispute) and the reason where they differ. */}
+            <div className="grid grid-cols-2 gap-x-3 text-xs text-gray-600 dark:text-gray-300" data-testid="confirm-head">
+              <span className="text-gray-500">Cashier</span><span className="text-right">{target.cashier_name}</span>
+              <span className="text-gray-500">Shift</span><span className="text-right">{when(target.opened_at)} – {when(target.closed_at)}</span>
+            </div>
+            <table className="w-full text-sm" data-testid="confirm-table">
+              <thead>
+                <tr className="text-xs text-gray-500 text-left">
+                  <th className="font-normal pb-1">Method</th>
+                  {view.showCashier && <th className="font-normal pb-1 text-right pr-2">Cashier</th>}
+                  <th className="font-normal pb-1">Manager</th>
+                </tr>
+              </thead>
+              <tbody>
+                {methodsToCount(target.declared_methods).map((m) => {
+                  const cashierSaid = view.showCashier && view.declared ? (view.declared[m] ?? 0) : null;
+                  const typed = inputs[m] ?? '';
+                  const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                  return [
+                    <tr key={m}>
+                      <td className="py-1 text-gray-800 dark:text-gray-200 whitespace-nowrap">{methodName(m)}</td>
+                      {view.showCashier && (
+                        <td className="py-1 pr-2 text-right text-gray-600 dark:text-gray-300 tabular-nums" data-testid={`cashier-${m}`}>{money(cashierSaid ?? 0)}</td>
+                      )}
+                      <td className="py-1">
+                        <input type="number" min={0} step="0.01" inputMode="decimal" value={typed} data-testid={`confirm-input-${m}`}
+                          onChange={(e) => setInputs({ ...inputs, [m]: e.target.value })} onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                          className={`w-full rounded-lg border ${differs ? 'border-amber-400' : 'border-gray-300 dark:border-gray-700'} bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white`} />
+                      </td>
+                    </tr>,
+                    differs && (
+                      <tr key={`${m}-reason`}>
+                        <td colSpan={view.showCashier ? 3 : 2} className="pb-2">
+                          <input type="text" maxLength={REASON_MAX} value={reasons[m] ?? ''} data-testid={`reason-${m}`}
+                            placeholder={`Reason — ${methodName(m)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
+                            onChange={(e) => setReasons({ ...reasons, [m]: e.target.value })}
+                            className="w-full rounded-lg border border-amber-400 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                        </td>
+                      </tr>
+                    ),
+                  ];
+                })}
+              </tbody>
+            </table>
             {msg && <p className="text-sm text-red-600 dark:text-red-400">{msg}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setTarget(null)} disabled={busy} className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">Cancel</button>

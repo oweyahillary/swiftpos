@@ -122,9 +122,11 @@ ok('the on-screen receipt: round off never includes the tip; PAY = total + tip (
 // 0.6.27: the sale screen hands the receipt the BILL (it passed amountDue — bill + tip — so a tip showed as "Round
 // Off" and was counted twice in PAY on the screen; the printed receipt was right).
 const pp = fs.readFileSync(path.join(here, '..', 'src', 'renderer', 'pages', 'POSPage.tsx'), 'utf8');
-ok('0.6.27: the on-screen receipt gets the bill as its total, the fee beside it',
-  /total=\{completedOrder\.payment\.total\}/.test(pp) && /deliveryFee=\{completedOrder\.payment\.deliveryFee\}/.test(pp)
-  && !/total=\{completedOrder\.payment\.amountDue\}/.test(pp));
+// 0.6.29 (owner): the on-screen receipt after payment became a success screen with no print button. Same money rule:
+// the bill, then the tip and the delivery fee, and "Paid" = what the customer handed over (amountDue) — never the tip twice.
+ok('0.6.29: the success screen shows the bill, tip and fee apart, and Paid = amountDue; no print button',
+  /<Row l="Bill" v=\{fmtMoney\(p\.total\)\} \/>/.test(pp) && /<Row l="Paid" v=\{fmtMoney\(p\.amountDue\)\} strong \/>/.test(pp)
+  && /p\.deliveryFee > 0 && <Row l=\{`Delivery fee/.test(pp) && !/Print receipt/.test(pp) && !/handlePrint/.test(pp));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

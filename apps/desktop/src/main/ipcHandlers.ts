@@ -2258,7 +2258,8 @@ export function registerIpcHandlers() {
   handle('pos:history', async () => {
     const scope = historyScope();
     if (scope.ownOnly && !scope.staffId) return { scope, orders: [] };
-    return { scope, orders: getRecentOrders(30, undefined, scope.ownOnly ? scope.staffId : null) };
+    // 0.6.29 (owner): "it should show everything of the days sales" — today's, all of them (it was the last 30).
+    return { scope, orders: getRecentOrders(0, resolveRange('today'), scope.ownOnly ? scope.staffId : null) };
   });
   handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
     getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));

@@ -118,7 +118,9 @@ ok('an open shift cannot be confirmed', !!threw(() => { signIn('u-test', 'Test C
 const extra = S.awaitingConfirmation().find((a) => a.id !== sh.id);
 S.confirmShift(extra.id, { id: 'u-mary', name: 'Mary' }, { cash: 100 });
 
-const c = S.confirmShift(sh.id, { id: 'u-mary', name: 'Mary' }, { cash: 2400, mpesa: 3250, card: 700 });
+// 0.6.29: the cashier's figures are standard at confirm — a count that differs from the declaration needs a reason.
+const c = S.confirmShift(sh.id, { id: 'u-mary', name: 'Mary' }, { cash: 2400, mpesa: 3250, card: 700 },
+  { cash: '100 short in the drawer', card: 'card total 700 on the machine' });
 const line = (m) => c.lines.find((l) => l.method === m);
 ok('the manager\'s blind recount: cash 2400 against 2500 expected → short 100',
   line('cash').confirmed === 2400 && line('cash').expected === 2500 && line('cash').variance === -100, JSON.stringify(line('cash')));

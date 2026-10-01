@@ -15,11 +15,14 @@ interface Props {
   /** Codes to recount — the shift's declared methods (cash first). */
   methods: string[];
   currency: string;
+  /** 0.6.29: the shift's open and close times, at the head of the table. */
+  openedAt?: string | null;
+  closedAt?: string | null;
   onDone: (c: Confirmation) => void;
   onClose: () => void;
 }
 
-export default function ConfirmShiftModal({ shiftId, cashierName, methods, currency, onDone, onClose }: Props) {
+export default function ConfirmShiftModal({ shiftId, cashierName, methods, currency, openedAt, closedAt, onDone, onClose }: Props) {
   const [options, setOptions] = useState<MethodOption[]>([]);
   const [pin, setPin] = useState('');
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -39,6 +42,8 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
     posApi.shift.canConfirm().then((v) => setSignedInManager(v === true)).catch(() => setSignedInManager(false));
   }, []);
 
+  const when = (iso?: string | null) => (iso
+    ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
   const money = (n: number) => `${currency} ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const submit = async () => {
@@ -61,7 +66,7 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-4 z-[60]" data-testid="confirm-shift">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-white font-bold">{result ? 'Shift confirmed' : `Confirm ${cashierName}'s shift`}</h2>
           <button onClick={() => (result ? onDone(result) : onClose())} className="text-gray-300 hover:text-white">✕</button>
@@ -76,28 +81,52 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
                   ? 'Manager: count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
                   : 'Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
               </p>
-              {codes.map((c) => {
-                const cashierSaid = view.showCashier && view.declared ? (view.declared[c] ?? 0) : null;
-                const typed = inputs[c] ?? '';
-                const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
-                return (
-                  <div key={c}>
-                    <label className="block text-xs text-gray-300 mb-1"><MethodDot method={c} />{methodName(c, options)} counted ({currency})</label>
-                    {cashierSaid !== null && (
-                      <p className="text-xs text-gray-400 mb-1" data-testid={`cashier-${c}`}>Cashier entered {money(cashierSaid)}</p>
-                    )}
-                    <input type="number" inputMode="decimal" value={typed} placeholder="0.00" className={inputCls}
-                      data-testid={`confirm-${c}`} onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                      onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} />
-                    {differs && (
-                      <input type="text" maxLength={REASON_MAX} value={reasons[c] ?? ''} data-testid={`reason-${c}`}
-                        placeholder={`Why is it ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's?`}
-                        className={inputCls + ' mt-1.5 border-amber-500/50'}
-                        onChange={(e) => setReasons({ ...reasons, [c]: e.target.value })} />
-                    )}
-                  </div>
-                );
-              })}
+              {/* 0.6.29 (owner): one table — who, when, and per method the cashier's figure, the manager's own count
+                  (the confirm or the dispute) and the reason where they differ. */}
+              <div className="text-xs text-gray-300 grid grid-cols-2 gap-x-3 gap-y-1" data-testid="confirm-head">
+                <span className="text-gray-500">Cashier</span><span className="text-right">{cashierName}</span>
+                <span className="text-gray-500">Shift</span>
+                <span className="text-right">{when(openedAt)} – {closedAt ? when(closedAt) : 'open'}</span>
+              </div>
+              <table className="w-full text-sm" data-testid="confirm-table">
+                <thead>
+                  <tr className="text-xs text-gray-500 text-left">
+                    <th className="font-normal pb-1">Method</th>
+                    {view.showCashier && <th className="font-normal pb-1 text-right pr-2">Cashier</th>}
+                    <th className="font-normal pb-1">Manager ({currency})</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {codes.map((c) => {
+                    const cashierSaid = view.showCashier && view.declared ? (view.declared[c] ?? 0) : null;
+                    const typed = inputs[c] ?? '';
+                    const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                    return [
+                      <tr key={c} className="align-middle">
+                        <td className="py-1 text-gray-200 whitespace-nowrap"><MethodDot method={c} />{methodName(c, options)}</td>
+                        {view.showCashier && (
+                          <td className="py-1 pr-2 text-right text-gray-300 tabular-nums" data-testid={`cashier-${c}`}>{money(cashierSaid ?? 0)}</td>
+                        )}
+                        <td className="py-1">
+                          <input type="number" inputMode="decimal" value={typed} placeholder="0.00" className={inputCls + (differs ? ' border-amber-500/60' : '')}
+                            data-testid={`confirm-${c}`} onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                            onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} />
+                        </td>
+                      </tr>,
+                      differs && (
+                        <tr key={`${c}-reason`}>
+                          <td colSpan={view.showCashier ? 3 : 2} className="pb-2">
+                            <input type="text" maxLength={REASON_MAX} value={reasons[c] ?? ''} data-testid={`reason-${c}`}
+                              placeholder={`Reason — ${methodName(c, options)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
+                              className={inputCls + ' border-amber-500/50'}
+                              onChange={(e) => setReasons({ ...reasons, [c]: e.target.value })} />
+                          </td>
+                        </tr>
+                      ),
+                    ];
+                  })}
+                </tbody>
+              </table>
               {!signedInManager && (
                 <div data-testid="confirm-pin">
                   <label className="block text-xs text-gray-300 mb-1">Manager PIN</label>

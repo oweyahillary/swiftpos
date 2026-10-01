@@ -25,6 +25,10 @@ import { reasonsNeeded, missingReasons, REASON_MAX } from '../../lib/confirmReas
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** 0.6.29: "01 Oct, 08:02" for the confirm table's shift line. */
+const shortTime = (iso?: string | null) => (iso
+  ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+
 export interface Shift {
   id: string;
   status: 'open' | 'closed';
@@ -583,25 +587,51 @@ export default function ShiftModal({
                     ? 'Manager: count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
                     : 'Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
                 </p>
-                {methodsToCount(closeResult.declared_methods, blind ? blindMethods.map((m) => ({ method: m, amount: 1 })) : taken).map((m) => {
-                  const cashierSaid = confirmView.showCashier && confirmView.declared ? (confirmView.declared[m] ?? 0) : null;
-                  const typed = confirmInputs[m] ?? '';
-                  const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
-                  return (
-                    <div key={m}>
-                      <label style={s.label}>{methodName(m, methodOptions)} counted ({currency})</label>
-                      {cashierSaid !== null && <p style={{ ...s.subtitle, margin: '0 0 4px' }} data-testid={`cashier-${m}`}>Cashier entered {fmt(cashierSaid, currency)}</p>}
-                      <input style={s.input} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
-                        data-testid={`confirm-${m}`} onWheel={e => (e.target as HTMLInputElement).blur()}
-                        value={typed} onChange={e => setConfirmInputs({ ...confirmInputs, [m]: e.target.value })} />
-                      {differs && (
-                        <input style={{ ...s.input, borderColor: '#f59e0b' }} type="text" maxLength={REASON_MAX} data-testid={`reason-${m}`}
-                          placeholder={`Why is it ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's?`}
-                          value={confirmReasons[m] ?? ''} onChange={e => setConfirmReasons({ ...confirmReasons, [m]: e.target.value })} />
-                      )}
-                    </div>
-                  );
-                })}
+                {/* 0.6.29 (owner): one table — who, when, and per method the cashier's figure, the manager's own count
+                    (the confirm or the dispute) and the reason where they differ. */}
+                <div data-testid="confirm-head" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px', fontSize: 12, color: '#cbd5e1', margin: '6px 0 10px' }}>
+                  <span style={{ color: '#64748b' }}>Cashier</span><span style={{ textAlign: 'right' }}>{shiftOwner?.name ?? session?.staffName ?? '—'}</span>
+                  <span style={{ color: '#64748b' }}>Shift</span>
+                  <span style={{ textAlign: 'right' }}>{shortTime(closeResult.opened_at)} – {closeResult.closed_at ? shortTime(closeResult.closed_at) : 'now'}</span>
+                </div>
+                <table data-testid="confirm-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ color: '#64748b', fontSize: 11, textAlign: 'left' }}>
+                      <th style={{ fontWeight: 400, paddingBottom: 4 }}>Method</th>
+                      {confirmView.showCashier && <th style={{ fontWeight: 400, paddingBottom: 4, textAlign: 'right', paddingRight: 8 }}>Cashier</th>}
+                      <th style={{ fontWeight: 400, paddingBottom: 4 }}>Manager ({currency})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {methodsToCount(closeResult.declared_methods, blind ? blindMethods.map((m) => ({ method: m, amount: 1 })) : taken).map((m) => {
+                      const cashierSaid = confirmView.showCashier && confirmView.declared ? (confirmView.declared[m] ?? 0) : null;
+                      const typed = confirmInputs[m] ?? '';
+                      const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                      return [
+                        <tr key={m}>
+                          <td style={{ padding: '3px 0', color: '#e2e8f0', whiteSpace: 'nowrap' }}>{methodName(m, methodOptions)}</td>
+                          {confirmView.showCashier && (
+                            <td style={{ padding: '3px 8px 3px 0', textAlign: 'right', color: '#cbd5e1' }} data-testid={`cashier-${m}`}>{fmt(cashierSaid ?? 0, currency)}</td>
+                          )}
+                          <td style={{ padding: '3px 0' }}>
+                            <input style={{ ...s.input, margin: 0, ...(differs ? { borderColor: '#f59e0b' } : {}) }} type="number" min="0" step="any" inputMode="decimal" placeholder="0"
+                              data-testid={`confirm-${m}`} onWheel={e => (e.target as HTMLInputElement).blur()}
+                              value={typed} onChange={e => setConfirmInputs({ ...confirmInputs, [m]: e.target.value })} />
+                          </td>
+                        </tr>,
+                        differs && (
+                          <tr key={`${m}-reason`}>
+                            <td colSpan={confirmView.showCashier ? 3 : 2} style={{ paddingBottom: 6 }}>
+                              <input style={{ ...s.input, margin: 0, borderColor: '#f59e0b' }} type="text" maxLength={REASON_MAX} data-testid={`reason-${m}`}
+                                placeholder={`Reason — ${methodName(m, methodOptions)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
+                                value={confirmReasons[m] ?? ''} onChange={e => setConfirmReasons({ ...confirmReasons, [m]: e.target.value })} />
+                            </td>
+                          </tr>
+                        ),
+                      ];
+                    })}
+                  </tbody>
+                </table>
                 {!signedInManager && (
                   <>
                     <label style={s.label}>Manager PIN</label>

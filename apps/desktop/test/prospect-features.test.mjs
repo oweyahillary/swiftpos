@@ -59,11 +59,15 @@ const features = (on) => C.setPosFeatures({ blind_shift_close: on, delivery_fee:
 console.log('0.6.27 — the prospect\'s requests, per-client switches\n');
 
 // ── The switches ─────────────────────────────────────────────────────────────
-ok('never told → every switch off (an existing client sees no change)', Object.values(C.getPosFeatures()).every((v) => v === false));
+// 0.6.29: blind close and the cashier's figures at confirm are standard (always on); the rest are switches, off unless set.
+ok('never told → every switch off; the two standard ones on', (() => { const f = C.getPosFeatures();
+  return f.blind_shift_close === true && f.confirm_shows_cashier_figures === true
+    && Object.entries(f).filter(([k]) => k !== 'blind_shift_close' && k !== 'confirm_shows_cashier_figures').every(([, v]) => v === false); })());
 C.setPosFeatures({ delivery_fee: 'yes', blind_shift_close: 1, cashier_no_reprint: true, made_up: true });
 ok('only a real true turns one on; unknown keys are dropped',
-  JSON.stringify(C.getPosFeatures()) === JSON.stringify({ blind_shift_close: false, delivery_fee: false, cashier_own_history: false, cashier_no_reprint: true, confirm_shows_cashier_figures: false,
-                                                kitchen_void_approval: false, pay_before_kitchen: false }),   // 0.6.28 adds the last two
+  JSON.stringify(C.getPosFeatures()) === JSON.stringify({ delivery_fee: false, cashier_own_history: false, cashier_no_reprint: true,
+                                                kitchen_void_approval: false, pay_before_kitchen: false,
+                                                blind_shift_close: true, confirm_shows_cashier_figures: true }),   // 0.6.29: standard ones last, always on
   JSON.stringify(C.getPosFeatures()));
 C.setPosFeatures(undefined);
 ok('an older cloud (nothing said) keeps what the till has', C.getPosFeatures().cashier_no_reprint === true);
@@ -166,7 +170,11 @@ ok('…with it, confirmed; only the differing method keeps a reason (cleaned)',
 ok('…stored for the cloud and the report', JSON.parse(db.prepare(`SELECT confirm_reasons FROM shifts WHERE id=?`).get(shiftId).confirm_reasons).cash === '34 was a float for change'
   && S.shiftConfirmation(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shiftId)).lines.find((l) => l.method === 'cash').reason === '34 was a float for change');
 features(false);
-ok('switch off: the confirm screen stays blind (A365)', S.confirmView(shiftId).showCashier === false && S.confirmView(shiftId).declared === null);
+// 0.6.29: standard — no switch turns it off; a stored row for the old key is ignored.
+ok('the confirm screen always shows the cashier\'s figures (standard since 0.6.29)', S.confirmView(shiftId).showCashier === true && S.confirmView(shiftId).declared !== null);
+C.setPosFeatures({ blind_shift_close: false, confirm_shows_cashier_figures: false });
+signIn('u-amy', 'Amy', 'cashier');
+ok('…and a cashier always closes blind, whatever a stored row says', S.blindClose() && S.confirmView(shiftId).showCashier === true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

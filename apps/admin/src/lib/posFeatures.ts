@@ -11,11 +11,6 @@
 
 export const POS_FEATURES = [
   {
-    key: 'blind_shift_close',
-    label: 'Blind shift close',
-    description: 'Cashiers closing a shift do not see sales, per-method totals or expected cash — only a box for each method used.',
-  },
-  {
     key: 'delivery_fee',
     label: 'Delivery fee and rider',
     description: 'Delivery orders need the rider’s name and a delivery fee. The customer pays the fee on top of the bill (not sales); the rider is paid it in cash from the drawer, recorded automatically.',
@@ -30,11 +25,6 @@ export const POS_FEATURES = [
     label: 'No reprint for cashiers',
     description: 'Cashiers cannot reprint a receipt from History. Managers can.',
   },
-  {
-    key: 'confirm_shows_cashier_figures',
-    label: 'Manager sees the cashier’s figures when confirming',
-    description: 'When confirming a shift the manager sees what the cashier entered per method, keys in their own count, and must give a reason where the two differ.',
-  },
   // 0.6.28 (owner, 2026-10-01: a sent order cancelled after the customer paid in cash — "the cashier pockets the money").
   {
     key: 'kitchen_void_approval',
@@ -48,14 +38,28 @@ export const POS_FEATURES = [
   },
 ] as const;
 
-export type PosFeatureKey = (typeof POS_FEATURES)[number]['key'];
+/**
+ * 0.6.29 — were switches in 0.6.27, now STANDARD for every client (owner, 2026-10-01: "cashiers should never see this only
+ * the manager should be able to"; the manager's confirm table always shows the cashier's figures). Always on; the admin
+ * portal no longer lists them, and a stored `feature_flags` row for either is ignored.
+ *   blind_shift_close             — a cashier never sees sales, per-method totals or expected cash (a manager sees all);
+ *   confirm_shows_cashier_figures — at confirm the manager sees the cashier's figure per method, keys in their own, and
+ *                                   gives a reason where they differ.
+ */
+export const STANDARD_POS_FEATURES = ['blind_shift_close', 'confirm_shows_cashier_figures'] as const;
+
+export type PosFeatureKey = (typeof POS_FEATURES)[number]['key'] | (typeof STANDARD_POS_FEATURES)[number];
 export type PosFeatures = Record<PosFeatureKey, boolean>;
 
+/** The keys the admin portal switches (the standard ones are not among them). */
 export const POS_FEATURE_KEYS: readonly PosFeatureKey[] = POS_FEATURES.map((f) => f.key);
 
-/** Every switch off — what a client has until the admin portal turns one on. */
+/** Every switch off — what a client has until the admin portal turns one on. The standard ones are always on. */
 export function noPosFeatures(): PosFeatures {
-  return Object.fromEntries(POS_FEATURE_KEYS.map((k) => [k, false])) as PosFeatures;
+  return Object.fromEntries([
+    ...POS_FEATURE_KEYS.map((k) => [k, false]),
+    ...STANDARD_POS_FEATURES.map((k) => [k, true]),
+  ]) as PosFeatures;
 }
 
 /**

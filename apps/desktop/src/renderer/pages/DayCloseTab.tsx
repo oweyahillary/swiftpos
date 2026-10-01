@@ -267,6 +267,7 @@ export default function DayCloseTab({ currency }: Props) {
       {confirmingShift && (
         <ConfirmShiftModal
           shiftId={confirmingShift.id} cashierName={confirmingShift.cashier_name} methods={confirmingShift.methods}
+          openedAt={confirmingShift.opened_at} closedAt={confirmingShift.closed_at}
           currency={currency}
           onClose={() => setConfirmingShift(null)}
           onDone={async () => { setConfirmingShift(null); await load(); }}

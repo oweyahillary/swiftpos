@@ -29,6 +29,7 @@ interface Order {
   payments: Payment[];
   delivery_person?: string | null;   // 0.6.27
   delivery_fee?: number | null;      // 0.6.27
+  tip_amount?: number | null;        // 0.6.29
 }
 /** 0.6.27: own_only — the cloud narrowed the list to this cashier's sales; can_reprint — Reprint is offered. */
 interface OrdersResponse { orders: Order[]; total: number; own_only?: boolean; can_reprint?: boolean; }
@@ -51,6 +52,9 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const PAGE_SIZE = 20;
+/** 0.6.29: what the customer paid — the bill, any tip and any delivery fee (the payments add up to this). */
+const paidOf = (o: { total: number; tip_amount?: number | null; delivery_fee?: number | null }) =>
+  Number(o.total) + Number(o.tip_amount ?? 0) + Number(o.delivery_fee ?? 0);
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -107,6 +111,9 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
         limit: String(PAGE_SIZE),
         offset: String((p - 1) * PAGE_SIZE),
       });
+      // 0.6.29 (owner): "it should show everything of the days sales" — today's (from local midnight), page by page.
+      const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+      params.set('date_from', midnight.toISOString());
       if (q) params.set('search', q);
       if (t) params.set('order_type', t);
       if (m) params.set('method', m);
@@ -198,7 +205,8 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     ●
                   </span>
                   {isRefunded(order.payments) && <span style={s.refundedBadge}>refunded</span>}
-                  <span style={s.total}>{fmt(order.total, currency)}</span>
+                  {/* 0.6.29 (owner, D2): what the customer PAID — the bill + tip + delivery fee (the fee was hidden). */}
+                  <span style={s.total} data-testid="history-paid">{fmt(paidOf(order), currency)}{Number(order.delivery_fee ?? 0) > 0 ? ` (incl. delivery ${fmt(Number(order.delivery_fee), currency)})` : ''}</span>
                   <span style={s.chevron}>{isOpen ? '▲' : '▼'}</span>
                 </div>
               </button>

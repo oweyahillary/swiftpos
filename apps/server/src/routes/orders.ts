@@ -937,7 +937,7 @@ router.get('/', async (req, res) => {
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount, discount_amount,
       loyalty_points_used, total, created_at, branch_id, customer_name, device_id,
-      cashier_id, delivery_person, delivery_fee,
+      cashier_id, delivery_person, delivery_fee, tip_amount,
       payments ( method, amount, status )${method ? ', pm:payments!inner ( method )' : ''}
     `, { count: 'exact' })
     .eq('business_id', req.businessId)

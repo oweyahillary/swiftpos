@@ -596,6 +596,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
         <ConfirmShiftModal
           shiftId={finalReport.shift.id}
           cashierName={finalReport.shift.cashier_name}
+          openedAt={finalReport.shift.opened_at} closedAt={finalReport.shift.closed_at}
           methods={finalReport.confirmation?.methods ?? finalReport.confirmation?.lines.map((l) => l.method) ?? ['cash']}
           currency={currency}
           onClose={() => setConfirming(false)}
