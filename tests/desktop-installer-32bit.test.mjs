@@ -6,7 +6,8 @@
  *
  * MUTATIONS TO CONFIRM BITE: drop ia32 from the target → "both 64-bit and 32-bit" fails; the release run builds without
  * --ia32 → its pin fails; the release check still looks for -x64.exe → its pin fails; the cloud requires "-x64" in the
- * installer name → "the update feed serves the combined installer" fails.
+ * installer name → "the update feed serves the combined installer" fails; drop the tag/version check, the draft re-publish
+ * or the draft check from release.yml → "a wrong tag or a draft release stops the run" fails.
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -36,6 +37,14 @@ ok('the release run builds both and checks for that exact file', () => {
   assert.match(wf, /npx electron-builder --win nsis --x64 --ia32 --config electron-builder\.config\.js --publish always/);
   assert.match(wf, /for f in latest\.yml "SwiftPOS-\$V\.exe"; do/);
   assert.ok(!/SwiftPOS-\$V-x64\.exe/.test(wf), 'the release check still expects the 64-bit-only name');
+});
+// 2026-10-02: v0.6.32 was tagged on main's A376 merge (0.6.31) three times, then uploaded into a DRAFT release.
+ok('a wrong tag or a draft release stops the run (version checked first; a draft re-published, then refused)', () => {
+  const wf = read('.github/workflows/release.yml');
+  assert.match(wf, /PKG=\$\(node -p "require\('\.\/apps\/desktop\/package\.json'\)\.version"\)\n\s*if \[ "\$PKG" != "\$V" \]; then/);
+  assert.ok(wf.indexOf('Check the tag matches the desktop version') < wf.indexOf('Install desktop deps'), 'the tag check must run before the build');
+  assert.match(wf, /--json isDraft --jq \.isDraft\)" = "true" \]; then\n\s*gh release edit "\$TAG" --repo "\$GITHUB_REPOSITORY" --draft=false --prerelease/);
+  assert.match(wf, /\[ "\$DRAFT" = "false" \] \|\| \{ echo "::error::\$TAG is a DRAFT/);
 });
 ok('a local installer build makes the same combined installer', () => {
   assert.match(JSON.parse(read('apps/desktop/package.json')).scripts['pack:installer'], /--win nsis --x64 --ia32/);
