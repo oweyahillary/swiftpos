@@ -110,20 +110,51 @@ export function firstOrNull(r: OwnerBusinessResult): OwnedBusiness | null {
  * Returns null rather than throwing — the caller decides how to fail, and issuing
  * a code with no valid principal must be refused, not papered over.
  */
+/**
+ * 2026-10-02 (owner, admin portal "Enrol till" on a newly registered client: "Could not resolve the business owner for
+ * this code"; an older test client worked). Matching ONLY on `businesses.email` fails whenever that is not the owner's
+ * sign-in email — self-signup stores the business CONTACT email from the form when one is given, and the owner can change
+ * it in Settings › Business › Profile. Now, in order:
+ *   1. the owner's SIGN-IN email (`businesses.owner_id` → the auth user) — the truth;
+ *   2. `businesses.email` (how every client resolved before);
+ *   3. the business's one active user with the `owner` role.
+ * An email that matches more than one user is not taken (never guess between people). Pure part: pickOwnerUserId.
+ */
+export interface OwnerCandidate { id: string; email?: string | null; status?: string | null; role_name?: string | null }
+
+export function pickOwnerUserId(
+  users: OwnerCandidate[], opts: { authEmail?: string | null; businessEmail?: string | null },
+): string | null {
+  const norm = (e: unknown) => String(e ?? '').trim().toLowerCase();
+  for (const email of [norm(opts.authEmail), norm(opts.businessEmail)]) {
+    if (!email) continue;
+    const hits = users.filter((u) => norm(u.email) === email);
+    if (hits.length === 1) return hits[0].id;
+  }
+  const owners = users.filter((u) => norm(u.role_name) === 'owner' && norm(u.status || 'active') === 'active');
+  return owners.length === 1 ? owners[0].id : null;
+}
+
 export async function resolveOwnerUserId(businessId: string): Promise<string | null> {
   const { data: biz } = await supabase
-    .from('businesses').select('email').eq('id', businessId).maybeSingle();
-  const email = String((biz as any)?.email ?? '').trim().toLowerCase();
-  if (!email) return null;
+    .from('businesses').select('email, owner_id').eq('id', businessId).maybeSingle();
+  if (!biz) return null;
 
-  const likeSafe = email.replace(/[\\%_]/g, ch => `\\${ch}`);
-  const { data: candidates, error } = await supabase
-    .from('users').select('id, email')
-    .eq('business_id', businessId).ilike('email', likeSafe).limit(200);
+  let authEmail: string | null = null;
+  const ownerAuthId = (biz as { owner_id?: string | null }).owner_id;
+  if (ownerAuthId) {
+    try {
+      const { data } = await supabase.auth.admin.getUserById(ownerAuthId);
+      authEmail = data?.user?.email ?? null;
+    } catch { /* fall through to the business email */ }
+  }
+
+  const { data: users, error } = await supabase
+    .from('users').select('id, email, status, roles ( name )')
+    .eq('business_id', businessId).limit(500);
   if (error) return null;
-
-  const match = (candidates ?? []).find(
-    (u: any) => String(u.email ?? '').trim().toLowerCase() === email,
-  );
-  return (match as any)?.id ?? null;
+  const candidates: OwnerCandidate[] = (users ?? []).map((u: any) => ({
+    id: u.id, email: u.email, status: u.status, role_name: u.roles?.name ?? null,
+  }));
+  return pickOwnerUserId(candidates, { authEmail, businessEmail: (biz as { email?: string | null }).email ?? null });
 }

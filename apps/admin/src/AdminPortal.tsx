@@ -635,6 +635,7 @@ function ClientDetailPage({ client, req, onBack }) {
   const [deviceView, setDeviceView] = useState(null);           // Branches tab: selected till
   const [techAudit, setTechAudit] = useState(null);             // Branches tab: tech audit log for the till
   const [enrolResult, setEnrolResult] = useState(null);   // A69: { businessId, codes[], branchName, expiresAt }
+  const [enrolError, setEnrolError] = useState("");       // 2026-10-02: shown by the branches, not at the top of the page
   const [devices, setDevices] = useState([]);             // A70: enrolled-device roster
   const [editing, setEditing] = useState(false);          // G5: business edit panel open
   const [editForm, setEditForm] = useState({ name: "", type: "", currency: "" });
@@ -838,11 +839,11 @@ function ClientDetailPage({ client, req, onBack }) {
     const ans = await askPrompt(`How many tills for ${branch.name}? (1–20)`, "1");
     if (ans === null) return;                                   // cancelled
     const count = Math.max(1, Math.min(20, parseInt(ans as string, 10) || 1));
-    setEnrolBranch(branch.id); setEnrolResult(null);
+    setEnrolBranch(branch.id); setEnrolResult(null); setEnrolError("");
     try {
       const r = await req("POST", `/clients/${client.id}/branches/${branch.id}/enrol-code`, { count });
       setEnrolResult({ businessId: r.businessId, codes: r.codes || [], branchName: r.branchName || branch.name, expiresAt: r.expiresAt });
-    } catch(e) { setError(e.message); }
+    } catch(e) { setEnrolError(`${branch.name}: ${e.message}`); }   // beside the branch, where the admin is looking
     finally { setEnrolBranch(null); }
   }
 
@@ -1278,6 +1279,11 @@ function ClientDetailPage({ client, req, onBack }) {
               ))}
 
               {/* A69: minted codes — shown ONCE. Business ID once, then one code per till. */}
+              {enrolError && (
+                <div data-testid="enrol-error" style={{ marginTop: 10, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>
+                  Could not issue an enrolment code — {enrolError}
+                </div>
+              )}
               {enrolResult && (
                 <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
@@ -1375,6 +1381,11 @@ function ClientDetailPage({ client, req, onBack }) {
               {/* A198: show the minted code on the Branches tab too — same shared state
                   as the Overview card. Without this, "Enrol till" here minted a single-use
                   code with nowhere to display it, silently burning it. */}
+              {enrolError && (
+                <div data-testid="enrol-error" style={{ marginTop: 10, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>
+                  Could not issue an enrolment code — {enrolError}
+                </div>
+              )}
               {enrolResult && (
                 <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
