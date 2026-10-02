@@ -7,7 +7,7 @@ import {
 // 0.6.30 (A336 stage 3) — Manager → Settings → Voids & refunds: the owner's rules (shared/reversalRules.ts).
 // Owner, 2026-10-01: "we will let the owner decide the refund method in the managers setting which methods are allow".
 // Everyone on the manager screen sees them; only the owner changes them (the cloud refuses anyone else). The same three
-// are on the web (Settings › Business › Voids & refunds).
+// are on the web (Settings › Business › Voids & refunds). 0.6.33: and the owner's free-delivery switch.
 const BUILT_IN = [
   { code: 'cash', name: 'Cash' },
   { code: 'mpesa', name: 'M-Pesa' },
@@ -63,6 +63,7 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
   };
 
   const web = rules.offlineReverseWebSales;
+  const free = rules.freeDeliveryAllowed;   // 0.6.33
   const locked = !isOwner || busy;
 
   return (
@@ -121,6 +122,22 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
           className={`shrink-0 w-12 h-7 rounded-full transition-colors relative disabled:opacity-40 ${web ? 'bg-action-500' : 'bg-gray-700'}`}
         >
           <span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${web ? 'left-6' : 'left-1'}`} />
+        </button>
+      </div>
+
+      {/* 0.6.33: free delivery (owner, 2026-10-02) — with the client's delivery-fee switch, the cashier may leave the fee
+          empty. The rider's name is still required. */}
+      <div className="flex items-start justify-between gap-4 border border-gray-800 rounded-xl p-4" data-testid="free-delivery-rule">
+        <div className="flex-1">
+          <p className="text-white text-sm font-medium">Allow free delivery</p>
+          <p className="text-xs text-gray-400 mt-1">On: a delivery may go with no fee — the cashier leaves the fee empty. The rider's name is still needed. Off: every delivery needs its fee.</p>
+        </div>
+        <button
+          onClick={() => void save('delivery_free_allowed', !free, { ...rules, freeDeliveryAllowed: !free })}
+          disabled={locked} role="switch" aria-checked={free} data-testid="till-free-delivery"
+          className={`shrink-0 w-12 h-7 rounded-full transition-colors relative disabled:opacity-40 ${free ? 'bg-action-500' : 'bg-gray-700'}`}
+        >
+          <span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${free ? 'left-6' : 'left-1'}`} />
         </button>
       </div>
 

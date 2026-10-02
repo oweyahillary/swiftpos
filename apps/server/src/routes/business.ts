@@ -76,7 +76,7 @@ const READABLE_SETTING_KEYS = new Set([
   // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
   'order_note_picks',
   // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules (lib/reversalRules.ts).
-  'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales',
+  'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something

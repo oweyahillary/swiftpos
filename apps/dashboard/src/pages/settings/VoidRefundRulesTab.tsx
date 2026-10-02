@@ -9,7 +9,8 @@ import {
 //   • the void window — how long after a sale a manager may still void it (default 30 minutes; the owner always may);
 //   • which payment methods a till may refund while it cannot reach the cloud (default cash);
 //   • whether, offline, a till may also reverse the web sales on its drawer (default: its own sales only).
-// The same three are on the till (Manager → Settings, signed in as the owner). Only the owner can change them — the
+//   • 0.6.33: whether a delivery may go with no fee (free delivery) when the client's deliveries need one.
+// The same are on the till (Manager → Settings, signed in as the owner). Only the owner can change them — the
 // cloud refuses anyone else (routes/business.ts).
 
 interface PaymentMethod { code: string; name: string; is_active?: boolean }
@@ -81,6 +82,7 @@ export default function VoidRefundRulesTab() {
   if (loading) return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
 
   const web = rules.offlineReverseWebSales;
+  const free = rules.freeDeliveryAllowed;   // 0.6.33
 
   return (
     <div className="p-6 max-w-2xl space-y-8" data-testid="void-refund-rules">
@@ -159,6 +161,29 @@ export default function VoidRefundRulesTab() {
             data-testid="offline-web-sales"
           >
             <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${web ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </div>
+      </section>
+
+      <div className="border-t border-gray-800" />
+
+      {/* ── 0.6.33: free delivery (owner, 2026-10-02) ── */}
+      <section>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-white font-semibold">Allow free delivery</h3>
+            <p className="text-gray-500 text-sm mt-0.5">
+              When your deliveries need a fee, turn this on to let the cashier leave the fee empty for a free delivery —
+              on the tills and the web POS. The rider's name is still needed. Off: every delivery needs its fee.
+            </p>
+          </div>
+          <button
+            onClick={() => void save('delivery_free_allowed', !free, { ...rules, freeDeliveryAllowed: !free })}
+            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${free ? 'bg-swift-strong' : 'bg-gray-700'}`}
+            aria-pressed={free}
+            data-testid="free-delivery"
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${free ? 'left-5' : 'left-0.5'}`} />
           </button>
         </div>
       </section>

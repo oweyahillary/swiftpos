@@ -29,7 +29,7 @@ import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
 import { noteLines } from '../../shared/orderNotes';
 import { historyView, historyChoices, orderMethod, type HistorySort } from '../../shared/historyView';
-import { orderTypeLabel, deliveryProblem, cleanDeliveryFee } from '../../shared/delivery';
+import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, deliveryFeePlaceholder } from '../../shared/delivery';
 import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
@@ -142,6 +142,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   }, []);
   // 0.6.27: the delivery fee the customer pays on top (with the 'delivery_fee' switch), and why Pay is held back.
   const [deliveryFee, setDeliveryFee] = useState('');
+  // 0.6.33: the owner allows free delivery — the fee may be left empty (Manager → Settings / the web's owner rules).
+  const [freeDelivery, setFreeDelivery] = useState(false);
+  useEffect(() => {
+    if (orderType !== 'delivery') return;
+    posApi.pos.reversalRules().then((r) => setFreeDelivery(r.freeDeliveryAllowed === true)).catch(() => { /* fee required */ });
+  }, [orderType]);
   const [deliveryMsg, setDeliveryMsg] = useState('');
   const feeDue = posFeatures.delivery_fee && orderType === 'delivery' ? cleanDeliveryFee(deliveryFee) : 0;
   const [tableNumber, setTableNumber] = useState('');
@@ -1458,7 +1464,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     value={deliveryFee}
                     onChange={e => { setDeliveryFee(e.target.value); setDeliveryMsg(''); }}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
-                    placeholder="Delivery fee"
+                    placeholder={deliveryFeePlaceholder(freeDelivery)}
                     data-testid="delivery-fee"
                     className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
                   />
@@ -1616,8 +1622,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             </div>
             <button
               onClick={() => {
-                // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment.
-                const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee);
+                // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment
+                // (0.6.33: the fee may be empty when the owner allows free delivery).
+                const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee, freeDelivery);
                 if (problem) { setDeliveryMsg(problem); return; }
                 setShowPayment(true);
               }}

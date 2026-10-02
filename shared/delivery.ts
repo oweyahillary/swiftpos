@@ -34,13 +34,31 @@ export function cleanDeliveryFee(raw: unknown): number {
 
 /**
  * Why a delivery order cannot be paid yet, or null when it can. Only with the switch on, and only for a delivery.
- * `fee` is what the cashier typed (text or number).
+ * `fee` is what the cashier typed (text or number). `freeAllowed` (0.6.33, the owner's 'delivery_free_allowed' rule): the
+ * fee may be left empty or 0 — a free delivery — but anything else typed must still be a real fee.
  */
-export function deliveryProblem(featureOn: boolean, orderType: string | null | undefined, rider: unknown, fee: unknown): string | null {
+export function deliveryProblem(
+  featureOn: boolean, orderType: string | null | undefined, rider: unknown, fee: unknown, freeAllowed = false,
+): string | null {
   if (!featureOn || orderType !== 'delivery') return null;
   if (!cleanRider(rider)) return 'Enter the rider’s name for this delivery.';
-  if (cleanDeliveryFee(fee) <= 0) return 'Enter the delivery fee for this delivery.';
-  return null;
+  if (cleanDeliveryFee(fee) > 0) return null;
+  if (freeAllowed && isNoFee(fee)) return null;
+  return freeAllowed
+    ? 'Enter a valid delivery fee, or leave it empty for free delivery.'
+    : 'Enter the delivery fee for this delivery.';
+}
+
+/** Nothing typed, or zero: what a free delivery looks like (0.6.33). */
+export function isNoFee(fee: unknown): boolean {
+  if (fee == null) return true;
+  const s = String(fee).replace(/,/g, '').trim();
+  return s === '' || (Number.isFinite(Number(s)) && Number(s) === 0);
+}
+
+/** The fee box's hint: required, or optional when the owner allows free delivery (0.6.33). */
+export function deliveryFeePlaceholder(freeAllowed: boolean): string {
+  return freeAllowed ? 'Delivery fee (empty = free)' : 'Delivery fee';
 }
 
 /** "Delivery — Eugene" for a delivery with a rider; otherwise the type in words ("Dine in", "Takeaway"). */

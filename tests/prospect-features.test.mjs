@@ -105,7 +105,7 @@ await ok('a tab paid later (/pay) collects the fee too, and the web sends it', (
 });
 await ok('the web POS asks the rider and fee before Charge (switch on)', () => {
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
-  assert.match(cs, /const problem = deliveryProblem\(posFeatures\.delivery_fee, getOrderType\(\), activeRider, activeFeeText\);/);
+  assert.match(cs, /const problem = deliveryProblem\(posFeatures\.delivery_fee, getOrderType\(\), activeRider, activeFeeText, freeDeliveryAllowed\);/);   // 0.6.33: + the owner's free delivery
   assert.equal((cs.match(/openPayment\((false|true)\)/g) ?? []).length, 3);
 });
 

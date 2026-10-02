@@ -12,6 +12,10 @@
  *                              A refund hands back every leg in the tender it came in on; offline, every leg must be one
  *                              of these — M-Pesa or card money cannot be checked or sent back without the network.
  *   offline_reverse_web_sales  offline, a till reverses its OWN sales only; with this on, also the web sales it holds.
+ *   delivery_free_allowed      0.6.33 — with the client's 'delivery_fee' switch, a delivery may go without a fee (free
+ *                              delivery): the cashier still names the rider but may leave the fee empty. Off by default.
+ *                              Owner, 2026-10-02: "can we add an option of free delivery where its not a must for the
+ *                              cashier to key in delivery fee? but that can be turned on and of by the hotel owner".
  *
  * Set by the owner — on the web (Settings) and on the till (Manager → Settings, signed in as the owner). Stored in
  * business_settings; pos/init carries them to the till.
@@ -24,13 +28,14 @@ export const MIN_VOID_WINDOW_MINUTES = 1;
 export const MAX_VOID_WINDOW_MINUTES = 1440;   // a day
 export const DEFAULT_OFFLINE_REFUND_METHODS: readonly string[] = ['cash'];
 
-export const REVERSAL_SETTING_KEYS = ['void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales'] as const;
+export const REVERSAL_SETTING_KEYS = ['void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed'] as const;
 export type ReversalSettingKey = (typeof REVERSAL_SETTING_KEYS)[number];
 
 export interface ReversalRules {
   voidWindowMinutes: number;
   offlineRefundMethods: string[];
   offlineReverseWebSales: boolean;
+  freeDeliveryAllowed: boolean;   // 0.6.33
 }
 
 export function defaultReversalRules(): ReversalRules {
@@ -38,6 +43,7 @@ export function defaultReversalRules(): ReversalRules {
     voidWindowMinutes: DEFAULT_VOID_WINDOW_MINUTES,
     offlineRefundMethods: [...DEFAULT_OFFLINE_REFUND_METHODS],
     offlineReverseWebSales: false,
+    freeDeliveryAllowed: false,
   };
 }
 
@@ -93,7 +99,7 @@ export function cleanOnOff(raw: unknown): boolean | null {
 export function reversalSettingValue(key: string, raw: unknown): string | null {
   if (key === 'void_window_minutes') { const n = cleanVoidWindow(raw); return n === null ? null : JSON.stringify(n); }
   if (key === 'offline_refund_methods') { const m = cleanRefundMethods(raw); return m === null ? null : JSON.stringify(m); }
-  if (key === 'offline_reverse_web_sales') { const b = cleanOnOff(raw); return b === null ? null : JSON.stringify(b); }
+  if (key === 'offline_reverse_web_sales' || key === 'delivery_free_allowed') { const b = cleanOnOff(raw); return b === null ? null : JSON.stringify(b); }
   return null;
 }
 
@@ -110,6 +116,7 @@ export function parseReversalRules(
     voidWindowMinutes: cleanVoidWindow(get('void_window_minutes')) ?? d.voidWindowMinutes,
     offlineRefundMethods: cleanRefundMethods(get('offline_refund_methods')) ?? d.offlineRefundMethods,
     offlineReverseWebSales: cleanOnOff(get('offline_reverse_web_sales')) ?? d.offlineReverseWebSales,
+    freeDeliveryAllowed: cleanOnOff(get('delivery_free_allowed')) ?? d.freeDeliveryAllowed,
   };
 }
 
@@ -120,6 +127,7 @@ export function rulesFromWire(raw: unknown): ReversalRules {
     void_window_minutes: r.voidWindowMinutes,
     offline_refund_methods: r.offlineRefundMethods,
     offline_reverse_web_sales: r.offlineReverseWebSales,
+    delivery_free_allowed: r.freeDeliveryAllowed,
   });
 }
 

@@ -308,7 +308,7 @@ declare global {
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
         history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
-        reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean }>;
+        reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;

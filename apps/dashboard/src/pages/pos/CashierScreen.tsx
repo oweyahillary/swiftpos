@@ -28,7 +28,7 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
-import { deliveryProblem, cleanDeliveryFee } from '../../lib/delivery';
+import { deliveryProblem, cleanDeliveryFee, deliveryFeePlaceholder } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
@@ -193,6 +193,7 @@ export default function CashierScreen() {
     kitchenExclusions,
     notePicks,
     posFeatures,   // 0.6.27
+    freeDeliveryAllowed,   // 0.6.33: the owner allows free delivery (the fee may be empty)
     receiptLogo,
     receiptHeader,
     receiptFooter,
@@ -733,7 +734,7 @@ export default function CashierScreen() {
   const activeFeeText = activeKey ? openOrders[activeKey]?.deliveryFee ?? '' : '';
   /** Open the payment screen — unless a delivery still needs its rider or fee. */
   function openPayment(evenSplit: boolean) {
-    const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText);
+    const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText, freeDeliveryAllowed);
     if (problem) { setDeliveryMsg(problem); return; }
     setPaymentEvenSplit(evenSplit); setShowPayment(true);
   }
@@ -1599,8 +1600,8 @@ export default function CashierScreen() {
               {posFeatures.delivery_fee && (
                 <input type="number" min={0} inputMode="decimal" value={activeFeeText} data-testid="delivery-fee"
                   onChange={e => setActiveDelivery({ deliveryFee: e.target.value })} onWheel={e => (e.target as HTMLInputElement).blur()}
-                  placeholder="Delivery fee"
-                  style={{ width: 110, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
+                  placeholder={deliveryFeePlaceholder(freeDeliveryAllowed)}
+                  style={{ width: freeDeliveryAllowed ? 160 : 110, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
               )}
             </div>
           )}

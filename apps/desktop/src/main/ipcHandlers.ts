@@ -2254,7 +2254,7 @@ export function registerIpcHandlers() {
   // stores only what the owner sends (routes/business.ts refuses anyone else); this till uses the new value at once.
   handle('manage:setReversalRule', async (_e, payload) => {
     const { key, value } = assertPayload<{ key: string; value: unknown }>({ key: { t: 'string', min: 1 }, value: { t: 'any' } }, payload);
-    if (!isReversalSettingKey(key)) throw new Error('Not a void or refund rule.');
+    if (!isReversalSettingKey(key)) throw new Error('Not one of the owner\'s rules.');
     const clean = reversalSettingValue(key, value);
     if (clean === null) throw new Error('That value is not allowed.');
     const out = await manageFetch('/api/business/settings', 'POST', { key, value: JSON.parse(clean) });
@@ -2263,6 +2263,7 @@ export function registerIpcHandlers() {
       voidWindowMinutes: key === 'void_window_minutes' ? JSON.parse(clean) : now.voidWindowMinutes,
       offlineRefundMethods: key === 'offline_refund_methods' ? JSON.parse(clean) : now.offlineRefundMethods,
       offlineReverseWebSales: key === 'offline_reverse_web_sales' ? JSON.parse(clean) : now.offlineReverseWebSales,
+      freeDeliveryAllowed: key === 'delivery_free_allowed' ? JSON.parse(clean) : now.freeDeliveryAllowed,   // 0.6.33
     });
     return out;
   });

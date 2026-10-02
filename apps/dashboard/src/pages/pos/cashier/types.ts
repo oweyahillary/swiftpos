@@ -73,6 +73,8 @@ export interface POSInitResponse {
   noteQuickPicks?: string[];
   /** 0.6.27: the per-client POS switches. */
   posFeatures?: Record<string, boolean>;
+  /** 0.6.30: the owner's rules (void window, offline refunds; 0.6.33 free delivery) — rulesFromWire reads them. */
+  reversalRules?: unknown;
   receiptHeader?: string;
   /** A304/A311: branding from /pos/init; null when the business has no row. */
   branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean } | null;
