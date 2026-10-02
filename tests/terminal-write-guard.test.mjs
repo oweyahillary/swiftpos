@@ -30,9 +30,10 @@ const ALLOW = [
   /^\/api\/orders(\/|$|\?)/,
   /^\/api\/sync\/push(\/|$|\?)/,
   /^\/api\/branch-prices\/sync(\/|$|\?)/,
-  /^\/api\/shifts\/[^/]+\/(close|force-close)(\/|$|\?)/,
+  /^\/api\/shifts\/[^/]+\/(close|force-close|foreign-cash|foreign-orders)(\/|$|\?)/,
   /^\/api\/auth\//,
   /^\/api\/tech\//,
+  /^\/api\/business\/branding(\?|$)/,   // 0.6.25: a logo uploaded on the till is saved to the cloud too
 ];
 const denied = (surface, method, p) => {
   if (surface !== 'desktop') return false;
@@ -56,9 +57,21 @@ ok('till tech audit is allowed', () => assert.equal(denied('desktop','POST','/ap
 // A164 audit: shift close/force-close are the till's own server-reconciled writes.
 ok('till shift close is allowed',       () => assert.equal(denied('desktop','POST','/api/shifts/abc123/close'), false));
 ok('till shift force-close is allowed', () => assert.equal(denied('desktop','POST','/api/shifts/abc123/force-close'), false));
+ok('till foreign-cash / foreign-orders (read-only POSTs, A342) are allowed', () => {
+  assert.equal(denied('desktop','POST','/api/shifts/abc123/foreign-cash'), false);
+  assert.equal(denied('desktop','POST','/api/shifts/abc123/foreign-orders'), false);
+});
 // ...but the allowance is TIGHT — a shift delete/edit from a till is still denied.
 ok('till shift DELETE is still DENIED', () => assert.equal(denied('desktop','DELETE','/api/shifts/abc123'), true));
 ok('till shift create is still DENIED',  () => assert.equal(denied('desktop','POST','/api/shifts'), true));
+
+// 0.6.25 (owner's decision): the till's logo upload is saved to the cloud — that ONE route, nothing else under /business.
+ok('till branding save (PUT /api/business/branding) is allowed', () => assert.equal(denied('desktop','PUT','/api/business/branding'), false));
+ok('…but business settings and the business record stay DENIED', () => {
+  assert.equal(denied('desktop','POST','/api/business/settings'), true);
+  assert.equal(denied('desktop','PATCH','/api/business/'), true);
+  assert.equal(denied('desktop','PUT','/api/business/branding/extra'), true);
+});
 
 // ── Reads and web-surface are never gated ─────────────────────────────────────
 ok('desktop GET /api/products is allowed (read)', () => assert.equal(denied('desktop','GET','/api/products'), false));
@@ -67,6 +80,10 @@ ok('null-surface POST is allowed', () => assert.equal(denied(null,'POST','/api/p
 
 // ── Source assertions against the REAL guard ──────────────────────────────────
 const AUTH = fs.readFileSync(path.join(root, 'apps/server/src/middleware/auth.ts'), 'utf8');
+ok('0.6.25: the real guard carries exactly the branding entry (no wider /api/business pattern)', () => {
+  assert.ok(AUTH.includes("/^\\/api\\/business\\/branding(\\?|$)/,"), 'branding entry missing from TILL_WRITE_ALLOWLIST');
+  assert.ok(!/\/\^\\\/api\\\/business\(\\\/\|\$/.test(AUTH), 'a wider /api/business entry appeared');
+});
 ok('guard is wired into requireAuth', () => {
   assert.ok(/terminalWriteBlocked\(req, res\)/.test(AUTH), 'terminalWriteBlocked is not called in requireAuth');
 });

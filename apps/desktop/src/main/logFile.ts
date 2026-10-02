@@ -28,7 +28,18 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+// Rotation ceiling — deliberately 1MB into a single .1 backup (two bounded files,
+// no dated pile-up on a machine nobody prunes). A299 added error + event volume,
+// which just rolls more often within the same bound rather than raising it — the
+// design (and test/logFile.test.mjs) fix this at 1MB.
 const MAX_BYTES = 1_000_000;
+
+// Captured BEFORE installConsoleCapture() swaps the globals, so logLine's own
+// echo — and the append path — never re-enter the hook and recurse.
+const _origConsole = {
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+};
 
 let _logPath: string | null = null;
 
@@ -61,17 +72,7 @@ function roll(file: string): void {
   }
 }
 
-/**
- * Append one line. `scope` is a short tag like 'sync' or 'auth' so the file can
- * be grepped; `message` should already be safe to read aloud.
- */
-export function logLine(scope: string, message: string): void {
-  const line = `${new Date().toISOString()} [${scope}] ${message}\n`;
-
-  // Keep the dev experience: during `npm run dev` this is the only place the
-  // message is visible, and in production it costs nothing.
-  console.warn(line.trimEnd());
-
+function appendToFile(line: string): void {
   try {
     const file = logPath();
     roll(file);
@@ -79,6 +80,54 @@ export function logLine(scope: string, message: string): void {
   } catch {
     /* Logging must never break the caller. */
   }
+}
+
+/**
+ * Append one line. `scope` is a short tag like 'sync' or 'auth' so the file can
+ * be grepped; `message` should already be safe to read aloud.
+ */
+export function logLine(scope: string, message: string): void {
+  const line = `${new Date().toISOString()} [${scope}] ${message}\n`;
+
+  // Dev echo via the CAPTURED original, not the live console — after
+  // installConsoleCapture() the live console.warn appends to the file, and using
+  // it here would double-log this line and recurse.
+  _origConsole.warn(line.trimEnd());
+
+  appendToFile(line);
+}
+
+/**
+ * A299: route the main process's own console.error / console.warn into the log
+ * file. Before this, 43 diagnostic console.* calls across main went nowhere on a
+ * packaged build — the exact gap that hid the salesSummary IPC error until a
+ * DevTools screenshot on 2026-09-18. Call once, early in startup. Idempotent.
+ * logLine uses the captured originals above, so it never re-enters this hook.
+ */
+let _captured = false;
+export function installConsoleCapture(): void {
+  if (_captured) return;
+  _captured = true;
+  const fmt = (args: unknown[]): string =>
+    args
+      .map((a) =>
+        a instanceof Error
+          ? a.stack || a.message
+          : typeof a === 'object'
+            ? (() => { try { return JSON.stringify(a); } catch { return String(a); } })()
+            : String(a),
+      )
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .slice(0, 2000);
+  console.error = (...args: unknown[]) => {
+    _origConsole.error(...args);
+    appendToFile(`${new Date().toISOString()} [console.error] ${fmt(args)}\n`);
+  };
+  console.warn = (...args: unknown[]) => {
+    _origConsole.warn(...args);
+    appendToFile(`${new Date().toISOString()} [console.warn] ${fmt(args)}\n`);
+  };
 }
 
 /**

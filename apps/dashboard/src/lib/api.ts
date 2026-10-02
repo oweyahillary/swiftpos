@@ -80,8 +80,27 @@ export function clearAllTokens() {
   sessionStorage.removeItem(TOKEN_KEYS.cashierSession); // legacy unsoped key
 }
 
-function getStoredAccessToken():  string | null { return localStorage.getItem(accessKey()); }
-function getStoredRefreshToken(): string | null { return localStorage.getItem(refreshKey()); }
+function getStoredAccessToken():  string | null {
+  // A260: prefer the surface's token, but fall back to whichever token exists.
+  // A manager works the *dashboard* (Receiving/Reports) where onPosSurface() is
+  // false, so accessKey() pointed at the absent owner token and every `api` call
+  // — incl. BusinessContext's /api/business — 401'd, leaving the business null so
+  // documents printed "SwiftPOS". Falling back to the POS token they DO hold fixes
+  // it (and any other manager-dashboard `api` call that was silently failing).
+  return localStorage.getItem(accessKey())
+      || localStorage.getItem(TOKEN_KEYS.posAccess)
+      || localStorage.getItem(TOKEN_KEYS.ownerAccess);
+}
+function getStoredRefreshToken(): string | null {
+  // A267: the refresh half of A260. A manager works the dashboard surface where
+  // refreshKey() points at the (absent) OWNER refresh token, so refreshAccessToken()
+  // threw "No refresh token" — the 401 handler then failed to refresh and every call
+  // 401'd once the access token expired (business, tables, pos/init, …). Fall back to
+  // whichever refresh token exists (the POS one they actually hold) so refresh works.
+  return localStorage.getItem(refreshKey())
+      || localStorage.getItem(TOKEN_KEYS.posRefresh)
+      || localStorage.getItem(TOKEN_KEYS.ownerRefresh);
+}
 
 // ── Session-expired event ─────────────────────────────────────────────────────
 // Fired when a token refresh fails. AuthContext listens and signs out cleanly.
@@ -197,7 +216,15 @@ async function request<T>(
   const json = await res.json();
 
   if (!res.ok) {
-    const err = new Error(json.error ?? `Request failed: ${res.status}`) as Error & {
+    // A257: the validate() middleware returns { error:'Validation failed',
+    // errors:[{field,message}] }. Showing only `error` gave the user a bare
+    // "Validation failed" with no clue which field — surface the field messages.
+    const fieldErrors = Array.isArray((json as { errors?: { field?: string; message?: string }[] }).errors)
+      ? ((json as { errors: { field?: string; message?: string }[] }).errors)
+          .map(e => (e.field ? `${e.field}: ${e.message}` : e.message))
+          .filter(Boolean).join('; ')
+      : '';
+    const err = new Error(fieldErrors || json.error || `Request failed: ${res.status}`) as Error & {
       code?: string;
       status?: number;
     };
@@ -216,6 +243,49 @@ async function request<T>(
   }
 
   return json as T;
+}
+
+// ── Authenticated file download ───────────────────────────────────────────────
+// A143: report exports are files, not JSON. window.open() on the API URL sent NO
+// Authorization header (cross-origin to the API host, no cookie), so every export
+// 401'd with "Missing or malformed Authorization header". Fetch the file WITH the
+// auth + active-branch headers, then save the returned blob client-side.
+export async function downloadFile(path: string, filename: string, isRetry = false): Promise<void> {
+  const authHeader = await getAuthHeader();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { ...authHeader, ...activeBranchHeader() },
+  });
+
+  // A201: mirror request()'s 401 → refresh → retry-once. The first export click
+  // immediately after a page load can fire before the access token is
+  // hydrated/refreshed; without this, downloadFile did a single fetch and 401'd
+  // ("Missing or malformed Authorization header") on that race. Refresh and retry.
+  if (res.status === 401 && !isRetry) {
+    if (getStoredAccessToken()) {
+      try {
+        await refreshAccessToken();
+        return downloadFile(path, filename, true);
+      } catch {
+        signalSessionExpired();
+        return new Promise(() => {}); // halt — sign-out is in flight
+      }
+    }
+  }
+
+  if (!res.ok) {
+    let msg = `Download failed (${res.status})`;
+    try { const b = await res.json(); if (b?.error) msg = b.error; } catch { /* file/non-JSON body */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export const api = {

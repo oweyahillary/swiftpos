@@ -51,7 +51,7 @@ export default function PaperWidthControl({ settings, save, onWidthTest, disable
             })}
             className={`flex-1 py-2 text-sm transition-colors ${
               settings.paperMode === m.key
-                ? 'bg-green-500/10 text-green-400'
+                ? 'bg-action-500/10 text-action-400'
                 : 'bg-gray-800 text-gray-400 hover:text-white'
             }`}
           >

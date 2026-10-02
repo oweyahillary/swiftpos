@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.17 — Rollout Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.17 — rollout verification</h1>
+  <p class="sub">0.6.17: the manager menu in groups (Sales, Close, Settings) · the first build that reaches only the business you approve (the real test of the per-client hold) · one release per tag · the printer-free money checks carried from 0.6.16 · one till (manager + cashier PINs), the admin portal · ~40 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.17"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-29"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> Do §R first. Do <b>not</b> install 0.6.17 by hand — §U tests that it arrives only through your approval. You need: admin-portal access (§U), GitHub (§R), a manager PIN and a cashier PIN. Checks marked “(printer)” need a receipt printer — SKIP them without one. Wherever a check says <b>Record</b>, take a screenshot or photo. A <b>Fail needs a note</b> saying exactly what you saw.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+  ["§R — Rollout (do these first, in order)", "closes A350", "Desktop only: no migration, no cloud or admin deploy this time. Bump 0.6.17, push, tag.", [
+    ["R1", "The tag comes out as ONE pre-release", ["After the tag: GitHub → Actions → Release desktop → the run for v0.6.17.", "GitHub → Releases."], "The run is green, including the step <b>“Verify the release (one copy, latest.yml + installer)”</b>. Releases shows <b>one</b> v0.6.17, marked <b>Pre-release</b>, with latest.yml and SwiftPOS-0.6.17-x64.exe. No second copy, no draft.", true],
+    ["R2", "Leave it a pre-release", ["Do <b>not</b> edit it, untick “pre-release” or set it as latest."], "v0.6.16 stays the <b>Latest</b> release on GitHub. (From now on every build stays a pre-release; you release it per client in the admin portal.)", false],
+  ]],
+
+  ["§U — Updates approved per client (held by default)", "closes A348", "Admin portal → Clients → a client → the “Desktop updates” box (under Web access expiry). This is the real test of the hold: 0.6.17 must reach only the business you approve.", [
+    ["U1", "Every client starts HELD", ["Open two or three clients in the admin portal (do not approve anything yet)."], "Each says <b>Held — tills stay on the version they run.</b> The version list shows <b>0.6.17 (pre-release)</b> and 0.6.16.", true],
+    ["U2", "Nothing moves while held", ["Leave your till open (online) for an hour, or restart it."], "Your till stays on <b>0.6.16</b> — no “update ready”. (Before 0.6.16 a new release reached every till by itself.)", false],
+    ["U3", "Approve your own business", ["On YOUR business choose 0.6.17 → Approve → confirm.", "Admin portal → Audit."], "The box says <b>Approved: 0.6.17</b>. The audit log has <b>desktop_update.approve</b> for your business.", true],
+    ["U4", "Your till updates; the others do not", ["Restart your till (or wait up to an hour online). When it says the update is ready, close the till and open it again.", "Technician mode / About → version. If you have a till of ANOTHER client (still held), check its version too."], "Your till reads <b>0.6.17</b>. The other client’s till stays on 0.6.16.", true],
+    ["U5", "Hold again — never a downgrade", ["Press <b>Hold</b> on your business → confirm. Restart your till."], "The audit log has <b>desktop_update.hold</b>. Your till stays on 0.6.17 (holding never takes a till back). Approve again afterwards if you want it approved.", false],
+  ]],
+
+  ["§G — The manager menu in groups", "closes A351", "Sign in on 0.6.17 as the MANAGER (or owner), online.", [
+    ["G1", "The shorter menu", ["Look at the manager sidebar."], "<b>Overview · Sales · Expenses · Close · Menu · Settings</b> (and <b>Stock</b> when the web POS is on), then Open POS and Lock till at the bottom. No separate Orders, Shift, Close Day, Close Branch, Staff or Printing items.", true],
+    ["G2", "Sales", ["Tap <b>Sales</b>. Use each tab across the top.", "Current shift, then Shift report → pick a previous shift → Print report (if you have a printer)."], "Tabs: <b>Orders · Item Mix · Current shift · Shift report</b> (Item Mix only for a restaurant). Each opens the same page as before; one tap each; the sidebar does not move.", true],
+    ["G3", "Close", ["Tap <b>Close</b>."], "It opens on <b>Close Day</b>, with <b>Close Branch</b> as the second tab. Both work as before (Close Branch still explains when this till is not the branch node).", false],
+    ["G4", "Settings", ["Tap <b>Settings</b>. Use each tab.", "Inside Printing: Stations, Printers, Exclusions, Receipt."], "Tabs: <b>General · Printing · Staff</b>. General is the old Settings (24-hour operation, payment methods). Printing and Staff are the pages you had before, unchanged.", true],
+    ["G5", "Each group remembers its tab", ["Settings → <b>Printing</b>. Tap Overview. Tap Settings again.", "Same with Sales → Shift report."], "Settings reopens on <b>Printing</b>; Sales on <b>Shift report</b>. (After locking the till, groups open on their first tab again.)", false],
+    ["G6", "Menu → Import stays in Menu", ["Menu → Import / export."], "The sidebar keeps <b>Menu</b> highlighted and the title says Menu.", false],
+    ["G7", "A cashier cannot reach it", ["Lock the till; sign in with a CASHIER PIN."], "The cashier goes to the till as before, with no Manager button — the manager menu is not reachable.", false],
+  ]],
+
+  ["§M — Money on receipts and reports (carried from 0.6.16)", "A349", "M3–M5 need no printer. M1, M2, M7, M8 need one — SKIP them until you have a printer. On a till of a CTL business (VAT 16 %, CTL 2 %) unless a check says otherwise.", [
+    ["M3", "Overview shows VAT and CTL", ["Manager → Overview (today)."], "Under the four boxes: <b>VAT … CTL …</b> (and Tips / Discounts when there were any).", true],
+    ["M4", "A refund is taken off everywhere", ["Refund one sale (online, owner/manager).", "Look at Overview, then Sales → Orders → export the Daily Sales Report."], "Overview revenue drops by the refund and shows <b>Refunds −…</b>; VAT and CTL drop by the refund's share. The Daily report's <b>Total Gross</b> equals the Overview revenue; its Total Sale is not negative.", true],
+    ["M5", "Z-report shows the shift's money in full (screen)", ["Sales → Shift report → this shift, on screen."], "Gross sales, − Refunds, = Net sales, incl. VAT, incl. <b>CTL</b>, Tips (when any). Expected cash as before.", true],
+    ["M1", "A DISCOUNTED sale prints its receipt (printer)", ["Ring 2–3 items, apply a 10 % discount, take cash.", "Compare the printed receipt with the screen."], "The receipt <b>prints</b>. It shows Discount, SubTotal, CTL, VAT, Round Off, Total — and they add up to the Total.", true],
+    ["M2", "A TIP is on the receipt (printer)", ["Ring a sale, add a tip (e.g. 50), pay."], "Paper: <b>Tip 50.00</b> after Total, and <b>PAY = Total + tip</b>. Screen receipt: Round Off 0.00 (not −50).", true],
+    ["M7", "Web POS receipt, CTL business (printer)", ["On the web POS, ring a discounted sale with a tip and print to the thermal printer."], "It prints straight to the printer (no browser dialog), with the <b>CTL</b> line, and the same VAT/CTL as the till would show.", true],
+    ["M8", "A business WITHOUT CTL (printer)", ["On a VAT-only business (or a test one), print a receipt."], "No “CTL (0%)” line.", false],
+  ]],
+
+  ["§X — Regression (release-blocker if any fail)", "", "", [
+    ["X1", "Normal sale and receipt", ["Ring a sale, take payment (print the receipt if you have a printer)."], "The sale completes; the receipt prints as before (or the on-screen receipt shows, without a printer).", false],
+    ["X2", "Kitchen ticket", ["Ring an item that goes to the kitchen (if you use one and have a printer)."], "Kitchen ticket prints as before.", false],
+    ["X3", "Online sign-in unchanged", ["Network ON: sign in as a cashier, then as the manager."], "Cashier → till; manager → manager screen; Menu and Staff editable straight away.", false],
+    ["X4", "Sync healthy at the end", ["Technician mode → Sync card."], "Pending 0, no failures, no red errors.", true],
+    ["X5", "Second till (if you have one)", ["Sign in on T2 and ring a sale."], "Works; its sale reaches the dashboard.", false],
+  ]],
+];
+
+
+const KEY = "swiftpos-verify-0617";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS v0.6.17 — rollout verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

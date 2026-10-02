@@ -67,6 +67,16 @@ export interface POSInitResponse {
   categories: Category[];
   branchId: string | null;
   variantsByProduct: Record<string, VariantGroup[]>;
+  comboItems?: Record<string, import('../../../types').ComboComponent[]>;
+  kitchenExclusions?: string[];
+  /** A367: the owner's quick picks for order notes (always a list from a 0.6.24 cloud). */
+  noteQuickPicks?: string[];
+  /** 0.6.27: the per-client POS switches. */
+  posFeatures?: Record<string, boolean>;
+  receiptHeader?: string;
+  /** A304/A311: branding from /pos/init; null when the business has no row. */
+  branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean } | null;
+  receiptFooter?: string;
   businessType: string;
   businessName: string;
   currency: string;

@@ -3,6 +3,8 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
+import { monoRasterFromRGBA, monoRasterToString } from '@swiftpos/printing';
+import { validateBrandingWrite } from './brandingGuard';
 
 // Resolved lazily, NOT at import time.
 //
@@ -136,6 +138,24 @@ function initSchema(db: Database.Database) {
       held_at         TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_held_orders_held_at ON held_orders(held_at);
+
+    -- ── Client branding (A295) — synced down from cloud, remote wins ──────────
+    -- One row per business (a till serves one). Populated by the branding sync (a
+    -- later cloud slice); until then the table is empty and PinPage renders the
+    -- SwiftPOS default via resolveBranding (shared/contrast.ts). LOCAL mirror of the
+    -- cloud business_branding; NOT cleared by clearCatalogue() — a logout must not
+    -- un-brand the till; it re-syncs anyway. accent_hex may be null (logo-only, or
+    -- nothing set); logo_png is base64/data-uri; logo_receipt is the thermal mono
+    -- raster (later slice), null until built.
+    CREATE TABLE IF NOT EXISTS branding (
+      business_id   TEXT PRIMARY KEY,
+      accent_hex    TEXT,
+      logo_png      TEXT,
+      logo_receipt  TEXT,
+      synced_at     TEXT,
+      receipt_logo_enabled INTEGER NOT NULL DEFAULT 0,
+      theme_id      TEXT
+    );
 
     -- ── Active staff (PIN login) — singleton, layered on top of owner session ─
     CREATE TABLE IF NOT EXISTS staff_session (
@@ -528,6 +548,60 @@ function initSchema(db: Database.Database) {
       sync_status         TEXT NOT NULL DEFAULT 'pending'
     );
 
+    -- ── 0.6.28 (60): what went to the kitchen, and what was taken back ─────────
+    -- kitchen_lines — LOCAL ONLY. One row per cart line per order number: how many are on a kitchen ticket (sent_qty)
+    -- and how many were voided since. A row stays 'open' until the order is paid ('paid') or every sent item is voided
+    -- ('voided'). It is what makes a sent order impossible to lose: Clear, a crash or a restart leaves the row, End
+    -- Shift lists it (with 'kitchen_void_approval' it blocks), and item_json rebuilds the line. Never pushed — the sale
+    -- or the void is the record the cloud gets.
+    CREATE TABLE IF NOT EXISTS kitchen_lines (
+      order_number  TEXT NOT NULL,
+      line_id       TEXT NOT NULL,
+      product_id    TEXT,
+      product_name  TEXT NOT NULL,
+      unit_price    REAL NOT NULL DEFAULT 0,
+      sent_qty      REAL NOT NULL DEFAULT 0,
+      voided_qty    REAL NOT NULL DEFAULT 0,
+      item_json     TEXT,
+      order_type    TEXT,
+      table_number  TEXT,
+      shift_id      TEXT,
+      cashier_id    TEXT,
+      device_id     TEXT,
+      status        TEXT NOT NULL DEFAULT 'open',
+      first_sent_at TEXT NOT NULL,
+      updated_at    TEXT NOT NULL,
+      PRIMARY KEY (order_number, line_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_kitchen_lines_open ON kitchen_lines(status, shift_id);
+
+    -- kitchen_voids — PUSHED (/api/sync/push, migration 112). One row per line taken back after it was sent: what, how
+    -- many, what it would have sold for, why, whether it was already cooked, who rang it and who approved it.
+    CREATE TABLE IF NOT EXISTS kitchen_voids (
+      id               TEXT PRIMARY KEY,
+      business_id      TEXT,
+      branch_id        TEXT,
+      shift_id         TEXT,
+      order_number     TEXT NOT NULL,
+      order_id         TEXT,
+      product_id       TEXT,
+      product_name     TEXT NOT NULL,
+      quantity         REAL NOT NULL,
+      unit_price       REAL NOT NULL DEFAULT 0,
+      amount           REAL NOT NULL DEFAULT 0,
+      reason           TEXT NOT NULL,
+      note             TEXT,
+      cooked           INTEGER NOT NULL DEFAULT 0,
+      cashier_id       TEXT,
+      cashier_name     TEXT,
+      approved_by      TEXT,
+      approved_by_name TEXT,
+      device_id        TEXT,
+      created_at       TEXT NOT NULL,
+      sync_status      TEXT NOT NULL DEFAULT 'pending'
+    );
+    CREATE INDEX IF NOT EXISTS idx_kitchen_voids_shift ON kitchen_voids(shift_id);
+
     -- Branch price overrides set by the manager on THIS device (the branch
     -- authority). LOCAL ORIGIN — the manager owns the branch's prices offline.
     -- Kept in its own table (not just products.branch_price) for two reasons:
@@ -590,6 +664,19 @@ function initSchema(db: Database.Database) {
     ['terminal_code', 'TEXT'],
     ['drawer_label', 'TEXT'],
     ['opened_by', 'TEXT'],
+  ]);
+
+  // A365 (schema 57): a manager confirms every shift. The cashier's per-method declaration at End Shift, then the
+  // manager's blind recount, what the till recorded, who and when (JSON maps {"cash": n, "mpesa": n, …}).
+  // confirm_sync: 'pending' until the confirmation reaches the cloud (syncEngine pushShiftConfirmations).
+  migrateColumns(db, 'shifts', [
+    ['declared_methods', 'TEXT'],
+    ['expected_methods', 'TEXT'],
+    ['confirmed_methods', 'TEXT'],
+    ['confirmed_by', 'TEXT'],
+    ['confirmed_at', 'TEXT'],
+    ['confirm_self', 'INTEGER NOT NULL DEFAULT 0'],
+    ['confirm_sync', 'TEXT'],
   ]);
 
   // Records what this install has applied. Two jobs: it makes a terminal's
@@ -677,6 +764,31 @@ function initSchema(db: Database.Database) {
     // paper did not reconcile with the tax in the till's own reports.
     ['ctl_amount', 'REAL DEFAULT 0'],
   ]);
+  // 55 (cross-sync stage 1, 2026-09-27): where a sale was RUNG. NULL = on this till (every sale before 55,
+  // and every sale this till makes); 'web' = rung on the web POS on this till's drawer and downloaded from the
+  // cloud (webSales.ts). Such a row is never pushed, relayed to the node, or claimed as this till's own.
+  migrateColumns(db, 'orders', [
+    ['origin', 'TEXT'],
+  ]);
+  // A367 (58): notes — one on each line ("3 normal, 2 spicy", "no salt") and one on the whole order. Both columns have
+  // been in Postgres since the baseline; they travel in the order payload (POST /api/orders), not /api/sync/push.
+  migrateColumns(db, 'orders', [['notes', 'TEXT']]);
+  migrateColumns(db, 'order_items', [['notes', 'TEXT']]);
+  migrateColumns(db, 'held_orders', [['order_note', 'TEXT']]);   // a held tab keeps its order note (local only)
+  // 0.6.27 (59): the prospect's requests.
+  //   orders.delivery_fee — what the customer pays on top of the bill for delivery (pass-through to the rider, like a
+  //     tip: in the payment legs, not in orders.total/sales). held_orders keeps it with the rider.
+  //   expenses.payment_method — the method an expense was paid with; only 'cash' comes out of the drawer, others
+  //     (M-Pesa…) come off that method's expected total. NULL = before 59 = cash (what every expense was).
+  //   expenses.expense_type_name — the expense TYPE's name, stored with the row so the Z-report shows it offline.
+  //   shifts.confirm_reasons — the manager's reason per method where their count differs from the cashier's.
+  //   float_transactions.order_id — a pay-out the till made FOR a sale (the rider's delivery fee): voiding the sale
+  //     cancels it with a matching pay-in.
+  migrateColumns(db, 'orders', [['delivery_fee', 'REAL DEFAULT 0']]);
+  migrateColumns(db, 'held_orders', [['delivery_fee', 'REAL']]);
+  migrateColumns(db, 'expenses', [['payment_method', 'TEXT'], ['expense_type_name', 'TEXT']]);
+  migrateColumns(db, 'shifts', [['confirm_reasons', 'TEXT']]);
+  migrateColumns(db, 'float_transactions', [['order_id', 'TEXT']]);
 
   migrateColumns(db, 'categories', [
     // Drives kitchen ticket routing — see migrations/34_kitchen_categories.sql
@@ -862,7 +974,7 @@ function initSchema(db: Database.Database) {
       branch_id    TEXT,
       device_id    TEXT,
       seq          INTEGER,
-      kind         TEXT NOT NULL,        -- shift_closed | day_closed | order_voided
+      kind         TEXT NOT NULL,        -- shift_closed | day_closed | day_reopened | order_voided
       target_table TEXT NOT NULL,
       target_id    TEXT NOT NULL,
       payload      TEXT NOT NULL,        -- JSON column:value, applied through a per-kind whitelist
@@ -931,6 +1043,11 @@ function initSchema(db: Database.Database) {
       ON business_days (device_id, seq);
   `);
 
+  // A311 (schema 53): the client's opt-in receipt-logo toggle, pulled remote-wins
+  // with the rest of the branding row. INTEGER 0/1 — SQLite has no boolean.
+  migrateColumns(db, 'branding', [['receipt_logo_enabled', 'INTEGER NOT NULL DEFAULT 0']]);
+  // A325 (schema 54): the EFFECTIVE action theme the cloud serves (null = themes off → today's look).
+  migrateColumns(db, 'branding', [['theme_id', 'TEXT']]);
   migrateColumns(db, 'device_config', [
     ['device_id', 'TEXT'],
     ['device_role', "TEXT NOT NULL DEFAULT 'till'"],
@@ -980,6 +1097,12 @@ function initSchema(db: Database.Database) {
     // WINS over the baseline and is never overwritten by a catalogue pull. This
     // is how a local edit is "final" while the cloud default keeps updating.
     ['kitchen_exclusions_override', 'TEXT'],
+    // A346: does the business have the web POS? Pulled (webPosEnabled), never pushed. NULL = not told yet = no.
+    ['web_pos_enabled', 'INTEGER'],
+    // A367 (58): the owner's quick picks for order notes, a JSON array. Pulled (noteQuickPicks), never pushed.
+    ['order_note_picks', 'TEXT'],
+    // 0.6.27 (59): the per-client POS switches (JSON object). Pulled (posFeatures), never pushed. NULL = all off.
+    ['pos_features', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1054,7 +1177,23 @@ function initSchema(db: Database.Database) {
 // 52 adds device_config.kitchen_exclusions_override — a per-terminal local
 // override that wins over the synced cloud baseline. Additive and idempotent
 // like every column here; an older till converges by running migrateColumns.
-export const LOCAL_SCHEMA_VERSION = 52;
+// 53 adds branding.receipt_logo_enabled (A311) — pulled, never pushed, so no
+// push payload changes; REQUIRED moves with it by convention only.
+// 54 adds branding.theme_id (A325) — pulled, never pushed; same convention as 53.
+// 55 adds orders.origin — the web POS's sales on this till's drawer, downloaded (cross-sync stage 1). Pulled,
+// never pushed; REQUIRED moves with it by convention.
+// 56 adds device_config.web_pos_enabled (A346) — whether the business has the web POS, which decides whether the
+// manager screen shows Stock. Pulled, never pushed; REQUIRED moves with it by convention.
+// 57 adds the A365 shift-confirmation columns on shifts (declared / expected / confirmed methods, confirmed_by/at,
+// confirm_self, confirm_sync). Pushed through POST /api/shifts/:id/close and /confirm, not /api/sync/push.
+// 58 adds A367 order notes: orders.notes and order_items.notes (in the order payload, POST /api/orders), and
+// device_config.order_note_picks (the owner's quick picks, pulled). REQUIRED moves with it by convention.
+// 59 adds 0.6.27: device_config.pos_features (pulled), orders.delivery_fee (order payload), expenses.payment_method +
+// expense_type_name (local only; the cloud joins expense_categories), shifts.confirm_reasons (/confirm), float_transactions.order_id (local link; the pay-out
+// itself syncs as before). REQUIRED moves with it by convention.
+// 60 adds 0.6.28: kitchen_lines (local only — what is on a kitchen ticket per order) and kitchen_voids (pushed through
+// /api/sync/push; migration 112). REQUIRED moves with it.
+export const LOCAL_SCHEMA_VERSION = 60;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {
@@ -1076,4 +1215,158 @@ function migrateColumns(db: Database.Database, table: string, cols: [string, str
       db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`);
     }
   }
+}
+
+/**
+ * A295: the client branding for this till (accent + logo), or null when none is
+ * set — an empty table renders the SwiftPOS default via resolveBranding. One row
+ * per business; a till serves one, so LIMIT 1 is that row. Fail-soft: any read
+ * error → null, so the lock screen never fails to render over a branding read.
+ */
+export interface BrandingRow {
+  accentHex: string | null;
+  logoPng: string | null;
+  /** A310/A311: `mono1:w:h:base64` raster string, or null. Decoded by shared/printing only. */
+  logoReceipt: string | null;
+  /** A311: the client's opt-in toggle. The print path prints the logo only when this is true. */
+  receiptLogoEnabled: boolean;
+  /** A325: the effective action theme id from the cloud, or null (themes off → today's look). Resolved against the
+   *  registry (themes.ts) by the screens, so an id from a newer cloud degrades to the default, never to nothing. */
+  themeId: string | null;
+}
+
+export function getBranding(): BrandingRow | null {
+  try {
+    const row = getLocalDb().prepare(
+      `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id FROM branding LIMIT 1`).get() as
+      { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number | null; theme_id: string | null } | undefined;
+    if (!row) return null;
+    return {
+      accentHex: row.accent_hex ?? null,
+      logoPng: row.logo_png ?? null,
+      logoReceipt: row.logo_receipt ?? null,
+      receiptLogoEnabled: row.receipt_logo_enabled === 1,
+      themeId: row.theme_id ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A301: the desktop-local WRITE path for this till's client branding (accent + logo).
+ * Lets a real accent/logo be written locally and SEEN flowing through PinPage's existing
+ * read seam before any cloud branding sync exists — proving the whole chain visually.
+ *
+ * Merge semantics (so two separate actions don't clobber each other): an OMITTED field
+ * (undefined) is left as-is, an explicit NULL clears it, a value sets it. So "set the
+ * accent" never wipes an existing logo. Read-merge-write runs in ONE transaction so two
+ * writes cannot interleave — the same discipline held-order recall uses.
+ *
+ * Validation is delegated to the pure validateBrandingWrite (brandingGuard.ts): accent must
+ * be hex; a logo must be a PNG/JPEG data-URI under 250 KB; SVG is rejected (its sanitiser is
+ * a later slice — rule 20). Invalid input THROWS; the write is not swallowed (rule 7), and
+ * the same check runs here at the persist boundary because the renderer is not trusted.
+ *
+ * One row per business — a till serves one, which is why getBranding reads LIMIT 1. synced_at
+ * is stamped with the local write time for this slice; when the cloud sync lands it defines
+ * remote-wins provenance against this column.
+ */
+export function setBranding(
+  businessId: string,
+  write: { accentHex?: string | null; logoPng?: string | null;
+           logoRgba?: { width: number; height: number; data: ArrayLike<number> } | null;
+           receiptLogoEnabled?: boolean },
+): BrandingRow {
+  if (!businessId) throw new Error('branding: businessId is required');
+  const clean = validateBrandingWrite(write);
+  // A312: the ONE place colour becomes ink. Pixels in, mono1 string out; done outside
+  // the transaction (pure CPU, no DB) so a slow threshold never holds the write lock.
+  const receipt: string | null | undefined =
+    clean.logoRgba === undefined ? undefined
+    : clean.logoRgba === null ? null
+    : monoRasterToString(monoRasterFromRGBA(clean.logoRgba.data, clean.logoRgba.width, clean.logoRgba.height));
+  const db = getLocalDb();
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    const existing = db
+      .prepare(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id = ?`)
+      .get(businessId) as { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number } | undefined;
+    const accent =
+      clean.accentHex === undefined ? existing?.accent_hex ?? null : clean.accentHex;
+    const logo = clean.logoPng === undefined ? existing?.logo_png ?? null : clean.logoPng;
+    const logoReceipt = receipt === undefined ? existing?.logo_receipt ?? null : receipt;
+    const enabled = clean.receiptLogoEnabled === undefined
+      ? (existing?.receipt_logo_enabled === 1) : clean.receiptLogoEnabled;
+    db.prepare(
+      `INSERT INTO branding (business_id, accent_hex, logo_png, logo_receipt, receipt_logo_enabled, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(business_id) DO UPDATE SET
+         accent_hex   = excluded.accent_hex,
+         logo_png     = excluded.logo_png,
+         logo_receipt = excluded.logo_receipt,
+         receipt_logo_enabled = excluded.receipt_logo_enabled,
+         synced_at    = excluded.synced_at`,
+    ).run(businessId, accent, logo, logoReceipt, enabled ? 1 : 0, now);
+    // A325: the tech write never touches theme_id (the cloud owns it); report what is stored.
+    const themeId = (db.prepare(`SELECT theme_id FROM branding WHERE business_id = ?`).get(businessId) as
+      { theme_id: string | null } | undefined)?.theme_id ?? null;
+    return { accentHex: accent, logoPng: logo, logoReceipt, receiptLogoEnabled: enabled, themeId };
+  });
+  return tx();
+}
+
+/**
+ * A304: write branding pulled from the cloud into the local mirror (remote-wins). Called by
+ * the catalogue pull ONLY when the cloud returned a branding object; a null from the cloud
+ * means "no branding row" and the caller skips this, leaving any local (tech-set, A302) value
+ * intact. Keyed by the owner session's business_id — the same PK A301/A302 use — and no-ops
+ * if the till has no session yet. The cloud already validated on write (A303), so this trusts
+ * the payload but still only touches the two columns.
+ */
+/**
+ * A325: store the EFFECTIVE action theme the cloud served (`themeId` in /api/pos/init). Its own write — it touches
+ * ONLY theme_id, never the logo or colour — because a business can have themes without a branding row, and
+ * `branding: null` means "leave the local branding alone". `undefined` = the cloud predates A325 → no-op (keep).
+ * The value is stored as-is when it looks like an id; the screens resolve it against the registry.
+ */
+export function applyPulledTheme(themeId: string | null | undefined): void {
+  if (themeId === undefined) return;
+  const value = typeof themeId === 'string' && /^[a-z][a-z0-9-]{1,31}$/.test(themeId) ? themeId : null;
+  const db = getLocalDb();
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id: string } | undefined;
+  if (!sess?.business_id) return;
+  db.prepare(
+    `INSERT INTO branding (business_id, theme_id, synced_at) VALUES (?, ?, ?)
+     ON CONFLICT(business_id) DO UPDATE SET theme_id = excluded.theme_id, synced_at = excluded.synced_at`,
+  ).run(sess.business_id, value, new Date().toISOString());
+}
+
+export function applyPulledBranding(b: {
+  accentHex: string | null; logoPng: string | null;
+  /** A311: absent on an older cloud → keep the local value (COALESCE below), not clear it. */
+  logoReceipt?: string | null; receiptLogoEnabled?: boolean | null;
+}): void {
+  const db = getLocalDb();
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as
+    { business_id: string } | undefined;
+  if (!sess?.business_id) return;   // no business bound yet — nothing to key the row to
+  const now = new Date().toISOString();
+  // A311: the two receipt fields are remote-wins like the rest, EXCEPT when the
+  // cloud omitted them entirely (undefined — a cloud not yet on migration 105).
+  // Then the local value stands; a null from the cloud still clears/disables.
+  const lr = b.logoReceipt === undefined ? null : b.logoReceipt;
+  const lrKeep = b.logoReceipt === undefined ? 1 : 0;
+  const en = b.receiptLogoEnabled === undefined || b.receiptLogoEnabled === null ? null : (b.receiptLogoEnabled ? 1 : 0);
+  const enKeep = b.receiptLogoEnabled === undefined ? 1 : 0;
+  db.prepare(
+    `INSERT INTO branding (business_id, accent_hex, logo_png, logo_receipt, receipt_logo_enabled, synced_at)
+     VALUES (?, ?, ?, ?, COALESCE(?, 0), ?)
+     ON CONFLICT(business_id) DO UPDATE SET
+       accent_hex = excluded.accent_hex,
+       logo_png   = excluded.logo_png,
+       logo_receipt = CASE WHEN ? = 1 THEN branding.logo_receipt ELSE excluded.logo_receipt END,
+       receipt_logo_enabled = CASE WHEN ? = 1 THEN branding.receipt_logo_enabled ELSE COALESCE(?, 0) END,
+       synced_at  = excluded.synced_at`,
+  ).run(sess.business_id, b.accentHex, b.logoPng, lr, en, now, lrKeep, enKeep, en);
 }

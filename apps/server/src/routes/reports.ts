@@ -5,6 +5,7 @@ import { requireAuth, requireWebSurface } from '../middleware/auth';
 import { branchScope, requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
+import { summariseKitchenVoids, kitchenVoidText } from '../lib/kitchenLines';
 import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
 
 const router = safeRouter();
@@ -206,7 +207,7 @@ router.get('/staff', async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('id, total, refunded_amount, refunded_at, cashier_id, branch_id, branches ( name )')
+    .select('id, total, refunded_amount, refunded_at, cashier_id, shift_id, branch_id, created_at, branches ( name )')
     .eq('business_id', req.businessId)
     .eq('status', 'completed')
     .gte('created_at', start)
@@ -217,21 +218,52 @@ router.get('/staff', async (req, res) => {
   const { data: orders, error } = await query;
   if (error) { res.status(500).json({ error: error.message }); return; }
 
+  // A259c: orders rung offline/desktop often land with NO cashier_id AND NO shift_id,
+  // so both id- and shift_id-based lookups miss and everything buckets into "Unknown".
+  // Attribute an unresolved order to the SHIFT whose time window covers it (same branch,
+  // opened_at <= created_at <= closed_at/open) — an order rung during Eugene's open shift
+  // is Eugene's even if the row never recorded who. Order cashier_id, then the order's
+  // own shift_id, still win when present.
+  let shiftsQ = supabase
+    .from('shifts')
+    .select('id, cashier_id, branch_id, opened_at, closed_at, status')
+    .eq('business_id', req.businessId)
+    .lte('opened_at', end)
+    .or(`status.eq.open,closed_at.gte.${start}`);
+  if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
+  const { data: shiftRows } = await shiftsQ;
+  const shiftById: Record<string, { cashier_id: string | null }> = {};
+  (shiftRows ?? []).forEach((sh: any) => { shiftById[sh.id] = sh; });
+  const coveringCashier = (branchId: string, at: string): string | null => {
+    const sh = (shiftRows ?? []).find((s: any) =>
+      s.branch_id === branchId && s.cashier_id &&
+      s.opened_at <= at && (s.closed_at == null || s.closed_at >= at));
+    return sh?.cashier_id ?? null;
+  };
+  const cashierOf = (o: any): string | null =>
+    o.cashier_id
+    ?? (o.shift_id ? shiftById[o.shift_id]?.cashier_id ?? null : null)
+    ?? coveringCashier(o.branch_id, o.created_at)
+    ?? null;
+
   // Collect unique user IDs then fetch names in one query
-  const userIds = [...new Set((orders ?? []).map(o => o.cashier_id).filter(Boolean))];
+  const userIds = [...new Set((orders ?? []).map((o: any) => cashierOf(o)).filter(Boolean))];
   const userMap: Record<string, string> = {};
   if (userIds.length) {
     const { data: users } = await supabase
       .from('users')
-      .select('id, name')
+      .select('id, name, email')
       .in('id', userIds);
-    (users ?? [] as Array<{ id: string; name: string }>).forEach(u => { userMap[u.id] = u.name; });
+    // A258: a user with a null name was rendering as "Unknown" — fall back to email.
+    (users ?? [] as Array<{ id: string; name: string; email: string }>)
+      .forEach(u => { userMap[u.id] = u.name || u.email || 'Unknown'; });
   }
 
   const staffMap: Record<string, { name: string; branch: string; orders: number; revenue: number }> = {};
   (orders ?? [] as ReportOrderRow[]).forEach((o) => {
-    const key    = o.cashier_id ?? 'unknown';
-    const name   = userMap[o.cashier_id] ?? 'Unknown';
+    const cid    = cashierOf(o);
+    const key    = cid ?? 'unknown';
+    const name   = (cid && userMap[cid]) ? userMap[cid] : 'Unknown';
     const branch = embedOne<{ name: string }>((o as any).branches)?.name ?? '';
     if (!staffMap[key]) staffMap[key] = { name, branch, orders: 0, revenue: 0 };
     staffMap[key].orders++;
@@ -241,7 +273,16 @@ router.get('/staff', async (req, res) => {
   });
 
   const staff = Object.entries(staffMap)
-    .map(([id, v]) => ({ cashier_id: id, ...v }))
+    // A259d: the frontend StaffRow reads staff_id / staff_name (not cashier_id / name)
+    // — that contract mismatch, not the data, is why every row showed "Unknown".
+    .map(([id, v]) => ({
+      staff_id:        id,
+      staff_name:      v.name,
+      orders:          v.orders,
+      revenue:         v.revenue,
+      avg_order_value: v.orders ? v.revenue / v.orders : 0,
+      voids:           0,
+    }))
     .sort((a, b) => b.revenue - a.revenue);
 
   res.json({ staff });
@@ -434,8 +475,8 @@ router.get('/eod', async (req, res) => {
     .from('shifts')
     .select('id, status, opening_float, closing_float, expected_cash, cash_variance, opened_at')
     .eq('business_id', req.businessId)
-    .gte('opened_at', start)
     .lte('opened_at', end)
+    .or(`status.eq.open,opened_at.gte.${start}`)   // A258: include active open shifts
     .order('opened_at', { ascending: false });
   if (scopedBranch) shiftsQ = shiftsQ.eq('branch_id', scopedBranch);
   const { data: shiftRows } = await shiftsQ;
@@ -486,10 +527,24 @@ router.get('/eod', async (req, res) => {
 
   const netRevenue = totalRevenue - totalVat; // VAT is a liability, not income
 
+  // 0.6.28: items sent to the kitchen and taken back in the period (migration 112) — why, made or not, who approved.
+  // A cloud before 112 has no table: the block is simply empty.
+  let kvQ = supabase.from('kitchen_voids')
+    .select('id, order_number, product_name, quantity, amount, reason, note, cooked, cashier_id, cashier_name, approved_by_name, created_at')
+    .eq('business_id', req.businessId).gte('created_at', start).lte('created_at', end)
+    .order('created_at', { ascending: true }).limit(500);
+  if (scopedBranch) kvQ = kvQ.eq('branch_id', scopedBranch);
+  if (cashier_id) kvQ = kvQ.eq('cashier_id', cashier_id as string);
+  const { data: kvRows } = await kvQ;
+  const kitchenVoidLines = (kvRows ?? []).map((r: any) => ({
+    ...r, quantity: Number(r.quantity) || 0, amount: Number(r.amount) || 0, text: kitchenVoidText(r),
+  }));
+
   res.json({
     period: { from: start, to: end },
     branchName,
     cashierName,
+    kitchenVoids: { summary: summariseKitchenVoids(kitchenVoidLines), lines: kitchenVoidLines },
     summary: {
       totalRevenue,
       netRevenue,
@@ -523,8 +578,10 @@ router.get('/shifts', async (req, res) => {
     .from('shifts')
     .select('*')
     .eq('business_id', req.businessId)
-    .gte('opened_at', start)
     .lte('opened_at', end)
+    // A258: an OPEN shift opened before this period is still active during it —
+    // include it, not just shifts whose opened_at falls inside the window.
+    .or(`status.eq.open,opened_at.gte.${start}`)
     .order('opened_at', { ascending: false });
 
   if (scopedBranch)            query = query.eq('branch_id', scopedBranch);
@@ -543,10 +600,10 @@ router.get('/shifts', async (req, res) => {
   const cashierIds = [...new Set(shifts.map(s => s.cashier_id))];
   const { data: users } = await supabase
     .from('users')
-    .select('id, name')
+    .select('id, name, email')
     .in('id', cashierIds);
   const nameMap: Record<string, string> = {};
-  (users ?? []).forEach(u => { nameMap[u.id] = u.name; });
+  (users ?? []).forEach(u => { nameMap[u.id] = u.name || u.email || 'Unknown'; });
 
   // ── Enrich with branch names ──────────────────────────────────────────────
   const branchIds = [...new Set(shifts.map(s => s.branch_id))];
@@ -936,6 +993,80 @@ router.get('/voids', async (req, res) => {
     summary: {
       totalVoids: enriched.length,
       totalValue: enriched.reduce((s, o) => s + Number(o.total), 0),
+      byStaff,
+    },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/reports/refunds — A193
+// All refunded orders in a period, with cashier + authorizer attribution and
+// reason — the refund equivalent of the voids report. A refund keeps status
+// 'completed' (the sale stands, with a reversal), so refunds are flagged by
+// refunded_at, not by status, and dated by the refund event (refunded_at).
+// Query: from, to (by refund date), branch_id, cashier_id
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/refunds', async (req, res) => {
+  const { from, to, cashier_id } = req.query;
+  const { start, end } = getDateRange(from as string, to as string);
+  const scopedBranch = branchScope(req);
+
+  let query = supabase
+    .from('orders')
+    .select(`
+      id, order_number, order_type, total, refunded_amount, refunded_at,
+      refund_reason, refunded_by, refund_authorized_by, cashier_id, created_at, branch_id,
+      branches ( name )
+    `)
+    .eq('business_id', req.businessId)
+    .not('refunded_at', 'is', null)
+    .gte('refunded_at', start)
+    .lte('refunded_at', end)
+    .order('refunded_at', { ascending: false });
+
+  if (scopedBranch)  query = query.eq('branch_id', scopedBranch);
+  if (cashier_id)    query = query.eq('cashier_id', cashier_id as string);
+
+  const { data: refunds, error } = await query;
+  if (error) { res.status(500).json({ error: error.message }); return; }
+
+  // Enrich cashier + refunder + authorizer names in one lookup.
+  const userIds = [...new Set(
+    (refunds ?? []).flatMap(o => [o.cashier_id, (o as any).refunded_by, (o as any).refund_authorized_by]).filter(Boolean)
+  )];
+  const nameMap: Record<string, string> = {};
+  if (userIds.length) {
+    const users = await chunkIn<any>('users', 'id', userIds, q => q.select('id, name'));
+    (users ?? []).forEach((u: any) => { nameMap[u.id] = u.name; });
+  }
+
+  const enriched = (refunds ?? []).map(o => ({
+    ...o,
+    refunded_amount:    Number((o as any).refunded_amount ?? 0),
+    cashier_name:       nameMap[o.cashier_id] ?? 'Unknown',
+    refunded_by_name:   (o as any).refunded_by ? (nameMap[(o as any).refunded_by] ?? 'Unknown') : null,
+    authorized_by_name: (o as any).refund_authorized_by ? (nameMap[(o as any).refund_authorized_by] ?? 'Unknown') : null,
+    branch_name:        embedOne<{ name: string }>((o as any).branches)?.name ?? '—',
+  }));
+
+  // Per-cashier summary (value = the amount refunded, not the order total).
+  const staffMap: Record<string, { name: string; count: number; value: number }> = {};
+  for (const o of enriched) {
+    const key = o.cashier_id ?? 'unknown';
+    if (!staffMap[key]) staffMap[key] = { name: o.cashier_name, count: 0, value: 0 };
+    staffMap[key].count++;
+    staffMap[key].value += Number(o.refunded_amount);
+  }
+  const byStaff = Object.entries(staffMap)
+    .map(([cashier_id, v]) => ({ cashier_id, ...v }))
+    .sort((a, b) => b.value - a.value);
+
+  res.json({
+    period:   { from: start, to: end },
+    refunds:  enriched,
+    summary: {
+      totalRefunds: enriched.length,
+      totalValue:   enriched.reduce((s, o) => s + Number(o.refunded_amount), 0),
       byStaff,
     },
   });

@@ -290,7 +290,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                             placeholder="Search ingredient…"
                             value={search}
                             onChange={e => setSearches(p => p.map((s, i) => i === idx ? e.target.value : s))}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500"
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                           />
                           {search && (
                             <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 max-h-52 overflow-y-auto">
@@ -331,7 +331,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                           placeholder="0"
                           value={line.quantity_per_serving}
                           onChange={e => setQty(idx, e.target.value)}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 pr-10"
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift pr-10"
                         />
                         {line.ingredient_unit && (
                           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">
@@ -357,7 +357,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
               {/* Add line */}
               <button
                 onClick={addLine}
-                className="flex items-center gap-2 text-green-400 hover:text-green-300 text-sm font-medium transition-colors mt-2"
+                className="flex items-center gap-2 text-swift-text hover:text-swift-text-hover text-sm font-medium transition-colors mt-2"
               >
                 <span className="text-lg leading-none">+</span> Add ingredient
               </button>
@@ -437,7 +437,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                             <select
                               value={line.ingredient_id}
                               onChange={e => setPkgLine(idx, { ingredient_id: e.target.value })}
-                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
                             >
                               <option value="">— Select packaging —</option>
                               {packagingItems.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -448,7 +448,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                               type="number" min="0.001" step="0.001" placeholder="1"
                               value={line.quantity}
                               onChange={e => setPkgLine(idx, { quantity: e.target.value })}
-                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 pr-10"
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift pr-10"
                             />
                             {line.ingredient_id && (
                               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">{pkgUnit(line.ingredient_id)}</span>
@@ -461,7 +461,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                       ))}
                     </div>
 
-                    <button onClick={addPkgLine} className="flex items-center gap-2 text-green-400 hover:text-green-300 text-sm font-medium transition-colors mt-2">
+                    <button onClick={addPkgLine} className="flex items-center gap-2 text-swift-text hover:text-swift-text-hover text-sm font-medium transition-colors mt-2">
                       <span className="text-lg leading-none">+</span> Add packaging
                     </button>
 
@@ -473,7 +473,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
                       <button
                         onClick={savePackaging}
                         disabled={pkgSaving}
-                        className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${pkgSaved ? 'bg-green-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-green-400 border border-gray-700'}`}
+                        className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${pkgSaved ? 'bg-green-600 text-white' : 'bg-gray-800 hover:bg-gray-700 text-swift-text border border-gray-700'}`}
                       >
                         {pkgSaving ? 'Saving…' : pkgSaved ? '✓ Saved' : 'Save packaging'}
                       </button>
@@ -511,7 +511,7 @@ export default function RecipeDrawer({ product, onClose }: Props) {
             className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${
               saved
                 ? 'bg-green-600 text-white'
-                : 'bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black'
+                : 'bg-swift hover:bg-swift-light disabled:opacity-50 text-black'
             }`}
           >
             {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Recipe'}

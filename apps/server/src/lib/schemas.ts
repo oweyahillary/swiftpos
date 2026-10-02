@@ -76,9 +76,22 @@ export const CreateOrderSchema = z.object({
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
+// A320: a product name is trimmed BEFORE the length check. nonEmptyString is `min(1)` on the raw string, so
+// '   ' passed it; POST then refused it in the handler, but PATCH wrote `name.trim()` → an empty product name.
+// Trim-then-min here refuses it at the door for both, with the field-level error the clients already show
+// (A257). Order matters: `.min(1).trim()` would measure the untrimmed string. Product-only on purpose —
+// nonEmptyString serves 12 schemas (orders, variants, staff…); widening it is its own change (see A320).
+const productName = z.string().trim().min(1, 'Cannot be empty').max(120);
+
+// A317: description is .nullable() as well as .optional(). Every client clears
+// it by sending null (`form.description.trim() || null` — web Products page,
+// till MenuWorkbench, till ManageTabs create/update), the column is nullable
+// `text`, and the handler writes null through. Without it zod rejected every
+// save of a product whose description box was empty: "description: Invalid
+// input: expected string, received null" (owner, 2026-09-23). Same for update.
 export const CreateProductSchema = z.object({
-  name: nonEmptyString.max(120),
-  description: z.string().max(500).optional(),
+  name: productName,
+  description: z.string().max(500).optional().nullable(),
   base_price: z.number().nonnegative(),
   category_id: uuid.optional().nullable(),
   image_url: z.string().url().optional().nullable(),
@@ -87,8 +100,20 @@ export const CreateProductSchema = z.object({
   has_modifiers: z.boolean().default(false),
 });
 
-export const UpdateProductSchema = CreateProductSchema.partial().extend({
-  status: z.enum(['active', 'inactive']).optional(),
+// A157: NOT CreateProductSchema.partial() — that keeps the .default() values, so an
+// update omitting track_stock/has_variants/has_modifiers would inject them and the
+// handler (which writes any field that is `!== undefined`) would silently reset them.
+// Explicit optionals with NO defaults: an update touches only the fields it sends.
+export const UpdateProductSchema = z.object({
+  name:          productName.optional(),              // A320: trimmed, then must be non-empty
+  description:   z.string().max(500).optional().nullable(),   // A317: null clears it
+  base_price:    z.number().nonnegative().optional(),
+  category_id:   uuid.optional().nullable(),
+  image_url:     z.string().url().optional().nullable(),
+  track_stock:   z.boolean().optional(),
+  has_variants:  z.boolean().optional(),
+  has_modifiers: z.boolean().optional(),
+  status:        z.enum(['active', 'inactive']).optional(),
 });
 
 // ── Categories ────────────────────────────────────────────────────────────────
@@ -147,6 +172,9 @@ export const CloseShiftSchema = z.object({
   // { "1000": 3, "500": 5 }. When present, the server verifies it sums to
   // closing_float. Keys are denomination values as strings.
   denomination_breakdown: z.record(z.string(), z.number().nonnegative()).optional(),
+  // A365: the cashier's declaration of every payment method at End Shift ({"cash": n, "mpesa": n, …}). Cash is always
+  // the counted closing_float. Absent from an older till or web build — then nothing awaits a manager's confirmation.
+  declared_methods: z.record(z.string(), z.number().nonnegative()).optional(),
 });
 
 // ── Discounts ─────────────────────────────────────────────────────────────────
@@ -164,11 +192,18 @@ export const CreateDiscountSchema = z.object({
 
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
+// 0.6.27: matched to what POST /api/expenses reads and the dashboard sends. It asked for `category` and `date`, which no
+// caller sends, so every expense added from the dashboard (Expenses page, manager dashboard) was refused
+// "Validation failed" — and a pass would have stripped expense_category_id / expense_date / paid_by (validate keeps only
+// the schema's keys). The till (sync push) and the web POS (POST /api/shifts/:id/expense) never used this route.
+const optionalId = z.union([uuid, z.literal('')]).optional().nullable();
 export const CreateExpenseSchema = z.object({
   branch_id: uuid,
-  category: nonEmptyString.max(60),
-  description: z.string().optional(),
+  expense_category_id: optionalId,
+  description: nonEmptyString.max(255),
   amount: z.number().positive(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  receipt_url: z.string().url().optional().nullable(),
+  paid_by: optionalId,
+  receipt_url: z.string().max(2000).optional().nullable(),
+  expense_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
+  payment_method: z.string().max(40).optional(),   // 0.6.27: how it was paid — only cash leaves a drawer
 });

@@ -8,7 +8,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import type { BusinessMode } from '../../context/POSAuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { api } from '../../lib/api';
-import { cartSubtotal, extractVat, generateOrderNumber } from '../../lib/cart';
+import { cartSubtotal, extractTaxes, generateOrderNumber } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
 import type { Product, Category, VariantGroup, VariantOption, SelectedVariant, OrderType } from '../../types';
 import PaymentModal from './PaymentModal';
@@ -19,11 +19,19 @@ import type { LoyaltyState } from './LoyaltyPanel';
 import ZReportModal from './ZReportModal';
 import ShiftModal from './ShiftModal';
 import type { Shift, ShiftModalMode } from './ShiftModal';
+import { setCoveredTerminal, loadTills, loadWebTill, ownOpenDrawer, mayEnterSilently, markJoined } from '../../lib/posTerminal';
 import PrinterSettingsModal from './PrinterSettingsModal';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
-import { printKOTs, type BranchPrinter } from '../../lib/printKOT';
+import { type BranchPrinter } from '../../lib/printKOT';
+import { printRoutedStations } from '../../lib/printRouted';
 import POSDrawer from './POSDrawer';
+import NoteModal from './NoteModal';
+import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
+import { deliveryProblem, cleanDeliveryFee } from '../../lib/delivery';
+import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
+import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
+import { maySignedInConfirm } from '../../lib/shiftConfirm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -89,6 +97,9 @@ interface OpenOrder {
   covers: number;
   openedAt: number;
   orderType?: string; // e.g. 'takeaway' for non-table orders; undefined = derive from tableId
+  // 0.6.27: a delivery's rider and fee (the fee is required with the client's 'delivery_fee' switch)
+  rider?: string;
+  deliveryFee?: string;
   // parking
   parkingSessionId?: string;
   vehiclePlate?: string;
@@ -144,12 +155,23 @@ export default function CashierScreen() {
   const isManager = hasPermission('settings.manage');
   const { business } = useBusiness();
 
-  // Guard — if this user should not be on the cashier screen, redirect them now.
-  // Uses the same resolveRoute() logic as the login screen — consistent everywhere.
+  // A manager reached the cashier screen via "Open POS" from their portal, so give
+  // them a way back (parity with the desktop app). Cashiers have no portal, so this
+  // is hidden for them. resolveRoute is the same signal that sends them to /manager
+  // (role-based — note managers are denied settings.manage, so the isManager flag
+  // above, which is really "owner/settings.manage", would miss a role-based manager).
+  const hasManagerPortal = !!session && resolveRoute(session.permissions, session.role) === '/manager';
+
+  // Guard — only the OWNER is redirected off the cashier screen (they use the full
+  // web dashboard, not the POS terminal). Managers and cashiers both belong here:
+  // managers hold orders.create and open the POS from their dashboard's "Open POS"
+  // button. Previously this bounced anyone whose resolveRoute home wasn't
+  // '/pos/cashier' — which kicked managers straight back to /manager, so "Open POS"
+  // opened nothing (A206).
   useEffect(() => {
     if (!session) return;
     const dest = resolveRoute(session.permissions, session.role);
-    if (dest !== '/pos/cashier') navigate(dest, { replace: true });
+    if (dest === '/') navigate(dest, { replace: true });
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data (usePOSData hook) ────────────────────────────────────────────────
@@ -166,6 +188,13 @@ export default function CashierScreen() {
     pumps,
     setPumps,
     branchPrinters,
+    comboItems,
+    kitchenExclusions,
+    notePicks,
+    posFeatures,   // 0.6.27
+    receiptLogo,
+    receiptHeader,
+    receiptFooter,
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
@@ -254,6 +283,25 @@ export default function CashierScreen() {
   const [openOrders, setOpenOrders] = useState<Record<string, OpenOrder>>({});
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
+  // ── A367: notes — one on each line (on the cart item) and one on the whole order, kept per open order (the table,
+  // bay or pump; '' for a quick sale). An order with no items has no note, so an emptied cart drops it.
+  const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
+  const [noteFor, setNoteFor] = useState<number | 'order' | null>(null);
+  const noteKey = activeKey ?? '';
+  const orderNote = orderNotes[noteKey] ?? '';
+  const setOrderNote = (note: string | null) => setOrderNotes(prev => {
+    const n = { ...prev };
+    if (note) n[noteKey] = note; else delete n[noteKey];
+    return n;
+  });
+  useEffect(() => {
+    if (cart.length === 0 && orderNotes[noteKey]) setOrderNote(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.length, noteKey]);
+  const setLineNote = (index: number, note: string | null) =>
+    setCart(prev => prev.map((it, i) => (i === index ? { ...it, notes: note } : it)));
+
+
   // ── UI state ───────────────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
@@ -322,6 +370,7 @@ export default function CashierScreen() {
   const orderMode = posDataOrderMode;
   // For order-first: track the DB order id once it's been sent to kitchen
   const [sentOrderIds, setSentOrderIds] = useState<Record<string, string>>({}); // tableKey → orderId
+  const [sentOrderNumbers, setSentOrderNumbers] = useState<Record<string, string>>({}); // 0.6.28: the number on its ticket
 
   // ── Variant modal state — from useCart hook above ───────────────────────────
 
@@ -365,14 +414,40 @@ export default function CashierScreen() {
   useEffect(() => {
     if (!session) return;
     posApi.get<Shift | null>('/api/shifts/current')
-      .then((shift) => {
-        if (shift) {
+      .then(async (shift) => {
+        // A343 (owner, 2026-09-27): the cashier who OPENED the running shift — or already chose to join it on this
+        // browser — goes straight in. Anyone else is asked: join it, or start their own shift on the web till.
+        if (shift && mayEnterSilently(shift as any, session.staffId)) {
           setCurrentShift(shift);
-        } else {
-          setShiftModal('open');
+          return;
         }
+        // A273 follow-up (owner, 2026-09-26): if THIS cashier already has a drawer open — on one of the branch's tills
+        // (opened on the desktop or another web tab) or, since A343, on the web till — join it silently: no picker, no
+        // float. Anything else (none, several, or a lookup failure) falls back to the picker, which shows which are open.
+        const branchId = session.branchId;
+        if (branchId) {
+          try {
+            const [tills, webTill] = await Promise.all([
+              loadTills((path) => posApi.get(path), branchId),
+              loadWebTill((path) => posApi.get(path), branchId),
+            ]);
+            const mine = ownOpenDrawer(tills, webTill, session.staffId);
+            if (mine) {
+              setCoveredTerminal(mine.kind === 'till' ? mine.till : null);   // the web till covers no till
+              const joined = await posApi.get<Shift | null>('/api/shifts/current');
+              if (joined) { setCurrentShift(joined); return; }
+              setCoveredTerminal(null);
+            }
+          } catch { /* fall through to the picker */ }
+        }
+        setShiftModal('open');
       })
-      .catch(() => {});
+      // A274: a failed /current check means the shift state is UNKNOWN, which is
+      // not the same as knowing none is open (mirrors the cloud's own /open guard
+      // comment). Never fall through to a sellable screen on an unknown shift —
+      // prompt to open. If one already exists, POST /open answers 409 with a clear
+      // message rather than a silent shift_id:null sale.
+      .catch(() => setShiftModal('open'));
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -426,6 +501,7 @@ export default function CashierScreen() {
   }
 
   function clearTable(table: Table) {
+    if (!sentTabGuard(table.id)) { setShowClearTableModal(false); setTableToClear(null); return; }   // 0.6.28
     setOpenOrders(prev => {
       const next = { ...prev };
       delete next[table.id];
@@ -633,6 +709,34 @@ export default function CashierScreen() {
     setCart([]);
   }
 
+  // A264: the in-cart order-type selector sets the active order's recorded type
+  // (dine_in / takeaway / delivery), mirroring the desktop toggle. Keeps the same
+  // table association — it changes what the order is booked as, not its key.
+  function setActiveOrderType(val: 'dine_in' | 'takeaway' | 'delivery') {
+    if (!activeKey) return;
+    setOpenOrders(prev => prev[activeKey]
+      ? { ...prev, [activeKey]: { ...prev[activeKey], orderType: val,
+          ...(val !== 'delivery' ? { rider: undefined, deliveryFee: undefined } : {}) } }
+      : prev);
+    setDeliveryMsg('');
+  }
+
+  // 0.6.27: the active delivery's rider / fee, and the check before Charge ('delivery_fee' switch).
+  const [deliveryMsg, setDeliveryMsg] = useState('');
+  function setActiveDelivery(patch: { rider?: string; deliveryFee?: string }) {
+    if (!activeKey) return;
+    setOpenOrders(prev => prev[activeKey] ? { ...prev, [activeKey]: { ...prev[activeKey], ...patch } } : prev);
+    setDeliveryMsg('');
+  }
+  const activeRider = activeKey ? openOrders[activeKey]?.rider ?? '' : '';
+  const activeFeeText = activeKey ? openOrders[activeKey]?.deliveryFee ?? '' : '';
+  /** Open the payment screen — unless a delivery still needs its rider or fee. */
+  function openPayment(evenSplit: boolean) {
+    const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText);
+    if (problem) { setDeliveryMsg(problem); return; }
+    setPaymentEvenSplit(evenSplit); setShowPayment(true);
+  }
+
   function resumeParked(key: string) {
     const order = openOrders[key];
     if (!order) return;
@@ -644,6 +748,7 @@ export default function CashierScreen() {
   }
 
   function clearActiveOrder() {
+    if (!sentTabGuard(activeKey)) return;   // 0.6.28: a sent order is voided, not dropped
     if (activeKey) {
       // Release pump if this was a petrol order
       const order = openOrders[activeKey];
@@ -672,63 +777,41 @@ export default function CashierScreen() {
   }
 
   // ── Print guest check / bill (before payment) ───────────────────────────────
-  function printGuestCheck() {
-    const tableLabel = activeKey && openOrders[activeKey]?.tableName
-      ? `Table ${openOrders[activeKey].tableName}` : '';
-    const lines = cart.map(i => {
-      const name = i.product.name.padEnd(22, ' ').slice(0, 22);
-      const qty  = String(i.quantity).padStart(3);
-      const price = fmt(i.lineTotal, currency).padStart(12);
-      return `${name}${qty}${price}`;
-    }).join('\n');
-    const sep  = '─'.repeat(38);
-    const dateStr = new Date().toLocaleString('en-KE');
-    const receipt = [
-      '',
-      business?.name ?? 'SwiftPOS',
-      tableLabel,
-      session?.branchName ?? '',
-      sep,
-      `${'ITEM'.padEnd(22)} QTY         AMT`,
-      sep,
-      lines,
-      sep,
-      `${'Subtotal'.padEnd(22)}    ${fmt(subtotal, currency)}`,
-      `${'VAT (16%)'.padEnd(22)}    ${fmt(vatAmount, currency)}`,
-      sep,
-      `${'TOTAL'.padEnd(22)}    ${fmt(orderTotal, currency)}`,
-      sep,
-      'This is not a receipt.',
-      'Please pay at the counter.',
-      dateStr,
-      '',
-    ].join('\n');
-    const html = `<!DOCTYPE html><html><head><title>Bill</title>
-      <style>body{font-family:'Courier New',monospace;font-size:12px;padding:16px;white-space:pre;}</style>
-      </head><body>${receipt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-      </body></html>`;
-
-    // Print via a hidden iframe rather than a popup window. A popup can be blocked
-    // (returns null) or half-load and then hang the tab on print(); the iframe is
-    // self-contained and is always cleaned up via onafterprint / a fallback timer.
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('aria-hidden', 'true');
-    Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
-    document.body.appendChild(iframe);
-
-    const cleanup = () => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); };
-    const doc = iframe.contentWindow?.document;
-    if (!doc) { cleanup(); return; }
-    doc.open(); doc.write(html); doc.close();
-
-    const win = iframe.contentWindow!;
-    win.onafterprint = () => setTimeout(cleanup, 100);
-    setTimeout(() => {
-      try { win.focus(); win.print(); }
-      catch { cleanup(); }
-      // Safety net: remove the iframe even if onafterprint never fires.
-      setTimeout(cleanup, 60000);
-    }, 200);
+  async function printGuestCheck() {
+    // Silent, shared-format, fans to all configured full-order printers (Customer
+    // Receipt / Master KOT / Dispatcher). Replaces the old iframe→window.print
+    // dialog. Pre-payment bill: no payments/change yet (A246).
+    const tableName = activeKey && openOrders[activeKey]?.tableName
+      ? String(openOrders[activeKey].tableName) : undefined;
+    try {
+      const res = await printRoutedStations({
+        cart,
+        branchPrinters,
+        business: business!,
+        orderNumber: '',                 // A269: a proforma BILL carries no fiscal number
+        proforma: true,
+        orderType: (activeKey && openOrders[activeKey]?.orderType) || (activeKey && openOrders[activeKey]?.tableId ? 'dine_in' : 'retail'),
+        cashierName: session?.staffName ?? 'Cashier',
+        total: orderTotal,
+        discount: totalDiscount,   // A349: the lines sum to total + discount
+        tableNumber: tableName,
+        footerMessage: printerSettings.footerMessage,
+        comboItems,
+        kitchenExclusions,
+        categories,
+        orderNote,   // A367
+        branchName: session?.branchName,
+        receiptHeader, receiptFooter,
+        receiptLogo,
+        kinds: ['receipt'],            // A253: Print Bill is a customer proforma, not the kitchen fire
+      });
+      if (res.printed > 0) console.log(`[bill] printed to ${res.printed} station(s)`);
+      else if (res.configured === 0) alert('No full-order printers configured. Add them in Settings → Printers.');
+      else alert('Print server not connected — the bill did not print. Check the bridge.');
+    } catch (e: any) {
+      console.error('[bill] print failed:', e?.message);
+      alert('Could not print the bill. Check Settings → Printers.');
+    }
   }
 
     // ── Send to kitchen (order-first model) ───────────────────────────────────
@@ -736,12 +819,16 @@ export default function CashierScreen() {
 
   async function sendToKitchen() {
     if (!session || !activeKey || cart.length === 0) return;
+    // A274: no drawer session → no sale. Same hard gate as the desktop till
+    // ("No shift is open. Start a shift before selling."). Belt-and-braces with
+    // the disabled Charge/Send buttons so an order can never carry shift_id:null.
+    if (!currentShift) { setShiftModal('open'); return; }
     setSendingToKitchen(true);
     try {
       const order = openOrders[activeKey];
       const orderNumber = `ORD-${Date.now()}`;
       const otype = order.orderType ?? (order.tableId ? 'dine_in' : 'retail');
-      const result = await posApi.post<{ orderId: string; orderNumber: string }>(
+      const result = await posApi.post<{ orderId: string; orderNumber: string; items?: { id: string }[] }>(
         '/api/orders/open',
         {
           branch_id:    session.branchId,
@@ -752,26 +839,115 @@ export default function CashierScreen() {
           subtotal,
           vat_amount:   vatAmount,
           total:        orderTotal,
-          items:        cart,
+          items:        cart,   // each line carries its notes (A367)
           shift_id:     currentShift?.id ?? null,
+          notes:        orderNote.trim() || null,   // A367
         }
       );
       // Remember the DB order id — PaymentModal will use /pay instead of creating a new order
       setSentOrderIds(prev => ({ ...prev, [activeKey]: result.orderId }));
+      setSentOrderNumbers(prev => ({ ...prev, [activeKey]: result.orderNumber }));
+      // 0.6.28: each line now names its order item — a sent line leaves the order only as a kitchen void.
+      if (Array.isArray(result.items)) {
+        setCart(prev => prev.map((it, i) => (result.items![i]?.id ? { ...it, order_item_id: result.items![i].id } : it)));
+      }
       // Print KOT if printers configured
       if (branchPrinters.length > 0) {
-        printKOTs(
-          cart,
-          { orderNumber: result.orderNumber, tableNumber: order.tableId ? order.tableName : undefined, orderType: otype, branchName: session.branchName },
-          branchPrinters,
-          printerSettings,
-        ).catch(err => console.error('[KOT]', err));
+        printRoutedStations({
+          cart, branchPrinters, business: business!,
+          orderNumber: result.orderNumber,
+          orderType: otype,
+          cashierName: session.staffName ?? 'Cashier',
+          total: orderTotal,
+          discount: totalDiscount,
+          tableNumber: order.tableId ? order.tableName : undefined,
+          comboItems, categories, kitchenExclusions,
+          orderNote,   // A367
+          kinds: ['kitchen', 'dispatch'],   // A253: food + packing fire at send, not at pay
+        }).catch(err => console.error('[KOT]', err));
       }
     } catch (err: any) {
       console.error('Send to kitchen failed:', err);
     } finally {
       setSendingToKitchen(false);
     }
+  }
+
+  // ── 0.6.28: sent lines come back only as a recorded kitchen void ─────────────
+  // Owner, 2026-10-01: a sent order could be cancelled after the customer paid in cash ("the cashier pockets the
+  // money"). On the web a sent order is an open order on the cloud; reducing or removing a sent line goes through
+  // KitchenVoidModal → POST /api/orders/:id/kitchen-void (reason, made or not, a manager with 'kitchen_void_approval'),
+  // and the kitchen gets a VOID ticket.
+  const [kitchenVoid, setKitchenVoid] = useState<null | { title: string; lines: KitchenVoidLine[]; apply: (orderVoided: boolean) => void }>(null);
+  const activeSentId = activeKey ? sentOrderIds[activeKey] : undefined;
+  const lineAmount = (it: CartItem, q: number) => (it.quantity > 0 ? Math.round((it.lineTotal / it.quantity) * q * 100) / 100 : 0);
+  const closeVoidedTab = () => {
+    if (!activeKey) return;
+    const key = activeKey;
+    setSentOrderIds(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setOpenOrders(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setActiveKey(null);
+    setCart([]);
+  };
+  function changeQty(index: number, delta: number) {
+    const it = cart[index];
+    if (activeSentId && it?.order_item_id && delta < 0) {
+      setKitchenVoid({ title: `Take back 1 × ${it.product.name}`,
+        lines: [{ order_item_id: it.order_item_id, name: it.product.name, qty: 1, amount: lineAmount(it, 1) }],
+        apply: (gone) => (gone ? closeVoidedTab() : updateQty(index, -1)) });
+      return;
+    }
+    updateQty(index, delta);
+  }
+  function removeLine(index: number) {
+    const it = cart[index];
+    if (activeSentId && it?.order_item_id) {
+      setKitchenVoid({ title: `Remove ${it.product.name}`,
+        lines: [{ order_item_id: it.order_item_id, name: it.product.name, qty: it.quantity, amount: lineAmount(it, it.quantity) }],
+        apply: (gone) => (gone ? closeVoidedTab() : removeItem(index)) });
+      return;
+    }
+    removeItem(index);
+  }
+  /** A sent tab is not dropped: its items are voided (or it is charged). Returns true when the caller may go on. */
+  function sentTabGuard(key: string | null | undefined): boolean {
+    if (!key || !sentOrderIds[key]) return true;
+    const order = openOrders[key];
+    const lines = (key === activeKey ? cart : order?.cart ?? []).filter(it => it.order_item_id);
+    if (key !== activeKey || !lines.length) {
+      window.alert('This order was sent to the kitchen. Open it and charge it, or remove its items (a kitchen void).');
+      return false;
+    }
+    setKitchenVoid({ title: 'Cancel the order',
+      lines: lines.map(it => ({ order_item_id: it.order_item_id!, name: it.product.name, qty: it.quantity, amount: lineAmount(it, it.quantity) })),
+      apply: () => closeVoidedTab() });
+    return false;
+  }
+  async function submitKitchenVoid(v: { reason: string; cooked: boolean; note: string | null; pin?: string }) {
+    if (!kitchenVoid || !activeSentId) return;
+    const r = await posApi.post<{ ok: boolean; total: number; orderVoided: boolean; approvedBy: string | null }>(
+      `/api/orders/${activeSentId}/kitchen-void`,
+      { lines: kitchenVoid.lines.map(l => ({ order_item_id: l.order_item_id, qty: l.qty })), reason: v.reason,
+        cooked: v.cooked, note: v.note, ...(v.pin ? { pin: v.pin } : {}) });
+    // The VOID ticket — the same stations the items went to, so the kitchen stops cooking them.
+    if (branchPrinters.length > 0) {
+      const order = activeKey ? openOrders[activeKey] : undefined;
+      const voidCart = kitchenVoid.lines.map(l => {
+        const it = cart.find(c => c.order_item_id === l.order_item_id)!;
+        return { ...it, quantity: l.qty, lineTotal: l.amount };
+      });
+      printRoutedStations({
+        cart: voidCart, branchPrinters, business: business!,
+        orderNumber: (activeKey ? sentOrderNumbers[activeKey] : undefined) ?? String(activeSentId).slice(0, 8),
+        orderType: order?.orderType ?? (order?.tableId ? 'dine_in' : 'retail'),
+        cashierName: session?.staffName ?? 'Cashier', total: kitchenVoid.lines.reduce((s, l) => s + l.amount, 0),
+        tableNumber: order?.tableId ? order.tableName : undefined, comboItems, categories, kitchenExclusions,
+        kinds: ['kitchen', 'dispatch'], voided: { by: r.approvedBy ?? '', reason: voidReasonLabel(v.reason) },
+      }).catch(err => console.error('[KOT void]', err));
+    }
+    const apply = kitchenVoid.apply;
+    setKitchenVoid(null);
+    apply(r.orderVoided);
   }
 
   // Fire a held course to the kitchen for an already-sent order.
@@ -803,7 +979,6 @@ export default function CashierScreen() {
   const subtotal = isParking && parkingBill
     ? parkingBill.amount
     : cartSubtotal(cart);
-  const vatAmount = extractVat(subtotal, VAT_RATE);
   const loyaltyDiscount = loyaltyState?.discountAmount ?? 0;
   // Auto-applied promotion discount
   const autoPromoDiscount = activePromos.reduce((total, promo) => {
@@ -819,6 +994,11 @@ export default function CashierScreen() {
   const promoDiscount = (discountState?.discount_amount ?? 0) + autoPromoDiscount;
   const totalDiscount = loyaltyDiscount + promoDiscount;
   const orderTotal = Math.max(0, subtotal - totalDiscount);
+  // A349: VAT and CTL at the business's own rates, on the bill AFTER the discount — as the till and the cloud charge it.
+  // (Was a fixed 16 % on the undiscounted subtotal, with no levy: wrong on screen for a CTL business or any discount.)
+  const vatRate = Number(business?.vat_rate ?? VAT_RATE);
+  const ctlRate = Number(business?.ctl_rate ?? 0) || 0;
+  const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(orderTotal, vatRate, ctlRate);
 
   // ── Product filter ─────────────────────────────────────────────────────────
   const filtered = products.filter((p) => {
@@ -871,7 +1051,7 @@ export default function CashierScreen() {
         <div className="max-w-md text-sm text-slate-400">{posDataError}</div>
         <button
           onClick={() => reloadPOSData()}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className="rounded-lg bg-[rgb(var(--act-strong,37_99_235))] px-4 py-2 text-sm font-medium text-white hover:bg-[rgb(var(--act-strong,59_130_246))]"
         >
           Retry
         </button>
@@ -925,6 +1105,15 @@ export default function CashierScreen() {
             <div style={s.branchLabel}>{session?.branchName}</div>
             <div style={s.staffLabel}>{session?.staffName} · {session?.role}</div>
           </div>
+          {hasManagerPortal && (
+            <button
+              onClick={() => navigate('/manager')}
+              title="Back to the manager portal"
+              style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginLeft: 8 }}
+            >
+              ← Manager portal
+            </button>
+          )}
         </div>
 
         <div style={s.headerCenter}>
@@ -988,7 +1177,7 @@ export default function CashierScreen() {
           {currentShift && (
             <>
               <button
-                style={{ ...s.lockBtn, background: 'transparent', color: '#10b981', border: '1px solid #10b981', marginRight: 4 }}
+                style={{ ...s.lockBtn, background: 'transparent', color: 'rgb(var(--act-text, 16 185 129))', border: '1px solid rgb(var(--act-fill, 16 185 129))', marginRight: 4 }}
                 onClick={() => setShiftModal('clockin')}
                 title="Clock In / Out"
               >⏱ Clock</button>
@@ -997,6 +1186,12 @@ export default function CashierScreen() {
                 onClick={() => setShiftModal('float')}
                 title="Cash In/Out"
               >💵 Float</button>
+              {/* A362: petty cash out of this drawer — any cashier on the shift, as at the till */}
+              <button
+                style={{ ...s.lockBtn, background: 'transparent', color: '#64748b', border: '1px solid #334155', marginRight: 4 }}
+                onClick={() => setShiftModal('expense')}
+                title="Record an expense"
+              >🧾 Expense</button>
               <button
                 style={{ ...s.lockBtn, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', marginRight: 4 }}
                 onClick={() => setShiftModal('close')}
@@ -1022,7 +1217,7 @@ export default function CashierScreen() {
             onUpdateQty={minimartUpdateQty}
             onRemoveItem={minimartRemoveItem}
             onClearCart={() => setCart([])}
-            onCharge={() => setShowPayment(true)}
+            onCharge={() => openPayment(false)}
             onParkOrder={parkOrder}
             parkedOrders={minimartParkedOrders}
             onResumeParked={resumeParked}
@@ -1286,7 +1481,7 @@ export default function CashierScreen() {
                       ...s.catBtn,
                       ...(activeCategory === cat.id
                         ? {
-                            background: (cat as Category).color ?? '#22c55e',
+                            background: (cat as Category).color ?? 'rgb(var(--act-strong, 34 197 94))',
                             color: '#fff',
                             borderColor: 'transparent',
                           }
@@ -1378,6 +1573,36 @@ export default function CashierScreen() {
             )}
           </div>
 
+          {/* A264: order-type selector — shared core, top of the cart (matches desktop) */}
+          {isRestaurant && activeKey && (
+            <div style={{ display: 'flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden', margin: '0 14px 10px' }}>
+              {(['dine_in', 'takeaway', 'delivery'] as const).map(val => {
+                const active = getOrderType() === val;
+                return (
+                  <button key={val} onClick={() => setActiveOrderType(val)}
+                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: active ? 'rgb(var(--act-fill, 34 197 94) / 0.12)' : '#1e293b', color: active ? 'rgb(var(--act-text, 34 197 94))' : '#cbd5e1' }}>
+                    {val === 'dine_in' ? 'Dine in' : val === 'takeaway' ? 'Takeaway' : 'Delivery'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {/* 0.6.27: a delivery's rider (and, with the 'delivery_fee' switch, the fee the customer pays on top). */}
+          {isRestaurant && activeKey && getOrderType() === 'delivery' && (
+            <div style={{ display: 'flex', gap: 8, margin: '0 14px 10px' }}>
+              <input value={activeRider} onChange={e => setActiveDelivery({ rider: e.target.value })} data-testid="rider-name"
+                placeholder={posFeatures.delivery_fee ? 'Rider name (required)' : 'Rider name'} maxLength={60}
+                style={{ flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
+              {posFeatures.delivery_fee && (
+                <input type="number" min={0} inputMode="decimal" value={activeFeeText} data-testid="delivery-fee"
+                  onChange={e => setActiveDelivery({ deliveryFee: e.target.value })} onWheel={e => (e.target as HTMLInputElement).blur()}
+                  placeholder="Delivery fee"
+                  style={{ width: 110, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
+              )}
+            </div>
+          )}
+          {deliveryMsg && <p style={{ margin: '0 14px 10px', color: '#f59e0b', fontSize: 12 }} data-testid="delivery-msg">{deliveryMsg}</p>}
+
           {/* Slot picker hint when no active key */}
           {hasSlotPicker && !activeKey && (
             <div style={s.tableHint}>
@@ -1443,15 +1668,30 @@ export default function CashierScreen() {
                       <span style={s.qtyNum}>{item.quantity.toFixed(2)} L</span>
                     ) : (
                       <>
-                        <button style={s.qtyBtn} onClick={() => updateQty(index, -1)}>−</button>
+                        <button style={s.qtyBtn} onClick={() => changeQty(index, -1)}>−</button>
                         <span style={s.qtyNum}>{item.quantity}</span>
                         <button style={s.qtyBtn} onClick={() => updateQty(index, 1)}>+</button>
                       </>
                     )}
-                    <button style={s.removeBtn} onClick={() => removeItem(index)}>✕</button>
+                    <button style={s.removeBtn} onClick={() => removeLine(index)}>✕</button>
                   </div>
                   <div style={s.cartItemTotal}>{fmt(item.lineTotal, currency)}</div>
                 </div>
+                {/* A367: the line's note, and the button that edits it */}
+                {!item.isFuel && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '0 0 6px 0', marginTop: -2 }}>
+                    <div style={{ flex: 1, minWidth: 0 }} data-testid="line-note">
+                      {noteLines(item.notes).map((l, k) => (
+                        <div key={k} style={{ fontSize: 11, color: '#fcd34d', wordBreak: 'break-word' }}>{l}</div>
+                      ))}
+                    </div>
+                    <button onClick={() => setNoteFor(index)} data-testid="line-note-btn"
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', background: 'transparent',
+                                     border: '1px solid #334155', color: '#94a3b8', flexShrink: 0 }}>
+                      {item.notes ? '✎ Note' : '+ Note'}
+                    </button>
+                  </div>
+                )}
                 {isRestaurant && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 0 6px 0', marginTop: -2 }}>
                     <select
@@ -1489,14 +1729,29 @@ export default function CashierScreen() {
           {/* Totals */}
           {(cart.length > 0 || (isParking && activeKey && parkingBill)) && (
             <div style={s.cartFooter}>
+              {/* A367: the note on the whole order */}
+              {cart.length > 0 && (
+                <button onClick={() => setNoteFor('order')} data-testid="order-note-btn"
+                        style={{ width: '100%', textAlign: 'left', fontSize: 12, borderRadius: 8, padding: '6px 10px', marginBottom: 6,
+                                 cursor: 'pointer', background: 'transparent', border: '1px dashed #334155',
+                                 color: orderNote ? '#fcd34d' : '#94a3b8', whiteSpace: 'pre-line' }}>
+                  {orderNote ? `Order note: ${orderNote}` : '+ Note for the order'}
+                </button>
+              )}
               <div style={s.totalRow}>
                 <span style={s.totalLabel}>Subtotal (incl. VAT)</span>
                 <span style={s.totalValue}>{fmt(subtotal, currency)}</span>
               </div>
               <div style={s.totalRow}>
-                <span style={{ ...s.totalLabel, color: '#475569' }}>VAT ({VAT_RATE}%)</span>
+                <span style={{ ...s.totalLabel, color: '#475569' }}>incl. VAT ({vatRate}%)</span>
                 <span style={{ ...s.totalValue, color: '#475569' }}>{fmt(vatAmount, currency)}</span>
               </div>
+              {ctlRate > 0 && (
+                <div style={s.totalRow}>
+                  <span style={{ ...s.totalLabel, color: '#475569' }}>incl. CTL ({ctlRate}%)</span>
+                  <span style={{ ...s.totalValue, color: '#475569' }}>{fmt(ctlAmount, currency)}</span>
+                </div>
+              )}
               {activePromos.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
                   {activePromos.map(p => (
@@ -1526,82 +1781,91 @@ export default function CashierScreen() {
                 <span style={{ ...s.totalValue, color: '#f1f5f9', fontWeight: 700, fontSize: 17 }}>{fmt(orderTotal, currency)}</span>
               </div>
 
-              {/* ── Order-first: Send to Kitchen + Charge as separate actions ── */}
-              {isRestaurant && orderMode === 'order_first' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Fire held courses — shown once the order is sent and held items remain */}
-                  {activeKey && sentOrderIds[activeKey] && (() => {
-                    const heldCourses = Array.from(new Set(
-                      cart.filter(i => i.fire_status === 'held' && i.course).map(i => i.course as string)
-                    ));
-                    if (heldCourses.length === 0) return null;
-                    return (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {heldCourses.map(c => (
-                          <button key={c}
-                            onClick={() => fireCourse(c)}
-                            style={{ flex: '1 1 auto', padding: '8px 10px', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                            🔥 Fire {c}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  {/* Send to Kitchen — disabled once sent (order already in DB) */}
-                  <button
-                    style={{
-                      ...s.chargeBtn,
-                      background: activeKey && sentOrderIds[activeKey]
-                        ? '#166534'  // already sent — muted green
-                        : '#15803d',
-                      fontSize: 14,
-                    }}
-                    disabled={sendingToKitchen || !!(activeKey && sentOrderIds[activeKey])}
-                    onClick={sendToKitchen}
-                  >
-                    {sendingToKitchen
-                      ? 'Sending…'
-                      : activeKey && sentOrderIds[activeKey]
-                        ? '✓ Sent to kitchen'
-                        : '🍳 Send to Kitchen'}
-                  </button>
-                  {/* Charge — always available; uses /pay if already sent */}
-                  <button
-                    data-testid="charge-button"
-                    style={s.chargeBtn}
-                    onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}
-                  >
-                    Charge {fmt(orderTotal, currency)}
-                  </button>
-                </div>
-              ) : (
-                /* Pay-first (default) — single charge button + extra restaurant actions */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {isRestaurant && cart.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { printGuestCheck(); }}>
-                        🧾 Print Bill
-                      </button>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setTransferTarget(null); setShowTransfer(true); }}>
-                        ↔ Transfer
-                      </button>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setPaymentEvenSplit(true); setShowPayment(true); }}>
-                        👥 Split Bill
-                      </button>
-                      <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                        onClick={() => { setRoomNumber(''); setRoomGuestName(''); setRoomChargeError(''); setShowRoomCharge(true); }}>
-                        🏨 Room
-                      </button>
+              {/* ── A264: shared actions (Send to Kitchen · Hold -> Charge), same on web + desktop.
+                   The web extras sit BELOW Charge so they never displace the shared core. ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Fire held courses — order-first, once sent and held items remain */}
+                {isRestaurant && orderMode === 'order_first' && activeKey && sentOrderIds[activeKey] && (() => {
+                  const heldCourses = Array.from(new Set(
+                    cart.filter(i => i.fire_status === 'held' && i.course).map(i => i.course as string)
+                  ));
+                  if (heldCourses.length === 0) return null;
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {heldCourses.map(c => (
+                        <button key={c}
+                          onClick={() => fireCourse(c)}
+                          style={{ flex: '1 1 auto', padding: '8px 10px', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          🔥 Fire {c}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  <button data-testid="charge-button" style={s.chargeBtn} onClick={() => { setPaymentEvenSplit(false); setShowPayment(true); }}>
-                    Charge {fmt(orderTotal, currency)}
-                  </button>
-                </div>
-              )}
+                  );
+                })()}
+                {/* Send to Kitchen · Hold — shared core, BOTH modes. 0.6.28 ('pay_before_kitchen'): takeaway, delivery and
+                    counter orders go to the kitchen when paid — no Send. */}
+                {isRestaurant && cart.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {maySendBeforePay(posFeatures.pay_before_kitchen, getOrderType()) && <button
+                      style={{ flex: 1, padding: '10px 0', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, color: '#fbbf24', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (sendingToKitchen || !currentShift || !!(activeKey && sentOrderIds[activeKey])) ? 0.5 : 1 }}
+                      disabled={sendingToKitchen || !currentShift || !!(activeKey && sentOrderIds[activeKey])}
+                      onClick={sendToKitchen}
+                    >
+                      {sendingToKitchen
+                        ? 'Sending…'
+                        : activeKey && sentOrderIds[activeKey]
+                          ? '✓ Sent to kitchen'
+                          : '🍳 Send to Kitchen'}
+                    </button>}
+                    <button
+                      style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={parkOrder}
+                    >
+                      ⏸ Hold
+                    </button>
+                  </div>
+                )}
+                {/* Charge — gated on an open drawer session (A274). A sale with
+                    shift_id:null cannot be reconciled into any drawer, so with no
+                    shift the button prompts to open one instead of selling. */}
+                <button
+                  data-testid="charge-button"
+                  style={{ ...s.chargeBtn, opacity: currentShift ? 1 : 0.5 }}
+                  disabled={!currentShift}
+                  onClick={() => {
+                    if (!currentShift) { setShiftModal('open'); return; }
+                    openPayment(false);
+                  }}
+                >
+                  Charge {fmt(orderTotal, currency)}
+                </button>
+                {!currentShift && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
+                    Open a shift to start selling.
+                  </p>
+                )}
+                {/* Web-only premium extras — below Charge */}
+                {isRestaurant && cart.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { printGuestCheck(); }}>
+                      🧾 Print Bill
+                    </button>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { setTransferTarget(null); setShowTransfer(true); }}>
+                      ↔ Transfer
+                    </button>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #a78bfa', borderRadius: 8, color: '#a78bfa', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => openPayment(true)}>
+                      👥 Split Bill
+                    </button>
+                    <button style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid #f59e0b', borderRadius: 8, color: '#f59e0b', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => { setRoomNumber(''); setRoomGuestName(''); setRoomChargeError(''); setShowRoomCharge(true); }}>
+                      🏨 Room
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1952,6 +2216,35 @@ export default function CashierScreen() {
         </div>
       )}
 
+      {/* 0.6.28: sent items come back only as a recorded kitchen void. */}
+      {kitchenVoid && activeSentId && (
+        <KitchenVoidModal
+          title={kitchenVoid.title}
+          orderNumber={(activeKey ? sentOrderNumbers[activeKey] : undefined) ?? String(activeSentId).slice(0, 8)}
+          lines={kitchenVoid.lines}
+          needsManager={posFeatures.kitchen_void_approval}
+          signedInManager={maySignedInConfirm(session as any)}
+          currency={currency}
+          onSubmit={submitKitchenVoid}
+          onClose={() => setKitchenVoid(null)}
+        />
+      )}
+
+      {/* A367: the note editor — one line, or the whole order */}
+      {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
+        <NoteModal
+          kind={noteFor === 'order' ? 'order' : 'item'}
+          title={noteFor === 'order' ? 'The whole order' : `${cart[noteFor].product.name} ×${cart[noteFor].quantity}`}
+          initial={noteFor === 'order' ? orderNote : cart[noteFor].notes}
+          picks={notePicks}
+          onSave={(note) => {
+            if (noteFor === 'order') setOrderNote(note); else setLineNote(noteFor, note);
+            setNoteFor(null);
+          }}
+          onClose={() => setNoteFor(null)}
+        />
+      )}
+
       {showPayment && session && (
         <PaymentModal
           cart={cart}
@@ -1962,6 +2255,9 @@ export default function CashierScreen() {
           business={business as any}
           branchId={session.branchId}
           branchName={session.branchName}
+          receiptHeader={receiptHeader}
+          receiptLogo={receiptLogo}
+          receiptFooter={receiptFooter}
           orderType={getOrderType()}
           tableNumber={activeKey && openOrders[activeKey]?.tableName ? openOrders[activeKey].tableName : undefined}
           loyaltyState={loyaltyState}
@@ -1971,6 +2267,9 @@ export default function CashierScreen() {
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
+          orderNote={orderNote}
+          rider={getOrderType() === 'delivery' ? (activeRider.trim() || null) : null}
+          deliveryFee={posFeatures.delivery_fee && getOrderType() === 'delivery' ? cleanDeliveryFee(activeFeeText) : 0}
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {
@@ -1981,20 +2280,24 @@ export default function CashierScreen() {
             }
           }}
           onSuccess={(orderNumber) => {
-            // In pay-first mode, print KOT now. In order-first it was already printed on Send to Kitchen.
-            if (isRestaurant && orderMode === 'pay_first' && branchPrinters.length > 0) {
-              printKOTs(
-                cart,
-                {
-                  orderNumber,
-                  tableNumber: activeKey && openOrders[activeKey]?.tableName
-                    ? openOrders[activeKey].tableName : undefined,
-                  orderType: getOrderType(),
-                  branchName: session?.branchName,
-                },
-                branchPrinters,
-                printerSettings,
-              ).catch(err => console.error('[KOT]', err));
+            // In pay-first mode, print KOT now — UNLESS it was already fired via the
+            // Send to Kitchen button (A264 surfaced that in pay-first too). Re-firing
+            // here printed a second kitchen + dispatcher ticket, confusing the line (A268).
+            if (isRestaurant && orderMode === 'pay_first' && branchPrinters.length > 0
+                && !(activeKey && sentOrderIds[activeKey])) {
+              printRoutedStations({
+                cart, branchPrinters, business: business!,
+                orderNumber,
+                orderType: getOrderType(),
+                cashierName: session?.staffName ?? 'Cashier',
+                total: orderTotal,
+                discount: totalDiscount,
+                tableNumber: activeKey && openOrders[activeKey]?.tableName
+                  ? openOrders[activeKey].tableName : undefined,
+                comboItems, categories, kitchenExclusions,
+                orderNote,   // A367
+                kinds: ['kitchen', 'dispatch'],   // A253: pay-first has no send step
+              }).catch(err => console.error('[KOT]', err));
             }
             // Release pump on payment
             if (isPetrol && activeKey && openOrders[activeKey]?.pumpId) {
@@ -2067,9 +2370,9 @@ export default function CashierScreen() {
                   <button key={t.id}
                     onClick={() => setTransferTarget(`table-${t.id}`)}
                     style={{
-                      padding: '10px 6px', borderRadius: 10, border: `2px solid ${transferTarget === `table-${t.id}` ? '#3b82f6' : '#334155'}`,
-                      background: transferTarget === `table-${t.id}` ? 'rgba(59,130,246,0.12)' : 'var(--pos-surface)',
-                      color: transferTarget === `table-${t.id}` ? '#60a5fa' : '#94a3b8',
+                      padding: '10px 6px', borderRadius: 10, border: `2px solid ${transferTarget === `table-${t.id}` ? 'rgb(var(--act-fill, 59 130 246))' : '#334155'}`,
+                      background: transferTarget === `table-${t.id}` ? 'rgb(var(--act-fill, 59 130 246) / 0.12)' : 'var(--pos-surface)',
+                      color: transferTarget === `table-${t.id}` ? 'rgb(var(--act-text, 96 165 250))' : '#94a3b8',
                       fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center',
                     }}>
                     {t.name}
@@ -2116,7 +2419,7 @@ export default function CashierScreen() {
                   setShowTransfer(false);
                   setTransferTarget(null);
                 }}
-                style={{ flex: 1, padding: '11px 0', background: transferTarget ? '#3b82f6' : '#334155', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
+                style={{ flex: 1, padding: '11px 0', background: transferTarget ? 'rgb(var(--act-strong, 59 130 246))' : '#334155', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: transferTarget ? 'pointer' : 'default', opacity: transferTarget ? 1 : 0.5 }}>
                 Transfer →
               </button>
             </div>
@@ -2161,9 +2464,10 @@ export default function CashierScreen() {
                 Cancel
               </button>
               <button
-                disabled={!roomNumber.trim() || roomCharging}
+                disabled={!roomNumber.trim() || roomCharging || !currentShift}
                 onClick={async () => {
                   if (!roomNumber.trim() || !session) return;
+                  if (!currentShift) { setShowRoomCharge(false); setShiftModal('open'); return; } // A274
                   if (roomChargeRef.current) return;   // before any await
                   roomChargeRef.current = true;
                   setRoomCharging(true); setRoomChargeError('');
@@ -2187,7 +2491,9 @@ export default function CashierScreen() {
                         lineTotal:         i.lineTotal,
                         selectedVariants:  i.selectedVariants,
                         selectedModifiers: i.selectedModifiers,
+                        notes:             i.notes ?? null,   // A367
                       })),
+                      notes: orderNote.trim() || null,   // A367
                       payments: [{
                         method:    'other',
                         amount:    orderTotal,
@@ -2251,7 +2557,7 @@ Signature: _______________`;
           shiftId={currentShift?.id}
           branchId={session?.branchId ?? undefined}
           currency={currency}
-          onShiftOpened={(shift) => { setCurrentShift(shift); setShiftModal(null); }}
+          onShiftOpened={(shift) => { markJoined(shift.id, session?.staffId); setCurrentShift(shift); setShiftModal(null); }}
           onShiftClosed={(shift) => {
             setCurrentShift(shift);
             setShiftModal(null);
@@ -2320,7 +2626,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   spinnerLg: {
     width: 36, height: 36, border: '3px solid var(--pos-border)',
-    borderTopColor: '#22c55e', borderRadius: '50%',
+    borderTopColor: 'rgb(var(--act-fill, 34 197 94))', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   // Header — always dark for POS readability
@@ -2348,7 +2654,7 @@ const s: Record<string, React.CSSProperties> = {
     color: '#94a3b8', fontSize: 12, cursor: 'pointer', flexShrink: 0,
   },
   parkedBadgeActive: {
-    background: 'rgba(34,197,94,0.12)', borderColor: '#22c55e', color: '#4ade80',
+    background: 'rgb(var(--act-fill, 34 197 94) / 0.12)', borderColor: 'rgb(var(--act-fill, 34 197 94))', color: 'rgb(var(--act-text, 74 222 128))',
   },
   parkedCount: {
     background: '#475569', borderRadius: 10, padding: '0 5px',
@@ -2428,10 +2734,10 @@ const s: Record<string, React.CSSProperties> = {
   },
   activeTablePill: {
     display: 'flex', alignItems: 'center', gap: 8,
-    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
-    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: '#4ade80', fontWeight: 600,
+    background: 'rgb(var(--act-fill, 34 197 94) / 0.12)', border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.4)',
+    borderRadius: 20, padding: '4px 12px', fontSize: 13, color: 'rgb(var(--act-text, 74 222 128))', fontWeight: 600,
   },
-  coversPill: { fontSize: 11, color: '#4ade80' },
+  coversPill: { fontSize: 11, color: 'rgb(var(--act-text, 74 222 128))' },
   productHeader: { padding: '10px 16px 8px', flexShrink: 0, background: 'var(--pos-panel)' },
   searchInput: {
     width: '100%', background: 'var(--pos-input)', border: '1px solid var(--pos-input-border)',
@@ -2460,9 +2766,9 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: 'stretch', gap: 5,
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
-  productCardActive: { border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.06)' },
+  productCardActive: { border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.5)', background: 'rgb(var(--act-fill, 34 197 94) / 0.06)' },
   cartBadge: {
-    position: 'absolute' as const, top: 6, right: 6, background: '#22c55e',
+    position: 'absolute' as const, top: 6, right: 6, background: 'rgb(var(--act-fill, 34 197 94))',
     color: '#030712', fontSize: 10, fontWeight: 700, width: 18, height: 18,
     borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
@@ -2542,7 +2848,7 @@ const s: Record<string, React.CSSProperties> = {
   totalLabel: { fontSize: 13, color: 'var(--pos-text3)' },
   totalValue: { fontSize: 13, color: 'var(--pos-text3)' },
   chargeBtn: {
-    width: '100%', padding: '13px 0', background: '#22c55e', border: 'none',
+    width: '100%', padding: '13px 0', background: 'rgb(var(--act-fill, 34 197 94))', border: 'none',
     borderRadius: 10, color: '#0f172a', fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 6,
   },
   // Modals
@@ -2568,7 +2874,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 8, color: 'var(--pos-text3)', fontSize: 11, cursor: 'pointer',
   },
   typeBtnActive: {
-    background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6', color: '#60a5fa',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', border: '1px solid rgb(var(--act-fill, 59 130 246))', color: 'rgb(var(--act-text, 96 165 250))',
   },
   coversRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 8 },
   coversBtn: {
@@ -2584,7 +2890,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 10, color: 'var(--pos-text3)', fontWeight: 600, fontSize: 14, cursor: 'pointer',
   },
   modalConfirm: {
-    flex: 1, padding: '11px 0', background: '#3b82f6', border: 'none',
+    flex: 1, padding: '11px 0', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none',
     borderRadius: 10, color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer',
   },
   // Variant modal
@@ -2614,7 +2920,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '7px 14px', background: 'var(--pos-surface)', border: '1px solid var(--pos-border)',
     borderRadius: 8, cursor: 'pointer', transition: 'all 0.12s ease',
   },
-  variantOptionSelected: { background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e' },
+  variantOptionSelected: { background: 'rgb(var(--act-fill, 34 197 94) / 0.15)', border: '1px solid rgb(var(--act-fill, 34 197 94))' },
   variantOptionName: { fontSize: 13, color: 'var(--pos-text)', fontWeight: 500 },
   variantOptionPrice: { fontSize: 11, color: '#22c55e', fontWeight: 600 },
   variantTotal: {

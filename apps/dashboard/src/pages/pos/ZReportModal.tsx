@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { documentLogo } from '../../lib/printDocument';
 import { api } from "../../lib/api";
 import { usePOSAuth } from "../../context/POSAuthContext";
 import { useBusiness } from "../../context/BusinessContext";
@@ -20,6 +21,11 @@ interface EODData {
   paymentMethods: Record<string, number>;
   topProducts: { name: string; qty: number; revenue: number }[];
   expenses: { total: number; breakdown: { category: string; amount: number }[] };
+  /** 0.6.28: items sent to the kitchen and taken back in the period. Absent from a cloud before 0.6.28. */
+  kitchenVoids?: {
+    summary: { count: number; value: number; cookedValue: number };
+    lines: { id: string; text: string; amount: number }[];
+  };
   shifts?: {
     id: string;
     status: string;
@@ -75,6 +81,10 @@ export default function ZReportModal({ onClose }: Props) {
     if (!el) return;
     const w = window.open("", "_blank");
     if (!w) return;
+    // 0.6.25 (owner: "add the logo in all documents"): the client's logo heads the Z-report. The window opens inside the
+    // click (no popup block); the page is written once the (cached) logo is known.
+    void documentLogo().then((logo) => {
+    const logoHtml = logo ? `<div class="center" style="margin-bottom:8px"><img src="${logo.replace(/"/g, '&quot;')}" alt="" style="max-height:72px;max-width:220px;object-fit:contain" /></div>` : '';
     w.document.write(`
       <!DOCTYPE html><html><head>
       <title>Z-Report</title>
@@ -89,13 +99,14 @@ export default function ZReportModal({ onClose }: Props) {
         .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; }
         @media print { body { padding: 0; } }
       </style>
-      </head><body>${el.innerHTML}</body></html>
+      </head><body>${logoHtml}${el.innerHTML}</body></html>
     `);
     w.document.close();
     w.focus();
     setTimeout(() => {
       w.print();
-    }, 300);
+    }, 350);
+    });
   };
 
   const s = data?.summary;
@@ -230,7 +241,7 @@ export default function ZReportModal({ onClose }: Props) {
               onClick={generate}
               disabled={loading}
               style={{
-                background: loading ? "#334155" : "#22c55e",
+                background: loading ? "#334155" : "rgb(var(--act-fill, 34 197 94))",
                 color: loading ? "#64748b" : "#000",
                 border: "none",
                 borderRadius: 8,
@@ -352,6 +363,30 @@ export default function ZReportModal({ onClose }: Props) {
                 <span>TOTAL REVENUE</span>
                 <span>{fmt(s!.totalRevenue, currency)}</span>
               </div>
+
+              {/* 0.6.28: what was sent to the kitchen and taken back — why, made or not, who approved. */}
+              {(data.kitchenVoids?.lines.length ?? 0) > 0 && (
+                <>
+                  <div className="divider" />
+                  <p className="section-title" data-testid="z-kitchen-voids">Kitchen voids ({data.kitchenVoids!.lines.length})</p>
+                  {data.kitchenVoids!.lines.map((v) => (
+                    <div key={v.id} className="row">
+                      <span>{v.text}</span>
+                      <span>{fmt(v.amount, currency)}</span>
+                    </div>
+                  ))}
+                  <div className="row" style={{ fontWeight: 600 }}>
+                    <span>Total voided</span>
+                    <span>{fmt(data.kitchenVoids!.summary.value, currency)}</span>
+                  </div>
+                  {data.kitchenVoids!.summary.cookedValue > 0 && (
+                    <div className="row">
+                      <span>Of which already made</span>
+                      <span>{fmt(data.kitchenVoids!.summary.cookedValue, currency)}</span>
+                    </div>
+                  )}
+                </>
+              )}
 
               {data.expenses && data.expenses.total > 0 && (
                 <>

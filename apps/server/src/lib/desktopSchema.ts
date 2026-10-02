@@ -40,7 +40,18 @@
  * equality) so the "behind" check stays meaningful; a till on 51 keeps trading
  * and syncing and is merely shown as behind until it takes the A66 build.
  */
-export const REQUIRED_DESKTOP_SCHEMA = 52;
+/** Schema 53 = branding.receipt_logo_enabled (A311). Pulled only; same convention. */
+/** Schema 54 = branding.theme_id (A325). Pulled only; same convention. */
+/** Schema 55 = orders.origin (cross-sync stage 1: the web's sales downloaded onto a till). Pulled only; same convention. */
+/** Schema 56 = device_config.web_pos_enabled (A346: the till shows Stock only with the web POS). Pulled only; same convention. */
+/** Schema 57 = A365 shift confirmation (declared / confirmed methods on shifts). A till on 56 keeps trading and syncing;
+ *  its closes simply carry no declaration, so nothing of its awaits a manager. */
+/** Schema 58 = A367 order notes (orders.notes, order_items.notes, device_config.order_note_picks). A till on 57 keeps
+ *  trading; its sales simply carry no notes. */
+/** 59 = 0.6.27: POS switches, delivery fee, expense method, confirm reasons. Additive; a till on 58 keeps syncing. */
+/** 60 = 0.6.28: kitchen_lines (local) and kitchen_voids (pushed, migration 112). A till on 59 keeps syncing; it simply
+ *  sends no kitchen voids. */
+export const REQUIRED_DESKTOP_SCHEMA = 60;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

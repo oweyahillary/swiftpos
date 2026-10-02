@@ -58,6 +58,7 @@
  */
 
 import { pickPriorTerminal, isMac, PriorTerminal } from './deviceRestore';
+import { labelFor, cleanLabel } from './terminalLabel';
 import { supabase } from './supabase';
 
 export interface TerminalIdentity {
@@ -141,14 +142,6 @@ function withoutRoleColumns(patch: Record<string, unknown>): Record<string, unkn
 }
 
 /** A readable label for the fleet view, so an office box is not shown as a till. */
-function labelFor(role: DeviceRole | null, given?: string | null): string {
-  if (given) return String(given).slice(0, 64);
-  switch (role) {
-    case 'office': return 'SwiftPOS office server (view only)';
-    case 'node':   return 'SwiftPOS till (branch server)';
-    default:       return 'SwiftPOS till';
-  }
-}
 
 /**
  * The fingerprint column is NOT NULL and, for browsers, holds a hash of headers.
@@ -197,6 +190,11 @@ export async function registerDesktopTerminal(
     const patch: Record<string, unknown> = { last_seen_at: now };
     if (identity.appVersion)   patch.app_version   = String(identity.appVersion).slice(0, 32);
     if (identity.terminalCode) patch.terminal_code = String(identity.terminalCode).slice(0, 32);
+    // A273 follow-up: the name typed at the till's setup. Written on EVERY sign-in —
+    // the setup name always wins (owner, 2026-09-26), so the web POS's till picker
+    // shows the till's real name instead of the generic label (terminalLabel.ts).
+    const reportedLabel = cleanLabel(identity.label);
+    if (reportedLabel) patch.device_label = reportedLabel;
     if (identity.ipAddress)    patch.ip_address    = identity.ipAddress;
     // A182: bind the machine MAC so a reinstall can be recognised and re-named
     // to its old terminal code. Normalised lower-case; only written when sent.

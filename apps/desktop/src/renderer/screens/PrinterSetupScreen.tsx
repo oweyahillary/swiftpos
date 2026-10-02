@@ -163,7 +163,7 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
                 const r = await window.swiftpos.escpos.setEnabled(e.target.checked);
                 setThermalOn(r.enabled);
               }}
-              className="mt-0.5 accent-green-500"
+              className="mt-0.5 accent-action-500"
             />
             <span className="text-xs leading-relaxed">
               <span className="block text-gray-200">Print through these printers</span>

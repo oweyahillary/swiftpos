@@ -1,0 +1,5 @@
+{
+  "main": "build/bridge.cjs",
+  "output": "build/bridge.blob",
+  "disableExperimentalSEAWarning": true
+}

@@ -18,7 +18,9 @@ import { requireAuth } from '../middleware/auth';
 import { requirePermission, branchScope, assertBranchAccess } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { CreateExpenseSchema } from '../lib/schemas';
+import { cleanExpenseMethod } from '../lib/expenseMethod';
 import { supabase } from '../lib/supabase';
+import { recorderId } from '../lib/expenseRecorder';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -39,7 +41,13 @@ function getDateRange(from?: string, to?: string) {
 // ─── Expense Categories ───────────────────────────────────────────────────────
 
 // GET /api/expenses/categories
-router.get('/categories', requirePermission('expenses.view'), async (req, res) => {
+// A360 (2026-09-28): the LIST of expense types is read by anyone signed in to this business — a cashier records petty
+// cash at the till (Shift → Expenses) and must be able to pick a type; before, only `expenses.view` could read it, so a
+// cashier's picker was empty and their expenses synced untyped (owner, backlog S2: "cashier cannot select expense type").
+// No key on purpose: a cashier's keys differ by role and database (orders.create is not registered everywhere), and
+// type names are no more private than the menu. requireAuth (router-wide) still applies and the read is business-scoped.
+// ADDING, renaming and deleting a type stay `expenses.manage` (below).
+router.get('/categories', async (req, res) => {
   const { data, error } = await supabase
     .from('expense_categories')
     .select('id, name, created_at')
@@ -122,7 +130,9 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
       id, description, amount, expense_date, receipt_url, created_at,
       branch_id, branches ( name ),
       expense_category_id, expense_categories ( name ),
-      paid_by, users ( name )
+      paid_by, payer:users!expenses_paid_by_fkey ( name ),
+      recorded_by, recorder:users!expenses_recorded_by_fkey ( name ),
+      payment_method
     `)
     .eq('business_id', req.businessId)
     .gte('expense_date', (from as string) || start.slice(0, 10))
@@ -149,7 +159,10 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
     expense_category_id: e.expense_category_id,
     category_name: e.expense_categories?.name ?? null,
     paid_by: e.paid_by,
-    paid_by_name: e.users?.name ?? null,
+    paid_by_name: e.payer?.name ?? null,
+    recorded_by: e.recorded_by ?? null,
+    recorded_by_name: e.recorder?.name ?? null,
+    payment_method: e.payment_method ?? 'cash',   // 0.6.27
   }));
 
   const total = expenses.reduce((s: number, e: any) => s + e.amount, 0);
@@ -196,8 +209,9 @@ router.get('/summary', requirePermission('expenses.view'), async (req, res) => {
 router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSchema), async (req, res) => {
   const {
     branch_id, expense_category_id, description, amount,
-    paid_by, receipt_url, expense_date,
+    paid_by, receipt_url, expense_date, payment_method,
   } = req.body as {
+    payment_method?: string;
     branch_id: string;
     expense_category_id?: string;
     description: string;
@@ -215,6 +229,7 @@ router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSch
     res.status(403).json({ error: 'Branch access denied' }); return;
   }
 
+  const recordedBy = await recorderId(req);
   const { data, error } = await supabase
     .from('expenses')
     .insert({
@@ -224,14 +239,17 @@ router.post('/', requirePermission('expenses.manage'), validate(CreateExpenseSch
       description: description.trim(),
       amount,
       paid_by: paid_by || null,
+      recorded_by: recordedBy,
       receipt_url: receipt_url?.trim() || null,
       expense_date: expense_date || new Date().toISOString().slice(0, 10),
+      payment_method: cleanExpenseMethod(payment_method),   // 0.6.27
     })
     .select(`
       id, description, amount, expense_date, receipt_url, created_at,
       branch_id, branches ( name ),
       expense_category_id, expense_categories ( name ),
-      paid_by, users ( name )
+      paid_by, payer:users!expenses_paid_by_fkey ( name ),
+      recorded_by, recorder:users!expenses_recorded_by_fkey ( name )
     `)
     .single();
 
@@ -247,6 +265,7 @@ router.patch('/:id', requirePermission('expenses.manage'), async (req, res) => {
   } = req.body;
 
   const updates: Record<string, unknown> = {};
+  if (req.body?.payment_method !== undefined) updates.payment_method = cleanExpenseMethod(req.body.payment_method);   // 0.6.27
   if (description !== undefined)       updates.description = description?.trim();
   if (amount !== undefined)            updates.amount = amount;
   if (expense_category_id !== undefined) updates.expense_category_id = expense_category_id || null;

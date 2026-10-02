@@ -210,7 +210,7 @@ export default function PromotionsPage() {
           </p>
         </div>
         <button onClick={openCreate}
-          className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors">
+          className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors">
           + New promotion
         </button>
       </div>
@@ -331,7 +331,7 @@ export default function PromotionsPage() {
                 </label>
                 <input value={form.name} onChange={e => setF('name', e.target.value)}
                   placeholder="e.g. Happy Hour, Lunch Special, Buy 2 Get 1"
-                  className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                  className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
               </div>
 
               {/* Type */}
@@ -343,10 +343,10 @@ export default function PromotionsPage() {
                     return (
                       <button key={t} onClick={() => setF('promo_type', t)}
                         className={`p-3 rounded-xl border-2 text-center transition-colors ${
-                          type === t ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700 hover:border-gray-600'
+                          type === t ? 'border-swift bg-swift/10' : 'border-gray-700 hover:border-gray-600'
                         }`}>
                         <div className="text-xl mb-1">{meta.icon}</div>
-                        <div className={`text-xs font-semibold ${type === t ? 'text-blue-400' : 'text-gray-400'}`}>
+                        <div className={`text-xs font-semibold ${type === t ? 'text-swift-text' : 'text-gray-400'}`}>
                           {meta.label}
                         </div>
                       </button>
@@ -363,7 +363,7 @@ export default function PromotionsPage() {
                     <button key={i} onClick={() => toggleDay(i)}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
                         form.days_of_week.includes(i)
-                          ? 'bg-blue-600 border-blue-500 text-white'
+                          ? 'bg-swift-strong border-swift-strong text-white'
                           : 'border-gray-700 text-gray-500 hover:border-gray-600'
                       }`}>
                       {label}
@@ -378,12 +378,12 @@ export default function PromotionsPage() {
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Start time</label>
                     <input type="time" value={form.start_time} onChange={e => setF('start_time', e.target.value)}
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">End time</label>
                     <input type="time" value={form.end_time} onChange={e => setF('end_time', e.target.value)}
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                   </div>
                 </div>
               )}
@@ -393,12 +393,12 @@ export default function PromotionsPage() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Start date (optional)</label>
                   <input type="date" value={form.start_date} onChange={e => setF('start_date', e.target.value)}
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">End date (optional)</label>
                   <input type="date" value={form.end_date} onChange={e => setF('end_date', e.target.value)}
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                 </div>
               </div>
 
@@ -411,14 +411,14 @@ export default function PromotionsPage() {
                     </label>
                     <input type="number" min={1} value={form.min_quantity}
                       onChange={e => setF('min_quantity', e.target.value)}
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                   </div>
                   {type === 'bogo' && (
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Get free (qty)</label>
                       <input type="number" min={1} value={form.free_quantity}
                         onChange={e => setF('free_quantity', e.target.value)}
-                        className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                        className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                     </div>
                   )}
                 </div>
@@ -442,7 +442,7 @@ export default function PromotionsPage() {
                     <input type="number" min={0} value={form.discount_value}
                       onChange={e => setF('discount_value', e.target.value)}
                       placeholder={form.discount_type === 'percentage' ? '10' : '100'}
-                      className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                      className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
                   </div>
                 </div>
               )}
@@ -455,7 +455,7 @@ export default function PromotionsPage() {
                     <button key={a} onClick={() => setF('applies_to', a)}
                       className={`flex-1 py-2 rounded-lg border text-xs font-semibold capitalize transition-colors ${
                         form.applies_to === a
-                          ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                          ? 'border-swift bg-swift/10 text-swift-text'
                           : 'border-gray-700 text-gray-500 hover:border-gray-600'
                       }`}>
                       {a === 'all' ? 'All items' : a === 'product' ? 'Specific products' : 'Specific categories'}
@@ -477,7 +477,7 @@ export default function PromotionsPage() {
                 Cancel
               </button>
               <button onClick={save} disabled={saving}
-                className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
+                className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
                 {saving ? 'Saving…' : editing ? 'Save changes' : 'Create promotion'}
               </button>
             </div>

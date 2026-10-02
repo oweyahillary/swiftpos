@@ -55,7 +55,7 @@ export default function MovementsDrawer({ product, branchId, onClose }: Props) {
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex justify-center py-16">
-              <div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-swift border-t-transparent rounded-full animate-spin" />
             </div>
           ) : movements.length === 0 ? (
             <div className="text-center py-16 text-gray-600 text-sm">No stock movements yet</div>

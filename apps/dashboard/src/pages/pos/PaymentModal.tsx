@@ -1,6 +1,9 @@
+import MethodDot from '../../components/MethodDot';
+import { methodColour, methodTint } from '../../lib/paymentColours';
+import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
-import { generateOrderNumber } from '../../lib/cart';
+import { generateOrderNumber, extractTaxes } from '../../lib/cart';
 import type { CartItem } from '../../lib/cart';
 import { capDiscountPct } from './cashier/types';
 import type { Business, OrderType } from '../../types';
@@ -12,6 +15,10 @@ import SplitPaymentPanel, { type PaymentLeg } from './SplitPaymentPanel';
 import EvenSplitPanel from './EvenSplitPanel';
 import ByItemSplitPanel from './ByItemSplitPanel';
 import { printReceipt } from '../../lib/printReceipt';
+import { printBytesToServer, getQZStatus } from '../../lib/localPrintServer';
+import { renderEscPos } from '../../lib/escposRenderer';
+import { buildReceiptOrder, buildReceiptBusinessConfig } from '../../lib/buildReceiptOrder';
+import { usePOSAuth } from '../../context/POSAuthContext';
 import { usePrinterSettings } from '../../hooks/usePrinterSettings';
 
 type SingleMethod = 'cash' | 'mpesa' | 'card' | 'credit';
@@ -40,6 +47,9 @@ interface Props {
   business: Business;
   branchId: string;
   branchName?: string;
+  receiptHeader?: string;
+  receiptLogo?: MonoRaster | null;   // A313
+  receiptFooter?: string;
   orderType?: OrderType;
   tableNumber?: string;
   loyaltyState: LoyaltyState | null;
@@ -71,6 +81,11 @@ interface Props {
    * symptom the desktop fix was written to close, still live on the other client.
    */
   pumpId?: string | null;
+  /** A367: the note on the whole order (the lines' notes ride on the cart items). */
+  orderNote?: string | null;
+  /** 0.6.27: a delivery's rider, and the fee the customer pays on top of the bill (0 = none). */
+  rider?: string | null;
+  deliveryFee?: number;
 }
 
 function fmt(n: number) {
@@ -78,13 +93,16 @@ function fmt(n: number) {
 }
 
 export default function PaymentModal({
-  cart, total, subtotal, vatAmount, currency, business, branchId, branchName,
+  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId,
   initialEvenSplit,
   pumpId,
   customMethods = [],
+  orderNote = null,
+  rider = null,
+  deliveryFee = 0,
 }: Props) {
 
   // ── Mode ──────────────────────────────────────────────────────────────────
@@ -111,6 +129,16 @@ export default function PaymentModal({
   const [placing, setPlacing]       = useState(false);
   const [error, setError]           = useState('');
   const [completedOrder, setCompletedOrder] = useState<CompletedOrder | null>(null);
+  // A266: the receipt needs the business record, but useBusiness() is null on the
+  // POS surface for managers — which left the receipt preview a blank white box and
+  // the printed receipt without a name. Fall back to fetching /api/business (works
+  // via the POS token) so the receipt always has a business.
+  const [resolvedBusiness, setResolvedBusiness] = useState<Business | null>(business ?? null);
+  const autoPrintedRef = useRef(false);
+  useEffect(() => {
+    if (business) { setResolvedBusiness(business); return; }
+    api.get<Business>('/api/business').then(b => setResolvedBusiness(b)).catch(() => {});
+  }, [business]);
 
   // Free the table the moment payment succeeds, not when the receipt is dismissed.
   // Previously the table only cleared via the receipt's "New Sale" button, so
@@ -120,6 +148,9 @@ export default function PaymentModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedOrder?.orderId]);
   const [receiptPhone, setReceiptPhone] = useState('');
+  // A194: optional free-text customer name for a walk-in (call-ahead / named
+  // collection). Falls back to an attached loyalty customer's name if left blank.
+  const [customerName, setCustomerName] = useState('');
 
   // After a sale completes, fiscalisation runs async server-side. Poll a few
   // times for the signed KRA record and patch it onto the receipt if it arrives.
@@ -147,6 +178,7 @@ export default function PaymentModal({
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const { settings: printerSettings } = usePrinterSettings();
+  const { session } = usePOSAuth();
 
   // Double-submit protection. chargingRef blocks a second call synchronously
   // (before React re-renders the button as disabled — a fast touchscreen
@@ -183,9 +215,14 @@ export default function PaymentModal({
   // The total actually charged: subtotal minus the capped discount. `total` came
   // in reflecting the uncapped discount, so recompute rather than trust it.
   const chargedTotal  = Math.round((subtotal - cappedDiscount) * 100) / 100;
+  // A349: VAT and the levy on what is actually CHARGED (after the capped discount), at the business's own rates — the
+  // figures the receipt shows and the payload carries (the cloud recomputes and stores its own; they now agree).
+  const taxes = extractTaxes(chargedTotal, Number(business?.vat_rate ?? 16), Number(business?.ctl_rate ?? 0) || 0);
+  const chargedVat = taxes.vat, chargedCtl = taxes.ctl;
 
   // Tip is added on top of the order total — this is what the customer pays.
-  const grandTotal    = chargedTotal + tipAmount;
+  // 0.6.27: and the delivery fee on top (pass-through to the rider — not in the bill or its taxes).
+  const grandTotal    = Math.round((chargedTotal + tipAmount + deliveryFee) * 100) / 100;
   // A blank cash field means "pay exact". Without this the Confirm button stays
   // disabled with no feedback even though the field shows the total as a
   // placeholder — cashiers only type a value when the customer hands over more.
@@ -228,7 +265,7 @@ export default function PaymentModal({
   // a round-up to the next 100. These just fill the tendered field — the manual
   // input remains for odd tenders (mixed notes/coins).
   const quickTenders = (() => {
-    const base = total + tipAmount;
+    const base = total + tipAmount + deliveryFee;
     const notes = [50, 100, 200, 500, 1000];
     const set = new Set<number>();
     set.add(Math.ceil(base));                        // exact
@@ -246,14 +283,18 @@ export default function PaymentModal({
       order_number:    generateOrderNumber(),
       order_type:      orderType,
       table_number:    tableNumber ?? null,
+      // 0.6.27: the rider, and the fee on top (the cloud pays the rider it from this shift's drawer).
+      delivery_person: orderType === 'delivery' ? rider : null,
+      ...(orderType === 'delivery' && deliveryFee > 0 ? { delivery_fee: deliveryFee } : {}),
       subtotal,
-      vat_amount:      vatAmount,
+      vat_amount:      chargedVat,
+      ctl_amount:      chargedCtl,
       discount_amount: cappedDiscount,
       discount_id:     discountState?.discount.id ?? null,
       total:           chargedTotal,
       tip_amount:      tipAmount,
       customer_id:     loyaltyState?.customer.id ?? null,
-      customer_name:   loyaltyState?.customer.name ?? null,
+      customer_name:   (customerName.trim() || loyaltyState?.customer.name) ?? null,
       customer_phone:  loyaltyState?.customer.phone ?? null,
       points_redeemed: pointsRedeemed,
       shift_id:        shiftId ?? null,
@@ -268,8 +309,25 @@ export default function PaymentModal({
         lineTotal:          item.lineTotal,
         selectedVariants:   item.selectedVariants,
         selectedModifiers:  item.selectedModifiers,
+        notes:              item.notes ?? null,   // A367
       })),
+      notes: orderNote?.trim() || null,   // A367
       payments,
+    };
+  }
+
+  // ── Build /pay body (order already open, sent to kitchen first) ───────────
+  // The server recomputes the amount due as subtotal − capDiscount(discount_amount)
+  // + tip_amount (+ delivery_fee, 0.6.27) and refuses legs that don't match
+  // (PAYMENT_MISMATCH). The legs carry grandTotal, so the discount, tip and fee
+  // that produced it must travel too — the same money fields buildOrderPayload sends.
+  function buildPayPayload(payments: object[]) {
+    return {
+      payments,
+      discount_amount: cappedDiscount,
+      discount_id:     discountState?.discount.id ?? null,
+      tip_amount:      tipAmount,
+      ...(deliveryFee > 0 ? { delivery_fee: deliveryFee } : {}),
     };
   }
 
@@ -312,7 +370,7 @@ export default function PaymentModal({
         ? `/api/orders/${existingOrderId}/pay`
         : '/api/orders';
       const { orderId, orderNumber } = await api.post<{ orderId: string; orderNumber: string }>(
-        endpoint, existingOrderId ? { payments } : buildOrderPayload(payments)
+        endpoint, existingOrderId ? buildPayPayload(payments) : buildOrderPayload(payments)
       );
       setCompletedOrder(makeCompletedOrder(
         orderNumber,
@@ -379,7 +437,7 @@ export default function PaymentModal({
         ? `/api/orders/${existingOrderId}/pay`
         : '/api/orders';
       const { orderId, orderNumber } = await api.post<{ orderId: string; orderNumber: string }>(
-        endpoint, existingOrderId ? { payments } : buildOrderPayload(payments)
+        endpoint, existingOrderId ? buildPayPayload(payments) : buildOrderPayload(payments)
       );
       setCompletedOrder(makeCompletedOrder(
         orderNumber,
@@ -413,11 +471,52 @@ export default function PaymentModal({
     } finally { setWaSending(false); }
   };
 
-  const handlePrint = () => {
-    const content = receiptRef.current;
-    if (!content) return;
-    printReceipt(content.innerHTML, printerSettings, business.name);
+  // Silent thermal via the bridge when connected + a receipt printer is paired.
+  // Returns true if it printed, false if the bridge path isn't available/failed.
+  const printViaBridge = async (): Promise<boolean> => {
+    const printerName = printerSettings.receiptPrinterName;
+    if (!(completedOrder && printerName && resolvedBusiness && getQZStatus() === 'connected')) return false;
+    try {
+      const order = buildReceiptOrder({
+        orderNumber: completedOrder.orderNumber,
+        orderType, cashierName: session?.staffName ?? 'Cashier',
+        // A349: the BILL (after discount, before tip) with the discount and tip beside it — grandTotal (bill + tip)
+        // could never reconcile with the lines, so the thermal receipt threw and fell back to the browser dialog.
+        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, deliveryFee, change: completedOrder.change,
+        payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
+        tableNumber,
+        orderNote,   // A367
+      });
+      const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
+        { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo });
+      const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
+      const copies = printerSettings.copies ?? 1;
+      for (let i = 0; i < copies; i++) {
+        await printBytesToServer(`printer:${printerName}`, bytes);
+      }
+      return true;
+    } catch (e: any) {
+      console.warn('[receipt] bridge print failed:', e?.message);
+      return false;
+    }
   };
+
+  const handlePrint = async () => {
+    if (await printViaBridge()) return;
+    // Fallback: the browser print dialog (never blocks the cashier).
+    const content = receiptRef.current;
+    if (content) printReceipt(content.innerHTML, printerSettings, resolvedBusiness?.name ?? 'Receipt');
+  };
+
+  // A266: auto-print the receipt once on payment success (silent bridge path only —
+  // no browser dialog), matching the desktop. Waits for resolvedBusiness so the
+  // receipt carries the business name. The Print button remains for a reprint.
+  useEffect(() => {
+    if (completedOrder && resolvedBusiness && !autoPrintedRef.current) {
+      autoPrintedRef.current = true;
+      void printViaBridge();
+    }
+  }, [completedOrder?.orderId, resolvedBusiness]);
 
   // ── Receipt screen ────────────────────────────────────────────────────────
   if (completedOrder) {
@@ -458,15 +557,18 @@ export default function PaymentModal({
           <div className="px-6 py-4 max-h-80 overflow-y-auto bg-white rounded-xl mx-2 mb-2">
             <ReceiptView
               ref={receiptRef}
-              business={business}
+              business={resolvedBusiness as Business}
               branchName={branchName}
               orderNumber={completedOrder.orderNumber}
               etims={completedOrder.etims}
               tip={tipAmount}
+              deliveryFee={deliveryFee}
               cart={cart}
               total={chargedTotal}
               subtotal={subtotal}
-              vatAmount={vatAmount}
+              vatAmount={chargedVat}
+              ctlAmount={chargedCtl}
+              ctlRate={Number(business?.ctl_rate ?? 0) || 0}
               currency={currency}
               payments={completedOrder.payments}
               tendered={completedOrder.tendered}
@@ -474,7 +576,7 @@ export default function PaymentModal({
               loyaltyDiscount={loyaltyDiscount}
               promoDiscount={promoDiscount}
               promoName={discountState?.discount.name}
-              customerName={loyaltyState?.customer.name}
+              customerName={customerName.trim() || loyaltyState?.customer.name}
               footerMessage={printerSettings.footerMessage}
             />
           </div>
@@ -497,7 +599,7 @@ export default function PaymentModal({
                     // For now — show inline info message (no blocking alert)
                     setWaMsg('WhatsApp receipt: set WHATSAPP_PROVIDER in server .env to enable.');
                   }}
-                  className="flex-shrink-0 text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg font-medium transition-colors">
+                  className="flex-shrink-0 text-xs bg-[rgb(var(--act-strong,37_99_235))] hover:bg-[rgb(var(--act-strong,59_130_246))] text-white px-3 py-1 rounded-lg font-medium transition-colors">
                   Send
                 </button>
               )}
@@ -514,7 +616,7 @@ export default function PaymentModal({
               {waSending ? 'Sending…' : '💬 WhatsApp'}
             </button>
             <button onClick={() => onSuccess(completedOrder.orderNumber)}
-              className="flex-1 bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
+              className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
               New order
             </button>
           </div>
@@ -571,12 +673,28 @@ export default function PaymentModal({
             {loyaltyState && estimatedPoints > 0 && <p className="text-yellow-500 text-xs mt-0.5">Customer earns ~{estimatedPoints} pts</p>}
           </div>
 
+          {/* A194: optional customer name — for a call-ahead / named collection ticket.
+              Hidden when a loyalty customer is attached (their name is used instead). */}
+          {!loyaltyState?.customer.name && (
+            <div className="flex items-center gap-2 bg-gray-800/50 border border-gray-700 rounded-xl px-3 py-2">
+              <span className="text-sm flex-shrink-0">🧾</span>
+              <input
+                type="text"
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                placeholder="Customer name (optional)"
+                maxLength={60}
+                className="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-gray-600"
+              />
+            </div>
+          )}
+
           {/* Split toggles */}
           <div className="flex items-center justify-between">
             <p className="text-gray-400 text-sm">Split payment (by method)</p>
             <button
               onClick={() => { setSplitMode(s => !s); setEvenSplitMode(false); setByItemMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${splitMode ? 'bg-green-500' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${splitMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${splitMode ? 'translate-x-5' : ''}`} />
             </button>
@@ -585,7 +703,7 @@ export default function PaymentModal({
             <p className="text-gray-400 text-sm">Split evenly (per person)</p>
             <button
               onClick={() => { setEvenSplitMode(s => !s); setSplitMode(false); setByItemMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${evenSplitMode ? 'bg-green-500' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${evenSplitMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${evenSplitMode ? 'translate-x-5' : ''}`} />
             </button>
@@ -604,7 +722,7 @@ export default function PaymentModal({
             <p className="text-gray-400 text-sm">Split by item (per guest)</p>
             <button
               onClick={() => { setByItemMode(s => !s); setSplitMode(false); setEvenSplitMode(false); }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${byItemMode ? 'bg-green-500' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${byItemMode ? 'bg-action-500' : 'bg-gray-700'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${byItemMode ? 'translate-x-5' : ''}`} />
             </button>
@@ -640,10 +758,12 @@ export default function PaymentModal({
                   <button key={m} onClick={() => setMethod(m)}
                     className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                       method === m
-                        ? 'bg-green-500/10 border-green-500 text-green-400'
-                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-                    }`}>
-                    {m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
+                        ? 'bg-action-500/10 border-action-500 text-action-400'
+                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                    }`}
+                    // A344: each method in its own colour; the SELECTED one keeps the theme highlight (action-*).
+                    style={method === m ? undefined : { backgroundColor: methodTint(m), borderColor: methodColour(m).dot }}>
+                    <MethodDot method={m} />{m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
                     <span className="capitalize">{m === 'mpesa' ? 'M-Pesa' : m === 'credit' ? 'On Account' : m}</span>
                   </button>
                 ))}
@@ -652,10 +772,11 @@ export default function PaymentModal({
                   <button key={cm.code} onClick={() => setMethod(cm.code)}
                     className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                       method === cm.code
-                        ? 'bg-green-500/10 border-green-500 text-green-400'
-                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-                    }`}>
-                    🏦<br />
+                        ? 'bg-action-500/10 border-action-500 text-action-400'
+                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                    }`}
+                    style={method === cm.code ? undefined : { backgroundColor: methodTint(cm.code), borderColor: methodColour(cm.code).dot }}>
+                    <MethodDot method={cm.code} />🏦<br />
                     <span>{cm.name}</span>
                   </button>
                 ))}
@@ -678,7 +799,7 @@ export default function PaymentModal({
                         <button key={pct} type="button"
                           onClick={() => setTipAmount(active ? 0 : amt)}
                           className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                            active ? 'bg-green-500/10 border-green-500 text-green-400'
+                            active ? 'bg-action-500/10 border-action-500 text-action-400'
                                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
                           }`}>
                           {pct}%
@@ -702,9 +823,9 @@ export default function PaymentModal({
               {/* Cash */}
               {method === 'cash' && (
                 <div className="space-y-3">
-                  {tipAmount > 0 && (
-                    <div className="bg-gray-800 rounded-lg px-4 py-2 flex justify-between text-sm">
-                      <span className="text-gray-400">Total to collect (incl. tip)</span>
+                  {(tipAmount > 0 || deliveryFee > 0) && (
+                    <div className="bg-gray-800 rounded-lg px-4 py-2 flex justify-between text-sm" data-testid="collect-total">
+                      <span className="text-gray-400">Total to collect (incl. {[tipAmount > 0 ? 'tip' : '', deliveryFee > 0 ? `delivery fee ${fmt(deliveryFee)}${rider ? ` — ${rider}` : ''}` : ''].filter(Boolean).join(' and ')})</span>
                       <span className="text-white font-semibold">{currency} {fmt(grandTotal)}</span>
                     </div>
                   )}
@@ -715,7 +836,7 @@ export default function PaymentModal({
                         <button key={v} type="button" onClick={() => setTendered(String(v))}
                           className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                             tenderedNum === v
-                              ? 'bg-green-500/10 border-green-500 text-green-400'
+                              ? 'bg-action-500/10 border-action-500 text-action-400'
                               : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
                           }`}>
                           {v === Math.ceil(total + tipAmount) ? 'Exact' : fmt(v)}
@@ -726,7 +847,7 @@ export default function PaymentModal({
                       type="number" value={tendered}
                       onChange={e => setTendered(e.target.value)}
                       placeholder={fmt(grandTotal)} min={grandTotal} autoFocus
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors text-lg font-semibold"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-action-500 transition-colors text-lg font-semibold"
                     />
                   </div>
                   {tenderedNum >= grandTotal && (
@@ -819,7 +940,7 @@ export default function PaymentModal({
               <button
                 onClick={handleInitiateMpesa}
                 disabled={placing}
-                className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
+                className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
                 {placing ? 'Creating order…' : '📱 Initiate M-Pesa payment'}
               </button>
@@ -828,7 +949,7 @@ export default function PaymentModal({
                 data-testid="payment-confirm"
                 onClick={handleCharge}
                 disabled={placing || !cashValid || !creditValid}
-                className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
+                className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
               >
                 {placing
                   ? 'Processing…'

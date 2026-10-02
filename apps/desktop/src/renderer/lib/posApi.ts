@@ -1,5 +1,9 @@
+import type { PosFeatures } from '../../shared/posFeatures';
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
+
+/** A345: why the back office's cloud-owned lists cannot be read right now (main/offlineSession.ts has the words). */
+export interface OfflineManage { reason: 'offline_session' | 'no_connection'; message: string }
 
 export interface StaffSession {
   staff: { id: string; name: string } | null;
@@ -7,6 +11,8 @@ export interface StaffSession {
   permissions: Record<string, boolean>;
   branchId: string;
   branchName: string | null;
+  /** A334: set when this sign-in joined a drawer the web POS opened as this till. */
+  joinedDrawer?: { openedByName: string | null; openedAt: string; sameCashier: boolean } | null;
 }
 
 export type DeployMode = 'cloud' | 'local';
@@ -46,6 +52,7 @@ export interface TechStatus {
     branch_id: string | null; deploy_mode: string | null; server_url: string | null; node_url: string | null;
   };
   sync: { online?: boolean; pending: number; failed: number; lastOrder: string | null; [k: string]: any };
+  build?: { sha: string; time: string };
 }
 
 export interface DeviceConfig {
@@ -61,6 +68,8 @@ export interface DeviceConfig {
   // src/main/deviceConfig.ts. Sent as X-Node-Secret on every /node/* call.
   node_secret: string | null;
   terminal_code: string | null;
+  /** A346: does the business have the web POS (from the cloud)? null = not known yet = no. Read-only (the cloud sets it). */
+  web_pos_enabled?: boolean | null;
   vat_rate: number | null;
   ctl_rate: number | null;
   // Discount ceiling the server enforces; cached so an offline till clamps to it.
@@ -75,6 +84,24 @@ export interface ConnectionTestResult {
   reachable: boolean;
   status?: number;
   error?: string;
+}
+
+/** 0.6.28: one kitchen void on the Z-report. */
+export interface KitchenVoidLine {
+  id: string; order_number: string; product_name: string; quantity: number; amount: number; reason: string;
+  note: string | null; cooked: boolean; cashier_name: string | null; approved_by_name: string | null; created_at: string;
+}
+
+/** 0.6.28: a sent order not yet paid (kitchen:open). */
+export interface OpenKitchenOrder {
+  order_number: string; order_type: string | null; table_number: string | null; first_sent_at: string;
+  cashier_id: string | null; held: boolean; value: number;
+  lines: Array<{ line_id: string; product_id: string | null; product_name: string; unit_price: number; qty: number; item: unknown }>;
+}
+
+/** 0.6.28: a line handed to kitchen:sent / kitchen:void. */
+export interface KitchenLinePayload {
+  line_id: string; product_id: string | null; product_name: string; unit_price: number; qty: number; item?: unknown;
 }
 
 export interface ZReport {
@@ -95,14 +122,83 @@ export interface ZReport {
   totals: {
     orderCount: number;
     grossSales: number;
+    /** A349: refunds, sales kept, taxes (refund-reduced), CTL levied?, tips — see main/shiftService.ts. */
+    refunds?: number;
+    netSales?: number;
+    vat?: number;
+    ctl?: number;
+    ctlLevied?: boolean;
+    tips?: number;
     voidCount: number;
     cashSales: number;
     floatIn: number;
     floatOut: number;
     expectedCash: number;
+    /** A334: the web POS's cash on this (shared) drawer, already inside the totals. null = could not be checked. */
+    foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number;
+      /** A342: the web's own shift(s) on this till, counted in this drawer. */
+      siblings?: { count: number; expected: number; shifts?: Array<{ id: string; opened_by_name: string | null; opened_at: string | null; expected: number }> } | null } | null;
+    /** Cross-sync stage 1: the web's sales downloaded onto the till — already inside the totals. */
+    webSales?: { orders: number; cash_sales: number };
+    /** 0.6.11: cash paid out as expenses — already taken off expectedCash. Absent on reports from older builds. */
+    expenses?: number;
+    /** 0.6.27: expenses paid by other methods (not from the drawer), per method. */
+    expensesByMethod?: Record<string, number>;
+    /** 0.6.27: delivery fees (pass-through, in the payments); riders paid from the drawer (inside floatOut), and any
+     *  put back by a void (inside floatIn). */
+    deliveryFees?: number;
+    riderPayouts?: number;
+    riderReturned?: number;
   };
+  /** 0.6.11: this till's expense lines on the shift. 0.6.27: `label` = type — description · method. */
+  expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null;
+                   label?: string; category_name?: string | null; payment_method?: string }[];
+  /** A363: what of this shift is not on the cloud yet. */
+  notBackedUp?: { sales: number; drawerRefused: boolean };
+  /** 0.6.28: items taken back after they were sent to the kitchen on this shift. */
+  kitchenVoids?: {
+    summary: { count: number; quantity: number; value: number; cookedValue: number;
+               byReason: Array<{ reason: string; label: string; quantity: number; value: number }> };
+    lines: KitchenVoidLine[];
+  };
+  /** A365: the manager's confirmation — awaiting, or confirmed (who, when, self) with per-method lines. */
+  confirmation?: {
+    status: 'awaiting' | 'confirmed';
+    confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
+    /** 0.6.23: awaiting — what the manager recounts (names only). */
+    methods?: string[];
+    lines: ConfirmLine[];
+  } | null;
   businessName: string;
   currency: string;
+}
+
+/** A365: one payment method on a shift's confirmation — cashier's figure, what the till recorded, the manager's recount. */
+export interface ConfirmLine {
+  method: string; declared: number | null; expected: number | null; confirmed: number | null;
+  variance: number | null; mismatch: boolean; reason?: string | null;   // 0.6.27
+}
+/** A365: a closed shift waiting for a manager's recount. */
+export interface AwaitingShift {
+  id: string; cashier_id: string | null; cashier_name: string; opened_at: string; closed_at: string | null;
+  business_day_id: string | null; methods: string[];
+}
+/** A365: the result of a manager's confirmation. */
+export interface Confirmation {
+  shift_id: string; confirmed_by: string; confirmed_by_name: string | null; confirmed_at: string; self: boolean;
+  lines: ConfirmLine[];
+}
+
+/** 0.6.11: a row in the previous-shift-reports list. */
+export interface ShiftSummary {
+  id: string; status: string; opened_at: string; closed_at: string | null;
+  cashier_name: string | null; expected_cash: number | null; cash_variance: number | null;
+}
+
+/** 0.6.11: an expense on the manager's Expenses screen. */
+export interface ExpenseRow {
+  id: string; description: string; amount: number; created_at: string; shift_id: string | null;
+  paid_by_name: string | null; expense_category_id: string | null; sync_status: string;
 }
 
 /** Date-range selection for the manager reports. */
@@ -205,19 +301,29 @@ declare global {
           receiptHeader: string; receiptFooter: string }>;
         getVariants: (productId: string) => Promise<any[]>;
         getModifiers: (productId: string) => Promise<any[]>;
+        /** A367: the owner's quick picks for order notes (cached from the cloud; the defaults until told). */
+        notePicks: () => Promise<string[]>;
+        /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
+        features: () => Promise<PosFeatures>;
+        /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
+        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
+        onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
-        create: (payload: any) => Promise<{ orderId: string }>;
+        /** A349: printFailed names tickets that could not be produced (shown to the cashier); [] when all went out. */
+        create: (payload: any) => Promise<{ orderId: string; printFailed?: string[] }>;
         void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
         status: () => Promise<{ online: boolean; pendingCount: number; failedCount: number;
-                                failedReason?: string; failedSince?: string }>;
+                                failedReason?: string; failedSince?: string;
+                                /** A363: records the cloud refused (parked), why, and when the till last had nothing waiting. */
+                                parkedCount?: number; parkedReason?: string; lastSyncedAt?: string | null }>;
         retryFailed: () => Promise<{ requeued: number; pushed: number; errors: string[] }>;
         notifyNetworkChange: (online: boolean) => Promise<{ online: boolean; pendingCount: number; failedCount: number }>;
       };
@@ -277,12 +383,31 @@ declare global {
         >;
         html: (opts: { html: string; deviceName: string; paperWidthMm: 58 | 80; copies: number }) => Promise<{ ok: boolean; error?: string }>;
       };
+      branding: {
+        get: () => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null } | null>;
+        // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
+        // Rejects (throws) on a bad hex, an SVG, a non-raster data-URI, or a logo over 250 KB.
+        // A312: logoRgba = the logo's pixels (≤384×240 RGBA); main thresholds them into the receipt
+        // raster. receiptLogoEnabled = the opt-in toggle.
+        set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null;
+                   logoRgba?: { width: number; height: number; data: Uint8ClampedArray } | null;
+                   receiptLogoEnabled?: boolean })
+          => Promise<{ accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean; themeId?: string | null;
+                       /** 0.6.25: how the cloud copy went (saved / pending until the next sync / refused with why). */
+                       cloud?: { state: 'saved' | 'pending' | 'refused'; message?: string } }>;
+      };
+      // A306: auto-update status + manager-gated install-now.
+      update: {
+        getStatus: () => Promise<{ state: string; version: string | null; percent: number | null }>;
+        installNow: () => Promise<{ ok: boolean; reason?: string }>;
+        onStatus: (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => () => void;
+      };
       config: {
         get: () => Promise<DeviceConfig | null>;
         isConfigured: () => Promise<boolean>;
         save: (patch: Partial<DeviceConfig>) => Promise<DeviceConfig>;
         clear: () => Promise<boolean>;
-        identity: () => Promise<{ deviceId: string | null; terminalCode: string | null }>;
+        identity: () => Promise<{ deviceId: string | null; terminalCode: string | null; deviceName?: string | null }>;
         resetPreview: () => Promise<{ terminalCode: string | null; deviceRole: string | null; unsyncedOrders: number; unsyncedValue: number; openShifts: number; safe: boolean }>;
         reset: (force?: boolean) => Promise<boolean>;
         testConnection: (url: string) => Promise<ConnectionTestResult>;
@@ -307,6 +432,15 @@ declare global {
         testConnection: () => Promise<{ ok: boolean; status: number | null; ms: number; error?: string }>;
         logTail: (lines?: number) => Promise<{ path: string | null; text: string }>;
       };
+      /** 0.6.28: what went to the kitchen, and kitchen voids. */
+      kitchen: {
+        sent: (p: { order_number: string; lines: KitchenLinePayload[]; order_type?: string; table_number?: string }) =>
+          Promise<{ recorded: number }>;
+        void: (p: { order_number: string; lines: KitchenLinePayload[]; reason: string; note?: string; cooked?: boolean;
+                    pin?: string; order_type?: string; table_number?: string }) =>
+          Promise<{ ok: true; total: number; approvedBy: string | null; skipped: string[] }>;
+        open: () => Promise<{ all: OpenKitchenOrder[]; shift: OpenKitchenOrder[] }>;
+      };
       shift: {
         // A shift left open past ~18 hours. Null when there is none, or when
         // the open one is still plausibly today's.
@@ -317,11 +451,23 @@ declare global {
         // Ends it WITHOUT a cash count. Records closed_unreconciled with a null
         // variance — never zero, which would claim a check that never happened.
         forceClose: (reason: string) => Promise<ZReport>;
-        current: () => Promise<ZReport | null>;
+        current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         float: (type: 'float_in' | 'float_out', amount: number, reason?: string) => Promise<ZReport | null>;
-        close: (closing_float: number, notes?: string) => Promise<ZReport>;
+        close: (closing_float: number, notes?: string, declared?: Record<string, number>) => Promise<ZReport>;
+        /** A365: this till's shifts awaiting a manager's confirmation. */
+        awaiting: () => Promise<AwaitingShift[]>;
+        /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
+        confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
+        /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
+        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null }>;
+        /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
+        canConfirm: () => Promise<boolean>;
+        /** A366: may the signed-in person close the open shift — its owner or a manager? */
+        closeRights: () => Promise<{ allowed: boolean; ownerName: string | null }>;
         zreport: (shiftId: string) => Promise<ZReport>;
+        /** 0.6.11: this till's shifts, newest first (previous shift reports). */
+        history: () => Promise<ShiftSummary[]>;
       };
       manage: {
         listProducts:   () => Promise<any[]>;
@@ -359,6 +505,10 @@ declare global {
         deleteVariantGroup: (id: string) => Promise<any>;
         listStaff:      () => Promise<any[]>;
         listRoles:      () => Promise<any[]>;
+        /** A345: what this till has saved, shown read-only while the cloud is out of reach. `offline` null = the cloud is
+         *  reachable (or refused for another reason) — nothing is returned then. */
+        cachedMenu:     () => Promise<{ offline: OfflineManage | null; products: any[]; categories: any[]; combos: any[] }>;
+        cachedStaff:    () => Promise<{ offline: OfflineManage | null; source: 'branch' | 'till' | null; staff: any[] }>;
         createStaff:    (payload: any) => Promise<any>;
         updateStaff:    (id: string, patch: any) => Promise<any>;
         getReceiptText: () => Promise<{ header: string; footer: string }>;
@@ -382,6 +532,8 @@ declare global {
         salesSummary:    (range?: ReportRangeArg) => Promise<any>;
         topProducts:     (range?: ReportRangeArg) => Promise<any[]>;
         recentOrders:    (range?: ReportRangeArg) => Promise<any[]>;
+        /** Every till's sales at this branch, from the cloud (online only — throws offline). */
+        branchOrders:    (range?: ReportRangeArg) => Promise<any[]>;
         stockLevels:     () => Promise<any[]>;
         fuelSales:       () => Promise<any>;
         pumpStatus:      () => Promise<any[]>;
@@ -393,8 +545,14 @@ declare global {
       };
       expense: {
         categories: () => Promise<{ id: string; name: string }[]>;
-        create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) => Promise<{ id: string }>;
+        /** A341: add an expense type on the cloud (expenses.manage). */
+        addCategory: (name: string) => Promise<{ id: string; name: string }>;
+        create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
+                  /** 0.6.27: how it was paid ('cash' leaves the drawer) and the type's name. */
+                  payment_method?: string; category_name?: string }) => Promise<{ id: string }>;
         list: () => Promise<any[]>;
+        /** 0.6.11: expenses paid out on this till in a date range. */
+        range: (range?: ReportRangeArg) => Promise<{ rows: ExpenseRow[]; total: number; label: string }>;
       };
     };
   }

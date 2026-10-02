@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { API_URL } from '../lib/config';
+import { getCoveredTerminal } from '../lib/posTerminal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -141,6 +142,10 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
       const token = session?.token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      // A273: adopt the covered till's identity so the cloud keys this request's
+      // drawer to that till (device_id) instead of the shared web:<branch> one.
+      const covered = getCoveredTerminal();
+      if (covered?.device_id) headers['x-device-id'] = covered.device_id;
 
       const res = await fetch(`${BASE_URL}${path}`, {
         method,
@@ -169,7 +174,13 @@ export function POSAuthProvider({ children }: { children: ReactNode }) {
               });
               const retryRes = await fetch(`${BASE_URL}${path}`, {
                 method,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${newToken}` },
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${newToken}`,
+                  // A273: the retry must carry the same covered-till identity as
+                  // the original request, or the drawer key would change on refresh.
+                  ...(getCoveredTerminal()?.device_id ? { 'x-device-id': getCoveredTerminal()!.device_id } : {}),
+                },
                 body: body !== undefined ? JSON.stringify(body) : undefined,
               });
               if (retryRes.status === 204) return undefined as T;

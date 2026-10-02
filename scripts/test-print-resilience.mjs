@@ -129,12 +129,22 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
 
   // Ticking ten categories used to mean ten full-catalogue re-pulls in a row.
   {
-    // Scope each check to the HANDLER BODY (up to the next ipcMain.handle) —
-    // a fixed character window ran into the NEXT handler, whose full-catalogue
-    // refresh is legitimate for a category write.
+    // Scope each check to the HANDLER BODY (up to the next handler) — a fixed
+    // character window ran into the NEXT handler, whose full-catalogue refresh is
+    // legitimate for a category write. D7 renamed ipcMain.handle('x' → handle('x'
+    // (a validating wrapper), so match either form when locating a handler.
+    const at = (from) => {
+      const a = IH.indexOf(`ipcMain.handle('`, from);
+      const b = IH.indexOf(`handle('`, from);
+      // earliest non -1 of the two
+      if (a === -1) return b;
+      if (b === -1) return a;
+      return Math.min(a, b);
+    };
     const body = (channel) => {
-      const i = IH.indexOf(`ipcMain.handle('${channel}'`);
-      const j = IH.indexOf('ipcMain.handle(', i + 1);
+      let i = IH.indexOf(`handle('${channel}'`);
+      if (i === -1) i = IH.indexOf(`ipcMain.handle('${channel}'`);
+      const j = at(i + 1);
       return IH.slice(i, j === -1 ? undefined : j);
     };
     const stationWrites = ['manage:createStation', 'manage:updateStation', 'manage:deleteStation', 'manage:setStationCategories'];
@@ -244,9 +254,9 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
     const parse = new Function(`${fn}; return parseDescriptionLines;`)();
     const a = parse('3pc chicken, 2 fries, 1 soda 500ml');
     ok('comma prose itemizes into three lines', Array.isArray(a) && a.length === 3 && a[1] === '2 fries', JSON.stringify(a));
-    // The REAL menu (kudo_kudo_menu_clean.csv) — '+'-separated components.
+    // A real-world menu shape — '+'-separated components.
     const k = parse('5pc chicken + cole slaw + popcorn + medium fries + soft drink');
-    ok("the Kudo menu's '+' descriptions itemize", k.length === 5 && k[1] === 'cole slaw' && k[4] === 'soft drink', JSON.stringify(k));
+    ok("a '+'-separated menu description itemizes", k.length === 5 && k[1] === 'cole slaw' && k[4] === 'soft drink', JSON.stringify(k));
     const b = parse('Chicken\nFries\n- Coleslaw');
     const bp = parse('Chicken\n+ Fries\n+ Coleslaw');
     ok("newline lists with leading '+' strip the marker", bp.length === 3 && bp[1] === 'Fries', JSON.stringify(bp));

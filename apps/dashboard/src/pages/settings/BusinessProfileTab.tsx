@@ -11,7 +11,7 @@ interface BusinessRecord {
   id: string;
   name: string; currency: string; address: string | null;
   phone: string | null; email: string | null;
-  tax_pin: string | null; vat_rate: number | null;
+  tax_pin: string | null; vat_rate: number | null; ctl_rate: number | null; logo_url: string | null;
 }
 
 const IDENTITY_FIELDS: Array<{ key: keyof BusinessRecord; label: string; type?: string; help?: string }> = [
@@ -21,6 +21,8 @@ const IDENTITY_FIELDS: Array<{ key: keyof BusinessRecord; label: string; type?: 
   { key: 'email',    label: 'Contact email', type: 'email', help: 'Business contact address. Your sign-in email is changed by your SwiftPOS admin.' },
   { key: 'tax_pin',  label: 'Tax PIN (KRA)' },
   { key: 'vat_rate', label: 'VAT rate (%)', type: 'number' },
+  { key: 'ctl_rate', label: 'Catering/Tourism Levy (%)', type: 'number', help: 'Charged on the same net as VAT. 0 = not applicable. Shows on receipts and tax reports when above 0.' },
+  { key: 'logo_url', label: 'Logo image URL', help: 'Paste a hosted image URL (PNG/JPG). It prints on your POs, GRNs, transfer notes and Z reports.' },
 ];
 
 export default function BusinessProfileTab() {
@@ -61,7 +63,8 @@ export default function BusinessProfileTab() {
       const payload = {
         name: record.name, address: record.address, phone: record.phone,
         email: record.email, tax_pin: record.tax_pin, vat_rate: record.vat_rate,
-        currency: record.currency,
+        ctl_rate: record.ctl_rate,
+        currency: record.currency, logo_url: record.logo_url,
       };
       const updated = await api.patch<BusinessRecord>('/api/business/', payload);
       setRecord(updated);
@@ -106,7 +109,7 @@ export default function BusinessProfileTab() {
                 type={f.type ?? 'text'}
                 value={(record[f.key] ?? '') as string | number}
                 onChange={e => setField(f.key, (f.type === 'number' ? Number(e.target.value) : e.target.value) as never)}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500"
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift"
               />
               {f.help && <p className="text-xs text-gray-600 mt-1">{f.help}</p>}
             </div>
@@ -116,14 +119,14 @@ export default function BusinessProfileTab() {
             <input
               value={record.currency ?? ''}
               onChange={e => setField('currency', e.target.value)}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500"
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift"
             />
             <p className="text-xs text-gray-600 mt-1">Locked once you have recorded sales — historical amounts are denominated in it.</p>
           </div>
         </div>
         <button
           onClick={saveIdentity} disabled={savingId}
-          className="mt-4 px-5 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-lg transition-colors"
+          className="mt-4 px-5 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white text-sm font-bold rounded-lg transition-colors"
         >
           {savingId ? 'Saving…' : 'Save business details'}
         </button>
@@ -147,7 +150,7 @@ export default function BusinessProfileTab() {
                 value={settings[f.key] ?? ''}
                 onChange={e => setSettings(prev => ({ ...prev, [f.key]: e.target.value }))}
                 onBlur={e => saveSetting(f.key, e.target.value)}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 resize-y"
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift resize-y"
               />
             </div>
           ))}
@@ -165,7 +168,7 @@ export default function BusinessProfileTab() {
           </div>
           <button
             onClick={() => saveSetting('continuous_operation', continuous ? 'false' : 'true')}
-            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${continuous ? 'bg-green-500' : 'bg-gray-700'}`}
+            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${continuous ? 'bg-swift-strong' : 'bg-gray-700'}`}
           >
             <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${continuous ? 'left-5' : 'left-0.5'}`} />
           </button>

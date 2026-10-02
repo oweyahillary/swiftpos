@@ -32,5 +32,23 @@ ok('test ping inserts a webhook_deliveries row', () => {
   assert.match(body, /response_status:\s*response\.status/, 'success path must record the response status');
 });
 
+ok('A146: one WebhooksTab implementation — both pages use the shared component', () => {
+  // SettingsPage used to carry its OWN inline WebhooksTab (a stale subset without the
+  // test-send + delivery log), while BusinessPage imported the full standalone one — so
+  // the two pages showed different webhook UIs. Consolidated onto the shared component.
+  const settings = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/SettingsPage.tsx'), 'utf8');
+  const business = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/settings/BusinessPage.tsx'), 'utf8');
+  assert.match(settings, /import WebhooksTab from '\.\/settings\/WebhooksTab'/,
+    'SettingsPage must import the shared WebhooksTab');
+  assert.doesNotMatch(settings, /function WebhooksTab\s*\(/,
+    'SettingsPage must not define its own inline WebhooksTab');
+  assert.match(business, /import WebhooksTab from '\.\/WebhooksTab'/,
+    'BusinessPage must import the shared WebhooksTab');
+  // the shared component carries the A146 observability the inline copy lacked
+  const shared = fs.readFileSync(path.join(root, 'apps/dashboard/src/pages/settings/WebhooksTab.tsx'), 'utf8');
+  assert.match(shared, /\/api\/webhooks\/\$\{[^}]+\}\/test/, 'shared tab has the test-send ping');
+  assert.match(shared, /\/api\/webhooks\/\$\{[^}]+\}\/deliveries/, 'shared tab has the delivery log');
+});
+
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
 process.exit(fail ? 1 : 0);

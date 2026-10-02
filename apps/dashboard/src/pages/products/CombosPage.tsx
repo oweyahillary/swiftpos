@@ -173,7 +173,7 @@ export default function CombosPage() {
           <p className="text-gray-500 text-sm mt-1">Bundle products into set meals at a fixed price</p>
         </div>
         <button onClick={openCreate}
-          className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors">
+          className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors">
           + New combo
         </button>
       </div>
@@ -181,7 +181,7 @@ export default function CombosPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mb-4">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${lower('combos')}…`}
-            className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+            className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
         </div>
 
         {loading ? (
@@ -235,7 +235,7 @@ export default function CombosPage() {
                       {c.status === 'active' ? 'Deactivate' : 'Activate'}
                     </button>
                     <button onClick={() => openEdit(c)}
-                      className="flex-1 py-2.5 text-xs text-blue-400 hover:bg-gray-800 transition-colors border-l border-gray-800">
+                      className="flex-1 py-2.5 text-xs text-swift-text hover:bg-gray-800 transition-colors border-l border-gray-800">
                       Edit
                     </button>
                     <button onClick={() => remove(c.id)}
@@ -267,21 +267,21 @@ export default function CombosPage() {
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Combo name *</label>
                     <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                       placeholder="e.g. Chicken Meal Deal, Family Combo"
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Description</label>
                     <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                       placeholder="What's in this combo?"
                       rows={2}
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 resize-none" />
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift resize-none" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Combo price *</label>
                     <input type="number" min={0} step={0.01} value={form.combo_price}
                       onChange={e => setForm(f => ({ ...f, combo_price: e.target.value }))}
                       placeholder="0.00"
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
                     {saving_ > 0 && comboPrice > 0 && (
                       <p className={`text-xs mt-1.5 ${savingAmount > 0 ? 'text-green-400' : 'text-amber-400'}`}>
                         Individual total: {fmt(saving_)}
@@ -293,7 +293,7 @@ export default function CombosPage() {
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Category (optional)</label>
                       <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
-                        className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
+                        className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift">
                         <option value="">— None —</option>
                         {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
@@ -361,7 +361,7 @@ export default function CombosPage() {
                 Cancel
               </button>
               <button onClick={save} disabled={saving}
-                className="px-5 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
+                className="px-5 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
                 {saving ? 'Saving…' : editing ? 'Save changes' : 'Create combo'}
               </button>
             </div>

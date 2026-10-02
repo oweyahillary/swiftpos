@@ -158,7 +158,7 @@ export default function ChoicesEditor({
                     disabled={busy === g.id}
                     onClick={() => setKind(g, k)}
                     className={`px-2 py-1 text-[11px] transition-colors ${
-                      g.kind === k ? 'bg-green-500/15 text-green-400' : 'bg-gray-800 text-gray-400 hover:text-white'
+                      g.kind === k ? 'bg-action-500/15 text-action-400' : 'bg-gray-800 text-gray-400 hover:text-white'
                     } disabled:opacity-50`}
                   >
                     {KIND_LABEL[k]}

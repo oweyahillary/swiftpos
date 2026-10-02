@@ -11,13 +11,23 @@ import { fireWebhook } from '../lib/webhooks';
 import { requireAuth } from '../middleware/auth';
 import { branchScope, requirePermission, assertBranchAccess } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { resolveOrderId } from '../lib/resolveOrder';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
+import { verifyPin } from './auth';
+import { findApprover, type ApproverRow } from '../lib/approver';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
+import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
+import { businessPosFeatures } from '../lib/posFeatureFlags';
+import { callerMayConfirm } from '../lib/shiftConfirm';
+import { cleanDeliveryFee } from '../lib/delivery';
+import { payRider, returnRiderPayout } from '../lib/riderPayout';
+import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
+import { confirmerByPin } from '../lib/confirmerLookup';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -97,42 +107,41 @@ async function verifySupervisorPin(
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Verify a per-user override authorizer for a privileged action (e.g. voiding a
-// paid order). Looks up active staff in the business who have an override PIN
-// configured and bcrypt-compares the entered PIN.
-//   - If `authorizerId` is supplied (supervisor picked from a list), only that
-//     user is checked, giving an unambiguous audit trail.
-//   - Returns { ok:true, userId } on success.
-//   - Returns reason 'no_authorizers' when nobody has an override PIN set, so the
-//     caller can fall back to the legacy business-wide supervisor PIN.
+// Who approves a void or refund (A355, lib/approver.ts): an override PIN, or the approver's OWN sign-in PIN when their
+// role may approve (owner, owner/admin role, '*', or orders.void — managers by default, never cashiers). If
+// `authorizerId` is supplied (a supervisor picked from a list), only that person is checked. 'no_authorizers' = nobody
+// in the business can approve with a PIN, so the caller tries the legacy business-wide supervisor PIN.
 async function verifyOverrideAuthorizer(
   businessId:   string,
   authorizerId: string | undefined,
   pin:          string | undefined,
 ): Promise<{ result: 'ok' | 'invalid' | 'no_authorizers'; userId?: string }> {
-  const { data: authorizers } = await supabase
-    .from('users')
-    .select('id, override_pin_hash')
-    .eq('business_id', businessId)
-    .eq('status', 'active')
-    .not('override_pin_hash', 'is', null);
-
-  if (!authorizers || authorizers.length === 0) {
-    return { result: 'no_authorizers' };
-  }
-  if (!pin) return { result: 'invalid' };
-
-  const candidates = authorizerId
-    ? authorizers.filter((a: any) => a.id === authorizerId)
-    : authorizers;
-
-  for (const a of candidates as any[]) {
-    if (a.override_pin_hash && await bcrypt.compare(String(pin), String(a.override_pin_hash))) {
-      return { result: 'ok', userId: a.id };
-    }
-  }
-  return { result: 'invalid' };
+  const [{ data: rows }, { data: biz }] = await Promise.all([
+    supabase
+      .from('users')
+      .select('id, pin_hash, override_pin_hash, roles ( name, role_permissions ( permissions ( key ) ) ), user_permissions ( granted, permissions ( key ) )')
+      .eq('business_id', businessId)
+      .eq('status', 'active'),
+    supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle(),
+  ]);
+  const found = await findApprover((rows ?? []) as ApproverRow[], { pin, authorizerId, ownerId: (biz as any)?.owner_id ?? null }, {
+    loginPin:    async (p, h) => (await verifyPin(p, h, businessId)).valid,
+    overridePin: (p, h) => bcrypt.compare(p, h),
+  });
+  if (found.result === 'ok') return { result: 'ok', userId: found.userId };
+  return { result: found.result === 'none' ? 'no_authorizers' : 'invalid' };
 }
+
+// What the till/web is told when no approval matched (A355). The legacy business-wide supervisor PIN is still tried
+// first by the caller; this is the answer when it does not match either. One wording for void and refund.
+const APPROVER_PIN_REFUSED = {
+  error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.',
+  code:  'INVALID_APPROVER_PIN',
+} as const;
+const NO_APPROVER = {
+  error: 'Nobody can approve this yet. Give a staff member a manager role and a PIN in Staff.',
+  code:  'NO_OVERRIDE_CONFIGURED',
+} as const;
 
 // ── Authoritative order pricing (shared by POST / and POST /open) ────────────
 // Rebuilds every line from the catalogue so client-sent prices/totals can't be
@@ -394,7 +403,12 @@ router.post('/', async (req, res) => {
     discount_id = null,
     shift_id = null,
     tip_amount = 0,
+    // A367: a note on the whole order ("deliver to gate B"). Free; trimmed and capped.
+    notes: orderNoteRaw = null,
+    // 0.6.27: the delivery fee paid on top of the bill (pass-through, like the tip). Only on a delivery.
+    delivery_fee: deliveryFeeRaw = 0,
   } = req.body;
+  const deliveryFee = order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
 
   // Normalise to array — support both old single `payment` and new `payments` array
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -547,6 +561,17 @@ router.post('/', async (req, res) => {
     // The client's supplied shift_id wins when present (it already reflects the
     // terminal's session from /shifts/current); otherwise resolve by terminal.
     let resolvedShiftId: string | null = shift_id ?? null;
+    // A338: a sale whose drawer has not reached the cloud yet is not a fault — the till pushes the drawer first and
+    // will retry. Say so with a code the till understands (it keeps the sale pending instead of giving up after 5
+    // tries), rather than letting the orders.shift_id foreign key fail as a 500.
+    if (resolvedShiftId) {
+      const { data: drawer } = await supabase
+        .from('shifts').select('id').eq('id', resolvedShiftId).eq('business_id', req.businessId).maybeSingle();
+      if (!drawer) {
+        res.status(424).json({ code: 'shift_not_synced', error: 'This sale\'s drawer has not reached the cloud yet — it will sync right after it.' });
+        return;
+      }
+    }
     if (!resolvedShiftId) {
       const tkey = terminalKeyFromRequest(req);
       const { data: openShifts } = await supabase
@@ -583,7 +608,7 @@ router.post('/', async (req, res) => {
         unit_price: authLines[idx].unitPrice,
         quantity: item.quantity,
         subtotal: authLines[idx].lineTotal,
-        notes: item.notes ?? null,
+        notes: cleanNote(item.notes),   // A367: trimmed and capped, never refused
       },
       variants: (item.selectedVariants ?? []).map((v: { groupName: string; optionName: string; priceAdjustment?: number }) => ({
         variant_group_name: v.groupName,
@@ -662,6 +687,7 @@ router.post('/', async (req, res) => {
       loyalty_points_used: points_redeemed,
       total: authTotal,
       tip_amount: Math.max(0, Number(tip_amount) || 0),
+      delivery_fee: deliveryFee,   // 0.6.27: create_order_atomic (migration 111) reconciles legs to total + tip + fee
       shift_id: resolvedShiftId,
       seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
       idempotency_key: idempotencyKey || crypto.randomUUID(),
@@ -734,11 +760,26 @@ router.post('/', async (req, res) => {
     }
 
     const createdRow = Array.isArray(created) ? created[0] : created;
+    // A367: the order's note. create_order_atomic (migration 69) does not carry orders.notes, so it is written right
+    // after the order exists — a note is an instruction, not money, and a failure here is logged, never the sale's.
+    const orderNote = cleanNote(orderNoteRaw, ORDER_NOTE_MAX);
+    if (orderNote) {
+      const { error: noteErr } = await supabase.from('orders').update({ notes: orderNote })
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (noteErr) console.error('[order-create] the order note was not saved:', noteErr.message);
+    }
     const order = {
       id: createdRow.order_id,
       order_number: createdRow.order_number,
       pump_id: req.body?.pump_id ? String(req.body.pump_id) : null,
     } as { id: string; order_number: string; pump_id: string | null };
+
+    // 0.6.27: a web sale's rider is paid the fee in cash from this shift's drawer. A till's sale is not — the till
+    // recorded that pay-out itself when it sold (it reaches the cloud as an ordinary pay-out).
+    if (deliveryFee > 0 && req.surface !== 'desktop') {
+      await payRider({ orderId: order.id, orderNumber: order.order_number, shiftId: resolvedShiftId, branchId: branch_id,
+                       cashierId: resolvedCashierId ?? req.userId ?? null, fee: deliveryFee, rider: orderPayload.delivery_person });
+    }
 
     // orderItems is re-read for the post-commit steps that need item ids (stock,
     // recipe deduction). One extra read, off the critical write path.
@@ -886,7 +927,7 @@ router.post('/', async (req, res) => {
 
 // GET /api/orders
 router.get('/', async (req, res) => {
-  const { status, date_from, date_to, search, limit = '50', offset = '0' } = req.query;
+  const { status, date_from, date_to, search, limit = '50', offset = '0', order_type, method } = req.query;
 
   // Owner: may filter by any branch_id or get all. Staff: locked to their branch.
   const scopedBranch = branchScope(req);
@@ -895,8 +936,9 @@ router.get('/', async (req, res) => {
     .from('orders')
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount, discount_amount,
-      loyalty_points_used, total, created_at, branch_id, customer_name,
-      payments ( method, amount, status )
+      loyalty_points_used, total, created_at, branch_id, customer_name, device_id,
+      cashier_id, delivery_person, delivery_fee, tip_amount,
+      payments ( method, amount, status )${method ? ', pm:payments!inner ( method )' : ''}
     `, { count: 'exact' })
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false })
@@ -907,10 +949,20 @@ router.get('/', async (req, res) => {
   if (date_from)    query = query.gte('created_at', date_from as string);
   if (date_to)      query = query.lte('created_at', date_to as string);
   if (search)       query = query.ilike('order_number', `%${search}%`);
+  // 0.6.27: History narrowed by order type or payment method (the web POS's Orders filters).
+  if (typeof order_type === 'string' && order_type) query = query.eq('order_type', order_type);
+  if (typeof method === 'string' && method)         query = query.eq('pm.method', method.toLowerCase());
+  // 0.6.27: 'cashier_own_history' (admin portal) — a cashier sees only the sales they rang; a manager sees all.
+  const manager = callerMayConfirm(req);
+  const features = await businessPosFeatures(req.businessId);
+  const ownOnly = !manager && features.cashier_own_history;
+  if (ownOnly) query = query.eq('cashier_id', req.userId ?? '00000000-0000-0000-0000-000000000000');
 
   const { data, error, count } = await query;
   if (error) { sendError(res, error); return; }
-  res.json({ orders: data ?? [], total: count ?? 0 });
+  // can_reprint: 'cashier_no_reprint' (admin portal) — the web POS hides Reprint for a cashier.
+  res.json({ orders: (data ?? []).map(({ pm, ...o }: any) => o), total: count ?? 0, own_only: ownOnly,
+             can_reprint: manager || !features.cashier_no_reprint });
 });
 
 // GET /api/orders/:id
@@ -963,6 +1015,12 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/orders/:id/void
 const VOID_WINDOW_MINUTES = 30;
 
+// A335: the till voids and refunds by ITS id (our idempotency_key); the web by ours.
+const cloudOrderId = (ref: string, businessId: string) => resolveOrderId(ref, async (column, value) => {
+  const { data } = await supabase.from('orders').select('id')
+    .eq(column, value).eq('business_id', businessId).limit(1).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+});
 
 // ── POST /api/orders/:id/refund ──────────────────────────────────────────────
 //
@@ -984,7 +1042,7 @@ const VOID_WINDOW_MINUTES = 30;
 // than none — staff can refund in full and re-ring what the customer keeps.
 router.post('/:id/refund', requirePermission('orders.void'), async (req, res) => {
   const { reason, override_pin, supervisor_pin, authorizer_id } = req.body;
-  const orderId = req.params.id;
+  const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
   if (!reason || !String(reason).trim()) {
     res.status(400).json({ error: 'A reason is required to refund an order' });
@@ -1041,22 +1099,18 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
     // and refund_authorized_by = the same owner (set below).
     authorizedBy = req.userId ?? null;
   } else {
-    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, (override_pin ?? supervisor_pin) as string | undefined);
+    const pin = (override_pin ?? supervisor_pin) as string | undefined;
+    const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
     if (ov.result === 'ok') {
       authorizedBy = ov.userId ?? null;
-    } else if (ov.result === 'no_authorizers') {
-      const legacy = await verifySupervisorPin(req.businessId, (override_pin ?? supervisor_pin) as string | undefined);
-      if (legacy === 'not_configured') {
-        res.status(400).json({
-          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
-          code:  'NO_OVERRIDE_CONFIGURED',
-        });
+    } else {
+      // A355: the legacy business-wide supervisor PIN is still accepted (authorizedBy stays null — no one person).
+      const legacy = await verifySupervisorPin(req.businessId, pin);
+      if (legacy !== true) {
+        if (ov.result === 'no_authorizers' && legacy === 'not_configured') { res.status(400).json(NO_APPROVER); return; }
+        res.status(403).json(APPROVER_PIN_REFUSED);
         return;
       }
-      if (!legacy) { res.status(403).json({ error: 'Invalid supervisor PIN' }); return; }
-    } else {
-      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
-      return;
     }
   }
 
@@ -1180,7 +1234,7 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
 
 router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   const { reason, supervisor_pin, override_pin, authorizer_id } = req.body;
-  const orderId = req.params.id;
+  const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
   if (!reason) {
     res.status(400).json({ error: 'A reason is required to void an order' });
@@ -1236,25 +1290,15 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
 
     if (ov.result === 'ok') {
       authorizedBy = ov.userId ?? null;
-    } else if (ov.result === 'no_authorizers') {
-      // Transition fallback: no per-user override PINs configured yet — accept
-      // the legacy business-wide supervisor PIN so existing installs keep working.
-      const legacy = await verifySupervisorPin(req.businessId, pin);
-      if (legacy === 'not_configured') {
-        res.status(400).json({
-          error: 'No override PIN configured. Set one for a supervisor in Staff Management → Staff Members.',
-          code:  'NO_OVERRIDE_CONFIGURED',
-        });
-        return;
-      }
-      if (!legacy) {
-        res.status(403).json({ error: 'Invalid supervisor PIN' });
-        return;
-      }
-      // legacy PIN valid — authorizedBy stays null (no identifiable supervisor)
     } else {
-      res.status(403).json({ error: 'Invalid override PIN, or the selected supervisor is not authorized' });
-      return;
+      // A355: the legacy business-wide supervisor PIN is still accepted so existing installs keep working
+      // (authorizedBy stays null — no identifiable supervisor).
+      const legacy = await verifySupervisorPin(req.businessId, pin);
+      if (legacy !== true) {
+        if (ov.result === 'no_authorizers' && legacy === 'not_configured') { res.status(400).json(NO_APPROVER); return; }
+        res.status(403).json(APPROVER_PIN_REFUSED);
+        return;
+      }
     }
   }
 
@@ -1265,6 +1309,10 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
       .update({ status: 'voided', void_reason: reason, voided_at: new Date().toISOString(), voided_by: req.userId, authorized_by: authorizedBy })
       .eq('id', orderId);
     if (vErr) throw vErr;
+
+    // 0.6.27: a voided web delivery's rider pay-out goes back in while its shift is open (a till's own sale: the till
+    // puts its pay-out back itself when it hears of the void). Best-effort — the void has happened.
+    if (Number((order as any).delivery_fee ?? 0) > 0) await returnRiderPayout(orderId);
 
     // 1b. Pull the order's kitchen ticket(s) off the KDS (A196). A voided order
     // is cancelled, so its ticket must not stay live on the board — otherwise the
@@ -1463,6 +1511,7 @@ router.post('/open', async (req, res) => {
     customer_id = null,
     customer_name = null,
     shift_id = null,
+    notes: orderNoteRaw = null,   // A367
   } = req.body;
 
   if (!branch_id || !order_number || !items?.length) {
@@ -1509,6 +1558,7 @@ router.post('/open', async (req, res) => {
         customer_id,
         customer_name,
         shift_id,
+        notes:           cleanNote(orderNoteRaw, ORDER_NOTE_MAX),   // A367
         seated_at:       order_type === 'dine_in' ? new Date().toISOString() : null,
         // This path set no idempotency_key whatsoever, so every dine-in order
         // carried NULL and duplicated on replay. See the note on POST / above.
@@ -1540,7 +1590,7 @@ router.post('/open', async (req, res) => {
       unit_price: authLines[idx].unitPrice,
       quantity:   item.quantity,
       subtotal:   authLines[idx].lineTotal,
-      notes:      item.notes ?? null,
+      notes:      cleanNote(item.notes),   // A367: trimmed and capped, never refused
       course:      item.course ?? null,
       fire_status: item.fire_status === 'held' ? 'held' : 'fired',
     }));
@@ -1562,9 +1612,120 @@ router.post('/open', async (req, res) => {
 
     if (ktErr) console.error('Failed to create kitchen ticket:', ktErr.message);
 
-    res.status(201).json({ orderId: order.id, orderNumber: order.order_number });
+    // 0.6.28: the item ids, in the order sent — a line taken back later (POST /:id/kitchen-void) names its item.
+    res.status(201).json({
+      orderId: order.id, orderNumber: order.order_number,
+      items: (insertedItems ?? []).map((it: { id: string; product_id: string | null; quantity: number }) =>
+        ({ id: it.id, product_id: it.product_id, quantity: Number(it.quantity) })),
+    });
   } catch (err) {
     sendError(res, err, { message: 'Failed to open order' });
+  }
+});
+
+// ── POST /api/orders/:id/kitchen-void ───────────────────────────────────────────
+// 0.6.28 — owner, 2026-10-01: a sent order could be cancelled after the customer paid in cash ("the cashier pockets the
+// money"). On the web an order sent to the kitchen is an OPEN order here; its items leave it only through this route:
+// the item and how many, a reason (shared/kitchenLines.ts), whether the kitchen had already made it — and, with the
+// client's 'kitchen_void_approval' switch, a manager (signed in as themselves, or their PIN; no grace period). The
+// order's money is recomputed (no discount exists before payment), the void is recorded in kitchen_voids (migration
+// 112), and an order with nothing left is voided. The web prints the VOID ticket (it holds the printers).
+router.post('/:id/kitchen-void', async (req, res) => {
+  const orderId = req.params.id;
+  const reason = cleanVoidReason(req.body?.reason);
+  if (!reason) { res.status(400).json({ error: 'Choose why these items are being taken back.' }); return; }
+  if (typeof req.body?.cooked !== 'boolean') { res.status(400).json({ error: 'Say whether the kitchen had already made them.' }); return; }
+  const cooked = req.body.cooked === true;
+  const note = cleanVoidNote(req.body?.note);
+  const wanted = new Map<string, number>();
+  for (const l of Array.isArray(req.body?.lines) ? req.body.lines : []) {
+    const id = String(l?.order_item_id ?? ''); const q = Number(l?.qty);
+    if (id && q > 0) wanted.set(id, (wanted.get(id) ?? 0) + q);
+  }
+  if (!wanted.size) { res.status(400).json({ error: 'Nothing to void.' }); return; }
+
+  try {
+    const { data: order, error: oErr } = await supabase
+      .from('orders')
+      .select('id, business_id, branch_id, shift_id, order_number, status, subtotal, order_items ( id, product_id, product_name, unit_price, quantity, subtotal )')
+      .eq('id', orderId).eq('business_id', req.businessId).maybeSingle();
+    if (oErr) { sendError(res, oErr); return; }
+    if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    if (!assertBranchAccess(req, order.branch_id)) { res.status(403).json({ error: 'You do not have access to this branch' }); return; }
+    if (order.status !== 'open') {
+      res.status(409).json({ error: `This order is ${order.status} — a paid sale is voided or refunded instead.`, code: 'ORDER_NOT_OPEN' });
+      return;
+    }
+
+    let approver: { id: string; name: string | null } | null = null;
+    if ((await businessPosFeatures(req.businessId!)).kitchen_void_approval) {
+      if (req.body?.pin) {
+        approver = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined);
+        if (!approver) {
+          res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
+          return;
+        }
+      } else if (callerMayConfirm(req)) {
+        approver = { id: req.userId!, name: null };
+      } else {
+        res.status(403).json({ error: 'A manager must approve this — enter a manager’s PIN.', code: 'KITCHEN_VOID_APPROVAL_REQUIRED' });
+        return;
+      }
+    }
+
+    type Item = { id: string; product_id: string | null; product_name: string; unit_price: number; quantity: number; subtotal: number };
+    const items = ((order as any).order_items ?? []) as Item[];
+    const plan: Array<{ item: Item; qty: number; unit: number; amount: number; left: number }> = [];
+    for (const [id, qty] of wanted) {
+      const item = items.find((i) => i.id === id);
+      if (!item) { res.status(400).json({ error: 'That item is not on this order.' }); return; }
+      const have = Number(item.quantity) || 0;
+      if (qty > have + 1e-9) { res.status(400).json({ error: `Only ${have} × ${item.product_name} on this order.` }); return; }
+      const unit = have > 0 ? (Number(item.subtotal) || 0) / have : Number(item.unit_price) || 0;
+      plan.push({ item, qty, unit, amount: round2(unit * qty), left: Math.round((have - qty) * 1000) / 1000 });
+    }
+
+    // The names are stored with the void (a report reads the same after a rename or a departure).
+    const ids = [req.userId, approver?.id].filter(Boolean) as string[];
+    const { data: people } = await supabase.from('users').select('id, name').in('id', ids);
+    const nameOf = (id?: string | null) => (people ?? []).find((u: { id: string }) => u.id === id)?.name ?? null;
+
+    for (const p of plan) {
+      const q = p.left > 0
+        ? supabase.from('order_items').update({ quantity: p.left, subtotal: round2(p.unit * p.left) }).eq('id', p.item.id)
+        : supabase.from('order_items').delete().eq('id', p.item.id);
+      const { error } = await q;
+      if (error) { sendError(res, error); return; }
+    }
+    const voidedTotal = round2(plan.reduce((s, p) => s + p.amount, 0));
+    const remainingItems = items.filter((i) => !plan.some((p) => p.item.id === i.id && p.left <= 0));
+    const newSubtotal = Math.max(0, round2((Number(order.subtotal) || 0) - voidedTotal));
+    const nothingLeft = remainingItems.length === 0;
+    const { vat, ctl } = await taxSplit(req.businessId!, newSubtotal);
+    const { error: uErr } = await supabase.from('orders').update({
+      subtotal: newSubtotal, total: newSubtotal, vat_amount: vat, ctl_amount: ctl,
+      ...(nothingLeft ? { status: 'voided', void_reason: `Kitchen void: ${voidReasonLabel(reason)}`,
+                          voided_at: new Date().toISOString(), voided_by: req.userId, authorized_by: approver?.id ?? null } : {}),
+    }).eq('id', orderId);
+    if (uErr) { sendError(res, uErr); return; }
+
+    const at = new Date().toISOString();
+    const { error: kErr } = await supabase.from('kitchen_voids').insert(plan.map((p) => ({
+      business_id: req.businessId, branch_id: order.branch_id, shift_id: order.shift_id ?? null,
+      order_number: order.order_number, order_id: order.id, product_id: p.item.product_id ?? null,
+      product_name: p.item.product_name, quantity: p.qty, unit_price: round2(p.unit), amount: p.amount,
+      reason, note, cooked, cashier_id: req.userId ?? null, cashier_name: nameOf(req.userId),
+      approved_by: approver?.id ?? null, approved_by_name: approver ? (approver.name ?? nameOf(approver.id)) : null,
+      device_id: deviceIdFromRequest(req) ?? null, created_at: at,
+    })));
+    if (kErr) { sendError(res, kErr); return; }
+
+    res.json({
+      ok: true, total: voidedTotal, remaining: newSubtotal, orderVoided: nothingLeft,
+      approvedBy: approver ? (approver.name ?? nameOf(approver.id)) : null,
+    });
+  } catch (err) {
+    sendError(res, err, { message: 'Failed to void the items' });
   }
 });
 
@@ -1582,6 +1743,7 @@ router.post('/:id/pay', async (req, res) => {
     discount_amount = 0,
     discount_id = null,
     tip_amount = 0,
+    delivery_fee: deliveryFeeRaw = 0,   // 0.6.27: on top of the bill on a delivery (pass-through, like the tip)
   } = req.body;
 
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -1688,12 +1850,14 @@ router.post('/:id/pay', async (req, res) => {
     // order paths must agree on what "paid in full" means, or a sale that is
     // accepted at the counter is refused on the dine-in path and vice versa.
     const payTip = Math.max(0, Number(tip_amount) || 0);
-    const amountDue = round2(payTotal + payTip);
+    // 0.6.27: the delivery fee rides on top like the tip (create_order_atomic agrees, migration 111).
+    const payFee = order.order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
+    const amountDue = round2(payTotal + payTip + payFee);
     const legSum = paymentLegs.reduce((s, l) => s + (Number(l.amount) || 0), 0);
     if (Math.abs(legSum - amountDue) > 0.01) {
       res.status(400).json({
         error: `Payment legs sum to ${legSum.toFixed(2)} but the amount due is ${amountDue.toFixed(2)} `
-             + `(total ${payTotal.toFixed(2)} + tip ${payTip.toFixed(2)}).`,
+             + `(total ${payTotal.toFixed(2)} + tip ${payTip.toFixed(2)}${payFee ? ` + delivery fee ${payFee.toFixed(2)}` : ''}).`,
         code: 'PAYMENT_MISMATCH',
       });
       return;
@@ -1747,6 +1911,7 @@ router.post('/:id/pay', async (req, res) => {
       // was money in the drawer that the books had no record of, which reads as
       // an unexplained cash surplus at close.
       tip_amount:      payTip,
+      delivery_fee:    payFee,   // 0.6.27
       // Points redeemed on this order. The counter path has always written this
       // (it is read back by GET /orders); the dine-in path never did, so every
       // table order reported zero points redeemed however many were taken.
@@ -1782,11 +1947,11 @@ router.post('/:id/pay', async (req, res) => {
       // whoever reconciles the day, not in front of the cashier mid-service.
       const { data: settled } = await supabase
         .from('orders')
-        .select('id, order_number, status, total, tip_amount')
+        .select('id, order_number, status, total, tip_amount, delivery_fee')
         .eq('id', order.id)
         .single();
 
-      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0));
+      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0) + Number((settled as any)?.delivery_fee ?? 0));
       if (settled && Math.abs(settledDue - amountDue) > 0.01) {
         await supabase.from('payment_exceptions').insert({
           business_id:     req.businessId,
@@ -1808,6 +1973,13 @@ router.post('/:id/pay', async (req, res) => {
     // ── 2b. We own the order. Now it is safe to write the money. ─────────────
     const { error: pErr } = await supabase.from('payments').insert(paymentRows);
     if (pErr) { sendError(res, pErr); return; }
+
+    // 0.6.27: a web tab's rider is paid the fee in cash from its shift's drawer (a till pays its own).
+    if (payFee > 0 && req.surface !== 'desktop') {
+      await payRider({ orderId: order.id, orderNumber: order.order_number, shiftId: (order as any).shift_id ?? null,
+                       branchId: order.branch_id, cashierId: (order as any).cashier_id ?? req.userId ?? null, fee: payFee,
+                       rider: (order as any).delivery_person ?? null });
+    }
 
     checkPaymentIntegrity(order.order_number, order.id, payTotal, paymentRows);
 

@@ -179,7 +179,7 @@ export default function ReservationsPage() {
     } catch { /* silent */ }
   }
 
-  const InputCls = "w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500";
+  const InputCls = "w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift";
 
   return (
     <div className="flex flex-col h-full">
@@ -194,7 +194,7 @@ export default function ReservationsPage() {
             + Waitlist
           </button>
           <button onClick={() => { setShowRes(true); setError(''); setResForm({ ...BLANK_RES, reserved_date: date }); }}
-            className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors">
+            className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors">
             + Reservation
           </button>
         </div>
@@ -206,7 +206,7 @@ export default function ReservationsPage() {
           <div className="px-5 py-3 border-b border-gray-800 flex items-center gap-3">
             <p className="text-sm font-semibold text-white">Reservations</p>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1 text-white text-sm focus:outline-none focus:border-blue-500" />
+              className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1 text-white text-sm focus:outline-none focus:border-swift" />
             <span className="text-xs text-gray-500">{reservations.length} booking{reservations.length !== 1 ? 's' : ''}</span>
           </div>
 
@@ -236,7 +236,7 @@ export default function ReservationsPage() {
                   {r.status === 'confirmed' && (
                     <div className="flex gap-1 flex-shrink-0">
                       <button onClick={() => updateResStatus(r.id, 'seated')}
-                        className="text-xs px-2.5 py-1 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-600/30 transition-colors">
+                        className="text-xs px-2.5 py-1 bg-swift/20 text-swift-text border border-swift/30 rounded-lg hover:bg-swift/30 transition-colors">
                         Seat
                       </button>
                       <button onClick={() => updateResStatus(r.id, 'no_show')}
@@ -247,7 +247,7 @@ export default function ReservationsPage() {
                   )}
                   {r.status === 'seated' && (
                     <button onClick={() => updateResStatus(r.id, 'completed')}
-                      className="flex-shrink-0 text-xs px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors">
+                      className="flex-shrink-0 text-xs px-2.5 py-1 bg-swift/10 text-swift-text border border-swift/20 rounded-lg hover:bg-swift/20 transition-colors">
                       Complete
                     </button>
                   )}
@@ -288,7 +288,7 @@ export default function ReservationsPage() {
                 </div>
                 <div className="flex gap-2 ml-5">
                   <button onClick={() => updateWaitStatus(w.id, 'seated')}
-                    className="text-xs px-2.5 py-1 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-600/30 transition-colors">
+                    className="text-xs px-2.5 py-1 bg-swift/20 text-swift-text border border-swift/30 rounded-lg hover:bg-swift/30 transition-colors">
                     Seat
                   </button>
                   <button onClick={() => updateWaitStatus(w.id, 'left')}
@@ -352,7 +352,7 @@ export default function ReservationsPage() {
             </div>
             <div className="px-6 py-4 border-t border-gray-800 flex gap-2.5">
               <button onClick={() => setShowRes(false)} className="flex-1 py-2.5 border border-gray-700 rounded-lg text-gray-400 text-sm hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={saveRes} disabled={savingRes} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
+              <button onClick={saveRes} disabled={savingRes} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
                 {savingRes ? 'Saving…' : 'Book table'}
               </button>
             </div>

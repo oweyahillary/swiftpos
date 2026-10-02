@@ -121,7 +121,7 @@ export default function WebhooksTab() {
           <p className="text-gray-500 text-sm mt-0.5">Receive HTTP POST requests when orders complete or are voided.</p>
         </div>
         <button onClick={() => { setShowForm(true); setError(''); }}
-          className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-xl transition-colors">
+          className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-xl transition-colors">
           + Add endpoint
         </button>
       </div>
@@ -129,7 +129,7 @@ export default function WebhooksTab() {
       {newSecret && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
           <p className="text-amber-400 text-sm font-semibold mb-2">⚠️ Copy your webhook secret — shown once only</p>
-          <code className="block bg-gray-900 rounded-lg p-2.5 text-xs text-green-400 break-all font-mono">{newSecret}</code>
+          <code className="block bg-gray-900 rounded-lg p-2.5 text-xs text-swift-text break-all font-mono">{newSecret}</code>
           <button onClick={() => setNewSecret(null)} className="text-xs text-gray-500 hover:text-gray-300 mt-2 transition-colors">Dismiss</button>
         </div>
       )}
@@ -225,7 +225,7 @@ export default function WebhooksTab() {
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Endpoint URL</label>
               <input value={formUrl} onChange={e => setFormUrl(e.target.value)} placeholder="https://your-server.com/webhook"
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Events</label>
@@ -233,7 +233,7 @@ export default function WebhooksTab() {
                 <label key={ev} className="flex items-center gap-2.5 mb-2 cursor-pointer">
                   <input type="checkbox" checked={formEvents.includes(ev)}
                     onChange={e => setFormEvents(prev => e.target.checked ? [...prev, ev] : prev.filter(x => x !== ev))}
-                    className="w-4 h-4 rounded border-gray-700 bg-gray-800 accent-blue-600" />
+                    className="w-4 h-4 rounded border-gray-700 bg-gray-800 accent-swift-strong" />
                   <span className="text-gray-300 text-sm font-mono">{ev}</span>
                 </label>
               ))}
@@ -243,7 +243,7 @@ export default function WebhooksTab() {
               <button onClick={() => setShowForm(false)}
                 className="flex-1 py-2.5 border border-gray-700 rounded-lg text-gray-400 text-sm hover:border-gray-600 transition-colors">Cancel</button>
               <button onClick={create} disabled={saving}
-                className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
+                className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 rounded-lg text-white text-sm font-bold transition-colors">
                 {saving ? 'Creating…' : 'Create'}
               </button>
             </div>

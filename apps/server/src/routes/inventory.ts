@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
-import { branchScope, assertBranchAccess } from '../middleware/rbac';
+import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 
 const router = safeRouter();
@@ -72,7 +72,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/inventory/adjust
 // Body: { product_id, branch_id, type: 'restock'|'write_off'|'correction', quantity, notes }
-router.post('/adjust', async (req, res) => {
+router.post('/adjust', requirePermission('inventory.adjust'), async (req, res) => {
   const { product_id, branch_id, type, quantity, notes } = req.body;
 
   if (!product_id || !branch_id || !type || quantity === undefined) {
@@ -162,7 +162,7 @@ router.post('/adjust', async (req, res) => {
 
 // PATCH /api/inventory/:product_id/threshold
 // Update low stock threshold for a product+branch
-router.patch('/:product_id/threshold', async (req, res) => {
+router.patch('/:product_id/threshold', requireAnyPermission('inventory.adjust', 'inventory.receive'), async (req, res) => {
   const { product_id } = req.params;
   const { branch_id, low_stock_threshold } = req.body;
 

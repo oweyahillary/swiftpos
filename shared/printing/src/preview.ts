@@ -48,6 +48,14 @@ export function toPreview(doc: Document, opts: PreviewOptions = {}): string {
         lines.push(b.size === 'tall' || b.size === 'large' ? t : t);
         break;
       }
+      case 'image': {
+        // The text preview cannot draw pixels; it says what will print and how
+        // tall, so the settings screen still shows where the paper goes.
+        const tag = `[logo ${block.raster.width}x${block.raster.height}]`;
+        const pad = Math.max(0, Math.floor((cols - tag.length) / 2));
+        lines.push(' '.repeat(pad) + tag.slice(0, cols));
+        break;
+      }
       case 'feed':
         for (let i = 0; i < block.lines; i++) lines.push('');
         break;

@@ -10,6 +10,8 @@
  *
  * DROP-IN: this file replaces apps/server/src/routes/products.ts entirely.
  */
+import { validateLoose } from '../middleware/validate';
+import { CreateProductSchema, UpdateProductSchema } from '../lib/schemas';
 
 import { Router }    from 'express';
 import { sendError } from '../lib/sendError';
@@ -89,7 +91,7 @@ router.get('/barcode/:code', async (req, res) => {
 
 // ── POST /api/products ────────────────────────────────────────────────────────
 
-router.post('/', requirePermission('products.manage'), async (req, res) => {
+router.post('/', requirePermission('products.manage'), validateLoose(CreateProductSchema), async (req, res) => {
   const {
     name, description, base_price, category_id, image_url,
     track_stock, has_variants, has_modifiers,
@@ -173,7 +175,7 @@ router.post('/', requirePermission('products.manage'), async (req, res) => {
 
 // ── PATCH /api/products/:id ───────────────────────────────────────────────────
 
-router.patch('/:id', requirePermission('products.manage'), async (req, res) => {
+router.patch('/:id', requirePermission('products.manage'), validateLoose(UpdateProductSchema), async (req, res) => {
   const { id } = req.params;
   const {
     name, description, base_price, category_id, image_url,

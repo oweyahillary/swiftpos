@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { ZodSchema, ZodError } from 'zod';
+import { z, ZodObject, ZodSchema, ZodError } from 'zod';
 
 /**
  * validate(schema) — Express middleware that parses req.body through a Zod schema.
@@ -27,4 +27,14 @@ export function validate<T>(schema: ZodSchema<T>) {
     req.body = result.data;
     next();
   };
+}
+
+/**
+ * validateLoose(schema) — like validate(), but validates the KNOWN fields and
+ * PASSES unknown fields through untouched (`.catchall(z.unknown())`). Use on
+ * routes that read more of req.body than the schema declares (auth device fields,
+ * product tax fields, …) so validation never silently strips a live field (A157).
+ */
+export function validateLoose(schema: ZodObject<any>) {
+  return validate(schema.catchall(z.unknown()) as unknown as ZodSchema);
 }

@@ -39,6 +39,18 @@ interface FleetDevice {
   lastSyncAt: string | null;
   hoursSinceSync: number | null;
   hoursSinceSeen: number | null;
+  // A184 Tier 1 — identity
+  terminalCode: string | null;
+  role: string | null;
+  branchName: string | null;
+  mac: string | null;
+  // A184 Tier 2 — active session
+  activeShift: { cashier: string | null; openedAt: string | null } | null;
+  // A184 Tier 3 — retirement
+  retiredAt: string | null;
+  // A22 — split-brain: two servers on this branch
+  servingConflict?: boolean;
+  conflictAt?: string | null;
 }
 
 interface FleetResponse {
@@ -77,6 +89,9 @@ export default function FleetPage() {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
+  // A184 Tier 3 — toggle between live fleet and the retired archive.
+  const [showRetired, setShowRetired] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const saveLabel = useCallback(async (id: string) => {
     const label = draftLabel.trim();
@@ -91,11 +106,26 @@ export default function FleetPage() {
     }
   }, [draftLabel]);
 
+  // A184 Tier 3 — retire drops the row out of the current list; restore does the same
+  // from the archive. Either way we remove it locally so the view stays accurate.
+  const setRetired = useCallback(async (id: string, retire: boolean) => {
+    setBusyId(id);
+    setError('');
+    try {
+      await api.patch(`/api/devices/${id}/${retire ? 'retire' : 'unretire'}`, {});
+      setData(prev => prev ? { ...prev, fleet: prev.fleet.filter(f => f.id !== id) } : prev);
+    } catch (e: any) {
+      setError(e?.message ?? (retire ? 'Could not retire the terminal' : 'Could not restore the terminal'));
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(await api.get<FleetResponse>('/api/devices/fleet'));
+      setData(await api.get<FleetResponse>(`/api/devices/fleet${showRetired ? '?retired=1' : ''}`));
     } catch (e: any) {
       // Say it failed. An empty table would read as "no terminals", which is the
       // reassuring answer and almost certainly the wrong one.
@@ -103,7 +133,7 @@ export default function FleetPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showRetired]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -164,13 +194,26 @@ export default function FleetPage() {
         </div>
       )}
 
+      {/* A184 Tier 3 — switch between the live fleet and the retired archive. */}
+      <div className="flex items-center gap-1 text-sm">
+        <button
+          onClick={() => setShowRetired(false)}
+          className={`px-3 py-1 rounded-lg ${!showRetired ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >Live</button>
+        <button
+          onClick={() => setShowRetired(true)}
+          className={`px-3 py-1 rounded-lg ${showRetired ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >Retired</button>
+      </div>
+
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : fleet.length === 0 ? (
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            No approved terminals yet. A till appears here once it has been approved
-            and someone has signed in on it.
+            {showRetired
+              ? 'No retired terminals. Retiring a dead till moves it here and out of the health view.'
+              : 'No approved terminals yet. A till appears here once it has been approved and someone has signed in on it.'}
           </p>
         </div>
       ) : (
@@ -178,11 +221,12 @@ export default function FleetPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
-                {['Terminal', 'App', 'Schema', 'Last sync', 'Last sign-in'].map(h => (
+                {['Terminal', 'On shift', 'App', 'Schema', 'Last sync', 'Last sign-in'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-600 dark:text-gray-400">
                     {h}
                   </th>
                 ))}
+                <th key="actions" className="px-4 py-2.5 text-right text-xs font-medium text-gray-600 dark:text-gray-400"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -203,9 +247,9 @@ export default function FleetPage() {
                               if (e.key === 'Enter') void saveLabel(d.id);
                               if (e.key === 'Escape') setEditingId(null);
                             }}
-                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-green-500 w-40"
+                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-swift w-40"
                           />
-                          <button onClick={() => void saveLabel(d.id)} className="text-green-500 hover:text-green-400 text-sm" title="Save">✓</button>
+                          <button onClick={() => void saveLabel(d.id)} className="text-swift-text hover:text-swift-text-hover text-sm" title="Save">✓</button>
                           <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-200 text-sm" title="Cancel">✕</button>
                         </div>
                       ) : (
@@ -223,9 +267,36 @@ export default function FleetPage() {
                       <div className="text-xs text-gray-400 font-mono">
                         {/* Truncated: the full id is a uuid and would push every
                             other column off screen. Enough to tell tills apart. */}
-                        {d.deviceId ? d.deviceId.slice(0, 8) : 'no device id'}
+                        {d.terminalCode
+                          ? <span className="font-sans font-medium text-gray-600 dark:text-gray-300">{d.terminalCode}</span>
+                          : (d.deviceId ? d.deviceId.slice(0, 8) : 'no device id')}
                         {d.user && <span className="ml-2 font-sans">· {d.user}</span>}
                       </div>
+                      {/* A184 Tier 1 — role · branch, and the MAC (the tell for a
+                          reinstalled duplicate). MAC is blank until the A182 desktop
+                          build ships and the till has reported it. */}
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {(d.role || d.branchName)
+                          ? <>{d.role ?? '—'}{d.branchName ? ` · ${d.branchName}` : ''}</>
+                          : null}
+                      </div>
+                      {d.mac && <div className="text-[11px] text-gray-400 font-mono">{d.mac}</div>}
+                      {d.servingConflict && (
+                        <div className="mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/40">
+                          ⚠ Split-brain — two servers on this branch. Demote one.
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* A184 Tier 2 — who is on shift right now. */}
+                      {d.activeShift ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Shift open" />
+                          <span className="text-gray-700 dark:text-gray-300 text-sm">{d.activeShift.cashier ?? 'On shift'}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400 tabular-nums">
                       {d.appVersion ?? <span className="italic text-gray-400">not reported</span>}
@@ -254,6 +325,22 @@ export default function FleetPage() {
                       {d.lastSeenAt
                         ? `${d.hoursSinceSeen}h ago`
                         : <span className="italic text-gray-400">never</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {/* A184 Tier 3 — retire a dead till (reversible from the Retired tab). */}
+                      {showRetired ? (
+                        <button
+                          onClick={() => void setRetired(d.id, false)}
+                          disabled={busyId === d.id}
+                          className="text-xs text-swift-text hover:text-swift-text-hover disabled:opacity-40"
+                        >{busyId === d.id ? '…' : 'Restore'}</button>
+                      ) : (
+                        <button
+                          onClick={() => { if (confirm(`Retire ${d.label ?? d.terminalCode ?? 'this terminal'}? It leaves the health view but keeps its history. You can restore it later.`)) void setRetired(d.id, true); }}
+                          disabled={busyId === d.id}
+                          className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-40"
+                        >{busyId === d.id ? '…' : 'Retire'}</button>
+                      )}
                     </td>
                   </tr>
                 );

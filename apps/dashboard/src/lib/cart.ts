@@ -18,6 +18,14 @@ export interface CartItem {
   // litre-aware display and suppresses the qty stepper.
   isFuel?: boolean;
   fire_status?: 'held' | 'fired';
+
+  // 0.6.28: the cloud's order_items.id once the order was sent to the kitchen (POST /api/orders/open). Its presence is
+  // what makes the line SENT: it then leaves the order only as a kitchen void (POST /api/orders/:id/kitchen-void).
+  order_item_id?: string;
+
+  // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Sent as
+  // order_items.notes; printed on the kitchen ticket and the receipt.
+  notes?: string | null;
 }
 
 export function cartSubtotal(items: CartItem[]): number {
@@ -27,6 +35,18 @@ export function cartSubtotal(items: CartItem[]): number {
 // Prices are VAT-inclusive — extract VAT portion from total
 export function extractVat(total: number, vatRate: number): number {
   return total - total / (1 + vatRate / 100);
+}
+
+/**
+ * A349: VAT and the catering levy inside a tax-inclusive BILL (after any discount) — the same arithmetic as the till
+ * (desktop payment.ts) and the cloud (orders.ts taxSplit), which stores the authoritative figures:
+ *   net = bill / (1 + (vat + ctl)/100);  vat = round2(net·vat%);  ctl = round2(net·ctl%)
+ * VAT is on the net, never on net-plus-levy. ctlRate 0 gives the VAT-only figure.
+ */
+export function extractTaxes(bill: number, vatRate: number, ctlRate = 0): { vat: number; ctl: number } {
+  const net = bill / (1 + (vatRate + ctlRate) / 100);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return { vat: r2(net * (vatRate / 100)), ctl: r2(net * (ctlRate / 100)) };
 }
 
 let __orderSeq = 0;

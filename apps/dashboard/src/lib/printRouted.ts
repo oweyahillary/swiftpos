@@ -1,0 +1,172 @@
+/**
+ * printRouted — B-engine (A252). Fan a web order to every configured printer with
+ * REAL component-level routing, using the SAME shared engine the desktop uses
+ * (toUnits + stationsForCategory, A249), fed from the web's existing
+ * `branch_printers` config. No DB migration, no Printers-UI change.
+ *
+ * Each branch_printer is treated as a station:
+ *   receipt          -> receipt kind  (all items, prices)
+ *   kitchen | bar    -> kitchen kind  (routed: only units whose category routes here)
+ *   kot | expeditor  -> dispatch kind (all items, no prices — full-order copies)
+ *
+ * A combo's components each route on their OWN category, so a combo's drink lands
+ * on the bar/packer and its food on the grill — the thing line-level filtering
+ * could not do. Owner kitchen-exclusions are stripped from kitchen-kind stations.
+ */
+import type { MonoRaster } from './escposRenderer';
+import {
+  renderStationEscPos, stationHasContent, toUnits, stationsForCategory, idsByKind, kitchenExclusionTerms, stripKitchenIfExcluded,
+  type StationIds, type CategoryRouting,
+} from './escposRenderer';
+import { buildReceiptBusinessConfig } from './buildReceiptOrder';
+import { getQZStatus, printBytesToServer } from './localPrintServer';
+import type { BranchPrinter } from './printKOT';
+import type { CartItem } from './cart';
+import type { Business, Category, ComboComponent } from '../types';
+
+const toCents = (n: number) => Math.round((Number(n) || 0) * 100);
+
+type Kind = 'receipt' | 'kitchen' | 'dispatch';
+// Timing/ordering group: Master KOT (kot) fires with the kitchen, NOT as a second
+// dispatch (A254). Only the Dispatcher (expeditor) is the dispatch kind.
+const kindOf = (t: BranchPrinter['type']): Kind =>
+  t === 'receipt' ? 'receipt' : t === 'expeditor' ? 'dispatch' : 'kitchen';
+// Only kitchen/bar are category-ROUTED stations; kot prints the whole order.
+const isRouted = (t: BranchPrinter['type']): boolean => t === 'kitchen' || t === 'bar';
+
+const ORDER_TYPES: Record<string, string> = {
+  takeaway: 'takeaway', dine_in: 'dine_in', delivery: 'delivery',
+  counter: 'counter', retail: 'counter',
+};
+
+export interface PrintRoutedArgs {
+  cart: CartItem[];
+  branchPrinters: BranchPrinter[];
+  business: Business;
+  orderNumber: string;
+  orderType: string;
+  cashierName: string;
+  /** The BILL: after the discount, without any tip. */
+  total: number;
+  /** A349: the discount taken off the cart lines (the lines sum to total + discount). */
+  discount?: number;
+  /** A349: tip on top of the bill. */
+  tip?: number;
+  change?: number;
+  payments?: { method: string; amount: number }[];
+  tableNumber?: string;
+  comboItems?: Record<string, ComboComponent[]>;
+  categories?: Category[];
+  kitchenExclusions?: string[];
+  ctlRate?: number;
+  footerMessage?: string;
+  branchName?: string;
+  receiptHeader?: string;
+  receiptLogo?: MonoRaster | null;   // A313
+  receiptFooter?: string;
+  /** Restrict to these station kinds (e.g. Send-to-Kitchen = kitchen+dispatch). */
+  kinds?: Kind[];
+  /** A269: render the receipt as a proforma BILL (Print Bill), not a fiscal receipt. */
+  proforma?: boolean;
+  /** A367: the note on the whole order (heads the kitchen ticket; on the receipt). */
+  orderNote?: string | null;
+  /** 0.6.28: a kitchen void — `cart` is what was taken back; kitchen/dispatch print it under a VOID banner. */
+  voided?: { by?: string; reason?: string };
+}
+
+export interface PrintRoutedResult { printed: number; failed: number; configured: number }
+
+export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRoutedResult> {
+  const wanted = a.kinds ?? ['receipt', 'kitchen', 'dispatch'];
+  const ORDER: Record<Kind, number> = { kitchen: 0, receipt: 1, dispatch: 2 };  // A247 sequence
+  const printers = a.branchPrinters
+    .filter(p => p.enabled && !!p.printer_name && wanted.includes(kindOf(p.type)))
+    .sort((x, y) => ORDER[kindOf(x.type)] - ORDER[kindOf(y.type)]);
+  if (printers.length === 0) return { printed: 0, failed: 0, configured: 0 };
+
+  // Engine station ids: routed (kitchen/bar) vs all-items (kot/expeditor). Routing
+  // is computed against ALL printers so a unit's stationIds mean the same thing on
+  // every ticket, even if we only print a subset now.
+  const all = a.branchPrinters.filter(p => p.enabled && !!p.printer_name);
+  const ids: StationIds = {
+    kitchen:  all.filter(p => isRouted(p.type)).map(p => p.id),        // routed kitchen/bar only
+    dispatch: all.filter(p => p.type === 'expeditor').map(p => p.id),  // all-items dispatch
+  };
+  const byCategory: Record<string, string[]> = {};
+  for (const p of all) {
+    if (!isRouted(p.type)) continue;                     // only routed stations carry a category filter
+    for (const c of p.category_ids) (byCategory[c] ??= []).push(p.id);
+  }
+  const routing: CategoryRouting = {
+    byCategory,
+    kitchenCategories: new Set((a.categories ?? []).filter(c => c.is_kitchen).map(c => c.id)),
+  };
+
+  const lines = a.cart.map(item => {
+    const cat = item.product?.category_id ?? null;
+    const lineStationIds = stationsForCategory(cat, ids, routing);
+    const routable = {
+      product: {
+        id: item.product?.id ?? '',
+        name: item.product?.name ?? 'Item',
+        category_id: cat,
+        description: (item.product as any)?.description ?? null,
+      },
+      selectedVariants: item.selectedVariants,
+      selectedModifiers: item.selectedModifiers,
+      comboComponents: a.comboItems?.[item.product?.id ?? ''],
+    };
+    // A276: the built-in drinks rule + the owner's exclusions drop the kitchen from an excluded LINE and from each
+    // excluded unit, exactly as the desktop's printSale does (dispatch/receipt keep it).
+    const exc = kitchenExclusionTerms(a.kitchenExclusions ?? []);
+    const units = toUnits(routable, ids, lineStationIds, routing)
+      .map(u => ({ ...u, stationIds: stripKitchenIfExcluded(u.name, u.stationIds, ids, exc) }));
+    return {
+      name: item.product?.name ?? 'Item',
+      quantity: item.quantity,
+      unitPrice: toCents(item.unitPrice),
+      lineTotal: toCents(item.lineTotal),
+      stationIds: stripKitchenIfExcluded(item.product?.name ?? 'Item', lineStationIds, ids, exc),
+      units,
+      note: item.notes || undefined,   // A367
+    };
+  });
+
+  const order = {
+    billNumber: a.orderNumber,
+    orderType: (ORDER_TYPES[a.orderType] ?? 'counter') as any,
+    cashierName: a.cashierName || 'Cashier',
+    soldAt: new Date().toISOString(),
+    tableNumber: a.tableNumber,
+    lines,
+    payments: (a.payments ?? []).map(p => ({ label: p.method, amount: toCents(p.amount) })),
+    changeGiven: toCents(a.change ?? 0),
+    total: toCents(a.total),
+    discount: toCents(a.discount ?? 0),
+    tip: toCents(a.tip ?? 0),
+    kotCount: 0,
+    note: a.orderNote || undefined,   // A367
+  } as any;
+  const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0,
+    { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter, logoRaster: a.receiptLogo });
+
+  let printed = 0, failed = 0;
+  for (const p of printers) {
+    try {
+      const spec = { id: p.id, type: p.type, paperWidthMm: p.paper_width, proforma: a.proforma && p.type === 'receipt',
+                     voided: a.voided };
+      // A254: don't print a blank kitchen/bar ticket when none of its categories
+      // are in this order (all-items stations always have content).
+      if (isRouted(p.type) && !stationHasContent(order, biz as any, spec)) continue;
+      if (getQZStatus() === 'connected') {
+        const bytes = renderStationEscPos(order, biz as any, spec);
+        await printBytesToServer(`printer:${p.printer_name}`, bytes);
+        printed++;
+      } else { failed++; }
+    } catch (err: any) {
+      console.error(`[printRouted] ${p.type} → ${p.printer_name} failed:`, err?.message);
+      failed++;
+    }
+  }
+  return { printed, failed, configured: printers.length };
+}

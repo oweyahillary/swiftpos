@@ -409,7 +409,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
             type="checkbox"
             checked={settings.kitchenEnabled}
             onChange={e => save({ kitchenEnabled: e.target.checked })}
-            className="accent-green-500"
+            className="accent-action-500"
           />
           Print a kitchen ticket when “Send to kitchen” is pressed
         </label>

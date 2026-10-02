@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useTerm } from '../../lib/terminology';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
+import { printDocument } from '../../lib/printDocument';
 import { useBranch } from '../../context/BranchContext';
 import AdjustmentModal from './AdjustmentModal';
 import MovementsDrawer from './MovementsDrawer';
@@ -133,6 +134,29 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold text-white">{term('inventory')}</h1>
           <p className="text-gray-400 text-sm mt-0.5">{rows.length} products</p>
         </div>
+        <button
+          onClick={() => {
+            const items = rows.filter(r => r.products.track_stock);
+            printDocument({
+              docType: 'STOCK-TAKE COUNT SHEET',
+              number: new Date().toLocaleDateString('en-KE'),
+              dateLabel: new Date().toLocaleString('en-KE'),
+              accent: '#475569',
+              business: business ?? { name: 'SwiftPOS' },
+              meta: [{ label: 'Prepared', value: new Date().toLocaleString('en-KE') }],
+              columns: [
+                { label: 'Product' }, { label: 'System qty', align: 'right' },
+                { label: 'Counted', align: 'right' }, { label: 'Variance', align: 'right' },
+              ],
+              // System qty is shown so the counter can reconcile; Counted/Variance
+              // are left blank to be written in by hand during the physical count.
+              rows: items.map(r => [r.products.name, String(r.quantity), '', '']),
+              signatures: ['Counted by', 'Verified by'],
+            });
+          }}
+          className="text-sm font-medium px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+          Print count sheet
+        </button>
       </div>
 
       {/* Summary cards */}
@@ -161,7 +185,7 @@ export default function InventoryPage() {
           placeholder="Search products…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors w-64"
+          className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors w-64"
         />
         {filter !== 'all' && (
           <button
@@ -244,7 +268,7 @@ export default function InventoryPage() {
                               if (escRef.current) { escRef.current = false; setEditThreshId(null); setThreshErr(''); return; }
                               saveThreshold(row);
                             }}
-                            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-green-500"
+                            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-swift"
                           />
                           {threshErr && <span className="text-red-400 text-[10px] max-w-[8rem]">{threshErr}</span>}
                         </div>
@@ -269,7 +293,7 @@ export default function InventoryPage() {
                           <>
                             <button
                               onClick={() => setAdjusting(row)}
-                              className="text-xs text-green-400 hover:text-green-300 px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+                              className="text-xs text-swift-text hover:text-swift-text-hover px-2 py-1 rounded hover:bg-gray-700 transition-colors"
                             >
                               Adjust
                             </button>

@@ -181,6 +181,9 @@ and every manifest, and renumbering would silently break those references.
 
 
 
+> **Correction 2026-09-22 (lead dev):** the fleet is now on **Electron 43.4.0** (A108, register Tree row);
+> Node 20 and Windows are unchanged. The ABI point below stands — only the version number moved.
+
 The tills run **Windows, Node 20, Electron 35.7.5**. Three separate breakages in
 one session came from assuming otherwise:
 

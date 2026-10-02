@@ -96,7 +96,7 @@ export default function SuppliersPage() {
         </div>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-swift hover:bg-swift-light text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
         >
           + Add Supplier
         </button>
@@ -109,7 +109,7 @@ export default function SuppliersPage() {
           placeholder="Search suppliers…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm bg-gray-900 border border-gray-800 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-green-500"
+          className="w-full max-w-sm bg-gray-900 border border-gray-800 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-swift"
         />
       </div>
 
@@ -192,7 +192,7 @@ export default function SuppliersPage() {
               <div>
                 <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Name *</label>
                 <input
-                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. Naivas Distributors"
@@ -204,7 +204,7 @@ export default function SuppliersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Contact Name</label>
                   <input
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.contact_name ?? ''}
                     onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))}
                     placeholder="John Doe"
@@ -213,7 +213,7 @@ export default function SuppliersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Phone</label>
                   <input
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.phone ?? ''}
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                     placeholder="+254…"
@@ -225,7 +225,7 @@ export default function SuppliersPage() {
                 <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
                 <input
                   type="email"
-                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                   value={form.email ?? ''}
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="supplier@example.com"
@@ -235,7 +235,7 @@ export default function SuppliersPage() {
               <div>
                 <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Address</label>
                 <input
-                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                   value={form.address ?? ''}
                   onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                   placeholder="Nairobi, Kenya"
@@ -245,7 +245,7 @@ export default function SuppliersPage() {
               <div>
                 <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Notes</label>
                 <textarea
-                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500 resize-none"
+                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift resize-none"
                   value={form.notes ?? ''}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   rows={2}
@@ -257,7 +257,7 @@ export default function SuppliersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Status</label>
                   <select
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.status}
                     onChange={e => setForm(f => ({ ...f, status: e.target.value as 'active' | 'inactive' }))}
                   >
@@ -280,7 +280,7 @@ export default function SuppliersPage() {
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
+                className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
               >
                 {saving ? 'Saving…' : modal === 'add' ? 'Add Supplier' : 'Save Changes'}
               </button>

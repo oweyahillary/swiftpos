@@ -178,4 +178,5 @@ try { await db.exec(fs.readFileSync(MIGRATION, 'utf8')); } catch (e) { rerun = f
 ok('re-running migration 47 is safe', rerun);
 
 console.log(`\n${pass} passed, ${fail} failed`);
+await db.close().catch(() => {});  // A186: close PGlite before exit so libuv's Windows async-close path can't crash on teardown.
 process.exit(fail ? 1 : 0);

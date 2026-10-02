@@ -1,0 +1,208 @@
+import { useEffect, useRef, useState } from 'react';
+import { posApi } from '../lib/posApi';
+import { prepareRasterLogo, logoPixelsForReceipt, monoStringToCanvas, type LogoPixels } from '../lib/prepareRasterLogo';
+import { resolveBranding } from '../../shared/contrast';
+
+/**
+ * BrandingEditor — A302. The tech-gated FEED for A301's branding write path: an accent
+ * picker + a PNG/JPEG logo upload that call posApi.branding.set, so a real client accent/logo
+ * can be written and SEEN on the lock screen (PinPage's existing read seam) before any cloud
+ * branding UI exists. Lives inside the technician gate (rendered by TechPage) — branch/brand
+ * changes belong behind the tech gate (HANDOFF-2026-09-20 §6).
+ *
+ * businessId comes from the owner session (the branding row's PK). Accent legibility is
+ * previewed with the same resolveBranding guard the lock screen uses, judged against the same
+ * lock-card surface. The logo is shrunk client-side by prepareRasterLogo (raster only; SVG is
+ * rejected until the sanitiser slice). Every write re-validates in main (brandingGuard) and is
+ * audited via tech.logAction.
+ */
+
+// The lock-screen card the accent is measured against — must match PinPage's LOCK_SURFACE.
+const LOCK_SURFACE = '#0d1424';
+
+export default function BrandingEditor() {
+  const [businessId, setBusinessId] = useState<string | null>(null);
+  const [accentHex, setAccentHex] = useState('');       // '' = unset (SwiftPOS default)
+  const [logoPng, setLogoPng] = useState<string | null>(null);
+  // A312: pixels of a newly picked logo (sent once with the save); the stored mono raster
+  // (for the preview); and the client's opt-in toggle.
+  const [logoRgba, setLogoRgba] = useState<LogoPixels | null>(null);
+  const [logoReceipt, setLogoReceipt] = useState<string | null>(null);
+  const [receiptLogoEnabled, setReceiptLogoEnabled] = useState(false);
+  const monoRef = useRef<HTMLCanvasElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [warnings, setWarnings] = useState<string[]>([]);
+
+  const load = async () => {
+    const s = await posApi.auth.getSession().catch(() => null);
+    setBusinessId(s?.business?.id ?? null);
+    const b = await posApi.branding.get().catch(() => null);
+    setAccentHex(b?.accentHex ?? '');
+    setLogoPng(b?.logoPng ?? null);
+    setLogoReceipt(b?.logoReceipt ?? null);
+    setReceiptLogoEnabled(b?.receiptLogoEnabled ?? false);
+    setLogoRgba(null);
+  };
+  useEffect(() => { load(); }, []);
+
+  // Live legibility preview — the same decision the lock screen makes.
+  const brand = resolveBranding(accentHex.trim() || null, LOCK_SURFACE);
+  // A312: paint the stored mono raster (what the printer gets) whenever it changes.
+  useEffect(() => {
+    const c = monoRef.current;
+    if (!c) return;
+    if (!monoStringToCanvas(logoReceipt, c)) { c.width = 1; c.height = 1; }
+  }, [logoReceipt]);
+
+  const onPickLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';                       // let the same file re-trigger onChange later
+    if (!file) return;
+    setMsg(''); setWarnings([]);
+    try {
+      const { logoPng: png, warnings: w } = await prepareRasterLogo(file);
+      setLogoPng(png);
+      setWarnings(w);
+      // A312: read the pixels for the receipt raster from the SAME prepared image the
+      // lock screen will show, so preview and paper come from one source.
+      setLogoRgba(await logoPixelsForReceipt(png));
+    } catch (err: any) {
+      setMsg(String(err?.message ?? err));
+    }
+  };
+
+  const save = async () => {
+    if (!businessId) { setMsg('No business on this till yet — enrol it first.'); return; }
+    setBusy(true); setMsg('');
+    try {
+      const saved = await posApi.branding.set({
+        businessId, accentHex: accentHex.trim() || null, logoPng,
+        logoRgba: logoRgba ?? undefined,      // undefined = keep the stored raster
+        receiptLogoEnabled,
+      });
+      setLogoReceipt(saved.logoReceipt);
+      setLogoRgba(null);
+      await posApi.tech.logAction('tech.branding.set',
+        { hasAccent: !!accentHex.trim(), hasLogo: !!logoPng, hasReceiptLogo: !!saved.logoReceipt, receiptLogoEnabled });
+      // 0.6.25: the upload is saved to the cloud too, so a later sync no longer puts the old logo back — say how that went.
+      const cloud = saved.cloud;
+      setMsg(cloud?.state === 'refused'
+        ? `Saved on this till, but the cloud refused it: ${cloud.message ?? 'unknown reason'}. The next sync will bring the cloud's logo back — upload it on the web dashboard instead.`
+        : cloud?.state === 'pending'
+          ? `Saved on this till. ${cloud.message ?? 'It will be saved to the cloud at the next sync.'} Until then, syncing keeps this logo.`
+          : 'Saved on this till and to the cloud — every till and receipt picks it up at its next sync.');
+      await load();
+    } catch (err: any) {
+      setMsg(String(err?.message ?? err));      // e.g. main-side guard rejected the logo
+    } finally { setBusy(false); }
+  };
+
+  const clear = async () => {
+    if (!businessId) return;
+    setBusy(true); setMsg('');
+    try {
+      const cleared = await posApi.branding.set({ businessId, accentHex: null, logoPng: null, logoRgba: null, receiptLogoEnabled: false });
+      await posApi.tech.logAction('tech.branding.clear');
+      setAccentHex(''); setLogoPng(null); setWarnings([]);
+      setMsg(cleared.cloud?.state === 'saved'
+        ? 'Cleared on this till and the cloud — back to the SwiftPOS default.'
+        : `Cleared on this till. ${cleared.cloud?.message ?? 'The cloud will be updated at the next sync.'}`);
+    } catch (err: any) {
+      setMsg(String(err?.message ?? err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4">
+      <h2 className="text-sm font-semibold text-gray-300 mb-3">Client branding</h2>
+
+      {!businessId && (
+        <p className="text-xs text-amber-400 mb-3">This till has no business yet — enrol it before setting branding.</p>
+      )}
+
+      {/* Accent */}
+      <label className="block text-xs text-gray-300 mb-1">Accent colour</label>
+      <div className="flex items-center gap-3 mb-1">
+        <input
+          type="color"
+          value={/^#[0-9a-fA-F]{6}$/.test(accentHex.trim()) ? accentHex.trim() : '#0d9488'}
+          onChange={(e) => setAccentHex(e.target.value)}
+          className="h-9 w-12 rounded bg-transparent border border-[#1e293b] p-0"
+          aria-label="Accent colour"
+        />
+        <input
+          type="text"
+          value={accentHex}
+          onChange={(e) => setAccentHex(e.target.value)}
+          placeholder="#0d9488"
+          className="flex-1 bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm font-mono text-gray-200"
+        />
+      </div>
+      <p className="text-xs mb-4" style={{ color: brand.usedFallback ? '#f59e0b' : '#9ca3af' }}>
+        {accentHex.trim() === ''
+          ? 'Empty = SwiftPOS default (teal).'
+          : brand.usedFallback
+            ? 'Not legible on the lock screen — this will fall back to the default.'
+            : 'Legible on the lock screen.'}
+      </p>
+
+      {/* Logo */}
+      <label className="block text-xs text-gray-300 mb-1">Logo (PNG or JPEG)</label>
+      <div className="flex items-center gap-3 mb-1">
+        <div className="h-16 w-16 rounded-lg bg-white flex items-center justify-center overflow-hidden shrink-0">
+          {logoPng
+            ? <img src={logoPng} alt="logo preview" className="max-h-full max-w-full object-contain" />
+            : <span className="text-[10px] text-gray-400">no logo</span>}
+        </div>
+        <input
+          type="file"
+          accept="image/png,image/jpeg"
+          onChange={onPickLogo}
+          className="flex-1 text-xs text-gray-300 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1e293b] file:px-3 file:py-2 file:text-gray-200 hover:file:bg-[#26344b]"
+        />
+      </div>
+      <p className="text-xs text-gray-400 mb-1">Shrunk to fit automatically; max 250 KB stored. SVG isn't supported yet.</p>
+      {warnings.map((w, i) => (
+        <p key={i} className="text-xs text-amber-400">{w}</p>
+      ))}
+
+      {/* A312: receipt logo — opt-in toggle + the exact mono raster the printer will get */}
+      <label className="flex items-center gap-2 mt-4 text-xs text-gray-300">
+        <input
+          type="checkbox"
+          checked={receiptLogoEnabled}
+          onChange={(e) => setReceiptLogoEnabled(e.target.checked)}
+          disabled={!logoPng}
+        />
+        Print logo on customer receipts
+      </label>
+      <div className="mt-2 rounded-lg bg-white p-2 inline-block">
+        {logoReceipt
+          ? <canvas ref={monoRef} className="block max-w-[192px]" style={{ imageRendering: 'pixelated' }} />
+          : <span className="text-[10px] text-gray-500">{logoRgba ? 'Receipt raster will be generated on save.' : 'No receipt raster yet — pick a logo and save.'}</span>}
+      </div>
+      <p className="text-xs text-gray-400 mt-1">Thermal printers are black-and-white: this is what the paper will show. Gradients wash out; if it looks wrong, upload a cleaner mark.</p>
+
+      {/* Actions */}
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={save}
+          disabled={busy || !businessId}
+          className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm"
+        >
+          Save branding
+        </button>
+        <button
+          onClick={clear}
+          disabled={busy || !businessId}
+          className="bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg px-4 py-2 text-sm"
+        >
+          Reset to default
+        </button>
+      </div>
+
+      {msg && <p className="text-xs text-gray-300 mt-3">{msg}</p>}
+    </section>
+  );
+}

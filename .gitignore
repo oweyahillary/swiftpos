@@ -32,3 +32,8 @@ shared/printing/dist/
 
 # local delivery artifacts
 *.patch
+
+# A283: keep the committed NSIS installer script (branch-node firewall rule).
+# Force-added past the build/ ignore above; un-ignore so a clean checkout keeps it.
+!apps/desktop/build/
+!apps/desktop/build/installer.nsh

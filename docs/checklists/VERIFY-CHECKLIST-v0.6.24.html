@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.24 — Rollout Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.24 — rollout verification</h1>
+  <p class="sub">0.6.24: only the cashier who opened a shift, or a manager, can close it (A366); the update bar no longer covers the till (C5); notes on an item and on the order (A367). Nothing carried — every earlier check has passed.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.24"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-29"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> §R first. You need two cashier PINs and a manager PIN. A <b>Fail</b> needs a note.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+  ["§R — Rollout", "", "The cloud and dashboard deploy, then 0.6.24 on the till through the approval. No migration.", [
+    ["R1", "Cloud and dashboard deployed from dev", ["Deploy the cloud, then the dashboard; hard-refresh."], "The web POS signs in.", false],
+    ["R2", "The tag comes out as ONE pre-release", ["Tag v0.6.24 → Actions → Release desktop green → Releases."], "One v0.6.24 pre-release with latest.yml and the installer; v0.6.16 stays Latest.", true],
+    ["R3", "Approve B Foods for 0.6.24", ["Admin portal → B Foods → 0.6.24 → Approve; restart T1, close and reopen when the update is ready."], "T1 reads 0.6.24.", false],
+  ]],
+  ["§C — Only the shift’s owner or a manager closes it", "A366", "On T1 with cashier A, cashier B and a manager.", [
+    ["C1", "Another cashier cannot close it", ["Cashier A opens a shift and rings a sale.", "Lock / switch: sign in as cashier B → Shift."], "No count form: “This shift belongs to A. Only A or a manager can close it — ask them to sign in.” B can still sell, pay in/out and record expenses.", true],
+    ["C2", "The owner closes it", ["Sign in as A → Shift → Close shift."], "The count form is there; the close works as usual (then the manager confirms).", false],
+    ["C3", "A manager can close someone else’s shift", ["Open a shift as A; sign in as the MANAGER → Shift."], "The count form is there; the manager can close it (closed by the manager).", false],
+    ["C4", "The web POS", ["Web POS: sign in as cashier B on a shift A opened (or joined T1’s) → Close Shift."], "“This shift belongs to A. Only A or a manager can close it.” As A or a manager, the form appears.", true],
+    ["C5", "The update bar never covers the screen", ["With “Update ready” showing: Close → Close Day, scroll to the bottom.", "POS: ring a sale; look at Pay, and at the sync notice if one shows."], "The page ends above the bar: Close the day, Pay and the rest are visible and clickable. The sync notice sits above the bar. A dialog covers the bar, not the other way round.", true],
+    ["C6", "The locked till shows the logo and reads clearly", ["With a logo set, let the till lock over a busy screen."], "The client’s logo on a white card above “Till locked”; nothing shows through; both lines under it are easy to read. No logo → the padlock.", true],
+  ]],
+  ["§N — Notes in the order", "A367", "On T1 (0.6.24) and the web POS. A kitchen printer helps; without one, look at the KDS and the receipt.", [
+    ["N1", "A note on a line", ["Ring 5 × Chicken Piece → + Note → “3 normal”, new line “2 spicy” → Save note."], "Under the line: » 3 normal / » 2 spicy. The price and total do not change.", true],
+    ["N2", "Quick picks", ["Pizza → + Note → tap Extra cheese, tap it again, then Extra cheese and No onions → Save."], "The second tap takes it off; the note reads » Extra cheese / » No onions.", false],
+    ["N3", "A plain tap does not join a noted line", ["With the noted Chicken Piece line, tap Chicken Piece on the grid once."], "A new plain line (qty 1); the noted line stays 5 with its note.", false],
+    ["N4", "A note on the whole order", ["+ Note for the order → “Deliver to gate B” → Save. Send to kitchen, then charge."], "Kitchen: NOTE: Deliver to gate B under the header, ** 3 normal / ** 2 spicy under the chicken. Receipt: Note: … and the ** lines. No notes → prints as before.", true],
+    ["N5", "Hold and recall", ["Notes on a line and the order → Hold → recall."], "Both notes come back. A changed note after Send to kitchen sends that line again.", false],
+    ["N6", "The cloud and the KDS", ["After N4 syncs: KDS; Supabase: select order_number, notes from orders order by created_at desc limit 1;"], "The KDS shows the order note and each line's note; the query shows “Deliver to gate B”.", true],
+    ["N7", "The owner’s quick picks", ["Dashboard → Settings → Business → Restaurant setup → 🍽 Service → Quick notes for orders: edit, click outside.", "T1: Sync → open a note."], "The till offers the new list. An emptied box → no quick picks (typing still works).", false],
+    ["N8", "The web POS", ["Restaurant cashier screen: note on a line and the order → Send to kitchen / charge."], "Same editor and picks; kitchen print and receipt carry the notes; the KDS shows them.", false],
+  ]],
+];
+
+
+const KEY = "swiftpos-verify-0624";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS v0.6.24 — rollout verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

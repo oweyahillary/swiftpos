@@ -21,9 +21,15 @@ export interface CartItem {
   selectedModifiers: SelectedModifier[];
   unitPrice: number;
   lineTotal: number;
-  // Restaurant mode: has this line already been printed on a KOT? Any edit to
-  // the line (qty change) clears it so the delta goes out on the next ticket.
+  // Restaurant mode: is ALL of this line on a kitchen ticket? 0.6.28: derived from sentQty (kept for held tabs saved
+  // before it, where it meant "all sent").
   kotSent?: boolean;
+  // 0.6.28: how many of this line are already on a kitchen ticket. A send prints only quantity − sentQty; taking a
+  // sent item back is a kitchen void (shared/kitchenLines.ts). Until 0.6.28 any change cleared kotSent and the whole
+  // line went out again — a line of 2 that became 3 was cooked as 2 + 3.
+  sentQty?: number;
+  // 0.6.28: a stable id for the line — the kitchen ledger (kitchen_lines) and kitchen voids key on it.
+  lineId?: string;
   // Petrol mode: a fuel line (quantity is litres). Drives litre-aware display
   // and suppresses the +/- stepper (fuel is re-entered, not incremented).
   isFuel?: boolean;
@@ -31,6 +37,9 @@ export interface CartItem {
   // line wins — one fill-up per order in practice), it is what per-pump fuel
   // reports and tank deduction key on.
   pumpId?: string;
+  // A367: the cashier's note on this line ("3 normal, 2 spicy", "No salt"). Free — never changes the price. Travels
+  // to the kitchen ticket, the receipt, the till's order_items.notes and the cloud's.
+  notes?: string | null;
 }
 
 // The price this till charges for a product: the per-branch override if one was

@@ -18,6 +18,7 @@
 
 import type Database from 'better-sqlite3';
 import { ipcMain, type BrowserWindow } from 'electron';
+import { installValidatedHandle } from '../ipcGuard';
 
 import {
   renderTicket, toEscPos, toPreview, Spool,
@@ -26,7 +27,8 @@ import {
 } from '@swiftpos/printing';
 import { SqliteJobStore } from './spoolStore.sqlite';
 import { escposEnabled, setEscposEnabled } from '../escposBridge';
-import { renderShiftReport, hasPrintableContent } from '@swiftpos/printing';
+import { renderShiftReport, hasPrintableContent, monoRasterFromString } from '@swiftpos/printing';
+import { getBranding } from '../localDb';
 import { sampleOrder, sampleBusiness, SAMPLE_KITCHEN, SAMPLE_DISPATCH,
   kitchenPreset, dispatchPreset, receiptPreset } from '@swiftpos/printing';
 
@@ -47,6 +49,18 @@ export interface Assignment {
 
 let spool: Spool | null = null;
 let db: Database.Database | null = null;
+
+// A322: the test print and the preview show THIS till's business name (the local session row, the same
+// source the rest of the till uses), so a technician sees the client's own name on the client's printer —
+// never a reference business's. Everything else stays the neutral sample; "Your Business" if no name yet.
+function sampleBusinessForThisTill(): typeof sampleBusiness {
+  let name: string | null = null;
+  try {
+    name = (db?.prepare(`SELECT business_name FROM session WHERE id = 1`).get() as { business_name?: string } | undefined)
+      ?.business_name ?? null;
+  } catch { /* not enrolled yet / no session row: fall back */ }
+  return { ...sampleBusiness, name: name?.trim() || sampleBusiness.name };
+}
 
 export function initPrinting(database: Database.Database, win: () => BrowserWindow | null): void {
   db = database;
@@ -130,9 +144,12 @@ function assignmentFor(stationId: string): Assignment | null {
 export function queueTickets(
   contexts: Omit<PrintContext, 'station'>[],
   stations: StationConfig[],
-): { queued: string[]; skipped: string[] } {
+): { queued: string[]; skipped: string[]; failed: string[] } {
   const queued: string[] = [];
   const skipped: string[] = [];
+  // A349: a ticket that cannot be RENDERED (bad data) is named here and the loop goes on — it never takes the other
+  // stations' tickets down with it, and the cashier is told (order:create → the sale screen), not just the log.
+  const failed: string[] = [];
 
   for (const station of stations) {
     const assignment = assignmentFor(station.id);
@@ -153,12 +170,19 @@ export function queueTickets(
         continue;
       }
 
-      const doc = renderTicket({ ...base, station: resolved });
-      const bytes = toEscPos(doc, {
-        cut: resolved.cutPaper,
-        openDrawer: resolved.openCashDrawer,
-        feedBeforeCut: resolved.feedBeforeCut,
-      });
+      let bytes: ReturnType<typeof toEscPos>;
+      try {
+        const doc = renderTicket({ ...base, station: resolved });
+        bytes = toEscPos(doc, {
+          cut: resolved.cutPaper,
+          openDrawer: resolved.openCashDrawer,
+          feedBeforeCut: resolved.feedBeforeCut,
+        });
+      } catch (err) {
+        console.error(`[escpos] ${station.name} ticket for ${base.order.billNumber} could not be rendered:`, err);
+        failed.push(station.name);
+        continue;
+      }
       queued.push(spool!.enqueue({
         stationId: station.id,
         stationName: station.name,
@@ -169,13 +193,17 @@ export function queueTickets(
       }));
     }
   }
-  return { queued, skipped };
+  return { queued, skipped, failed };
 }
 
 function registerIpc(): void {
-  ipcMain.handle('escpos:assignments', () => assignments());
+  // D7: validate every escpos:* payload against ipcSchemas.ts before the handler
+  // runs (see ipcGuard). setEnabled/canPrint/preview carried scalars and small
+  // bags that silently coerced on the wrong shape; now they reject cleanly.
+  const handle = installValidatedHandle(ipcMain);
+  handle('escpos:assignments', () => assignments());
 
-  ipcMain.handle('escpos:assign', (_e, a: Assignment) => {
+  handle('escpos:assign', (_e, a: Assignment) => {
     db!.prepare(`
       INSERT INTO station_printers (station_id, target, paper_width_mm, updated_at)
       VALUES (?, ?, ?, ?)
@@ -187,12 +215,12 @@ function registerIpc(): void {
     return { ok: true };
   });
 
-  ipcMain.handle('escpos:unassign', (_e, stationId: string) => {
+  handle('escpos:unassign', (_e, stationId: string) => {
     db!.prepare(`DELETE FROM station_printers WHERE station_id=?`).run(stationId);
     return { ok: true };
   });
 
-  ipcMain.handle('escpos:status', () => spool!.status());
+  handle('escpos:status', () => spool!.status());
 
   /**
    * The per-terminal thermal switch.
@@ -201,12 +229,12 @@ function registerIpc(): void {
    * because the only place anyone will look for it is beside the printers it
    * governs. Off by default — see main/escposBridge.ts.
    */
-  ipcMain.handle('escpos:enabled', () => escposEnabled());
-  ipcMain.handle('escpos:setEnabled', (_e, on: boolean) => {
+  handle('escpos:enabled', () => escposEnabled());
+  handle('escpos:setEnabled', (_e, on: boolean) => {
     setEscposEnabled(!!on);
     return { ok: true, enabled: escposEnabled() };
   });
-  ipcMain.handle('escpos:retry', (_e, id: string) => { spool!.retry(id); return { ok: true }; });
+  handle('escpos:retry', (_e, id: string) => { spool!.retry(id); return { ok: true }; });
 
   /**
    * Preview comes from the SAME Document the printer receives, so what the
@@ -226,7 +254,7 @@ function registerIpc(): void {
    * Renders the SAME sample order the verified output was produced from, so a
    * preview that looks right is evidence about the paper.
    */
-  ipcMain.handle('escpos:preview', (_e, req: { stationId: string; paperWidthMm: 58 | 80 }) => {
+  handle('escpos:preview', (_e, req: { stationId: string; paperWidthMm: 58 | 80 }) => {
     try {
       const st = stationConfigFor(req.stationId, req.paperWidthMm);
       if (!st) return 'No such station.';
@@ -251,7 +279,7 @@ function registerIpc(): void {
       };
 
       return toPreview(
-        renderTicket({ order: sampleOrder, business: sampleBusiness, station: previewStation }),
+        renderTicket({ order: sampleOrder, business: sampleBusinessForThisTill(), station: previewStation }),
         { showMargins: true });
     } catch (err) {
       console.error('[escpos] preview failed:', err);
@@ -282,7 +310,7 @@ function registerIpc(): void {
    * Goes to the RECEIPT station: it is a till document, printed on the same roll
    * as the customer receipt, and a kitchen has no use for it.
    */
-  ipcMain.handle('escpos:printShiftReport', async (_e, data: any) => {
+  handle('escpos:printShiftReport', async (_e, data: any) => {
     try {
       const assignment = assignments().find(a => {
         const st = stationConfigFor(a.stationId, a.paperWidthMm);
@@ -290,9 +318,13 @@ function registerIpc(): void {
       });
       if (!assignment) return { ok: false, error: 'No receipt printer is set up on this terminal.' };
 
+      // 0.6.25: the receipt logo heads the Z-report too (same raster, same switch as the receipt).
+      const brand = getBranding();
+      const logoRaster = brand?.receiptLogoEnabled && brand.logoReceipt ? monoRasterFromString(brand.logoReceipt) ?? undefined : undefined;
       const doc = renderShiftReport(
         {
           ...data,
+          logoRaster,
           openedAt:  new Date(data.openedAt),
           closedAt:  data.closedAt ? new Date(data.closedAt) : null,
           printedAt: new Date(),
@@ -308,7 +340,7 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle('escpos:canPrint', (_e, kind: 'kitchen' | 'dispatch' | 'receipt') => {
+  handle('escpos:canPrint', (_e, kind: 'kitchen' | 'dispatch' | 'receipt') => {
     try {
       if (!escposEnabled()) return false;
       const bound = new Set(assignments().map(a => a.stationId));
@@ -329,7 +361,7 @@ function registerIpc(): void {
    * is the whole point of pressing it: the installer is standing at the printer
    * and needs to know now, not in a queue.
    */
-  ipcMain.handle('escpos:test', async (
+  handle('escpos:test', async (
     _e,
     req: { stationId: string; paperWidthMm: 58 | 80 },
     target: string,
@@ -356,7 +388,7 @@ function registerIpc(): void {
           : st.id,
       };
 
-      const doc = renderTicket({ order: sampleOrder, business: sampleBusiness, station });
+      const doc = renderTicket({ order: sampleOrder, business: sampleBusinessForThisTill(), station });
       const bytes = toEscPos(doc, { cut: station.cutPaper, feedBeforeCut: station.feedBeforeCut });
       await sendToPrinter(parseTarget(target), bytes);
       return { ok: true, ms: Date.now() - started, bytes: bytes.length };

@@ -9,12 +9,19 @@
  *   petrol_station → Overview (pump monitor + fuel sales) · Orders · Shift · Z-report · Stock
  *   restaurant/cafe → Overview (tables + revenue) · Orders · Shift · Z-report · Top items · Stock
  *   retail/other   → Overview (revenue KPIs) · Orders · Shift · Z-report · Stock
+ *
+ * Stock is a web POS (pro) feature (owner, 2026-09-27: "stock should only appear if the web pos is enabled"): the Stock
+ * item shows only when the business has the web POS — web access active or in grace, as the cloud reports it on every
+ * catalogue pull — AND something tracks stock.
  */
 
 import { useState, useEffect, useRef } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
+import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
+import { mayAddExpenseType } from '../lib/expenseTypes';
+import { buildManagerNav, groupOf, openGroup, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
@@ -44,12 +51,15 @@ const FALLBACK_STATIONS = [
 import BranchCloseTab from './BranchCloseTab';
 import DayCloseTab from './DayCloseTab';
 import MenuWorkbench from './MenuWorkbench';
+import MethodDot from '../components/MethodDot';
+import { methodColour } from '../../shared/paymentColours';
 import ReportRangeBar from '../components/ReportRangeBar';
-import type { ReportRangeArg } from '../lib/posApi';
+import type { ReportRangeArg, ShiftSummary, ExpenseRow } from '../lib/posApi';
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printShiftReport } from '../lib/printShiftReport';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
+import { lastSyncedLabel } from '../lib/syncNotice';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
 function Icon({ d, size = 18, cls = '' }: { d: string; size?: number; cls?: string }) {
@@ -65,6 +75,7 @@ const I = {
   overview:  'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
   orders:    'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
   shift:     'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  expenses:  'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
   zreport:   'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   stock:     'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
   items:     'M4 6h16M4 12h16M4 18h7',
@@ -105,6 +116,32 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
   );
 }
 
+/**
+ * A349: the money behind the headline revenue — VAT and, where levied, CTL (both reduced by any refund, as the cloud
+ * reports them), refunds, tips and discounts. Owner: "does it [CTL] appear on … reports? add it in overview".
+ */
+// A357 (2026-09-28): `hideVat` where the layout already has a "VAT collected" box above — the owner saw VAT twice on
+// the Overview. The strip then carries only what the boxes do not (CTL, refunds, discounts, tips), and is not drawn at
+// all when none of those apply.
+function MoneyStrip({ s, currency, hideVat = false }: { s: any; currency: string; hideVat?: boolean }) {
+  if (!s) return null;
+  const extras = s.ctlLevied || (s.totalRefunded ?? 0) > 0 || (s.totalDiscount ?? 0) > 0 || (s.totalTips ?? 0) > 0;
+  if (hideVat && !extras) return null;
+  const item = (label: string, value: number) => (
+    <span className="whitespace-nowrap"><span className="text-gray-400">{label}</span>{' '}
+      <span className="text-white font-medium tabular-nums">{fmt(value, currency)}</span></span>
+  );
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm bg-gray-800/60 border border-gray-700 rounded-xl px-4 py-2.5">
+      {!hideVat && item('VAT', s.totalVat ?? 0)}
+      {s.ctlLevied && item('CTL', s.totalCtl ?? 0)}
+      {(s.totalRefunded ?? 0) > 0 && item('Refunds', -(s.totalRefunded ?? 0))}
+      {(s.totalDiscount ?? 0) > 0 && item('Discounts', s.totalDiscount ?? 0)}
+      {(s.totalTips ?? 0) > 0 && item('Tips (not revenue)', s.totalTips ?? 0)}
+    </div>
+  );
+}
+
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
@@ -131,16 +168,22 @@ function RestaurantOverview({ currency }: { currency: string }) {
   useEffect(() => {
     let live = true;
     async function load() {
-      try {
-        const [s, t, tb] = await Promise.all([
-          posApi.manager.salesSummary(),
-          posApi.manager.topProducts(),
-          posApi.manager.tableOccupancy(),
-        ]);
-        if (!live) return;
-        setSales(s); setTopItems(t); setTables(tb);
-      } catch { /* best effort */ }
-      finally { if (live) setLoading(false); }
+      // A290: settle each independently — a failure in one (e.g. tableOccupancy
+      // on an old schema) must NOT blank the KPIs and top sellers. The old shared
+      // try/catch zeroed the whole Overview when any single call threw.
+      const [s, t, tb] = await Promise.allSettled([
+        posApi.manager.salesSummary(),
+        posApi.manager.topProducts(),
+        posApi.manager.tableOccupancy(),
+      ]);
+      if (!live) return;
+      if (s.status === 'fulfilled') setSales(s.value);
+      else console.warn('[Overview] salesSummary failed:', s.reason);
+      if (t.status === 'fulfilled') setTopItems(t.value);
+      else console.warn('[Overview] topProducts failed:', t.reason);
+      if (tb.status === 'fulfilled') setTables(tb.value);
+      else console.warn('[Overview] tableOccupancy failed:', tb.reason);
+      setLoading(false);
     }
     load();
     return () => { live = false; };
@@ -160,6 +203,7 @@ function RestaurantOverview({ currency }: { currency: string }) {
         <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
+      <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Payment split */}
@@ -171,16 +215,17 @@ function RestaurantOverview({ currency }: { currency: string }) {
                 {Object.entries(sales.paymentMethods as Record<string, number>)
                   .sort(([, a], [, b]) => b - a)
                   .map(([method, amount]) => {
-                    const total = s?.totalRevenue ?? 1;
+                    // A349: share of what was PAID (tips included, refunds out) — against revenue a tip pushed it past 100 %.
+                    const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
                     const pct   = total > 0 ? Math.round((amount / total) * 100) : 0;
                     return (
                       <div key={method}>
                         <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
+                          <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
                           <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                         </div>
                         <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
                         </div>
                       </div>
                     );
@@ -346,6 +391,8 @@ function PetrolOverview({ currency }: { currency: string }) {
         </Card>
       )}
 
+      <MoneyStrip s={sales?.summary} currency={currency} />
+
       {/* Payment split */}
       {sales?.paymentMethods && Object.keys(sales.paymentMethods).length > 0 && (
         <Card title="Payment methods — today">
@@ -353,16 +400,17 @@ function PetrolOverview({ currency }: { currency: string }) {
             {Object.entries(sales.paymentMethods as Record<string, number>)
               .sort(([, a], [, b]) => b - a)
               .map(([method, amount]) => {
-                const total = sales.summary?.totalRevenue ?? 1;
+                // A349: share of what was PAID (tips included, refunds out).
+                const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
                 const pct   = total > 0 ? Math.round((amount / total) * 100) : 0;
                 return (
                   <div key={method}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
+                      <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
                       <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                     </div>
                     <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} />
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
                     </div>
                   </div>
                 );
@@ -408,6 +456,7 @@ function RetailOverview({ currency }: { currency: string }) {
         <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
+      <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Payment methods — today">
@@ -416,16 +465,17 @@ function RetailOverview({ currency }: { currency: string }) {
             : (
               <div className="space-y-2">
                 {Object.entries(sales.paymentMethods as Record<string, number>).sort(([, a], [, b]) => b - a).map(([method, amount]) => {
-                  const total = s?.totalRevenue ?? 1;
+                  // A349: share of what was PAID (tips included, refunds out).
+                  const total = Object.values(sales.paymentMethods as Record<string, number>).reduce((a, b) => a + Number(b), 0);
                   const pct = total > 0 ? Math.round((amount / total) * 100) : 0;
                   return (
                     <div key={method}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-300 capitalize">{method.replace(/_/g, ' ')}</span>
+                        <span className="text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</span>
                         <span className="text-white font-medium tabular-nums">{fmt(amount, currency)} <span className="text-gray-300 text-xs">{pct}%</span></span>
                       </div>
                       <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: methodColour(method).dot }} />
                       </div>
                     </div>
                   );
@@ -523,66 +573,43 @@ function SegmentedSelector<T extends string>({ options, value, onChange }: {
   );
 }
 
-// #7 (A105): Orders and Item Mix under one nav item. Item Mix is restaurant-only,
-// so a non-restaurant business sees just Orders with no selector.
-function OrdersAndMixTab({ currency, isRestaurant }: { currency: string; isRestaurant: boolean }) {
-  const [view, setView] = useState<'orders' | 'mix'>('orders');
-  return (
-    <div className="space-y-4">
-      {isRestaurant && (
-        <SegmentedSelector
-          options={[{ key: 'orders', label: 'Orders' }, { key: 'mix', label: 'Item Mix' }]}
-          value={view}
-          onChange={v => setView(v)}
-        />
-      )}
-      {view === 'orders' || !isRestaurant
-        ? <OrdersTab currency={currency} />
-        : <TopItemsTab currency={currency} />}
-    </div>
-  );
-}
-
-// #6 (A105): the shift and its report under one "Shift" nav item. The manager
-// sees the open shift, then switches to "Shift report" to view (and print) the
-// Z-report — instead of two separate tabs that never referenced each other.
-function ShiftAndReportTab({ currency, businessName }: { currency: string; businessName: string }) {
-  const [view, setView] = useState<'shift' | 'report'>('shift');
-  return (
-    <div className="space-y-4">
-      <SegmentedSelector
-        options={[{ key: 'shift', label: 'Current shift' }, { key: 'report', label: 'Shift report' }]}
-        value={view}
-        onChange={v => setView(v)}
-      />
-      {view === 'shift'
-        ? <ShiftTab currency={currency} />
-        : <ZReportTab businessName={businessName} currency={currency} />}
-    </div>
-  );
-}
-
+// A351: Orders, Item Mix, Current shift and Shift report are the tabs of the Sales page (lib/managerNav.ts); before
+// that A105 had put them in pairs under Orders and Shift.
 function OrdersTab({ currency }: { currency: string }) {
   const [orders,  setOrders]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
+  // Cross-sync stage 1 (2026-09-27): this till's own list (local, works offline) or every till at the
+  // branch (read from the cloud — owner: "Branch view, read from cloud"). Offline → this till, said so.
+  const [scope, setScope] = useState<'till' | 'branch'>('till');
+  const [scopeNote, setScopeNote] = useState('');
 
   // 500 rather than 30: a date range is asked for in order to see the range, and
   // silently showing the newest 30 of a month would be a lie the totals confirm.
   // The CSV export is uncapped — the screen is capped only to stay responsive.
+  const fetchOrders = async (r: ReportRangeArg, sc: 'till' | 'branch'): Promise<{ list: any[]; note: string }> => {
+    if (sc === 'branch') {
+      try { return { list: await posApi.manager.branchOrders({ ...r, limit: 500 }), note: '' }; }
+      catch { /* offline or the cloud did not answer — fall through to this till's own list */ }
+      return { list: await posApi.manager.recentOrders({ ...r, limit: 500 }),
+               note: 'The cloud could not be reached — showing this till only.' };
+    }
+    return { list: await posApi.manager.recentOrders({ ...r, limit: 500 }), note: '' };
+  };
   const load = (r: ReportRangeArg) => {
     setLoading(true);
-    posApi.manager.recentOrders({ ...r, limit: 500 })
-      .then(setOrders).catch(() => {}).finally(() => setLoading(false));
+    fetchOrders(r, scope)
+      .then(({ list, note }) => { setOrders(list); setScopeNote(note); }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => {
     let live = true;
-    posApi.manager.recentOrders({ ...range, limit: 500 })
-      .then(o => { if (live) setOrders(o); }).catch(() => {})
+    setLoading(true);
+    fetchOrders(range, scope)
+      .then(({ list, note }) => { if (live) { setOrders(list); setScopeNote(note); } }).catch(() => {})
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [range.preset, range.from, range.to]);
+  }, [range.preset, range.from, range.to, scope]);
 
   const rangeTotal = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
 
@@ -602,7 +629,15 @@ function OrdersTab({ currency }: { currency: string }) {
         </button>
       </div>
 
-      <ReportRangeBar value={range} onChange={setRange} exportKind="orders" showDailyReport />
+      <SegmentedSelector
+        options={[{ key: 'till', label: 'This till' }, { key: 'branch', label: 'All tills at this branch' }]}
+        value={scope}
+        onChange={v => setScope(v)}
+      />
+
+      <ReportRangeBar value={range} onChange={setRange} exportKind="orders" showDailyReport
+        scopeOverride={scope === 'branch' && !scopeNote ? 'All tills at this branch — read from the cloud' : null} />
+      {scopeNote && <p data-testid="branch-offline" className="text-[11px] text-amber-400/80">⚠ {scopeNote}</p>}
 
       {loading && <Spinner />}
 
@@ -623,10 +658,19 @@ function OrdersTab({ currency }: { currency: string }) {
                   const method = o.payments?.[0]?.method ?? '—';
                   return (
                     <tr key={o.id} className="hover:bg-gray-700/30 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-gray-300">{o.order_number}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-300">
+                        {o.order_number}
+                        {o.origin === 'web' && (
+                          <span className="ml-1.5 font-sans text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400"
+                            title="Rung on the web POS on this till's drawer">web</span>
+                        )}
+                        {scope === 'branch' && !scopeNote && o.this_till && (
+                          <span className="ml-1.5 font-sans text-[10px] text-gray-400">this till</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{timeAgo(o.created_at)}</td>
                       <td className="px-4 py-3 text-gray-300 capitalize">{(o.order_type ?? 'retail').replace(/_/g, ' ')}</td>
-                      <td className="px-4 py-3 text-gray-300 capitalize">{method.replace(/_/g, ' ')}</td>
+                      <td className="px-4 py-3 text-gray-300 capitalize"><MethodDot method={method} />{method.replace(/_/g, ' ')}</td>
                       <td className="px-4 py-3 font-semibold text-white tabular-nums">{fmt(Number(o.total), currency)}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -656,7 +700,7 @@ function ShiftTab({ currency }: { currency: string }) {
 
   useEffect(() => {
     let live = true;
-    posApi.shift.current().then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    posApi.shift.current({ includeForeign: true }).then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, []);
 
@@ -688,6 +732,12 @@ function ShiftTab({ currency }: { currency: string }) {
         <KpiCard label="Opening float" value={fmt(shift.opening_float, currency)} />
         <KpiCard label="Expected cash" value={fmt(totals.expectedCash, currency)} />
       </div>
+      {(totals as any).foreign?.orders > 0 && (
+        <p data-testid="foreign-note" className="text-gray-300 text-xs">
+          Includes {(totals as any).foreign.orders} web POS sale{(totals as any).foreign.orders !== 1 ? 's' : ''} on this drawer
+          not yet downloaded to this till — they appear in Orders within about 20 seconds when online.
+        </p>
+      )}
 
       {/* Payment split */}
       <Card title="Sales by payment method">
@@ -697,7 +747,7 @@ function ShiftTab({ currency }: { currency: string }) {
             <div className="divide-y divide-gray-700">
               {byMethod.map(m => (
                 <div key={m.method} className="flex items-center justify-between py-2.5">
-                  <span className="text-gray-300 capitalize text-sm">{m.method.replace(/_/g, ' ')}</span>
+                  <span className="text-gray-300 capitalize text-sm"><MethodDot method={m.method} />{m.method.replace(/_/g, ' ')}</span>
                   <div className="text-right">
                     <p className="text-white font-semibold tabular-nums text-sm">{fmt(m.amount, currency)}</p>
                     <p className="text-gray-300 text-xs">{m.orders} order{m.orders !== 1 ? 's' : ''}</p>
@@ -720,15 +770,26 @@ function ShiftTab({ currency }: { currency: string }) {
 
 // ── Z-Report Tab ──────────────────────────────────────────────────────────────
 function ZReportTab({ businessName, currency }: { businessName: string; currency: string }) {
-  const [report,  setReport]  = useState<ZReport | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 0.6.11 (owner: "I should be able to print previous shift reports"): the open shift's live report
+  // AND every past shift this till ran — pick one, see it, print it.
+  const [shifts,   setShifts]   = useState<ShiftSummary[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);   // null = the open shift (live)
+  const [report,   setReport]   = useState<ZReport | null>(null);
+  const [loading,  setLoading]  = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let live = true;
-    posApi.shift.current().then(r => { if (live) setReport(r); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+    posApi.shift.history().then(setShifts).catch(() => setShifts([]));
   }, []);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    const load = selected ? posApi.shift.zreport(selected) : posApi.shift.current({ includeForeign: true });
+    load.then(r => { if (live) setReport(r); }).catch(() => { if (live) setReport(null); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [selected]);
 
   const [printMsg, setPrintMsg] = useState('');
 
@@ -741,30 +802,119 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
     if (!r.ok) setPrintMsg(r.error ?? 'Could not print the shift report.');
   };
 
-  if (loading) return <Spinner />;
-  if (!report)  return (
-    <div className="text-center py-16">
-      <p className="text-gray-400 font-medium">No open shift</p>
-      <p className="text-gray-400 text-sm mt-1">Open a shift from the POS first.</p>
-    </div>
-  );
+  const past = shifts.filter(x => x.status !== 'open');
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-bold text-white">Shift Report</h2>
-          <p className="text-gray-300 text-sm">Live preview — not a closed Z-report</p>
+          <p className="text-gray-300 text-sm">
+            {selected ? 'Z-report of a closed shift' : 'Live preview — not a closed Z-report'}
+          </p>
         </div>
-        <button onClick={handlePrint}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors">
-          Print report
-        </button>
+        <div className="flex items-center gap-2">
+          <select data-testid="shift-picker" value={selected ?? ''} onChange={e => setSelected(e.target.value || null)}
+            className="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
+            <option value="">Current shift (live)</option>
+            {past.map(x => (
+              <option key={x.id} value={x.id}>
+                {when(x.opened_at)} → {when(x.closed_at)} · {x.cashier_name ?? 'Cashier'}
+                {x.status === 'closed_unreconciled' ? ' · force-closed' : ''}
+              </option>
+            ))}
+          </select>
+          <button onClick={handlePrint} disabled={!report}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors">
+            Print report
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl p-4 max-w-sm">
-        <ZReportView ref={printRef} report={report} />
-      {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
+      {past.length === 0 && <p className="text-gray-400 text-xs">No closed shifts on this till yet.</p>}
+
+      {loading ? <Spinner /> : !report ? (
+        <div className="text-center py-16">
+          <p className="text-gray-400 font-medium">{selected ? 'That shift could not be loaded' : 'No open shift'}</p>
+          <p className="text-gray-400 text-sm mt-1">
+            {selected ? 'Choose another shift above.' : 'Open a shift from the POS, or choose a previous shift above.'}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl p-4 max-w-sm">
+          <ZReportView ref={printRef} report={report} />
+          {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Expenses Tab (0.6.11) ─────────────────────────────────────────────────────
+// Owner (2026-09-27): "I should be able to see expenses". Cash this till's drawers paid out, by date range —
+// the same rows the shift report deducts. Recorded from the POS (Shift → Expenses); this screen only reads.
+function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: boolean }) {
+  const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
+  const [data, setData] = useState<{ rows: ExpenseRow[]; total: number; label: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    posApi.expense.range(range).then(d => { if (live) setData(d); }).catch(() => { if (live) setData(null); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [range.preset, range.from, range.to]);
+
+  const rows = data?.rows ?? [];
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-lg font-bold text-white">Expenses</h2>
+        <p className="text-gray-300 text-sm" data-testid="expenses-summary">
+          {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(data?.total ?? 0, currency)} paid out`}
+        </p>
       </div>
+      {/* A358: the expense types, and "+ Add type" here as well as in Shift → Expenses (owner, on v0.6.18). */}
+      <ExpenseTypesPanel canAdd={canAddType} />
+      <ReportRangeBar value={range} onChange={setRange} />
+      {loading ? <Spinner /> : rows.length === 0 ? (
+        <div className="text-center py-12 text-gray-300">No expenses in this date range. Record one from the POS: Shift → Expenses.</div>
+      ) : (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-700">
+                {['When', 'Description', 'Paid by', 'Amount'].map(h => (
+                  <th key={h} className={`px-4 py-3 text-xs font-medium text-gray-300 ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-700/50">
+              {rows.map(e => (
+                <tr key={e.id} className="hover:bg-gray-700/30 transition-colors">
+                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                    {new Date(e.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td className="px-4 py-3 text-gray-200">
+                    {e.description}
+                    {e.sync_status !== 'synced' && <span className="ml-1.5 text-[10px] text-amber-400">not synced</span>}
+                  </td>
+                  <td className="px-4 py-3 text-gray-300">{e.paid_by_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-white tabular-nums">{fmt(e.amount, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-gray-700">
+                <td colSpan={3} className="px-4 py-3 text-gray-300 font-medium">Total</td>
+                <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmt(data?.total ?? 0, currency)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -853,26 +1003,38 @@ function StockTab({ currency }: { currency: string }) {
 function TopItemsTab({ currency }: { currency: string }) {
   const [items,   setItems]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // A296: Item Mix was hard-wired to today. Give it the same range control as the
+  // Orders tab. getTopProducts already accepts a resolved range and the
+  // manager:topProducts IPC already resolves the preset (managerReports.ts /
+  // ipcHandlers.ts:1795), so this is a renderer wire-up only — no query, handler
+  // or schema change. limit lifted 8 -> 50 so a month's mix is not clipped to
+  // eight rows, while staying a bounded "top sellers" (never the 500 an order
+  // list needs).
+  const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
 
   useEffect(() => {
     let live = true;
-    posApi.manager.topProducts().then(t => { if (live) setItems(t); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    setLoading(true);
+    posApi.manager.topProducts({ ...range, limit: 50 })
+      .then(t => { if (live) setItems(t); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, []);
-
-  if (loading) return <Spinner />;
+  }, [range.preset, range.from, range.to]);
 
   const totalRev = items.reduce((s, i) => s + Number(i.revenue), 0);
 
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-bold text-white">Item Mix — today</h2>
+        <h2 className="text-lg font-bold text-white">Item Mix</h2>
         <p className="text-gray-300 text-sm">Top sellers from local order data · {fmt(totalRev, currency)} total</p>
       </div>
 
-      {items.length === 0
-        ? <div className="text-center py-12 text-gray-300">No sales yet today.</div>
+      <ReportRangeBar value={range} onChange={setRange} exportKind="products" />
+
+      {loading && <Spinner />}
+
+      {!loading && (items.length === 0
+        ? <div className="text-center py-12 text-gray-300">No sales in this date range.</div>
         : (
           <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
@@ -906,7 +1068,7 @@ function TopItemsTab({ currency }: { currency: string }) {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
     </div>
   );
 }
@@ -1019,7 +1181,7 @@ function PricesTab({ currency }: { currency: string }) {
                             value={draft !== undefined ? draft : (hasOverride ? String(r.branch_price) : '')}
                             placeholder={String(r.base_price)}
                             onChange={e => setDrafts(d => ({ ...d, [r.product_id]: e.target.value }))}
-                            className={`w-28 bg-gray-900 border rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-blue-500 ${hasOverride ? 'border-green-600/50 text-green-300' : 'border-gray-700 text-white'}`}
+                            className={`w-28 bg-gray-900 border rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-blue-500 ${hasOverride ? 'border-action-600/50 text-action-300' : 'border-gray-700 text-white'}`}
                           />
                         </div>
                       </td>
@@ -1056,6 +1218,27 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
   const businessName = business.name;
   const flags        = modeFlags(business.type);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // 0.6.25 (owner: "Where its b foods can we add the logo there"): the client's logo beside the business name, read like the
+  // PIN and lock screens read it (branding:get, refreshed when a pull lands). None → the report icon, as before.
+  const [brandLogo, setBrandLogo] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      posApi.branding.get().then((b) => { if (!cancelled) setBrandLogo(b?.logoPng ?? null); }).catch(() => { /* keep what is shown */ });
+    };
+    load();
+    const unsubscribe = posApi.pos.onCatalogueChanged(load);
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+
+  // A363: a neutral "Last synced" — information, not an alarm (the red notice on the POS is for refusals only).
+  const [lastSynced, setLastSynced] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    const read = () => posApi.sync.status().then(st => setLastSynced(st.lastSyncedAt ?? null)).catch(() => {});
+    read();
+    const t = setInterval(read, 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   /**
    * The business's own print stations, pulled down with the catalogue.
@@ -1135,66 +1318,52 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     MANAGER_ROLES.includes(String((staff as any)?.role ?? '').toLowerCase())
     || has('settings.manage');
 
-  // Stock tab only appears once something actually tracks stock.
+  // Stock only for a business with the web POS (A346), and only once something actually tracks stock.
   const [showStock, setShowStock] = useState(false);
   useEffect(() => {
-    posApi.manager.stockLevels()
-      .then((rows: any[]) => setShowStock(Array.isArray(rows) && rows.length > 0))
-      .catch(() => setShowStock(false));
+    let live = true;
+    (async () => {
+      const cfg = await posApi.config.get().catch(() => null);
+      if (cfg?.web_pos_enabled !== true) { if (live) setShowStock(false); return; }
+      const rows = await posApi.manager.stockLevels().catch(() => []);
+      if (live) setShowStock(Array.isArray(rows) && rows.length > 0);
+    })();
+    return () => { live = false; };
   }, []);
 
-  // Build nav from vertical
-  type TabKey = 'overview' | 'orders' | 'shift' | 'dayclose' | 'branchclose' | 'zreport' | 'stock' | 'items' | 'prices' | 'menu' | 'combos' | 'import' | 'staff' | 'receipt' | 'printers' | 'settings';
-
-  const navItems: { key: TabKey; label: string; icon: string }[] = [
-    { key: 'overview', label: 'Overview',     icon: I.overview },
-    { key: 'orders',   label: 'Orders',       icon: I.orders   },
-    { key: 'shift',    label: 'Shift',        icon: I.shift    },
-    // #6 (A105): the Shift Report is now a view INSIDE the Shift tab, not its own
-    // nav item.
-    // Manager-only: this is the escape route for the trading-day gate. Without
-    // it a till stays frozen the first morning nobody closed the day.
-    ...(isManagerRole ? [{ key: 'dayclose' as TabKey, label: 'Close Day', icon: I.shift }] : []),
-    // Phase 4. Registered for every manager; the tab itself explains when this
-    // till is not the branch server, which beats an option that silently is not there.
-    ...(isManagerRole ? [{ key: 'branchclose' as TabKey, label: 'Close Branch', icon: I.shift }] : []),
-    // #7 (A105): Item Mix is now a view INSIDE the Orders tab (restaurant only),
-    // selected with a segmented control, not its own nav item.
-    // Editing, not just viewing. Without these the owner has to phone us to add
-    // a product or fix a price, which for fast food is a daily event.
-    // ONE Menu tab. Prices, Combos and Import were three views of the same menu,
-    // organised around database tables rather than around a menu item — and a
-    // combo was never a different kind of thing, only a different query. To change
-    // a combo's price and its contents you had to visit three tabs, and none of
-    // them mentioned the other two. Import stays reachable from inside the Menu
-    // screen rather than as a sibling nobody connects to the menu they are editing.
-    ...(canManageProducts ? [{ key: 'menu' as TabKey, label: 'Menu', icon: I.menu }] : []),
-    ...(canManageStaff    ? [{ key: 'staff' as TabKey,   label: 'Staff',   icon: I.staffIcon }] : []),
-    ...((canManageSettings || canManageProducts) ? [{ key: 'settings' as TabKey, label: 'Settings', icon: I.receipt }] : []),
-    // Gated like the other configuration tabs. It was briefly left open on the
-    // reasoning that printer bindings are per-device, so whoever stands at the
-    // till is who needs them. That was wrong: re-pointing a printer mid-service
-    // sends receipts to the wrong station and nobody notices until the queue
-    // backs up. Cashiers keep the read-only view on the POS screen, where they
-    // can see connection status and fire a test print.
-    //
-    // A59 / permission-model · Gated on stations.manage. NOT settings.manage,
-    // which migration 59 makes owner/admin-only — keying Printers there would
-    // hide it from every manager. Migration 79 grants stations.manage to the
-    // manager roles, so this is additive: everyone who reached Printers via the
-    // role gate still does. Ships in the same batch as 79; without that grant,
-    // managers would lose the tab.
-    // Now holds Receipt too (A90), so it shows for anyone who can manage EITHER
-    // stations OR the receipt text; PrintersScreen then shows only the sub-tabs
-    // each permission allows. A manager with only receipt.manage keeps Receipt.
-    ...((has('stations.manage') || canManageReceipt)
-      ? [{ key: 'printers' as TabKey, label: 'Printing', icon: I.printer }] : []),
-    // Hidden when nothing is stock-tracked — an owner who turned stock off
-    // shouldn't be shown an empty Stock screen and conclude it's broken.
-    ...(showStock ? [{ key: 'stock' as TabKey, label: 'Stock', icon: I.stock }] : []),
-  ];
+  // A351 (2026-09-28): the sidebar in groups — Sales, Close and Settings open as one page with tabs across the top.
+  // The rules (which tabs each role sees, where a tap lands) live in lib/managerNav.ts; every gate below is the one each
+  // page had as its own sidebar item. Why each gate is what it is:
+  //  - Close Day / Close Branch — isManagerRole: closing the trading day is a CASH operation and the escape route for
+  //    the day gate, so it never hides behind settings.manage alone.
+  //  - Printing — stations.manage OR the receipt text (A59/A90). NOT settings.manage, which migration 59 makes
+  //    owner/admin-only; re-pointing a printer mid-service sends receipts to the wrong station, so cashiers keep only
+  //    the read-only view on the POS screen. PrintersScreen shows the sub-tabs each permission allows.
+  //  - Stock — only with the web POS and something stock-tracked (A346).
+  //  - Menu — ONE Menu page (prices, combos and import are reached from inside it).
+  const nav = buildManagerNav({
+    isRestaurant: flags.isRestaurant,
+    isManagerRole,
+    canManageProducts,
+    canManageStaff,
+    canManageSettings,
+    canPrinting: has('stations.manage') || canManageReceipt,
+    showStock,
+  });
+  const GROUP_ICON: Record<GroupKey, string> = {
+    overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
+    menu: I.menu, settings: I.receipt, stock: I.stock,
+  };
 
   const [active, setActive] = useState<TabKey>('overview');
+  // The tab last used in each group, so Settings reopens on Printing if that is where the manager was.
+  const [lastTab, setLastTab] = useState<Partial<Record<GroupKey, TabKey>>>({});
+  const activeGroup = groupOf(nav, active);
+  const openTab = (tab: TabKey) => {
+    setActive(tab);
+    const g = groupOf(nav, tab);
+    if (g && g.tabs.some(t => t.key === tab)) setLastTab(prev => ({ ...prev, [g.key]: tab }));
+  };
 
   function renderContent() {
     switch (active) {
@@ -1202,16 +1371,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         if (flags.isPetrol)     return <PetrolOverview     currency={currency} />;
         if (flags.isRestaurant) return <RestaurantOverview currency={currency} />;
         return <RetailOverview currency={currency} />;
-      case 'orders':  return <OrdersAndMixTab currency={currency} isRestaurant={flags.isRestaurant} />;
-      case 'shift':   return <ShiftAndReportTab currency={currency} businessName={businessName} />;
+      case 'orders':  return <OrdersTab currency={currency} />;
+      case 'shift':   return <ShiftTab currency={currency} />;
+      case 'expenses': return <ExpensesTab currency={currency} canAddType={mayAddExpenseType(staff as any)} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
       case 'branchclose': return <BranchCloseTab currency={currency} />;
-      // Reachable only as a fallback now — the nav folds these into Orders/Shift
-      // (A105). Kept so any direct setActive still resolves.
+      // Tabs of Sales (A351): Shift report, Item Mix (restaurant).
       case 'zreport': return <ZReportTab businessName={businessName} currency={currency} />;
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
-      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => setActive('import')} />;
+      case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} />;
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
@@ -1224,21 +1393,30 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         canManageStations={has('stations.manage')}
         canManageReceipt={canManageReceipt}
       />;
-      case 'stock':   return <StockTab   currency={currency} />;
+      case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
     }
   }
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex app-screen bg-gray-950 text-white overflow-hidden">
 
       {/* Sidebar */}
-      <aside className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-52' : 'w-16'}`}>
+      {/* A326: tinted by the business's brand colour (or theme) when themes are ON; the fallback IS gray-900, so OFF is unchanged. */}
+      <aside style={{ backgroundColor: 'var(--sidebar-tint, #111827)' }} className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-200 flex-shrink-0 ${sidebarOpen ? 'w-52' : 'w-16'}`}>
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-800 flex-shrink-0">
-          <span className="flex-shrink-0 text-blue-400">
-            <Icon d={I.zreport} size={20} />
-          </span>
+        <div className={`flex items-center gap-3 border-b border-gray-800 flex-shrink-0 ${brandLogo ? 'px-3 h-20' : 'px-4 h-16'}`}>
+          {brandLogo ? (
+            // The logo on a small white tile (logos are made for a light background), visible even when collapsed.
+            <span data-testid="sidebar-logo" className="flex-shrink-0 bg-white rounded-lg flex items-center justify-center"
+                  style={{ width: sidebarOpen ? 52 : 40, height: sidebarOpen ? 52 : 40, padding: 3 }}>
+              <img src={brandLogo} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
+            </span>
+          ) : (
+            <span className="flex-shrink-0 text-blue-400">
+              <Icon d={I.zreport} size={20} />
+            </span>
+          )}
           {sidebarOpen && (
             <div className="min-w-0">
               <p className="text-sm font-bold text-white truncate">{businessName}</p>
@@ -1249,16 +1427,16 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {navItems.map(item => (
-            <button key={item.key} onClick={() => setActive(item.key)}
-              title={!sidebarOpen ? item.label : undefined}
+          {nav.map(group => (
+            <button key={group.key} onClick={() => openTab(openGroup(group, lastTab))}
+              title={!sidebarOpen ? group.label : undefined}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                active === item.key
+                activeGroup?.key === group.key
                   ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}>
-              <Icon d={item.icon} size={18} cls="flex-shrink-0" />
-              {sidebarOpen && <span className="truncate">{item.label}</span>}
+              <Icon d={GROUP_ICON[group.key]} size={18} cls="flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">{group.label}</span>}
             </button>
           ))}
         </nav>
@@ -1310,17 +1488,26 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
               <Icon d={I.menu} size={20} />
             </button>
             <h1 className="text-base font-semibold text-white">
-              {navItems.find(n => n.key === active)?.label ?? 'Overview'}
+              {activeGroup?.label ?? 'Overview'}
             </h1>
           </div>
           <div className="text-right">
             <p className="text-sm font-medium text-white">{staff.staff?.name ?? 'Manager'}</p>
             <p className="text-xs text-gray-300 capitalize">{staff.role} · {staff.branchName}</p>
+            {lastSynced !== undefined && (
+              <p data-testid="last-synced" className="text-[11px] text-gray-400">Last synced: {lastSyncedLabel(lastSynced)}</p>
+            )}
           </div>
         </header>
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6">
+          {/* A351: a group's tabs; none when the role sees only one of them. */}
+          {activeGroup && activeGroup.tabs.length > 1 && (
+            <div className="mb-5">
+              <SegmentedSelector options={activeGroup.tabs} value={active} onChange={openTab} />
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>

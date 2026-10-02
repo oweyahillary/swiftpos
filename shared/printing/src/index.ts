@@ -19,6 +19,7 @@ export { toEscPos } from './escpos';
 export { toPreview } from './preview';
 export { splitTax, netOf, formatCents } from './money';
 export { columnsFor } from './layout';
+export * from './raster';
 
 import type { StationConfig } from './types';
 
@@ -80,3 +81,4 @@ export { KITCHEN as SAMPLE_KITCHEN, DISPATCH as SAMPLE_DISPATCH } from './sample
 export { renderShiftReport } from './shiftReport';
 export type { ShiftReportData, ShiftReportMethodLine } from './shiftReport';
 export { hasPrintableContent } from './render';
+export * from './routing';

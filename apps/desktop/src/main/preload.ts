@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
   })(),
   platform: process.platform,
 
+  // A299: forward a renderer-side error string to main so it lands in
+  // swiftpos.log. Fire-and-forget; never let logging break the bridge.
+  logError: (msg: string) => { try { ipcRenderer.send('log:renderer', msg); } catch { /* ignore */ } },
+
   auth: {
     redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
     logout:     ()                                 => ipcRenderer.invoke('auth:logout'),
@@ -27,9 +31,19 @@ contextBridge.exposeInMainWorld('swiftpos', {
     init:         ()                  => ipcRenderer.invoke('pos:init'),
     getVariants:  (productId: string) => ipcRenderer.invoke('pos:getVariants', productId),
     getModifiers: (productId: string) => ipcRenderer.invoke('pos:getModifiers', productId),
+    notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
+    features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
+    history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
+    // A278: main pushes 'catalogue:changed' after a background pull applied a web edit, so the
+    // running POS reloads products/prices without a restart. Returns its own unsubscribe.
+    onCatalogueChanged: (cb: () => void) => {
+      const h = () => cb();
+      ipcRenderer.on('catalogue:changed', h);
+      return () => { ipcRenderer.removeListener('catalogue:changed', h); };
+    },
   },
 
   order: {
@@ -111,6 +125,27 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // Held orders (restaurant tabs). Backed by SQLite in the main process since
   // 2026-08-08 — previously renderer localStorage, where a truncated write
   // silently reported zero open tables.
+  branding: {
+    get: () => ipcRenderer.invoke('branding:get'),
+    // A301: desktop-local write path. undefined field = leave as-is, null = clear, value = set.
+    set: (b: { businessId: string; accentHex?: string | null; logoPng?: string | null }) =>
+      ipcRenderer.invoke('branding:set', b),
+  },
+
+  // A306: auto-update UX. getStatus for the initial read; onStatus is the push the banner
+  // subscribes to; installNow applies a downloaded update (manager/tech-gated at the call site).
+  update: {
+    getStatus:  () => ipcRenderer.invoke('update:getStatus'),
+    installNow: () => ipcRenderer.invoke('update:installNow'),
+    // Push, not poll: main tells the screen when the update state changes.
+    // Returns its own unsubscribe so a React effect can clean up.
+    onStatus:   (cb: (s: { state: string; version: string | null; percent: number | null }) => void) => {
+      const h = (_e: unknown, s: any) => cb(s);
+      ipcRenderer.on('update:status', h);
+      return () => { ipcRenderer.removeListener('update:status', h); };
+    },
+  },
+
   held: {
     list:   ()                => ipcRenderer.invoke('held:list'),
     hold:   (order: unknown)  => ipcRenderer.invoke('held:hold', order),
@@ -120,14 +155,31 @@ contextBridge.exposeInMainWorld('swiftpos', {
     importLegacy: (orders: unknown[]) => ipcRenderer.invoke('held:import', { orders }),
   },
 
+  // 0.6.28: what went to the kitchen, and kitchen voids (a manager approves where the client requires it).
+  kitchen: {
+    sent:  (p: unknown) => ipcRenderer.invoke('kitchen:sent', p),
+    void:  (p: unknown) => ipcRenderer.invoke('kitchen:void', p),
+    open:  ()           => ipcRenderer.invoke('kitchen:open'),
+  },
+
   shift: {
-    current: ()                                                          => ipcRenderer.invoke('shift:current'),
+    current: (opts?: { includeForeign?: boolean })                       => ipcRenderer.invoke('shift:current', opts),
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
     stale: () => ipcRenderer.invoke('shift:stale'),
     forceClose: (reason: string) => ipcRenderer.invoke('shift:forceClose', { reason }),
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason }),
-    close:   (closing_float: number, notes?: string)                     => ipcRenderer.invoke('shift:close', { closing_float, notes }),
+    close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
+    // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).
+    awaiting: ()                                                         => ipcRenderer.invoke('shift:awaiting'),
+    confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) =>
+      ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts, reasons }),
+    confirmView: (shiftId: string) => ipcRenderer.invoke('shift:confirmView', shiftId),   // 0.6.27
+    // 0.6.23: a manager already signed in confirms without a PIN.
+    canConfirm: ()                                                       => ipcRenderer.invoke('shift:canConfirm'),
+    // A366: may the signed-in person close the open shift (its owner or a manager)?
+    closeRights: ()                                                      => ipcRenderer.invoke('shift:closeRights'),
     zreport: (shiftId: string)                                           => ipcRenderer.invoke('shift:zreport', shiftId),
+    history: ()                                                          => ipcRenderer.invoke('shift:history'),
   },
 
   // Catalogue and staff management. Online-only by design — see ipcHandlers.
@@ -171,6 +223,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),
     listRoles:      ()                                   => ipcRenderer.invoke('manage:listRoles'),
+    cachedMenu:     ()                                   => ipcRenderer.invoke('manage:cachedMenu'),
+    cachedStaff:    ()                                   => ipcRenderer.invoke('manage:cachedStaff'),
     createStaff:    (payload: any)                       => ipcRenderer.invoke('manage:createStaff', payload),
     updateStaff:    (id: string, patch: any)             => ipcRenderer.invoke('manage:updateStaff', { id, patch }),
     getReceiptText: ()                                   => ipcRenderer.invoke('manage:getReceiptText'),
@@ -184,6 +238,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     salesSummary:   (range?: any) => ipcRenderer.invoke('manager:salesSummary', range),
     topProducts:    (range?: any) => ipcRenderer.invoke('manager:topProducts', range),
     recentOrders:   (range?: any) => ipcRenderer.invoke('manager:recentOrders', range),
+    branchOrders:   (range?: any) => ipcRenderer.invoke('manager:branchOrders', range),
     reportScope:    ()            => ipcRenderer.invoke('manager:reportScope'),
     resolveRange:   (range: any)  => ipcRenderer.invoke('manager:resolveRange', range),
     exportCsv:      (req: any)    => ipcRenderer.invoke('manager:exportCsv', req),
@@ -270,8 +325,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
 
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
+    addCategory: (name: string) => ipcRenderer.invoke('expense:addCategory', { name }),   // A341
     create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) =>
               ipcRenderer.invoke('expense:create', payload),
     list: () => ipcRenderer.invoke('expense:list'),
+    range: (range?: any) => ipcRenderer.invoke('expense:range', range),
   },
 });

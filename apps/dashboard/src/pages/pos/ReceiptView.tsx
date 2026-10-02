@@ -16,11 +16,16 @@ interface Props {
   total: number;
   subtotal: number;
   vatAmount: number;
+  /** A349: the catering levy inside the bill, and its rate (0 = not levied → no line). */
+  ctlAmount?: number;
+  ctlRate?: number;
   currency: string;
   payments: PaymentLine[];
   tendered: number;
   change: number;
   tip?: number;
+  /** 0.6.27: the delivery fee on top of the bill. */
+  deliveryFee?: number;
   loyaltyDiscount?: number;
   promoDiscount?: number;
   promoName?: string;
@@ -47,8 +52,8 @@ function fmtMethod(method: string) {
 
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
   {
-    business, branchName, orderNumber, cart, total, subtotal, vatAmount, currency,
-    payments, tendered, change, tip = 0,
+    business, branchName, orderNumber, cart, total, subtotal, vatAmount, ctlAmount = 0, ctlRate = 0, currency,
+    payments, tendered, change, tip = 0, deliveryFee = 0,
     loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName,
     footerMessage = 'Thank you for your business!',
     etims = null,
@@ -126,13 +131,16 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
 
       {/* Totals */}
       {line('Subtotal', `${currency} ${fmtMoney(subtotal)}`)}
-      {line(vatLabel, `${currency} ${fmtMoney(vatAmount)}`)}
       {promoDiscount > 0 && line(`${promoName ?? 'Promo discount'}`, `- ${currency} ${fmtMoney(promoDiscount)}`, false, '#92400e')}
       {loyaltyDiscount > 0 && line('Loyalty discount', `- ${currency} ${fmtMoney(loyaltyDiscount)}`, false, '#065f46')}
+      {/* A349: the taxes INSIDE the total (after any discount) — the figures the cloud stores for this sale. */}
+      {line(`incl. ${vatLabel}`, `${currency} ${fmtMoney(vatAmount)}`)}
+      {ctlRate > 0 && line(`incl. CTL (${ctlRate}%)`, `${currency} ${fmtMoney(ctlAmount)}`)}
       <div style={{ borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px' }}>
         {line('TOTAL', `${currency} ${fmtMoney(total)}`, true)}
         {tip > 0 && line('Tip', `${currency} ${fmtMoney(tip)}`)}
-        {tip > 0 && line('TOTAL PAID', `${currency} ${fmtMoney(total + tip)}`, true)}
+        {deliveryFee > 0 && line('Delivery fee', `${currency} ${fmtMoney(deliveryFee)}`)}
+        {(tip > 0 || deliveryFee > 0) && line('TOTAL PAID', `${currency} ${fmtMoney(total + tip + deliveryFee)}`, true)}
       </div>
 
       {divider()}

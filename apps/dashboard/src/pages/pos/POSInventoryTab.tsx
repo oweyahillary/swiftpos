@@ -158,7 +158,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '5px 12px', background: '#1e293b', border: '1px solid #334155',
     borderRadius: 20, color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer',
   },
-  chipActive: { background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6', color: '#93c5fd' },
+  chipActive: { background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', border: '1px solid rgb(var(--act-fill, 59 130 246))', color: '#93c5fd' },
   search: {
     width: '100%', padding: '8px 12px', background: '#0f172a', border: '1px solid #334155',
     borderRadius: 7, color: '#f1f5f9', fontSize: 13, marginBottom: 12,
@@ -168,7 +168,7 @@ const s: Record<string, React.CSSProperties> = {
   center:  { display: 'flex', justifyContent: 'center', padding: 24 },
   spinner: {
     display: 'inline-block', width: 22, height: 22,
-    border: '2px solid #334155', borderTop: '2px solid #3b82f6', borderRadius: '50%',
+    border: '2px solid #334155', borderTop: '2px solid rgb(var(--act-fill, 59 130 246))', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   empty:   { color: '#475569', fontSize: 13, textAlign: 'center', padding: '24px 0' },

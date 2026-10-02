@@ -65,6 +65,7 @@ import { requireAdmin, requireSuperAdmin, signAdminToken } from '../middleware/a
 import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
+import { isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
 
 const router = safeRouter();
 
@@ -879,6 +880,60 @@ router.patch('/clients/:id/web-access', requireAdmin, async (req, res) => {
     businessId: id, businessName: biz?.name ?? undefined,
     before: { web_access_expires_at: biz?.web_access_expires_at ?? null },
     after:  { web_access_expires_at: expires_at ?? null },
+  });
+
+  res.json(data);
+});
+
+// ─── DESKTOP UPDATES (A348: per-business approval; null = hold) ───────────────
+// Owner, 2026-09-28: "hold by default, per business". Tills on 0.6.16+ update only to the version their business is
+// approved for (routes/desktopUpdate.ts). The list shows every release the cloud can serve — pre-releases (every build
+// from 0.6.16), published ones, and drafts when the token can see them — merged across split copies (A350), and whether each has latest.yml and the
+// installer.
+router.get('/desktop-releases', requireAdmin, async (req, res) => {
+  try {
+    // A356: GitHub refusing falls back to the last good list, with a warning. `?meta=1` (the 0.6.18 portal) gets
+    // { releases, warning }; without it the answer stays a bare array, so an older portal keeps working.
+    const { releases, warning } = await listDesktopReleasesOrStale({ fresh: req.query.fresh === '1' });
+    const list = releases.map((r) => ({ version: r.version, draft: r.draft, prerelease: r.prerelease, complete: r.complete, missing: r.missing, copies: r.copies, published_at: r.publishedAt }));
+    res.json(req.query.meta === '1' ? { releases: list, warning } : list);
+  } catch (e: any) {
+    res.status(502).json({ error: `Could not read the releases from GitHub: ${e?.message ?? e}` });
+  }
+});
+
+router.patch('/clients/:id/desktop-version', requireAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  const raw = (req.body as { version?: unknown })?.version;
+  const version = raw === null || raw === undefined || raw === '' ? null : raw;
+  if (version !== null && !isVersion(version)) {
+    res.status(400).json({ error: 'version must be x.y.z (e.g. 0.6.16) or null to hold' });
+    return;
+  }
+  // Approving a version the tills cannot download would leave them failing every check — refuse it here instead.
+  if (version !== null) {
+    let rel;
+    try { rel = (await listDesktopReleasesOrStale({ fresh: true })).releases.find((r) => r.version === version); }
+    catch (e: any) { res.status(502).json({ error: `Could not read the releases from GitHub: ${e?.message ?? e}` }); return; }
+    if (!rel) { res.status(400).json({ error: `There is no release ${version}.` }); return; }
+    if (!rel.complete) { res.status(400).json({ error: `Release ${version} is missing ${rel.missing.join(', ')} — rebuild it first.` }); return; }
+  }
+
+  const { data: biz } = await supabase.from('businesses').select('name, desktop_approved_version').eq('id', id).single();
+  const { data, error } = await supabase
+    .from('businesses')
+    .update({ desktop_approved_version: version })
+    .eq('id', id)
+    .select('id, name, desktop_approved_version')
+    .single();
+  if (error) { sendError(res, error); return; }
+
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail,
+    action: version ? 'desktop_update.approve' : 'desktop_update.hold', resource: 'business',
+    businessId: id, businessName: biz?.name ?? undefined,
+    before: { desktop_approved_version: (biz as any)?.desktop_approved_version ?? null },
+    after:  { desktop_approved_version: version },
   });
 
   res.json(data);

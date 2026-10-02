@@ -260,7 +260,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                       value={form[f.key as keyof typeof form]}
                       onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                       placeholder={f.placeholder}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
                     />
                   </div>
                 ))}
@@ -269,7 +269,7 @@ function CustomerDrawer({ customer, currency, onClose, onUpdated, onDeactivated 
                   <button
                     onClick={handleSave}
                     disabled={saving || !form.name.trim() || !form.phone.trim()}
-                    className="flex-1 py-2 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 text-sm font-bold rounded-lg transition-colors"
+                    className="flex-1 py-2 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 text-sm font-bold rounded-lg transition-colors"
                   >
                     {saving ? 'Saving…' : 'Save changes'}
                   </button>
@@ -616,12 +616,12 @@ export default function CustomersPage({ currency }: Props) {
             value={search}
             onChange={e => handleSearch(e.target.value)}
             placeholder="Search by name or phone…"
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 transition-colors"
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-swift transition-colors"
           />
         </div>
         <button
           onClick={() => { setShowCreate(true); setCreateError(''); }}
-          className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-400 text-gray-950 text-sm font-bold rounded-lg transition-colors flex-shrink-0"
+          className="flex items-center gap-2 px-4 py-2 bg-swift hover:bg-swift-light text-gray-950 text-sm font-bold rounded-lg transition-colors flex-shrink-0"
         >
           <span>+</span> New Customer
         </button>
@@ -670,7 +670,7 @@ export default function CustomersPage({ currency }: Props) {
                 className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4 px-5 py-3.5 border-b border-gray-800/40 hover:bg-gray-800/30 transition-colors text-left group"
               >
                 <div>
-                  <p className="text-white text-sm font-medium group-hover:text-green-400 transition-colors truncate">{c.name}</p>
+                  <p className="text-white text-sm font-medium group-hover:text-swift-text-hover transition-colors truncate">{c.name}</p>
                   <p className="text-gray-500 text-xs">{c.phone}</p>
                 </div>
                 <div className="flex items-center">
@@ -744,7 +744,7 @@ export default function CustomersPage({ currency }: Props) {
                     onChange={e => setCreateForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
                     placeholder={f.placeholder}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift transition-colors"
                   />
                 </div>
               ))}
@@ -753,7 +753,7 @@ export default function CustomersPage({ currency }: Props) {
             <button
               onClick={handleCreate}
               disabled={creating || !createForm.name.trim() || !createForm.phone.trim()}
-              className="w-full py-2.5 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 text-sm font-bold rounded-xl transition-colors"
+              className="w-full py-2.5 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 text-sm font-bold rounded-xl transition-colors"
             >
               {creating ? 'Creating…' : 'Create customer'}
             </button>

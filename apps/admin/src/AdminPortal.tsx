@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
+import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
+import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
+import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -315,6 +318,21 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+// 0.6.28 (owner: "add versioning … so that i can tell which one i am running"): this portal's release and build, and the
+// cloud's (GET /api/admin/version). Amber when they differ — one was deployed, the other not yet.
+function ReleaseLine() {
+  const { req } = useAdminApi();
+  const [cloud, setCloud] = useState(null);
+  useEffect(() => { req("GET", "/version", undefined).then((c) => c?.release && setCloud(c)).catch(() => {}); }, [req]);
+  const differ = releasesDiffer(RELEASE, cloud?.release);
+  return (
+    <div data-testid="release-badge" style={{ fontSize: 10, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+      <div>SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}</div>
+      {cloud && <div style={differ ? { color: "#f59e0b" } : undefined}>cloud {releaseLabel(cloud.release, cloud.commit)}{differ ? " — not the same release" : ""}</div>}
+    </div>
+  );
+}
+
 function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
   const nav = [
     { id: "dashboard", icon: "▦", label: "Dashboard" },
@@ -371,6 +389,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
           <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin?.name || "Admin"}</div>
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin?.email}</div>
           <button onClick={onLogout} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "6px 12px", width: "100%" }}>Sign out</button>
+          <ReleaseLine />
         </div>
       </aside>
     </>
@@ -624,6 +643,13 @@ function ClientDetailPage({ client, req, onBack }) {
   const [error, setError] = useState("");
   const [expiryDraft, setExpiryDraft] = useState("");   // A147: web-access expiry setter
   const [savingExpiry, setSavingExpiry] = useState(false);
+  // A348: desktop updates per business — releases the cloud can serve, the version picked, saving.
+  const [desktopReleases, setDesktopReleases] = useState(null);   // null = loading; { error } on failure
+  const [desktopPick, setDesktopPick] = useState("");
+  // A356: GitHub's refusal, when the list shown is the last good one; and the short list's "show all" switch.
+  const [desktopWarning, setDesktopWarning] = useState(null);
+  const [showAllVersions, setShowAllVersions] = useState(false);
+  const [savingDesktop, setSavingDesktop] = useState(false);
   const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
@@ -642,6 +668,13 @@ function ClientDetailPage({ client, req, onBack }) {
       setDevices((dev && dev.devices) || []);
     }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
+    req("GET", "/desktop-releases?meta=1")
+      .then(r => {
+        // A356: { releases, warning } from a 0.6.18 cloud; a bare array from an older one.
+        setDesktopReleases(Array.isArray(r) ? r : Array.isArray(r?.releases) ? r.releases : []);
+        setDesktopWarning(Array.isArray(r) ? null : (r?.warning ?? null));
+      })
+      .catch(e => setDesktopReleases({ error: e.message }));
   }, [client.id]);
 
   async function toggleFeature(key, enabled) {
@@ -695,6 +728,9 @@ function ClientDetailPage({ client, req, onBack }) {
 
   const webHostingFlag = features.find(f => f.key === 'web_hosting');
   const hasWebHosting  = webHostingFlag?.enabled === true;
+  // A325: client branding Phase 2 — curated action themes (premium; off by default). While off, the client's
+  // tills keep today's look and the web hides the theme picker. Price not decided: no invoice is raised here.
+  const hasThemes = features.find(f => f.key === 'themes')?.enabled === true;
 
   // A147: set businesses.web_access_expires_at — the date the renewal ladder is
   // measured against (distinct from the legacy web_hosting on/off boolean above).
@@ -706,6 +742,21 @@ function ClientDetailPage({ client, req, onBack }) {
       setExpiryDraft("");
     } catch (e) { setError(e.message); }
     finally { setSavingExpiry(false); }
+  }
+
+  // A348: approve one desktop version for this business (its tills update to it within the hour), or hold (null).
+  async function setDesktopVersion(version) {
+    const msg = version
+      ? `Approve desktop ${version} for ${detail?.name ?? 'this client'}? Their tills download it within the hour and install it the next time each till is closed.`
+      : `Hold desktop updates for ${detail?.name ?? 'this client'}? Their tills stay on the version they run now.`;
+    if (!(await askConfirm(msg))) return;
+    setSavingDesktop(true);
+    try {
+      const updated = await req("PATCH", `/clients/${client.id}/desktop-version`, { version });
+      setDetail(prev => prev ? { ...prev, desktop_approved_version: updated?.desktop_approved_version ?? null } : prev);
+      setDesktopPick("");
+    } catch (e) { setError(e.message); }
+    finally { setSavingDesktop(false); }
   }
 
   async function toggleWebHosting(enable) {
@@ -736,6 +787,24 @@ function ClientDetailPage({ client, req, onBack }) {
           });
         } catch(e) { /* Invoice creation is non-fatal */ }
       }
+    } catch(e) { setError(e.message); }
+  }
+
+  async function toggleThemes(enable) {
+    const msg = enable
+      ? 'Enable themes? The client can then pick an app theme on the Branding page; their tills pick it up within about 20 seconds.'
+      : 'Disable themes? The client\'s tills return to the standard look within about 20 seconds. Their chosen theme is kept for later.';
+    if (!(await askConfirm(msg))) return;
+    try {
+      await req("PATCH", `/clients/${client.id}/features/themes`, {
+        enabled: enable,
+        notes:   enable ? 'Themes enabled (client branding Phase 2)' : 'Themes disabled',
+      });
+      setFeatures(prev => {
+        const existing = prev.find(f => f.key === 'themes');
+        if (existing) return prev.map(f => f.key === 'themes' ? { ...f, enabled: enable } : f);
+        return [...prev, { key: 'themes', enabled: enable }];
+      });
     } catch(e) { setError(e.message); }
   }
 
@@ -997,6 +1066,23 @@ function ClientDetailPage({ client, req, onBack }) {
         </button>
       </div>
 
+      {/* ── Themes (A325, client branding Phase 2) ── */}
+      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>App themes {hasThemes ? "ON" : "OFF"}</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {hasThemes
+              ? "The client can pick an app theme on the Branding page; tills follow it."
+              : "Tills keep the standard look. Turn on to let the client pick an app theme."}
+          </div>
+        </div>
+        <button
+          onClick={() => toggleThemes(!hasThemes)}
+          style={{ ...S.btn, ...(hasThemes ? S.btnGhost : S.btnPrimary), fontSize: 12 }}>
+          {hasThemes ? "Turn themes off" : "Turn themes on"}
+        </button>
+      </div>
+
       {/* ── Web access expiry (A147) ── */}
       <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
@@ -1025,6 +1111,56 @@ function ClientDetailPage({ client, req, onBack }) {
             onClick={() => setWebAccessExpiry(null)}
             style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>
             Clear
+          </button>
+        )}
+      </div>
+
+      {/* ── Desktop updates (A348) — per business, held by default ── */}
+      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Desktop updates</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {detail?.desktop_approved_version
+              ? `Approved: ${detail.desktop_approved_version}. Tills on 0.6.16 or later update to it within the hour; it installs when each till is next closed.`
+              : "Held — tills stay on the version they run. (Tills older than 0.6.16 still follow the published GitHub release.)"}
+          </div>
+          {desktopReleases && desktopReleases.error && (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
+          )}
+          {desktopWarning && (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{desktopWarning}</div>
+          )}
+          {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
+            <button type="button" onClick={() => setShowAllVersions(v => !v)}
+              style={{ ...S.btn, ...S.btnGhost, fontSize: 11, marginTop: 6, padding: "2px 8px" }}>
+              {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
+            </button>
+          )}
+        </div>
+        <select
+          value={desktopPick}
+          disabled={savingDesktop || !Array.isArray(desktopReleases)}
+          onChange={e => setDesktopPick(e.target.value)}
+          style={{ ...S.input, width: "auto" } as React.CSSProperties}>
+          <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
+          {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
+            <option key={r.version} value={r.version} disabled={!r.complete}>
+              {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
+            </option>
+          ))}
+        </select>
+        <button
+          disabled={savingDesktop || !desktopPick}
+          onClick={() => setDesktopVersion(desktopPick)}
+          style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingDesktop || !desktopPick) ? 0.4 : 1 }}>
+          {savingDesktop ? "Saving…" : "Approve"}
+        </button>
+        {detail?.desktop_approved_version && (
+          <button
+            disabled={savingDesktop}
+            onClick={() => setDesktopVersion(null)}
+            style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingDesktop ? 0.4 : 1 }}>
+            Hold
           </button>
         )}
       </div>
@@ -1302,8 +1438,27 @@ function ClientDetailPage({ client, req, onBack }) {
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Feature Flags</div>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Toggle features on/off for this client. Changes take effect immediately.</p>
-          {features.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>No feature flags configured yet.</p>}
-          {features.map(f => (
+          {/* 0.6.27: the POS switches — always listed (off until set), named and explained; the till and web POS pick
+              them up at their next catalogue pull. */}
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, margin: "4px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
+          {POS_FEATURES.map(pf => {
+            const on = features.some(f => f.key === pf.key && f.enabled);
+            return (
+              <div key={pf.key} data-testid={`pos-feature-${pf.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{pf.label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pf.description}</div>
+                </div>
+                <button onClick={() => toggleFeature(pf.key, !on)} aria-pressed={on} aria-label={pf.label}
+                  style={{ flex: "0 0 auto", width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: on ? "#22c55e" : C.border, position: "relative", transition: "background 0.2s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 0.2s" }} />
+                </button>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key)).length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>No feature flags configured yet.</p>}
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key)).map(f => (
             <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>

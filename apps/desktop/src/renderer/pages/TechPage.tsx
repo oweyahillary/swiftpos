@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import type { TechSession, TechStatus } from '../lib/posApi';
+import BrandingEditor from './BrandingEditor';
 
 interface Props {
   onExit: () => void;   // close session -> back to PIN pad
@@ -191,6 +192,7 @@ export default function TechPage({ onExit }: Props) {
             <dt className="text-gray-300">Mode</dt><dd className="text-gray-300">{dev?.deploy_mode ?? '—'}</dd>
             <dt className="text-gray-300">Server</dt><dd className="font-mono text-gray-300 truncate">{dev?.server_url ?? '—'}</dd>
             {dev?.node_url && (<><dt className="text-gray-300">Branch server</dt><dd className="font-mono text-gray-300 truncate">{dev.node_url}</dd></>)}
+            {status?.build && (<><dt className="text-gray-300">Build</dt><dd className="font-mono text-gray-300 truncate">{status.build.sha} · {status.build.time}</dd></>)}
           </dl>
         </section>
 
@@ -366,6 +368,9 @@ export default function TechPage({ onExit }: Props) {
             </div>
           )}
         </section>
+
+        {/* Client branding (A302) — the tech-gated feed for the A301 write path */}
+        <BrandingEditor />
 
         {/* Reset this device */}
         <section className="bg-[#0d1424] border border-red-900/40 rounded-xl p-4">

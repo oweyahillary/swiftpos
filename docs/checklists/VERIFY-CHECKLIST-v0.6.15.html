@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.15 — Rollout Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.15 — rollout verification</h1>
+  <p class="sub">0.6.15: Stock only with the web POS · a manager signed in offline — the right message, the saved menu and staff read-only, and unlocking by itself when the network returns — plus the 3 checks skipped on 0.6.14 · one till (manager + cashier PINs), the admin portal · ~40 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.15"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-28"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> Do §R first (the cloud before the tills). You need: admin-portal access for §N, a manager PIN that has signed in ONLINE on this till before, a cashier PIN, a way to take the till offline (cable or Wi-Fi), and the dashboard. §S K4 also needs the web POS. Wherever a check says <b>Record</b>, take a screenshot or photo. A <b>Fail needs a note</b> saying exactly what you saw.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+  ["§R — Rollout (do these first, in order)", "prerequisite for everything below", "The cloud first, then the tills. Nothing to deploy on the dashboard; no migration.", [
+    ["R1", "Cloud deployed from dev", ["Render → the API service → deploy the latest dev commit.", "Wait for “Live”."], "Deploy finished; the web POS and dashboard still sign in.", false],
+    ["R2", "Every till is on 0.6.15", ["Install 0.6.15 (or let auto-update finish and restart).", "Technician mode / About → version."], "Each till reads <b>0.6.15</b>.", true],
+  ]],
+
+  ["§N — Stock only with the web POS", "closes A346", "Stock is a web POS (pro) feature. The till learns whether the business has the web POS on its catalogue sync — after installing, sign in online once (or Technician → Force sync) before N1.", [
+    ["N1", "A business WITH the web POS sees Stock", [
+      "On a till of a business that has web access (e.g. B Foods), sign in as the manager, online.",
+      "Look at the manager menu.",
+    ], "<b>Stock</b> is in the menu (if any item tracks stock) and opens the stock levels.", true],
+    ["N2", "A business WITHOUT the web POS does not", [
+      "Admin portal → that business (or a test business) → switch web access OFF (or use a business that never had it).",
+      "On its till: Technician → Force sync (or wait for the next sync), then lock and sign in again as the manager.",
+      "Switch web access back ON afterwards if it was a real business, and sync again.",
+    ], "With web access off: <b>no Stock</b> in the manager menu. Back on + sync: Stock returns.", true],
+    ["N3", "Selling is unchanged", [
+      "With web access off, ring a sale of an item that tracks stock.",
+    ], "The sale goes through as before — only the Stock screen is hidden.", false],
+  ]],
+
+  ["§O — A manager signed in OFFLINE", "closes A345", "You need a MANAGER PIN that has signed in on this till online at least once, and a cashier PIN. “Network off” = unplug the cable / turn Wi-Fi off on the till.", [
+    ["O1", "Staff page offline says so and shows the saved staff", [
+      "Network OFF. Sign out to the PIN pad; enter the MANAGER PIN (you land on the manager screen).",
+      "Open <b>Staff</b>.",
+    ], "An amber box: “<b>You signed in while offline.</b> Menu, staff and settings changes are saved on the cloud — once the till is online they unlock by themselves (or lock the till and sign in again). Selling is not affected.” Under it: “Showing the staff who have signed in on this till — read-only.” The list shows names and roles. <b>No</b> “Add staff member”, <b>no</b> Deactivate. Never “This till is not signed in”.", true],
+    ["O2", "Menu page offline shows the till’s menu, read-only", [
+      "Still offline, open <b>Menu</b>.",
+      "Try to change a price. Click a combo item.",
+    ], "The same amber box, then “Showing the menu saved on this till — read-only.” The items, categories and prices the till sells (“N of N items”, not “0 of 0”). Prices cannot be changed; no Import / export button. A combo shows a read-only card with its price and “Comes with”.", true],
+    ["O3", "Settings → Payment methods offline", [
+      "Still offline, open <b>Settings</b> → Payment methods.",
+    ], "It says “You signed in while offline … Showing what’s active on this till.” (not “Can’t reach the server”). The till’s methods are listed.", false],
+    ["O4", "Selling is not affected", [
+      "Still offline: Open POS, ring a cash sale, print the receipt.",
+    ], "The sale goes through and prints as usual.", false],
+    ["O5", "Network back → the manager screens unlock by themselves", [
+      "Network ON. Stay signed in — do <b>not</b> sign out.",
+      "Wait about a minute, then go to Menu → <b>Try again</b> (or Refresh), then Staff.",
+    ], "No PIN asked. Menu: no amber box, prices editable, Import / export back. Staff: the full list from the cloud and “Add staff member” back. (If it is still amber after 2 minutes, press Try again once more, then note what it says.)", true],
+    ["O6", "The offline sale reached the cloud", [
+      "Technician mode → Sync card; then the dashboard’s orders for today.",
+    ], "Pending 0. The O4 sale is on the dashboard with the manager as cashier.", false],
+    ["O7", "Signed in online, then the network drops", [
+      "Sign out; sign in as the manager with the network ON.",
+      "Network OFF. Open Menu, then Staff.",
+    ], "Amber box “No connection — menu and staff changes need internet …” and the saved menu / staff, read-only, as in O1–O2. Network ON → Try again → editable again.", false],
+    ["O8", "A void by the offline-signed-in manager", [
+      "Network OFF; sign in as the manager (offline). Network ON; <b>straight away</b> void a sale from this shift (manager PIN).",
+    ], "The void goes through (the till turns the offline sign-in into an online one first) — no “This till is not signed in”.", false],
+  ]],
+
+  ["§S — Skipped last round (0.6.14)", "A342, A335", "", [
+    ["K4", "A web close never closes the till’s shift", ["Set up two shifts on T1 as for §K last time (till offline while the web opens T1, then back online).", "Close the WEB shift first (from the web POS).", "Look at the till."], "The till’s shift is still open and selling.", false],
+    ["F5", "Void and refund a TILL sale from the till", ["Ring a sale on the till; within 30 min void it (manager PIN).", "Ring another; refund it (owner/manager)."], "Both succeed — no “Order not found”. The dashboard shows them voided / refunded.", false],
+    ["X5", "Second till (if you have one)", ["Sign in on T2 and ring a sale."], "Works; its sale reaches the dashboard.", false],
+  ]],
+
+  ["§X — Regression (release-blocker if any fail)", "", "", [
+    ["X1", "Normal sale and receipt", ["Ring a sale, take payment, print the receipt."], "Receipt prints as before.", false],
+    ["X2", "Kitchen ticket", ["Ring an item that goes to the kitchen (if you use one)."], "Kitchen ticket prints as before.", false],
+    ["X3", "Online sign-in unchanged", ["Network ON: sign in as a cashier, then as the manager."], "Cashier → till; manager → manager screen; Menu and Staff editable straight away.", false],
+    ["X4", "Sync healthy at the end", ["Technician mode → Sync card."], "Pending 0, no failures, no red errors.", true],
+  ]],
+];
+
+
+const KEY = "swiftpos-verify-0615";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS v0.6.15 — rollout verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

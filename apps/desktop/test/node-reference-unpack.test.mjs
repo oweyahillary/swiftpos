@@ -40,7 +40,7 @@ const full = {
     comboItems: { k1: [{ product_id: 'p1' }] },
     paymentMethods: [{ code: 'glovo', name: 'Glovo' }],
     branchId: 'B1', vatRate: 16, ctlRate: 2, maxDiscountPct: 10,
-    businessType: 'restaurant', receiptHeader: 'Kudo', receiptFooter: 'Karibu',
+    businessType: 'restaurant', receiptHeader: 'Your Business', receiptFooter: 'Karibu',
     kitchenExclusions: ['c9'], continuousOperation: true,
   },
   variantGroups: [{ id: 'vg1' }], variantOptions: [{ id: 'vo1' }],

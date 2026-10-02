@@ -22,10 +22,10 @@ import type { CsvRow } from '../lib/csv';
 
 const input =
   'w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-white ' +
-  'placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
+  'placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
 const label = 'block text-xs text-gray-400 mb-1';
 const btn =
-  'bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed ' +
+  'bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed ' +
   'text-gray-950 font-semibold rounded-lg px-4 py-2 transition-colors';
 
 function Banner({ kind, text }: { kind: 'ok' | 'err'; text: string }) {
@@ -244,7 +244,7 @@ export function MenuTab({ currency }: { currency: string }) {
                     ? `Follows ${categories.find(c => c.id === p.category_id)?.name ?? 'its category'} — click to override`
                     : ov ? 'Forced to the kitchen — click for never' : 'Never goes to the kitchen — click to follow the category'}
                   className={`text-xs px-2 py-0.5 rounded-md border transition-colors whitespace-nowrap ${
-                    effective ? 'border-green-700 text-green-400' : 'border-gray-700 text-gray-300'
+                    effective ? 'border-action-700 text-action-400' : 'border-gray-700 text-gray-300'
                   } ${ov !== null ? 'font-semibold' : 'opacity-80'}`}>
                   {effective ? '🍳 Kitchen' : 'Counter'}{ov !== null ? ' ·' : ''}
                 </button>
@@ -303,7 +303,7 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
         <button
           onClick={() => setIsKitchen(v => !v)}
           className={`px-3 rounded-lg border text-xs whitespace-nowrap transition-colors ${
-            isKitchen ? 'border-green-500 text-green-400' : 'border-gray-700 text-gray-300'}`}>
+            isKitchen ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'}`}>
           {isKitchen ? 'Kitchen ✓' : 'Kitchen'}
         </button>
         <button onClick={add} disabled={busy || !name.trim()} className={btn}>Add</button>
@@ -318,7 +318,7 @@ function CategoryBlock({ categories, onChanged }: { categories: any[]; onChanged
             <span className="flex-1 text-gray-200 truncate">{c.name}</span>
             <button onClick={() => toggleKitchen(c)} disabled={busy}
               className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${
-                c.is_kitchen ? 'border-green-500 text-green-400' : 'border-gray-700 text-gray-300'}`}>
+                c.is_kitchen ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'}`}>
               {c.is_kitchen ? 'Kitchen' : 'Not kitchen'}
             </button>
           </div>
@@ -339,6 +339,9 @@ export function StaffTab({ branchId }: { branchId?: string }) {
   const [ok, setOk] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: '', pin: '', role_id: '', override_pin: '' });
+  // A345: set while the cloud is out of reach for an offline reason — the page then lists the people this till knows,
+  // read-only, and says why. `source`: 'branch' = a node's whole branch roster; 'till' = people who signed in here.
+  const [offline, setOffline] = useState<{ message: string; source: 'branch' | 'till' | null } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -347,8 +350,19 @@ export function StaffTab({ branchId }: { branchId?: string }) {
       setStaff(Array.isArray(s) ? s : []);
       setRoles(Array.isArray(r) ? r : []);
       setErr('');
+      setOffline(null);
     } catch (e: any) {
-      setErr(e?.message ?? 'Could not load staff.');
+      const cached = await posApi.manage.cachedStaff().catch(() => null);
+      if (cached?.offline) {
+        setStaff(cached.staff);
+        setRoles([]);
+        setShowNew(false);
+        setErr('');
+        setOffline({ message: cached.offline.message, source: cached.source });
+      } else {
+        setOffline(null);
+        setErr(e?.message ?? 'Could not load staff.');
+      }
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -406,9 +420,25 @@ export function StaffTab({ branchId }: { branchId?: string }) {
       <Banner kind="err" text={err} />
       <Banner kind="ok" text={ok} />
 
-      <button onClick={() => setShowNew(v => !v)} className={`${btn} mb-4`}>
-        {showNew ? 'Cancel' : 'Add staff member'}
-      </button>
+      {offline ? (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-4 flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm text-amber-300">{offline.message}</p>
+            <p className="text-xs text-gray-300 mt-1">
+              {offline.source === 'branch'
+                ? 'Showing this branch\'s staff as saved on this till — read-only.'
+                : 'Showing the staff who have signed in on this till — read-only. Others appear once the till is online.'}
+            </p>
+          </div>
+          <button onClick={load} className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5">
+            Try again
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setShowNew(v => !v)} className={`${btn} mb-4`}>
+          {showNew ? 'Cancel' : 'Add staff member'}
+        </button>
+      )}
 
       {showNew && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 space-y-3">
@@ -429,7 +459,8 @@ export function StaffTab({ branchId }: { branchId?: string }) {
               <select value={form.role_id} onChange={e => setForm({ ...form, role_id: e.target.value })}
                 className={input}>
                 <option value="">— choose —</option>
-                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {/* A340: only roles the cloud says this manager may hand out — never Owner. */}
+                {roles.filter(r => r.assignable !== false).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
           </div>
@@ -469,10 +500,12 @@ export function StaffTab({ branchId }: { branchId?: string }) {
                 {m.can_authorize ? ' · can authorise voids' : ''}
               </p>
             </div>
-            <button onClick={() => toggleActive(m)} disabled={busy}
-              className="text-xs text-gray-300 hover:text-amber-400 px-2">
-              {m.is_active === false ? 'Reactivate' : 'Deactivate'}
-            </button>
+            {!offline && (
+              <button onClick={() => toggleActive(m)} disabled={busy}
+                className="text-xs text-gray-300 hover:text-amber-400 px-2">
+                {m.is_active === false ? 'Reactivate' : 'Deactivate'}
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -527,7 +560,7 @@ export function ReceiptTextTab() {
       <div>
         <label className={label}>Footer — printed at the bottom</label>
         <textarea value={footer} onChange={e => setFooter(e.target.value)}
-          placeholder={'Thank you, visit again!\nFollow us @kudokudo_ke'}
+          placeholder={'Thank you, visit again!\nFollow us @yourbusiness'}
           className={area} />
       </div>
 
@@ -1200,7 +1233,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
       'Chicken Wrap,550,Wraps,,yes,,,,',
       'French Fries,200,Hot Sides,,yes,Size,Medium | Large +70,,',
       'Cole Slaw,200,Cold Sides,Prepared at the counter,no,,,,',
-      'Kudo Sauce,100,Sauces,,no,,,,',
+      'House Sauce,100,Sauces,,no,,,,',
       'Shake Chocolate,350,Shakes & Mojitos,Made beside the till,no,,,,',
       'Soda 500ml,120,Soft Drinks,,no,,,,',
       'Water 500ml,100,Soft Drinks,,no,,,,',
@@ -1414,7 +1447,7 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
           className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-800 file:text-gray-200 hover:file:bg-gray-700" />
 
         <button onClick={downloadSample}
-          className="mt-3 text-xs text-green-400 hover:text-green-300 transition-colors">
+          className="mt-3 text-xs text-action-400 hover:text-action-300 transition-colors">
           ↓ Download a sample file to fill in
         </button>
 

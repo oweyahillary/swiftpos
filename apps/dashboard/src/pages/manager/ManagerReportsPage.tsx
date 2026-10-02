@@ -14,8 +14,10 @@
  *   6. Shifts        — shift list with float reconciliation
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePOSAuth , type PosApi } from '../../context/POSAuthContext';
+import { useBusiness } from '../../context/BusinessContext';
+import { printDocument } from '../../lib/printDocument';
 import { localDateStr } from '../../lib/localDate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -49,9 +51,12 @@ interface StaffRow {
 
 interface ShiftRow {
   id: string; opened_at: string; closed_at: string | null; status: string;
-  staff_name: string | null; opening_float: number; closing_float: number | null;
-  expected_cash: number | null; variance: number | null;
-  order_count: number | null; total_revenue: number | null;
+  cashier_name: string | null; opening_float: number; closing_float: number | null;
+  expected_cash: number | null;
+  cash_variance: number | null; order_count: number | null; order_revenue: number | null;
+  float_in?: number | null; float_out?: number | null;
+  // legacy aliases (the API sends cash_variance / order_revenue; kept as fallbacks)
+  variance?: number | null; total_revenue?: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -90,7 +95,7 @@ const ALL_TABS = [
 function Spinner() {
   return (
     <div className="flex justify-center py-12">
-      <div className="w-6 h-6 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
+      <div className="w-6 h-6 border-2 border-gray-700 border-t-swift rounded-full animate-spin" />
     </div>
   );
 }
@@ -107,17 +112,32 @@ function Empty({ label }: { label: string }) {
 
 interface DateBarProps { from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void; onApply: () => void; loading: boolean; }
 function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
+  // A216: auto-apply. Presets and date edits both just set from/to; this debounced
+  // effect runs the query ~400ms later, so there's no need to click Apply. The
+  // first run is skipped (each tab already loads once on mount), and empty/partial
+  // dates are guarded. The Apply button stays as an immediate manual trigger.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
+    if (!from || !to) return;
+    const id = setTimeout(() => onApply(), 400);
+    return () => clearTimeout(id);
+  }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   const presets = [
     { label: 'Today',   f: today(),   t: today() },
     { label: '7 days',  f: weekAgo(), t: today() },
     { label: 'Month',   f: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; })(), t: today() },
   ];
+  // A263: track the chosen preset explicitly so exactly one highlights (deriving
+  // it from from/to could light two up when their ranges coincide), and clear it
+  // when the dates are edited by hand.
+  const [active, setActive] = useState<string>(() => presets.find(p => p.f === from && p.t === to)?.label ?? '');
   return (
     <div className="flex flex-wrap gap-3 items-end mb-6">
       <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
         {presets.map(p => (
-          <button key={p.label} onClick={() => { setFrom(p.f); setTo(p.t); }}
-            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${from===p.f && to===p.t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <button key={p.label} onClick={() => { setActive(p.label); setFrom(p.f); setTo(p.t); }}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${active === p.label ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white'}`}>
             {p.label}
           </button>
         ))}
@@ -125,14 +145,11 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
       {[{ label: 'From', val: from, set: setFrom }, { label: 'To', val: to, set: setTo }].map(({ label, val, set }) => (
         <div key={label} className="flex flex-col gap-1">
           <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
-          <input type="date" value={val} onChange={e => set(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+          <input type="date" value={val} onChange={e => { set(e.target.value); setActive(''); }}
+            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-swift" />
         </div>
       ))}
-      <button onClick={onApply} disabled={loading}
-        className="px-4 py-1.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors">
-        {loading ? '…' : 'Apply'}
-      </button>
+      {loading && <span className="self-end pb-1.5 text-xs text-gray-500">Updating…</span>}
     </div>
   );
 }
@@ -140,7 +157,7 @@ function DateBar({ from, to, setFrom, setTo, onApply, loading }: DateBarProps) {
 // ── Tab: Summary ──────────────────────────────────────────────────────────────
 
 function SummaryTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
-  const [from, setFrom] = useState(weekAgo());
+  const [from, setFrom] = useState(today());
   const [to,   setTo]   = useState(today());
   const [data, setData] = useState<SalesSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -312,7 +329,7 @@ function HourlyTab({ posApi, session, currency }: { posApi: PosApi; session: any
 // ── Tab: Item Mix ─────────────────────────────────────────────────────────────
 
 function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
-  const [from, setFrom]   = useState(weekAgo());
+  const [from, setFrom]   = useState(today());
   const [to,   setTo]     = useState(today());
   const [rows, setRows]   = useState<ProductRow[]>([]);
   const [search, setSearch] = useState('');
@@ -339,7 +356,7 @@ function ItemMixTab({ posApi, session, currency }: { posApi: PosApi; session: an
     <div className="space-y-4">
       <DateBar from={from} to={to} setFrom={setFrom} setTo={setTo} onApply={() => load(from, to)} loading={loading} />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
-        className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+        className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
       {error && <ErrorMsg msg={error} />}
       {loading && <Spinner />}
       {!loading && filtered.length === 0 && <Empty label="No items sold in this period." />}
@@ -499,7 +516,7 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
                 <tr key={r.staff_id} className="hover:bg-gray-800/30 transition-colors">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-xs font-bold flex-shrink-0">
+                      <div className="w-7 h-7 rounded-full bg-swift/20 border border-swift/30 flex items-center justify-center text-swift-text text-xs font-bold flex-shrink-0">
                         {(r.staff_name ?? '?').charAt(0).toUpperCase()}
                       </div>
                       <span className="text-white font-medium">{r.staff_name ?? 'Unknown'}</span>
@@ -531,7 +548,43 @@ function StaffPerfTab({ posApi, session, currency }: { posApi: PosApi; session: 
 // ── Tab: Shifts ───────────────────────────────────────────────────────────────
 
 function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any; currency: string }) {
+  const { business } = useBusiness();
   const [from, setFrom] = useState(today());
+
+  const zMoney = (n: number) => `${currency} ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const printZReport = (r: ShiftRow) => {
+    const rev      = Number(r.order_revenue ?? r.total_revenue ?? 0);
+    const expected = r.expected_cash == null ? null : Number(r.expected_cash);
+    const counted  = r.closing_float == null ? null : Number(r.closing_float);
+    const variance = r.cash_variance ?? r.variance;
+    printDocument({
+      docType: 'Z REPORT',
+      number: `Z · ${new Date(r.opened_at).toLocaleDateString('en-KE')}`,
+      dateLabel: r.closed_at ? new Date(r.closed_at).toLocaleString('en-KE') : 'open shift',
+      accent: '#7c3aed', statusLabel: r.status,
+      business: business ?? { name: 'SwiftPOS' },
+      meta: [
+        { label: 'Cashier', value: r.cashier_name ?? 'Unknown' },
+        { label: 'Branch', value: session?.branchName ?? '—' },
+        { label: 'Opened', value: new Date(r.opened_at).toLocaleString('en-KE') },
+        { label: 'Closed', value: r.closed_at ? new Date(r.closed_at).toLocaleString('en-KE') : '—' },
+      ],
+      columns: [{ label: 'Line' }, { label: 'Amount', align: 'right' }],
+      rows: [
+        ['Orders', String(r.order_count ?? 0)],
+        ['Sales', zMoney(rev)],
+        ['Opening float', zMoney(r.opening_float)],
+        ['Paid in', zMoney(r.float_in ?? 0)],
+        ['Paid out', zMoney(r.float_out ?? 0)],
+      ],
+      totals: [
+        ...(expected != null ? [{ label: 'Expected cash', value: zMoney(expected) }] : []),
+        ...(counted  != null ? [{ label: 'Counted cash',  value: zMoney(counted) }] : []),
+        ...(variance != null ? [{ label: 'Variance',      value: zMoney(Number(variance)) }] : []),
+      ],
+      signatures: ['Counted by', 'Verified by'],
+    });
+  };
   const [to,   setTo]   = useState(today());
   const [rows, setRows] = useState<ShiftRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -559,7 +612,8 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
       {!loading && rows.length > 0 && (
         <div className="space-y-3">
           {rows.map(r => {
-            const variance = r.variance ?? null;
+            const variance = r.cash_variance ?? r.variance ?? null;
+            const revenue  = r.order_revenue ?? r.total_revenue ?? null;
             const isOpen   = r.status === 'open';
             const hours    = r.closed_at
               ? ((new Date(r.closed_at).getTime() - new Date(r.opened_at).getTime()) / 3_600_000).toFixed(1)
@@ -569,16 +623,22 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-white font-semibold">{r.staff_name ?? 'Unknown'}</p>
+                      <p className="text-white font-semibold">{r.cashier_name ?? 'Unknown'}</p>
                       {isOpen && <span className="text-[10px] text-green-400 font-semibold border border-green-500/30 rounded-full px-2 py-0.5">● Open</span>}
                     </div>
                     <p className="text-gray-500 text-xs mt-0.5">
                       {fmtDate(r.opened_at)} {r.closed_at ? `→ ${fmtDate(r.closed_at)}` : '→ now'} · {hours}h
                     </p>
                   </div>
-                  {r.total_revenue != null && (
-                    <p className="text-green-400 font-bold text-lg">{fmtShort(currency, r.total_revenue)}</p>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {revenue != null && (
+                      <p className="text-green-400 font-bold text-lg">{fmtShort(currency, revenue)}</p>
+                    )}
+                    <button onClick={() => printZReport(r)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+                      Print Z
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   <div>
@@ -832,7 +892,7 @@ export default function ManagerReportsPage() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === t.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              activeTab === t.id ? 'bg-swift-strong text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
             }`}>
             {t.label}
           </button>

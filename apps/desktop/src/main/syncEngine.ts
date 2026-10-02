@@ -9,21 +9,28 @@
 //   This means an offline sale is always applied on top of whatever quantity is current
 
 import { net } from 'electron';
-import { getLocalDb, LOCAL_SCHEMA_VERSION } from './localDb';
+import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
-import { getDeviceConfig, saveDeviceConfig, getServerUrl, canSell, isNodeRole } from './deviceConfig';
+import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
+import { cleanDeliveryFee, riderPayoutReason } from './delivery';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
+// A275: reuse the SAME local close the branch-LAN central close uses, so remote
+// and on-prem closes run identical cash arithmetic. Called only at runtime (during
+// sync), so the branchClose ↔ syncEngine import cycle resolves safely.
+import { executeCloseDay } from './branchClose';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
+import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
-  nodeQueueDepth,
+  nodeQueueDepth, emitEvent,
 } from './nodeIngest';
 import { v4 as uuid } from 'uuid';
 // ── Sync direction — the single authoritative source of truth ────────────────
@@ -52,6 +59,7 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
   payments: 'push', customer_credit_transactions: 'push',
   shifts: 'push', float_transactions: 'push', expenses: 'push',
   business_days: 'push',
+  kitchen_voids: 'push',   // 0.6.28 (migration 112)
 };
 
 /**
@@ -61,7 +69,7 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
  * came to be marked synced and lost. Keep in step with the server's `rejected`
  * union in apps/server/src/routes/sync.ts.
  */
-type RejectableTable = 'shifts' | 'business_days' | 'float_transactions' | 'expenses';
+type RejectableTable = 'shifts' | 'business_days' | 'float_transactions' | 'expenses' | 'kitchen_voids';
 
 let _serverUrl   = '';
 let _accessToken  = '';   // owner/device token — used for catalogue pull
@@ -69,6 +77,7 @@ let _refreshToken = '';
 let _staffToken   = '';   // per-shift staff token — used for order push
 let _staffRefresh = '';
 let _isSyncing    = false;
+let _kvWaitingLogged = 0;   // 0.6.28: kitchen voids an older cloud would not take (logged once per count)
 // A177: when the current sync started, so a wedged _isSyncing can't block forever.
 let _syncStartedAt = 0;
 // A sync running longer than this is presumed wedged and no longer blocks a new
@@ -183,7 +192,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
   };
 
   const attempt = async (token: string) => {
-    const res = await syncFetch(`${_serverUrl || getServerUrl()}/api/auth/refresh`, {
+    const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: token }),
@@ -379,11 +388,18 @@ async function runPushStages(errors: string[]): Promise<number> {
       return 0;
     }
   };
+  // A338: first, give back to the queue what a sibling drawer's clash parked (0.6.10 and earlier), so it goes in this pass.
+  // A363: then what a trading-day clash parked (an offline close-and-reopen), once.
+  await stage('requeue', async () => { requeueAfterDayClash(); return requeueAfterDrawerClash(); });
   await stage('shift push', () => pushLocalRecords(errors));
   await stage('price push', () => pushBranchPriceEdits(errors));
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
   await stage('reconcile', () => reconcileClosedShifts(errors));
+  // A365: then a manager's confirmation of a shift whose close is on the cloud.
+  await stage('confirm', () => pushShiftConfirmations(errors));
   await stage('node push', () => pushToNode(errors));
+  // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
+  await stage('last synced', async () => noteSyncedIfClear());
   return orders;
 }
 
@@ -392,7 +408,7 @@ async function runPushStages(errors: string[]): Promise<number> {
 // actually reaches the configured server and reports the round-trip. Uses the
 // same timeout as every other sync fetch.
 export async function testConnection(): Promise<{ ok: boolean; status: number | null; ms: number; error?: string }> {
-  const url = `${_serverUrl || getServerUrl()}/api/health`;
+  const url = `${_serverUrl || getCloudUrl()}/api/health`;
   const t0 = Date.now();
   try {
     const res = await syncFetch(url, { method: 'GET' });
@@ -403,6 +419,64 @@ export async function testConnection(): Promise<{ ok: boolean; status: number | 
     const ms = Date.now() - t0;
     logLine('sync', `connection test FAILED in ${ms}ms: ${err?.message ?? err}`);
     return { ok: false, status: null, ms, error: err?.message ?? String(err) };
+  }
+}
+
+// ── 0.6.25: a logo uploaded on this till is saved to the cloud too ─────────────────────────────────────────────
+// Owner, 2026-09-30: "when u upload the logo in the desktop app it removes it after a while … is it that the web config
+// overrides it?" — yes: branding is remote-wins, and the tech upload was local only, so the next catalogue pull put the
+// cloud's logo back. Decided: the till's upload ALSO saves to the cloud (PUT /api/business/branding, the owner session).
+// Until it lands the till keeps its own (the pull skips branding while pending); offline → it goes with the next sync.
+const BRANDING_PENDING_KEY = 'branding_push_pending';
+export function brandingPushPending(): boolean {
+  try {
+    return (getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(BRANDING_PENDING_KEY) as
+      { value: string } | undefined)?.value === '1';
+  } catch { return false; }
+}
+function setBrandingPending(on: boolean): void {
+  const db = getLocalDb();
+  if (on) db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, '1', ?)`).run(BRANDING_PENDING_KEY, new Date().toISOString());
+  else db.prepare(`DELETE FROM maintenance_state WHERE key = ?`).run(BRANDING_PENDING_KEY);
+}
+export type BrandingPushResult = { state: 'saved' | 'pending' | 'refused'; message?: string };
+/** Mark this till's branding as needing the cloud, then try now. Called by branding:set after the local save. */
+export async function queueBrandingPush(): Promise<BrandingPushResult> {
+  setBrandingPending(true);
+  return pushBrandingNow();
+}
+/** Send the till's branding row to the cloud. saved → pulls resume; pending → retried each sync; refused → pulls resume
+ *  (the cloud's copy will come back) and the editor says why. */
+export async function pushBrandingNow(): Promise<BrandingPushResult> {
+  if (!brandingPushPending()) return { state: 'saved' };
+  const db = getLocalDb();
+  const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id: string } | undefined;
+  const row = sess?.business_id ? db.prepare(
+    `SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding WHERE business_id = ?`,
+  ).get(sess.business_id) as { accent_hex: string | null; logo_png: string | null; logo_receipt: string | null; receipt_logo_enabled: number } | undefined : undefined;
+  if (!row) { setBrandingPending(false); return { state: 'refused', message: 'No business on this till yet.' }; }
+  if (!_accessToken || !_serverUrl || !isOnline()) return { state: 'pending', message: 'Offline — it will be saved to the cloud at the next sync.' };
+  const body = JSON.stringify({
+    accent_hex: row.accent_hex, logo_png: row.logo_png, logo_receipt: row.logo_receipt,
+    receipt_logo_enabled: row.receipt_logo_enabled === 1,
+  });
+  const put = () => syncFetch(`${_serverUrl}/api/business/branding`, { method: 'PUT', headers: authHeaders(), body });
+  try {
+    let res = await put();
+    if (res.status === 401 && await refreshAccessToken()) res = await put();
+    if (res.ok) {
+      setBrandingPending(false);
+      logLine('sync', 'branding saved to the cloud');
+      return { state: 'saved' };
+    }
+    if (res.status >= 500) return { state: 'pending', message: `The cloud did not answer (HTTP ${res.status}) — it will retry at the next sync.` };
+    const err = await res.json().catch(() => ({} as any));
+    setBrandingPending(false);
+    const message = describeServerError(err, res.status);
+    logLine('sync', `branding refused by the cloud (HTTP ${res.status}): ${message}`);
+    return { state: 'refused', message };
+  } catch (e: any) {
+    return { state: 'pending', message: `Could not reach the cloud (${e?.message ?? e}) — it will retry at the next sync.` };
   }
 }
 
@@ -424,18 +498,31 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     // 401'ing every second pull by construction.
     await refreshDeviceTokenIfExpiring();
 
+    // 0.6.25: this till's own logo upload goes up BEFORE the pull, so the pull brings back the same logo.
+    if (brandingPushPending()) { try { await pushBrandingNow(); } catch { /* stays pending */ } }
     pulled = await pullCatalogue();
     // If pull returns false it may be a 401 — try refreshing once
     if (!pulled && _refreshToken) {
       const refreshed = await refreshAccessToken();
       if (refreshed) pulled = await pullCatalogue();
     }
+    // A321: tell the open screens. Every pull path — the 10-min floor, startup, enrol, branch change,
+    // manual sync, post-edit sync and the 20-s freshness check — goes through here, so this is the
+    // ONE place the signal is raised. It used to be raised only by the 20-s check (index.ts), so a
+    // change brought in by any other path sat in the local DB until a screen was re-opened (owner,
+    // 2026-09-23: "the changes reflect but I have to login first then log out").
+    if (pulled) notifyCataloguePulled();
     // A114: refresh the branch reveal code + tech public key on every online
     // sync, not just at owner login (which the till UI can't reach). This is what
     // lets a cashier-only till pick up a freshly-generated/backfilled reveal code.
     // Best-effort — a failure here must never affect the sync result.
     try { await refreshTechConfig(_accessToken); } catch { /* non-fatal */ }
     pushed = await runPushStages(errors);
+    // A275: after pushing local state up, pull any remote day-close instruction
+    // and execute it locally. Best-effort — must never affect the sync result.
+    try { await runDayCloseInstructions(errors); } catch { /* non-fatal */ }
+    // Cross-sync stage 1: the web's sales on this till's drawers. Best-effort, like the above.
+    try { await pullWebSales(); } catch { /* non-fatal */ }
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -443,6 +530,44 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
   }
 
   return { pulled, pushed, errors };
+}
+
+// A275 — pull any remote day-close instruction and execute it LOCALLY, then ack.
+// The till is the cash authority: executeCloseDay computes this till's own expected
+// cash + variance. Idempotent — a day already closed acks success (already_closed),
+// and an instruction is re-offered until acked, so a crash between execute and ack
+// is safe (the re-run no-ops). Best-effort: never throws into the sync result.
+async function runDayCloseInstructions(errors: string[]): Promise<void> {
+  const deviceId = getDeviceConfig()?.device_id ?? '';
+  if (!deviceId) return;
+  let pending: Array<{ id: string; kind: string; payload: any }> = [];
+  try {
+    const res = await syncFetch(`${_serverUrl}/api/day-close/pending`, { headers: authHeaders() });
+    if (!res.ok) return;                 // 401/5xx — re-offered next cycle
+    pending = await res.json();
+  } catch {
+    return;                              // offline/timeout — re-offered next cycle
+  }
+  for (const ins of pending ?? []) {
+    if (ins.kind !== 'close_day') continue;
+    const ack = executeCloseDay(ins.payload);
+    try {
+      await syncFetch(`${_serverUrl}/api/day-close/ack`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          instruction_id: ins.id,
+          ok:      ack.ok,
+          error:   ack.error ?? null,
+          summary: ack.summary ?? null,
+        }),
+      });
+    } catch (e: any) {
+      // Close succeeded locally but the ack didn't land — leave it pending; the
+      // idempotent re-run next cycle will ack success.
+      errors.push(`day-close ack failed: ${e?.message ?? 'unknown'}`);
+    }
+  }
 }
 
 // Push-only pass — cheap (no catalogue pull), safe to run frequently.
@@ -464,6 +589,107 @@ export async function syncPush(): Promise<{ pushed: number; errors: string[] }> 
     _isSyncing = false;
   }
   return { pushed, errors };
+}
+
+// Cross-sync stage 1 (2026-09-27): download the web POS's sales on this till's drawers (webSales.ts).
+// Runs on the 20-s poll (index.ts), after every full sync and at sign-in — so a sale rung on the web as this
+// till shows in its orders, shift panel and Z-report within ~20 s. Read-only on the cloud; fail-soft: any
+// error skips this pass (the close still includes the web's cash through foreign-cash).
+let _pullingWebSales = false;
+export async function pullWebSales(): Promise<number> {
+  if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingWebSales) return 0;
+  _pullingWebSales = true;
+  let changed = 0;
+  let failed = false;
+  try {
+    for (const shift of webSaleShifts()) {
+      const doPull = () => syncFetch(`${_serverUrl}/api/shifts/${encodeURIComponent(shift.id)}/foreign-orders`, {
+        method: 'POST',
+        headers: pushAuthHeaders(),
+        body: JSON.stringify({ own_ids: ownOrderIds(shift.id) }),
+      });
+      let res = await doPull();
+      // A363: the signed-in cashier's token expires; the pushes renew it on a 401 and retry, this pull never did — so it
+      // failed every 20 s for hours (T1, 2026-09-28: 250+ "HTTP 401" lines) until some push happened to renew it.
+      if (res.status === 401 && await refreshStaffToken()) res = await doPull();
+      if (res.status === 404) continue;   // not on the cloud yet (the shift push has not landed) — next pass
+      if (!res.ok) { failed = true; noteInboundFailure('web-sales', `web sales pull failed: HTTP ${res.status}`); continue; }
+      const body = await res.json() as { orders?: WebOrder[]; own_reversals?: OwnReversal[] };
+      changed += applyWebOrders(shift, body.orders ?? []);
+      // 0.6.26 (A336 follow-up): a void or refund made on the web of a sale THIS till rang.
+      changed += applyOwnReversals(body.own_reversals ?? [], undefined, (id, at, reason) =>
+        emitEvent('order_voided', id, { status: 'voided', voided_at: at, void_reason: reason }));
+    }
+    // A363: only a clean pass recovers — this used to run after a failed one too, so every failure was followed a
+    // millisecond later by "recovered after: …" and the log could not show a real outage.
+    if (!failed) clearInboundFailure('web-sales');
+    if (changed) logLine('sync', `web sales: ${changed} downloaded or updated`);
+  } catch (err: any) {
+    noteInboundFailure('web-sales', `web sales pull error: ${err?.message ?? err}`);
+  } finally {
+    _pullingWebSales = false;
+  }
+  return changed;
+}
+
+// A291: cheap catalogue-freshness poll. Ask the server for the newest updated_at
+// across the reference tables (GET /api/pos/catalogue-version) and refresh only
+// when it has moved since our last successful pull. This is what makes a web edit
+// reach the till in ~20s instead of waiting for the 10-min full-pull floor, which
+// stays as the safety net (and covers the tables without an updated_at trigger).
+// Fail-soft throughout: any error just skips this tick — the floor still runs.
+let _lastCatalogueVersion: string | null = null;
+// A321: who to tell when a pull lands. index.ts registers one listener that messages every window;
+// kept here (not an Electron import) so the engine stays testable under node.
+const _cataloguePulledListeners = new Set<() => void>();
+export function onCataloguePulled(cb: () => void): () => void {
+  _cataloguePulledListeners.add(cb);
+  return () => { _cataloguePulledListeners.delete(cb); };
+}
+function notifyCataloguePulled(): void {
+  for (const cb of _cataloguePulledListeners) {
+    try { cb(); } catch (e: any) { logLine('sync', `catalogue-pulled listener threw: ${e?.message ?? e}`); }
+  }
+}
+
+export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pulled: boolean }> {
+  if (!_accessToken || !_serverUrl) return { changed: false, pulled: false };
+  if (!isOnline()) return { changed: false, pulled: false };
+
+  const branch = getDeviceConfig()?.branch_id ?? null;
+  const url = `${_serverUrl}/api/pos/catalogue-version${branch ? `?branch_id=${encodeURIComponent(branch)}` : ''}`;
+
+  // A321: this check used to treat ANY non-OK answer as "nothing changed" and never reached syncAll's
+  // token refresh — so an expired device token (15-min lifetime) made the 20-s path fail silently and
+  // changes only arrived via the 10-min floor. Now: renew ahead of expiry exactly as syncAll does,
+  // retry once after a refresh on 401, and record any other failure where the tech screen's sync
+  // status already shows inbound failures, instead of dropping it.
+  let version: string | null = null;
+  try {
+    await refreshDeviceTokenIfExpiring();
+    let res = await syncFetch(url, { headers: authHeaders() });
+    if (res.status === 401 && _refreshToken && await refreshAccessToken()) {
+      res = await syncFetch(url, { headers: authHeaders() });
+    }
+    if (!res.ok) {
+      noteInboundFailure('version', `catalogue-version check failed: HTTP ${res.status} — changes will arrive with the 10-minute sync instead`);
+      return { changed: false, pulled: false };
+    }
+    version = ((await res.json()) as any)?.version ?? null;
+    clearInboundFailure('version');
+  } catch (e: any) {
+    noteInboundFailure('version', `catalogue-version check failed: ${e?.message ?? 'unreachable'} — changes will arrive with the 10-minute sync instead`);
+    return { changed: false, pulled: false };
+  }
+  if (!version || version === _lastCatalogueVersion) return { changed: false, pulled: false };
+
+  // Something changed (or first observation). syncAll self-guards against a
+  // concurrent/offline run; only adopt the new version once a pull actually lands,
+  // so a skipped run is retried on the next tick rather than silently swallowed.
+  // (The screens are told by syncAll itself — A321.)
+  const r = await syncAll();
+  if (r.pulled) _lastCatalogueVersion = version;
+  return { changed: true, pulled: r.pulled };
 }
 
 export function getSyncStatus(): {
@@ -494,6 +720,11 @@ export function getSyncStatus(): {
    * indicator stops meaning anything and gets ignored on the day it matters.
    */
   nodeBacklog?: { pending: number; failed: number };
+  /** A363: records the cloud REFUSED and this till parked ('conflict'), and the first reason it gave. */
+  parkedCount?: number;
+  parkedReason?: string;
+  /** A363: the last moment this till had nothing waiting for the cloud (ISO), null if never recorded. */
+  lastSyncedAt?: string | null;
 } {
   const db = getLocalDb();
   const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`).get() as { count: number };
@@ -530,6 +761,9 @@ export function getSyncStatus(): {
       (SELECT COUNT(*) FROM business_days      WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS days
   `).get({ dev: ownDevice }) as { shifts: number; floats: number; expenses: number; days: number };
   const localPending = { count: bd.shifts + bd.floats + bd.expenses + bd.days };
+  // A363: a status read never throws — the badge must render even on a database missing a newer table.
+  let parked: { count: number; reason: string | null } = { count: 0, reason: null };
+  try { parked = parkedSummary(ownDevice); } catch { /* keep the zero */ }
   return {
     online: isOnline(),
     pendingCount: pending.count + localPending.count,
@@ -541,7 +775,52 @@ export function getSyncStatus(): {
     pullErrorSince: currentInboundFailure()?.since ?? undefined,
     logPath: getLogPath(),
     nodeBacklog: hasNode() ? nodeQueueDepth() : undefined,
+    parkedCount: parked.count,
+    parkedReason: parked.reason ?? undefined,
+    lastSyncedAt: lastSyncedAt(),
   };
+}
+
+// ── A363: parked records and "last synced" ─────────────────────────────────────
+// Parked = refused by the cloud and set aside ('conflict'); only a shift or a trading day carries the reason (notes).
+function parkedSummary(ownDevice: string | null): { count: number; reason: string | null } {
+  const db = getLocalDb();
+  const row = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM shifts             WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM business_days      WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM float_transactions WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
+      (SELECT COUNT(*) FROM expenses           WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS n
+  `).get({ dev: ownDevice }) as { n: number };
+  if (!row.n) return { count: 0, reason: null };
+  const note = db.prepare(`
+    SELECT notes FROM (
+      SELECT notes, created_at FROM shifts        WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')
+      UNION ALL
+      SELECT notes, created_at FROM business_days WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')
+    ) WHERE notes LIKE '%Sync rejected:%' ORDER BY created_at DESC LIMIT 1
+  `).get({ dev: ownDevice }) as { notes: string } | undefined;
+  const m = note?.notes.match(/Sync rejected:\s*([^\n]+)/);
+  return { count: row.n, reason: m ? m[1].trim() : null };
+}
+
+const LAST_SYNCED_KEY = 'last_synced_at';
+function lastSyncedAt(): string | null {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(LAST_SYNCED_KEY) as { value: string | null } | undefined;
+    return row?.value ?? null;
+  } catch { return null; }   // a status read never throws (see getSyncStatus)
+}
+/** After a push pass: if nothing waits for the cloud (queued, failed or parked) and the cloud was reachable, stamp now. */
+export function noteSyncedIfClear(now: Date = new Date()): boolean {
+  if (!isOnline()) return false;
+  const s = getSyncStatus();
+  if (s.pendingCount > 0 || s.failedCount > 0 || (s.parkedCount ?? 0) > 0) return false;
+  getLocalDb().prepare(`
+    INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(LAST_SYNCED_KEY, now.toISOString(), now.toISOString());
+  return true;
 }
 
 // Re-arm rows that exhausted their 5 attempts (cashier-initiated). Resetting
@@ -584,7 +863,7 @@ const _inbound = new Map<string, { message: string; since: string }>();
 // Order matters when both are set. A dead token explains a dead catalogue pull;
 // a dead catalogue pull does not explain a dead token. Report the cause, not the
 // symptom.
-const SCOPE_PRIORITY = ['auth', 'sync'];
+const SCOPE_PRIORITY = ['auth', 'sync', 'version'];   // A321: the 20-s freshness check reports last — a dead token or pull explains it
 
 function noteInboundFailure(scope: string, message: string): void {
   const prev = _inbound.get(scope);
@@ -711,6 +990,20 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (typeof c.receiptFooter === 'string') saveDeviceConfig({ receipt_footer: c.receiptFooter });
   if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
+  // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
+  // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
+  // tech-set value (A302) survives until the business actually has cloud branding.
+  // 0.6.25: NOT while this till's own upload is still on its way to the cloud — the pull would put the old logo back
+  // (the owner's "it removes it after a while"). The upload goes first (syncAll → pushBrandingNow), then pulls resume.
+  if (c.branding && !brandingPushPending()) applyPulledBranding(c.branding);
+  // A325: the effective action theme — its own field (see applyPulledTheme); undefined = older cloud → keep.
+  if (c.themeId !== undefined) applyPulledTheme(c.themeId);
+  // A346: the web POS switch (decides the manager screen's Stock). undefined = not said → keep.
+  setWebPosEnabled(c.webPosEnabled);
+  // A367: the quick picks for order notes. undefined = not said → keep.
+  setOrderNotePicks(c.noteQuickPicks);
+  // 0.6.27: the per-client POS switches. undefined = not said → keep.
+  setPosFeatures(c.posFeatures);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -803,6 +1096,23 @@ async function pullCatalogue(): Promise<boolean> {
       receiptFooter: typeof _j.receiptFooter === 'string' ? _j.receiptFooter : null,
       kitchenExclusions: Array.isArray(_j.kitchenExclusions) ? _j.kitchenExclusions : null,
       continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
+      // A304: null when the business has no branding row → applyReferenceConfig skips it,
+      // keeping any local value. A row (even with null fields) is remote-wins.
+      branding: (_j.branding && typeof _j.branding === 'object')
+        ? {
+            accentHex: _j.branding.accentHex ?? null, logoPng: _j.branding.logoPng ?? null,
+            // A311: undefined (not null) when the cloud predates migration 105, so the
+            // local value is kept rather than cleared — see applyPulledBranding.
+            logoReceipt: 'logoReceipt' in _j.branding ? (_j.branding.logoReceipt ?? null) : undefined,
+            receiptLogoEnabled: 'receiptLogoEnabled' in _j.branding ? (_j.branding.receiptLogoEnabled === true) : undefined,
+          }
+        : null,
+      // A325: top-level; absent on a cloud before A325 → undefined (keep the local value).
+      themeId: 'themeId' in _j ? (typeof _j.themeId === 'string' ? _j.themeId : null) : undefined,
+      // A346: does the business have the web POS? Absent on an older cloud → undefined (keep the local value).
+      webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
+      noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
+      posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
@@ -1186,7 +1496,7 @@ async function pullCatalogue(): Promise<boolean> {
   // a plain till and is simply ignored.
   if (isNodeRole(getDeviceConfig()?.device_role)) {
     try {
-      const rosterRes = await syncFetch(`${_serverUrl || getServerUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
+      const rosterRes = await syncFetch(`${_serverUrl || getCloudUrl()}/api/pos/branch-staff`, { headers: authHeaders() });
       if (rosterRes.ok) {
         const { branch_id: rBranch, staff } = await rosterRes.json();
         if (rBranch && Array.isArray(staff)) storeBranchStaff(rBranch, staff);
@@ -1258,7 +1568,8 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
   `).all(ownDevice) as any[];
   const expenses = db.prepare(`
     SELECT id, business_id, branch_id, expense_category_id, description, amount,
-           paid_by, expense_date, shift_id, created_at
+           paid_by, expense_date, shift_id, created_at,
+           COALESCE(payment_method, 'cash') AS payment_method   -- 0.6.27 (a cloud before 111 ignores it)
     FROM expenses WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
   // Trading days. Pushed like shifts: the till originates them and the cloud is
@@ -1271,12 +1582,19 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     FROM business_days WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
 
-  if (!shifts.length && !floats.length && !expenses.length && !business_days.length) return 0;
+  // 0.6.28: kitchen voids — sent items taken back (kitchenService.recordKitchenVoid). Cloud table: migration 112.
+  const kitchen_voids = db.prepare(`
+    SELECT id, business_id, branch_id, shift_id, order_number, order_id, product_id, product_name, quantity, unit_price,
+           amount, reason, note, cooked, cashier_id, cashier_name, approved_by, approved_by_name, device_id, created_at
+    FROM kitchen_voids WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(ownDevice) as any[];
+
+  if (!shifts.length && !floats.length && !expenses.length && !business_days.length && !kitchen_voids.length) return 0;
 
   const doPost = () => syncFetch(`${_serverUrl}/api/sync/push`, {
     method: 'POST',
     headers: pushAuthHeaders(),
-    body: JSON.stringify({ shifts, floats, expenses, business_days }),
+    body: JSON.stringify({ shifts, floats, expenses, business_days, kitchen_voids }),
   });
 
   try {
@@ -1329,7 +1647,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     const tableOf = (r: { code: string; table?: string }): RejectableTable | null => {
       const t = r.table ?? TABLE_BY_CODE[r.code];
       return t === 'shifts' || t === 'business_days' ||
-             t === 'float_transactions' || t === 'expenses' ? t : null;
+             t === 'float_transactions' || t === 'expenses' || t === 'kitchen_voids' ? t : null;
     };
 
     // Rejected ids per table. Keyed by table because two rows in different
@@ -1337,7 +1655,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     // loop below has to consult its OWN table's set — not one shared set.
     const rejectedByTable: Record<RejectableTable, Set<string>> = {
       shifts: new Set(), business_days: new Set(),
-      float_transactions: new Set(), expenses: new Set(),
+      float_transactions: new Set(), expenses: new Set(), kitchen_voids: new Set(),
     };
     const unrouted: typeof rejected = [];
 
@@ -1355,6 +1673,7 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
         business_days:      markWithNote('business_days'),
         float_transactions: db.prepare(`UPDATE float_transactions SET sync_status='conflict' WHERE id=?`),
         expenses:           db.prepare(`UPDATE expenses SET sync_status='conflict' WHERE id=?`),
+        kitchen_voids:      db.prepare(`UPDATE kitchen_voids SET sync_status='conflict' WHERE id=?`),
       };
 
       db.transaction(() => {
@@ -1380,6 +1699,10 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
           }
         }
       })();
+
+      // A363: into the log too — until 0.6.20 a refusal reached only the Sync card, and the log said "pushed N cash
+      // record(s)" as if all had landed (T1, 2026-09-29: a parked shift sat unseen for two hours).
+      for (const r of rejected) logLine('sync', `refused by the cloud (${r.table ?? tableOf(r) ?? 'unknown table'} ${r.id}): ${r.error}`);
 
       // The server's own words. The previous hardcoded "a cashier has an open
       // drawer on another till" was wrong for every rejection that was not that
@@ -1413,6 +1736,14 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     const markFloat = db.prepare(`UPDATE float_transactions SET sync_status='synced' WHERE id=?`);
     const markExp   = db.prepare(`UPDATE expenses SET sync_status='synced' WHERE id=?`);
     const markDay   = db.prepare(`UPDATE business_days SET sync_status='synced' WHERE id=?`);
+    const markKv    = db.prepare(`UPDATE kitchen_voids SET sync_status='synced' WHERE id=?`);
+    // 0.6.28: a cloud before migration 112 ignores `kitchen_voids` — marking them synced would lose them. Only a cloud
+    // that counts them (upserted.kitchenVoids) has stored them; otherwise they wait, pending, for the cloud's update.
+    const cloudTakesKv = typeof body?.upserted?.kitchenVoids === 'number';
+    if (kitchen_voids.length && !cloudTakesKv && kitchen_voids.length !== _kvWaitingLogged) {
+      _kvWaitingLogged = kitchen_voids.length;   // once per count, not every pass
+      logLine('sync', `${kitchen_voids.length} kitchen void(s) kept on the till — the cloud does not take them yet (migration 112)`);
+    }
     // Every loop excludes its own table's rejections. Anything absent from
     // `rejected` is still treated as accepted — that design constraint is
     // unchanged and is why the routing above has to be right.
@@ -1421,9 +1752,10 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
       for (const f of floats)        if (!rejectedByTable.float_transactions.has(f.id)) markFloat.run(f.id);
       for (const e of expenses)      if (!rejectedByTable.expenses.has(e.id))           markExp.run(e.id);
       for (const d of business_days) if (!rejectedByTable.business_days.has(d.id))      markDay.run(d.id);
+      if (cloudTakesKv) for (const k of kitchen_voids) if (!rejectedByTable.kitchen_voids.has(k.id)) markKv.run(k.id);
     })();
-    const pushedCount = shifts.length + floats.length + expenses.length + business_days.length;
-    if (pushedCount) logLine('sync', `pushed ${pushedCount} cash record(s): ${shifts.length} shift, ${floats.length} float, ${expenses.length} expense, ${business_days.length} day`); // A178
+    const pushedCount = shifts.length + floats.length + expenses.length + business_days.length + kitchen_voids.length;
+    if (pushedCount) logLine('sync', `pushed ${pushedCount} cash record(s): ${shifts.length} shift, ${floats.length} float, ${expenses.length} expense, ${business_days.length} day, ${kitchen_voids.length} kitchen void`); // A178
     return pushedCount;
   } catch (err: any) {
     errors.push(`Shift sync: ${err.message}`);
@@ -1573,6 +1905,13 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         `).run(message, row.id);
         errors.push(`Order ${row.order_id}: ${message}`);
         logLine('sync', `order push rejected (409): ${message}`);
+      } else if (res.status === 424) {
+        // A338: the sale's drawer is not on the cloud yet (it goes up in the shift stage, before this one). Not a
+        // fault and not this sale's to give up on: it stays pending, never counts towards 'failed', and goes next pass.
+        const err = await res.json().catch(() => ({} as any));
+        const message = (err as any)?.error || 'drawer not on the cloud yet';
+        db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
+        logLine('sync', `order ${row.order_id} waits for its drawer: ${message}`);
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         const message = describeServerError(err, res.status);
@@ -1720,6 +2059,109 @@ async function pushToNode(errors: string[]): Promise<number> {
   return delivered.length;
 }
 
+/**
+ * A363 (2026-09-29) — a trading-day clash parks a day and its shift for good; put them back ONCE.
+ *
+ * An offline close-and-reopen pushes yesterday's closing day and today's new one in one batch. Before the cloud wrote
+ * closing days first (sync.ts, lib/dayOrder), the new day could land first and be refused as duplicate_open_day; its
+ * shift was then refused as missing_business_day, and both were parked 'conflict' — nothing re-sent them, so the shift
+ * never reached the cloud and every sale on it waited for its drawer (T1, 2026-09-29). Once the cloud accepts them,
+ * this re-sends each such row ONE time (a local mark in maintenance_state, never in notes — a day's notes go to the
+ * cloud), so a row refused again for a real reason is parked again and never loops. Its floats, expenses and sales
+ * follow through requeueAfterDrawerClash once the shift is no longer parked.
+ */
+export const DAY_CLASH_NOTE = 'Sync rejected: This till already has an open trading day. It must be closed before this one can sync.';
+export const MISSING_DAY_NOTE = 'Sync rejected: This shift\'s trading day is not on the server — the day was refused or has not synced yet. Resolve the trading day first.';
+export function requeueAfterDayClash(): { days: number; shifts: number } {
+  const db = getLocalDb();
+  const own = getDeviceConfig()?.device_id ?? null;
+  const once = (table: string, id: string): boolean => {
+    const key = `resent_once:${table}:${id}`;
+    if (db.prepare(`SELECT 1 FROM maintenance_state WHERE key = ?`).get(key)) return false;
+    db.prepare(`INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, 'A363', ?)`).run(key, new Date().toISOString());
+    return true;
+  };
+  const strip = (notes: string | null, line: string) =>
+    (notes ?? '').split(line).join('').replace(/^[\s\n\r]+|[\s\n\r]+$/g, '') || null;
+  let days = 0, shifts = 0;
+  db.transaction(() => {
+    const parkedDays = db.prepare(`
+      SELECT id, notes FROM business_days
+       -- own: only this till pushes its days, so only it re-sends them.
+       WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'') AND notes LIKE '%already has an open trading day%'
+    `).all(own) as { id: string; notes: string | null }[];
+    for (const d of parkedDays) {
+      if (!once('business_days', d.id)) continue;
+      db.prepare(`UPDATE business_days SET sync_status = 'pending', notes = ? WHERE id = ?`).run(strip(d.notes, DAY_CLASH_NOTE), d.id);
+      days++;
+    }
+    const parkedShifts = db.prepare(`
+      SELECT id, notes FROM shifts
+       -- own: only this till pushes its drawers, so only it re-sends them.
+       WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'') AND notes LIKE '%trading day is not on the server%'
+    `).all(own) as { id: string; notes: string | null }[];
+    for (const sh of parkedShifts) {
+      if (!once('shifts', sh.id)) continue;
+      db.prepare(`UPDATE shifts SET sync_status = 'pending', notes = ? WHERE id = ?`).run(strip(sh.notes, MISSING_DAY_NOTE), sh.id);
+      shifts++;
+    }
+  })();
+  if (days + shifts) logLine('sync', `A363 re-sending once after a trading-day clash: ${days} day(s), ${shifts} shift(s)`);
+  return { days, shifts };
+}
+
+/**
+ * A338 (2026-09-27) — one drawer must never stop another from syncing (owner: "one should never block the other").
+ *
+ * Until migration 107 the cloud refused a till's shift while another drawer was open on the same terminal (the web POS
+ * standing in for this till): the shift was parked 'conflict' (duplicate_open_shift), its floats and expenses were refused
+ * as missing_shift and parked too, and every sale on it failed its foreign key five times and went 'failed'. Nothing
+ * retried any of it, and Force sync could not help. Once the cloud accepts such a drawer, this puts them back:
+ *   - shifts parked for that reason → pending (the rejection line is taken out of the notes, which the close sends on);
+ *   - floats / expenses parked while their drawer was missing → pending, once the drawer is no longer parked;
+ *   - sales that failed because their drawer was missing → pending, ONCE (marked, so a sale refused for another reason
+ *     cannot loop), and only once their drawer has reached the cloud.
+ * Cheap and idempotent: each is a single UPDATE that matches nothing on a healthy till.
+ */
+export const DRAWER_CLASH_NOTE = 'Sync rejected: This cashier already has an open shift. It must be closed before this one can sync.';
+export const REQUEUED_MARK = '[requeued after its drawer synced] ';
+export const REQUEUE_ONCE = 1000;
+export function requeueAfterDrawerClash(): { shifts: number; floats: number; expenses: number; orders: number } {
+  const db = getLocalDb();
+  const own = getDeviceConfig()?.device_id ?? null;
+  const shifts = db.prepare(`
+    UPDATE shifts SET sync_status = 'pending', notes = NULLIF(TRIM(REPLACE(COALESCE(notes,''), ?, ''), ' ' || char(10) || char(13)), '')
+     -- own: only this till pushes its drawers, so only it re-queues them.
+     WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'') AND notes LIKE '%already has an open shift%'
+  `).run(DRAWER_CLASH_NOTE, own).changes;
+  const floats = db.prepare(`
+    UPDATE float_transactions SET sync_status = 'pending'
+     -- own: this till's drawer movements, whose drawer is no longer parked.
+     WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'')
+       AND shift_id IN (SELECT id FROM shifts WHERE sync_status != 'conflict')
+  `).run(own).changes;
+  const expenses = db.prepare(`
+    UPDATE expenses SET sync_status = 'pending'
+     -- own: this till's expenses, whose drawer is no longer parked.
+     WHERE sync_status = 'conflict' AND COALESCE(device_id,'') = COALESCE(?,'')
+       AND shift_id IN (SELECT id FROM shifts WHERE sync_status != 'conflict')
+  `).run(own).changes;
+  // Once only: attempts is set to REQUEUE_ONCE, which the failure path only ever increments — so a sale that fails
+  // again goes straight back to 'failed' (attempts+1 >= 5) and is never matched here again. (A mark in last_error
+  // would not hold: the failure path overwrites last_error.)
+  const orders = db.prepare(`
+    UPDATE sync_queue SET status = 'pending', attempts = ?, last_error = ? || COALESCE(last_error, '')
+     WHERE status = 'failed' AND attempts < ?
+       AND (last_error LIKE '%references a record the server does not have%' OR last_error LIKE '%drawer has not reached the cloud%')
+       -- branch-wide: keyed by order id to this till's own sync_queue rows; the drawer test is by id.
+       AND order_id IN (SELECT o.id FROM orders o JOIN shifts s ON s.id = o.shift_id WHERE s.sync_status = 'synced')
+  `).run(REQUEUE_ONCE, REQUEUED_MARK, REQUEUE_ONCE).changes;
+  if (shifts + floats + expenses + orders) {
+    logLine('sync', `A338 requeued after a drawer clash: ${shifts} shift(s), ${floats} float(s), ${expenses} expense(s), ${orders} sale(s)`);
+  }
+  return { shifts, floats, expenses, orders };
+}
+
 async function reconcileClosedShifts(errors: string[]): Promise<number> {
   const db = getLocalDb();
   // Both terminal states, not just 'closed'.
@@ -1732,14 +2174,14 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
   // someone edits the database by hand. Force-close is the path every forgotten
   // drawer takes, so this sat on the common route, not an edge case.
   const closed = db.prepare(`
-    SELECT id, status, closing_float, notes
+    SELECT id, status, closing_float, notes, declared_methods
       FROM shifts
      -- own: reconciling a closed shift means asking the server to compute the
      -- close for a drawer THIS till owns. A peer reconciles its own.
      WHERE status IN ('closed', 'closed_unreconciled')
        AND sync_status = 'pending'
        AND COALESCE(device_id,'') = COALESCE(?,'')
-  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null }[];
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; status: string; closing_float: number | null; notes: string | null; declared_methods: string | null }[];
   if (!closed.length) return 0;
 
   let reconciled = 0;
@@ -1762,7 +2204,9 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
       : `${_serverUrl}/api/shifts/${shift.id}/close`;
     const body = forced
       ? { reason: shift.notes?.trim() || 'Force-closed on terminal; no cash count was taken' }
-      : { closing_float: shift.closing_float, notes: shift.notes };
+      : { closing_float: shift.closing_float, notes: shift.notes,
+          // A365: the cashier's declaration of every method — the cloud then shows the shift as awaiting a manager.
+          ...(shift.declared_methods ? { declared_methods: safeJson(shift.declared_methods) } : {}) };
 
     const doPost = () => syncFetch(url, {
       method: 'POST',
@@ -1798,6 +2242,57 @@ async function reconcileClosedShifts(errors: string[]): Promise<number> {
     }
   }
   return reconciled;
+}
+
+const safeJson = (t: string): unknown => { try { return JSON.parse(t); } catch { return undefined; } };
+
+/**
+ * A365: send a manager's confirmation of a shift to the cloud — after the shift's close is there (sync_status
+ * 'synced'). The till verified the manager's PIN; the cloud re-checks that person may confirm. 409 ALREADY_CONFIRMED
+ * (an earlier pass landed, its answer lost) is done. A refusal that no retry fixes (403) is logged and parked; anything
+ * else (incl. 404 from a cloud not yet deployed) stays pending for the next pass.
+ */
+async function pushShiftConfirmations(errors: string[]): Promise<number> {
+  const db = getLocalDb();
+  const rows = db.prepare(`
+    SELECT id, confirmed_methods, expected_methods, confirmed_by, confirmed_at, confirm_reasons
+      FROM shifts
+     -- own: a till sends the confirmations of the drawers it holds.
+     WHERE confirm_sync = 'pending' AND confirmed_at IS NOT NULL AND sync_status = 'synced'
+       AND COALESCE(device_id,'') = COALESCE(?,'')
+  `).all(getDeviceConfig()?.device_id ?? null) as { id: string; confirmed_methods: string; expected_methods: string | null; confirmed_by: string; confirmed_at: string; confirm_reasons: string | null }[];
+  let sent = 0;
+  for (const r of rows) {
+    const post = () => syncFetch(`${_serverUrl}/api/shifts/${r.id}/confirm`, {
+      method: 'POST', headers: pushAuthHeaders(),
+      body: JSON.stringify({
+        confirmed_methods: safeJson(r.confirmed_methods), expected_methods: r.expected_methods ? safeJson(r.expected_methods) : undefined,
+        confirmed_by: r.confirmed_by, confirmed_at: r.confirmed_at,
+        ...(r.confirm_reasons ? { confirm_reasons: safeJson(r.confirm_reasons) } : {}),   // 0.6.27
+      }),
+    });
+    try {
+      let res = await post();
+      if (res.status === 401 && await refreshStaffToken()) res = await post();
+      const body = await res.json().catch(() => ({} as any));
+      if (res.ok || (res.status === 409 && body?.code === 'ALREADY_CONFIRMED')) {
+        db.prepare(`UPDATE shifts SET confirm_sync='synced' WHERE id=?`).run(r.id);
+        sent++;
+      } else if (res.status === 403) {
+        // 403 only: the named person may not confirm, or the wrong till — no retry fixes that. A 404 is retried: a
+        // cloud not yet deployed with /confirm answers 404 too, and parking then would lose the confirmation.
+        db.prepare(`UPDATE shifts SET confirm_sync='refused' WHERE id=?`).run(r.id);
+        logLine('sync', `A365 shift confirmation refused by the cloud (shift ${r.id}): ${describeServerError(body, res.status)}`);
+        errors.push(`Shift confirmation: ${describeServerError(body, res.status)}`);
+      } else {
+        errors.push(`Shift confirmation: ${describeServerError(body, res.status)}`);
+      }
+    } catch (err: any) {
+      errors.push(`Shift confirmation: ${err.message}`);
+    }
+  }
+  if (sent) logLine('sync', `A365 pushed ${sent} shift confirmation(s)`);
+  return sent;
 }
 
 // Returns the currently open shift row (most recent), or null if none is open.
@@ -1861,11 +2356,15 @@ export function createLocalOrder(orderPayload: any): string {
 
   const orderId = uuid();
   const now = new Date().toISOString();
+  // 0.6.27: a delivery fee only on a delivery (the sale screen sends one only with the client's 'delivery_fee' switch on).
+  const deliveryFee = orderPayload.order_type === 'delivery' ? cleanDeliveryFee(orderPayload.delivery_fee) : 0;
+  // What travels to the cloud is the same cleaned figure (its create_order_atomic reconciles the legs to total + tip + fee).
+  if (deliveryFee > 0) orderPayload.delivery_fee = deliveryFee; else delete orderPayload.delivery_fee;
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -1884,15 +2383,30 @@ export function createLocalOrder(orderPayload: any): string {
       // Pump attribution (fuel). Present in Postgres since migration 15 and in
       // SQLite since v45's migrateColumns — this write is the missing link.
       orderPayload.pump_id ?? null,
+      // A367: the order's note, cleaned the same way the cloud cleans it (shared/orderNotes.ts).
+      cleanNote(orderPayload.notes, ORDER_NOTE_MAX),
+      deliveryFee,   // 0.6.27: on top of the bill, in the legs (like the tip); not in total
     );
+
+    // 0.6.27 (the prospect's request 3): the rider is paid the delivery fee in CASH from this drawer, now — recorded as
+    // a pay-out tied to the sale, so expected cash is the fee lower while the method the customer paid with carries it.
+    // It syncs like any pay-out; voiding the sale puts it back (reverseRiderPayout).
+    if (deliveryFee > 0) {
+      const sh = db.prepare(`SELECT branch_id, cashier_id FROM shifts WHERE id=?`).get(shiftId) as { branch_id: string; cashier_id: string } | undefined;
+      db.prepare(`
+        INSERT INTO float_transactions (id, shift_id, branch_id, cashier_id, type, amount, reason, created_at, device_id, order_id, sync_status)
+        VALUES (?, ?, ?, ?, 'float_out', ?, ?, ?, ?, ?, 'pending')
+      `).run(uuid(), shiftId, sh?.branch_id ?? orderPayload.branch_id, cashierId ?? sh?.cashier_id ?? '', deliveryFee,
+             riderPayoutReason(orderPayload.delivery_person, orderPayload.order_number), now, deviceId, orderId);
+    }
 
     for (const item of orderPayload.items) {
       const itemId = uuid();
       db.prepare(`
-        INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (id, order_id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(itemId, orderId, item.product.id, item.product.name, item.product.categories?.name ?? null, item.unitPrice, item.quantity, item.lineTotal,
-        item.course ?? null, item.fire_status === 'held' ? 'held' : 'fired');
+        item.course ?? null, item.fire_status === 'held' ? 'held' : 'fired', cleanNote(item.notes));
 
       for (const v of item.selectedVariants ?? []) {
         db.prepare(`

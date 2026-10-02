@@ -6,7 +6,12 @@ import PinPage from './pages/PinPage';
 import LockCurtain from './components/LockCurtain';
 import POSPage from './pages/POSPage';
 import ManagerPage from './pages/ManagerPage';
+import { mayVoidRefund } from './lib/voidRefund';
+import { maySeeSync } from './lib/syncNotice';
+import { mayAddExpenseType } from './lib/expenseTypes';
 import TechPage from './pages/TechPage';
+import UpdateBanner from './pages/UpdateBanner';
+import { computeThemeVars, applyThemeVars } from './lib/themeVars';
 
 type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
 
@@ -19,6 +24,28 @@ export default function App() {
   // A52 — the idle lock. A CURTAIN over whatever is mounted, never a reset: the
   // cart and the part-entered payment stay exactly where they are behind it.
   const [locked, setLocked] = useState(false);
+
+  // A326 (client branding Phase 2): the business's action theme + brand colour, applied as CSS variables on <html>
+  // for every screen. Re-read on every landed pull (A321's signal), so an admin switching themes on/off or a new
+  // theme reaches the running till within the 20-s check. themeId null (themes OFF) → nothing is overridden.
+  const [brandStrip, setBrandStrip] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      posApi.branding.get().then((b) => {
+        if (cancelled) return;
+        const t = computeThemeVars(b ? { themeId: b.themeId ?? null, accentHex: b.accentHex } : null);
+        applyThemeVars(t);
+        setBrandStrip(t?.strip ?? null);
+      }).catch(() => { /* keep what is applied; the defaults are today's look */ });
+    };
+    load();
+    const unsubscribe = posApi.pos.onCatalogueChanged(load);
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+  const strip = brandStrip
+    ? <div aria-hidden className="fixed top-0 inset-x-0 h-[3px] z-[60] pointer-events-none" style={{ background: brandStrip }} />
+    : null;
 
   // On boot — first decide whether the device has been configured at all.
   // No config -> install screen (open, because there's nothing to protect yet).
@@ -119,7 +146,7 @@ export default function App() {
   if (state === 'loading') {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-action-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -159,6 +186,10 @@ export default function App() {
     />
   ) : null;
 
+  // A306: the auto-update banner rides alongside the working surface (like the curtain), so a
+  // pending update is communicated while staff are logged in — never on the lock/PIN screens.
+  const updateBanner = <UpdateBanner branchId={staff?.branchId ?? null} />;
+
   if (state === 'manager' && staff) {
     return (
       <>
@@ -170,6 +201,8 @@ export default function App() {
         onSwitchAccount={handleSignOut}
       />
       {curtain}
+      {updateBanner}
+      {strip}
       </>
     );
   }
@@ -183,8 +216,13 @@ export default function App() {
       // visible, and ManagerPage gates each tab on its own permission anyway.
       onOpenManager={hasManagerRights(staff) ? () => setState('manager') : undefined}
       canManagePrinters={hasManagerRights(staff)}
+      canVoidRefund={mayVoidRefund(staff)}
+      canSeeSync={maySeeSync(staff as any)}
+      canAddExpenseType={mayAddExpenseType(staff)}
     />
     {curtain}
+    {updateBanner}
+    {strip}
     </>
   );
 }

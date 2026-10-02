@@ -13,6 +13,7 @@ export interface PrinterSettings {
   autoCut:       boolean;           // print cut marker at bottom
   copies:        1 | 2;            // 1 = customer only, 2 = customer + merchant
   footerMessage: string;           // custom footer e.g. "Asante! Karibu tena"
+  receiptPrinterName?: string;     // A235: bridge printer for silent web receipts (device-local)
 }
 
 const STORAGE_KEY = 'swiftpos_printer_settings';
@@ -23,6 +24,7 @@ const DEFAULTS: PrinterSettings = {
   autoCut:       true,
   copies:        1,
   footerMessage: 'Thank you for your business!',
+  receiptPrinterName: '',
 };
 
 function load(): PrinterSettings {

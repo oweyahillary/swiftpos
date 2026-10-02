@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS — Backlog Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS — built but never checked (backlog verification)</h1>
+  <p class="sub">Items the register marks FIX BUILT that were never checked on a real till: sync of delivery sales and expenses, long sessions, receipts and branch text, manager and dashboard screens, technician and updates, colours and themes, the web till — and, with a second till, the branch node. On desktop 0.6.19. Do it in parts, in any order; progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.19"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-29"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> Nothing to deploy — this checks what is already live (till 0.6.19, the dashboard, the web POS, the admin portal). You need a manager and a cashier PIN, the owner’s dashboard login, and the printer for §B. §N needs a second till — SKIP it without one. Wherever a check says <b>Record</b>, take a screenshot or photo. A <b>Fail needs a note</b>.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+  ["§S — Sales and money reach the cloud (one till)", "A129, A179, A267, A168", "Till online unless stated. “Sync” = Technician mode → Sync card.", [
+    ["S1", "A delivery sale reaches the dashboard", ["On the till, ring a <b>Delivery</b> order (pick a rider if asked) and take payment.", "Sync → Pending 0.", "Dashboard → Orders."], "The sale is there, type <b>delivery</b>, right total. (Delivery sales used to be refused by the cloud and never arrive.)", true],
+    ["S2", "A till expense reaches the dashboard", ["On the till: Shift → Expenses → record one (with a type).", "Sync → Pending 0.", "Dashboard → Expenses."], "The expense is listed with its type and amount.", false],
+    ["S3", "A long day does not sign the till out", ["Leave the till signed in and idle for <b>more than an hour</b> (or check at the end of a full day).", "Ring a sale; Sync."], "The sale goes through and syncs (Pending 0) — no “signed out” / “Unauthorized” message.", false],
+    ["S4", "The web POS survives an hour too", ["Leave the web POS signed in and idle for more than an hour.", "Ring a sale."], "It goes through; no “business null” or sign-out loop.", false],
+    ["S5", "An offline sale syncs later with the right cashier", ["Network OFF; ring a sale as a cashier.", "Network ON; wait a minute; Sync."], "Pending 0; the dashboard shows the sale under that cashier.", false],
+  ]],
+
+  ["§B — Receipts and branch text (printer)", "A277, A209, A139", "", [
+    ["B1", "The till receipt shows the CTL line", ["Print a receipt on the till (B Foods levies CTL)."], "A <b>CTL (2%)</b> line with the amount, beside VAT. (P1 on 0.6.19 printed it — confirm and keep the receipt.)", true],
+    ["B2", "Web and till receipts look the same", ["Ring the same items on the till and on the web POS; print both."], "Same layout: header, lines, SubTotal / CTL / VAT / Total, footer.", true],
+    ["B3", "Branch receipt text overrides the business default", ["Dashboard → the branch’s settings → set a branch receipt header/footer (e.g. “Mama Ngina branch”).", "On the till: Technician → Sync (or wait), then print a receipt. Same on the web POS."], "Both receipts carry the <b>branch</b> text, not the business default. (Remove it afterwards if it was only a test.)", true],
+  ]],
+
+  ["§M — Manager screens and dashboard reports", "A296, A258, A259, A262, A58, A257, A157, A141, A211, A256", "", [
+    ["M1", "Item Mix follows the date range (till)", ["Manager → Sales → Item Mix → Yesterday, then 7 days."], "The list changes with the range (it used to be stuck on today).", false],
+    ["M2", "Owner reports name the cashier", ["Dashboard as the OWNER → Reports → Staff performance (today / this week)."], "Real cashier names with their sales — not “Unknown” or blank.", true],
+    ["M3", "Shift report under Shifts (dashboard)", ["Dashboard → Shifts → open a closed shift → its report."], "The shift report shows (sales, by method, expected cash) and matches the till’s Z-report for that shift.", false],
+    ["M4", "The manager’s web menu is complete", ["Dashboard signed in as the MANAGER."], "Orders (all orders), Inventory and Expenses are there and open (not “no permission”).", false],
+    ["M5", "Customers and Receiving open for a manager", ["As the manager on the dashboard: open Customers, then Inventory → Receiving."], "Both open (no “no permission”).", false],
+    ["M6", "A form says which field is wrong", ["Dashboard → Menu → add a product with an EMPTY name → Save."], "“Name is required” (not a silent nothing / “Validation failed”).", false],
+    ["M7", "Bulk ingredient import (skip if you don’t track ingredients)", ["Dashboard → Inventory → Ingredients → bulk import a small CSV (name, unit, opening stock)."], "The ingredients appear with their opening stock.", false],
+  ]],
+
+  ["§T — Technician and updates", "A298, A299, A306", "", [
+    ["T1", "The till shows which build it runs", ["Technician mode → the status card."], "A <b>Build</b> line: a short code + a build time (and v0.6.19).", true],
+    ["T2", "Errors land in the log file", ["Settings → Printing → Printers → Test print to a printer that is OFF (or a wrong address).", "On the PC open <code>%APPDATA%\\SwiftPOS\\swiftpos.log</code> (Win+R → paste → Enter; open with Notepad)."], "Near the bottom: a line with the time and the print error.", false],
+    ["T3", "The update banner (do at the next update)", ["When 0.6.20 is approved for B Foods: watch the till."], "A banner says an update is downloading/ready; “Restart & update now” asks for a <b>manager PIN</b>. SKIP until the next update.", false],
+  ]],
+
+  ["§C — Colours and themes", "A331, A330, A329", "", [
+    ["C1", "Themed tills stay readable", ["Admin portal → B Foods → <b>Turn themes on</b>; on the till pick two or three themes in turn (Settings).", "Look at the Charge button, category tabs, primary buttons."], "White text readable on every coloured button in each theme. (Turn themes off again afterwards if you prefer.)", true],
+    ["C2", "Web POS light mode — the tip panel", ["Web POS → switch to ☀ light → take a payment → Add tip."], "The tip panel is a light, subtle panel — not a flat grey block.", false],
+    ["C3", "The dashboard in SwiftPOS teal", ["Dashboard in dark, then light mode."], "Primary buttons, links, toggles and focus rings are teal (not green), text readable on them.", false],
+  ]],
+
+  ["§W — The web till", "A273", "A till shift open on T1.", [
+    ["W1", "The web knows the till by name", ["Web POS sign-in picker (as a cashier who is NOT on the till’s shift)."], "It lists “T1 — <your setup name>” and “<Branch> Web Till” — not “SwiftPOS till”.", true],
+    ["W2", "Same cashier goes straight in — no float prompt", ["Sign in on the web as the SAME cashier who opened the till’s shift."], "Straight to selling: no picker, <b>no opening-float prompt</b>.", false],
+  ]],
+
+  ["§N — Only with a second till (SKIP the whole section without one)", "A19, A20, A24, A160–A163, A22, D9", "T1 = the branch node (the till the others talk to); T2 = a peer on the same network.", [
+    ["N1", "A peer’s sales reach the cloud through the node", ["Unplug T2 from the internet only (keep it on the shop network with T1). Ring a sale on T2.", "Sync on T1."], "The T2 sale reaches the dashboard via T1.", false],
+    ["N2", "A menu change reaches an offline peer", ["With T2 still off the internet, change a price on the dashboard; T1 syncs.", "Check the price on T2."], "T2 shows the new price (from T1).", false],
+    ["N3", "Staff sign in on a peer while the cloud is away", ["Internet off for both tills; sign in on T2 with a cashier PIN."], "The cashier signs in (the staff list came from T1).", false],
+    ["N4", "A long offline peer session keeps working", ["Keep T2 off the internet for over an hour; ring a sale."], "It works; after reconnecting, its sales sync.", false],
+    ["N5", "Held orders seen on both tills", ["Hold an order on T1; open held orders on T2."], "T2 lists it; recalling it on one till locks it on the other.", false],
+    ["N6", "Promoting a till checks for a split", ["Technician → promote T2 to node while T1 is still node."], "It warns / refuses instead of creating two nodes.", false],
+  ]],
+];
+
+
+const KEY = "swiftpos-verify-backlog-2026-09-29";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS backlog verification (built, never checked on target)");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

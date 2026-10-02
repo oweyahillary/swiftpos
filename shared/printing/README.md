@@ -24,13 +24,30 @@ screen preview without a printer attached.
 ## Running it
 
     cd shared/printing
-    npm install
-    npx tsc
-    node dist/test/sample.js
+    npm ci
+    npm run sample             # print the sample tickets to the terminal
+    npm test                   # every suite, plus the reference-artefact check
 
-That renders the sample order to all three stations plus a duplicate, on both
-80mm and 58mm, and checks the tax arithmetic against two receipts photographed
-from the incumbent system. `SAMPLE-OUTPUT.txt` is a captured run.
+`npm run sample` renders the sample order to all three stations plus a
+duplicate, on both 80mm and 58mm, and checks the tax arithmetic against two
+receipts photographed from the incumbent system.
+
+### Reference artefacts (A314)
+
+`SAMPLE-OUTPUT.txt` and `out/*.bin` are the committed output of the CURRENT
+renderer — the text a reviewer reads and the bytes an owner sends to a printer
+(`copy /b out\receipt-80.bin \\localhost\<printer>`). `npm test` re-renders
+both and fails, naming the file and the first differing line or byte, if either
+has drifted. So when a change moves the paper on purpose:
+
+    npm run refresh-artefacts  # rewrites out/*.bin and SAMPLE-OUTPUT.txt
+    git diff SAMPLE-OUTPUT.txt # the review: only the lines you meant to move
+    node ../../scripts/build-escpos-renderer.mjs   # the web POS bundle, same change
+
+and commit all of it together. CI also rebuilds the web bundle
+(`build-escpos-renderer.mjs --check`, esbuild pinned) and fails if it is stale.
+`BYTE-CHECK.txt` and `VERIFICATION.txt` are one-off captures from 2026-08-05 and
+are NOT maintained — their byte counts predate the receipt closing block.
 
 Compiles clean under `strict: true`. The three app tsconfigs are currently
 `strict: false`; do not relax this one to match them.

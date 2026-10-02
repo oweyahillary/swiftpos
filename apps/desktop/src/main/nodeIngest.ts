@@ -55,6 +55,8 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
     'status', 'subtotal', 'vat_amount', 'ctl_amount', 'discount_amount', 'tip_amount',
     'total', 'covers', 'cashier_id', 'shift_id', 'customer_id', 'customer_name',
     'customer_phone', 'created_at', 'device_id', 'pump_id', 'seq',
+    'notes',   // A367 (58): the order's note. An older node ignores it; an older peer sends none (NULL).
+    'delivery_fee',   // 0.6.27 (59): on top of the bill (pass-through). Same rule as notes.
   ],
   shifts: [
     'id', 'business_id', 'branch_id', 'cashier_id', 'opened_at', 'closed_at', 'status',
@@ -65,10 +67,12 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
   float_transactions: [
     'id', 'shift_id', 'branch_id', 'cashier_id', 'type', 'amount', 'reason',
     'created_at', 'device_id', 'seq',
+    'order_id',   // 0.6.27 (59): a rider's pay-out tied to its sale. Same rule as orders.notes.
   ],
   expenses: [
     'id', 'business_id', 'branch_id', 'expense_category_id', 'description', 'amount',
     'paid_by', 'expense_date', 'shift_id', 'created_at', 'device_id', 'seq',
+    'payment_method', 'expense_type_name',   // 0.6.27 (59): how it was paid; the type's name. Same rule as orders.notes.
   ],
   business_days: [
     'id', 'business_id', 'branch_id', 'device_id', 'terminal_code', 'business_date',
@@ -103,6 +107,7 @@ export function replicatedColumns(table: ReplicatedTable): string[] {
 const ORDER_ITEM_COLUMNS = [
   'id', 'order_id', 'product_id', 'product_name', 'category_name',
   'unit_price', 'quantity', 'subtotal', 'course', 'fire_status',
+  'notes',   // A367 (58): the line's note ("3 normal, 2 spicy"). Same tolerance as the order's.
 ];
 
 /**
@@ -559,9 +564,12 @@ export function fillNodeOutbox(): number {
     // own: a till offers the node ITS OWN rows. A node running this same code
     // must not offer a peer's rows back to itself, and on a mesh peer it would
     // re-offer another till's history as though it were its own.
+    // Cross-sync (2026-09-27): a web sale downloaded onto this till's drawer (orders.origin) is not this
+    // till's to offer — it was never rung here, and the cloud already has it.
+    const notDownloaded = table === 'orders' ? 'AND origin IS NULL' : '';
     const unnumbered = db.prepare(
       `SELECT id FROM ${table}
-        WHERE seq IS NULL AND COALESCE(device_id,'') = COALESCE(?,'')
+        WHERE seq IS NULL AND COALESCE(device_id,'') = COALESCE(?,'') ${notDownloaded}
         ORDER BY created_at, rowid LIMIT 500`,
     ).all(own) as Array<{ id: string }>;
 
@@ -576,7 +584,7 @@ export function fillNodeOutbox(): number {
     // own: as above — only this terminal's rows are its to offer.
     const rows = db.prepare(
       `SELECT ${cols.join(', ')} FROM ${table}
-        WHERE seq IS NOT NULL AND seq > ? AND COALESCE(device_id,'') = COALESCE(?,'')
+        WHERE seq IS NOT NULL AND seq > ? AND COALESCE(device_id,'') = COALESCE(?,'') ${notDownloaded}
         ORDER BY seq LIMIT 500`,
     ).all(getOutboxCursor(table), own) as any[];
     if (!rows.length) continue;
@@ -823,6 +831,12 @@ const EVENT_WHITELIST: Record<string, { table: ReplicatedTable; columns: string[
               'cash_variance', 'notes', 'close_method', 'closed_by'],
   },
   day_closed: {
+    table: 'business_days',
+    columns: ['status', 'closed_at', 'closed_by', 'counted_cash',
+              'expected_cash', 'cash_variance', 'notes'],
+  },
+  // A364: a shift opened after today's cash-up reopens the day (dayService.reopenDay).
+  day_reopened: {
     table: 'business_days',
     columns: ['status', 'closed_at', 'closed_by', 'counted_cash',
               'expected_cash', 'cash_variance', 'notes'],

@@ -19,6 +19,7 @@
  * order, same labels, same wording. Changing it while also changing the
  * mechanism would make a mis-print impossible to attribute.
  */
+import type { MonoRaster } from './raster';
 import { DocBuilder, type Document } from './document';
 import { columnsFor, center, rule, pair, wrap } from './layout';
 import { formatCents } from './money';
@@ -32,6 +33,9 @@ export interface ShiftReportMethodLine {
 }
 
 export interface ShiftReportData {
+  /** 0.6.25 (owner: "add the logo in all documents"): the client's receipt logo, printed centred above the name — the same
+   *  raster and the same switch as the receipt's. Absent = no logo, the report byte-identical to before. */
+  logoRaster?: MonoRaster;
   businessName: string;
   branchName?: string;
   currencyCode: string;
@@ -47,12 +51,39 @@ export interface ShiftReportData {
   byMethod: ShiftReportMethodLine[];
   orderCount: number;
   grossSales: Cents;
+  /** A349: refunds on the shift's orders, sales kept, the taxes in them (refund-reduced), and tips. null/absent =
+   *  not reported (an older caller) → no line. `ctl` is printed only when given (the business levies it). */
+  refunds?: Cents | null;
+  netSales?: Cents | null;
+  vat?: Cents | null;
+  ctl?: Cents | null;
+  tips?: Cents | null;
+  /** 0.6.27: delivery fees the customers paid on top of their bills (pass-through, in the payments, not sales). */
+  deliveryFees?: Cents | null;
   voidCount: number;
 
   openingFloat: Cents;
   cashSales: Cents;
   floatIn: Cents;
   floatOut: Cents;
+  /** 0.6.11: cash paid out as expenses, already taken off expectedCash. null/absent = not reported (older caller). */
+  expenses?: Cents | null;
+  /** 0.6.27: the delivery fees paid to riders in cash from the drawer (a part of the pay-outs, shown on its own line;
+   *  `floatOut` is then the other pay-outs). null/absent = none. */
+  riderPayouts?: Cents | null;
+  /** 0.6.27: expenses paid by another method (M-Pesa…), NOT from the drawer — off that method's total. */
+  otherExpenses?: { method: string; amount: Cents }[] | null;
+  /** A342: the web POS's own shift on this till, counted in this drawer and closed with it. null/absent = none. */
+  siblingCash?: Cents | null;
+  /** 0.6.11: the expense lines behind it. */
+  expenseLines?: { description: string; amount: Cents }[];
+  /** 0.6.28: items taken back after they were sent to the kitchen — one line each ("2x Chicken — Wrong item · made ·
+   *  approved Jane"), the total and the part already made (wasted). null/absent = none. */
+  kitchenVoids?: { lines: { description: string; amount: Cents }[]; total: Cents; madeTotal: Cents } | null;
+  /** A363: what of the shift is not on the cloud yet, in words (desktop lib/syncNotice zBackupNote). null/absent = all on it. */
+  backupNote?: string | null;
+  /** A365: the manager's confirmation, in lines ("CONFIRMED BY …", one per method; desktop lib/shiftConfirm). */
+  confirmLines?: string[] | null;
   expectedCash: Cents;
 
   /** Present once the drawer has been counted. */
@@ -86,6 +117,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   const isClosed = r.status === 'closed' || r.status === 'closed_unreconciled';
 
   // ── Heading ───────────────────────────────────────────────────────────────
+  if (r.logoRaster) d.image(r.logoRaster, 'center');   // 0.6.25
   d.line(center(cols, r.businessName.toUpperCase()), { size: 'tall', bold: true });
   d.line(center(cols, isClosed ? 'Z-REPORT (SHIFT CLOSE)' : 'SHIFT REPORT (LIVE)'), { bold: true });
   if (r.branchName) d.line(center(cols, r.branchName));
@@ -114,6 +146,15 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
 
   d.line(pair(cols, 'Orders', String(r.orderCount)));
   d.line(pair(cols, 'Gross sales', money(r.grossSales)));
+  // A349: the shift's money in full — refunds, what was kept, the taxes in it (CTL where levied), tips.
+  if (r.refunds != null && r.refunds > 0) {
+    d.line(pair(cols, '- Refunds', money(r.refunds)));
+    d.line(pair(cols, '= Net sales', money(r.netSales ?? r.grossSales - r.refunds)));
+  }
+  if (r.vat != null) d.line(pair(cols, 'incl. VAT', money(r.vat)));
+  if (r.ctl != null) d.line(pair(cols, 'incl. CTL', money(r.ctl)));
+  if (r.tips != null && r.tips > 0) d.line(pair(cols, 'Tips (in payments)', money(r.tips)));
+  if (r.deliveryFees != null && r.deliveryFees > 0) d.line(pair(cols, 'Delivery fees (in payments)', money(r.deliveryFees)));
   d.line(pair(cols, 'Voids', String(r.voidCount)));
   d.line(rule(cols));
 
@@ -125,6 +166,11 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   d.line(pair(cols, '+ Cash sales', money(r.cashSales)));
   d.line(pair(cols, '+ Float in', money(r.floatIn)));
   d.line(pair(cols, '- Float out', money(r.floatOut)));
+  // 0.6.27: the riders' delivery fees, paid in cash from this drawer — why cash is lower and M-Pesa higher.
+  if (r.riderPayouts != null && r.riderPayouts > 0) d.line(pair(cols, '- Paid to riders', money(r.riderPayouts)));
+  // 0.6.11: expenses were always deducted from expected cash but never printed, so the column did not add up.
+  if (r.expenses != null) d.line(pair(cols, '- Expenses', money(r.expenses)));
+  if (r.siblingCash != null) d.line(pair(cols, '+ Web shift, this till', money(r.siblingCash)));
   d.line(pair(cols, '= Expected cash', money(r.expectedCash)), { bold: true });
 
   if (isClosed) {
@@ -137,6 +183,55 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
         : 'Variance (short)';
       d.line(pair(cols, label, money(r.variance)), { size: 'tall', bold: true });
     }
+  }
+
+  // 0.6.27: expenses paid by M-Pesa etc. — not from the drawer; they come off that method's expected total.
+  if (r.otherExpenses && r.otherExpenses.length) {
+    d.line(rule(cols));
+    d.line('EXPENSES NOT FROM THE DRAWER', { bold: true });
+    for (const e of r.otherExpenses) {
+      const label = METHOD_LABELS[e.method] ?? e.method.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      d.line(pair(cols, `- ${label}`, money(e.amount)));
+    }
+  }
+
+  if (r.expenseLines && r.expenseLines.length) {
+    d.line(rule(cols));
+    d.line(`EXPENSES (${r.expenseLines.length})`, { bold: true });
+    for (const e of r.expenseLines) {
+      const amt = money(e.amount);
+      // Fits → one line. Otherwise the description wraps WHOLE (it is what the owner reads to know what the cash
+      // was for) and the amount sits right-aligned beneath it.
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
+    }
+  }
+
+  // 0.6.28: what was sent to the kitchen and taken back — the owner reads these to see who cancels cooked food.
+  if (r.kitchenVoids && r.kitchenVoids.lines.length) {
+    d.line(rule(cols));
+    d.line(`KITCHEN VOIDS (${r.kitchenVoids.lines.length})`, { bold: true });
+    for (const e of r.kitchenVoids.lines) {
+      const amt = money(e.amount);
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
+    }
+    d.line(pair(cols, 'Total voided', money(r.kitchenVoids.total)), { bold: true });
+    if (r.kitchenVoids.madeTotal > 0) d.line(pair(cols, 'Of which already made', money(r.kitchenVoids.madeTotal)));
+  }
+
+  // A363 (owner: "add the note on the zreport"): never close a day without seeing what is still only on this till.
+  if (r.backupNote && r.backupNote.trim()) {
+    d.line(rule(cols));
+    d.lines(wrap(r.backupNote.trim(), cols), { bold: true });
+  }
+
+  // A365: who confirmed the shift and each method's recount — or that it still awaits a manager.
+  if (r.confirmLines && r.confirmLines.length) {
+    d.line(rule(cols));
+    const [head, ...rest] = r.confirmLines;
+    d.lines(wrap(head, cols), { bold: true });
+    for (const l of rest) d.lines(wrap(l, cols));
   }
 
   if (isClosed && r.notes && r.notes.trim()) {

@@ -22,7 +22,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { posApi } from '../lib/posApi';
+import { posApi, type AwaitingShift } from '../lib/posApi';
+import ConfirmShiftModal from '../components/ConfirmShiftModal';
 
 interface Props { currency: string }
 
@@ -57,6 +58,9 @@ export default function DayCloseTab({ currency }: Props) {
   const [retryMsg, setRetryMsg] = useState<Record<string, string>>({});
 
   const [loadError, setLoadError] = useState('');
+  // A365: shifts a manager must confirm before the day can close.
+  const [awaiting, setAwaiting] = useState<AwaitingShift[]>([]);
+  const [confirmingShift, setConfirmingShift] = useState<AwaitingShift | null>(null);
 
   // Four INDEPENDENT calls, deliberately not Promise.all.
   //
@@ -85,6 +89,8 @@ export default function DayCloseTab({ currency }: Props) {
     setGate(g);
     setIsManager(m === true);
     setConflicts(Array.isArray(c) ? c : []);
+    const a = await posApi.shift.awaiting().catch(fail('shifts awaiting a manager'));
+    setAwaiting(Array.isArray(a) ? a : []);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -181,6 +187,10 @@ export default function DayCloseTab({ currency }: Props) {
         <p className="text-sm text-gray-400">
           Trading date <span className="text-white">{summary.day.business_date}</span> on this till.
         </p>
+        {/* A364: a cash-up, not the end of trading — a later shift reopens the day. */}
+        <p data-testid="day-close-cashup" className="text-xs text-gray-500">
+          This is a cash-up. A shift opened later today reopens the day, and the next close counts only the cash since.
+        </p>
       </div>
 
       {loadError && (
@@ -237,6 +247,31 @@ export default function DayCloseTab({ currency }: Props) {
             Only a manager can close the trading day. Ask a manager to sign in with their PIN.
           </p>
         </div>
+      )}
+
+      {/* A365: every shift is confirmed by a manager (blind recount of every method) before the day closes. */}
+      {awaiting.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-2" data-testid="awaiting-shifts">
+          <p className="text-sm text-amber-200 font-medium">
+            {awaiting.length === 1 ? '1 shift awaits' : `${awaiting.length} shifts await`} a manager's check
+          </p>
+          {awaiting.map((a) => (
+            <div key={a.id} className="flex items-center justify-between text-xs text-amber-100/90">
+              <span>{a.cashier_name} · {hm(a.opened_at)}–{hm(a.closed_at)}</span>
+              <button onClick={() => setConfirmingShift(a)} data-testid={`confirm-${a.id}`}
+                className="bg-action-600 hover:bg-action-500 text-white rounded px-2.5 py-1">Confirm</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {confirmingShift && (
+        <ConfirmShiftModal
+          shiftId={confirmingShift.id} cashierName={confirmingShift.cashier_name} methods={confirmingShift.methods}
+          openedAt={confirmingShift.opened_at} closedAt={confirmingShift.closed_at}
+          currency={currency}
+          onClose={() => setConfirmingShift(null)}
+          onDone={async () => { setConfirmingShift(null); await load(); }}
+        />
       )}
 
       <div className="bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm">
@@ -302,16 +337,28 @@ export default function DayCloseTab({ currency }: Props) {
 
       {msg && <p className="text-sm text-red-400">{msg}</p>}
 
+      {awaiting.length > 0 && (
+        <p className="text-sm text-amber-300" data-testid="close-blocked">
+          Confirm every shift above before closing the day.
+        </p>
+      )}
+
       <button
         onClick={handleClose}
-        disabled={!isManager || busy || counted === ''}
-        className="bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500
+        disabled={!isManager || busy || counted === '' || awaiting.length > 0}
+        className="bg-action-600 hover:bg-action-500 disabled:bg-gray-700 disabled:text-gray-500
                    text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
       >
         {busy ? 'Closing…' : 'Count verified — close the day'}
       </button>
     </div>
   );
+}
+
+function hm(iso: string | null): string {
+  if (!iso) return '?';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '?' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function Row({ label, value, className = '' }: { label: string; value: string; className?: string }) {

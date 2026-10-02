@@ -61,7 +61,7 @@ function stockPayload(s: StockForm) {
 }
 
 const inputCls =
-  'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors';
+  'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift transition-colors';
 
 // Shared editor for an option's stock rule. Used in Add-group and Edit-option.
 function StockImpactEditor({
@@ -199,7 +199,7 @@ function SectionHeader({ title, onAdd }: { title: string; onAdd: () => void }) {
       <h3 className="text-white font-medium text-sm">{title}</h3>
       <button
         onClick={onAdd}
-        className="text-xs bg-gray-800 hover:bg-gray-700 text-green-400 border border-gray-700 px-3 py-1.5 rounded-lg transition-colors"
+        className="text-xs bg-gray-800 hover:bg-gray-700 text-swift-text border border-gray-700 px-3 py-1.5 rounded-lg transition-colors"
       >
         + Add group
       </button>
@@ -298,7 +298,7 @@ function AddGroupModal({
               type="checkbox"
               checked={form.required}
               onChange={e => setForm(f => ({ ...f, required: e.target.checked }))}
-              className="accent-green-500"
+              className="accent-swift"
             />
             <span className="text-sm text-gray-400">Required selection</span>
           </label>
@@ -331,7 +331,7 @@ function AddGroupModal({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs text-gray-400">Options</label>
-            <button onClick={addOption} className="text-xs text-green-400 hover:text-green-300 transition-colors">+ Add option</button>
+            <button onClick={addOption} className="text-xs text-swift-text hover:text-swift-text-hover transition-colors">+ Add option</button>
           </div>
           <div className="space-y-3">
             {form.options.map((opt, i) => (
@@ -341,7 +341,7 @@ function AddGroupModal({
                     value={opt.name}
                     onChange={e => updateOption(i, { name: e.target.value })}
                     placeholder={mode === 'variant' ? 'e.g. Large' : 'e.g. Extra Cheese'}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift transition-colors"
                   />
                   <div className="relative w-28">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">{currency}</span>
@@ -350,7 +350,7 @@ function AddGroupModal({
                       value={opt.price}
                       onChange={e => updateOption(i, { price: e.target.value })}
                       placeholder="0"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-swift transition-colors"
                     />
                   </div>
                   {form.options.length > 1 && (
@@ -378,7 +378,7 @@ function AddGroupModal({
           <button onClick={onClose} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+          <button onClick={handleSave} disabled={saving} className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
             {saving ? 'Saving…' : 'Save group'}
           </button>
         </div>
@@ -438,7 +438,7 @@ function EditOptionModal({
                 type="number"
                 value={price}
                 onChange={e => setPrice(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-swift transition-colors"
               />
             </div>
           </div>
@@ -455,7 +455,7 @@ function EditOptionModal({
           <button onClick={onClose} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg py-2.5 text-sm transition-colors">
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+          <button onClick={handleSave} disabled={saving} className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-40 text-gray-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -589,6 +589,21 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
     await fetchAll();
   };
 
+  // A148: add ONE option to a SAVED modifier group. The group-create form can add
+  // options and a saved group could DELETE them, but there was no "add option to an
+  // existing group" control — this wires the live POST /api/modifiers/options.
+  const [addOpt, setAddOpt] = useState<{ groupId: string; name: string; price: string } | null>(null);
+  const addModifierOption = async () => {
+    if (!addOpt || !addOpt.name.trim()) return;
+    await api.post('/api/modifiers/options', {
+      modifier_group_id: addOpt.groupId,
+      name: addOpt.name.trim(),
+      price: parseFloat(addOpt.price) || 0,
+    });
+    setAddOpt(null);
+    await fetchAll();
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -608,7 +623,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-8">
           {loading ? (
             <div className="flex justify-center py-16">
-              <div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-swift border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
             <>
@@ -657,7 +672,7 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                                   <span className="text-gray-500 text-xs">{priceLabel}</span>
                                   <button
                                     onClick={() => setEditingOption(opt)}
-                                    className="text-gray-500 hover:text-green-400 transition-colors text-xs"
+                                    className="text-gray-500 hover:text-swift-text-hover transition-colors text-xs"
                                   >
                                     Edit
                                   </button>
@@ -718,6 +733,32 @@ export default function VariantsDrawer({ product, onClose, onUpdated }: Props) {
                               </div>
                             </div>
                           ))}
+                          {/* A148: add one option to this saved group */}
+                          {addOpt?.groupId === group.id ? (
+                            <div className="flex items-center gap-2 py-1.5">
+                              <input
+                                autoFocus value={addOpt.name}
+                                onChange={e => setAddOpt({ ...addOpt, name: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') void addModifierOption(); }}
+                                placeholder="Option name"
+                                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-swift"
+                              />
+                              <input
+                                value={addOpt.price} inputMode="decimal"
+                                onChange={e => setAddOpt({ ...addOpt, price: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') void addModifierOption(); }}
+                                placeholder="0"
+                                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-swift"
+                              />
+                              <button onClick={() => void addModifierOption()} className="text-xs text-swift-text hover:text-swift-text-hover transition-colors">Add</button>
+                              <button onClick={() => setAddOpt(null)} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setAddOpt({ groupId: group.id, name: '', price: '' })}
+                              className="text-xs text-swift-text hover:text-swift-text-hover transition-colors mt-1"
+                            >+ Add option</button>
+                          )}
                         </div>
                       </div>
                     ))}

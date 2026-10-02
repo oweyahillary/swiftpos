@@ -131,7 +131,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
           <select
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
           >
             <option value="">Print dialog (ask every time)</option>
             {printers.map(p => (
@@ -182,7 +182,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
           <span className="text-xs text-gray-400">
             {loading ? 'Finding printers…' : `Built-in silent printing · ${printers.length} printer${printers.length === 1 ? '' : 's'} found`}
           </span>
-          <button onClick={loadPrinters} className="ml-auto text-xs text-green-400 hover:text-green-300 flex-shrink-0">Refresh</button>
+          <button onClick={loadPrinters} className="ml-auto text-xs text-action-400 hover:text-action-300 flex-shrink-0">Refresh</button>
         </div>
 
         {/* Receipt printer */}
@@ -214,7 +214,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
               <button
                 onClick={() => canEdit && save({ kitchenEnabled: !settings.kitchenEnabled })}
                 disabled={!canEdit}
-                className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${settings.kitchenEnabled ? 'border-green-500 text-green-400' : 'border-gray-700 text-gray-300'} ${!canEdit ? 'opacity-70 cursor-default' : ''}`}
+                className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${settings.kitchenEnabled ? 'border-action-500 text-action-400' : 'border-gray-700 text-gray-300'} ${!canEdit ? 'opacity-70 cursor-default' : ''}`}
               >
                 {settings.kitchenEnabled ? 'Enabled' : 'Disabled'}
               </button>
@@ -256,7 +256,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
             <div className="flex rounded-lg overflow-hidden border border-gray-700">
               {([1, 2] as const).map(c => (
                 <button key={c} onClick={() => save({ copies: c })}
-                  className={`flex-1 py-1.5 text-xs ${settings.copies === c ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-400'}`}>
+                  className={`flex-1 py-1.5 text-xs ${settings.copies === c ? 'bg-action-500/10 text-action-400' : 'bg-gray-800 text-gray-400'}`}>
                   {c}
                 </button>
               ))}
@@ -265,7 +265,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
           <div>
             <label className="block text-xs text-gray-400 mb-1">Cut marker</label>
             <button onClick={() => save({ autoCut: !settings.autoCut })}
-              className={`w-full py-1.5 text-xs rounded-lg border ${settings.autoCut ? 'border-green-500 text-green-400 bg-green-500/10' : 'border-gray-700 text-gray-400 bg-gray-800'}`}>
+              className={`w-full py-1.5 text-xs rounded-lg border ${settings.autoCut ? 'border-action-500 text-action-400 bg-action-500/10' : 'border-gray-700 text-gray-400 bg-gray-800'}`}>
               {settings.autoCut ? 'On' : 'Off'}
             </button>
           </div>
@@ -280,7 +280,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
             type="text" value={settings.footerMessage}
             onChange={e => save({ footerMessage: e.target.value })}
             placeholder="Thank you for your business!"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
           />
         </div>
         )}
@@ -291,7 +291,7 @@ export default function PrinterSettingsModal({ isRestaurant, onClose, canEdit = 
           {canEdit
             ? <button onClick={reset} className="text-xs text-gray-400 hover:text-red-400 transition-colors">Reset to defaults</button>
             : <span />}
-          <button onClick={onClose} className="bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl px-5 py-2 text-sm transition-colors">Done</button>
+          <button onClick={onClose} className="bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl px-5 py-2 text-sm transition-colors">Done</button>
         </div>
       </div>
     </div>

@@ -22,7 +22,8 @@
  * a week.
  */
 
-import type { Document, TextBlock, Size } from './document';
+import type { Document, TextBlock, ImageBlock, Size } from './document';
+import { bytesPerRow, PRINTER_MAX_DOTS } from './raster';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -83,6 +84,23 @@ export function toEscPos(doc: Document, opts: EscPosOptions = {}): Buffer {
         if (bold !== curBold) { push(ESC, 0x45, bold); curBold = bold; }
         text(b.text);
         push(0x0a);
+        break;
+      }
+      case 'image': {
+        // GS v 0 m xL xH yL yH d1..dk — "print raster bit image", m=0 normal
+        // density. xL/xH is BYTES per row, yL/yH is rows. The bytes were packed
+        // MSB-first / row-padded by raster.ts, so they go straight through.
+        // A malformed raster is dropped, not sent: a wrong length here desyncs
+        // the printer's parser and it prints the rest of the receipt as garbage.
+        const b = block as ImageBlock;
+        const r = b.raster;
+        const rowBytes = bytesPerRow(r.width);
+        if (r.width <= 0 || r.width > PRINTER_MAX_DOTS || r.height <= 0 || r.height > 0xffff
+            || r.bytes.length !== rowBytes * r.height) break;
+        const a = ALIGN[b.align];
+        if (a !== curAlign) { push(ESC, 0x61, a); curAlign = a; }
+        push(GS, 0x76, 0x30, 0x00, rowBytes & 0xff, (rowBytes >> 8) & 0xff, r.height & 0xff, (r.height >> 8) & 0xff);
+        for (let i = 0; i < r.bytes.length; i++) out.push(r.bytes[i]);
         break;
       }
       case 'feed':

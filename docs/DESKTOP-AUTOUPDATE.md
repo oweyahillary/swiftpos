@@ -1,15 +1,28 @@
 # Desktop auto-update (register D3)
 
-**Status: SCAFFOLD.** The code (`apps/desktop/src/main/autoUpdate.ts`) is written
-and correct against the electron-updater API, but it is **not wired, not built,
-and not verified** — none of that is possible on the Linux bench, and the pieces
-below are release-engineering decisions only the owner can make. Follow this to
-finish and prove it.
+> **A348 (desktop 0.6.16, 2026-09-28) — updates are approved per business; held by default.** From 0.6.16 a till never
+> polls GitHub. At launch and hourly it asks the cloud (`GET /api/desktop-update/status`) which version its business is
+> approved for; `null` = hold. Only a NEWER approved version is downloaded, through the cloud's generic feed
+> (`/api/desktop-update/v/<version>/…`, which redirects to the GitHub release file). Approve or hold per client in the
+> admin portal (client detail → Desktop updates). Every build is published as a **pre-release**, which tills on 0.6.15
+> and older ignore (they follow GitHub's latest non-pre-release). **0.6.16 itself must be published once as a normal
+> release** so old tills pick up the approval check; after that, never untick pre-release again — approve in the portal.
+> The repository can go private once every till runs 0.6.16+ and the cloud has `GITHUB_RELEASES_TOKEN` (read-only).
+> Code: `apps/desktop/src/main/autoUpdate.ts`, `apps/server/src/routes/desktopUpdate.ts`, `apps/server/src/lib/desktopReleases.ts`.
+> The sections below describe the original (0.6.x ≤ 0.6.15) GitHub-feed setup, which still builds the files.
 
-Today every release is a hand-installed `.exe` per till. That is the root of A1
-(no release pipeline) and the tax on every desktop fix — a till is always a
-version or two behind, and a schema bump reaches the fleet only when someone
-walks to each machine.
+**Status: WIRED (2026-09-10).** `electron-updater` is a dependency, `autoUpdate.ts`
+is built and called from `index.ts`, the prod flavour publishes to GitHub Releases
+(`oweyahillary/swiftpos`), and a tag-triggered `.github/workflows/release.yml`
+builds + publishes on Windows. It runs **unsigned** for now (§4) — the update loop
+works; Windows SmartScreen shows on first install until a signing cert is added,
+which is a config/secret flip, not a code change. What remains is owner-only:
+optionally add a cert, and cut + verify the first published release end-to-end on
+a real Windows till (rule 16 — the Linux bench can't run Electron or publish).
+
+Today (until the first release is cut) every install is still a hand-installed
+`.exe`; once a v-tag is pushed, installed prod tills converge on the feed by
+themselves — the end of A1.
 
 ---
 

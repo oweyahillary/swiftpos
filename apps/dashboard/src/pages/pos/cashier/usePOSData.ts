@@ -8,11 +8,15 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
+import { parseNotePicks } from '../../../lib/orderNotes';
+import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
+import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
 import { usePOSAuth } from '../../../context/POSAuthContext';
 import { connectQZ } from '../../../lib/localPrintServer';
 import type { BranchPrinter } from '../../../lib/printKOT';
+import type { ComboComponent } from '../../../types';
 import {
   deriveMode,
   type BusinessMode,
@@ -29,6 +33,16 @@ export interface POSData {
   products:          Product[];
   categories:        Category[];
   variantsByProduct: Record<string, VariantGroup[]>;
+  comboItems:        Record<string, ComboComponent[]>;
+  kitchenExclusions: string[];
+  /** A367: the owner's quick picks for order notes. */
+  notePicks:         string[];
+  /** 0.6.27: the per-client POS switches (admin portal); all off until pos/init says. */
+  posFeatures:       PosFeatures;
+  receiptHeader:     string;
+  /** A313: the receipt logo to print, already gated on the client's toggle; null = none. */
+  receiptLogo:       MonoRaster | null;
+  receiptFooter:     string;
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -51,6 +65,13 @@ export function usePOSData(): POSData {
   const [categories,        setCategories]        = useState<Category[]>([]);
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
+  const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
+  const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
+  const [notePicks, setNotePicks] = useState<string[]>([]);
+  const [posFeatures, setPosFeatures] = useState<PosFeatures>(noPosFeatures());
+  const [receiptHeader,     setReceiptHeader]     = useState('');
+  const [receiptLogo,       setReceiptLogo]       = useState<MonoRaster | null>(null);
+  const [receiptFooter,     setReceiptFooter]     = useState('');
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
   const [branchPrinters,    setBranchPrinters]    = useState<BranchPrinter[]>([]);
@@ -78,6 +99,16 @@ export function usePOSData(): POSData {
       setCategories(init.categories ?? []);
       setPaymentMethods(init.paymentMethods ?? []);
       setVariantsByProduct(init.variantsByProduct ?? {});
+      setComboItems(init.comboItems ?? {});
+      setKitchenExclusions(init.kitchenExclusions ?? []);
+      setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
+      setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
+      setReceiptHeader(init.receiptHeader ?? '');
+      // A313: resolve the receipt logo ONCE here, the same gate the till applies
+      // (resolveReceiptLogo in ipcHandlers): toggle ON and a decodable raster.
+      setReceiptLogo(init.branding?.receiptLogoEnabled && init.branding.logoReceipt
+        ? monoRasterFromString(init.branding.logoReceipt) : null);
+      setReceiptFooter(init.receiptFooter ?? '');
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
       // Clamp the web POS to the server's discount ceiling. Falls back to the
@@ -143,7 +174,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct,
+    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, receiptHeader, receiptLogo, receiptFooter,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
     loading, error,

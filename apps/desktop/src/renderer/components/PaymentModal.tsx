@@ -1,6 +1,9 @@
+import MethodDot from './MethodDot';
+import { methodColour, methodTint } from '../../shared/paymentColours';
 import { useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
+import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
 
 // Payment modal — split tender + discount + tip.
 //
@@ -25,8 +28,10 @@ export interface PaymentResult {
   tipAmount: number;
   /** The BILL — subtotal minus discount, excluding tip. Goes to orders.total. */
   total: number;
-  /** What the customer paid: total + tipAmount. The legs sum to this. */
+  /** What the customer paid: total + tipAmount (+ deliveryFee). The legs sum to this. */
   amountDue: number;
+  /** 0.6.27: the delivery fee paid on top of the bill (pass-through to the rider; not sales). 0 = none. */
+  deliveryFee: number;
   vatAmount: number;
   ctlAmount: number;
   legs: PaymentLeg[];
@@ -45,6 +50,10 @@ interface Props {
   // Custom tenders beyond the built-ins (A96), cached from the last pull so they
   // work offline. Rendered as extra method buttons; all are non-cash.
   customMethods?: { code: string; name: string }[];
+  /** 0.6.27: a delivery fee to collect on top of the bill ('delivery_fee' switch; 0 = none). */
+  deliveryFee?: number;
+  /** 0.6.27: who takes the order (shown beside the fee). */
+  rider?: string | null;
   onConfirm: (result: PaymentResult) => void;
   onClose: () => void;
 }
@@ -59,7 +68,7 @@ const METHOD_META: Record<LegMethod, { label: string; icon: string }> = {
   glovo: { label: 'Glovo',  icon: '🛵' },
 };
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], deliveryFee: feeIn = 0, rider = null, onConfirm, onClose }: Props) {
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
@@ -68,10 +77,13 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   const [localError, setLocalError] = useState('');
 
   const discountRaw = parseFloat(discountInput) || 0;
-  const { discountAmount, tipAmount, vatAmount, ctlAmount, total, amountDue, discountCapped } = useMemo(
+  const { discountAmount, tipAmount, vatAmount, ctlAmount, total, amountDue: billAndTip, discountCapped } = useMemo(
     () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct }),
     [subtotal, discountRaw, discountMode, tipInput, vatRate, ctlRate, maxDiscountPct]
   );
+  // 0.6.27: the delivery fee rides on top like the tip — in the legs, not in the bill (total) or its taxes.
+  const deliveryFee = cleanDeliveryFee(feeIn);
+  const amountDue = amountDueWithFee(billAndTip, 0, deliveryFee);
 
   // ── Payment legs ────────────────────────────────────────
   // Single leg by default; "Split payment" adds more. A blank amount means
@@ -113,6 +125,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
       tipAmount,
       total,
       amountDue,
+      deliveryFee,
       vatAmount,
       ctlAmount,
       legs: legView.map(l => ({
@@ -151,6 +164,11 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
               <span>Tip</span><span>{fmt(tipAmount)}</span>
             </div>
           )}
+          {deliveryFee > 0 && (
+            <div className="flex justify-between text-gray-400" data-testid="pay-delivery-fee">
+              <span>Delivery fee{rider ? ` — ${rider}` : ''}</span><span>{fmt(deliveryFee)}</span>
+            </div>
+          )}
           {ctlRate > 0 && (
             <div className="flex justify-between text-gray-300 text-xs">
               <span>incl. CTL ({ctlRate}%)</span><span>{fmt(ctlAmount)}</span>
@@ -182,7 +200,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   type="number" min="0" value={discountInput}
                   onChange={e => setDiscountInput(e.target.value)}
                   placeholder="0"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-l-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-l-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
                 />
                 <button
                   onClick={() => setDiscountMode(m => (m === 'amount' ? 'percent' : 'amount'))}
@@ -208,7 +226,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                 type="number" min="0" value={tipInput}
                 onChange={e => setTipInput(e.target.value)}
                 placeholder="0"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-action-500"
               />
             </div>
           </div>
@@ -227,9 +245,11 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     <button
                       key={m.code}
                       onClick={() => setLeg(i, { method: m.code })}
-                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
+                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-action-500/10 border-action-500 text-action-400' : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'}`}
+                      // A344: each method in its own colour; the SELECTED one keeps the theme highlight (action-*).
+                      style={leg.method === m.code ? undefined : { backgroundColor: methodTint(m.code), borderColor: methodColour(m.code).dot }}
                     >
-                      {m.icon} {m.label}
+                      <MethodDot method={m.code} />{m.icon} {m.label}
                     </button>
                   ))}
                 </div>
@@ -245,7 +265,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     type="number" min="0" value={legs[i].amount}
                     onChange={e => setLeg(i, { amount: e.target.value })}
                     placeholder={String(leg.resolvedAmount || amountDue)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-action-500"
                   />
                 </div>
                 {leg.method === 'cash' ? (
@@ -255,7 +275,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                       type="number" min="0" value={legs[i].tendered}
                       onChange={e => setLeg(i, { tendered: e.target.value })}
                       placeholder={String(leg.resolvedAmount)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-green-500"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-semibold focus:outline-none focus:border-action-500"
                     />
                   </div>
                 ) : (
@@ -267,7 +287,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                       type="text" value={legs[i].reference}
                       onChange={e => setLeg(i, { reference: leg.method === 'mpesa' ? e.target.value.toUpperCase() : e.target.value })}
                       placeholder={leg.method === 'mpesa' ? 'QHX4K2L9MP' : leg.method === 'glovo' ? 'Glovo order #' : 'Txn ID'}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-green-500"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500"
                     />
                   </div>
                 )}
@@ -283,7 +303,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           ))}
 
           <div className="flex items-center justify-between">
-            <button onClick={addLeg} className="text-xs text-green-400 hover:text-green-300 transition-colors font-medium">
+            <button onClick={addLeg} className="text-xs text-action-400 hover:text-action-300 transition-colors font-medium">
               + Split payment
             </button>
             {Math.abs(remaining) > EPSILON && (
@@ -299,7 +319,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
         <button
           onClick={handleConfirm}
           disabled={!canConfirm}
-          className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
+          className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors"
         >
           {placing ? 'Processing…' : `Charge ${fmt(amountDue)}`}
         </button>

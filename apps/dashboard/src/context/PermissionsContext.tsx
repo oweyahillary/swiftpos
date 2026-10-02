@@ -68,17 +68,16 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setRoles(rolesData ?? []);
       setAllPermissions(permsData ?? []);
 
-      // Dashboard user is always the business owner
-      const ownerRole = (rolesData ?? []).find(r => r.name === 'owner');
-      if (ownerRole) {
-        const ownerPermIds = new Set(ownerRole.role_permissions.map(rp => rp.permission_id));
-        const keys = (permsData ?? [])
-          .filter(p => ownerPermIds.has(p.id))
-          .map(p => p.key);
-        setPermissionKeys(new Set(keys));
-      } else {
-        setPermissionKeys(new Set(['*'])); // fallback: grant all
-      }
+      // A202: the dashboard user is ALWAYS the business owner, and the server treats
+      // the owner as all-access — requirePermission() bypasses on req.isOwner, and
+      // migration 24 states "owners are never role-gated (auth grants them a
+      // wildcard), so the owner-only permissions don't need an explicit grant."
+      // Mirror that wildcard here. Previously we filtered permissionKeys to the owner
+      // ROLE's explicit role_permissions, which hid owner-only features the owner
+      // role isn't explicitly granted (ingredients.manage, inventory.adjust) even
+      // though the server allows them — e.g. the "+ Add Ingredient" button vanished.
+      // roles/allPermissions stay loaded above for the Roles management screen.
+      setPermissionKeys(new Set(['*']));
     } catch {
       if (!signal?.aborted) {
         setPermissionKeys(new Set(['*'])); // don't lock the owner out on error

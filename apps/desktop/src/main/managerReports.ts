@@ -39,6 +39,7 @@
 import { isNodeRole } from './deviceConfig';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
+import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
 
 export type RangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
 
@@ -165,20 +166,30 @@ export function getSalesSummary(range?: ReportRange) {
   const db = getLocalDb();
   const { from, to } = range ?? todayRange();
 
+  // A349: refund-true, with the levy. Revenue is what was KEPT (gross − refunds) — the same figure the Daily Sales
+  // Report and the dashboard call gross sales; VAT and CTL are the stored amounts reduced by the refunded share
+  // (orderMoney.ts, the cloud's orderTax rule). Before: refunds ignored, no CTL at all.
   const row = db.prepare(`
     SELECT
-      COUNT(*)                        AS order_count,
-      COALESCE(SUM(total), 0)        AS total_revenue,
-      COALESCE(SUM(vat_amount), 0)   AS total_vat,
-      COALESCE(SUM(discount_amount),0) AS total_discount,
-      COALESCE(AVG(total), 0)        AS avg_order_value
+      COUNT(*)                                   AS order_count,
+      COALESCE(SUM(total), 0)                    AS gross_before_refunds,
+      COALESCE(SUM(${refundedSql()}), 0)         AS total_refunded,
+      COALESCE(SUM(${vatKeptSql()}), 0)          AS total_vat,
+      COALESCE(SUM(${ctlKeptSql()}), 0)          AS total_ctl,
+      COALESCE(SUM(discount_amount),0)           AS total_discount,
+      COALESCE(SUM(COALESCE(tip_amount, 0)), 0)  AS total_tips
     FROM orders
     WHERE status = 'completed'
       AND created_at >= ? AND created_at <= ?
   `).get(from, to) as any;
+  const netRevenue = Number(row.gross_before_refunds) - Number(row.total_refunded);
 
-  // Payment method split
-  const methods = db.prepare(`
+  // Payment method split — isolated: a schema-drift throw here (e.g. an old local
+  // payments table on a migrated db) must NOT take the revenue row down with it.
+  // A293: same fail-soft pattern as getTableOccupancy (A290), one level deeper.
+  let methods: { method: string; amount: number }[] = [];
+  try {
+    methods = db.prepare(`
     SELECT p.method, COALESCE(SUM(p.amount), 0) AS amount
     FROM payments p
     JOIN orders o ON o.id = p.order_id
@@ -186,27 +197,43 @@ export function getSalesSummary(range?: ReportRange) {
       AND o.created_at >= ? AND o.created_at <= ?
     GROUP BY p.method
   `).all(from, to) as { method: string; amount: number }[];
+  } catch (err) {
+    console.warn('[managerReports] getSalesSummary payment split failed (schema?):', (err as Error).message);
+  }
 
-  // Hourly (last 12 hours)
-  const hourly = db.prepare(`
+  // Hourly (last 12 hours) — isolated for the same reason.
+  let hourly: { hour: string; order_count: number; revenue: number }[] = [];
+  try {
+    hourly = db.prepare(`
     SELECT
-      strftime('%H', created_at) AS hour,
+      strftime('%H', created_at, 'localtime') AS hour,
       COUNT(*)                   AS order_count,
-      COALESCE(SUM(total), 0)   AS revenue
+      COALESCE(SUM(total - ${refundedSql()}), 0) AS revenue
     FROM orders
     WHERE status = 'completed'
       AND created_at >= ? AND created_at <= ?
-    GROUP BY strftime('%H', created_at)
+    GROUP BY strftime('%H', created_at, 'localtime')
     ORDER BY hour
   `).all(from, to) as { hour: string; order_count: number; revenue: number }[];
+  } catch (err) {
+    console.warn('[managerReports] getSalesSummary hourly failed:', (err as Error).message);
+  }
 
   return {
     summary: {
-      totalRevenue:   Number(row.total_revenue),
+      // A349: net of refunds (was the gross before refunds).
+      totalRevenue:   money2(netRevenue),
       totalOrders:    Number(row.order_count),
-      avgOrderValue:  Number(row.avg_order_value),
-      totalVat:       Number(row.total_vat),
-      totalDiscount:  Number(row.total_discount),
+      avgOrderValue:  Number(row.order_count) > 0 ? money2(netRevenue / Number(row.order_count)) : 0,
+      totalVat:       money2(Number(row.total_vat)),
+      // A349: the catering levy, and whether this business levies it (so the screen shows the line only then).
+      totalCtl:       money2(Number(row.total_ctl)),
+      ctlLevied:      Number(getDeviceConfig()?.ctl_rate ?? 0) > 0 || Number(row.total_ctl) > 0,
+      totalRefunded:  money2(Number(row.total_refunded)),
+      grossBeforeRefunds: money2(Number(row.gross_before_refunds)),
+      totalDiscount:  money2(Number(row.total_discount)),
+      // Tips ride in the payment legs but are not revenue — shown so the payment total reconciles.
+      totalTips:      money2(Number(row.total_tips)),
     },
     paymentMethods: Object.fromEntries(methods.map(m => [m.method, Number(m.amount)])),
     hourly: hourly.map(h => ({ hour: parseInt(h.hour), revenue: Number(h.revenue), orders: Number(h.order_count) })),
@@ -218,7 +245,10 @@ export function getTopProducts(limit = 8, range?: ReportRange) {
   const db = getLocalDb();
   const { from, to } = range ?? todayRange();
 
-  return db.prepare(`
+  // A293: fail-soft — a schema-drift throw here must not blank the sellers card
+  // (and, under the old shared-catch, used to blank the whole Overview).
+  try {
+    return db.prepare(`
     SELECT
       oi.product_name AS name,
       SUM(oi.quantity) AS qty,
@@ -231,22 +261,32 @@ export function getTopProducts(limit = 8, range?: ReportRange) {
     ORDER BY revenue DESC
     LIMIT ?
   `).all(from, to, limit) as { name: string; qty: number; revenue: number }[];
+  } catch (err) {
+    console.warn('[managerReports] getTopProducts failed (schema?):', (err as Error).message);
+    return [] as { name: string; qty: number; revenue: number }[];
+  }
 }
 
 // ── Order history (last N orders) ────────────────────────────────────────────
-export function getRecentOrders(limit = 30, range?: ReportRange) {
+export function getRecentOrders(limit = 30, range?: ReportRange, cashierId?: string | null) {
   const db = getLocalDb();
 
   // The N+1 below is deliberate and bounded for the on-screen list, but an export
   // can span a month. Payments are therefore fetched in ONE pass and grouped in
   // memory: at ~2,000 orders the per-order query was the difference between an
   // instant CSV and a visibly frozen window.
-  const where = range ? 'WHERE created_at >= ? AND created_at <= ?' : '';
-  const params: (string | number)[] = range ? [range.from, range.to] : [];
+  // 0.6.27: `cashierId` narrows to one cashier's sales (History for a cashier when 'cashier_own_history' is on).
+  const conds: string[] = [];
+  const params: (string | number)[] = [];
+  if (range) { conds.push('created_at >= ? AND created_at <= ?'); params.push(range.from, range.to); }
+  if (cashierId) { conds.push('cashier_id = ?'); params.push(cashierId); }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
   const orders = db.prepare(`
     SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
-           discount_amount, tip_amount, created_at, cashier_id, shift_id, device_id
+           discount_amount, tip_amount, refunded_amount, created_at, cashier_id, shift_id, device_id,
+           delivery_person, delivery_fee,   -- 0.6.27: History's type reads "Delivery — Eugene"
+           origin   -- 'web' = rung on the web POS on this till's drawer (cross-sync stage 1)
     FROM orders
     ${where}
     ORDER BY created_at DESC
@@ -388,14 +428,21 @@ export function getPumpStatus() {
 export function getTableOccupancy() {
   const db = getLocalDb();
 
-  const tables = db.prepare(`
-    SELECT id, name, capacity, slot_type, pos_x, pos_y, zone, shape, sort_order
-    FROM tables
-    WHERE slot_type = 'dining'
-    ORDER BY sort_order, name
-  `).all() as any[];
-
-  return tables;
+  // A290: an older/migrated local db may predate some of these columns
+  // (CREATE TABLE IF NOT EXISTS never adds them). A throw here used to bubble up
+  // and — via the Overview's shared catch — blank revenue + payments + sellers
+  // too. Fail soft: no tables is a valid state, and the KPIs must still render.
+  try {
+    return db.prepare(`
+      SELECT id, name, capacity, slot_type, pos_x, pos_y, zone, shape, sort_order
+      FROM tables
+      WHERE slot_type = 'dining'
+      ORDER BY sort_order, name
+    `).all() as any[];
+  } catch (err) {
+    console.warn('[managerReports] getTableOccupancy failed (schema?):', (err as Error).message);
+    return [];
+  }
 }
 
 // ── Branch price management (manager = branch authority) ─────────────────────

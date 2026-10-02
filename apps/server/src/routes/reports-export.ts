@@ -485,4 +485,77 @@ router.get('/shifts', async (req, res) => {
   await sendExcel(res, wb, `swiftpos_shifts_${dateLabel}.xlsx`);
 });
 
+// ── GET /api/reports/export/expenses ──────────────────────────────────────────
+// A143: this route was documented in the header and offered by the Exports hub,
+// but was never implemented — the hub's Expenses button 404'd. Flat table of
+// expenses in the period, mirroring the /shifts export shape.
+router.get('/expenses', async (req, res) => {
+  const { from, to, format = 'xlsx' } = req.query;
+  const { start, end } = getDateRange(from as string, to as string);
+  const scopedBranch = branchScope(req);
+
+  // expense_date is a DATE; category is a FK to expense_categories (see /pnl).
+  let expQ = supabase.from('expenses')
+    .select('expense_date, description, amount, expense_categories ( name ), branches ( name )')
+    .eq('business_id', req.businessId)
+    .gte('expense_date', start.slice(0, 10))
+    .lte('expense_date', end.slice(0, 10))
+    .order('expense_date', { ascending: false });
+  if (scopedBranch) expQ = expQ.eq('branch_id', scopedBranch);
+
+  const { data: expenses, error } = await expQ;
+  if (error) { sendError(res, error); return; }
+
+  const e = expenses ?? [];
+  const total = e.reduce((s: number, x: any) => s + Number(x.amount ?? 0), 0);
+  const dateLabel = `${(from as string) ?? start.slice(0, 10)}_to_${(to as string) ?? end.slice(0, 10)}`;
+
+  if (format === 'csv') {
+    sendCsv(res,
+      ['Date', 'Category', 'Description', 'Branch', 'Amount'],
+      [
+        ...e.map((x: any) => [
+          x.expense_date ?? '',
+          x.expense_categories?.name ?? '',
+          x.description ?? '',
+          x.branches?.name ?? '',
+          fmtMoney(x.amount ?? 0),
+        ]),
+        ['', '', '', 'Total', fmtMoney(total)],
+      ],
+      `swiftpos_expenses_${dateLabel}.csv`,
+    );
+    return;
+  }
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'SwiftPOS';
+  const ws = wb.addWorksheet('Expenses');
+  ws.mergeCells('A1:E1');
+  ws.getCell('A1').value = `Expenses — ${fmtDate(start)} to ${fmtDate(end)}`;
+  ws.getCell('A1').font  = { bold: true, size: 13, color: { argb: 'FF1E3A5F' } };
+  ws.getRow(1).height = 28;
+
+  styleHeader(ws.addRow(['Date', 'Category', 'Description', 'Branch', 'Amount']));
+
+  e.forEach((x: any) => {
+    const row = ws.addRow([
+      x.expense_date ?? '',
+      (x.expense_categories as any)?.name ?? '',
+      x.description ?? '',
+      (x.branches as any)?.name ?? '',
+      Number(x.amount ?? 0),
+    ]);
+    row.getCell(5).numFmt = '#,##0.00';
+  });
+
+  const totalRow = ws.addRow(['', '', '', 'Total', total]);
+  totalRow.getCell(4).font = { bold: true };
+  totalRow.getCell(5).font = { bold: true };
+  totalRow.getCell(5).numFmt = '#,##0.00';
+
+  autoWidth(ws);
+  await sendExcel(res, wb, `swiftpos_expenses_${dateLabel}.xlsx`);
+});
+
 export default router;

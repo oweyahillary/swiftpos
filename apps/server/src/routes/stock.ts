@@ -637,7 +637,7 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
 router.get('/transfers', async (req, res) => {
   const { status, branch_id, limit = '50' } = req.query as Record<string, string>;
   let query = supabase.from('stock_transfers')
-    .select(`*, stock_transfer_items ( id, product_id, quantity, products ( name ) )`)
+    .select(`*, stock_transfer_items ( id, product_id, quantity, quantity_received, products ( name ) )`)
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(Math.min(Number(limit), 200));
   if (status)    query = query.eq('status', status);
@@ -690,11 +690,18 @@ router.post('/transfers', requirePermission('inventory.transfer'), async (req, r
   if (from_branch_id === to_branch_id)  { res.status(400).json({ error: 'Source and destination branches must be different' }); return; }
   if (!items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
 
-  // BOTH branches, not just one. Checking only the source would let someone
-  // push stock into a branch they have no rights over, and checking only the
-  // destination would let them drain one they do not.
+  // A218: a manager may INITIATE a transfer FROM their own branch (source access
+  // required — you can only drain a branch you control) TO any other branch in the
+  // business. Requiring access to the destination too (the previous rule) blocks a
+  // single-branch manager from ever sending stock out, since they only have access
+  // to their own branch. Pushing stock to another branch is within their authority:
+  // it leaves their branch on despatch and the destination must still RECEIVE it
+  // before it books. Owners keep full any→any access (assertBranchAccess is true for
+  // every branch when isOwner).
   if (!assertBranchAccess(req, from_branch_id)) { res.status(403).json({ error: 'No access to the source branch' }); return; }
-  if (!assertBranchAccess(req, to_branch_id))   { res.status(403).json({ error: 'No access to the destination branch' }); return; }
+  const { data: destBranch } = await supabase.from('branches')
+    .select('id').eq('id', to_branch_id).eq('business_id', req.businessId).maybeSingle();
+  if (!destBranch) { res.status(404).json({ error: 'Destination branch not found in this business' }); return; }
 
   const clean = items
     .map((i: any) => ({ product_id: i.product_id, quantity: Number(i.quantity) }))
@@ -717,7 +724,12 @@ router.post('/transfers', requirePermission('inventory.transfer'), async (req, r
 });
 
 router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), async (req, res) => {
-  const { status, reason, allow_same_user } = req.body;
+  // A203: the whole handler is wrapped so a failure in the stock RPCs
+  // (applyProductStockIn/Out) can never escape as an unhandled async rejection —
+  // in Express 4 that leaves the request hanging forever with no response, which
+  // is exactly what made "Mark received" appear to hang. On error we return 500.
+  try {
+  const { status, reason, allow_same_user, received_items, receipt_note } = req.body;
   if (!['in_transit', 'received', 'cancelled'].includes(status)) {
     res.status(400).json({ error: "status must be 'in_transit', 'received' or 'cancelled'" });
     return;
@@ -778,12 +790,58 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
       });
       return;
     }
-    await applyProductStockIn(lines, transfer.to_branch_id, req.userId, 'transfer_in',
+    // A221: book what actually ARRIVED, not what was sent. The recipient keys a
+    // received quantity per line; `quantity` on each item stays as the SENT figure
+    // (the despatch record), so sent-vs-received is a visible audit trail. When a
+    // caller sends no `received_items` (legacy / non-manager callers) we fall back
+    // to the sent quantity, so existing behaviour is unchanged unless a received
+    // quantity is supplied. A received line may be 0..sent (a short shipment); it
+    // may not exceed what was despatched, and it may not invent a new product.
+    const sentByProduct = new Map<string, number>(
+      lines.map((l: { product_id: string; quantity: number }) => [l.product_id, Number(l.quantity)]),
+    );
+    const receivedRaw = Array.isArray(received_items) ? received_items : null;
+    if (receivedRaw) {
+      for (const r of receivedRaw) {
+        if (!sentByProduct.has(r?.product_id)) {
+          res.status(400).json({ error: 'A received line references a product that is not on this transfer.', code: 'unknown_received_line' });
+          return;
+        }
+      }
+    }
+    const receivedLines = lines.map((l: { product_id: string; quantity: number }) => {
+      if (!receivedRaw) return { product_id: l.product_id, quantity: Number(l.quantity) };
+      const r = receivedRaw.find((x: any) => x.product_id === l.product_id);
+      return { product_id: l.product_id, quantity: r ? Number(r.quantity_received) : 0 };
+    });
+    for (const rl of receivedLines) {
+      const sent = Number(sentByProduct.get(rl.product_id) ?? 0);
+      if (!Number.isFinite(rl.quantity) || rl.quantity < 0 || rl.quantity > sent) {
+        res.status(400).json({
+          error: `Received quantity must be between 0 and the sent quantity (${sent}) for every line.`,
+          code: 'invalid_received_qty',
+        });
+        return;
+      }
+    }
+
+    const toBook = receivedLines.filter(l => l.quantity > 0);
+    await applyProductStockIn(toBook, transfer.to_branch_id, req.userId, 'transfer_in',
       `Transfer ${transfer.transfer_number} ← ${transfer.from_branch_id}`);
+    // Persist what arrived, per line, so sent (quantity) vs received
+    // (quantity_received) is on the record — the audit trail the recipient leaves.
+    for (const rl of receivedLines) {
+      await supabase.from('stock_transfer_items')
+        .update({ quantity_received: rl.quantity })
+        .eq('transfer_id', transfer.id).eq('product_id', rl.product_id);
+    }
+    if (receipt_note && String(receipt_note).trim()) {
+      patch.receipt_note = String(receipt_note).trim();
+    }
     // Booking the receipt is exactly the "received in the system" event that
     // clears a sold-beyond-stock warning at the destination (register A75).
     void resolveStockNotifications(
-      req.businessId, transfer.to_branch_id, lines.map((l: { product_id: string }) => l.product_id),
+      req.businessId, transfer.to_branch_id, receivedLines.map(l => l.product_id),
     );
     patch.received_by = req.userId;
     patch.received_at = now;
@@ -818,6 +876,9 @@ router.patch('/transfers/:id/status', requirePermission('inventory.transfer'), a
     .update(patch).eq('id', transfer.id).eq('business_id', req.businessId).select().single();
   if (error) { sendError(res, error); return; }
   res.json(data);
+  } catch (err) {
+    sendError(res, err as Error);
+  }
 });
 
 export default router;

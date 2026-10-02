@@ -83,7 +83,7 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {loading ? (
             <div className="flex justify-center py-10">
-              <div className="w-5 h-5 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-action-400 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
             <>
@@ -100,10 +100,10 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
                       const isSelected = selectedVariants[group.id]?.optionId === opt.id;
                       return (
                         <button key={opt.id} onClick={() => selectVariant(group, opt.id)}
-                          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors ${isSelected ? 'border-green-500 bg-green-500/10 text-white' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}`}>
+                          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors ${isSelected ? 'border-action-500 bg-action-500/10 text-white' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}`}>
                           <div className="flex items-center gap-2">
-                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-green-500' : 'border-gray-600'}`}>
-                              {isSelected && <span className="w-2 h-2 rounded-full bg-green-500 block" />}
+                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-action-500' : 'border-gray-600'}`}>
+                              {isSelected && <span className="w-2 h-2 rounded-full bg-action-500 block" />}
                             </span>
                             {opt.name}
                           </div>
@@ -134,9 +134,9 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
                         Object.values(selectedModifiers).filter((m: any) => m.groupId === group.id).length >= group.max_select && !isSelected;
                       return (
                         <button key={opt.id} onClick={() => !atMax && toggleModifier(group, opt.id)} disabled={atMax}
-                          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors ${isSelected ? 'border-green-500 bg-green-500/10 text-white' : atMax ? 'border-gray-800 bg-gray-800/40 text-gray-400 cursor-not-allowed' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}`}>
+                          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors ${isSelected ? 'border-action-500 bg-action-500/10 text-white' : atMax ? 'border-gray-800 bg-gray-800/40 text-gray-400 cursor-not-allowed' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}`}>
                           <div className="flex items-center gap-2">
-                            <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-green-500 bg-green-500' : 'border-gray-600'}`}>
+                            <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-action-500 bg-action-500' : 'border-gray-600'}`}>
                               {isSelected && <span className="text-gray-950 text-xs leading-none">✓</span>}
                             </span>
                             {opt.name}
@@ -161,7 +161,7 @@ export default function VariantModal({ product, currency, onConfirm, onClose }: 
             <span className="text-white font-semibold">{currency} {previewTotal.toLocaleString()}</span>
           </div>
           <button onClick={handleConfirm} disabled={loading}
-            className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
+            className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
             Add to order
           </button>
         </div>

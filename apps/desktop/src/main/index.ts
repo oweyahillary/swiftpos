@@ -6,32 +6,34 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
-import { getServerUrl, getDeviceConfig } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
+import { initAutoUpdate } from './autoUpdate';
+import { getBuildInfo } from './buildInfo';
+import { installConsoleCapture, logLine } from './logFile';
 
 const isDev = !app.isPackaged;
 
-// D17: the window title reflects the CLOUD this till is enrolled against, so a
-// build can never lie about which environment it is selling to. getServerUrl()
-// returns the enrolled device_config.server_url (the cloud — rule 21). Fill
-// PROD_CLOUD_HOSTS with your production host(s); any other host is shown in the
-// title. An empty list is the safe default: it over-shows an environment and
-// never HIDES one, which is the failure mode this exists to prevent.
-const PROD_CLOUD_HOSTS: string[] = []; // e.g. ['api.swiftpos.co.ke']
-
+// D17 / A289: the window title. The DEV flavour (and unpackaged dev) ALWAYS show
+// the enrolled cloud host — useful for setup/verification and to catch a dev till
+// pointed at the wrong cloud. The PROD flavour NEVER shows it: prod is the
+// client-facing build and a shop shouldn't see a technical URL in its title.
+// (Wrong-cloud safety for prod, if ever needed, belongs in a one-time first-launch
+// warning, not a permanent badge.) getCloudUrl() returns the enrolled cloud (rule 21).
 function cloudBadgeTitle(): string {
-  const base = 'SwiftPOS';
+  const base = app.getName();                 // 'SwiftPOS' or 'SwiftPOS Dev' (A284)
+  const devFlavour = isDev || base.toLowerCase().includes('dev');
+  if (!devFlavour) return base;               // prod: clean, no host
   try {
-    const url = getServerUrl();
-    if (!url) return base; // not enrolled yet — nothing to badge
-    const host = new URL(url).host;
-    return PROD_CLOUD_HOSTS.includes(host) ? base : `${base} — ${host}`;
+    const url = getCloudUrl();
+    if (!url) return base;                     // not enrolled yet — nothing to badge
+    return `${base} — ${new URL(url).host}`;   // dev: always show the cloud
   } catch {
     return base;
   }
@@ -188,6 +190,13 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
+  // A299: from here on, main's console.error / console.warn also go to
+  // swiftpos.log — so a failure is in the file, not just a packaged console
+  // nobody can read. Must run before the rest of startup can throw.
+  installConsoleCapture();
+  // A298: stamp the log with the build this till is actually running, so "is the
+  // fix on this machine?" is answerable from the log, not just the Tech screen.
+  { const b = getBuildInfo(); logLine('startup', `SwiftPOS ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {
@@ -225,7 +234,7 @@ app.whenReady().then(() => {
     migratePlaintextTokens();
     const session = readSessionTokens();
     if (session.token) {
-      configureSyncEngine(getServerUrl(), session.token, session.refreshToken);
+      configureSyncEngine(getCloudUrl(), session.token, session.refreshToken);
       // Sync on startup if online
       if (net.isOnline()) {
         syncAll().catch(console.error);
@@ -236,6 +245,13 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+
+  // D3 / A348: on launch and every hour, ask the cloud which version this business is approved for (null = hold) and
+  // download only an approved newer one; install on next quit.
+  // No-op in dev (app.isPackaged) and on the "SwiftPOS Dev" flavour, so
+  // `npm run dev` and dev-flavour tills are unaffected. Never throws — a failed
+  // update must not stop a till trading.
+  try { initAutoUpdate(); } catch (e) { console.error('[startup] autoUpdate init failed:', e); }
 
   // ── Background sync ──────────────────────────────────────────────────────
   // `app.on('network-connected')` is NOT a real Electron event (it never fired),
@@ -251,12 +267,30 @@ app.whenReady().then(() => {
   // mid-sale.
   startIdleMonitor();
 
+  // Backstop for anything still pending (a retry after a network blip). Sales and shift changes push at once
+  // (order:create, shift:* in ipcHandlers); 30 s, not 60, per the owner (2026-09-27).
   setInterval(() => {
     if (getSyncStatus().pendingCount > 0) syncPush().catch(console.error);
-  }, 60_000);
+  }, 30_000);
   setInterval(() => {
     syncAll().catch(console.error);
   }, 10 * 60_000);
+  // A291: cheap freshness poll — a web edit reaches this till in ~20s instead of
+  // waiting for the 10-min floor above. pullIfCatalogueChanged() only pulls when the
+  // server's catalogue version actually moved, and self-guards on offline/in-flight.
+  setInterval(() => {
+    pullIfCatalogueChanged().catch(console.error);
+    // Cross-sync stage 1 (2026-09-27): a sale rung on the web as this till reaches it on the same ~20 s beat.
+    pullWebSales().catch(console.error);
+  }, 20_000);
+  // A321: ANY successful pull (this check, the 10-min floor, startup, manual sync, post-edit sync…)
+  // tells every open window to reload from the local DB. This used to be sent only by the check
+  // above, and only to getAllWindows()[0] — changes from every other path waited for a sign-in/out.
+  onCataloguePulled(() => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('catalogue:changed');
+    }
+  });
 
   // Central day close (Phase 4) — the peer side. Every 15s: tell the node how
   // this till is doing, collect any instruction, execute it, ack the outcome.

@@ -1,17 +1,38 @@
+import MethodDot from '../components/MethodDot';
 import { useEffect, useRef, useState } from 'react';
 import { printShiftReport } from '../lib/printShiftReport';
 import { posApi } from '../lib/posApi';
-import type { ZReport } from '../lib/posApi';
+import { checkTypeName } from '../lib/expenseTypes';
+import type { ZReport, OpenKitchenOrder } from '../lib/posApi';
 import ZReportView from '../components/ZReportView';
+import ConfirmShiftModal from '../components/ConfirmShiftModal';
+import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
+import { expenseLabel } from '../../shared/expenseMethod';
+
+/** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */
+function expenseMethodChoices(options: MethodOption[]): string[] {
+  return [...new Set(['cash', 'mpesa', 'card', ...options.map(o => String(o.code).toLowerCase())])];
+}
 
 interface Props {
   business: { name: string; currency: string };
   canForceClose?: boolean;
+  /** A341: may this person add an expense type (expenses.manage)? */
+  canAddExpenseType?: boolean;
   onClose: () => void;
   onShiftChange: (report: ZReport | null) => void;
 }
 
-export default function ShiftPanel({ business, canForceClose = false, onClose, onShiftChange }: Props) {
+/** A334 + cross-sync stage 1: the web POS's part of a shared drawer — downloaded onto this till (webSales) plus what is
+ *  still only in the cloud (foreign). Both are already inside the totals; this is only what the panel says about them. */
+function webPart(report: { totals: { webSales?: { orders: number; cash_sales: number }; foreign?: { orders: number; cash_sales: number; float_in: number; float_out: number; expenses: number } | null } } | null) {
+  const w = report?.totals.webSales, f = report?.totals.foreign;
+  const sales = (w?.orders ?? 0) + (f?.orders ?? 0);
+  const cash = Number(w?.cash_sales ?? 0) + Number(f?.cash_sales ?? 0);
+  return { sales, cash, show: sales > 0 || !!(f && (f.float_in || f.float_out || f.expenses)) };
+}
+
+export default function ShiftPanel({ business, canForceClose = false, canAddExpenseType = false, onClose, onShiftChange }: Props) {
   const [report, setReport] = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -29,6 +50,12 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
   // Close form
   const [closingFloat, setClosingFloat] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
+  // A365: the cashier declares every other payment method too; a manager then confirms (now, or later from Close).
+  const [methodOptions, setMethodOptions] = useState<MethodOption[]>([]);
+  const [declaredInputs, setDeclaredInputs] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
+  // A366: only the shift's owner or a manager may close it (another cashier still sells, pays in/out, records expenses).
+  const [closeRights, setCloseRights] = useState<{ allowed: boolean; ownerName: string | null; blind?: boolean }>({ allowed: true, ownerName: null });
   // Forced close: a manager ending a shift nobody counted. Kept behind a second
   // click and a reason, because it writes an UNRECONCILED shift and that record
   // is permanent.
@@ -41,24 +68,55 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
   const [expAmount, setExpAmount]       = useState('');
   const [expDesc, setExpDesc]           = useState('');
   const [expCatId, setExpCatId]         = useState('');
+  // 0.6.27 (request 5): how the expense was paid — only cash comes out of the drawer.
+  const [expMethod, setExpMethod]       = useState('cash');
   const [expList, setExpList]           = useState<any[]>([]);
   const [expBusy, setExpBusy]           = useState(false);
   const [expError, setExpError]         = useState('');
   const [expSuccess, setExpSuccess]     = useState('');
+  // A341: adding an expense type from the picker.
+  const [addingType, setAddingType]     = useState(false);
+  const [newTypeName, setNewTypeName]   = useState('');
+  const [typeBusy, setTypeBusy]         = useState(false);
+
+  const saveNewType = async () => {
+    const check = checkTypeName(newTypeName, categories);
+    if (check.ok === false) { setExpError(check.error); return; }
+    if (check.ok === 'exists') {           // already there: pick it, no duplicate
+      setExpCatId(check.id); setAddingType(false); setNewTypeName(''); setExpError('');
+      return;
+    }
+    setTypeBusy(true); setExpError('');
+    try {
+      const created = await posApi.expense.addCategory(check.name);
+      const list = await posApi.expense.categories().catch(() => [] as { id: string; name: string }[]);
+      setCategories(list.length ? list : [...categories, created]);
+      setExpCatId(created.id);
+      setAddingType(false); setNewTypeName('');
+      setExpSuccess(`Expense type "${created.name}" added`);
+    } catch (e: any) {
+      setExpError(e?.message ?? 'Could not add the expense type.');
+    } finally { setTypeBusy(false); }
+  };
 
   const printRef = useRef<HTMLDivElement>(null);
   const currency = business.currency ?? 'KES';
 
   const refresh = async () => {
-    const r = await posApi.shift.current();
+    const r = await posApi.shift.current({ includeForeign: true });   // A334: + the web POS's cash on this drawer
     setReport(r);
     onShiftChange(r);
+    if (r) posApi.shift.closeRights().then(setCloseRights).catch(() => setCloseRights({ allowed: true, ownerName: null }));
+    // 0.6.28: sent to the kitchen on this shift and not paid — said before the count, not after it.
+    posApi.kitchen.open().then((k) => setUnpaidKitchen(k?.shift ?? [])).catch(() => setUnpaidKitchen([]));
   };
+  const [unpaidKitchen, setUnpaidKitchen] = useState<OpenKitchenOrder[]>([]);
 
   useEffect(() => {
     (async () => { await refresh(); setLoading(false); })();
     // Load expense categories (online only — falls back to empty list offline)
     posApi.expense.categories().then(setCategories).catch(() => {});
+    posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
   }, []);
 
   // Reload expense list whenever the expenses tab is opened
@@ -99,8 +157,11 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
         description: expDesc.trim(),
         amount: Number(expAmount),
         expense_category_id: expCatId || undefined,
+        // 0.6.27: the type's name rides with it (the Z-report shows the TYPE, offline too), and how it was paid.
+        category_name: categories.find(c => c.id === expCatId)?.name,
+        payment_method: expMethod,
       });
-      setExpDesc(''); setExpAmount(''); setExpCatId('');
+      setExpDesc(''); setExpAmount(''); setExpCatId(''); setExpMethod('cash');
       setExpSuccess('Expense saved — will sync on next connection');
       const list = await posApi.expense.list();
       setExpList(list);
@@ -112,7 +173,12 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
   const counted    = Number(closingFloat);
   const hasCount   = closingFloat.trim() !== '' && !Number.isNaN(counted);
   const variance   = hasCount ? counted - expected : 0;
-  const noteRequired = hasCount && Math.round(variance * 100) !== 0 && !closeNotes.trim();
+  // 0.6.27: a blind close ('blind_shift_close', a cashier) shows no figures — the report arrives without them.
+  const blind = !!(report as any)?.blind || !!closeRights.blind;
+  const noteRequired = !blind && hasCount && Math.round(variance * 100) !== 0 && !closeNotes.trim();
+  // A365: every other method this shift recorded money on (0.6.23: a method at 0 is not asked — it counts as 0).
+  const toDeclare = blind ? ((report as any)?.declareMethods ?? []) as string[] : methodsToDeclare(report?.byMethod ?? []);
+  const declaredRead = readAmounts(declaredInputs, toDeclare);
 
   const handleForceClose = async () => {
     if (!forceReason.trim()) return;
@@ -129,9 +195,13 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
   const handleClose = async () => {
     if (!hasCount)    { setError('Enter the counted cash amount'); return; }
     if (noteRequired) { setError('A note is required to close with a variance'); return; }
+    if (declaredRead.ok === false) {
+      setError(`Enter the total for: ${declaredRead.missing.map((m) => methodName(m, methodOptions)).join(', ')} (0 if none).`);
+      return;
+    }
     setBusy(true); setError('');
     try {
-      const r = await posApi.shift.close(counted, closeNotes.trim() || undefined);
+      const r = await posApi.shift.close(counted, closeNotes.trim() || undefined, declaredRead.map);
       setFinalReport(r);
       onShiftChange(null);
     } catch (e: any) { setError(e?.message ?? 'Could not close shift'); }
@@ -151,7 +221,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
     if (!res.ok) setPrintMsg(res.error ?? 'Could not print the Z-report.');
   };
 
-  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 transition-colors';
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center px-4 z-50">
@@ -172,7 +242,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors capitalize ${
                   activeTab === t
-                    ? 'text-white border-b-2 border-green-500'
+                    ? 'text-white border-b-2 border-action-500'
                     : 'text-gray-300 hover:text-white'
                 }`}>
                 {t === 'expenses' && expList.length > 0
@@ -193,12 +263,32 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
           {/* ── Final closed report ── */}
           {finalReport && (
             <>
-              <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
-                <ZReportRows report={finalReport} money={money} />
-              </div>
+              {(finalReport as any).blind ? (
+                <div className="bg-gray-950 border border-gray-800 rounded-xl p-4 text-sm text-gray-300" data-testid="blind-closed">
+                  Your count is saved. A manager checks it against the till's figures.
+                </div>
+              ) : (
+                <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+                  <ZReportRows report={finalReport} money={money} />
+                </div>
+              )}
+              {/* A365: a manager confirms now (recommended) — or later from Manager → Close. */}
+              {finalReport.confirmation && (
+                <div data-testid="shift-confirmation" className={`text-sm rounded-lg px-3 py-2 border ${finalReport.confirmation.status === 'awaiting' ? 'text-amber-300 bg-amber-400/10 border-amber-400/20' : 'text-gray-200 bg-gray-800 border-gray-700'}`}>
+                  {confirmationLabel(finalReport.confirmation)}
+                  {finalReport.confirmation.status === 'awaiting' && (
+                    <button onClick={() => setConfirming(true)} data-testid="confirm-now"
+                      className="block w-full mt-2 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-lg py-2 text-sm">
+                      Manager: confirm now
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="flex gap-3">
-                <button onClick={() => void handlePrint()} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
-                <button onClick={onClose} className="flex-1 bg-green-500 hover:bg-green-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
+                {!(finalReport as any).blind && (
+                  <button onClick={() => void handlePrint()} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
+                )}
+                <button onClick={onClose} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
               </div>
               {/* A print that silently does nothing is the worst outcome here —
                   the drawer is counted and the paper trail is what is left. */}
@@ -214,7 +304,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                 <label className="block text-sm text-gray-400 mb-1.5">Opening float ({currency})</label>
                 <input type="number" inputMode="decimal" value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} placeholder="0.00" autoFocus className={inputCls} />
               </div>
-              <button onClick={handleOpen} disabled={busy} className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
+              <button onClick={handleOpen} disabled={busy} className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-3 transition-colors">
                 {busy ? 'Opening…' : 'Open shift'}
               </button>
             </>
@@ -223,9 +313,15 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
           {/* ── Shift tab ── */}
           {!loading && report && !finalReport && activeTab === 'shift' && (
             <>
-              <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
-                <ZReportRows report={report} money={money} />
-              </div>
+              {blind ? (
+                <div className="bg-gray-950 border border-gray-800 rounded-xl p-4 text-sm text-gray-300" data-testid="blind-shift">
+                  {report.shift.cashier_name} · opened {new Date(report.shift.opened_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              ) : (
+                <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+                  <ZReportRows report={report} money={money} />
+                </div>
+              )}
 
               {/* Float movement */}
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
@@ -233,7 +329,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                 <div className="flex gap-2">
                   {(['float_out', 'float_in'] as const).map(t => (
                     <button key={t} onClick={() => setFloatType(t)}
-                      className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${floatType === t ? 'bg-green-500 text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                      className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${floatType === t ? 'bg-action-500 text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
                       {t === 'float_out' ? 'Pay out' : 'Pay in'}
                     </button>
                   ))}
@@ -245,22 +341,80 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                 </button>
               </div>
 
+              {/* A366: another cashier cannot count out this drawer — its owner or a manager does. */}
+              {!closeRights.allowed && (
+                <div className="border border-amber-500/30 bg-amber-500/5 rounded-xl p-4" data-testid="close-not-yours">
+                  <p className="text-sm text-amber-200 font-medium">Close shift</p>
+                  <p className="text-xs text-amber-100/80 mt-1">
+                    This shift belongs to {closeRights.ownerName ?? 'another cashier'}. Only {closeRights.ownerName ?? 'they'} or a manager can close it —
+                    ask them to sign in.
+                  </p>
+                </div>
+              )}
+
+              {/* 0.6.28: orders sent to the kitchen and not paid — charged or voided (with 'kitchen_void_approval', before
+                  the shift may end). */}
+              {closeRights.allowed && unpaidKitchen.length > 0 && (
+                <div className="border border-amber-500/30 bg-amber-500/5 rounded-xl p-4" data-testid="close-unpaid-kitchen">
+                  <p className="text-sm text-amber-200 font-medium">Sent to the kitchen, not paid ({unpaidKitchen.length})</p>
+                  {unpaidKitchen.map((o) => (
+                    <p key={o.order_number} className="text-xs text-amber-100/80 mt-1">
+                      #{o.order_number}{o.table_number ? ` · Table ${o.table_number}` : ''}{o.held ? ' · on hold' : ''} — {currency} {o.value.toLocaleString()}
+                    </p>
+                  ))}
+                  <p className="text-xs text-amber-100/80 mt-2">Charge each one, or have a manager remove its items, before ending the shift.</p>
+                </div>
+              )}
+
               {/* Close shift */}
+              {closeRights.allowed && (
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Close shift</p>
                 <div>
-                  <label className="block text-xs text-gray-300 mb-1">Counted cash in drawer ({currency})</label>
+                  <label className="block text-xs text-gray-300 mb-1">Counted cash in drawer ({currency}) — include the opening float</label>
                   <input type="number" inputMode="decimal" value={closingFloat} onChange={e => setClosingFloat(e.target.value)} placeholder="0.00" className={inputCls} />
                 </div>
-                {hasCount && (
+                {/* A365: every other method, from the M-Pesa statement, the card machine's total, the delivery app. */}
+                {toDeclare.map((m) => (
+                  <div key={m}>
+                    <label className="block text-xs text-gray-300 mb-1"><MethodDot method={m} />{methodName(m, methodOptions)} total ({currency})</label>
+                    <input type="number" inputMode="decimal" value={declaredInputs[m] ?? ''} placeholder="0.00" className={inputCls}
+                      data-testid={`declare-${m}`}
+                      onChange={e => setDeclaredInputs({ ...declaredInputs, [m]: e.target.value })} />
+                  </div>
+                ))}
+                {blind && (
+                  <p className="text-xs text-gray-400" data-testid="blind-note">Count the drawer and enter each method's total. A manager checks them.</p>
+                )}
+                {hasCount && !blind && (
                   <div className={`text-sm rounded-lg px-3 py-2 border ${variance === 0 ? 'text-green-400 bg-green-400/10 border-green-400/20' : 'text-amber-400 bg-amber-400/10 border-amber-400/20'}`}>
                     Expected {money(expected)} · {variance === 0 ? 'balances' : `${variance > 0 ? 'over' : 'short'} ${money(Math.abs(variance))}`}
                   </div>
                 )}
+                {/* A334 + cross-sync stage 1: a shared drawer — what the web POS rang into it is part of the count, whether
+                    already downloaded onto this till (webSales) or still only in the cloud (foreign). */}
+                {!blind && webPart(report).show ? (
+                  <p className="text-xs text-gray-400" data-testid="foreign-cash">
+                    Includes the web POS on this drawer: {webPart(report).sales} sale{webPart(report).sales === 1 ? '' : 's'}, {money(webPart(report).cash)} cash.
+                  </p>
+                ) : null}
+                {!blind && (report?.totals.foreign?.siblings?.count ?? 0) > 0 && (
+                  <p className="text-xs text-amber-300" data-testid="sibling-shifts">
+                    {/* A342: one count covers both — the cloud closes the web's shift with this close. */}
+                    Also counted in this drawer: the web POS's own shift on this till
+                    ({report!.totals.foreign!.siblings!.shifts?.map(x => x.opened_by_name ?? 'another cashier').join(', ') || 'another cashier'}),
+                    expected {money(report!.totals.foreign!.siblings!.expected)}. Closing here closes it too.
+                  </p>
+                )}
+                {report && report.totals.foreign === null ? (
+                  <p className="text-xs text-gray-500" data-testid="foreign-cash-unknown">
+                    Web POS sales on this drawer could not be checked (offline) — the cloud reconciles them after sync.
+                  </p>
+                ) : null}
                 {(noteRequired || closeNotes) && (
                   <textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder={noteRequired ? 'Note required to explain the variance' : 'Notes (optional)'} rows={2} className={inputCls} />
                 )}
-                <button onClick={handleClose} disabled={busy || !hasCount || noteRequired} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
+                <button onClick={handleClose} disabled={busy || !hasCount || noteRequired || declaredRead.ok === false} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
                   {busy ? 'Closing…' : 'Close shift & print Z-report'}
                 </button>
 
@@ -311,6 +465,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                   </div>
                 ))}
               </div>
+              )}
             </>
           )}
 
@@ -321,16 +476,44 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
               <div className="border border-gray-800 rounded-xl p-4 space-y-3">
                 <p className="text-sm text-gray-300 font-medium">Record expense</p>
 
-                {/* Category picker */}
-                <select
-                  value={expCatId}
-                  onChange={e => setExpCatId(e.target.value)}
-                  className={inputCls + ' appearance-none'}>
-                  <option value="">— No category —</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                {/* Category picker (+ A341: a manager adds a type) */}
+                <div className="flex gap-2">
+                  <select
+                    value={expCatId}
+                    onChange={e => setExpCatId(e.target.value)}
+                    className={inputCls + ' appearance-none'}>
+                    <option value="">— No category —</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  {canAddExpenseType && !addingType && (
+                    <button type="button" onClick={() => { setAddingType(true); setExpError(''); }}
+                      className="flex-shrink-0 text-sm text-gray-200 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg px-3 transition-colors">
+                      + Add type
+                    </button>
+                  )}
+                </div>
+                {canAddExpenseType && addingType && (
+                  <div data-testid="add-expense-type" className="flex gap-2">
+                    <input
+                      type="text" autoFocus maxLength={60}
+                      value={newTypeName}
+                      onChange={e => setNewTypeName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') void saveNewType(); if (e.key === 'Escape') setAddingType(false); }}
+                      placeholder="New expense type (e.g. Gas refill)"
+                      className={inputCls}
+                    />
+                    <button type="button" disabled={typeBusy} onClick={() => void saveNewType()}
+                      className="flex-shrink-0 text-sm font-medium bg-action-500 hover:bg-action-400 disabled:opacity-50 text-gray-950 rounded-lg px-3 transition-colors">
+                      {typeBusy ? 'Saving…' : 'Save'}
+                    </button>
+                    <button type="button" disabled={typeBusy} onClick={() => { setAddingType(false); setNewTypeName(''); }}
+                      className="flex-shrink-0 text-sm text-gray-300 hover:text-white px-2 transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                )}
 
                 <input
                   type="text"
@@ -348,13 +531,30 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                   className={inputCls}
                 />
 
+                {/* 0.6.27: paid with — cash leaves the drawer; M-Pesa etc. come off that method's total at close. */}
+                <div data-testid="expense-method">
+                  <p className="text-xs text-gray-300 mb-1.5">Paid with</p>
+                  <div className="flex flex-wrap gap-2">
+                    {expenseMethodChoices(methodOptions).map(m => (
+                      <button key={m} type="button" onClick={() => setExpMethod(m)} aria-pressed={expMethod === m}
+                        className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${expMethod === m
+                          ? 'bg-action-700 border-action-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-200 hover:border-gray-500'}`}>
+                        <MethodDot method={m} />{methodName(m, methodOptions)}
+                      </button>
+                    ))}
+                  </div>
+                  {expMethod !== 'cash' && (
+                    <p className="text-[11px] text-gray-400 mt-1">Not taken from the drawer — it comes off {methodName(expMethod, methodOptions)} at close.</p>
+                  )}
+                </div>
+
                 {expError   && <p className="text-red-400 text-xs">{expError}</p>}
                 {expSuccess && <p className="text-green-400 text-xs">{expSuccess}</p>}
 
                 <button
                   onClick={handleExpense}
                   disabled={expBusy}
-                  className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
+                  className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">
                   {expBusy ? 'Saving…' : 'Save expense'}
                 </button>
               </div>
@@ -367,7 +567,7 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
                     {expList.map(e => (
                       <div key={e.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
                         <div className="min-w-0">
-                          <p className="text-white text-sm truncate">{e.description}</p>
+                          <p className="text-white text-sm truncate">{expenseLabel(e.category_name, e.description, e.payment_method, methodName(e.payment_method ?? 'cash', methodOptions))}</p>
                           <p className="text-gray-400 text-xs">
                             {new Date(e.created_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}
                             {e.sync_status === 'pending' && <span className="ml-1.5 text-amber-500">● not synced</span>}
@@ -392,6 +592,21 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
         </div>
       </div>
 
+      {confirming && finalReport && (
+        <ConfirmShiftModal
+          shiftId={finalReport.shift.id}
+          cashierName={finalReport.shift.cashier_name}
+          openedAt={finalReport.shift.opened_at} closedAt={finalReport.shift.closed_at}
+          methods={finalReport.confirmation?.methods ?? finalReport.confirmation?.lines.map((l) => l.method) ?? ['cash']}
+          currency={currency}
+          onClose={() => setConfirming(false)}
+          onDone={async () => {
+            setConfirming(false);
+            try { setFinalReport(await posApi.shift.zreport(finalReport.shift.id)); } catch { /* keep the closed report */ }
+          }}
+        />
+      )}
+
       {/* Hidden printable Z-report */}
       <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
         {(finalReport ?? report) && <ZReportView ref={printRef} report={(finalReport ?? report)!} />}
@@ -403,9 +618,9 @@ export default function ShiftPanel({ business, canForceClose = false, onClose, o
 // Compact on-screen rows (the printable version is ZReportView).
 function ZReportRows({ report, money }: { report: ZReport; money: (n: number) => string }) {
   const { shift, byMethod, totals } = report;
-  const Line = ({ l, v, strong }: { l: string; v: string; strong?: boolean }) => (
+  const Line = ({ l, v, strong, dot }: { l: string; v: string; strong?: boolean; dot?: string }) => (
     <div className={`flex justify-between text-sm ${strong ? 'font-semibold text-white' : 'text-gray-400'}`}>
-      <span>{l}</span><span>{v}</span>
+      <span>{dot && <MethodDot method={dot} />}{l}</span><span>{v}</span>
     </div>
   );
   return (
@@ -417,7 +632,7 @@ function ZReportRows({ report, money }: { report: ZReport; money: (n: number) =>
       {byMethod.length === 0
         ? <p className="text-xs text-gray-400">No sales yet this shift</p>
         : byMethod.map(m => (
-          <Line key={m.method} l={`${m.method === 'mpesa' ? 'M-Pesa' : m.method[0].toUpperCase() + m.method.slice(1)} (${m.orders})`} v={money(m.amount)} />
+          <Line key={m.method} dot={m.method} l={`${m.method === 'mpesa' ? 'M-Pesa' : m.method[0].toUpperCase() + m.method.slice(1)} (${m.orders})`} v={money(m.amount)} />
         ))}
       <div className="border-t border-gray-800 my-2" />
       <Line l="Opening float" v={money(shift.opening_float)} />

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
-import { partitionByValidId } from '../lib/syncPush';
+import { partitionByValidId, isUuid } from '../lib/syncPush';
+import { cleanVoidReason, cleanVoidNote } from '../lib/kitchenLines';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
@@ -8,6 +9,8 @@ import { normaliseDeviceRole, isNodeRole } from '../lib/deviceRegistry';
 import { confirmServingRole } from '../lib/deviceRole';
 
 import { REQUIRED_DESKTOP_SCHEMA, HARD_MIN_DESKTOP_SCHEMA } from '../lib/desktopSchema';
+import { cleanExpenseMethod } from '../lib/expenseMethod';
+import { closesFirst } from '../lib/dayOrder';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -47,6 +50,8 @@ router.post('/push', async (req, res) => {
   const floats   = Array.isArray(req.body?.floats)   ? req.body.floats   : [];
   const expenses = Array.isArray(req.body?.expenses) ? req.body.expenses : [];
   const businessDays = Array.isArray(req.body?.business_days) ? req.body.business_days : [];
+  // 0.6.28: sent items taken back on a till (migration 112). A till before schema 60 sends none.
+  const kitchenVoids = Array.isArray(req.body?.kitchen_voids) ? req.body.kitchen_voids : [];
 
   // 0 = a build predating the header. Treated as ancient rather than trusted.
   const clientSchema = Number(req.header('X-Schema-Version') ?? 0) || 0;
@@ -177,7 +182,9 @@ router.post('/push', async (req, res) => {
       }
     : { behind: false, client: clientSchema, required: REQUIRED_DESKTOP_SCHEMA };
 
-  const upserted = { shifts: 0, floats: 0, expenses: 0, businessDays: 0 };
+  // kitchenVoids is always present (0.6.28): a till marks its kitchen voids synced only when it is — an older cloud's
+  // answer has no such count, and the till keeps them pending until the cloud takes them.
+  const upserted = { shifts: 0, floats: 0, expenses: 0, businessDays: 0, kitchenVoids: 0 };
   // Rows the database refused for a reason no retry can fix. Returned to the
   // client so it can flag them for a human rather than looping on them.
   // `table` names which table the id belongs to. Without it the client has only
@@ -249,12 +256,17 @@ router.post('/push', async (req, res) => {
 
       // Per-row, for the same reason as shifts: business_days_one_open_per_till
       // can reject a row, and a batch call would take the whole push down with it.
-      const results = await Promise.all(
-        rows.map(async row => {
-          const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
-          return { id: row.id, error };
-        }),
-      );
+      // A363: closing days are written BEFORE open ones — an offline close-and-reopen arrives in one batch, and a new
+      // open day written first would collide with yesterday's still-open row (one open day per till).
+      const results: { id: string; error: any }[] = [];
+      for (const group of closesFirst<(typeof rows)[number]>(rows)) {
+        results.push(...await Promise.all(
+          group.map(async row => {
+            const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
+            return { id: row.id, error };
+          }),
+        ));
+      }
       for (const r of results) {
         if (!r.error) { upserted.businessDays++; syncedDayIds.add(r.id); continue; }
         if ((r.error as { code?: string }).code === '23505') {
@@ -488,8 +500,13 @@ router.post('/push', async (req, res) => {
             description:         e.description,
             amount:              Number(e.amount),
             paid_by:             e.paid_by ?? null,
+            // A361: who entered it. The till stamps paid_by with its signed-in staff and offers no pick, so paid_by IS
+            // the recorder; an explicit recorded_by (a later till) wins.
+            recorded_by:         e.recorded_by ?? e.paid_by ?? null,
             expense_date:        e.expense_date,
             shift_id:            e.shift_id ?? null,
+            // 0.6.27: how it was paid — only cash leaves the drawer. A till before 59 sends none → cash.
+            payment_method:      cleanExpenseMethod(e.payment_method),
           };
           const { error } = await supabase.from('expenses').upsert(row, { onConflict: 'id' });
           return { id: e.id, code: (error as { code?: string })?.code, error: error?.message };
@@ -497,6 +514,54 @@ router.post('/push', async (req, res) => {
         for (const r of results) {
           if (!r.error) { upserted.expenses++; continue; }
           rejected.push({ id: r.id, code: r.code ?? 'error', table: 'expenses', error: r.error });
+        }
+      }
+    }
+
+    // ── Kitchen voids (0.6.28, migration 112) ────────────────────────────────
+    // The business is forced from the token; a reason we do not offer is refused (never stored as something else).
+    if (kitchenVoids.length) {
+      const { valid: validKv, rejected: badIdKv } = partitionByValidId(kitchenVoids as { id: unknown }[], 'kitchen_voids');
+      for (const r of badIdKv) rejected.push(r);
+      if (validKv.length) {
+        const { data: existing } = await supabase
+          .from('kitchen_voids').select('id, business_id').in('id', validKv.map((k: any) => k.id));
+        const foreign = new Set((existing ?? []).filter((r) => r.business_id !== businessId).map((r) => r.id));
+        const uuidOrNull = (v: unknown) => (isUuid(v) ? String(v) : null);
+        const results = await Promise.all(validKv.map(async (k: any) => {
+          if (foreign.has(k.id)) return { id: k.id, code: 'forbidden', error: 'kitchen void id belongs to another business' };
+          const reason = cleanVoidReason(k.reason);
+          const quantity = Number(k.quantity);
+          if (!reason) return { id: k.id, code: 'invalid_reason', error: `unknown kitchen void reason: ${String(k.reason ?? '')}` };
+          if (!(quantity > 0)) return { id: k.id, code: 'invalid_quantity', error: 'a kitchen void needs a quantity above 0' };
+          const row = {
+            id:               k.id,
+            business_id:      businessId,                 // forced from token
+            branch_id:        uuidOrNull(k.branch_id),
+            shift_id:         uuidOrNull(k.shift_id),
+            order_number:     String(k.order_number ?? '').slice(0, 80),
+            order_id:         uuidOrNull(k.order_id),
+            product_id:       uuidOrNull(k.product_id),
+            product_name:     String(k.product_name ?? 'Item').slice(0, 200),
+            quantity,
+            unit_price:       Math.max(0, Number(k.unit_price) || 0),
+            amount:           Math.max(0, Number(k.amount) || 0),
+            reason,
+            note:             cleanVoidNote(k.note),
+            cooked:           k.cooked === true || k.cooked === 1 || k.cooked === '1',
+            cashier_id:       uuidOrNull(k.cashier_id),
+            cashier_name:     k.cashier_name ? String(k.cashier_name).slice(0, 120) : null,
+            approved_by:      uuidOrNull(k.approved_by),
+            approved_by_name: k.approved_by_name ? String(k.approved_by_name).slice(0, 120) : null,
+            device_id:        k.device_id ? String(k.device_id).slice(0, 120) : null,
+            created_at:       k.created_at ?? new Date().toISOString(),
+          };
+          const { error } = await supabase.from('kitchen_voids').upsert(row, { onConflict: 'id' });
+          return { id: k.id, code: (error as { code?: string })?.code, error: error?.message };
+        }));
+        for (const r of results) {
+          if (!r.error) { upserted.kitchenVoids++; continue; }
+          rejected.push({ id: r.id, code: r.code ?? 'error', table: 'kitchen_voids', error: r.error });
         }
       }
     }

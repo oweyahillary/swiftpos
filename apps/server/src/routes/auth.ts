@@ -33,6 +33,8 @@
  *   POST /api/auth/set-pin         — bcrypt PIN update
  *   PATCH /api/auth/me             — clears must_change_password
  */
+import { validateLoose } from '../middleware/validate';
+import { LoginSchema } from '../lib/schemas';
 
 import { Router }   from 'express';
 import { registerDesktopTerminal, findPriorTerminalByMac } from '../lib/deviceRegistry';
@@ -554,7 +556,7 @@ async function checkDeviceRegistration(
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', async (req, res) => {
+router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   const { email, password, business_id } = req.body;
 
   if (!email || !password) {
@@ -776,6 +778,7 @@ router.post('/enrol/redeem', async (req, res) => {
     deviceId,
     appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
     terminalCode: req.body?.terminal_code ?? null,
+    label:        req.body?.device_name ?? null,   // A273 follow-up: the till's setup name
     ipAddress:    req.ip ?? null,
     role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
     macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
@@ -1448,6 +1451,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
       deviceId:     String(req.body?.device_id ?? ''),
       appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
       terminalCode: req.body?.terminal_code ?? null,
+      label:        req.body?.device_name ?? null,   // A273 follow-up: the till's setup name
       ipAddress:    req.ip ?? null,
       role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
       macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182

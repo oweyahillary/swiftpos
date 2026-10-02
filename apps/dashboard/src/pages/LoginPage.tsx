@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { RELEASE, releaseLabel } from '../lib/release';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
@@ -38,7 +39,7 @@ export default function LoginPage() {
 
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
-    'focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/30 transition-all text-sm';
+    'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
 
   const handleLogin = async (e: React.FormEvent | null, chosenBusinessId?: string) => {
     e?.preventDefault();
@@ -126,7 +127,7 @@ export default function LoginPage() {
   const accessError = errorCode ? ACCESS_ERROR_CODES[errorCode] : null;
   if (accessError) {
     return (
-      <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
+      <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
         <div className="w-full max-w-md">
           <div className="bg-[#0f172a] border border-[#1e2d45] rounded-2xl p-8 text-center space-y-5">
             <div className="text-5xl">{accessError.icon}</div>
@@ -156,7 +157,7 @@ export default function LoginPage() {
                 href={`https://wa.me/${import.meta.env.VITE_SUPPORT_WHATSAPP || '254700000000'}?text=Hi, I'd like to upgrade my SwiftPOS account to include web hosting access.`}
                 target="_blank"
                 rel="noreferrer"
-                className="flex-1 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-xl py-2.5 transition-colors text-center"
+                className="flex-1 bg-swift-strong hover:bg-swift-deep text-white text-sm font-medium rounded-xl py-2.5 transition-colors text-center"
               >
                 Contact SwiftPOS
               </a>
@@ -168,14 +169,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
+    <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
 
       {/* Background grid */}
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: `linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(20,184,166,0.03) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(20,184,166,0.03) 1px, transparent 1px)`,
           backgroundSize: '48px 48px',
         }}
       />
@@ -185,7 +186,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22c55e] flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
+            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
             <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
           </div>
           <p className="text-[#334155] text-sm">Sign in to your dashboard</p>
@@ -211,7 +212,7 @@ export default function LoginPage() {
                     type="button"
                     disabled={loading}
                     onClick={() => { void handleLogin(null, b.id); }}
-                    className="w-full text-left bg-[#0f172a] border border-[#1e293b] hover:border-[#22c55e]
+                    className="w-full text-left bg-[#0f172a] border border-[#1e293b] hover:border-swift
                                rounded-xl px-4 py-3 text-white transition-colors disabled:opacity-50"
                   >
                     {b.name ?? b.id}
@@ -272,7 +273,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl font-bold text-sm bg-[#3b82f6] hover:bg-[#2563eb] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-xl font-bold text-sm bg-swift-strong hover:bg-swift-deep text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -291,6 +292,11 @@ export default function LoginPage() {
 
         <p className="text-center text-[#1e293b] text-xs mt-6">
           No account? Contact your SwiftPOS agent to get set up.
+        </p>
+        {/* 0.6.28: the release (was the commit alone, in near-invisible ink) — "which one am I running?" */}
+        <p className="text-center text-gray-500 text-xs mt-2" title={`${__WEB_BUILD_REF__} · built ${__WEB_BUILD_TIME__}`}
+           data-testid="login-release">
+          SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}
         </p>
       </div>
     </div>

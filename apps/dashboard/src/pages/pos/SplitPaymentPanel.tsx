@@ -374,8 +374,8 @@ const s: Record<string, React.CSSProperties> = {
   },
 
   addMethodRow: {
-    padding: '12px', background: 'rgba(59,130,246,0.04)',
-    border: '1px dashed rgba(59,130,246,0.2)', borderRadius: 10,
+    padding: '12px', background: 'rgb(var(--act-fill, 59 130 246) / 0.04)',
+    border: '1px dashed rgb(var(--act-fill, 59 130 246) / 0.2)', borderRadius: 10,
   },
   addMethodLabel: { fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' },
   addMethodBtns: { display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' },
@@ -393,7 +393,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   btnCharge: {
     flex: 2, padding: '13px',
-    background: 'linear-gradient(135deg,#1d4ed8,#2563eb)',
+    background: 'linear-gradient(135deg,rgb(var(--act-strong, 29 78 216)),rgb(var(--act-strong, 37 99 235)))',
     border: 'none', borderRadius: 10, color: '#fff',
     fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans','Segoe UI',sans-serif",
     transition: 'opacity 0.2s',

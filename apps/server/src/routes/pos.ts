@@ -1,17 +1,72 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
+import { parseNotePicks } from '../lib/orderNotes';
+import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
+import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
+import { getWebAccess } from '../lib/webAccess';
 
 const router = safeRouter();
 
 router.use(requireAuth);
 
-// GET /api/pos/init
-// Fetches everything the POS screen needs to boot in a single round-trip:
+// GET /api/pos/catalogue-version
+// A291: a CHEAP freshness signal so a till can pull the moment a web edit lands
+// instead of waiting for the 10-min full-pull floor. Returns the newest updated_at
+// across the reference tables that carry the set_updated_at() BEFORE UPDATE trigger
+// (products, categories, business_settings, users, tables, branches, branch_printers,
+// branch_prices). Any web edit to those bumps a timestamp; the till compares this to
+// its last successful pull and pulls ONLY when it moved. Far lighter than /init.
+//
+// v1 coverage gap (deliberate): category_stations, variant_*, modifier_*, combo_items
+// carry no updated_at trigger, so composition/routing edits still ride the 10-min
+// floor until v2 adds their triggers. NEVER wedges the till: on any failure it returns
+// 200 with version:null and the till simply keeps its floor cadence.
+router.get('/catalogue-version', async (req, res) => {
+  const branchId = typeof req.query.branch_id === 'string' ? req.query.branch_id : null;
+  const biz = req.businessId;
+
+  // Latest updated_at from one table; null (not throw) if the column/scope is absent,
+  // so one odd table can never fail the whole check.
+  const latest = async (table: string, col: 'business_id' | 'branch_id', val: string | null): Promise<string | null> => {
+    if (!val) return null;
+    try {
+      const { data, error } = await supabase
+        .from(table).select('updated_at').eq(col, val)
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      if (error || !data?.updated_at) return null;
+      return data.updated_at as string;
+    } catch { return null; }
+  };
+
+  try {
+    const picks = await Promise.all([
+      latest('products',         'business_id', biz),
+      latest('categories',       'business_id', biz),
+      latest('business_settings','business_id', biz),
+      latest('business_branding', 'business_id', biz),
+      // A325: switching a business's 'themes' flag must reach its tills within the 20-s check, not the 10-min
+      // floor. feature_flags has business_id and an updated_at trigger, like the tables above.
+      latest('feature_flags', 'business_id', biz),
+      latest('users',            'business_id', biz),
+      latest('tables',           'business_id', biz),
+      latest('branches',         'business_id', biz),
+      latest('branch_printers',  'branch_id',   branchId),
+      latest('branch_prices',    'branch_id',   branchId),
+    ]);
+    // ISO-8601 UTC strings sort chronologically; newest is the version.
+    const version = picks.filter(Boolean).sort().pop() ?? null;
+    res.json({ version });
+  } catch {
+    res.json({ version: null }); // never wedge the till over a freshness check
+  }
+});
+
+
 // active products (with category colour), active categories, main branch id, and variant groups.
 // GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
 // PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
@@ -94,6 +149,7 @@ router.get('/init', async (req, res) => {
     { data: boundBranch },
     { data: branchTextRows },
     { data: business },
+    { data: branding },
   ] = await Promise.all([
     supabase
       .from('products')
@@ -111,7 +167,7 @@ router.get('/init', async (req, res) => {
     // routes to the kitchen on its OWN category, so is_kitchen comes along.
     supabase
       .from('products')
-      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, is_kitchen, categories ( is_kitchen ) ) )')
+      .select('id, combo_items!combo_id ( quantity, sort_order, product:product_id ( id, name, is_kitchen, category_id, categories ( is_kitchen ) ) )')
       .eq('business_id', req.businessId)
       .eq('is_combo', true)
       .eq('status', 'active'),
@@ -124,7 +180,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation']),
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'order_note_picks']),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
     // back to when unbound. maybeSingle, not single: one_main_branch_per_business
@@ -162,10 +218,25 @@ router.get('/init', async (req, res) => {
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
-      .select('type, name, currency, vat_rate, ctl_rate')
+      .select('type, name, currency, vat_rate, ctl_rate, status')
       .eq('id', req.businessId)
       .single(),
+    // A304: client branding (accent + base64 logo) for this business, pulled to
+    // the till's local `branding` mirror (remote-wins). maybeSingle — the absent
+    // row is the norm (branding is optional) and must not fail the pull closed.
+    supabase
+      .from('business_branding')
+      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id')
+      .eq('business_id', req.businessId)
+      .maybeSingle(),
   ]);
+  // A325: the EFFECTIVE action theme — null while the business's 'themes' flag is off (the till keeps today's
+  // look), else its chosen id or the default. Top-level, not inside `branding`: a business can have themes
+  // without ever having saved a branding row, and `branding: null` means "leave the till's value alone".
+  const themeId = effectiveThemeId(await themesEnabled(req.businessId), branding?.theme_id);
+  // A346: does the business have the web POS? Same entitlement as web sign-in (lib/webAccess.ts) — fully usable = active
+  // or in grace (owner, 2026-09-27: "stock should only appear if the web pos is enabled"; reports-only week → no).
+  const webPosEnabled = (await getWebAccess(req.businessId, (business as any)?.status)).fullAccess;
 
   if (pErr || cErr || brErr) {
     sendError(res, (pErr || cErr || brErr));
@@ -253,7 +324,7 @@ router.get('/init', async (req, res) => {
   // combo_id -> ordered component list. Flattened here rather than in the till so
   // the desktop stores exactly what it prints and nothing has to understand
   // Supabase's nested join shape offline.
-  const comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean }>> = {};
+  const comboItems: Record<string, Array<{ product_id: string; name: string; quantity: number; is_kitchen: boolean; category_id: string | null }>> = {};
   for (const c of (comboRows ?? []) as any[]) {
     const items = (c.combo_items ?? [])
       .slice()
@@ -268,6 +339,9 @@ router.get('/init', async (req, res) => {
         is_kitchen: typeof ci.product?.is_kitchen === 'boolean'
           ? ci.product.is_kitchen
           : !!ci.product?.categories?.is_kitchen,
+        // A component routes on its OWN category (A248, Phase 1 of print parity),
+        // exactly as the desktop does; is_kitchen stays the fallback.
+        category_id: ci.product?.category_id ?? null,
       }))
       .filter((i: any) => i.product_id);
     if (items.length) comboItems[c.id] = items;
@@ -288,11 +362,23 @@ router.get('/init', async (req, res) => {
   res.json({
     products: productsOut,
     comboItems,
+    // A304: client branding (accent + logo) → the till writes it to the local
+    // `branding` mirror, remote-wins. null when the business has no branding row,
+    // which the till reads as "leave the local (tech-set) value alone".
+    branding: branding ? {
+      accentHex: branding.accent_hex ?? null, logoPng: branding.logo_png ?? null,
+      // A311: the receipt raster + the client's opt-in toggle ride the same pull.
+      logoReceipt: branding.logo_receipt ?? null,
+      receiptLogoEnabled: branding.receipt_logo_enabled === true,
+    } : null,
+    themeId,
     receiptHeader: receiptText.receipt_header ?? '',
     // 24-hour / continuous operation (A104): when on, an unclosed prior day gets
     // a short grace window at rollover instead of an immediate hard lock, so a
     // round-the-clock branch keeps trading while a manager closes the day.
     continuousOperation: receiptText.continuous_operation === 'true',
+    // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
+    webPosEnabled,
     receiptFooter: receiptText.receipt_footer ?? '',
     // Things that must never reach a kitchen ticket — drinks, sauces, packaged
     // sides. Stated by the owner rather than inferred: a keyword guess is wrong
@@ -308,6 +394,16 @@ router.get('/init', async (req, res) => {
         return raw.split(/[\r\n,]+/).map(t => t.trim()).filter(Boolean);
       }
       return [] as string[];
+    })(),
+    // A367: the quick picks for order notes, owner-set per business. Unset → the defaults; a saved empty list → none.
+    // Always a list, so a till never has to guess (shared/orderNotes.ts parseNotePicks).
+    noteQuickPicks: parseNotePicks(receiptTextRows?.find((r: any) => r.key === 'order_note_picks')?.value),
+    // 0.6.27: the per-client switches the admin portal sets (feature_flags). Always every key, true or false — an unset
+    // switch is off. Older tills ignore it.
+    posFeatures: await (async () => {
+      const { data } = await supabase.from('feature_flags').select('key, enabled')
+        .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS]);
+      return parsePosFeatures(data ?? []);
     })(),
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the

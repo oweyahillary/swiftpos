@@ -28,6 +28,8 @@ interface Props {
   subtotal: number;
   discountAmount: number;
   tipAmount: number;
+  /** 0.6.27: the delivery fee on top of the bill (after the total, with the tip). */
+  deliveryFee?: number;
   total: number;
   vatAmount: number;
   vatRate: number;
@@ -59,7 +61,7 @@ const METHOD_LABEL: Record<string, string> = {
 // shows it at true paper width. Every style must stay INLINE — a Tailwind
 // class here renders on screen and silently vanishes on paper.
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
-  { businessName, branchName, orderNumber, cart, subtotal, discountAmount, tipAmount, total,
+  { businessName, branchName, orderNumber, cart, subtotal, discountAmount, tipAmount, deliveryFee = 0, total,
     vatAmount, vatRate, ctlAmount = 0, ctlRate = 0, currency, payments,
     orderType, tableNumber, footerMessage, headerText, footerText, tillNumber, cashierName, billNumber, kots, deliveryPerson },
   ref
@@ -75,7 +77,8 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
   const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
 
   // Absorbs per-line rounding so the printed figures always sum to `total`.
-  const roundOff = total - (netSubtotal + ctlAmount + vatAmount + tipAmount);
+  // A349: `total` is the BILL — it never contained the tip, so taking the tip off here printed "Round Off: -<tip>".
+  const roundOff = total - (netSubtotal + ctlAmount + vatAmount);
   const totalChange = payments.reduce((s, p) => s + (p.change_given ?? 0), 0);
 
   const money = (v: number) => v.toFixed(2);
@@ -223,15 +226,17 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
 
       {ctlRate > 0 && row(`CTL (${ctlRate}%)`, money(ctlAmount))}
       {vatRate > 0 && row(`VAT (${vatRate}%)`, money(vatAmount))}
-      {tipAmount > 0 && row('Tip', money(tipAmount))}
       {(ctlRate > 0 || vatRate > 0) && rule()}
 
       {row('Round Off:', money(roundOff))}
       {row('Total:', moneyBig(total), { fontWeight: 'bold' })}
+      {/* A349: the tip after the bill (not a sale, not taxed); the customer pays both — as on the printed receipt. */}
+      {tipAmount > 0 && row('Tip:', money(tipAmount))}
+      {deliveryFee > 0 && row('Delivery fee:', money(deliveryFee))}
       {rule()}
 
       <p style={{ fontSize: '17px', fontWeight: 'bold', margin: '4px 0' }}>
-        PAY: {currency} {moneyBig(total)}
+        PAY: {currency} {moneyBig(total + tipAmount + deliveryFee)}
       </p>
       {rule()}
 

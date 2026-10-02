@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A328: themeable action channels (r g b). Defaults = Tailwind green 400/500/600 in BOTH modes (themes OFF unchanged).
+   With themes ON, src/lib/themeVars.ts sets --action-t-* (same in both modes) and --action-d-400 / --action-l-400 (links
+   switch shade with the mode). Chosen so every EXISTING label stays >= 4.5:1: 500 fills carry dark text (theme 500 reads
+   for all seven themes), 600 fills carry white text (theme 700), links are 400 on dark and 700 on white. */
+:root {
+  --action-400: var(--action-d-400, 45 212 191);   /* A329: themes OFF = SwiftPOS teal (Teal family, shade per job) */
+  --action-500: var(--action-t-500, 20 184 166);
+  --action-600: var(--action-t-600, 15 118 110);
+}
+:root:not(.dark) {
+  --action-400: var(--action-l-400, 15 118 110);   /* teal 700 on white: 5.47:1 (green-400 was 1.8) */
+}
+/* A329 step 3: the back office's FIXED SwiftPOS teal (not the client theme). Teal family, shade per job — dark labels on
+   500 = 8.09:1, white on 700 = 5.47:1, text 400 on dark = 9.53:1 / 700 on white = 5.47:1. If slice 5's B1 finds teal too
+   close to "paid" green in shop light, these values move — nothing else does. */
+:root {
+  --swift: 20 184 166;          --swift-light: 45 212 191;    /* teal 500 · 400 (hover on dark-label fills)          */
+  --swift-strong: 15 118 110;   --swift-deep: 17 94 89;       /* teal 700 · 800 (white-label fills and their hover)   */
+  --swift-logo: 13 148 136;                                   /* the logo's #0d9488 — wordmark only                   */
+  --swift-text: 45 212 191;     --swift-text-hover: 94 234 212; /* teal 400 · 300 on dark                             */
+}
+:root:not(.dark) { --swift-text: 15 118 110; --swift-text-hover: 17 94 89; }   /* teal 700 · 800 on white */
+
+/* A328 part 2: the web POS's INLINE colours use these aliases as rgb(var(--act-*, <that use's own original r g b>)).
+   A329 (2026-09-25): they now DEFAULT to SwiftPOS teal, so with themes OFF the web POS's green and blue primaries are
+   teal (before A329 each fell back to its own original green or blue). With themes ON: fill = theme 500 (dark labels,
+   borders, dots, tints), strong = theme 700 (white labels), text = 400 on dark / 700 on light. The web POS has its own
+   light/dark toggle (data-pos-theme), which wins inside the POS for both the aliases and the part-1 link token. */
+:root { --act-fill: var(--action-t-500, 20 184 166); --act-strong: var(--action-t-600, 15 118 110); --act-text: var(--action-d-400, 45 212 191); }
+:root:not(.dark) { --act-text: var(--action-l-400, 15 118 110); }
+[data-pos-theme="dark"]  { --act-text: var(--action-d-400, 45 212 191); --action-400: var(--action-d-400, 45 212 191); }
+[data-pos-theme="light"] { --act-text: var(--action-l-400, 15 118 110); --action-400: var(--action-l-400, 15 118 110); }
+
 /*
  * ── Theme system ─────────────────────────────────────────────────────────────
  *
@@ -68,6 +101,20 @@
   :root:not(.dark) .bg-gray-900  { background-color: #ffffff !important; }
   :root:not(.dark) .bg-gray-800  { background-color: #f1f5f9 !important; }
   :root:not(.dark) .bg-gray-700  { background-color: #e2e8f0 !important; }
+  /* A330: translucent grey PANELS (base, not hover) had no light-mode rule, so in light mode they stayed dark translucent
+     grey — e.g. the web POS "Add tip" panel. Same light colour as the solid override above, same opacity. None of these is
+     a backdrop (checked 2026-09-25; 11 classes); tests/light-mode-translucent.test.mjs fails if a new one appears without a rule. */
+  :root:not(.dark) .bg-gray-950\/60  { background-color: rgba(248,250,252,0.6) !important; }
+  :root:not(.dark) .bg-gray-900\/60  { background-color: rgba(255,255,255,0.6) !important; }
+  :root:not(.dark) .bg-gray-900\/50  { background-color: rgba(255,255,255,0.5) !important; }
+  :root:not(.dark) .bg-gray-900\/40  { background-color: rgba(255,255,255,0.4) !important; }
+  :root:not(.dark) .bg-gray-800\/60  { background-color: rgba(241,245,249,0.6) !important; }
+  :root:not(.dark) .bg-gray-800\/50  { background-color: rgba(241,245,249,0.5) !important; }
+  :root:not(.dark) .bg-gray-800\/40  { background-color: rgba(241,245,249,0.4) !important; }
+  :root:not(.dark) .bg-gray-800\/30  { background-color: rgba(241,245,249,0.3) !important; }
+  :root:not(.dark) .bg-gray-700\/30  { background-color: rgba(226,232,240,0.3) !important; }
+  :root:not(.dark) .bg-gray-700\/40  { background-color: rgba(226,232,240,0.4) !important; }
+  :root:not(.dark) .bg-gray-700\/50  { background-color: rgba(226,232,240,0.5) !important; }
   :root:not(.dark) .bg-gray-600  { background-color: #cbd5e1 !important; }
   :root:not(.dark) .bg-gray-500  { background-color: #94a3b8 !important; }
   :root:not(.dark) .bg-gray-400  { background-color: #64748b !important; }
@@ -108,12 +155,80 @@
   }
 
   /* Focus rings */
-  :root:not(.dark) .focus\:border-green-500:focus { border-color: #22c55e !important; }
   :root:not(.dark) .ring-gray-700 { --tw-ring-color: #e2e8f0; }
 
   /* Divide lines */
   :root:not(.dark) .divide-gray-800 > * + * { border-color: #e2e8f0 !important; }
 }
+
+/* A329: the back office's focus ring in light mode. OUTSIDE @layer base on purpose — inside it, Tailwind drops a rule
+   written for a variant class (`.focus\:border-x:focus`), so the two rules above for green / action never reach the build. */
+:root:not(.dark) .focus\:border-swift:focus { border-color: rgb(var(--swift)) !important; }
+/* A329: white labels STAY white on the teal-700 fills in light mode. The light theme turns every .text-white into slate
+   (#0f172a) — on teal 700 that is 3.26:1 (2.35 on the hover); white is 5.47 / 7.58. Covers the label on the button itself
+   and a child label (the checkbox tick). */
+:root:not(.dark) .bg-swift-strong.text-white,
+:root:not(.dark) .bg-swift-strong .text-white { color: #ffffff !important; }
+
+/* ── BEGIN light-colours (generated by scripts/build-light-colours.mjs — do not edit by hand) ── */
+:root:not(.dark) .border-gray-600\/30:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .border-gray-700\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .border-gray-800\/40:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .border-gray-800\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .border-gray-800\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .divide-gray-700\/50 > * + *:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .divide-gray-800\/50 > * + *:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { border-color: rgba(226,232,240,0.6) !important; }
+:root:not(.dark) .hover\:bg-gray-800\/20:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.2) !important; }
+:root:not(.dark) .hover\:bg-gray-800\/30:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.3) !important; }
+:root:not(.dark) .hover\:bg-gray-900\/50:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.5) !important; }
+:root:not(.dark) .hover\:text-amber-400:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #78350f !important; }
+:root:not(.dark) .hover\:text-gray-200:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #334155 !important; }
+:root:not(.dark) .hover\:text-gray-300:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #475569 !important; }
+:root:not(.dark) .hover\:text-red-300:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #991b1b !important; }
+:root:not(.dark) .hover\:text-red-400:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #991b1b !important; }
+:root:not(.dark) .hover\:text-red-500:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #991b1b !important; }
+:root:not(.dark) .text-amber-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e !important; }
+:root:not(.dark) .text-amber-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e !important; }
+:root:not(.dark) .text-amber-400\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e80 !important; }
+:root:not(.dark) .text-amber-400\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e99 !important; }
+:root:not(.dark) .text-amber-400\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400eb3 !important; }
+:root:not(.dark) .text-amber-400\/80:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400ecc !important; }
+:root:not(.dark) .text-amber-400\/90:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400ee6 !important; }
+:root:not(.dark) .text-amber-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400e !important; }
+:root:not(.dark) .text-amber-500\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #92400eb3 !important; }
+:root:not(.dark) .text-blue-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #1d4ed8 !important; }
+:root:not(.dark) .text-blue-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #1d4ed8 !important; }
+:root:not(.dark) .text-blue-400\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #1d4ed899 !important; }
+:root:not(.dark) .text-blue-400\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #1d4ed8b3 !important; }
+:root:not(.dark) .text-cyan-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #155e75 !important; }
+:root:not(.dark) .text-gray-100:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #1e293b !important; }
+:root:not(.dark) .text-gray-200:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #334155 !important; }
+:root:not(.dark) .text-green-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534 !important; }
+:root:not(.dark) .text-green-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534 !important; }
+:root:not(.dark) .text-green-400\/80:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534cc !important; }
+:root:not(.dark) .text-green-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534 !important; }
+:root:not(.dark) .text-green-500\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #166534b3 !important; }
+:root:not(.dark) .text-orange-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #9a3412 !important; }
+:root:not(.dark) .text-pink-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #be185d !important; }
+:root:not(.dark) .text-purple-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #7e22ce !important; }
+:root:not(.dark) .text-purple-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #7e22ce !important; }
+:root:not(.dark) .text-red-300:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c !important; }
+:root:not(.dark) .text-red-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c !important; }
+:root:not(.dark) .text-red-400\/50:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c80 !important; }
+:root:not(.dark) .text-red-400\/60:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c99 !important; }
+:root:not(.dark) .text-red-400\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1cb3 !important; }
+:root:not(.dark) .text-red-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #b91c1c !important; }
+:root:not(.dark) .text-violet-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #6d28d9 !important; }
+:root:not(.dark) .text-yellow-400:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #854d0e !important; }
+:root:not(.dark) .text-yellow-500:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #854d0e !important; }
+:root:not(.dark) .text-yellow-500\/70:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #854d0eb3 !important; }
+:root:not(.dark) .bg-action-600.text-white, :root:not(.dark) .bg-action-600 .text-white { color: #ffffff !important; }
+:root:not(.dark) .bg-red-600.text-white, :root:not(.dark) .bg-red-600 .text-white { color: #ffffff !important; }
+:root:not(.dark) .hover\:bg-action-400:hover, [data-pos-theme="light"] .hover\:bg-action-400:hover { background-color: rgb(var(--action-d-400, 45 212 191)) !important; }
+:root:not(.dark) .focus\:border-action-500:focus { border-color: rgb(var(--action-500)) !important; }
+:root:not(.dark) [data-theme-lock="dark"] .text-gray-500 { color: #6b7280 !important; }
+:root:not(.dark) [data-theme-lock="dark"] .text-white { color: #ffffff !important; }
+/* ── END light-colours ── */
 
 /* ── Smooth theme transition ─────────────────────────────────────────────── */
 *, *::before, *::after {
@@ -144,3 +259,9 @@ input, textarea, select, button, a, [role="button"] {
 :root:not(.dark) ::-webkit-scrollbar-track  { background: transparent; }
 :root:not(.dark) ::-webkit-scrollbar-thumb  { background: #cbd5e1; border-radius: 3px; }
 :root:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* 0.6.23 (owner: "remove the feature were scroll up or down reduces or increases the value"): no spinner arrows on
+   number fields; the wheel is stopped in shared/numberInputs.ts. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }

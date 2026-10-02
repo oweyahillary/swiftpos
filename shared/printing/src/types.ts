@@ -1,3 +1,4 @@
+import type { MonoRaster } from './raster';
 /**
  * types — the contract between the POS and the printer.
  *
@@ -71,7 +72,7 @@ export interface OrderLine {
   /** Gross, tax-inclusive, for the whole line INCLUDING unit deltas. */
   lineTotal: Cents;
   units: OrderUnit[];
-  /** Free-text kitchen note the cashier typed. */
+  /** Free-text kitchen note the cashier typed ("3 normal, 2 spicy", "No salt"). One printed row per typed line (A367). */
   note?: string;
 }
 
@@ -94,10 +95,19 @@ export interface Order {
   lines: OrderLine[];
   payments: PaymentLeg[];
   changeGiven: Cents;
-  /** Gross tax-inclusive total actually charged. The source of truth. */
+  /** Gross tax-inclusive total actually charged. The source of truth. The BILL: after any discount, never the tip. */
   total: Cents;
+  /** Discount taken off the lines (gross, tax-inclusive). The lines sum to total + discount. Omitted = none. */
+  discount?: Cents;
+  /** Tip on top of the bill. Not a sale and not taxed — printed after the total; the customer pays total + tip. */
+  tip?: Cents;
+  /** 0.6.27: delivery fee on top of the bill (pass-through to the rider). Not a sale, not taxed — printed after the
+   *  total with the tip; the customer pays total + tip + fee. Omitted = none. */
+  deliveryFee?: Cents;
   /** How many kitchen tickets this order produced, for the Kots line. */
   kotCount: number;
+  /** A367: the cashier's note on the whole order ("deliver to gate B"). Printed under the header. Omitted = none. */
+  note?: string;
 }
 
 /** ─── Configuration ────────────────────────────────────────────────────────
@@ -129,6 +139,11 @@ export interface BusinessConfig {
   /** As a percentage, e.g. 16 for 16%. */
   vatRate: number;
   ctlRate: number;
+  /** A310: client logo as a pre-thresholded 1-bit raster, printed centred above
+   *  the business name on CUSTOMER RECEIPTS only. Absent = no logo, receipt
+   *  identical to before. The caller resolves the client's toggle before setting
+   *  this; the renderer never decides whether a logo is wanted. */
+  logoRaster?: MonoRaster;
 }
 
 export type StationKind = 'kitchen' | 'dispatch' | 'receipt';
@@ -178,6 +193,8 @@ export interface PrintContext {
   station: StationConfig;
   /** Set on any copy after the first. Drives the Duplicate Print banner. */
   reprint?: { at: Date; count: number };
+  /** A264/A269: a pre-payment BILL (Print Bill), not a fiscal receipt. */
+  proforma?: boolean;
   /** Set when the order was voided. Drives the VOID layout. */
   voided?: { at: Date; by: string; reason?: string };
 }

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftPOS v0.6.18 — Rollout Verification</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6472; --line:#e3e7ec;
+    --accent:#0d9488; --pass:#15803d; --passbg:#dcfce7; --fail:#b91c1c; --failbg:#fee2e2;
+    --na:#6b7280; --nabg:#eef1f4; --field:#fbfcfd; --rec:#92400e; --recbg:#fef3c7;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:inherit}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+      --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+      --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f1a; --card:#0f1626; --ink:#e6eaf0; --muted:#9aa4b2; --line:#1e293b;
+    --accent:#2dd4bf; --pass:#4ade80; --passbg:#0f2a1a; --fail:#f87171; --failbg:#2a1214;
+    --na:#94a3b8; --nabg:#141b2b; --field:#0b1220; --rec:#fcd34d; --recbg:#2a2110;
+  }
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; font-size:15px;}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 60px;}
+  h1{font-size:20px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
+  .meta label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  input[type=text]{width:100%; background:var(--field); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 10px; font:inherit;}
+  h2{font-size:15px; margin:22px 0 8px; color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:6px}
+  h2 .ids{float:right; font-size:11px; color:var(--muted); font-weight:400}
+  .intro{font-size:13px; color:var(--muted); margin:0 0 10px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px dashed var(--line);}
+  .row:last-child{border-bottom:0}
+  .lbl{flex:1 1 360px; min-width:240px}
+  .lbl .t{font-weight:600}
+  .lbl .id{display:inline-block; min-width:30px; color:var(--accent); font-weight:700}
+  .lbl ol{margin:6px 0 0 18px; padding:0; font-size:13.5px}
+  .lbl ol li{margin:2px 0}
+  .lbl .exp{font-size:13px; margin-top:6px; color:var(--ink)}
+  .lbl .exp b{color:var(--pass)}
+  .lbl .rec{display:inline-block; font-size:12px; margin-top:6px; padding:2px 8px; border-radius:999px;
+    background:var(--recbg); color:var(--rec); font-weight:600}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:0 0 auto}
+  .seg button{border:0; background:transparent; color:var(--muted); padding:6px 12px; font:inherit; cursor:pointer; min-width:52px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"][data-v="pass"]{background:var(--passbg); color:var(--pass); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="fail"]{background:var(--failbg); color:var(--fail); font-weight:600}
+  .seg button[aria-pressed="true"][data-v="skip"]{background:var(--nabg); color:var(--na); font-weight:600}
+  .note{flex:1 1 100%;}
+  .note input{margin-top:6px}
+  .note input.need{border-color:var(--fail)}
+  .note[hidden]{display:none}
+  .bar{position:sticky; bottom:0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 -2px 12px rgba(0,0,0,.06);}
+  .count{font-size:13px; color:var(--muted)}
+  .count b.p{color:var(--pass)} .count b.f{color:var(--fail)}
+  .btn{border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px;
+    padding:9px 14px; font:inherit; cursor:pointer}
+  .btn.primary{background:var(--accent); color:#04241f; border-color:transparent; font-weight:600}
+  .btn.ghost{color:var(--muted)}
+  .note-hdr{font-size:12px; color:var(--muted); margin:20px 0 6px}
+  textarea{width:100%; min-height:240px; background:var(--field); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.5;}
+  pre.sql{background:var(--field); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0 0;
+    font-size:12px; overflow-x:auto; white-space:pre;}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:.95}
+  .scopenote{font-size:12.5px; color:var(--muted); background:var(--nabg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; margin:0 0 14px}
+  .scopenote b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SwiftPOS v0.6.18 — rollout verification</h1>
+  <p class="sub">0.6.18: void and refund from the till’s History at any time, approved with the manager’s own PIN (and web POS sales too) · drinks never on the kitchen ticket · the POS says which filter it shows · a manager adds expense types · VAT once on the Overview · a shorter, sturdier release list in the admin portal · one till (manager + cashier PINs), the web POS, the admin portal · §K needs the printer · ~50 min · progress saves in this browser · Pass / Fail / Skip, then “Generate results” → “Copy”.</p>
+
+  <div class="card">
+    <div class="meta">
+      <div><label>Tester</label><input type="text" id="m_tester" placeholder="name"></div>
+      <div><label>Till(s) + version</label><input type="text" id="m_till" placeholder="e.g. T1 0.6.18"></div>
+      <div><label>Date</label><input type="text" id="m_date" placeholder="2026-09-29"></div>
+    </div>
+  </div>
+
+  <p class="scopenote"><b>Before you start.</b> Do §R first, in order: the cloud must be deployed before the tills are on 0.6.18 (the manager-PIN approval is on the cloud). You need: a manager PIN and a cashier PIN, the web POS, the admin portal, and the printer for §K (SKIP §K without it). Wherever a check says <b>Record</b>, take a screenshot or photo. A <b>Fail needs a note</b> saying exactly what you saw.</p>
+
+  <div id="list"></div>
+
+  <p class="note-hdr">Results (generated) — paste this back:</p>
+  <textarea id="out" readonly placeholder="Click “Generate results”…"></textarea>
+
+  <div class="bar">
+    <span class="count" id="count">—</span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="reset">Reset</button>
+    <button class="btn" id="gen">Generate results</button>
+    <button class="btn primary" id="copy">Copy</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [id, title, steps[], expected, record?]  — grouped in sections: [section title, closes, intro, items[]]
+const DATA = [
+  ["§R — Rollout (do these first, in order)", "", "Cloud first (the new approval and the release list), then the dashboard and the admin portal, then 0.6.18 on the tills through the approval.", [
+    ["R1", "Cloud deployed from dev", ["Render → the API service → deploy the latest dev commit; wait for “Live”."], "Deploy finished; the web POS and dashboard still sign in.", false],
+    ["R2", "Dashboard and admin portal deployed from dev", ["Deploy both from the same commit; hard-refresh them."], "Both load. (The dashboard carries the web POS’s kitchen-ticket fix; the portal the shorter version list.)", false],
+    ["R3", "The tag comes out as ONE pre-release", ["After tagging v0.6.18: Actions → Release desktop → the run is green, including “Verify the release”.", "Releases: one v0.6.18, marked Pre-release. Do <b>not</b> untick it."], "One v0.6.18 pre-release with latest.yml and the installer; v0.6.16 (or whichever you set) stays Latest.", true],
+    ["R4", "Approve B Foods for 0.6.18", ["Admin portal → B Foods → Desktop updates → 0.6.18 → Approve.", "Restart the till; when the update is ready, close and reopen it."], "The till reads <b>0.6.18</b>. The audit log has desktop_update.approve.", true],
+  ]],
+
+  ["§V — Void and refund from the till", "A355, A336", "Sign in as the MANAGER unless a check says cashier. “Your PIN” = the PIN you sign in with. POS screen → <b>History</b> (top bar).", [
+    ["V1", "A cashier sees no void/refund", ["Lock the till; sign in with a CASHIER PIN; open History."], "The list shows (with Reprint) but <b>no</b> “Void / Refund” or “Refund” buttons.", false],
+    ["V2", "Void a new sale with your own PIN", ["As the manager, ring a cash sale.", "History → that sale → <b>Void / Refund</b> → keep “Void” → a reason → <b>your own sign-in PIN</b>."], "It goes through (no “Invalid supervisor PIN”). The sale shows “voided”; the dashboard shows it voided.", true],
+    ["V3", "Refund a sale older than 30 minutes", ["Pick a sale more than 30 minutes old in History — its button now reads <b>Refund</b> (it used to disappear).", "Refund → a reason → your own PIN."], "Refunded; the row shows a “refunded” tag and no button. Overview shows <b>Refunds −…</b>, revenue and VAT/CTL down by it; the Daily Sales Report’s Total Gross matches the Overview (the old M4).", true],
+    ["V4", "A wrong PIN says so plainly", ["Try another refund with a wrong PIN, then with the CASHIER’s PIN."], "Both: “That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.” — never “Invalid supervisor PIN”.", false],
+    ["V5", "Refund a WEB POS sale from the till", ["On the web POS, ring a cash sale on this till’s drawer (as for §F last time).", "On the till: History → the sale (tagged “web”) → Refund → your PIN.", "Shift panel → expected cash."], "Refunded; the dashboard shows it refunded; expected cash drops by the sale ONCE (not twice).", true],
+    ["V6", "An override PIN set before still works (skip if none)", ["If a staff member has an override PIN, use it for one refund."], "Accepted, as before.", false],
+  ]],
+
+  ["§K — Drinks never on the kitchen ticket (needs the printer)", "A276", "Ring on the till first, then the same on the web POS. Keep the tickets.", [
+    ["K1", "Till: combo + soda", ["Ring a spicy combo and a standalone Soda; Send to Kitchen (or pay, for a counter sale)."], "Kitchen ticket: the combo’s cooked items, <b>no Soda</b>. Dispatch ticket: everything, Soda included.", true],
+    ["K2", "Web POS: the same order", ["Same order on the web POS, printed to the thermal printers."], "Same result: no Soda on the kitchen ticket, Soda on dispatch.", true],
+    ["K3", "A cooked dish named after a sauce stays (skip if none)", ["Ring an item like “Wings in BBQ Sauce” if the menu has one."], "It IS on the kitchen ticket.", false],
+  ]],
+
+  ["§F — The POS says which filter it shows", "A279", "", [
+    ["F1", "A category filter is named, with Clear", ["On the POS, tap a category (e.g. Soft Drinks), then type in search."], "Under the tabs: “Showing Soft Drinks · \"…\" — N items” and <b>Clear ✕</b>. Clear brings back All with the search emptied.", true],
+    ["F2", "An empty grid explains itself", ["Search for something that doesn’t exist."], "“Nothing matches this filter.” with <b>Show all products</b>, which restores the grid.", false],
+  ]],
+
+  ["§E — A manager adds an expense type", "A341", "Online. POS → Shift → Expenses.", [
+    ["E1", "Add a type and use it", ["As the manager: <b>+ Add type</b> → e.g. “Gas refill” → Save.", "Record an expense with it."], "The new type is selected straight away; the expense saves; the dashboard’s Expenses shows the type.", true],
+    ["E2", "No duplicates", ["+ Add type → type an existing name in other capitals (e.g. “gas REFILL”)."], "The existing type is selected; no second copy is created.", false],
+    ["E3", "A cashier cannot add types", ["Sign in as a cashier → Shift → Expenses."], "No “+ Add type” button (the list still works).", false],
+  ]],
+
+  ["§M — Money on the Overview", "A357, A349", "", [
+    ["M1", "VAT shown once", ["Manager → Overview (after a sale today)."], "VAT is in the “VAT collected” box only; the strip below shows CTL (if the business levies it), Refunds, Discounts, Tips — and no strip when none apply.", true],
+    ["M2", "Z-report on screen (carried M5)", ["Sales → Shift report → this shift."], "Gross, − Refunds, = Net, incl. VAT, incl. CTL, Tips. (It passed on 0.6.17 — confirm still right after V3.)", false],
+  ]],
+
+  ["§A — Admin portal: releases", "A356", "Admin portal → a client → Desktop updates.", [
+    ["A1", "The short list", ["Open the version list."], "The newest 5 (0.6.18 marked pre-release), plus the client’s approved version if older; “Show all N versions” reveals the rest.", true],
+    ["A2", "A GitHub hiccup does not blank it (skip unless it happens)", ["Only if GitHub refuses: note the message."], "It names the cause (e.g. rate limit → GITHUB_RELEASES_TOKEN) and still shows the last list it read.", false],
+  ]],
+
+  ["§X — Regression (release-blocker if any fail)", "", "", [
+    ["X1", "Normal sale", ["Ring a sale, take payment (print if you have the printer)."], "Completes; receipt as before.", false],
+    ["X2", "Kitchen ticket", ["Ring a cooked item; send to kitchen."], "Prints as before, nothing missing.", false],
+    ["X3", "Sign-in unchanged", ["Cashier → till; manager → manager screen."], "As before.", false],
+    ["X4", "Sync healthy", ["Technician → Sync."], "Pending 0, no errors.", true],
+    ["X5", "Second till (if you have one)", ["Sign in on T2 and ring a sale."], "Works; its sale reaches the dashboard.", false],
+  ]],
+];
+
+
+const KEY = "swiftpos-verify-0618";
+const state = { meta:{}, marks:{}, notes:{} };
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)||"{}");
+    Object.assign(state.meta, s.meta||{}); Object.assign(state.marks, s.marks||{}); Object.assign(state.notes, s.notes||{});
+  }catch(e){/* fresh */}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){/* ignore */} }
+
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for(const [title, closes, intro, items] of DATA){
+    list.appendChild(el("h2", "", escapeHtml(title) + (closes? '<span class="ids">'+escapeHtml(closes)+'</span>':'')));
+    const card = el("div","card");
+    if(intro) card.appendChild(el("p","intro",escapeHtml(intro)));
+    for(const [id,label,steps,expect,record,sql] of items){
+      const row = el("div","row");
+      const lbl = el("div","lbl");
+      lbl.appendChild(el("div","t",'<span class="id">'+id+'</span> '+escapeHtml(label)));
+      const ol = el("ol"); for(const s of steps){ ol.appendChild(el("li","",s)); } lbl.appendChild(ol);
+      if(sql){ const p=el("pre","sql"); p.textContent=sql; lbl.appendChild(p); }
+      lbl.appendChild(el("div","exp","<b>Expected:</b> "+expect));
+      if(record) lbl.appendChild(el("span","rec","Record: screenshot / photo"));
+      const seg = el("div","seg");
+      for(const v of ["pass","fail","skip"]){
+        const b = el("button","",v[0].toUpperCase()+v.slice(1));
+        b.dataset.v=v;
+        b.setAttribute("aria-pressed", state.marks[id]===v ? "true":"false");
+        b.onclick = ()=>{ state.marks[id] = state.marks[id]===v ? "" : v; save(); render(); };
+        seg.appendChild(b);
+      }
+      const noteWrap = el("div","note");
+      if(state.marks[id]!=="fail" && !(state.notes[id])) noteWrap.hidden = true;
+      const note = document.createElement("input"); note.type="text";
+      const needs = state.marks[id]==="fail";
+      note.placeholder = needs ? "What exactly did you see? (required for a Fail)" : "note (optional)";
+      if(needs && !(state.notes[id]||"").trim()) note.className="need";
+      note.value = state.notes[id]||"";
+      note.oninput = ()=>{ state.notes[id]=note.value; note.className = (state.marks[id]==="fail" && !note.value.trim()) ? "need" : ""; save(); updateCount(); };
+      noteWrap.appendChild(note);
+      // A note can be added to any mark: tap the label.
+      lbl.onclick = (e)=>{ if(e.target.tagName!=="PRE"){ noteWrap.hidden=false; } };
+      row.appendChild(lbl); row.appendChild(seg); row.appendChild(noteWrap);
+      card.appendChild(row);
+    }
+    list.appendChild(card);
+  }
+  for(const k of ["tester","till","date"]){ const f=document.getElementById("m_"+k); if(f) f.value = state.meta[k]||""; }
+  updateCount();
+}
+
+function tally(){
+  let p=0,f=0,s=0,blank=0,total=0;
+  for(const [,,,items] of DATA) for(const [id] of items){ total++; const m=state.marks[id]; if(m==="pass")p++; else if(m==="fail")f++; else if(m==="skip")s++; else blank++; }
+  return {p,f,s,blank,total};
+}
+function updateCount(){
+  const {p,f,s,blank,total} = tally();
+  document.getElementById("count").innerHTML =
+    `<b class="p">${p} pass</b> · <b class="f">${f} fail</b> · ${s} skip · ${total-blank}/${total} done`;
+}
+
+function generate(){
+  const L=[];
+  const t = tally();
+  L.push("SwiftPOS v0.6.18 — rollout verification");
+  L.push(`Tester: ${state.meta.tester||"-"}  |  Till(s): ${state.meta.till||"-"}  |  Date: ${state.meta.date||"-"}`);
+  L.push("");
+  const missingNotes=[];
+  for(const [title,closes,,items] of DATA){
+    L.push(`${title}${closes?"  ["+closes+"]":""}`);
+    for(const [id,label] of items){
+      const m=state.marks[id];
+      const tag = m==="pass"?"PASS":m==="fail"?"FAIL":m==="skip"?"SKIP":"NOT RUN";
+      const note=(state.notes[id]||"").trim();
+      L.push(`${id}: ${tag}${note?" — "+note:""}   (${label})`);
+      if(m==="fail" && !note) missingNotes.push(id);
+    }
+    L.push("");
+  }
+  L.push(`Summary: ${t.p} pass / ${t.f} fail / ${t.s} skip / ${t.blank} not run (of ${t.total})`);
+  const fails=[];
+  for(const [,,,items] of DATA) for(const [id,label] of items) if(state.marks[id]==="fail") fails.push(`${id} (${label})${state.notes[id]?" — "+state.notes[id].trim():""}`);
+  L.push(`Failed: ${fails.length? fails.join("; ") : "none"}`);
+  if(missingNotes.length) L.push(`!! Fails without a note: ${missingNotes.join(", ")} — add what you saw.`);
+  document.getElementById("out").value = L.join("\n");
+  return missingNotes;
+}
+
+async function copyOut(){
+  const ta = document.getElementById("out");
+  const missing = generate();
+  const text = ta.value;
+  let ok=false;
+  try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){}
+  if(!ok){ ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try{ ok=document.execCommand("copy"); }catch(e){} ta.setAttribute("readonly","true"); }
+  toast(missing.length ? "Copied — but some Fails have no note" : ok ? "Copied to clipboard" : "Select the text and copy manually");
+}
+
+let tt;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1800); }
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  load(); render();
+  for(const k of ["tester","till","date"]){
+    const f=document.getElementById("m_"+k);
+    f.oninput=()=>{ state.meta[k]=f.value; save(); };
+  }
+  document.getElementById("gen").onclick=()=>{ const m=generate(); toast(m.length?"Some Fails have no note":"Results generated"); };
+  document.getElementById("copy").onclick=copyOut;
+  document.getElementById("reset").onclick=()=>{
+    if(!confirm("Clear all marks and notes on this device?")) return;
+    state.meta={}; state.marks={}; state.notes={};
+    try{ localStorage.removeItem(KEY);}catch(e){}
+    document.getElementById("out").value=""; render();
+  };
+});
+</script>
+</body>
+</html>

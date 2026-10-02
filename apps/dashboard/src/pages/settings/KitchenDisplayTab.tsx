@@ -42,7 +42,7 @@ export default function KitchenDisplayTab() {
       <div>
         <h2 className="text-lg font-semibold text-white">Kitchen display (KDS)</h2>
         <p className="text-sm text-gray-400 mt-1">
-          Generate a token for a kitchen screen, then open <code className="text-green-400">/kds</code> on
+          Generate a token for a kitchen screen, then open <code className="text-swift-text">/kds</code> on
           that screen and paste it once. The token is branch-scoped — it can only read and
           advance that branch's tickets. Owners only.
         </p>
@@ -54,7 +54,7 @@ export default function KitchenDisplayTab() {
           <select
             value={branchId}
             onChange={e => setBranchId(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-green-500 focus:outline-none"
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-swift focus:outline-none"
           >
             <option value="">Select a branch…</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -63,7 +63,7 @@ export default function KitchenDisplayTab() {
         <button
           onClick={generate}
           disabled={busy || !branchId}
-          className="bg-green-500 hover:bg-green-400 text-gray-950 font-semibold px-4 py-2 rounded-lg disabled:opacity-40 transition-colors"
+          className="bg-swift hover:bg-swift-light text-gray-950 font-semibold px-4 py-2 rounded-lg disabled:opacity-40 transition-colors"
         >{busy ? 'Generating…' : 'Generate token'}</button>
       </div>
 
@@ -77,7 +77,7 @@ export default function KitchenDisplayTab() {
             value={token}
             rows={4}
             onFocus={e => e.currentTarget.select()}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-mono break-all focus:border-green-500 focus:outline-none"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-mono break-all focus:border-swift focus:outline-none"
           />
           <div className="flex items-center gap-3">
             <button

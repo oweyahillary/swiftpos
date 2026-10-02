@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 import { useBusiness } from '../../context/BusinessContext';
 import { useBranch } from '../../context/BranchContext';
+import { printDocument } from '../../lib/printDocument';
+import { transferDocSpec } from '../../lib/documentSpecs';
 
 interface Product { id: string; name: string; }
 interface Branch  { id: string; name: string; }
@@ -9,6 +12,7 @@ interface Branch  { id: string; name: string; }
 interface TransferItem {
   product_id: string;
   quantity: number;
+  quantity_received?: number | null;
   products: { name: string };
 }
 
@@ -21,7 +25,9 @@ interface Transfer {
   to_branch_name: string;
   status: 'pending' | 'in_transit' | 'received' | 'cancelled';
   notes: string | null;
+  receipt_note?: string | null;
   created_at: string;
+  despatched_by: string | null;
   stock_transfer_items: TransferItem[];
 }
 
@@ -33,7 +39,23 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 };
 
 export default function StockTransfersPage() {
+  const { user } = useAuth();
   const { business } = useBusiness();
+
+  // Reprint a transfer document via the shared spec builder (received note once
+  // received, else a despatch note).
+  const printTransferDoc = (t: Transfer) => {
+    printDocument(transferDocSpec({
+      number: t.transfer_number,
+      date: new Date(t.created_at).toLocaleDateString('en-KE'),
+      from: t.from_branch_name, to: t.to_branch_name, status: t.status, received: t.status === 'received',
+      business: business ?? { name: 'SwiftPOS' },
+      lines: t.stock_transfer_items.map(it => ({
+        name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: it.quantity_received,
+      })),
+      note: t.receipt_note || t.notes || undefined,
+    }));
+  };
   const { activeBranchId } = useBranch();
 
   const [transfers, setTransfers]   = useState<Transfer[]>([]);
@@ -54,6 +76,12 @@ export default function StockTransfersPage() {
   // Row status actions (A144)
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [actionErr, setActionErr]     = useState<{ id: string; msg: string } | null>(null);
+  // A203: in-app confirmation for the same-user separation-of-duty override,
+  // replacing a native window.confirm() that blocked the page (and automation),
+  // which made "Mark received" look like it hung.
+  const [sameUserPrompt, setSameUserPrompt] = useState<{ t: Transfer; status: 'in_transit' | 'received' | 'cancelled'; msg: string } | null>(null);
+  // A204: cancelling needs a reason; capture it in an in-app modal (no native confirm).
+  const [cancelPrompt, setCancelPrompt] = useState<{ t: Transfer; reason: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,19 +109,23 @@ export default function StockTransfersPage() {
     t: Transfer,
     status: 'in_transit' | 'received' | 'cancelled',
     allowSameUser = false,
+    reason?: string,
   ) {
     setActioningId(t.id);
     setActionErr(null);
     try {
-      await api.patch(`/api/stock/transfers/${t.id}/status`,
-        allowSameUser ? { status, allow_same_user: true } : { status });
+      // A204: cancelling requires a reason (server returns 400 reason_required
+      // without one). Include it when provided; the cancel modal always supplies it.
+      const body: Record<string, unknown> = { status };
+      if (allowSameUser) body.allow_same_user = true;
+      if (reason) body.reason = reason;
+      await api.patch(`/api/stock/transfers/${t.id}/status`, body);
       await load();
     } catch (e: any) {
       if (e?.code === 'same_user_receipt' && !allowSameUser) {
-        if (window.confirm(`${e.message}\n\nProceed and record that you confirmed your own despatch?`)) {
-          await advance(t, status, true);
-          return;
-        }
+        // Open the in-app modal; the user completes the override there (no native
+        // dialog to block the page / tests). The modal calls advance(t, status, true).
+        setSameUserPrompt({ t, status, msg: e?.message ?? 'You despatched this transfer.' });
       } else {
         setActionErr({ id: t.id, msg: e?.message ?? 'Could not update the transfer' });
       }
@@ -103,6 +135,22 @@ export default function StockTransfersPage() {
   }
 
   const addLine = () => setLines(l => [...l, { product_id: '', quantity: '' }]);
+
+  // A203: decide the same-user case on the CLIENT, before any server call. If the
+  // current user despatched this transfer, open the in-app modal directly — we
+  // never fire the allowSameUser=false request, so the server's 409 (and any
+  // native dialog that could gate it) is never reached. A different user marks it
+  // received straight through. Makes the flow impossible to hang on a dialog.
+  const markReceived = (t: Transfer) => {
+    if (t.despatched_by && user?.id && t.despatched_by === user.id) {
+      setSameUserPrompt({
+        t, status: 'received',
+        msg: 'You despatched this transfer, so ideally someone else confirms it arrived. Proceeding is recorded on the transfer.',
+      });
+    } else {
+      void advance(t, 'received');
+    }
+  };
   const removeLine = (i: number) => setLines(l => l.filter((_, idx) => idx !== i));
   const updateLine = (i: number, field: string, val: string) =>
     setLines(l => l.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
@@ -143,7 +191,7 @@ export default function StockTransfersPage() {
         </div>
         <button
           onClick={() => { setCreateError(''); setShowCreate(true); }}
-          className="flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-swift hover:bg-swift-light text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
         >
           + New Transfer
         </button>
@@ -183,6 +231,10 @@ export default function StockTransfersPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  <button onClick={(e) => { e.stopPropagation(); printTransferDoc(t); }}
+                    className="text-xs font-medium px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors">
+                    Print
+                  </button>
                   <span className="text-gray-400 text-xs">{t.stock_transfer_items.length} item{t.stock_transfer_items.length !== 1 ? 's' : ''}</span>
                   <span className="text-gray-500 text-xs">{new Date(t.created_at).toLocaleDateString('en-KE')}</span>
                   <span className="text-gray-600 text-xs">{isOpen ? '▲' : '▼'}</span>
@@ -195,19 +247,28 @@ export default function StockTransfersPage() {
                     <thead>
                       <tr className="text-gray-500 uppercase tracking-wide">
                         <th className="text-left pb-2">Product</th>
-                        <th className="text-right pb-2">Quantity</th>
+                        <th className="text-right pb-2">Sent</th>
+                        <th className="text-right pb-2">Received</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {t.stock_transfer_items.map((item, i) => (
-                        <tr key={i} className="border-t border-gray-800/50">
-                          <td className="py-1.5 text-gray-300">{item.products?.name ?? item.product_id}</td>
-                          <td className="py-1.5 text-white text-right font-medium">{item.quantity}</td>
-                        </tr>
-                      ))}
+                      {t.stock_transfer_items.map((item, i) => {
+                        const rec = item.quantity_received;
+                        const short = rec != null && Number(rec) < Number(item.quantity);
+                        return (
+                          <tr key={i} className="border-t border-gray-800/50">
+                            <td className="py-1.5 text-gray-300">{item.products?.name ?? item.product_id}</td>
+                            <td className="py-1.5 text-white text-right font-medium">{item.quantity}</td>
+                            <td className={`py-1.5 text-right font-medium ${rec == null ? 'text-gray-600' : short ? 'text-amber-400' : 'text-white'}`}>
+                              {rec == null ? '—' : rec}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  {t.notes && <p className="text-gray-500 text-xs mt-3 italic">Note: {t.notes}</p>}
+                  {t.notes && <p className="text-gray-500 text-xs mt-3 italic">Despatch note: {t.notes}</p>}
+                  {t.receipt_note && <p className="text-amber-400/90 text-xs mt-1 italic">Receipt note: {t.receipt_note}</p>}
 
                   {(t.status === 'pending' || t.status === 'in_transit') && (
                     <div className="flex items-center gap-2 mt-4">
@@ -215,19 +276,19 @@ export default function StockTransfersPage() {
                         <button
                           disabled={actioningId === t.id}
                           onClick={() => advance(t, 'in_transit')}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors"
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors"
                         >Mark in transit</button>
                       )}
                       {t.status === 'in_transit' && (
                         <button
                           disabled={actioningId === t.id}
-                          onClick={() => advance(t, 'received')}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white transition-colors"
+                          onClick={() => markReceived(t)}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white transition-colors"
                         >Mark received</button>
                       )}
                       <button
                         disabled={actioningId === t.id}
-                        onClick={() => { if (window.confirm('Cancel this transfer? Nothing is moved back — reverse settled stock with an adjustment instead.')) advance(t, 'cancelled'); }}
+                        onClick={() => setCancelPrompt({ t, reason: '' })}
                         className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200 disabled:opacity-40 transition-colors"
                       >Cancel</button>
                     </div>
@@ -258,7 +319,7 @@ export default function StockTransfersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">From Branch *</label>
                   <select
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.from_branch_id}
                     onChange={e => setForm(f => ({ ...f, from_branch_id: e.target.value }))}
                   >
@@ -269,7 +330,7 @@ export default function StockTransfersPage() {
                 <div>
                   <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">To Branch *</label>
                   <select
-                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                    className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                     value={form.to_branch_id}
                     onChange={e => setForm(f => ({ ...f, to_branch_id: e.target.value }))}
                   >
@@ -285,7 +346,7 @@ export default function StockTransfersPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-gray-500 uppercase tracking-wide">Items *</label>
-                  <button onClick={addLine} className="text-xs text-green-400 hover:text-green-300">+ Add row</button>
+                  <button onClick={addLine} className="text-xs text-swift-text hover:text-swift-text-hover">+ Add row</button>
                 </div>
 
                 <div className="space-y-2">
@@ -298,7 +359,7 @@ export default function StockTransfersPage() {
                     <div key={i} className="grid grid-cols-12 gap-2 items-center">
                       <div className="col-span-8">
                         <select
-                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-green-500"
+                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-swift"
                           value={line.product_id}
                           onChange={e => updateLine(i, 'product_id', e.target.value)}
                         >
@@ -310,7 +371,7 @@ export default function StockTransfersPage() {
                         <input
                           type="number"
                           min="1"
-                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-green-500 text-right"
+                          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-2 outline-none focus:border-swift text-right"
                           value={line.quantity}
                           onChange={e => updateLine(i, 'quantity', e.target.value)}
                           placeholder="0"
@@ -329,7 +390,7 @@ export default function StockTransfersPage() {
               <div>
                 <label className="block text-xs text-gray-500 uppercase tracking-wide mb-1.5">Notes</label>
                 <input
-                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-green-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 outline-none focus:border-swift"
                   value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Reason for transfer…"
@@ -349,10 +410,59 @@ export default function StockTransfersPage() {
               <button
                 onClick={create}
                 disabled={creating}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
+                className="flex-1 bg-swift hover:bg-swift-light disabled:opacity-50 text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
               >
                 {creating ? 'Transferring…' : 'Transfer Stock'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {sameUserPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-white font-semibold text-lg mb-2">Confirm your own despatch?</h3>
+            <p className="text-gray-400 text-sm mb-5">{sameUserPrompt.msg}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSameUserPrompt(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-lg transition-colors"
+              >Not now</button>
+              <button
+                onClick={() => { const p = sameUserPrompt; setSameUserPrompt(null); void advance(p.t, p.status, true); }}
+                className="flex-1 bg-swift hover:bg-swift-light text-black font-semibold text-sm py-2.5 rounded-lg transition-colors"
+              >Proceed &amp; record</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* A204: cancel a transfer with a required reason (no native confirm). */}
+      {cancelPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-white font-semibold text-lg mb-2">Cancel this transfer?</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Nothing is moved back — reverse settled stock with an adjustment instead.
+              A reason is required and recorded on the transfer.
+            </p>
+            <textarea
+              autoFocus
+              value={cancelPrompt.reason}
+              onChange={e => setCancelPrompt(p => p ? { ...p, reason: e.target.value } : p)}
+              placeholder="Reason for cancelling (e.g. duplicate transfer, sent in error)"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500 resize-none h-20 mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelPrompt(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2.5 rounded-lg transition-colors"
+              >Keep transfer</button>
+              <button
+                disabled={!cancelPrompt.reason.trim()}
+                onClick={() => { const p = cancelPrompt; setCancelPrompt(null); void advance(p.t, 'cancelled', false, p.reason.trim()); }}
+                className="flex-1 bg-red-500 hover:bg-red-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
+              >Cancel transfer</button>
             </div>
           </div>
         </div>

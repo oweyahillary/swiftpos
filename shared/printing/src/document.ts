@@ -13,6 +13,8 @@
  * no second layout engine to disagree with the first.
  */
 
+import type { MonoRaster } from './raster';
+
 export type Align = 'left' | 'center' | 'right';
 
 /** Maps to the printer's character-size register. 'large' is double both ways. */
@@ -26,11 +28,14 @@ export interface TextBlock {
   bold: boolean;
 }
 
+/** A310: a 1-bit bitmap, already thresholded (see raster.ts). Only the receipt
+ *  renderer emits one — a logo on a kitchen ticket is paper for nothing. */
+export interface ImageBlock { kind: 'image'; raster: MonoRaster; align: Align }
 export interface FeedBlock { kind: 'feed'; lines: number }
 export interface CutBlock { kind: 'cut' }
 export interface DrawerBlock { kind: 'drawer' }
 
-export type Block = TextBlock | FeedBlock | CutBlock | DrawerBlock;
+export type Block = TextBlock | ImageBlock | FeedBlock | CutBlock | DrawerBlock;
 
 export interface Document {
   /** Character columns this document was laid out for. A serialiser must not
@@ -63,6 +68,11 @@ export class DocBuilder {
 
   blank(n = 1): this {
     for (let i = 0; i < n; i++) this.line('');
+    return this;
+  }
+
+  image(raster: MonoRaster, align: Align = 'center'): this {
+    this.blocks.push({ kind: 'image', raster, align });
     return this;
   }
 

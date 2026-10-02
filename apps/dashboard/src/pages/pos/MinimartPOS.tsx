@@ -50,7 +50,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type { CartItem } from '../../lib/cart';
-import { cartSubtotal, extractVat } from '../../lib/cart';
+import { cartSubtotal, extractTaxes } from '../../lib/cart';
+import { useBusiness } from '../../context/BusinessContext';
 import type { Product, Category } from '../../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -361,7 +362,11 @@ export default function MinimartPOS({
 
   // ── Cart totals ────────────────────────────────────────────────────────────
   const subtotal = cartSubtotal(cart);
-  const vat      = extractVat(subtotal, VAT_RATE);
+  // A349: the business's own VAT rate (was a fixed 16 %). VAT only — the catering levy (CTL) is for hotels, never a
+  // minimart (owner, 2026-09-28: "thats only for hotels not any other business only do VAT").
+  const { business: biz } = useBusiness();
+  const vatRate  = Number(biz?.vat_rate ?? VAT_RATE);
+  const { vat } = extractTaxes(subtotal, vatRate, 0);
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   // ── Scan bar status colour ─────────────────────────────────────────────────
@@ -618,7 +623,7 @@ export default function MinimartPOS({
                   <span style={s.totalValue}>{fmt(subtotal - vat, currency)}</span>
                 </div>
                 <div style={s.totalRow}>
-                  <span style={s.totalLabel}>VAT ({VAT_RATE}%)</span>
+                  <span style={s.totalLabel}>VAT ({vatRate}%)</span>
                   <span style={s.totalValue}>{fmt(vat, currency)}</span>
                 </div>
                 <div style={{ ...s.totalRow, ...s.totalRowGrand }}>
@@ -912,7 +917,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 6,
   },
   scanSubmitBtn: {
-    background: '#1d4ed8',
+    background: 'rgb(var(--act-strong, 29 78 216))',
     border: 'none',
     borderRadius: 7,
     color: '#fff',
@@ -956,7 +961,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   parkedLabel: { maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   parkedCount: {
-    background: '#3b82f6',
+    background: 'rgb(var(--act-strong, 59 130 246))',
     color: '#fff',
     borderRadius: 10,
     padding: '1px 6px',
@@ -1031,9 +1036,9 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   catBtnActive: {
-    background: 'rgba(59,130,246,0.15)',
-    borderColor: 'rgba(59,130,246,0.4)',
-    color: '#60a5fa',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)',
+    borderColor: 'rgb(var(--act-fill, 59 130 246) / 0.4)',
+    color: 'rgb(var(--act-text, 96 165 250))',
   },
   catSearchWrap: {
     padding: '8px 14px',
@@ -1077,14 +1082,14 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   productCardActive: {
-    border: '1.5px solid rgba(59,130,246,0.6)',
-    background: 'rgba(59,130,246,0.06)',
+    border: '1.5px solid rgb(var(--act-fill, 59 130 246) / 0.6)',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.06)',
   },
   cartBadge: {
     position: 'absolute',
     top: 6,
     right: 6,
-    background: '#3b82f6',
+    background: 'rgb(var(--act-strong, 59 130 246))',
     color: '#fff',
     fontSize: 10,
     fontWeight: 700,
@@ -1258,7 +1263,7 @@ const s: Record<string, React.CSSProperties> = {
     gap: 10,
     width: '100%',
     padding: '14px 20px',
-    background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)',
+    background: 'linear-gradient(135deg, rgb(var(--act-strong, 29 78 216)) 0%, rgb(var(--act-strong, 37 99 235)) 100%)',
     border: 'none',
     borderRadius: 12,
     color: '#fff',
@@ -1336,7 +1341,7 @@ const s: Record<string, React.CSSProperties> = {
   modalConfirm: {
     flex: 2,
     padding: '11px',
-    background: '#1d4ed8',
+    background: 'rgb(var(--act-strong, 29 78 216))',
     border: 'none',
     borderRadius: 8,
     color: '#fff',
@@ -1348,10 +1353,10 @@ const s: Record<string, React.CSSProperties> = {
   modalSecondary: {
     flex: 1,
     padding: '11px',
-    background: 'rgba(59,130,246,0.1)',
-    border: '1px solid rgba(59,130,246,0.3)',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.1)',
+    border: '1px solid rgb(var(--act-fill, 59 130 246) / 0.3)',
     borderRadius: 8,
-    color: '#60a5fa',
+    color: 'rgb(var(--act-text, 96 165 250))',
     fontSize: 13,
     fontWeight: 600,
     cursor: 'pointer',

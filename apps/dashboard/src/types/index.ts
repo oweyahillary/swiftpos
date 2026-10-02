@@ -9,6 +9,9 @@ export interface Business {
   phone?: string | null;
   tax_pin?: string | null;
   vat_rate?: number;
+  /** Catering/Tourism Levy % (A349: the web's printed receipts use it; 0 / absent = not levied). */
+  ctl_rate?: number | null;
+  logo_url?: string | null;
 }
 
 export interface Category {
@@ -19,6 +22,7 @@ export interface Category {
   icon: string | null;
   sort_order: number;
   status: 'active' | 'inactive';
+  is_kitchen?: boolean;   // A252: routing fallback when a category has no station config
   created_at: string;
 }
 
@@ -90,6 +94,14 @@ export interface ModifierGroup {
 }
 
 // Selections made at the POS for a single cart item
+export interface ComboComponent {
+  product_id: string;
+  name: string;
+  quantity: number;
+  is_kitchen: boolean;
+  category_id: string | null;   // A248: routes each component on its own category
+}
+
 export interface SelectedVariant {
   groupId: string;
   groupName: string;

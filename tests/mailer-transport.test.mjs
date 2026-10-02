@@ -260,9 +260,16 @@ ok('it sends to the owner\'s OWN email, no user-supplied recipient',
    /from\("users"\)[\s\S]*?\.eq\("id", req\.userId\)/.test(notifSrc)
    && !/req\.body[\s\S]*?to/.test(notifSrc),
    'Self-only delivery removes any spam vector.');
-ok('it reports the provider on success and the error on failure',
+ok('it reports the provider on success and a safe message on failure (A200)',
+   // success returns the delivering provider
    /ok:\s*true, provider: result\.provider/.test(notifSrc)
-   && /status\(502\)[\s\S]*?error: result\.error/.test(notifSrc));
+   // failure is a 502 that LOGS the raw diagnostic server-side (result.error) …
+   && /diagnostic: result\.error/.test(notifSrc)
+   && /status\(502\)/.test(notifSrc)
+   // … and returns a generic, non-leaking message to the client, never result.error in the body.
+   && /error: 'Test email could not be sent[\s\S]*?server logs/.test(notifSrc)
+   && !/status\(502\)[\s\S]*?error: result\.error/.test(notifSrc),
+   'A200: the raw provider diagnostic must be logged, not returned to the UI.');
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

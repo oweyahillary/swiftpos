@@ -20,6 +20,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
+import ReleaseBadge from '../../components/ReleaseBadge';
 import POSReportsTab       from './POSReportsTab';
 import POSOrderHistoryTab  from './POSOrderHistoryTab';
 import POSInventoryTab     from './POSInventoryTab';
@@ -224,7 +225,7 @@ const gv: Record<string, React.CSSProperties> = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function POSDrawer({ isOpen, onClose, currency }: Props) {
-  const { session } = usePOSAuth();
+  const { session, posApi } = usePOSAuth();
 
   const groups = buildGroups(session?.permissions ?? {});
 
@@ -342,6 +343,10 @@ export default function POSDrawer({ isOpen, onClose, currency }: Props) {
 
           </div>
         )}
+        {/* 0.6.28: which release this website and the cloud run */}
+        <div style={{ padding: '8px 16px', borderTop: '1px solid #334155', flexShrink: 0 }}>
+          <ReleaseBadge getCloud={() => posApi.get('/api/version')} />
+        </div>
       </div>
     </>
   );
@@ -396,7 +401,7 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: '0.4px', textAlign: 'center' as const, transition: 'all 0.15s ease',
   },
   railTabActive: {
-    color: '#93c5fd', borderLeftColor: '#3b82f6', background: 'rgba(59,130,246,0.08)',
+    color: '#93c5fd', borderLeftColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.08)',
   },
   railIcon:  { fontSize: 20 },
   railLabel: { lineHeight: 1.2, width: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
@@ -416,7 +421,7 @@ const s: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const, transition: 'all 0.15s ease',
   },
   subTabActive: {
-    color: '#3b82f6', borderBottomColor: '#3b82f6', background: 'rgba(59,130,246,0.06)',
+    color: 'rgb(var(--act-text, 59 130 246))', borderBottomColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.06)',
   },
 
   // Content

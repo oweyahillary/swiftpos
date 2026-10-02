@@ -312,6 +312,7 @@ jobs:
       - name: Migrations against real Postgres
         run: |
           npm install --no-audit --no-fund
+          node scripts/run-migration-tests.mjs --self-test
           npm run test:migrations
 
       # Server DB refs (supabase.from/.rpc/filter-columns) vs the schema the
@@ -438,6 +439,12 @@ jobs:
       - name: IPC bridge parity
         run: node scripts/check-ipc-parity.mjs
 
+      # D7: parity proves a channel is bridged+handled, NOT that its payload is
+      # validated. This gate fails if any handled channel is missing a schema in
+      # ipcSchemas.ts — so a new channel cannot ship passing an unchecked payload.
+      - name: IPC payload validation coverage
+        run: node scripts/check-ipc-validation.mjs
+
       # A38: syncEngine declared 'x-device-id' AND 'X-Device-Id' in one object.
       # Header names are case-insensitive to HTTP but not to an object literal,
       # so fetch sent both and every server reader got them comma-joined —
@@ -503,6 +510,25 @@ jobs:
       - name: Register agrees with itself
         run: node scripts/check-register-consistency.mjs
 
+      # A322 — SwiftPOS is general-purpose: no reference business's name in shipped source, sample data,
+      # tests or scripts (the technician test print once printed one on every client's printer).
+      - name: No reference business names
+        run: node scripts/check-reference-names.mjs && node scripts/check-reference-names.mjs --self-test
+
+      # A328 — no NEW raw green in the web POS + shared components (status and money only stay green).
+      - name: No new raw green in the web POS
+        run: node scripts/check-web-pos-green.mjs && node scripts/check-web-pos-green.mjs --self-test
+
+      # A329 step 3 — no NEW raw green or blue in the back office: its actions are the fixed SwiftPOS teal (swift-*);
+      # what stays green/blue is status, money, data or info (docs/A329-back-office-colour-classification.md).
+      - name: No new raw green or blue in the back office
+        run: node scripts/check-back-office-colour.mjs && node scripts/check-back-office-colour.mjs --self-test
+
+      # A333 — light mode: every coloured / pale text class and translucent gray line the dashboard uses has a generated
+      # light rule (index.css). A new class without one fails here — run node scripts/build-light-colours.mjs.
+      - name: Light-mode colours are current
+        run: node scripts/build-light-colours.mjs --check
+
       # A170: a literal NULL written into a NOT NULL local column throws at
       # runtime and is invisible to tsc — the A167 class (offline sign-in locked
       # the till out). The gate parses localDb.ts and flags any such write; the
@@ -563,6 +589,157 @@ jobs:
       - name: Desktop sync failure reporting
         working-directory: apps/desktop
         run: node --no-warnings test/syncEngine-failures.test.mjs
+
+      # A321 — any successful catalogue pull (10-min floor, startup, manual, post-edit, 20-s check)
+      # signals the open screens to reload; the 20-s freshness check refreshes on 401 and records
+      # other failures instead of dropping them. Real compiled syncEngine, shimmed deps, URL-routed fetch.
+      - name: Desktop catalogue refresh signal
+        working-directory: apps/desktop
+        run: node --no-warnings test/catalogue-refresh-signal.test.mjs
+
+      # A322 — the test print / preview show THIS till's business name (real printWorker, real SQLite).
+      - name: Desktop test print business name
+        working-directory: apps/desktop
+        run: node --no-warnings test/test-print-business-name.test.mjs
+
+      # A325 — the till stores the effective action theme (real localDb, real schema-53 → 54 upgrade).
+      - name: Desktop theme pull
+        working-directory: apps/desktop
+        run: node --no-warnings test/theme-pull.test.mjs
+
+      # A334 — the till joins a drawer the web POS opened as it (same id, its trading day) and its close
+      # includes the web's cash (real compiled shiftService on SQLite).
+      - name: Desktop shared drawer with the web POS
+        working-directory: apps/desktop
+        run: node --no-warnings test/shared-drawer.test.mjs
+
+      # Cross-sync stage 1 — the web POS's sales on this till's drawer are downloaded and held on the till: shown,
+      # counted once, never pushed back or relayed to the node (real compiled webSales + shiftService + nodeIngest).
+      - name: Desktop web sales on this till
+        working-directory: apps/desktop
+        run: node --no-warnings test/web-sales.test.mjs
+
+      # 0.6.11 — previous shift reports, expenses in the shift report (screen and paper), the Expenses screen, and the
+      # colour-coded Daily Sales Report (real compiled shiftService + dailySalesReport, real shared/printing renderer).
+      - name: Desktop shift reports, expenses and the daily report
+        working-directory: apps/desktop
+        run: node --no-warnings test/shift-reports.test.mjs
+
+      # A338 — one drawer never blocks another from syncing: what a sibling drawer's clash parked is re-queued once the
+      # cloud accepts it, and a sale whose drawer is not up yet waits instead of failing (real compiled syncEngine + SQLite).
+      - name: Desktop drawer clash never blocks sync
+        working-directory: apps/desktop
+        run: node --no-warnings test/drawer-clash-sync.test.mjs
+
+      # A363 — an offline close-and-reopen never strands a drawer: the till re-sends a day/shift parked by a trading-day
+      # clash once; refusals reach the log; the web-sales pull renews its token; "last synced"; the Z-report note.
+      - name: Desktop trading-day clash never strands a drawer
+        working-directory: apps/desktop
+        run: node --no-warnings test/day-clash-sync.test.mjs
+
+      # A364 — a day close is a cash-up: a shift opened after it reopens the day (was "That record already exists.");
+      # the next close counts only the shifts since, the row keeps the whole day.
+      - name: Desktop day close is a cash-up, a later shift reopens the day
+        working-directory: apps/desktop
+        run: node --no-warnings test/day-reopen.test.mjs
+
+      # A365 — a manager confirms every shift (blind recount of every payment method); Close Day waits for them; the
+      # close carries the cashier's declaration and the confirmation reaches the cloud.
+      - name: Desktop shift confirmation by a manager
+        working-directory: apps/desktop
+        run: node --no-warnings test/shift-confirm.test.mjs
+
+      # A367 — notes on an item ("3 normal, 2 spicy", "No salt") and on the whole order: stored, pushed, printed, held.
+      - name: Desktop order notes
+        working-directory: apps/desktop
+        run: node --no-warnings test/order-notes.test.mjs
+
+      # 0.6.27 — the prospect's requests, per-client switches: delivery fee paid to the rider, expense method, own History,
+      # no reprint, blind close, the manager's reasons (the real compiled main on SQLite).
+      - name: Desktop per-client switches (delivery fee, expenses, History, blind close, reasons)
+        working-directory: apps/desktop
+        run: node --no-warnings test/prospect-features.test.mjs
+
+      # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
+      # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
+      - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)
+        working-directory: apps/desktop
+        run: node --no-warnings test/kitchen-voids.test.mjs
+
+      # A336 follow-up (0.6.26) — a void or refund made on the web of a sale this till rang reaches the till (Z-report, shift).
+      - name: Desktop web reversals of the till's own sales
+        working-directory: apps/desktop
+        run: node --no-warnings test/own-reversals.test.mjs
+
+      # 0.6.25 — a logo uploaded on the till is saved to the cloud too (a sync no longer puts the old one back).
+      - name: Desktop branding saved to the cloud
+        working-directory: apps/desktop
+        run: node --no-warnings test/branding-cloud.test.mjs
+
+      # 0.6.24 — the locked till shows the client's logo; its text is readable (opaque background).
+      - name: Desktop lock screen logo and readability
+        working-directory: apps/desktop
+        run: node --no-warnings test/lock-curtain-brand.test.mjs
+
+      # 0.6.24 — the update bar never covers the till's controls: the screens stop above it (owner, 2026-09-30).
+      - name: Desktop update bar does not cover the screen
+        working-directory: apps/desktop
+        run: node --no-warnings test/update-banner-layout.test.mjs
+
+      # A363 — sync status for managers only (a bottom notice, red for refusals), "Last synced", the Z-report note.
+      - name: Desktop sync notice for managers
+        working-directory: apps/desktop
+        run: node --no-warnings test/sync-notice.test.mjs
+
+      # A339 — a manager signing in OFFLINE lands on the manager screen (the real compiled auth:verifyPin, saved credential).
+      - name: Desktop offline manager sign-in
+        working-directory: apps/desktop
+        run: node --no-warnings test/offline-manager-signin.test.mjs
+
+      # A345 — an offline sign-in: the back office says so, shows the till's saved menu/staff read-only, and becomes a cloud
+      # sign-in by itself when the network returns (the real compiled IPC handlers; the renderer's humaniser run).
+      - name: Desktop offline session
+        working-directory: apps/desktop
+        run: node --no-warnings test/offline-session.test.mjs
+
+      # A346 — the till's Stock screen only with the web POS (real deviceConfig + SQLite, the node relay).
+      - name: Desktop Stock only with the web POS
+        working-directory: apps/desktop
+        run: node --no-warnings test/stock-web-pos.test.mjs
+
+      # A348 — a till updates only to the version the cloud approved for its business (held by default).
+      - name: Desktop updates only when approved
+        working-directory: apps/desktop
+        run: node --no-warnings test/update-approval.test.mjs
+
+      # A349 — the till's reports agree to the cent: refunds, VAT and CTL (refund-reduced), tips; local hours.
+      - name: Desktop money in the reports
+        working-directory: apps/desktop
+        run: node --no-warnings test/money-reports.test.mjs
+
+      # A351 — the manager sidebar in groups (Sales, Close, Settings); each tab keeps its own permission.
+      - name: Desktop manager menu groups
+        working-directory: apps/desktop
+        run: node --no-warnings test/manager-nav.test.mjs
+
+      # A355 — reversing a sale from History: "Void / Refund", then "Refund" (never gone); cashiers get no buttons.
+      - name: Desktop void and refund from History
+        working-directory: apps/desktop
+        run: node --no-warnings test/void-refund.test.mjs
+
+      # A279 / A341 / A357 — the POS says which filter it shows; a manager adds an expense type; VAT once on the Overview.
+      - name: Desktop 0.6.18 till extras
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-extras-0618.test.mjs
+
+      # A326 — the till's colours follow the theme only when themes are on (real themeVars.ts, real compiled CSS).
+      - name: Desktop theme variables
+        working-directory: apps/desktop
+        run: node --no-warnings test/theme-vars.test.mjs
+
+      # A326 — no NEW raw green on the till: green is reserved for status, money and the SwiftPOS wordmark.
+      - name: No new raw green on the till
+        run: node scripts/check-till-green.mjs && node scripts/check-till-green.mjs --self-test
 
       # A161 — the node's downstream reference snapshot (A24). Pure reshape of
       # local rows into the cloud shapes pullCatalogue consumes; the tri-state
@@ -636,3 +813,9 @@ jobs:
       - name: Receipt closing block
         working-directory: shared/printing
         run: npm test
+
+      # A314: the web POS prints from a committed esbuild bundle of shared/printing.
+      # Rebuild it (esbuild pinned in the script) and fail if it differs, so a
+      # renderer change cannot reach the till without reaching the web too.
+      - name: Web receipt bundle is reproducible
+        run: node scripts/build-escpos-renderer.mjs --check

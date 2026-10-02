@@ -23,7 +23,7 @@
 import type { PrintContext, OrderLine, OrderUnit, OrderType } from './types';
 import { DocBuilder, type Document } from './document';
 import { splitTax, netOf, formatCents } from './money';
-import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns } from './layout';
+import { columnsFor, center, rule, pair, pairOrStack, hangingWrap, itemRow, subRow, wrap, wrapAuthored, itemColumns, sanitize } from './layout';
 
 const TYPE_CAPS: Record<OrderType, string> = {
   takeaway: 'TAKEAWAY',
@@ -95,6 +95,11 @@ function visibleUnits(line: OrderLine, ctx: PrintContext): OrderUnit[] {
   return units;
 }
 
+/** A367: a typed note as printed rows — the cashier's line breaks kept, blank lines dropped. */
+function noteRows(note: string | undefined): string[] {
+  return (note ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+}
+
 /** ─── Production tickets: kitchen, dispatch, and anything shaped like them ─── */
 function renderProduction(ctx: PrintContext): Document {
   const { order, station } = ctx;
@@ -117,6 +122,8 @@ function renderProduction(ctx: PrintContext): Document {
   if (order.orderType === 'delivery' && order.deliveryPerson) {
     d.line(`Rider  ${order.deliveryPerson}`);
   }
+  // A367: the order's note, bold, before any dish — the cook reads it first.
+  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `NOTE: ${ln}`, undefined, 0), { bold: true });
   if (ctx.reprint) {
     d.line(`REPRINT  ${fullStamp(ctx.reprint.at)}  (#${ctx.reprint.count})`);
   }
@@ -158,6 +165,8 @@ function renderProduction(ctx: PrintContext): Document {
     // A flat product with attributes but no units carries them directly.
     if (line.units.length === 0) {
       unitRows++;
+      // A367: its note too — this `continue` used to skip the note block below, so a plain dish lost its note.
+      for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 6), { bold: true });
       continue;
     }
 
@@ -175,9 +184,8 @@ function renderProduction(ctx: PrintContext): Document {
       }
     }
 
-    if (line.note) {
-      d.lines(subRow(cols, `** ${line.note}`, undefined, 6));
-    }
+    // A367: one row per line the cashier typed ("3 normal" / "2 spicy"), bold so it is not read as a component.
+    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 6), { bold: true });
   }
 
   d.line(rule(cols));
@@ -212,6 +220,14 @@ function renderReceipt(ctx: PrintContext): Document {
     d.line('Duplicate Print', { align: 'center', size: 'tall', bold: true });
     d.line(rule(cols));
   }
+  if (ctx.proforma) {
+    d.line('BILL - NOT A RECEIPT', { align: 'center', size: 'tall', bold: true });
+    d.line(rule(cols));
+  }
+
+  // A310: client logo above the name, receipts only. Nothing else in this
+  // document moves — with logoRaster absent the byte stream is unchanged.
+  if (business.logoRaster) d.image(business.logoRaster, 'center');
 
   d.line(center(cols, business.name), { bold: true });
   if (business.branchName) d.line(center(cols, business.branchName));
@@ -230,7 +246,7 @@ function renderReceipt(ctx: PrintContext): Document {
   d.line(`Type: ${TYPE_TITLE[order.orderType]}`);
   d.line(rule(cols));
 
-  d.line(`Bill No.: ${order.billNumber}`);
+  if (!ctx.proforma) d.line(`Bill No.: ${order.billNumber}`);   // a proforma bill carries no fiscal number
   if (order.orderType === 'delivery') d.line(`Delivery Boy: ${order.deliveryPerson ?? ''}`);
   if (order.orderType === 'dine_in' && order.tableNumber) d.line(`Table: ${order.tableNumber}`);
   d.line(`Cashier: ${order.cashierName}`);
@@ -238,6 +254,7 @@ function renderReceipt(ctx: PrintContext): Document {
   if (ctx.reprint) d.line(`RePrint T.: ${fullStamp(ctx.reprint.at)}`);
   if (ctx.voided) d.line(`Voided: ${fullStamp(ctx.voided.at)} by ${ctx.voided.by}`);
   d.line(`Kots: ${order.kotCount}`);
+  for (const ln of noteRows(order.note)) d.lines(subRow(cols, `Note: ${ln}`, undefined, 0));   // A367
   d.line(rule(cols));
 
   d.line('Item'.padEnd(c.name) + 'Qty'.padStart(c.qty) + 'Amt'.padStart(c.amt));
@@ -248,7 +265,10 @@ function renderReceipt(ctx: PrintContext): Document {
     order.total,
     business.vatRate,
     business.ctlRate,
+    order.discount ?? 0,
   );
+  const tip = Math.max(0, order.tip ?? 0);
+  const deliveryFee = Math.max(0, order.deliveryFee ?? 0);   // 0.6.27
 
   let totalQty = 0;
 
@@ -292,23 +312,30 @@ function renderReceipt(ctx: PrintContext): Document {
     }
     if (plain.length) d.lines(subRow(cols, plain.join(', '), undefined, 2));
 
-    if (line.note) d.lines(subRow(cols, `** ${line.note}`, undefined, 2));
+    for (const ln of noteRows(line.note)) d.lines(subRow(cols, `** ${ln}`, undefined, 2));   // A367
 
     lastHadSubLines = d.length > before;
   });
 
   d.line(rule(cols));
   d.line(pair(cols, 'Total Qty:', String(totalQty)));
+  // A349: the discount, net of tax like every figure above it; SubTotal is what is left, and the taxes below are on it.
+  if (tax.discount > 0) d.line(pair(cols, 'Discount:', `-${formatCents(tax.discount)}`));
   d.line(pair(cols, 'SubTotal:', formatCents(tax.subtotal)));
   d.line(rule(cols));
-  d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
+  // A349: the levy only where it is levied — a business without CTL no longer prints "CTL (0%) 0.00".
+  if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));
   d.line(pair(cols, `VAT (${rate(business.vatRate)}%)`, formatCents(tax.vat)));
   d.line(rule(cols));
   d.line(pair(cols, 'Round Off:', formatCents(tax.roundOff)));
   d.line(pair(cols, 'Total:', formatCents(tax.total)), { bold: true });
+  // A349: a tip is not a sale and carries no tax — shown after the total, and the customer pays both.
+  if (tip > 0) d.line(pair(cols, 'Tip:', formatCents(tip)));
+  // 0.6.27: the delivery fee — like the tip, on top of the bill and outside its taxes.
+  if (deliveryFee > 0) d.line(pair(cols, 'Delivery fee:', formatCents(deliveryFee)));
   d.line(rule(cols));
 
-  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total)}`, { size: 'tall', bold: true });
+  d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: 'tall', bold: true });
   d.line(rule(cols));
 
   d.line('Payment Detail:', { bold: true });
@@ -366,9 +393,22 @@ function renderReceipt(ctx: PrintContext): Document {
   }
   if (business.thankYouMessage || business.deliveryMessage) d.line(rule(cols));
 
-  // Closing block — fixed, always printed.
-  d.lines(wrap(business.closingMessage ?? 'Thank you for your business!', cols)
-    .map(l => center(cols, l)));
+  // Closing block — fixed, always printed, EXCEPT its thank-you line when the
+  // owner already wrote it (A315). The owner's box is printed verbatim above,
+  // so if any authored line of it — or of the delivery box, which prints in the
+  // same block — IS the closing line (case and surrounding whitespace aside),
+  // printing it again gives the customer the same sentence twice. Seen on paper
+  // on the XP-80, 2026-09-22; the web POS hits it on every receipt from a
+  // business with no receipt_footer, because its per-device footerMessage
+  // defaults to exactly this phrase. Whole-line equality, never "starts with":
+  // a longer owner sentence that merely begins with these words is a different
+  // line, and suppressing on it would leave no thank-you at all. The TAX line
+  // and the credit below are never suppressed — they are not the owner's to
+  // replace.
+  const closing = business.closingMessage ?? 'Thank you for your business!';
+  if (!ownerAlreadySays(closing, business.thankYouMessage, business.deliveryMessage)) {
+    d.lines(wrap(closing, cols).map(l => center(cols, l)));
+  }
 
   // Only when tax actually applies. A zero-rated business printing "TAX RECEIPT
   // UPON REQUEST" is claiming something untrue on a document a customer keeps.
@@ -379,6 +419,16 @@ function renderReceipt(ctx: PrintContext): Document {
   if (business.footerCredit) d.line(center(cols, business.footerCredit));
 
   return d.build();
+}
+
+/** A315: does any authored line of the owner's boxes equal `line`? Compared as
+ *  printed (sanitize maps smart quotes etc. to the code page), trimmed, and
+ *  case-insensitive. Private: the test drives renderTicket and reads the paper. */
+function ownerAlreadySays(line: string, ...boxes: (string | undefined)[]): boolean {
+  const norm = (s: string) => sanitize(s).trim().toLowerCase();
+  const want = norm(line);
+  if (!want) return false;
+  return boxes.some(box => !!box && box.split(/\r?\n/).some(l => norm(l) === want));
 }
 
 /**

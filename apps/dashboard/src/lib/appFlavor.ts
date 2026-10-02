@@ -8,13 +8,13 @@
  * them" (see HANDOFF-2026-08-08-evening.md §0). Absent/unknown env → prod, so a
  * missing variable never dresses dev up as prod.
  *
- * Colours come from the app's own palette: blue #3b82f6 (accent) for prod,
+ * Colours come from the app's own palette: SwiftPOS teal #0d9488 (the logo; A329) for prod,
  * amber #f59e0b (already "attention" across the UI) for dev.
  */
 type Flavor = { label: string; title: string; color: string; fg: string };
 
 const FLAVORS: Record<string, Flavor> = {
-  prod: { label: 'S', title: 'SwiftPOS', color: '#3b82f6', fg: '#ffffff' },
+  prod: { label: 'S', title: 'SwiftPOS', color: '#0d9488', fg: '#ffffff' },
   dev: { label: 'SD', title: '[DEV] SwiftPOS', color: '#f59e0b', fg: '#0f172a' },
 };
 

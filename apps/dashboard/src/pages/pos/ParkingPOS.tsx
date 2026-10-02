@@ -712,7 +712,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 20, color: '#64748b', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
-  pillActive: { background: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.4)', color: '#60a5fa' },
+  pillActive: { background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', borderColor: 'rgb(var(--act-fill, 59 130 246) / 0.4)', color: 'rgb(var(--act-text, 96 165 250))' },
   viewToggle: { display: 'flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' },
   viewBtn: {
     padding: '7px 10px', background: 'transparent', border: 'none',
@@ -770,9 +770,9 @@ const s: Record<string, React.CSSProperties> = {
     background: '#0f172a', transition: 'background 0.1s',
   },
   listActionBtn: {
-    padding: '5px 14px', background: 'rgba(34,197,94,0.1)',
-    border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6,
-    color: '#22c55e', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    padding: '5px 14px', background: 'rgb(var(--act-fill, 34 197 94) / 0.1)',
+    border: '1px solid rgb(var(--act-fill, 34 197 94) / 0.3)', borderRadius: 6,
+    color: 'rgb(var(--act-text, 34 197 94))', fontSize: 12, fontWeight: 600, cursor: 'pointer',
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   listCheckoutBtn: {
@@ -822,7 +822,7 @@ const s: Record<string, React.CSSProperties> = {
     transition: 'all 0.12s',
   },
   vehicleTypeBtnActive: {
-    borderColor: '#3b82f6', background: 'rgba(59,130,246,0.1)', color: '#60a5fa',
+    borderColor: 'rgb(var(--act-fill, 59 130 246))', background: 'rgb(var(--act-fill, 59 130 246) / 0.1)', color: 'rgb(var(--act-text, 96 165 250))',
   },
 
   rateRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
@@ -832,7 +832,7 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   ratePresetActive: {
-    background: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6', color: '#60a5fa',
+    background: 'rgb(var(--act-fill, 59 130 246) / 0.15)', borderColor: 'rgb(var(--act-fill, 59 130 246))', color: 'rgb(var(--act-text, 96 165 250))',
   },
 
   entrySummary: {
@@ -875,7 +875,7 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans','Segoe UI',sans-serif",
   },
   btnPrimary: {
-    flex: 2, padding: '12px', background: '#1d4ed8',
+    flex: 2, padding: '12px', background: 'rgb(var(--act-strong, 29 78 216))',
     border: 'none', borderRadius: 10, color: '#fff',
     fontSize: 14, fontWeight: 700, cursor: 'pointer',
     fontFamily: "'DM Sans','Segoe UI',sans-serif",

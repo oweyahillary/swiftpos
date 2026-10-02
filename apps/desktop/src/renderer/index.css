@@ -1,3 +1,25 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* A326 / A329: themeable colour channels (r g b). DEFAULTS = SwiftPOS teal (A329, owner 2026-09-25; the registry's Teal family,
+   shade per job): 300/400 #2dd4bf (text on dark) · 500 #14b8a6 (dark-label fills) · 600 #0f766e and 700/900 #115e59 (white-label
+   fills — A331: white on 600 fails) · the lock curtain: dots #2dd4bf, Enter #0f766e with white text (5.47:1). Themes ON:
+   themeVars.ts overrides them. (Before A329 the defaults were Tailwind green.) Status, money and M-Pesa keep plain green. */
+:root {
+  --action-300: 45 212 191;  --action-400: 45 212 191;  --action-500: 20 184 166;
+  --action-600: 15 118 110;  --action-700: 17 94 89;    --action-900: 17 94 89;
+  --brand-400: 45 212 191;   --brand-500: 20 184 166;   --brand-600: 15 118 110;  --brand-700: 17 94 89;
+  --on-brand: 255 255 255;
+}
+
+/* 0.6.23 (owner: "remove the feature were scroll up or down reduces or increases the value"): no spinner arrows on
+   number fields; the wheel is stopped in shared/numberInputs.ts. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+
+/* 0.6.24 (owner: "make the update banner not block user activity"): the working screens stop above the update bar.
+   UpdateBanner.tsx sets --update-banner-h to its height while it shows, and 0px otherwise. */
+.app-screen { height: calc(100vh - var(--update-banner-h, 0px)); }
+.app-screen-min { min-height: calc(100vh - var(--update-banner-h, 0px)); }

@@ -8,6 +8,16 @@ import { chunkIn, fetchAllIds } from '../lib/pgQuery';
 import { validate } from '../middleware/validate';
 import { OpenShiftSchema, CloseShiftSchema } from '../lib/schemas';
 import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib/terminalKey';
+import { openDrawersByTill, type OpenShiftRow } from '../lib/tillShifts';
+import { webTillName } from '../lib/terminalLabel';
+import { foreignCash, foreignOrders, ownReversals, type CloudOrder } from '../lib/foreignCash';
+import { recorderId } from '../lib/expenseRecorder';
+import { cleanExpenseMethod, nonCashExpenses } from '../lib/expenseMethod';
+import { reasonsNeeded, cleanReasons, missingReasons } from '../lib/confirmReasons';
+import { businessPosFeatures } from '../lib/posFeatureFlags';
+import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
+import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
+import { confirmerRows, confirmerByPin } from '../lib/confirmerLookup';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -40,6 +50,104 @@ router.get('/current', async (req, res) => {
     s => terminalKey(s.device_id ?? '', s.terminal_code ?? '', s.branch_id ?? '') === tkey,
   );
   res.json(match ?? null);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/terminals?branch_id=...
+// Lists the enrolled tills for a branch so a web POS — which has no device_id of
+// its own — can pick which till it is COVERING and adopt that till's identity
+// (A273, Option B). The web then sends the chosen device_id as x-device-id on
+// every request, so its shift folds into that till's drawer instead of the
+// shared web:<branch> session. Any authenticated POS session may read its OWN
+// business's tills for a branch: the response is device labels + ids scoped to
+// req.businessId, so a foreign branch_id resolves to nothing. Minimal shape by
+// design — no telemetry, no cash.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/terminals', async (req, res) => {
+  const branchId = (req.query.branch_id as string | undefined)?.trim() || '';
+  if (!branchId) { res.json([]); return; }
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id, terminal_code, device_label')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', branchId)
+    .eq('status', 'approved')
+    .is('retired_at', null)
+    .not('device_id', 'is', null);
+  if (error) { sendError(res, error); return; }
+  // De-dupe by device_id and drop any the web can't key on.
+  const seen = new Set<string>();
+  const tills = (data ?? []).filter((d: any) => {
+    if (!d.device_id || seen.has(d.device_id)) return false;
+    seen.add(d.device_id); return true;
+  }).map((d: any) => ({
+    device_id:     d.device_id,
+    terminal_code: d.terminal_code ?? null,
+    device_label:  d.device_label ?? null,
+  }));
+  res.json(tills);
+});
+
+// ──────────────────────────────────────────────────────────
+// GET /api/shifts/terminals/open?branch_id=...
+// A273 follow-up (2026-09-26): the branch's OPEN drawers, one per till, with who opened
+// each and when — never an amount. The web POS merges this with /terminals so it can
+// join the cashier's own open till silently (no picker, no float) and show every other
+// till as "open — Jane, since 09:02"; joining an open drawer never asks for a float
+// (the 2026-09-15 target finding). Additive: /terminals is unchanged, and a web page
+// talking to an older cloud gets a 404 here and keeps the picker behaviour.
+// Scoped like /terminals: the caller's business and the requested branch.
+// ──────────────────────────────────────────────────────────
+router.get('/terminals/open', async (req, res) => {
+  const branchId = (req.query.branch_id as string | undefined)?.trim() || '';
+  if (!branchId) { res.json([]); return; }
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('id, device_id, opened_at, opened_by, cashier_id')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', branchId)
+    .eq('status', 'open')
+    .not('device_id', 'is', null);
+  if (error) { sendError(res, error); return; }
+  const open = (data ?? []) as OpenShiftRow[];
+  const who = [...new Set(open.map((o) => o.opened_by ?? o.cashier_id).filter(Boolean))] as string[];
+  const nameById: Record<string, string> = {};
+  if (who.length) {
+    const { data: users } = await supabase.from('users').select('id, name').eq('business_id', req.businessId).in('id', who);
+    for (const u of users ?? []) nameById[(u as any).id] = (u as any).name;
+  }
+  res.json(openDrawersByTill(open, nameById));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/web-till?branch_id=
+// A343 (2026-09-27): the branch's WEB till — its name ("<Branch> Web Till") and whether its drawer is open (who, since
+// when; no amounts). The web POS offers it as the place a cashier starts their OWN shift instead of joining a till's.
+// Its drawer is the branch's web:<branchId> session: shifts opened on the web while covering no till.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/web-till', async (req, res) => {
+  const branchId = (req.query.branch_id as string | undefined)?.trim() || '';
+  if (!branchId) { res.status(400).json({ error: 'branch_id is required' }); return; }
+  const { data: branch } = await supabase
+    .from('branches').select('id, name').eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('id, device_id, terminal_code, branch_id, opened_at, opened_by, cashier_id')
+    .eq('business_id', req.businessId)
+    .eq('branch_id', branchId)
+    .eq('status', 'open')
+    .order('opened_at', { ascending: false });
+  if (error) { sendError(res, error); return; }
+  const webKey = terminalKey('', '', branchId);
+  const mine = (data ?? []).find((s: any) => terminalKey(s.device_id ?? '', s.terminal_code ?? '', s.branch_id ?? '') === webKey) as any;
+  let open_shift: { id: string; opened_at: string; opened_by: string | null; opened_by_name: string | null } | null = null;
+  if (mine) {
+    const who = mine.opened_by ?? mine.cashier_id ?? null;
+    const { data: u } = who ? await supabase.from('users').select('name').eq('id', who).eq('business_id', req.businessId).maybeSingle() : { data: null };
+    open_shift = { id: mine.id, opened_at: mine.opened_at, opened_by: who, opened_by_name: (u as any)?.name ?? null };
+  }
+  res.json({ name: webTillName((branch as any).name), open_shift });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,9 +249,115 @@ router.post('/open', validate(OpenShiftSchema), async (req, res) => {
 // Calculates expected cash and variance automatically.
 // Body: { closing_float, notes? }
 // ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+// POST /api/shifts/:id/foreign-cash   body: { order_ids, float_ids, expense_ids }
+// A334 (2026-09-26): the cash on this drawer that the calling till does NOT hold —
+// sales, floats and expenses rung on the web POS standing in for it (or on another
+// surface). The till adds it to its own close so a shared drawer reconciles (owner:
+// the close INCLUDES the web's sales). Read-only; the same arithmetic as /:id/close
+// (lib/foreignCash.ts). Authorised like /:id/close: the opener, a cashier on the
+// same terminal, or a manager — a stranger cannot read another drawer's cash.
+// ──────────────────────────────────────────────────────────
+router.post('/:id/foreign-cash', async (req, res) => {
+  const { id } = req.params;
+  const { data: shift } = await supabase
+    .from('shifts').select('id, status, device_id, terminal_code, branch_id, opened_by, cashier_id')
+    .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+
+  const sameTerminal =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
+  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const keys = req.permissionKeys ?? [];
+  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
+  if (!openedByRequester && !sameTerminal && !isManager) {
+    res.status(403).json({ error: 'Not your drawer' });
+    return;
+  }
+
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, 20_000) : []);
+  try {
+    const orderIds = await fetchAllIds('orders', q => q.eq('shift_id', id).eq('status', 'completed'));
+    // The till's sales carry its local id as idempotency_key (the cloud mints its own id) — fetch both.
+    const keyed = orderIds.length
+      ? await chunkIn<{ id: string; idempotency_key: string | null }>('orders', 'id', orderIds, q => q.select('id, idempotency_key'))
+      : [];
+    const keyById = new Map(keyed.map(o => [o.id, o.idempotency_key]));
+    const payments = orderIds.length
+      ? await chunkIn<{ order_id: string; method: string; status: string; amount: number }>(
+          'payments', 'order_id', orderIds,
+          q => q.select('order_id, method, status, amount').eq('method', 'cash').in('status', ['completed', 'refunded']))
+      : [];
+    const { data: floats }   = await supabase.from('float_transactions').select('id, type, amount').eq('shift_id', id);
+    // 0.6.27: only a cash expense is out of the drawer (migration 111: payment_method, default 'cash').
+    const { data: expenses } = await supabase.from('expenses').select('id, amount').eq('shift_id', id).eq('payment_method', 'cash');
+    // A342: other shifts open on this same till (the web standing in as it) — the till's count covers them too.
+    const siblings = siblingSummary(await openSiblingCash(shift as any, req.businessId!));
+    res.json({
+      ...foreignCash(
+        { orders: orderIds.map(o => ({ id: o, status: 'completed', idempotency_key: keyById.get(o) ?? null })), payments, floats: floats ?? [], expenses: expenses ?? [] },
+        { order_ids: ids(req.body?.order_ids), float_ids: ids(req.body?.float_ids), expense_ids: ids(req.body?.expense_ids) },
+      ),
+      siblings,
+    });
+  } catch (e) { sendError(res, e as Error); }
+});
+
+// ──────────────────────────────────────────────────────────
+// POST /api/shifts/:id/foreign-orders   body: { own_ids }
+// Cross-sync stage 1 (2026-09-27): the SALES on this drawer the calling till did not
+// ring — the web POS standing in for it — with their lines and payments, so the till
+// can show them in its orders, shift and Z-report. Read-only; authorised exactly like
+// foreign-cash (the opener, a cashier on the same terminal, or a manager).
+// ──────────────────────────────────────────────────────────
+router.post('/:id/foreign-orders', async (req, res) => {
+  const { id } = req.params;
+  const { data: shift } = await supabase
+    .from('shifts').select('id, device_id, terminal_code, branch_id, opened_by, cashier_id')
+    .eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+
+  const sameTerminal =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
+  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const keys = req.permissionKeys ?? [];
+  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
+  if (!openedByRequester && !sameTerminal && !isManager) {
+    res.status(403).json({ error: 'Not your drawer' });
+    return;
+  }
+
+  const ownIds = Array.isArray(req.body?.own_ids)
+    ? req.body.own_ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20_000) : [];
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        id, order_number, order_type, status, subtotal, vat_amount, discount_amount, total, tip_amount,
+        ctl_amount, covers, customer_id, customer_name, customer_phone, idempotency_key, cashier_id,
+        shift_id, branch_id, created_at, void_reason, voided_at, voided_by, refunded_at,
+        refunded_amount, refund_reason, delivery_person, notes, delivery_fee,
+        order_items ( id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes ),
+        payments ( id, method, amount, amount_tendered, change_given, reference, status, created_at )
+      `)
+      .eq('shift_id', id)
+      .eq('business_id', req.businessId)
+      .in('status', ['completed', 'voided'])
+      .order('created_at', { ascending: true })
+      .limit(2000);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as CloudOrder[];
+    // 0.6.26 (A336 follow-up): also which of the till's OWN sales were voided or refunded here (on the web). An older till
+    // ignores the field.
+    res.json({ orders: foreignOrders(rows, ownIds), own_reversals: ownReversals(rows, ownIds) });
+  } catch (e) { sendError(res, e as Error); }
+});
+
 router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const { id } = req.params;
-  const { closing_float, notes, denomination_breakdown } = req.body;
+  const { closing_float, notes, denomination_breakdown, declared_methods } = req.body;
+  // A365: every method the cashier declared; cash is always the counted drawer.
+  const declared = declared_methods ? { ...(methodMap(declared_methods) ?? {}), cash: Number(closing_float) } : null;
 
   if (closing_float === undefined || closing_float === null) {
     res.status(400).json({ error: 'closing_float is required' });
@@ -189,14 +403,36 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '')
       === terminalKeyFromRequest(req);
   const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
-  const keys = req.permissionKeys ?? [];
-  const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
+  const isManager = callerMayConfirm(req);
 
-  if (!openedByRequester && !sameTerminal && !isManager) {
+  // A366 (owner, 2026-09-30): "only the shift owner can close the shift not any other cashier, maybe the manager should
+  // be able to close it". The cashier who opened it, or a manager. "On the same terminal" no longer lets another cashier
+  // count out someone else's drawer — EXCEPT the till's own replay (desktop, same till): the till enforced the owner rule
+  // when the cashier counted (shiftService.closeShift), and it replays the close later under whoever is signed in then.
+  const tillReplay = req.surface === 'desktop' && sameTerminal;
+  if (!openedByRequester && !isManager && !tillReplay) {
     res.status(403).json({
-      error: 'You can only close a drawer you opened or are working on. Ask a manager to close another terminal\'s drawer.',
+      error: 'Only the cashier who opened this shift, or a manager, can close it.',
+      code: 'SHIFT_NOT_YOURS',
     });
     return;
+  }
+
+  // 0.6.28 ('kitchen_void_approval'): not while an order sent to the kitchen on this shift is unpaid — it is charged, or a
+  // manager voids its items (POST /api/orders/:id/kitchen-void). A till's own close is checked on the till (its ledger),
+  // and its replay is never refused for it (refusing would make the till retry forever).
+  if (!tillReplay && (await businessPosFeatures(req.businessId!)).kitchen_void_approval) {
+    const { data: unpaid } = await supabase.from('orders').select('order_number')
+      .eq('business_id', req.businessId).eq('shift_id', id).eq('status', 'open').limit(20);
+    if ((unpaid ?? []).length) {
+      const list = (unpaid ?? []).slice(0, 4).map((o: { order_number: string }) => `#${o.order_number}`).join(', ');
+      res.status(409).json({
+        error: `${unpaid!.length} order${unpaid!.length === 1 ? ' was' : 's were'} sent to the kitchen and not paid (${list}). ` +
+               'Charge them, or have a manager void them, before ending the shift.',
+        code: 'UNPAID_KITCHEN_ORDERS',
+      });
+      return;
+    }
   }
 
   // Sum all completed CASH payments for orders belonging to this shift.
@@ -245,11 +481,26 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const floatOut = (floatTxns ?? []).filter(f => f.type === 'float_out').reduce((s, f) => s + Number(f.amount), 0);
 
   const expensesOut   = await shiftExpenses(id);
-  const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut;
+  // A342: closed FROM THE TILL (a desktop token), the till's count also covers any other shift open on this same till —
+  // the web POS standing in as it. Owner, 2026-09-27: "Till's count covers both". A web close never closes the till's.
+  const siblings = req.surface === 'desktop' ? await openSiblingCash(shift, req.businessId!) : [];
+  const siblingExpected = siblings.reduce((s2, x) => s2 + x.expected, 0);
+  const expectedCash  = Number(shift.opening_float) + cashSales + floatIn - floatOut - expensesOut + siblingExpected;
   const cashVariance  = Number(closing_float) - expectedCash;
 
   // Require an explanatory note whenever the count doesn't match expected cash.
-  if (Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())) {
+  //
+  // A342: NOT for a till's close. The till already required a note against its own figures when the cashier counted;
+  // this is the cloud replaying that close later (reconcileClosedShifts), and the web may have sold on the till's other
+  // shift in between. Refusing it would make the till retry the close forever — the blocking A338 removed. Record the
+  // difference and say where it came from instead.
+  let closeNotes: string | null = notes ?? null;
+  if (req.surface === 'desktop' && Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())) {
+    closeNotes = 'Variance recorded when the till\'s close reached the cloud — figures on this till moved after the count.';
+  } else if (Math.round(cashVariance * 100) !== 0 && !(notes && notes.trim())
+             // 0.6.27: a blind close ('blind_shift_close', a cashier) — they could not see the variance; the manager
+             // explains it at confirmation.
+             && !(!callerMayConfirm(req) && (await businessPosFeatures(req.businessId)).blind_shift_close)) {
     res.status(400).json({
       error: 'A note is required to close a shift with a cash variance',
       variance: cashVariance,
@@ -268,17 +519,172 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
       closing_float: Number(closing_float),
       expected_cash: expectedCash,
       cash_variance: cashVariance,
-      notes: notes ?? null,
+      notes: closeNotes,
       denomination_breakdown: denomination_breakdown ?? null,
+      ...(declared ? { declared_methods: declared } : {}),
     })
     .eq('id', id)
     .select()
     .single();
 
   if (closeErr) { sendError(res, closeErr); return; }
-  res.json(closed);
+
+  // A342: the till's count closed the web's shift(s) on this till too — recorded as counted, inside that drawer, no variance.
+  const tillLabel = shift.terminal_code || 'the till';
+  for (const sib of siblings) {
+    const { error: sibErr } = await supabase
+      .from('shifts')
+      .update({
+        status: 'closed', closed_at: new Date().toISOString(), closed_by: req.userId, close_method: 'counted',
+        closing_float: sib.expected, expected_cash: sib.expected, cash_variance: 0,
+        notes: closedWithTillNote(tillLabel, id),
+      })
+      .eq('id', sib.id).eq('business_id', req.businessId).eq('status', 'open');
+    if (sibErr) console.error('[shifts] A342 could not close sibling shift', sib.id, sibErr.message);
+  }
+  // 0.6.27 ('blind_shift_close'): a cashier's close hands back no expected cash or variance — a manager checks them.
+  if (!isManager && (await businessPosFeatures(req.businessId)).blind_shift_close) {
+    res.json({ ...closed, expected_cash: null, cash_variance: null, blind: true, closed_with: siblings.map(x => x.id) });
+    return;
+  }
+  res.json({ ...closed, closed_with: siblings.map(x => x.id) });
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A365 — a manager confirms a closed shift: a blind recount of every payment method.
+//
+// Three ways in, one record:
+//   * the TILL replays a confirmation it took offline (desktop surface, same till, `confirmed_by` = the manager whose
+//     PIN the till verified). The cloud re-checks that person may confirm; it does not see the PIN.
+//   * a manager's PIN typed at the web POS (the cashier is signed in) — the refund rule's lookup, widened to mayConfirm.
+//   * a manager signed in on the dashboard confirms as themselves.
+// A second confirmation is refused (409 ALREADY_CONFIRMED) — the till treats that as done.
+// ─────────────────────────────────────────────────────────────────────────────
+// confirmerRows / confirmerByPin live in lib/confirmerLookup.ts (0.6.28: the web's kitchen voids use them too).
+
+/** What the system recorded per payment method on a closed shift; cash = the stored expected cash in the drawer. */
+async function expectedByMethod(shift: { id: string; expected_cash?: number | string | null; opening_float?: number | string | null }): Promise<MethodMap> {
+  const out: MethodMap = {};
+  const orderIds = await fetchAllIds('orders', q => q.eq('shift_id', shift.id).eq('status', 'completed'));
+  if (orderIds.length) {
+    const pays = await chunkIn<{ method: string; amount: number | string }>(
+      'payments', 'order_id', orderIds,
+      q => q.select('method, amount').in('status', ['completed', 'refunded']),
+    );
+    for (const p of pays) {
+      const m = String(p.method ?? '').trim().toLowerCase();
+      if (!m || m === 'cash') continue;
+      out[m] = Math.round(((out[m] ?? 0) + Number(p.amount)) * 100) / 100;
+    }
+  }
+  // 0.6.27: an expense paid by M-Pesa (or another method) comes off that method's expected total — as on the till.
+  const { data: spentRows } = await supabase.from('expenses').select('amount, payment_method')
+    .eq('shift_id', shift.id).neq('payment_method', 'cash');
+  for (const [m, v] of Object.entries(nonCashExpenses(spentRows ?? []))) out[m] = Math.round(((out[m] ?? 0) - v) * 100) / 100;
+  out.cash = shift.expected_cash != null
+    ? Number(shift.expected_cash)
+    : await computeExpectedCash(shift.id, Number(shift.opening_float) || 0);
+  return out;
+}
+
+// POST /api/shifts/confirmer — the till asks who a manager's PIN belongs to (the till then confirms locally and syncs).
+router.post('/confirmer', async (req, res) => {
+  const pin = String(req.body?.pin ?? '').trim();
+  if (!pin) { res.status(400).json({ error: 'Enter the manager\'s PIN.' }); return; }
+  const who = await confirmerByPin(req.businessId!, pin, req.body?.authorizer_id || undefined);
+  if (!who) {
+    res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
+    return;
+  }
+  res.json(who);
+});
+
+// POST /api/shifts/:id/confirm
+router.post('/:id/confirm', async (req, res) => {
+  const { id } = req.params;
+  const counts = methodMap(req.body?.confirmed_methods);
+  if (!counts) { res.status(400).json({ error: 'Enter the counted amount for every payment method.' }); return; }
+
+  const { data: shift, error } = await supabase
+    .from('shifts').select('*').eq('id', id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (shift.status === 'open') { res.status(409).json({ error: 'The cashier has not closed this shift yet.', code: 'SHIFT_OPEN' }); return; }
+  if (shift.confirmed_at) { res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED' }); return; }
+
+  let confirmer: { id: string; name: string | null } | null = null;
+  let at = new Date().toISOString();
+  let expected: MethodMap | null = null;
+  const sameTill =
+    terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
+
+  if (req.surface === 'desktop' && typeof req.body?.confirmed_by === 'string') {
+    // The till's replay: its manager was verified by PIN on the till.
+    if (!sameTill) { res.status(403).json({ error: 'Only the till that holds this shift can send its confirmation.' }); return; }
+    const { rows, ownerId } = await confirmerRows(req.businessId!);
+    const row = rows.find((r) => r.id === req.body.confirmed_by);
+    if (!row || !mayConfirm(row, ownerId)) {
+      res.status(403).json({ error: 'The person who confirmed this shift may not confirm shifts.', code: 'NOT_A_CONFIRMER' });
+      return;
+    }
+    confirmer = { id: row.id, name: row.name ?? null };
+    at = replayTime(req.body?.confirmed_at);
+    expected = methodMap(req.body?.expected_methods);
+  } else if (req.body?.pin) {
+    confirmer = await confirmerByPin(req.businessId!, String(req.body.pin), req.body?.authorizer_id || undefined);
+    if (!confirmer) {
+      res.status(403).json({ error: 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.', code: 'INVALID_CONFIRMER_PIN' });
+      return;
+    }
+  } else if (callerMayConfirm(req)) {
+    confirmer = { id: req.userId!, name: null };
+  } else {
+    res.status(403).json({ error: 'A manager must confirm this shift — enter a manager\'s PIN.', code: 'CONFIRMER_REQUIRED' });
+    return;
+  }
+
+  if (!expected) {
+    try { expected = await expectedByMethod(shift); } catch (e) { sendError(res, e as Error); return; }
+  }
+  // 0.6.27 ('confirm_shows_cashier_figures'): a reason for every method counted differently from the cashier. A till's
+  // replay already enforced it (and is never refused for it — refusing would make the till retry forever).
+  const declaredMap = methodMap(shift.declared_methods);
+  const needed = reasonsNeeded(declaredMap, counts);
+  const reasons = cleanReasons(req.body?.confirm_reasons, needed);
+  if (req.surface !== 'desktop' && (await businessPosFeatures(req.businessId)).confirm_shows_cashier_figures) {
+    const missing = missingReasons(needed, reasons);
+    if (missing.length) {
+      res.status(400).json({ error: `Give a reason where your count differs from the cashier's: ${missing.join(', ')}.`, code: 'REASON_REQUIRED', missing });
+      return;
+    }
+  }
+  const self = isSelfConfirm(confirmer.id, shift);
+  const { data: updated, error: upErr } = await supabase
+    .from('shifts')
+    .update({ confirmed_methods: counts, expected_methods: expected, confirmed_by: confirmer.id, confirmed_at: at, confirm_self: self,
+              confirm_reasons: reasons })
+    .eq('id', id).eq('business_id', req.businessId).is('confirmed_at', null)
+    .select().maybeSingle();
+  if (upErr) { sendError(res, upErr); return; }
+  if (!updated) { res.status(409).json({ error: 'This shift is already confirmed.', code: 'ALREADY_CONFIRMED' }); return; }
+  res.json({
+    ...updated,
+    confirmer_name: confirmer.name,
+    lines: confirmationLines(declaredMap, expected, counts).map((l) => (reasons?.[l.method] ? { ...l, reason: reasons[l.method] } : l)),
+  });
+});
+
+// GET /api/shifts/:id/confirm-view — 0.6.27: may the web's confirm screen show the cashier's figures
+// ('confirm_shows_cashier_figures')? The declaration is the cashier's own figures (never the expected ones), so whoever
+// holds the screen for the confirming manager may read it.
+router.get('/:id/confirm-view', async (req, res) => {
+  const showCashier = (await businessPosFeatures(req.businessId)).confirm_shows_cashier_figures;
+  if (!showCashier) { res.json({ showCashier: false, declared: null }); return; }
+  const { data: shift } = await supabase.from('shifts').select('declared_methods')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  res.json({ showCashier: true, declared: methodMap(shift?.declared_methods) });
+});
 
 /**
  * Cash paid out of a drawer as recorded EXPENSES.
@@ -296,7 +702,9 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
  */
 async function shiftExpenses(shiftId: string): Promise<number> {
   const { data } = await supabase
-    .from('expenses').select('amount').eq('shift_id', shiftId);
+    .from('expenses').select('amount').eq('shift_id', shiftId)
+    // 0.6.27: only a CASH expense leaves the drawer; one paid by M-Pesa comes off M-Pesa's expected (expectedByMethod).
+    .eq('payment_method', 'cash');
   return (data ?? []).reduce((sum, e: { amount: number }) => sum + Number(e.amount), 0);
 }
 
@@ -315,6 +723,28 @@ async function shiftExpenses(shiftId: string): Promise<number> {
  * amount — an unexplained shortage, which is the most corrosive thing a till can
  * report. Audit finding M8.
  */
+/**
+ * A342: the other shifts open on the same till as `shift`, with the cash each should hold. Empty for a closed shift.
+ * Declared as a function (hoisted) so the routes above can use it.
+ */
+async function openSiblingCash(shift: { id: string; status: string; business_id?: string; device_id?: string | null; terminal_code?: string | null; branch_id?: string | null }, businessId: string): Promise<SiblingCash[]> {
+  if (shift.status !== 'open') return [];
+  const { data: open } = await supabase
+    .from('shifts').select('id, status, device_id, terminal_code, branch_id, opening_float, opened_at, opened_by, cashier_id')
+    .eq('business_id', businessId).eq('status', 'open');
+  const sibs = siblingsOf(shift, (open ?? []) as any[]);
+  if (!sibs.length) return [];
+  const ids = [...new Set(sibs.map((x: any) => x.opened_by ?? x.cashier_id).filter(Boolean))] as string[];
+  const { data: users } = ids.length ? await supabase.from('users').select('id, name').in('id', ids) : { data: [] as any[] };
+  const nameById = new Map((users ?? []).map((u: any) => [u.id, u.name]));
+  const out: SiblingCash[] = [];
+  for (const x of sibs as any[]) {
+    out.push({ id: x.id, opened_by_name: nameById.get(x.opened_by ?? x.cashier_id) ?? null, opened_at: x.opened_at ?? null,
+               expected: await computeExpectedCash(x.id, Number(x.opening_float) || 0) });
+  }
+  return out;
+}
+
 async function computeExpectedCash(shiftId: string, openingFloat: number): Promise<number> {
   // Paged: a plain .select('id') silently truncates at Supabase's row cap, and
   // expected cash computed from a TRUNCATED order list reports a large phantom
@@ -496,6 +926,65 @@ router.post('/:id/float', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/shifts/:id/expense
+// A362 (2026-09-28, owner: "web pos cannot record expences on cashier"): petty cash paid out of an open drawer, recorded
+// from the web POS — the web twin of the till's Shift → Expenses, which any signed-in cashier may use. Same rule as a
+// float above (an open shift of this business, no key): the cash leaves THIS drawer, so it is the drawer's record, and the
+// shift's expected cash (and the till's count, A334 foreign cash) subtracts it. The back office's POST /api/expenses
+// (any date, any branch, a chosen Paid By) stays expenses.manage.
+// paid_by and recorded_by (A361) are both the signed-in person — at the till they are the same person too.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/:id/expense', async (req, res) => {
+  const { id } = req.params;
+  const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
+  const amount = Number(req.body?.amount);
+  const categoryId = typeof req.body?.expense_category_id === 'string' && req.body.expense_category_id
+    ? req.body.expense_category_id : null;
+  const paymentMethod = cleanExpenseMethod(req.body?.payment_method);   // 0.6.27: only cash leaves the drawer
+
+  if (!description) { res.status(400).json({ error: 'Say what the money was for (description).' }); return; }
+  if (description.length > 255) { res.status(400).json({ error: 'Description is too long (255 characters at most).' }); return; }
+  if (!Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: 'Enter an amount greater than zero.' }); return; }
+
+  const { data: shift, error: shiftErr } = await supabase
+    .from('shifts')
+    .select('id, branch_id, status')
+    .eq('id', id)
+    .eq('business_id', req.businessId)
+    .eq('status', 'open')
+    .maybeSingle();
+  if (shiftErr) { sendError(res, shiftErr); return; }
+  if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
+
+  if (categoryId) {
+    const { data: cat } = await supabase.from('expense_categories').select('id')
+      .eq('id', categoryId).eq('business_id', req.businessId).maybeSingle();
+    if (!cat) { res.status(400).json({ error: 'That expense type no longer exists — pick another.' }); return; }
+  }
+
+  const who = await recorderId(req);
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert({
+      business_id:         req.businessId,
+      branch_id:           (shift as { branch_id: string }).branch_id,
+      shift_id:            id,
+      expense_category_id: categoryId,
+      description,
+      amount,
+      paid_by:             who,
+      recorded_by:         who,
+      expense_date:        new Date().toISOString().slice(0, 10),   // as the till and POST /api/expenses do
+      payment_method:      paymentMethod,
+    })
+    .select('id, description, amount, expense_date, expense_category_id, created_at, payment_method')
+    .single();
+
+  if (error) { sendError(res, error); return; }
+  res.status(201).json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/shifts
 // Lists shifts for the business. Supports filters: branch_id, status, from, to.
 // Enriches with cashier name (fetched separately to avoid Supabase FK join issues).
@@ -522,7 +1011,8 @@ router.get('/', async (req, res) => {
   if (!shifts?.length) { res.json([]); return; }
 
   // Fetch cashier names separately (avoid FK join issues on users table)
-  const cashierIds = [...new Set(shifts.map(s => s.cashier_id))];
+  // A365: the confirming manager's name too.
+  const cashierIds = [...new Set([...shifts.map(s => s.cashier_id), ...shifts.map(s => s.confirmed_by).filter(Boolean)])];
   const { data: users } = await supabase
     .from('users')
     .select('id, name')
@@ -547,6 +1037,9 @@ router.get('/', async (req, res) => {
   const enriched = shifts.map(s => ({
     ...s,
     cashier_name: nameMap[s.cashier_id] ?? 'Unknown',
+    confirmer_name: s.confirmed_by ? (nameMap[s.confirmed_by] ?? null) : null,
+    // A365: closed under the new rule (declared every method) and not yet confirmed by a manager.
+    awaiting_confirmation: s.status !== 'open' && s.declared_methods != null && s.confirmed_at == null,
     expected_cash_live: expectedById.has(s.id) ? expectedById.get(s.id) : null,
   }));
 
@@ -574,7 +1067,7 @@ router.get('/:id', async (req, res) => {
       .order('created_at'),
     supabase
       .from('orders')
-      .select('id, total, created_at')
+      .select('id, total, created_at, payments ( method, amount, status )')
       .eq('shift_id', id)
       .eq('status', 'completed'),
   ]);
@@ -595,12 +1088,52 @@ router.get('/:id', async (req, res) => {
 
   const totalRevenue = (orders ?? []).reduce((s, o) => s + Number(o.total), 0);
 
+  // A262: payment breakdown + cash reconciliation for the shift report (byMethod,
+  // cash sales, float in/out, live expected cash) — the figures the desktop
+  // Z-report shows. Only completed payments count toward the drawer.
+  const byMethodMap: Record<string, { orders: number; amount: number }> = {};
+  let cashSales = 0;
+  (orders ?? []).forEach((o: any) => {
+    (o.payments ?? []).forEach((pm: { method: string; amount: string; status: string }) => {
+      if (pm.status && pm.status !== 'completed') return;
+      const method = pm.method ?? 'other';
+      (byMethodMap[method] ??= { orders: 0, amount: 0 });
+      byMethodMap[method].orders += 1;
+      byMethodMap[method].amount += Number(pm.amount);
+      if (method === 'cash') cashSales += Number(pm.amount);
+    });
+  });
+  const byMethod = Object.entries(byMethodMap).map(([method, v]) => ({ method, orders: v.orders, amount: v.amount }));
+  let floatIn = 0, floatOut = 0;
+  (floatTxns ?? []).forEach((f: { type: string; amount: string }) => {
+    if (f.type === 'float_in') floatIn += Number(f.amount);
+    else if (f.type === 'float_out') floatOut += Number(f.amount);
+  });
+  const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut;
+
+  // 0.6.27 ('blind_shift_close'): a cashier gets which methods to declare, never the figures.
+  const declareMethods = [...new Set((byMethod as Array<{ method: string; amount: number }>)
+    .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
+    .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));
+  if (!callerMayConfirm(req) && (await businessPosFeatures(req.businessId)).blind_shift_close) {
+    res.json({
+      id: shift.id, status: shift.status, opened_at: shift.opened_at, cashier_id: shift.cashier_id, opened_by: shift.opened_by,
+      cashier_name: cashier?.name ?? 'Unknown', blind: true, declare_methods: declareMethods,
+    });
+    return;
+  }
   res.json({
     ...shift,
     cashier_name: cashier?.name ?? 'Unknown',
     float_transactions: floatTxns ?? [],
     order_count: (orders ?? []).length,
     total_revenue: totalRevenue,
+    by_method: byMethod,
+    cash_sales: cashSales,
+    float_in: floatIn,
+    float_out: floatOut,
+    expected_cash_computed: expectedCash,
+    declare_methods: declareMethods,
   });
 });
 

@@ -19,7 +19,7 @@ export default function BranchSelector() {
         const selected = branches.find(b => b.id === val) ?? null;
         setActiveBranch(selected);
       }}
-      className="mt-1 w-full bg-gray-800 text-gray-300 text-xs rounded-md px-2 py-1 border border-gray-700 focus:outline-none focus:border-green-500 cursor-pointer"
+      className="mt-1 w-full bg-gray-800 text-gray-300 text-xs rounded-md px-2 py-1 border border-gray-700 focus:outline-none focus:border-action-500 cursor-pointer"
       // Single branch — show name but don't allow changing (cosmetic only)
       disabled={!isMulti}
     >

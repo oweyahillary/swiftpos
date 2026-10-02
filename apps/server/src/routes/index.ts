@@ -8,6 +8,7 @@ import categoriesRoutes    from './categories';
 import stationsRoutes      from './stations';
 import productsRoutes      from './products';
 import posRoutes           from './pos';
+import desktopUpdateRoutes from './desktopUpdate';   // A348: per-business desktop update feed
 import variantsRoutes      from './variants';
 import modifiersRoutes     from './modifiers';
 import ordersRoutes        from './orders';
@@ -25,8 +26,11 @@ import discountsRoutes     from './discounts';
 import paymentMethodsRoutes from './payment-methods';
 import promotionsRoutes    from './promotions';
 import flagsRoutes         from './flags';
+import versionRoutes       from './version';   // 0.6.28: which release the cloud runs
+import { adminVersionRouter } from './version';
 import tablesRoutes        from './tables';
 import shiftsRoutes        from './shifts';
+import dayCloseRoutes      from './day-close';
 import stockRoutes         from './stock';
 import expensesRoutes      from './expenses';
 import recipesRoutes       from './recipes';
@@ -57,8 +61,10 @@ router.use('/combos',         combosRoutes);
 router.use('/reservations',   reservationsRoutes);
 router.use('/qr',             qrRoutes);
 router.use('/flags',          flagsRoutes);
+router.use('/version',        versionRoutes);
 router.use('/tables',         tablesRoutes);
 router.use('/shifts',         shiftsRoutes);
+router.use('/day-close',      dayCloseRoutes);
 router.use('/stock',          stockRoutes);
 router.use('/expenses',       expensesRoutes);
 router.use('/recipes',        recipesRoutes);
@@ -70,6 +76,7 @@ router.use('/stations',       stationsRoutes);
 router.use('/products',       productsRoutes);
 router.use('/branch-prices',  branchPricesRoutes);
 router.use('/pos',            posRoutes);
+router.use('/desktop-update', desktopUpdateRoutes);
 router.use('/variants',       variantsRoutes);
 router.use('/modifiers',      modifiersRoutes);
 router.use('/orders',         ordersRoutes);
@@ -92,6 +99,7 @@ router.use('/reports/export', reportsDailyRoutes);
 router.use('/reports/export', reportsExportRoutes);
 router.use('/reports',        reportsRoutes);
 
+router.use('/admin/version',  adminVersionRouter);   // before /admin, which takes the rest of /admin/*
 router.use('/admin',          adminRoutes);
 router.use('/tech',           techRoutes);
 router.use('/sync',           syncRoutes);

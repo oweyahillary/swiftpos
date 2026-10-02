@@ -6,10 +6,10 @@ closed, and what was checked and found correct. Update in place; do not fork.
 | | |
 |---|---|
 | Opened | 2026-08-07 |
-| Last updated | **2026-09-02 (admin) — ADMIN PORTAL CLEARED (owner-run browser pass + one build): A69 (enrol-code mint, Overview path), A147 (web-access-expiry wiring; the other two endpoints were already-wired false positives), A70 (enrolled-device roster), A154 (DB-migrations panel — BUILT this session: `GET /api/admin/migrations` + `MigrationsPage` wired into `AdminPortal` + `schema_migration_runs` allowlisted in `check-api-schema-drift`; all gates green) — all CLOSED 2026-09-02 (rule 16). Opened A198 (Branches-tab "Enrol till" minted a single-use code with nowhere to display it — silently burned; P2) + FIX BUILT same session (code card now renders on the Branches tab). Counts A-P2 22→21, A-P3 8→6. Next free ID A199. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (later) — PROD RETEST + CLOSE (swiftpos-prod-mype, owner-run, post dev→main merge PR #5): A187 void/refund (void no-500 confirms migration 96 applied on prod DB; refund keeps Completed + reversal line), A191 /kds-no-logout, A3 KDS delivery/advance, A144 stock-track+threshold slice — all PASS on prod → CLOSED 2026-09-02 (rule 16). Opened A195 (refunded orders show "Completed" with no visual distinction, P2), A196 (voided/refunded orders still shown on KDS — ticket not cancelled on void, P2), A197 (A144 remainder: transfer approve/complete + direct branch-stock set still UI-unwired, P2). Counts A-P1 20→17, A-P2 20→22. Next free ID A198. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 — DEV-BOX PASS (swiftpos-20c2 test box, browser test, cloud/dashboard): A187 void/refund, A191 /kds-no-logout, A3 KDS delivery, A144 stock-tracking all verified GREEN on dev with evidence (A187's successful `voided_by` write proves migration 96 is applied on that box); all four STAY OPEN pending the same retest on `main` post-merge + on the prod DB (rule 16). Opened A192 (KDS masks a 401 ticket-fetch as "all clear", P2), A193 (Refund has no audit-log view, P2), A194 (no customer-name field at POS, P3). Counts A-P2 18→20, A-P3 7→8. Next free ID A195. `check-register-consistency` + `check-doc-refs` green. · 2026-08-29 — REGISTER RECONCILED (docs-only, no code): A183 repo-debt CLOSED — reconstructed the proving test `tests/order-number-per-device.test.mjs` (6/6 real SQLite, mutation-checked) and its `-p` delivery manifest `docs/MANIFEST-2026-08-27-p.md`; `check-doc-refs` + `check-test-registration` green, the durable fix is now provable in-repo. Trued up the stale Tree line to the tree: desktop v0.5.35→**v0.5.38**, migrations →90→**→94** (93 & 94 live in prod), last pushed `d70fa0e`→`0000804`, post-A111→post-A184. No finding opened or closed by this edit; `check-register-consistency` green. · 2026-08-28 — VERIFIED ON A REAL WINDOWS TILL (SwiftPOS v0.5.38 · win32): the four live P0s are CLOSED — A181/A183 (online loop `T001--1` on the cloud DSR + offline sales drained to 0 on reconnect, no collision, migration 94 live), A167 (offline PIN sign-in, no NULL-token crash), A152 (offline auth fell through on a real Render 503 and still rejected a wrong PIN), A177 (queue drains on reconnect). A17 stays OPEN (a build task, not verifiable this session). Open P0 5→1, P1 20→19. Outstanding non-blocking: A183 in-repo test + its `-p` delivery manifest still missing (rule-14 debt); A181 historical `T2--%` recovery query un-run. SECURITY still open: rotate `DATABASE_URL` + the exposed GitHub PAT. · 2026-08-27 — A167 FIX BUILT (bench, OPEN P0 pending real-till test): offline PIN sign-in threw `NOT NULL constraint failed: staff_session.token` at its LAST step — `signInLocal` inserted `token=NULL` into a `token TEXT NOT NULL` column, so every offline/5xx fallback (A17/A152/A160) died on the write it routes to. Fix: write `''` not NULL (the reader already coerces it — `tokenStore.read: unwrap(token_enc) || token || ''` — and `configureStaffSession('','')` already means empty in memory); no migration (rule 13). Reproduced against the real schema, then greened; NEW `tests/offline-signin-write.test.mjs` runs the real INSERT (mutation-checked: NULL → red naming the column). Gap that hid it: `offline-auth-fallback.test.mjs` models the ROUTING only, never the write (rules 8, 24). · A168 FIX BUILT (bench, P2): order-push 401 refreshed `refreshStaffToken()` unconditionally, so an OFFLINE order (owner-token push) had nothing to refresh and sat pending. Now refreshes the token the push actually sends via new pure `selectPushRefresh` in authTransport.ts; NOT the price path's staff||owner fallthrough, which would reattribute a staff order. New real-function test. · A169 OPENED (P1, NOT fixed): offline sales attribute to the OWNER because the server sets `cashier_id = req.userId` and an offline shift pushes under the owner token — blocker named (needs A164 desktop cutover or a signed roster claim). Delivery: MANIFEST-2026-08-27-b.md (supersedes -a). · A170 CLOSED (gate, rule 6): new `check-notnull-writes.mjs` flags a literal NULL written into a NOT NULL local column — the A167 class. Sweep found A167 was the only instance; self-tested 6/6 + mutation-checked on the real file (`ipcHandlers.ts:415`), wired into CI + auto-discovered by run-all, green on the tree. Delivery: MANIFEST-2026-08-27-d.md. · A171/A172/A173 CLOSED (docs + hygiene gate, unattended-safe): A171 formalised rule 24 into §0 (it was cited by ID with no home); A172 added `check-root-clean.mjs` enforcing rule 19 (no stray docs/zips/patches in root, self-test 9/9, green, CI-wired); A173 removed the byte-identical dup `docs/MANIFEST-2026-08-20-a (1).md`. Delivery: MANIFEST-2026-08-27-e.md. · A169 FIX BUILT (bench, Option A — owner-approved): offline sales now credit the real cashier. Till sends the cashier in the SHARED cloud-order payload (peer push + node relay identical); server trusts it only under an owner/device token and only when it validates like verify-pin (active, in-business, branch access) — staff-PIN tokens stay authoritative. Pure `pickCashier` unit-tested 11/11 + payload 5/5; server+desktop tsc clean. STILL OPEN P1 pending live server + real-till verification. Desktop change → version bump due at build (rule 15). Delivery: MANIFEST-2026-08-27-f.md. · A174 CLOSED (fixes A172's own false positive): check-root-clean now respects `.gitignore` via `git check-ignore`, so it stops flagging gitignored `.patch`/`.zip` leftovers (rule 23 — a crying-wolf gate) while still catching a real committable stray. CI was already green (clean checkout has no ignored files). Delivery: MANIFEST-2026-08-27-g.md. · A175/A176 CLOSED (revived two rotted desktop suites): `test:pin` (8→17/0, was throwing "no such table: device_config" because A17 added a `getDeviceConfig` dependency the shim lacked — plus new A17 no-expiry coverage) and `test:sync` (18/11→29/0, was throwing before the cloud pull because A24 added `fetchReferenceFromNode` the shim lacked). Both stale-shim, test-only, no app code — rotted because desktop tests don't run in CI. Delivery: MANIFEST-2026-08-27-h.md. · A177 OPENED + FIX BUILT (P0, bench — root cause of the field "6 pending / 0 failed / Force sync does nothing"): sync fetches had NO timeout and `_isSyncing` clears only in `finally`, so one hung connection (black-holed socket / cold-start stall) wedged `_isSyncing=true` forever and every later sync incl. Force sync returned "Sync already in progress" — queue never drained, orders invisible (0 failed). Reproduced end-to-end in a sandbox on the real compiled engine (hang → wedge; fast-fail → correctly escalates to failed). Fix: `syncFetch()` AbortController timeout on all 15 calls + `_syncStartedAt` stale-guard + break-the-batch-on-timeout + push failures now hit the durable log. New `sync-timeout.test.mjs` 5/5 in the desktop chain; regressions sync 29/0 pin 17/0 peerrelay 28/0. Server verified healthy from the sandbox (POST /api/orders 401 in 0.2–0.6s, no cold-start). STILL OPEN pending real-till confirmation the queue drains. Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-i.md. Next free ID A178.** · A178 CLOSED (sync visibility + decouple, from reading the field till's DB — all orders were synced; the "6 pending" were shift/day/float/expense records the push code logged NOTHING about): `runPushStages()` decouples the five push stages so a throw in one (e.g. a shift-push SELECT on a missing column) no longer skips the order push; shift/price push failures + successes now hit the durable log; `getSyncStatus` gains a per-table `pendingBreakdown`; and the Technician menu gains a real **Test connection** (reaches the server, not just `net.isOnline()`) + **View log** (reads `swiftpos.log` on-device) + the pending breakdown. New `sync-decouple.test.mjs` 6/6; regressions green; main+renderer tsc clean. TechPage UI target-only (rule 16). Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-j.md. · A179 FIX BUILT + SELF-HEAL (P1 — the actual cause of the field "6 pending that never move," found from the log once A178 made the shift push visible): till-created expenses got a non-UUID id (`exp_<ts>_<rand>`) that 500s the cloud uuid column (22P02) and, batched with shifts/days/floats, blocks the whole cash push. Generator → `uuid()`; startup self-heal regenerates stuck non-UUID pending expense ids (safe — never synced, nothing references expenses.id; idempotent), so a stuck till unblocks on next start. `expense-id-repair.test.mjs` 5/5, verified against the real till DB. Follow-up: server should reject bad rows individually so one row can't strand the batch. Delivery: MANIFEST-2026-08-27-k.md. Next free ID A180.** · A180 CLOSED (server robustness — the general form of A179): `/api/sync/push` batched the expenses upsert and 500'd the WHOLE push on one bad row, so a single malformed expense stranded every shift/day/float behind it. Expenses now isolate per-row like floats/shifts/days — a non-UUID id is rejected with `invalid_id` (client parks it as conflict) and the rest land. Pure `partitionByValidId` guard 8/8 + mutation-checked; server tsc clean. Server-only, no desktop bump. Delivery: MANIFEST-2026-08-27-l.md. · A181 OPENED + PART-1 FIX (P0 — the ORIGINAL "synced on the till, absent from the cloud", root-caused from the cloud data): order numbers are `terminal_code--localSeq`, the cloud is UNIQUE(business,branch,order_number), so a reinstalled/second till reusing `T1` over an earlier till’s numbers gets 409’d — and the client wrongly marked 409 as `synced`, silently losing every colliding sale (cloud holds T1--1..T1--25 from the old till; the new till’s 26/27 Aug orders all collided and are absent, ~KES 12,510). Part 1 built: 409 now surfaces as `failed`+logged, never synced (`order-409-not-synced.test.mjs` 5/5). Mitigation: give each till a distinct terminal code. OPEN pending owner decision on robust uniqueness + recovery of the lost orders. Delivery: MANIFEST-2026-08-27-m.md. · A182 OPENED + BUILT (P2, overnight request — attacks the ROOT of A181): a reinstalled till gets a new device_id and is re-named "T1" by hand, colliding. Now the desktop reads a stable MAC (`machineFingerprint.ts`, deterministic; 8/8) and sends it; the cloud binds it (migration 93) and on re-enrol returns the machine’s previous terminal code/name (`findPriorTerminalByMac`/`pickPriorTerminal`, 7/7) which the till adopts — so a reinstall keeps its identity. Plus `docs/RESTORE-GUIDE.md` for session restore (2nd ask). server+desktop tsc clean; enrol-UI pre-fill + real-hardware MAC = target-only. Delivery: MANIFEST-2026-08-27-o.md. · A183 OPENED + BUILT (P1 — the DURABLE fix for A181): the cloud enforced order_number unique per (business,branch), but a number is a per-till value, so two tills/one reinstall colliding lost sales. Migration 94 makes it unique per (business,branch,COALESCE(device_id,''),order_number) — device_id is already on every till order, so identical numbers coexist by device; genuine re-push still dedupes by idempotency_key; NULL-device web/legacy orders stay branch-unique. No code change. `order-number-per-device.test.mjs` 6/6 on real SQLite. Target-only: applying the DDL on prod (safe/strictly-more-permissive; run in a txn, confirm row count). Delivery: MANIFEST-2026-08-27-p.md. · A184 OPENED (P2, end-of-saga UI request): the cloud Terminals/fleet screen shows every till as "SwiftPOS till" with no device name, terminal code, MAC, active cashier/shift, or role — indistinguishable rows, and the "not syncing" banner counts decommissioned ghosts. Needs identity columns + a retire/merge action; MAC populates once the A182 build has checked in. Delivery: TBD. Next free ID A185.** — 2026-08-24 (batch -i) — A160 Phase-b FIX BUILT: the branch node now BROKERS a session refresh for an offline peer. New POST /node/refresh (X-Node-Secret auth) proxies the peer's refresh token to the cloud; syncEngine falls back to the node when the cloud is unreachable/5xx (A152 pattern), never on a 401. Refresh token is the device credential — no new secret, no migration. New node-token-refresh.test.mjs (9, mutation-checked). OPEN P1 pending two-till verification. Delivery: MANIFEST-2026-08-24-i.md.** — 2026-08-24 (batch -h) — A159 DRY-RUN SHIPPED: terminal write guard in requireAuth denies a desktop-surface token from writing dashboard data (products/prices/users/settings) — closes the stolen-token gap left by A158's credential removal. Default-deny by surface + a 5-entry till allowlist. Log-only until TERMINAL_WRITE_ENFORCE=true, so it can't break sync. New terminal-write-guard.test.mjs (19, mutation-checked). OPEN P2 pending enforce-flip. Delivery: MANIFEST-2026-08-24-h.md.** — 2026-08-24 (batch -g) — A158 FIX BUILT (bench): owner email/password login on a till RETIRED at every layer (App.tsx enrol-state + EnrolPage, auth:login IPC/preload/posApi removed, /desktop-login tombstoned 410); enrolment code is the sole activation; sign-out clears staff only (device stays enrolled); web /login untouched. New terminal-activation.test.mjs (mutation-checked) + auth-surface repointed. OPEN P1 pending amber-build verification (rule 16); rollout = tills-first before the server tombstone. Delivery: MANIFEST-2026-08-24-g.md.** — 2026-08-24 (batch -f) — A157 reconciliation map (docs-only, no code per rule 18): confirmed at PAYLOAD level that force-wiring the four validation schemas would 400 currently-valid production requests — product create sends `description:null` + `image_url:''` which the schema rejects, and 13 handler fields would be stripped; `/login` also reads `device_id` (stripped → device binding breaks). NOT wired (the "nothing broken" instruction). Per-schema safe-wiring recipe recorded; lowest-risk first step = category POST with `.passthrough()` after a DB-column length check. Stays OPEN P2 (per-route reconciliation + target test to close). Delivery: MANIFEST-2026-08-24-f.md.** — 2026-08-24 (batch -e) — A20 + A24 source passes (docs-only, no code per rule 18): confirmed at source that the node replicates only the six sales tables (`REPLICATED_TABLES`, origin-device/seq fan-out) and serves NO reference data downstream (`nodeClient` pulls `/node/since` only) — so a promoted peer has no roster (A20) and an offline peer's catalogue/prices/staff/settings go stale (A24). Key finding: the filed "extend `collectDistribution`" one-liner is wrong at source — reference data is cloud-authoritative/mutable/no-seq and needs a distinct node-authoritative SNAPSHOT channel; A20 is a special case of it. Concrete change maps + the `business_settings.branch_id` / dual-exclusion sub-bugs recorded in each entry. Both stay OPEN P1 (target-only to build). Delivery: MANIFEST-2026-08-24-e.md.** — 2026-08-24 (batch -d) — A152 FIX BUILT (bench, still OPEN P0 pending real-till test): offline PIN sign-in now falls through to node/cache when the cloud is DOWN-but-answering (5xx), not only on a thrown error; node leg widened 503→all-5xx; owner login gives a clear cloud-outage message instead of "Login failed"/crash. New `apps/desktop/src/main/authTransport.ts` + mutation-checked `tests/offline-auth-fallback.test.mjs` (20 assertions). Desktop version bump due at build (rule 15). Delivery: MANIFEST-2026-08-24-d.md.** — 2026-08-24 (batch -c) — A156 CLOSED (retired 12 orphaned helper value-exports across dashboard/desktop/server; 2 doc-coupled ones — `getLocalSchemaVersion`, `isTerminalCodeTaken` — excluded and flagged; deletions-only, full suite 40/0) · A157 opened (P2, input-validation schemas written but unwired — NOT auto-wired because the strip-on-parse middleware would drop live fields incl. login `device_id`; safe path needs per-route reconciliation + live test). Delivery: MANIFEST-2026-08-24-c.md. Next free ID A158.** — 2026-08-24 (batch -b) — A155 CLOSED (greened `check-doc-refs` — reworded `HANDOFF-2026-08-23`'s two dangling references to the outputs-only live-test checklist; branch-tip gate suite now fully green) · A153 follow-up done (pruned the two orphaned `computeUnitPrice`/`computeLineTotal` exports from dashboard `lib/cart.ts`; desktop copy live, untouched). Delivery: MANIFEST-2026-08-24-b.md. Next free ID A156.** — 2026-08-24 (batch -a) — A153 CLOSED (retired four superseded/orphaned dashboard-POS prototypes — `OrderHistoryTab`, `VoidModal`, `BranchSelectScreen`, dashboard `VariantModal`; deletions-only, bench tsc+build+gates green, rule 9) · A154 opened (P3, build the admin DB-migrations panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built; kept-and-to-build per owner). Delivery: MANIFEST-2026-08-24-a.md. Next free ID A155.** — 2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
-| Tree | `dev`, post-A184 (last pushed `0000804`; this edit commits on top), desktop **v0.5.38**, `LOCAL_SCHEMA_VERSION` **52**, migrations **→ 94** (93 & 94 live in prod per the 2026-08-28 real-till verification; 90's A129 delivery still pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
-| Open | **A: 1 P0 · 17 P1 · 21 P2 · 6 P3 — D: 1 P0 · 2 P1 · 2 P2 · 3 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
-| Counts | A-P0: A17 · A-P1: A179 A151 A54 A18 A19 A20 A50 A24 A12 A129 A145 A158 A160 A161 A162 A163 A164 · A-P2: A189 A188 A185 A184 A182 A168 A22 A23 A53 A133 A141 A143 A146 A159 A157 A192 A193 A195 A196 A197 A198 · A-P3: A190 A186 A13 A139 A148 A194 — D-P0: D1 · D-P1: D3 D4 · D-P2: D7 D18 · D-P3: D9 D10 D17 |
+| Last updated | **2026-10-01 (n) — results: checklist v0.6.29 14/14 PASS on T1 → A369, A374 CLOSED; every item from 0.6.26–0.6.29 verified. · 2026-10-01 (m) — results: v0.6.28 23/23 PASS → A372, A373 CLOSED; v0.6.27 20 PASS, D2 FAIL, D4/D5 not run → A370, A371 CLOSED, A369 open; NEW A374 (History hid the delivery fee) and the owner's 0.6.29 asks BUILT: confirm table, blind close + cashier figures standard, success screen after payment (no print), History = today's sales. · 2026-10-01 (l) — results: checklist v0.6.26 all 8 PASS on T1 (v0.6.28 install) → the A336 follow-up verified; A336 open for stage 3. · 2026-10-01 (k) — release number on every website (dashboard, web POS, login, admin portal) and the cloud (`GET /api/version`), with a warning when the website and the cloud differ; ships in v0.6.28 (no new tag). · 2026-10-01 (j) — desktop 0.6.28 + cloud + migration 112 BUILT (A372): a sent order is paid or a recorded kitchen void — reason, made or not, a manager with the client's switch, a VOID ticket, the Z-report; End Shift refused while one is unpaid; 'pay before kitchen' switch. Found on the way: A373 (the kitchen cooked a sent dish twice). · 2026-09-30 (i) — desktop 0.6.27 + cloud + migration 111 BUILT (A369): a prospect's nine requests as per-client switches in the admin portal — delivery fee paid to the rider from the drawer, expense payment method, cashier-only History, no reprint, blind shift close, the manager's reasons; the Z-report shows the expense type. Found on the way: A370 (dashboard expenses refused), A371 (till on-screen receipt tip). · 2026-09-30 (h) — desktop 0.6.26 + cloud BUILT (A336 follow-up): a void or refund made on the web of a sale a TILL rang now reaches that till (Z-report, shift figures, day close, History); A359's known limit removed. A336 stays open for stage 3. · 2026-09-30 (g) — ALL of v0.6.24 and v0.6.25 PASS on T1 (N7, N8, P1, D1, D2 the last) → A367 CLOSED; nothing from 0.6.21–0.6.25 is open. · 2026-09-30 (f) — results: 0.6.25 B1, B2, G1–G3 PASS (P1, D1, D2 not yet run); 0.6.24 C1–C6 PASS, N1–N6 PASS (N7 path fixed in the docs, N8 pending) → A366, A368 CLOSED; A367 open for N7/N8. · 2026-09-30 (e) — 0.6.21 D2–D4 PASS → A364 CLOSED (the 29 Sep day: two cash-ups, 18,240 counted = expected). 0.6.25 released (Release desktop #41; CI #441 green after the CI-only fix `91cb590`), deployed, approved, on T1. · 2026-09-30 (d) — desktop 0.6.25 + cloud BUILT: a bigger client logo on the PIN and lock screens, the logo in the manager sidebar, a bigger printed logo, and A368 — a logo uploaded on the till no longer disappears (it is saved to the cloud too). 0.6.24 landed (`6b12bed`, CI #439 green, v0.6.24 pre-release). · 2026-09-30 (c) — results recorded: 0.6.23 F1–F7, F9 PASS; 0.6.22 M3–M9 PASS; S1–S4, O1, L1, X1–X5 PASS → A365, A363, A362, A361, A360 CLOSED. D2–D4 (A364) still to run; 0.6.24 held. · 2026-09-30 (b) — desktop 0.6.24 (schema 58) + cloud BUILT (A367): notes on an item and on the whole order — free text + the owner's quick picks, on the till, the web POS, the kitchen ticket, the receipt and the KDS. HELD with 0.6.24 (owner testing 0.6.23 first; no patch yet). · 2026-09-30 (a) — desktop 0.6.24 + cloud BUILT (A366): only the cashier who opened a shift, or a manager, can close it — till, web POS and the cloud. F8 PASS (the printed Shift Report). · 2026-09-29 (e) — Shift Reports print a REPORT, not the page (dashboard only): an A4 shift report and a list report from the data. · 2026-09-29 (d) — desktop 0.6.23 (A365 follow-ups from T1: M1 + M2 PASS): a method with nothing recorded is not asked; no mouse-wheel / spinner changes on number fields (till + web); "include the opening float"; a manager already signed in confirms without a PIN; NEW dashboard **Shift Reports** (every shift: running / awaiting / confirmed, the difference, View → the per-method table). · 2026-09-29 (c) — desktop 0.6.22 + cloud + migration 110 BUILT (A365): the cashier declares every payment method at End Shift; a manager confirms every shift with a blind recount (PIN; now or later; till, web POS, dashboard); Close Day waits for them; self-confirmation flagged. · 2026-09-29 (b) — desktop 0.6.21 BUILT (A364): a day close is a cash-up — a shift opened after today's day was closed reopens it (was "That record already exists." on T1); the next close counts only the shifts since, the row keeps the whole day. · 2026-09-29 (a) — desktop 0.6.20 BUILT (A363): an offline close-and-reopen never strands a drawer (cloud writes closing days first; the till re-sends a parked day/shift once — T1 unsticks on 0.6.20); refusals in the log; web-sales token renewal; sync status for managers only + bottom notice + "Last synced"; Z-report note. · 2026-09-28 (z) — NEW A362 (a cashier records an expense on the web POS: POST /api/shifts/:id/expense + 🧾 Expense), built as a patch (cloud + dashboard). · 2026-09-28 (y) — Migration 109 applied to prod (`recorded_by | uuid`). · 2026-09-28 (x) — Backlog checklist on target: 25 pass / 0 fail / 4 skip. CLOSED 27 (A129 A179 A267 A168 · A277 A209 A139 · A296 A258 A259 A262 A58 A211 A256 A257 A157 A141 · A298 A299 A306 · A331 A330 A329 · A273; A300 A305 A234 on code evidence). §N run on ONE till only — node items stay open. NEW A360 (cashier expense types, cloud) + A361 (expense recorded_by, migration 109), built as a patch. · 2026-09-28 (w) — Checklist v0.6.19 on target: 26 pass / 0 fail / 1 skip. CLOSED A355, A358, A359, A341, A349. · 2026-09-28 (v) — Checklists v0.6.17 + v0.6.18 recorded: CLOSED A348, A350, A351, A276, A279, A356, A357. NEW A358 (0.6.18 follow-ups) + A359 (web refund), built for 0.6.19 (patch, owner commits). · 2026-09-28 (u) — desktop 0.6.18 BUILT: A355 (refund from History any time; manager's own PIN approves), A336 stage 2, A276 (drinks off the kitchen ticket — cause found), A279, A341, A356, A357. · 2026-09-28 (t) — A353 OPENED (move sign-in from Supabase to our own auth — scoped, not started) and A354 OPENED (Android tablet app — design doc, not started). · 2026-09-28 (s) — A352 BUILT: email — Resend primary, SendGrid (HTTPS) then SMTP as backups. Cloud only. · 2026-09-28 (r) — A351 BUILT: the manager menu in groups (Sales, Close, Settings) for desktop 0.6.17. · 2026-09-28 (q) — Checklist v0.6.16 on target: 20 pass / 1 fail / 15 skip. CLOSED A345, A346, A347, A342, A335. U1's "fail" is R4 as designed (0.6.15 → 0.6.16 was meant to reach every till); A348, A349, A350 stay FIX BUILT for their skipped checks. · 2026-09-28 (p) — A350 BUILT: the release workflow creates each release before uploading (no more split releases) and verifies it; the cloud merges a split release and downloads by file id. · 2026-09-28 (o) — A349 BUILT (pre-release money review, in 0.6.16): discounted sales' receipts now print; tips on receipts; CTL in the Overview and Z-report; the till's reports refund-true (VAT/CTL reduced by refunds, as the cloud); local-time hours; web receipts with CTL; a failed ticket told to the cashier. · 2026-09-28 (n) — A348 BUILT (migration 108 + cloud + admin portal + desktop v0.6.16): desktop updates approved per business in the admin portal, held by default; tills ask the cloud, never GitHub; builds publish as pre-releases; the repository can go private once every till is on 0.6.16. · 2026-09-28 (m) — A347 BUILT: app icon in SwiftPOS teal (#14b8a6), next desktop version (no bump yet). · 2026-09-27 (l) — A346 BUILT (cloud + desktop v0.6.15): the till shows Stock only when the business has the web POS (web access active or grace). A345 BUILT (desktop v0.6.15): an offline sign-in's back office says "You signed in while offline…" instead of "This till is not signed in"; offline, Menu and Staff show what the till has saved, read-only; when the network returns the offline sign-in becomes a cloud sign-in by itself (PIN held in memory only). · 2026-09-27 (k) — Owner's v0.6.14 checklist: 24 PASS / 0 FAIL / 5 SKIP. CLOSED A343, A344, A339 (J1), A334 (B3, B6); A342 open for K4 only; A336 stage 1 fully verified (stages 2–3 open); A335 open (F5). NEW A345 (offline manager: cloud-owned back-office pages say "not signed in"). · 2026-09-27 (j) — A342, A343, A344 BUILT (desktop v0.6.14 + cloud + dashboard): closing on the till closes the web's shift on that till with one count; on the web a cashier who didn't open the running shift chooses to join it or start their own on "<Branch> Web Till"; payment methods in colour (buttons + reports). The till's read-only foreign-cash / foreign-orders added to the terminal-write allowlist. Delivery 2026-09-27-j. · 2026-09-27 (i) — Owner's v0.6.13 checklist: 31 PASS / 0 FAIL / 8 SKIP. CLOSED A338, A340, A337, A332, A333; A334 (B5 fix confirmed), A335, A336, A339 stay open for their skipped checks. NEW A342 (till close closes the web's drawer), A343 (a cashier's own web shift), A344 (payment method colours) — owner decisions. · 2026-09-27 (h) — Migration 107 APPLIED to prod (owner's pg_indexes output: `shifts_open_by_terminal` plain index, unique one gone). NEW `docs/checklists/VERIFY-CHECKLIST-v0.6.13.html` (+ .md): 39 checks, everything open from 0.6.9 → 0.6.13. NEW A341 (manager may add a "type" — future build, owner to confirm which list). · 2026-09-27 (g) — A339 + A340 BUILT (desktop v0.6.13 + cloud + dashboard): an offline manager sign-in lands on the manager screen (the offline answer now carries the role the PIN screen routes on); a manager can no longer invite an owner (the invite route had no role check), grant a permission they do not hold, or mint an "Owner" role, and neither role picker offers what the cloud would refuse. Delivery 2026-09-27-g. · 2026-09-27 (f) — A338 BUILT (desktop v0.6.12 + cloud + migration 107): a till's drawer no longer stops syncing while the web POS has a drawer open as that till — the cloud accepts it (migration 107: the one-open-per-terminal index is no longer unique), a sale whose drawer is not up yet waits (424) instead of failing, and the till re-queues what the clash had parked (drawer, floats, expenses, sales). Delivery 2026-09-27-f. · 2026-09-27 (e) — A337 BUILT (desktop v0.6.11): previous shift reports can be opened and printed; expenses shown on the shift report (screen and paper — the reconciliation now adds up) and on a NEW Expenses screen; the Daily Sales Report is colour-coded (title, sections, headings, totals, key figures, warnings). Delivery 2026-09-27-e. · 2026-09-27 (d) — Cross-sync stage 1 (A336) + A335 + the B5 fix: the web POS's sales on a till's drawer download onto that till (orders, shift panel, Z-report; never pushed back or relayed); the manager's Orders tab can show every till at the branch from the cloud; the till's void/refund now finds its own sales in the cloud (A335); the shared-drawer close no longer counts the till's own sales twice (owner's B5: 6,210 → 4,720); shift changes push at once, 30 s backstop. Desktop v0.6.10, local schema 55. Delivery 2026-09-27-d. · 2026-09-27 (c) — A332 BUILT: web POS light mode — action hover uses the theme's 400 fill (2.51 → 6.56), white labels stay white where white wins (action-600 2.51 → 5.36, red Delete 3.70 → 4.83), themed focus ring now compiles. Delivery 2026-09-27-c. · 2026-09-27 (b) — A333 BUILT: light mode for the dashboard's coloured and pale text and translucent gray lines (52 generated rules, ≥ 4.5 on white and on each colour's own tints); the always-dark sign-in screens keep their white text (was 1.10:1 in light mode). Delivery 2026-09-27-b. · 2026-09-27 (a) — A334 BUILT: the till joins a drawer the web POS opened as it (same id, its trading day; a different cashier is told whose drawer it is) and its close includes the web's cash on any shared drawer (NEW POST /api/shifts/:id/foreign-cash). Desktop v0.6.9. Delivery 2026-09-27-a. · 2026-09-26 (c) — A273 follow-up BUILT (web ↔ desktop shifts): tills send their real name (setup name wins), the web picker shows "T1 — Front Counter" and which drawers are open, joining an open drawer asks no float, the cashier's own open till is joined silently; NEW A334 (P1 — the desktop never learns of a web-opened drawer; owner decisions needed). Desktop v0.6.8 owed. Delivery 2026-09-26-c. · 2026-09-26 (b) — A329 step 3 BUILT: the back office's 619 actions/wordmark/accents → fixed SwiftPOS teal (`swift-*`), "SwiftPOS Teal" preset, favicon teal; light-mode white labels and focus ring fixed; NEW gate + test; NEW A332 (web POS light-mode labels/hover/focus) and A333 (status greens in light mode). Delivery 2026-09-26-b. · 2026-09-26 (a) — A329 step 3 CLASSIFIED (docs only): the back office's 1016 green + blue uses, 619 → SwiftPOS teal, 394 keep their colour; owner decisions (blue primaries too; admin portal out) recorded; document for owner review. Delivery 2026-09-26-a. · 2026-09-25 (f) — Session close: v0.6.7 released (Release #23); A329 step 3 swept (back office: 641 greens in 59 files) and planned for the next session; test labels corrected; handoff. Delivery 2026-09-25-f. · 2026-09-25 (e) — A329 step 2: SwiftPOS teal is the themes-OFF look on tills + web POS; NEW A331 (themed tills' white labels on 600) fixed; Tree row v0.6.7. Delivery 2026-09-25-e. · 2026-09-25 (d) — A330 FIX BUILT: 11 translucent grey panel classes get their light-mode rule (the tip panel and ~130 uses); guard test. Delivery 2026-09-25-d. · 2026-09-25 (c) — A328 CLOSED on target (themed, reset-to-Ocean and OFF all exact on the web POS). Decisions: 4b-2 back office stays SwiftPOS-branded; NEW A329 SwiftPOS colour green → teal (owner yes; plan + numbers); NEW A330 tip panel in light mode. Slice 5 checklist. Delivery 2026-09-25-c. · 2026-09-25 (b) — A328 part 2: the web POS's INLINE colours (181 classified, 94 themed, each falling back to its own original) — fixes the green Charge / pink Confirm the owner saw. Delivery 2026-09-25-b. · 2026-09-25 (a) — A326 + A327 CLOSED on target (brand strip, yellow sidebar, theme buttons on the till; dark-mode picker fix deployed). A328 FIX BUILT: web POS + shared components follow the theme (67 classified, label contrast proven for 7 themes × 2 modes). Delivery 2026-09-25-a. · 2026-09-24 (j) — A327: the owner's run proved web → cloud → till (Blossom on the PIN screen) and found the selected theme near-invisible in DARK mode; fixed (theme-coloured ring + tick) and re-verified in dark and light. WORKING-METHOD: check dashboard UI in dark mode (its default) and light. Delivery 2026-09-24-k (re-issue of -j: a Node-on-Windows exit crash after all checks passed; the new test uses process.exitCode). · 2026-09-24 (i) — Phase 2 slice 4: A327 FIX BUILT (web theme picker + live till preview + save; nothing changes without themes). A326 CLOSED on target (0.6.6 screenshots). Delivery 2026-09-24-i. · 2026-09-24 (h) — CI #394 red on slice 3 (`8f40e02`): A321's desktop test pinned the PIN-page line A326 changed; re-pinned to intent. All 26 desktop tests run on the tip; WORKING-METHOD: run every CI step's tests before hand-over. Delivery 2026-09-24-h. · 2026-09-24 (f) — Phase 2 slice 3: A326 FIX BUILT (the till's colours follow the theme only when themes are ON; 222 greens classified; gate). A325 CLOSED on target (ocean/null). Tree row → v0.6.6. Delivery 2026-09-24-g (re-issue of -f: the new test spawned a Windows `.cmd`; fixed). · 2026-09-24 (e) — Phase 2 slice 2: A325 FIX BUILT (`theme_id`, migration 106, the `themes` flag, cloud → till, schema 54, admin toggle; catalogue-version now watches feature_flags); A324 CLOSED (CI #392). Delivery 2026-09-24-e. · 2026-09-24 (d) — Phase 2 approved and started: NEW A323 (tracker: decisions + 5-slice plan) and A324 (slice 1, the theme registry `themes.ts`, FIX BUILT — no visible change). Delivery 2026-09-24-d. · 2026-09-24 (c) — Phase 2 proposal revised (two layers: brand + action; seven themes; brand-colour table; complementary pairing). Render: the `"env":"development"` seen on `swiftpos-20c2` is the DEVELOPMENT service — correct; production is a separate service; dev→main merge planned after Phase 2 with its own checklist. Delivery 2026-09-24-c. · 2026-09-24 (b) — A322 CLOSED on target (0.6.4 on mamangina: preview shows the till's own name + neutral sample; neutral placeholder; neutral template). v0.6.4 released (Release #20) and running. Delivery 2026-09-24-b. · 2026-09-24 (a) — A322 FIX BUILT (desktop 0.6.4): test print shows the till's own name; neutral sample data (the sample ticket also carried a reference business's till number, phones and a cashier's name); placeholders/template neutral; checklists renamed, reference menu spreadsheets removed; NEW gate `check-reference-names.mjs`. Tree row → v0.6.4 (paired with the owner's `npm version 0.6.4`). Delivery 2026-09-24-a. · 2026-09-23 (y) — session close: `docs/HANDOFF-2026-09-23-evening.md` + NEW `docs/WORKING-METHOD.md` (how sessions run — delivery loop, the three command blocks, confirming "landed", release sequence, session-start prompt). Next: A322. Delivery -y. · 2026-09-23 (x) — **Branding Phase 1 CLOSED on target** (0.6.3 on mamangina: A2, B1, A5, A315 all PASS). CLOSED: A295 (Phase 1), A278, A308, A315, A319, A321. v0.6.3 confirmed running on the till. Next: A322. Delivery -x. · 2026-09-23 (w) — Phase 2 theme proposal (docs, nothing built); NEW A322 (P2): the test print and two till screens show a reference business's name to every client. Delivery -w. · 2026-09-23 (v) — desktop v0.6.3: Tree row updated in the SAME commit as the owner's `npm version 0.6.3` (the v0.6.2 bump missed this pairing and went red — -j). Delivery -v. · 2026-09-23 (u) — A321 FIX BUILT (desktop, 0.6.3): every landed pull signals every window; the lock screen listens; the 20-s check refreshes on 401 and reports other failures. Delivery -u. · 2026-09-23 (t) — retest recorded (Eugene, mamangina, 0.6.2; 18 PASS / 0 FAIL / 2 not run): CLOSED on target A311 A312 A313 A316 A317 A318 A320; A295 §10 item 4 closed, A295 stays open (items 5, 7); A315/A308/A319 stay FIX BUILT (till half / A2 / A5 owed); A278 stays open; NEW A321 (P2) — the open screen never refreshes after a background pull. Log `docs/VERIFY-LOG-2026-09-23.md`. Delivery -t. · 2026-09-23 (s) — docs only: `docs/checklists/verify-branding-phase1.html`, the interactive retest checklist (house style of VERIFY-CHECKLIST-v0.6.0.html, content = VERIFY-BRANDING-PHASE1.md after -r, output = the first run's report format). Delivery -s. · 2026-09-23 (r) — docs only: VERIFY-BRANDING-PHASE1 updated for the retest (A5's rejected example was wrong: `#777777` IS legible to the till — now `#1e293b`; A1/B1 record "Saved." and Edit-form use; new §G for A315/A317/A318/A320; results template). Delivery -r. · 2026-09-23 (q) — A320 FIX BUILT: product names are trimmed before the non-empty check on create and update (PATCH could save an empty name). Siblings on branches/staff recorded, not fixed. Cloud deploy only. Delivery -q. · 2026-09-23 (p) — A318 FIX BUILT (products table scrolls, actions pinned right — Edit/Delete visible on every row; reproduced and verified in a real browser) · A319 FIX BUILT (web Branding page uses the till's contrast rule and lock surface via a synced copy; #F5B800 now accepted with black text, as on the till). Dashboard deploy only. Delivery -p. · 2026-09-23 (o) — builder Windows regression from -n fixed: -n quoted the command name (`"npx.cmd" …`) and cmd.exe then resolved npx.cmd's own folder to the repo (`Cannot find module C:\swiftpos\pos\node_modules\npm\bin\npx-cli.js`, owner's run); -o hands cmd.exe exactly -m's line (`npx.cmd "--yes" …`, which ran there) as one string (no DEP0190). -n itself landed: `b646b51`, all 9 files checksum-matched, CI #377 green. Delivery -o. · 2026-09-23 (n) — A316 FIX BUILT (web receipt-logo codec had no Buffer in a browser: Branding saves with a logo 400'd, web never printed a logo) · A317 FIX BUILT (product schemas accept a null description — web + till edits were 400ing) · A314 CLOSED (CI #376 on `74d29a1`) · new OPEN: A318 (products table clips Edit/Delete), A319 (web legibility rule drifted from the till's), A320 (update accepts a blank name) · tester's VERIFY-BRANDING-PHASE1 results recorded on A308/A278 · builder no longer trips DEP0190 on Node 24. Delivery -n. · 2026-09-23 (m) — delivery -l re-issued: commit `7a66044` carried only the -l manifest (the other 13 files were not extracted over the repo); -m ships them plus a Windows fix to `build-escpos-renderer.mjs` (`spawnSync npx ENOENT` on the owner's Git Bash — npx is npx.cmd and Node refuses a .cmd without a shell; pre-existing in the old builder too). · 2026-09-23 (l) — A315 + A314 FIX BUILT together: closing thank-you no longer duplicates the owner/delivery box (whole-line match, owner ruling; was live on every web receipt with no receipt_footer via the per-device default); SAMPLE-OUTPUT + out/*.bin refreshed; `npm test` now fails on artefact drift and CI fails on a stale web bundle (esbuild pinned 0.28.2). Counts unchanged (FIX BUILT stays open). Delivery -l. · 2026-09-23 (k) — v0.6.2 published; handoff written. · 2026-09-23 (j) — Tree row: v0.6.2, schema 53, migration 105 on prod (verify PASS). Fixes the CI red on `ea8416a`. · 2026-09-22 (i) — A310 CLOSED: the `GS v 0` raster printed perfectly on the client's XP-80 (owner photo 23:23). A315 opened (duplicate closing line seen on the same paper). VERIFY §F added; handoff `HANDOFF-2026-09-22.md`. Delivery -i. · 2026-09-22 (h) — A313 receipt-logo slice 4 (last) FIX BUILT: web Branding page gets the opt-in toggle + a receipt preview from the stored raster; bundle rebuilt (A310 in, raster helpers exported, reproducible); web live/routed/reprint receipts carry the logo under the same gate as the till. Receipt logo is now code-complete end-to-end; paper + browser + prod-migrate 105 owed. A-P3 →24. Delivery -h. · 2026-09-22 (g) — A312 receipt-logo slice 3 FIX BUILT: pixels over IPC, main thresholds via shared raster.ts into `logo_receipt`; print path gates on toggle + raster; tech editor gets toggle + WYSIWYG mono preview. 42/42 via real guard + real SQL; run-all 113/113. Two paper .bin artefacts for the printer. A-P3 →23. Delivery -g. · 2026-09-22 (f) — A311 receipt-logo slice 2 FIX BUILT: migration 105 `receipt_logo_enabled` (opt-in), local schema 53, `/pos/init` + pull carry `logo_receipt` + toggle (absent = keep local, null = clear), server CRUD validates the raster shape. Real SQL executed in test; run-all 113/113. PROD-MIGRATE 105 owed. A-P3 →22. Delivery -f. · 2026-09-22 (e) — A310 receipt-logo slice 1 FIX BUILT in shared/printing (raster.ts + image block + GS v 0; receipts only; malformed → dropped); A314 opened (reference artefacts stale). A-P3 →21. Delivery -e. · 2026-09-22 (d) — A306 main-side manager gate + A159 env docs; guard mutation-checked (one assertion re-pointed after it passed by reading a comment, rule 24); run-all 113/113. Delivery -d. · 2026-09-22 (b) — lead-dev housekeeping after the repo review: A309 CLOSED (CI doc-refs red, fixed in -a); A295 OPENED as the Phase 1 branding tracker (P1: receipt logo + receipt preview NOT built; A308/A278 target checks owed); A237 re-graded FIX BUILT (Go bridge is live, Node bridge retired); SCOPE-A295 status line corrected; §0 environment note corrected to Electron 43. A-P1 18→19. Gates: register-consistency, doc-refs, root-clean green. Delivery -b (docs-only, no zip). · 2026-09-21 (push-all) — consolidated delivery -q: A307 in-app menu template (Large-fries upgrade) + A278 live catalogue refresh (web→till, no restart) + A19 node→cloud relay RE-GRADED FIX BUILT (bench 28/28; 09-18 note was wrong) + A308 web Branding settings page (client-facing). Branding requirement met end-to-end. P3 →19. Bench: all suites + tsc + gates green. · 2026-09-21 (ctl) — A277 FIX BUILT: receipt already rendered CTL + sales compute it; real gap was ctl_rate not being settable. Wired ctl_rate into server EDITABLE (0..100) + dashboard Business Profile form. Bench: ctl-rate-editable 6/6, server+dashboard tsc 0. Owner: set a nonzero CTL, ring a sale, confirm the receipt line. Delivery -m. · 2026-09-21 (verify) — Branding chain A301–A304 CLOSED on target (Till 1): on-till pass §A–§F 25/25, 0 fail — lock-screen reflow/teal, tech feed, cloud store (migration 104 live), sync-down remote-wins, offline read, plus 0.6.0 regression. A306 update-banner check deferred to the next release. · 2026-09-21 (update-ux) — A306 auto-update UX FIX BUILT: update:status banner ("Downloading…"/"Update ready"), manager-PIN-gated "Restart & update now" → quitAndInstall(false,true) (visible progress, relaunch), install-on-quit kept, 2h gentle reminder. Fixes the silent-vanish the v0.6.0 update showed. Bench: wiring 13/13, ipc gates green. Delivery -j. · 2026-09-21 (ci) — A305 migration runner hardened: per-test timeout (SIGKILL a hang → named FAIL), bounded parallel pool (min(cpus,4)), --self-test wired into CI. Fixes the 30-min hang class. Bench: self-test 3/3. Delivery -i. · 2026-09-21 (sync) — A304 branding sync-down FIX BUILT: /pos/init serves branding + business_branding on the A291 version list; till pullCatalogue → applyPulledBranding writes the local mirror remote-wins (keyed by session business; null/node = keep local). Bench: sync-pull 12/12, server+desktop-main tsc 0, gates green. Target-only: e2e pull with migration 104 live + visual. Delivery -g. · 2026-09-21 (cloud) — A303 cloud branding store FIX BUILT: migration 104 business_branding (RLS + set_updated_at trigger) + server CRUD (GET/PUT /api/business/branding, persist-boundary validated) — the cloud half of A295 sync. Logo base64-in-row (SCOPE §3 asset_id deviation, noted). Bench: PGlite migration 8/8, server tsc 0, schema-drift/rls-coverage/api-routes green. NEXT A304: pos/init serve + desktop pull. Delivery -f. · 2026-09-21 (feed) — A302 tech-gated branding FEED FIX BUILT: BrandingEditor (accent picker + PNG/JPEG upload via prepareRasterLogo) mounted in TechPage, writes through A301 branding:set, audited. Bench: wiring guard 8/8 (2 mutations bite), renderer tsc 0, 19/19 gates. Target-only: the on-screen editor + lock-screen render (rule 16). Delivery -e. · 2026-09-21 — A301 (desktop branding WRITE path) FIX BUILT + merged to dev (PR #9, 35c7229): `branding:set` end-to-end + pure `brandingGuard` (accent / PNG-JPEG / 250 KB, SVG rejected) + renderer `prepareRasterLogo` (shrink-not-crop). Bench 18/18 + 19/19 static gates green; target-only per rule 16 (Electron test:desktop on the real ABI, prepareRasterLogo needs a DOM, visual lock-screen). CI caught a missed test-registration mid-flight — fixed (delivery -c). Deliveries: -a/-b/-c. · 2026-09-15 (verification session, one laptop + printer) — CLOSED on target: A265 A266 A260 A274 A275 A182 A235 A249 A251 A240 A245 A239 A241 A243 (14). A275 (remote day close) verified end-to-end. Spice/VAT path validated live on a real receipt. OPENED: A276 (P1, soda prints on kitchen ticket — web+desktop, cause pending), A277 (P2, receipt omits CTL line), A278 (P2, web→till changes need a restart; want instant push), A279 (P3, POS filter control). A273 kept open — picker renders but asks for a float even when the till already has an open drawer (should resume). NOT closed (tested on pre-Vercel-rebuild build, re-confirm): A259 A262 A257 A256 A179 A129 A157 D18. Group C (A160-A164, A19, A20, A24, D9, A22) blocked pending a 2nd enrolled till. See docs/VERIFY-LOG-2026-09-15.md. · 2026-09-14 (g) — CI FIX round 3 (delivery -g): test-migration-102 failed on its idempotency re-run — CREATE POLICY has no IF NOT EXISTS, so the second db.exec(SQL) errored "policy owner_all already exists". Fixed by adding DROP POLICY IF EXISTS before CREATE POLICY (payment_methods/86 pattern). This round is VERIFIED, not blind: installed @electric-sql/pglite on the bench and ran the migrations — all 26 migration test files pass (test-migration-102 6/6 incl. idempotency), check-rls-coverage OK, schema-audit total 0, check-schema-drift OK. tsc/Build/Server-suites unaffected (only migration SQL changed). Delivery: docs/MANIFEST-2026-09-13-g.md. · 2026-09-14 (f) — CI FIX round 2 (delivery -f): after -e, two jobs still red. (1) RLS coverage — migration 102 created day_close_instructions with no RLS statement; added ENABLE ROW LEVEL SECURITY + an owner_all policy (payment_methods/86 pattern; all real access is server-side service_role), and mirrored 86's auth.uid()+businesses bootstrap into test-migration-102.mjs so it runs in PGlite. (2) Root-clean (rule 19) — VERIFY-CLOSEOUT-2026-09-14.md was committed to the repo ROOT (my flat-file share); it belongs in docs/ (git mv, not in this zip). Verified locally: check-rls-coverage OK (102/102), schema-drift OK, schema-audit total 0, all doc/register gates green. Delivery: docs/MANIFEST-2026-09-13-f.md. · 2026-09-14 (e) — CI FIX (delivery -e): the -c commit (e2969da) turned CI red. Type-check ratchet + Build + Server-suites all failed on 5× TS2559 in day-close.ts (validation calls passed 400 where sendError's 3rd arg is SendErrorOptions); Schema-drift failed because schema-audit.py saw day_close_instructions referenced but not in scripts/schema-index.json. Fix: 5 validation calls → res.status(400).json({ error }) (matches sendError's documented intent for intentional 4xx); added day_close_instructions to schema-index.json. Verified locally: schema-audit.py total 0, check-schema-drift OK, day-close-relay 5/5, all doc/register gates green. tsc not runnable on the bench (no node_modules) — re-confirm on CI. No count change (A275 still FIX BUILT). Delivery: docs/MANIFEST-2026-09-13-e.md. · 2026-09-13 (d) — A22 → FIX BUILT (P2, delivery -d): promotion split-brain made loud. Rule-17: detection already existed (confirmServingRole/migration 74 records role_conflict_at + refuses credentials) but only console.warn'd — so the delta was surfacing. Till: tech:promoteToNode now probes the current node_url before the role flip and refuses (code node_reachable) if a live node still answers. Cloud: GET /fleet exposes servingConflict/conflictAt. Web: FleetPage shows a loud red split-brain badge (catches the reconnect-after-promote case). Guard: split-brain-surfacing.test.mjs (3, mutation-checked). Counts unchanged (FIX BUILT still open). NOT verified: live two-node scenario + tsc. Follow-up noted: node-local banner via sync response. Delivery: docs/MANIFEST-2026-09-13-d.md. · 2026-09-13 (c) — A275 → FIX BUILT (P1, delivery -c): remote day close (Option i-A). Migration 102 day_close_instructions (cloud mirror of node_instructions, one-pending-per-till-per-day). Cloud /api/day-close: manager instruct/overview (shifts.force_close|settings.manage), till pending/ack (device-scoped via X-Device-Id). Till syncAll pulls + runs executeCloseDay verbatim + acks (idempotent, best-effort). Web manager "Remote day close" panel in ManagerShiftTab. Never writes a business_days close on the cloud (closes flow up only). Guards: day-close-relay (5) + day-close-till (4) + day-close-web (4), all mutation-checked. Counts unchanged (FIX BUILT still open). NOT verified: full live loop + tsc + PGlite migration test (no node_modules/Postgres on bench). Cluster A273/A274/A275 now all FIX BUILT — the shift/day web-parity design is code-complete on the bench, pending target verification. Delivery: docs/MANIFEST-2026-09-13-c.md. · 2026-09-13 (b) — A273 → FIX BUILT (P1, delivery -b): web POS now adopts the covered till's identity (Option B). New branch-scoped GET /api/shifts/terminals; posTerminal.ts stores the covered till per tab; POSAuthContext sends x-device-id on every request incl. the 401-retry; ShiftModal picks the till, adopts before /open, folds into an existing drawer on 409, clears on close. No migration (cloud already keys on the header). Behaviour change: a web shift now requires covering an enrolled till. Guards: shift-terminals-endpoint.test.mjs (4) + web-terminal-identity.test.mjs (7), both mutation-checked. Counts unchanged (FIX BUILT still counts open). NOT verified: live two-surface + tsc (no node_modules on bench). Delivery: docs/MANIFEST-2026-09-13-b.md. · 2026-09-13 (a) — WEB SHIFT/DAY PARITY cluster opened per owner direction (desktop = main register, web = per-till backup); design locked in docs/SHIFT-DAY-WEB-PARITY-DESIGN.md. A273 OPENED (P1): web has no per-register identity — all web sales share one web:&lt;branch&gt; drawer and cannot fold into a till's drawer/day; chosen fix = Option B (web stands in for a chosen till). A274 OPENED+FIX BUILT (P1): web could ring a shift_id:null sale — no hard shift gate and the /current check swallowed failures; Charge/Send-to-Kitchen/Room-charge now disabled+guarded on currentShift and a failed check prompts open instead of falling through; web-only, additive; guard tests/web-shift-gate.test.mjs (5, mutation-checked); NOT verified on screen or dashboard tsc (rule 16). A275 OPENED (P1): no remote day close — chosen fix = Option i (cloud-relayed close_day instruction the till executes locally against a cashier-entered count; remote finalise, never a fabricated count). Counts: A-P1 18→21 (A273/A274/A275). check-register-consistency green (238 entries). Delivery: docs/MANIFEST-2026-09-13-a.md. · 2026-09-10 (D9-core) — D9 → FIX BUILT (core only). Built the node-authoritative held-order claim/lease/audit CORE per the owner's soft-lock model (docs/D9-decision-brief.md): nodeTabs.ts — atomic claimTab (409 on double-claim, D4 burn shape), 90s lease renewed on edit, holder-gated update/clear (423), clear + forced-steal audited. Proven: apps/desktop/test/node-tabs-claim.test.mjs (17 checks); desktop main tsc 0; wired into test:desktop. NOT built (deliberately): nodeServer routes + client + IPC/UI wiring, the audit→cloud-notifications hop, and — the whole point — the LIVE two-till behaviour (poll lag, offline mid-charge, real race), which only a two-till rig proves. Do not ship to a floor until that passes. Still P3. Delivery: docs/MANIFEST-2026-09-10-D9-core.md. · 2026-09-10 (D18) — D18 → FIX BUILT + guarded: the tech-token paste fix (PinPage onPaste routes an st2. token past the truncating reveal field) is present and now guarded by tech-token-paste.test.mjs (6, mutation-checked); pending an on-screen paste confirm on the amber build. A186 stays OPEN with NEW EVIDENCE: the db.close()-before-exit hypothesis was tested on the owner's Windows box and FALSIFIED — test-migration-47 crashed EVEN WITH the close added, so the libuv teardown crash is independent of closing the handle; the 6 edits were reverted (no dead non-fix code). Exact crashers: 47, 79, 41-42 (48/99 which never close do NOT crash). Next candidates: upgrade pglite, or subprocess-isolate each test. Still P3 (Ubuntu CI is the authoritative green). No count change. Delivery: docs/MANIFEST-2026-09-10-D18.md. · 2026-09-10 (D3) — auto-update WIRED (D3 OPEN→FIX BUILT), the last pure-build P1. Was a dormant scaffold; now electron-updater is a dep, autoUpdate.ts is built (tsconfig exclude removed) + called from index.ts (guarded), prod flavour publishes to GitHub Releases (oweyahillary/swiftpos), dev flavour publishes nowhere + is runtime-skipped by name, and a tag-triggered release.yml builds+publishes on Windows (closes A1 once a release is cut). Unsigned for now (SmartScreen on first install; cert = a secrets flip, not code). Guard: autoupdate-wiring.test.mjs (12, mutation-checked). Desktop tsc 0, 97/97 suites, gates green. NOT verified: the end-to-end update loop on a real Windows till (push a v* tag, install, bump+tag, watch it self-update) — owner-only. Delivery: docs/MANIFEST-2026-09-10-D3.md. · 2026-09-10 (combined) — four items in one delivery. D1 CLOSED (last open P0): the two-business owner-login dead-end was already resolved by the A158 enrolment work (desktop-login RETIRED→410; till uses enrolment codes, no picker); heading was never flipped; verified in source. A204 CLOSED (code): Stock Transfers Cancel now uses an in-app required-reason modal instead of a native window.confirm that sent no reason (server needs it, 400 reason_required); guard + mutation-check; dashboard tsc 0. A146 CLOSED (code): the webhooks UI was duplicated + diverged — BusinessPage had the full standalone WebhooksTab (test-send + delivery log) while SettingsPage had a stale inline subset; consolidated onto the shared component; guard + mutation-check. A18 re-graded P1 OPEN→P3 NOTE: nothing to fix (nodeServer.ts header already correct); it is a tracking marker for PHASE5 §3. Counts: A-P1 19→18, A-P2 22→21, D-P0 1→0 (ZERO open P0s). 96/96 suites, gates green. Delivery: docs/MANIFEST-2026-09-10-combined.md. · 2026-09-09 (g) — BROWSER VERIFICATION PASS (Claude-in-Chrome agent, owner+manager) + 3 fixes it surfaced. CLOSED 12 verified on screen: A212 A238 A207 A208 (manager portal), A216 A263 A261 A224 A229 A230 A217 (reports/receiving), A188 (POS table grid). Counts A-P2 29→22, A-P3 17→12. The agent found 3 real issues, now FIXED (bench: dashboard tsc 0, guards mutation-checked, need a visual confirm): A258 (owner Overview still stacked Top sellers/Payment methods — fix had only reached the manager view; owner grid swapped), A257 (empty category/product submit was a silent no-op — now shows "Name is required", Save enabled; both pages), A259 (owner Reports Staff Performance column BLANK — owner ReportsPage read stale s.name/s.cashier_id while the A259d server fix emits staff_name/staff_id; owner type+row corrected, phantom Branch column dropped). A262 could not be verified (shift report only prints — needs the till). Guards added to ui-reports-fixes.test.mjs (11 checks). Note: the A-P2 ID list undercounts the summary (pre-existing cosmetic drift, gate checks the summary only). Delivery: docs/MANIFEST-2026-09-09-g.md. · 2026-09-09 (f) — LIVE PRINT SESSION on the dev till (SwiftPOS Dev 0.5.39, real thermal printer): the owner verified the entire print-parity sweep + the P1 split-bill and 16 items CLOSED. P1: A242 (KOT prints), A254 (cut/margin/master-KOT), A268 (no double printing), A151 (by-item split collects the exact total). P2: A244 (test print), A248/A252/A250 (combo component routing + kitchen exclusions), A246/A255/A269 (Print Bill proforma vs receipt), A253 (send-vs-pay timing), A231 (Z report). P3: A247 (station order), A232 (doc logo), A233 (stock-take sheet). Counts A-P1 23→19, A-P2 38→29, A-P3 20→17. check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-f.md. · 2026-09-09 (e) — LIVE VERIFICATION on the dev flavour (SwiftPOS Dev 0.5.39): D17 CLOSED — dev build installs and runs, shows "SwiftPOS DEV" with the amber icon, and writes to %APPDATA%\SwiftPOS Dev separate from prod (data isolation confirmed); the dev/prod flavour is real and safe to trade on. A271/D7 order:create caveat CLEARED — a real sale went through the validated order:create boundary, saved to SQLite AND synced to the cloud, so D7 is fully closed with nothing outstanding. Register only: D17 FIX BUILT→CLOSED (D-P3 3→2), A271 live note added. check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-e.md. · 2026-09-09 (d) — A272 register hygiene (no code change): re-graded five items OPEN → FIX BUILT after a code-vs-register audit found them built but mislabelled — D17 (dev/prod flavour, all 4 artefacts built at v0.5.39), A151 (Split Bill under-collect claim is FALSE vs code — server rejects unbalanced legs via PAYMENT_MISMATCH; heading+desc corrected), A188 (hasLayout grid fallback in CashierScreen), A146 (WebhooksTab is a real mounted caller; flagged a duplicate inline copy), A139 (branch receipt migration+editor present). FIX BUILT still counts as open, so header counts unchanged; check-register-consistency green. Delivery: docs/MANIFEST-2026-09-09-d.md. · 2026-09-09 (c) — A271 CI follow-up: the desktop "Print resilience" job (test-print-resilience.mjs) went red after A271 — its body() helper string-searched ipcMain.handle('<channel>', which the rename to the validating handle() wrapper broke, failing the "station writes refresh ONLY the two station tables" guard. Stale guard, not a regression (station writes still call refreshStationsLocal only). Fixed body() to match either form (same fix as check-ipc-parity); mutation-checked; 55/55. Delivery: docs/MANIFEST-2026-09-09-c.md. · 2026-09-09 (b) — A271 CLOSED (P2) + D7 CLOSED: completed IPC payload validation across ALL 149 channels and added a coverage gate. Extended ipcValidate (nested object/array/enum/any + bare guards); central ipcSchemas.ts registry gives every channel an explicit schema/NO_PAYLOAD; ipcGuard.installValidatedHandle validates at the boundary (renamed 138+11 ipcMain.handle → handle). check-ipc-validation.mjs (in CI) fails on any unregistered or stale channel — mutation-checked. order:create validated against createLocalOrder but NEEDS_LIVE_TEST (one real sale on a dev till). Desktop main tsc 0; gates green; ipc-validate test 25→52; 96/96 offline suites. Delivery: docs/MANIFEST-2026-09-09-b.md. · 2026-09-09 (a) — A270 CLOSED (P2): CI was RED on `dev` (`1ab6121`) across 4 jobs and had been since ~A261/A266/A269 while entries claimed "gates green" (narrow local runs, not the full suite). Read all 4 CI logs verbatim, fixed each at source. REAL: dashboard `tsc` +6 (stale `escposRenderer.d.ts` vs its bundle across A252→A269 + a duplicate `branchName` from A255) — reproduced 6→0. TOOLING: `schema-index.json` missing `stock_transfer_items.quantity_received` (migration 101/A221) — regenerated additively; stale `schema-pending.json` entry for migration 77/A55 (its functions are live) — cleared per the gate's self-clearing rule (re-enables checks, does not silence). STALE GUARDS (rule 23/24, each mutation-checked): tiny-bridge A252/PaymentModal, ui-reports A261, print-documents ×4 docType (A234 moved them to documentSpecs.ts), reports-refunds Exports hub (was demanding the OLD window.open 401 bug — now asserts the authed downloadFile), mailer-transport (A200 contract), manager-receiving (premise made false by A221/A228 PO-create + transfer-initiate; replaced the "receive-only" blanket with the real no-stock-adjust invariant). All 96 test suites green under CI conditions; all gates green; additive/behaviour-preserving (no runtime path changed). No count change (opens+closes same session, bench-verifiable). Delivery: docs/MANIFEST-2026-09-09-a.md. · 2026-09-07 (ah) — A269 FIX BUILT (P2): owner chose to make Print Bill a proforma. Added a proforma flag through the renderer (BILL - NOT A RECEIPT header, no fiscal Bill No.), bundle, printRouted (receipt station only), and printGuestCheck (proforma:true, no number). Print Bill is now clearly a BILL, distinct from the payment receipt — resolves the receipt double. Bundle reproducible. Ships with A268. A-P2 37→38. Delivery: docs/MANIFEST-2026-09-07-af.md. · 2026-09-07 (ag) — A268 FIX BUILT (P1): POS double-printing. Kitchen/dispatcher fired twice when Send to Kitchen was used then payment (pay-first onSuccess re-fired unconditionally) — now skips if sentOrderIds set. Receipt double (Print Bill full receipt + payment fiscal receipt, different numbers) noted separately — needs owner call on making Print Bill a marked proforma (renderer flag). A-P1 22→23. POS smoke otherwise passed (Send to Kitchen, order type, Charge+auto-receipt with business name, extras open, docs, reports). Delivery: docs/MANIFEST-2026-09-07-ae.md. · 2026-09-07 (af) — A267 FIX BUILT (P1, ROOT): every POS api call 401d after the access token expired — getStoredRefreshToken was surface-keyed only (A260 fixed the access token fallback but not the refresh token), so a manager on the dashboard surface could not refresh (owner refresh key empty) → refresh failed → 401 cascade → business null (blank receipt A266, SwiftPOS docs A260). Fixed by falling back to any stored refresh token. This is the root cause; the earlier /api/business fetch fallbacks were symptom patches. A-P1 21→22. Delivery: docs/MANIFEST-2026-09-07-ad.md. · 2026-09-07 (ae) — A266 FIX BUILT (P1): after payment the receipt preview was a blank white box + no auto-print. ReceiptView returns empty when business is null, and useBusiness() is null on the POS surface for managers. PaymentModal now resolves business by fetching /api/business (POS token) when the prop is null (used for preview + print), and auto-prints once on success via the silent bridge path (desktop parity). A-P1 20→21. Delivery: docs/MANIFEST-2026-09-07-ac.md. · 2026-09-07 (ad) — A265 FIX BUILT (P1): the web POS Charge crashed (ReferenceError: receiptHeader is not defined) — A255 used receiptHeader/receiptFooter in CashierScreen (PaymentModal props + Print Bill) but never added them to the usePOSData() destructure; opening PaymentModal threw. Reached prod because the dashboard build is esbuild-only (no type-check), so an undeclared identifier only fails at runtime. Fixed by destructuring them. A264 extras were not the cause. A-P1 19→20. Delivery: docs/MANIFEST-2026-09-07-ab.md. · 2026-09-07 (ac) — A264 FIX BUILT (P2): web POS cart converges on the desktop shared core. Added the in-cart order-type selector (Dine in/Takeaway/Delivery) + surfaced Send to Kitchen · Hold in BOTH modes (was order_first-only); web-only extras (Print Bill/Transfer/Split/Room) moved below Charge. Read both carts fully; desktop has no coursing/extras (web-only, kept). Web-only; guard test 4. A-P2 36→37. Delivery: docs/MANIFEST-2026-09-07-aa.md. · 2026-09-07 (ab) — A262 FIX BUILT (P3, LAST of the 5 UI asks): shift report under Shifts, reusing the desktop shared renderShiftReport (bundled). GET /api/shifts/:id extended with by_method + cash reconciliation; new lib/printShiftReport.ts; "Shift report" button on ManagerShiftTab. Proven render: SHIFT REPORT (LIVE) / Eugene / cash recon = Expected 29,970 (matches Shifts page). Bundle reproducible; test ui-reports 7→8. Delivery: docs/MANIFEST-2026-09-07-z.md. · 2026-09-07 (aa) — A259d: THE Unknown fix. Owner ran the SQL: orders have a valid cashier_id (Eugene) resolving in users; the server computed the name into name/cashier_id but the frontend StaffRow reads staff_name/staff_id — a field-name mismatch was the whole bug (the A259/b/c attribution work was unnecessary for this, though harmless/robust). /staff now emits staff_id/staff_name/orders/revenue/avg_order_value/voids; traced to Eugene/3/13,600/4,533.33. Delivery: docs/MANIFEST-2026-09-07-y.md. · 2026-09-07 (z) — A259c: Staff still Unknown (avg fix confirmed live at KES 4,533.33). Root: those orders have null cashier_id AND null shift_id (offline/desktop-rung), no name snapshot. Now attributes an unresolved order to the shift whose TIME WINDOW covers it (branch + opened_at <= created_at <= closed_at/open); the open shift spans these orders. Guard updated. Diagnostic SQL provided if it persists. Delivery: docs/MANIFEST-2026-09-07-x.md. · 2026-09-07 (y) — A261b: the reprint button was added to OrdersPage.tsx (owner table view) but the manager Orders tab is POSOrderHistoryTab (card view) — added "Reprint receipt" there too (uses reprintOrderReceipt via the A260 token fallback). Guard extended to assert both views. Test 7 (still). Delivery: docs/MANIFEST-2026-09-07-w.md. · 2026-09-07 (x) — CONFIRM #2 (owner: Staff still Unknown + selector asks). Confirmed origin (HEAD 6e38865) all green. A259b: Staff "Unknown" persisted because those orders cashier_id do not match a users row — now attributes via the order shift (cashierOf = cashier_id ?? shift.cashier_id); also fixed Avg Order 0.00 (returns avg_order_value). A263 (P3): report selector — removed redundant Apply (auto-applies), fixed preset double-highlight via explicit active state, Today is the default on every tab. Test ui-reports 5→7. A-P3 19→20. Delivery: docs/MANIFEST-2026-09-07-v.md. · 2026-09-07 (w) — CONFIRM/RECONCILE. Pulled origin (HEAD d3895e9) and verified all recent work landed (A157/A248-A261). Found + fixed two drift items: (1) tiny-bridge A254 guard was stale — the A261 emit() change added a 4th param (reprint) so /function emit\(station, order, business\)/ no longer matched (code was correct, cut/feed/drawer still passed); relaxed the regex. (2) the A256 delivery (-q) files were skipped so check-doc-refs was RED — restored docs/A256-permission-backfill.sql + docs/MANIFEST-2026-09-07-q.md. All green now: print 29/29, validation 7/7, ui-reports 5/5, register/doc-refs/root/test-reg. Delivery: docs/MANIFEST-2026-09-07-u.md. · 2026-09-07 (v) — A260 + A261 FIXED. A260 (P2): documents printed "SwiftPOS" because accessKey() used the owner token on the dashboard where a manager only holds a POS token, so /api/business 401d and business stayed null — getStoredAccessToken() now falls back to any available token (one-line root fix; unblocks other manager-dashboard api calls too). A261 (P3): reprint receipt on Orders — renderReceiptEscPos takes a reprint marker; new reprintReceipt.ts re-renders the stored order as a "Duplicate Print" via the same renderer + bridge, wired to a button on the Orders row. A262 (shift report) still OPEN — next. Test +2 (5); bundle reproducible. Delivery: docs/MANIFEST-2026-09-07-t.md. · 2026-09-07 (u) — OWNER UI REVIEW (5 issues). BUILT: A258 (P3) Overview Top Items + Payment Methods side by side; A259 (P2) reports "Unknown" cashier (null name -> email fallback) + open shifts now appear in the period (was BETWEEN opened_at window excluding a 76h open shift). FILED for next build: A260 (P2) documents print "SwiftPOS" not client name (BusinessContext null for managers); A261 (P3) reprint-receipt action on Orders (renderer supports ctx.reprint; needs order-items fetch); A262 (P3) shift report under Shifts. Test +1 file (3). A-P2 34->36, A-P3 16->19. Delivery: docs/MANIFEST-2026-09-07-s.md. · 2026-09-07 (t) — A157 CLOSE TEST (owner UI): 1 login PASS, 3 edit-no-reset PASS, 4 category create PASS. Found + fixed A257 (P3): (a) rejected saves showed bare "Validation failed" — api client now surfaces the field-level errors array (field: message); (b) category placeholder was petrol-specific "e.g. Diesel" -> "e.g. Beverages". A157 itself: the create "failure" was a legit empty-name catch (no regression — payload sends null not "" for optional fields, base_price is parseFloat number). Test 5→7. A-P3 15→16. Delivery: docs/MANIFEST-2026-09-07-r.md. · 2026-09-07 (s) — CLOUD SWEEP finished (owner in a meeting; handled the remaining code). A256 FIX BUILT: review-first permission-backfill script docs/A256-permission-backfill.sql — grants only POST-onboarding default permissions (permissions.created_at > businesses.created_at, so it never undoes a deliberate removal) per the exact defaultRolePermissions.ts tiers, idempotent; STEP-1 preview then STEP-2 apply (not auto-run — security-sensitive + created_at unreliable on dump-seeded DBs). A54 reconciled: the false-confidence comment is ALREADY corrected in mailer.ts and the Resend HTTP path exists — remaining is owner action (set RESEND_API_KEY). So the cloud bucket code is done; A54/A146/A159/A141 remainders are owner-config/verify. No count change (A256/A54 stay open pending owner). Delivery: docs/MANIFEST-2026-09-07-q.md. · 2026-09-07 (r) — CLOUD SWEEP. A157 FIX BUILT: input-validation wired via new validateLoose (catchall passthrough — validates known fields, never strips device_id/tax fields) on /login, product create/update, category create; fixed a landmine where UpdateProductSchema kept CreateProductSchema.partial() defaults (would reset track_stock/variants on any update) — de-defaulted. Verified vs real schemas; guard test 5, mutation-checked. A141 reconciled: bulk ingredient import IS built (POST /api/stock/ingredients/bulk + BulkIngredientImport.tsx); remaining is an owner permission grant. A256 FILED (P2): systemic backfill of newly-added default permissions to pre-existing roles (A141 root cause). A50/A54 mail: code has the Resend path — owner must set RESEND_API_KEY; A146/A159 are verify/config. A-P2 33→34. Delivery: docs/MANIFEST-2026-09-07-p.md. · 2026-09-07 (q) — A255 FIX BUILT (P2): sweep after A254. (1) web receipts were missing branch name + owner address header + paybill/delivery footer + Powered by SwiftPOS (receiptHeader/receiptFooter not loaded; buildReceiptBusinessConfig did not set them; and the owner footer maps to thankYouMessage not the ignored footerText) — now fully wired, matches SAMPLE-OUTPUT.txt. (2) Print Bill proforma opened the cash drawer — routed receipt now openCashDrawer:false; drawer only on the payment receipt. Test 27→29. Ships with A254 as one morning deploy. A-P2 32→33. Delivery: docs/MANIFEST-2026-09-07-o.md. · 2026-09-07 (p) — A254 FIX BUILT (P1): hardware-reported print bugs fixed. (1) toEscPos cut/feed/drawer opts were never passed by any web renderer -> no paper cut (continuous) and no bottom margin on every ticket incl. the receipt; all renderers now go through emit() that passes them. (2) Master KOT (kot) rendered as a 2nd dispatch (kindOf mapped kot+expeditor both to dispatch) -> "2 dispatch, missing kitchen"; config now type-aware (kot = all-items KITCHEN copy, expeditor = dispatch). (3) blank routed tickets: printRouted now skips a kitchen/bar station with no matching items. Test 24->27; bundle reproducible. Web-only. A-P1 18->19. Delivery: docs/MANIFEST-2026-09-07-n.md. · 2026-09-07 (o) — A253 FIX BUILT (P2): print-parity Phase 4 (final) — send-vs-pay timing split. Send-to-Kitchen fires kitchen+dispatch, Charge fires the receipt, Print Bill is now a customer proforma (receipt only). All three triggers go through the one routed engine (printRoutedStations); printKOTs/buildKotEscPos/buildKOTHtml retired (printKOT.ts is types-only now) and the inert printBill.ts deleted. Bridge-only (old window.print kitchen fallback gone; errors never block the order). Test 24/24. Web-only. A-P2 31→32. Delivery: docs/MANIFEST-2026-09-07-m.md. · 2026-09-07 (n) — DOC-REFS FIX: origin cited the A250 and A251 delivery manifests (docs/MANIFEST-2026-09-07-h.md and docs/MANIFEST-2026-09-07-i.md) but the files were missing (their zips were skipped), so check-doc-refs was RED; added both. Also printBill.ts was still present (the A252 delete step was skipped) — remove it. After this, origin is fully green (print test 25/25, all gates). Delivery: docs/MANIFEST-2026-09-07-l.md. · 2026-09-07 (m) — DELIVERY RECONCILE (code caught up to the register). Confirmed origin/dev had A248+A249+A252 code but was MISSING A250 (kitchen exclusions: usePOSData/cashier-types/printKOT) and A251 (desktop escposBridge shared routing), and still had the retired printBill.ts — so the print test + dashboard tsc were RED (CashierScreen destructures kitchenExclusions that usePOSData did not expose). Earlier zips (-h/-i) were skipped when -j applied. This delivery ships the correct usePOSData.ts, cashier/types.ts, printKOT.ts, escposBridge.ts and deletes printBill.ts, bringing the tree to the consistent A252 state (test 25/25 green). No new finding — completes A250/A251/A252 already in the register. Delivery: docs/MANIFEST-2026-09-07-k.md. · 2026-09-07 (l) — A252 FIX BUILT (P2): print-parity Phase 3b (B-engine) — web now routes combo COMPONENTS by category via the shared engine (toUnits/stationsForCategory), fed from existing branch_printers (no migration, no UI change). New printRouted.ts + renderStationEscPos; Print Bill uses it; old all-items printBill.ts retired. Proven: combo Chicken(grill)+Soda(bar) → Chicken on GRILL ticket, Soda on BAR ticket. Chose B-engine over B-full (merging branch_printers onto print_stations/category_stations = migrate live config; deferred). Web-only. Test 25/25; bundle reproducible. printBill.ts DELETED (git rm in apply). A-P2 30→31. Delivery: docs/MANIFEST-2026-09-07-j.md. · 2026-09-07 (k) — A251 FIX BUILT (P3): print-parity Phase 2b — the desktop escposBridge now imports toUnits/stationsForCategory/idsByKind/isExcludedFromKitchen from @swiftpos/printing (A249) and builds CategoryRouting from its local DB (buildCategoryRouting = the same two SQL reads); private copies deleted. One copy, no drift. Behaviour-preserving (verbatim logic + identical SQL; characterization test pins it). Verified: escposBridge transpiles, no external consumer of the deleted symbols, unused imports dropped. NOT verified here: desktop tsc (CI on push) + runtime print (release gate: dev-flavour two-till trade before tills). Apply after -g/-h. A-P3 14→15. Delivery: docs/MANIFEST-2026-09-07-i.md. · 2026-09-07 (j) — A250 FIX BUILT (P2): print-parity Phase 3a — kitchen exclusions now applied. Reading the source corrected the plan (the web already routes by category via per-printer category_ids; the real gap was that /api/pos/init returns kitchenExclusions but the web ignored them). Bundled shared isExcludedFromKitchen; usePOSData exposes kitchenExclusions; printKOTs + printBill drop excluded items from kitchen-kind tickets only (receipt/dispatcher keep all). Verified: soda excluded → off the KITCHEN ticket, on the receipt. Component-level routing (combo component by own category) surfaced as a design fork, deferred. Web-only. Test 24→25. A-P2 29→30. Delivery: docs/MANIFEST-2026-09-07-h.md. · 2026-09-07 (i) — A249 FIX BUILT (P2): print-parity Phase 2a — extracted the desktop routing logic (toUnits/stationsForCategory/idsByKind/describeFromText/isExcludedFromKitchen) VERBATIM into shared/printing/src/routing.ts, DB-free (SQLite reads → a CategoryRouting arg). Characterization test (11) pins the behaviour; shared sample still reproduces SAMPLE-OUTPUT.txt (no drift). Unblocks Phase 3 (web bundles routing.ts directly). Phase 2b (desktop swaps its private copy — needs dist rebuild + desktop regression) deferred; no behaviour change anywhere yet. A-P2 28→29. Delivery: docs/MANIFEST-2026-09-07-g.md. · 2026-09-07 (h) — A248 FIX BUILT (P2): print-parity Phase 1 — the web now carries combo components (server /api/pos/init comboItems gains category_id; usePOSData consumes it; buildReceiptOrder expands combos into component units at print time, cart unchanged). Kitchen/dispatch tickets now show the combo breakdown (verified vs SAMPLE-OUTPUT.txt structure). Routing/exclusions/timing/spool are later phases (docs/PLAN-web-print-parity.md). Server needs deploy for category_id. Test 23→24. A-P2 27→28. Delivery: docs/MANIFEST-2026-09-07-f.md. · 2026-09-07 (g) — A247 FIX BUILT (P3): Print-Bill fanned tickets in arbitrary (API array) order; now sorts kitchen(kot)→customer(receipt)→dispatcher(expeditor). Studied the desktop print path fully (escposBridge printSale/toUnits/stationsForCategory + printWorker spool) and filed docs/PLAN-web-print-parity.md — a phased roadmap to close the real gaps (web cart has no combo components, no category routing, no kitchen exclusions, no send-vs-pay timing split, no persistent spool). Test 22→23. A-P3 13→14. Delivery: docs/MANIFEST-2026-09-07-e.md. · 2026-09-07 (f) — A246 FIX BUILT (P2): restaurant "Print Bill" was a browser dialog with an ad-hoc format that printed once; now renders Customer Receipt + KITCHEN + DISPATCH in the shared/printing format (matches SAMPLE-OUTPUT.txt) and fans them SILENTLY to the configured full-order printers via the bridge. Vendored the 3 station renderers into escposRenderer.js (byte-reproducible); buildReceiptOrder emits units from variants/modifiers; fixed buildReceiptBusinessConfig missing currencyCode (PAY: undefined, also on the live receipt). New printBill.ts; iframe/window.print deleted. Flat web cart → sub-items print as names, kitchen+dispatch print all items (matches the web full-order-printer model); 3 printouts needs all 3 printers configured. Test 18→22. A-P2 26→27. NOT verified: physical print. UI parity deferred. Delivery: docs/MANIFEST-2026-09-07-d.md. · 2026-09-07 (e) — A244 FIX BUILT (P2): "Send test receipt" and station test buttons failed with "connect XP-80:9100 ... no such host" — testPrint posted a BARE printer name as target, so the bridge dialed it as a network host instead of the Windows spooler. Fixed testPrint to send target: printer:<name>; real receipt/KOT paths were already correct. Dashboard-only, no exe rebuild. Test 17→18, mutation-checked. A-P2 25→26. · 2026-09-07 (d) — OFFLINE/NODE CLUSTER RECONCILE (docs-only, no code). Audited the cluster line-by-line against the tree and ran the pure-logic suites green on current dev: peer-relay 28/0, node-reference-bundle 25/0, node-reference-unpack 19/0, roster-snapshot 16/0, node-token-refresh + device-token 2/2. Confirmed BUILT ON BENCH + wired (endpoints /node/reference:305, /node/roster:320, /node/refresh:187 in nodeServer.ts; pullCatalogue node-first at syncEngine:751; promoteToNode roster pre-pull at ipcHandlers:2052): A19/A20/A24/A160/A161/A162/A163/A168/A179/A182 — retagged their headings OPEN->FIX BUILT so state is scannable (still OPEN in counts, rule 16; numbers unchanged). A164: SERVER half built (migration 92 + device-token 21/0) but DESKTOP cutover NOT built. A129: migration 90 in tree (prod-applied per 08-28), needs one delivery-sale confirm. Genuinely UNBUILT code: A22 (promotion split-brain), A23 (RPO/distribution-lag measurement). A18: doc reconcile pending. What is needed from the owner: two-till hardware verification per docs/OFFLINE-CLUSTER-verification-checklist.md — passing it closes A19/A20/A24/A160/A161/A162/A163 (+A168/A129). · 2026-09-07 (c) — A17 CLOSED (the only open P0): owner A101 offline-auth hardware checklist PASSED on two tills (dev flavour); Test 2 (cloud-down/node-up sign-in) + Test 4 (clock +30d, no expiry) prove the node-first offline-forever design, closing the day-15 lockout. dev→main release-checklist gate cleared. A19 (node→cloud sales relay) now unblocked; A160 (node-brokered refresh) likely covered — confirm. A-P0 1→0. · 2026-09-07 (b) — A245 FIX BUILT: removed the pairing-token copy-paste — the Go bridge (v4.1.0→v4.2.0) now authorises by trusted dashboard Origin OR token (token optional), added the Private Network Access preflight header so Chrome LNA does not silently block printing, and shipped a per-user logon installer (install-startup.bat). Origin allow-list is exact (swiftpos-dashboard/-three .vercel.app + loopback) with a safe subdomain matcher for a future owned domain — never wildcards vercel.app (proven: evil-x.vercel.app→403). Dashboard prints token-free from a trusted origin; token field now optional. Runtime-proven on the built binary; test 14→17 green + 4 new guards mutation-checked. Counts A-P2 24→25. Sits on top of A240–A243. NOT verified: real thermal print, Chrome LNA prompt on a till, full dashboard tsc. Delivery: docs/MANIFEST-2026-09-07-b.md. · 2026-09-07 — A239 PRINT AUDIT (pre-live). Read every A239 file before today's live test; it was not "done perfectly." Opened + FIX BUILT A240 (P1 security — the Go bridge was DNS-rebinding-exploitable and leaked printer names; added a Host allow-list on all handlers + token-gated /printers, bridge v4.0.0→v4.1.0, proven at runtime: rebound Host→403, no-token /printers→401, byte-forward intact), A241 (P2 — dashboard still read VITE_PRINT_SERVER_URL despite the "hard-coded, no env" claim, a silent-misroute trap; hard-coded the URL and corrected the test that asserted the opposite of its own name), A242 (P1 — "⚡ Print Server" kitchen tickets silently 400'd because printKOTs still spoke the old QZ contract; now renders KOT ESC/POS in-browser and forwards bytes like the receipt, with a browser fallback), A243 (P3 — retired dead printReceiptViaServer/printToQZ, honoured copies on the byte path, fixed the modifier field on receipts, refreshed docstrings). Counts A-P1 16→18, A-P2 23→24, A-P3 12→13. `tiny-bridge-printing.test.mjs` 5→14 assertions, all green + mutation-checked; retired the stale A235 `silent-receipt.test.mjs`; `go vet`/linux+win builds green; register/doc-refs/root-clean green. NOT verified here (rule 16): real thermal receipt+KOT print + Windows spooler RAW (owner's live test); full dashboard tsc/vite build (no node_modules — TS transpile-checked only). Owner action before A239 closes: confirm no VITE_PRINT_SERVER_URL on Vercel, rebuild+ship the .exe with this dashboard. Delivery: `docs/MANIFEST-2026-09-07-a.md`. · 2026-09-03 — A196 + A198 CLOSED (prod-verified). Root cause of both "not showing on prod" reports was a FAILED Render deploy that left the prod server on an old build — the same cause as the `/api/admin/migrations` 404 (A154 panel worked on dev, 404 on prod). Prod redeployed from `main`; `/api/admin/migrations` now 401 (present). A196: void pulls the KDS ticket, refund pulls it only if not yet started — all three cases confirmed on prod. A198: Branches-tab Enrol till shows the code card. Counts A-P2 21→19. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (admin) — ADMIN PORTAL CLEARED (owner-run browser pass + one build): A69 (enrol-code mint, Overview path), A147 (web-access-expiry wiring; the other two endpoints were already-wired false positives), A70 (enrolled-device roster), A154 (DB-migrations panel — BUILT this session: `GET /api/admin/migrations` + `MigrationsPage` wired into `AdminPortal` + `schema_migration_runs` allowlisted in `check-api-schema-drift`; all gates green) — all CLOSED 2026-09-02 (rule 16). Opened A198 (Branches-tab "Enrol till" minted a single-use code with nowhere to display it — silently burned; P2) + FIX BUILT same session (code card now renders on the Branches tab). Counts A-P2 22→21, A-P3 8→6. Next free ID A199. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 (later) — PROD RETEST + CLOSE (swiftpos-prod-mype, owner-run, post dev→main merge PR #5): A187 void/refund (void no-500 confirms migration 96 applied on prod DB; refund keeps Completed + reversal line), A191 /kds-no-logout, A3 KDS delivery/advance, A144 stock-track+threshold slice — all PASS on prod → CLOSED 2026-09-02 (rule 16). Opened A195 (refunded orders show "Completed" with no visual distinction, P2), A196 (voided/refunded orders still shown on KDS — ticket not cancelled on void, P2), A197 (A144 remainder: transfer approve/complete + direct branch-stock set still UI-unwired, P2). Counts A-P1 20→17, A-P2 20→22. Next free ID A198. `check-register-consistency` + `check-doc-refs` green. · 2026-09-02 — DEV-BOX PASS (swiftpos-20c2 test box, browser test, cloud/dashboard): A187 void/refund, A191 /kds-no-logout, A3 KDS delivery, A144 stock-tracking all verified GREEN on dev with evidence (A187's successful `voided_by` write proves migration 96 is applied on that box); all four STAY OPEN pending the same retest on `main` post-merge + on the prod DB (rule 16). Opened A192 (KDS masks a 401 ticket-fetch as "all clear", P2), A193 (Refund has no audit-log view, P2), A194 (no customer-name field at POS, P3). Counts A-P2 18→20, A-P3 7→8. Next free ID A195. `check-register-consistency` + `check-doc-refs` green. · 2026-08-29 — REGISTER RECONCILED (docs-only, no code): A183 repo-debt CLOSED — reconstructed the proving test `tests/order-number-per-device.test.mjs` (6/6 real SQLite, mutation-checked) and its `-p` delivery manifest `docs/MANIFEST-2026-08-27-p.md`; `check-doc-refs` + `check-test-registration` green, the durable fix is now provable in-repo. Trued up the stale Tree line to the tree: desktop v0.5.35→**v0.5.38**, migrations →90→**→94** (93 & 94 live in prod), last pushed `d70fa0e`→`0000804`, post-A111→post-A184. No finding opened or closed by this edit; `check-register-consistency` green. · 2026-08-28 — VERIFIED ON A REAL WINDOWS TILL (SwiftPOS v0.5.38 · win32): the four live P0s are CLOSED — A181/A183 (online loop `T001--1` on the cloud DSR + offline sales drained to 0 on reconnect, no collision, migration 94 live), A167 (offline PIN sign-in, no NULL-token crash), A152 (offline auth fell through on a real Render 503 and still rejected a wrong PIN), A177 (queue drains on reconnect). A17 stays OPEN (a build task, not verifiable this session). Open P0 5→1, P1 20→19. Outstanding non-blocking: A183 in-repo test + its `-p` delivery manifest still missing (rule-14 debt); A181 historical `T2--%` recovery query un-run. SECURITY still open: rotate `DATABASE_URL` + the exposed GitHub PAT. · 2026-08-27 — A167 FIX BUILT (bench, OPEN P0 pending real-till test): offline PIN sign-in threw `NOT NULL constraint failed: staff_session.token` at its LAST step — `signInLocal` inserted `token=NULL` into a `token TEXT NOT NULL` column, so every offline/5xx fallback (A17/A152/A160) died on the write it routes to. Fix: write `''` not NULL (the reader already coerces it — `tokenStore.read: unwrap(token_enc) || token || ''` — and `configureStaffSession('','')` already means empty in memory); no migration (rule 13). Reproduced against the real schema, then greened; NEW `tests/offline-signin-write.test.mjs` runs the real INSERT (mutation-checked: NULL → red naming the column). Gap that hid it: `offline-auth-fallback.test.mjs` models the ROUTING only, never the write (rules 8, 24). · A168 FIX BUILT (bench, P2): order-push 401 refreshed `refreshStaffToken()` unconditionally, so an OFFLINE order (owner-token push) had nothing to refresh and sat pending. Now refreshes the token the push actually sends via new pure `selectPushRefresh` in authTransport.ts; NOT the price path's staff||owner fallthrough, which would reattribute a staff order. New real-function test. · A169 OPENED (P1, NOT fixed): offline sales attribute to the OWNER because the server sets `cashier_id = req.userId` and an offline shift pushes under the owner token — blocker named (needs A164 desktop cutover or a signed roster claim). Delivery: MANIFEST-2026-08-27-b.md (supersedes -a). · A170 CLOSED (gate, rule 6): new `check-notnull-writes.mjs` flags a literal NULL written into a NOT NULL local column — the A167 class. Sweep found A167 was the only instance; self-tested 6/6 + mutation-checked on the real file (`ipcHandlers.ts:415`), wired into CI + auto-discovered by run-all, green on the tree. Delivery: MANIFEST-2026-08-27-d.md. · A171/A172/A173 CLOSED (docs + hygiene gate, unattended-safe): A171 formalised rule 24 into §0 (it was cited by ID with no home); A172 added `check-root-clean.mjs` enforcing rule 19 (no stray docs/zips/patches in root, self-test 9/9, green, CI-wired); A173 removed the byte-identical dup `docs/MANIFEST-2026-08-20-a (1).md`. Delivery: MANIFEST-2026-08-27-e.md. · A169 FIX BUILT (bench, Option A — owner-approved): offline sales now credit the real cashier. Till sends the cashier in the SHARED cloud-order payload (peer push + node relay identical); server trusts it only under an owner/device token and only when it validates like verify-pin (active, in-business, branch access) — staff-PIN tokens stay authoritative. Pure `pickCashier` unit-tested 11/11 + payload 5/5; server+desktop tsc clean. STILL OPEN P1 pending live server + real-till verification. Desktop change → version bump due at build (rule 15). Delivery: MANIFEST-2026-08-27-f.md. · A174 CLOSED (fixes A172's own false positive): check-root-clean now respects `.gitignore` via `git check-ignore`, so it stops flagging gitignored `.patch`/`.zip` leftovers (rule 23 — a crying-wolf gate) while still catching a real committable stray. CI was already green (clean checkout has no ignored files). Delivery: MANIFEST-2026-08-27-g.md. · A175/A176 CLOSED (revived two rotted desktop suites): `test:pin` (8→17/0, was throwing "no such table: device_config" because A17 added a `getDeviceConfig` dependency the shim lacked — plus new A17 no-expiry coverage) and `test:sync` (18/11→29/0, was throwing before the cloud pull because A24 added `fetchReferenceFromNode` the shim lacked). Both stale-shim, test-only, no app code — rotted because desktop tests don't run in CI. Delivery: MANIFEST-2026-08-27-h.md. · A177 OPENED + FIX BUILT (P0, bench — root cause of the field "6 pending / 0 failed / Force sync does nothing"): sync fetches had NO timeout and `_isSyncing` clears only in `finally`, so one hung connection (black-holed socket / cold-start stall) wedged `_isSyncing=true` forever and every later sync incl. Force sync returned "Sync already in progress" — queue never drained, orders invisible (0 failed). Reproduced end-to-end in a sandbox on the real compiled engine (hang → wedge; fast-fail → correctly escalates to failed). Fix: `syncFetch()` AbortController timeout on all 15 calls + `_syncStartedAt` stale-guard + break-the-batch-on-timeout + push failures now hit the durable log. New `sync-timeout.test.mjs` 5/5 in the desktop chain; regressions sync 29/0 pin 17/0 peerrelay 28/0. Server verified healthy from the sandbox (POST /api/orders 401 in 0.2–0.6s, no cold-start). STILL OPEN pending real-till confirmation the queue drains. Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-i.md. Next free ID A178.** · A178 CLOSED (sync visibility + decouple, from reading the field till's DB — all orders were synced; the "6 pending" were shift/day/float/expense records the push code logged NOTHING about): `runPushStages()` decouples the five push stages so a throw in one (e.g. a shift-push SELECT on a missing column) no longer skips the order push; shift/price push failures + successes now hit the durable log; `getSyncStatus` gains a per-table `pendingBreakdown`; and the Technician menu gains a real **Test connection** (reaches the server, not just `net.isOnline()`) + **View log** (reads `swiftpos.log` on-device) + the pending breakdown. New `sync-decouple.test.mjs` 6/6; regressions green; main+renderer tsc clean. TechPage UI target-only (rule 16). Desktop change → version bump + tag after build (rule 15). Delivery: MANIFEST-2026-08-27-j.md. · A179 FIX BUILT + SELF-HEAL (P1 — the actual cause of the field "6 pending that never move," found from the log once A178 made the shift push visible): till-created expenses got a non-UUID id (`exp_<ts>_<rand>`) that 500s the cloud uuid column (22P02) and, batched with shifts/days/floats, blocks the whole cash push. Generator → `uuid()`; startup self-heal regenerates stuck non-UUID pending expense ids (safe — never synced, nothing references expenses.id; idempotent), so a stuck till unblocks on next start. `expense-id-repair.test.mjs` 5/5, verified against the real till DB. Follow-up: server should reject bad rows individually so one row can't strand the batch. Delivery: MANIFEST-2026-08-27-k.md. Next free ID A180.** · A180 CLOSED (server robustness — the general form of A179): `/api/sync/push` batched the expenses upsert and 500'd the WHOLE push on one bad row, so a single malformed expense stranded every shift/day/float behind it. Expenses now isolate per-row like floats/shifts/days — a non-UUID id is rejected with `invalid_id` (client parks it as conflict) and the rest land. Pure `partitionByValidId` guard 8/8 + mutation-checked; server tsc clean. Server-only, no desktop bump. Delivery: MANIFEST-2026-08-27-l.md. · A181 OPENED + PART-1 FIX (P0 — the ORIGINAL "synced on the till, absent from the cloud", root-caused from the cloud data): order numbers are `terminal_code--localSeq`, the cloud is UNIQUE(business,branch,order_number), so a reinstalled/second till reusing `T1` over an earlier till’s numbers gets 409’d — and the client wrongly marked 409 as `synced`, silently losing every colliding sale (cloud holds T1--1..T1--25 from the old till; the new till’s 26/27 Aug orders all collided and are absent, ~KES 12,510). Part 1 built: 409 now surfaces as `failed`+logged, never synced (`order-409-not-synced.test.mjs` 5/5). Mitigation: give each till a distinct terminal code. OPEN pending owner decision on robust uniqueness + recovery of the lost orders. Delivery: MANIFEST-2026-08-27-m.md. · A182 OPENED + BUILT (P2, overnight request — attacks the ROOT of A181): a reinstalled till gets a new device_id and is re-named "T1" by hand, colliding. Now the desktop reads a stable MAC (`machineFingerprint.ts`, deterministic; 8/8) and sends it; the cloud binds it (migration 93) and on re-enrol returns the machine’s previous terminal code/name (`findPriorTerminalByMac`/`pickPriorTerminal`, 7/7) which the till adopts — so a reinstall keeps its identity. Plus `docs/RESTORE-GUIDE.md` for session restore (2nd ask). server+desktop tsc clean; enrol-UI pre-fill + real-hardware MAC = target-only. Delivery: MANIFEST-2026-08-27-o.md. · A183 OPENED + BUILT (P1 — the DURABLE fix for A181): the cloud enforced order_number unique per (business,branch), but a number is a per-till value, so two tills/one reinstall colliding lost sales. Migration 94 makes it unique per (business,branch,COALESCE(device_id,''),order_number) — device_id is already on every till order, so identical numbers coexist by device; genuine re-push still dedupes by idempotency_key; NULL-device web/legacy orders stay branch-unique. No code change. `order-number-per-device.test.mjs` 6/6 on real SQLite. Target-only: applying the DDL on prod (safe/strictly-more-permissive; run in a txn, confirm row count). Delivery: MANIFEST-2026-08-27-p.md. · A184 OPENED (P2, end-of-saga UI request): the cloud Terminals/fleet screen shows every till as "SwiftPOS till" with no device name, terminal code, MAC, active cashier/shift, or role — indistinguishable rows, and the "not syncing" banner counts decommissioned ghosts. Needs identity columns + a retire/merge action; MAC populates once the A182 build has checked in. Delivery: TBD. Next free ID A185.** — 2026-08-24 (batch -i) — A160 Phase-b FIX BUILT: the branch node now BROKERS a session refresh for an offline peer. New POST /node/refresh (X-Node-Secret auth) proxies the peer's refresh token to the cloud; syncEngine falls back to the node when the cloud is unreachable/5xx (A152 pattern), never on a 401. Refresh token is the device credential — no new secret, no migration. New node-token-refresh.test.mjs (9, mutation-checked). OPEN P1 pending two-till verification. Delivery: MANIFEST-2026-08-24-i.md.** — 2026-08-24 (batch -h) — A159 DRY-RUN SHIPPED: terminal write guard in requireAuth denies a desktop-surface token from writing dashboard data (products/prices/users/settings) — closes the stolen-token gap left by A158's credential removal. Default-deny by surface + a 5-entry till allowlist. Log-only until TERMINAL_WRITE_ENFORCE=true, so it can't break sync. New terminal-write-guard.test.mjs (19, mutation-checked). OPEN P2 pending enforce-flip. Delivery: MANIFEST-2026-08-24-h.md.** — 2026-08-24 (batch -g) — A158 FIX BUILT (bench): owner email/password login on a till RETIRED at every layer (App.tsx enrol-state + EnrolPage, auth:login IPC/preload/posApi removed, /desktop-login tombstoned 410); enrolment code is the sole activation; sign-out clears staff only (device stays enrolled); web /login untouched. New terminal-activation.test.mjs (mutation-checked) + auth-surface repointed. OPEN P1 pending amber-build verification (rule 16); rollout = tills-first before the server tombstone. Delivery: MANIFEST-2026-08-24-g.md.** — 2026-08-24 (batch -f) — A157 reconciliation map (docs-only, no code per rule 18): confirmed at PAYLOAD level that force-wiring the four validation schemas would 400 currently-valid production requests — product create sends `description:null` + `image_url:''` which the schema rejects, and 13 handler fields would be stripped; `/login` also reads `device_id` (stripped → device binding breaks). NOT wired (the "nothing broken" instruction). Per-schema safe-wiring recipe recorded; lowest-risk first step = category POST with `.passthrough()` after a DB-column length check. Stays OPEN P2 (per-route reconciliation + target test to close). Delivery: MANIFEST-2026-08-24-f.md.** — 2026-08-24 (batch -e) — A20 + A24 source passes (docs-only, no code per rule 18): confirmed at source that the node replicates only the six sales tables (`REPLICATED_TABLES`, origin-device/seq fan-out) and serves NO reference data downstream (`nodeClient` pulls `/node/since` only) — so a promoted peer has no roster (A20) and an offline peer's catalogue/prices/staff/settings go stale (A24). Key finding: the filed "extend `collectDistribution`" one-liner is wrong at source — reference data is cloud-authoritative/mutable/no-seq and needs a distinct node-authoritative SNAPSHOT channel; A20 is a special case of it. Concrete change maps + the `business_settings.branch_id` / dual-exclusion sub-bugs recorded in each entry. Both stay OPEN P1 (target-only to build). Delivery: MANIFEST-2026-08-24-e.md.** — 2026-08-24 (batch -d) — A152 FIX BUILT (bench, still OPEN P0 pending real-till test): offline PIN sign-in now falls through to node/cache when the cloud is DOWN-but-answering (5xx), not only on a thrown error; node leg widened 503→all-5xx; owner login gives a clear cloud-outage message instead of "Login failed"/crash. New `apps/desktop/src/main/authTransport.ts` + mutation-checked `tests/offline-auth-fallback.test.mjs` (20 assertions). Desktop version bump due at build (rule 15). Delivery: MANIFEST-2026-08-24-d.md.** — 2026-08-24 (batch -c) — A156 CLOSED (retired 12 orphaned helper value-exports across dashboard/desktop/server; 2 doc-coupled ones — `getLocalSchemaVersion`, `isTerminalCodeTaken` — excluded and flagged; deletions-only, full suite 40/0) · A157 opened (P2, input-validation schemas written but unwired — NOT auto-wired because the strip-on-parse middleware would drop live fields incl. login `device_id`; safe path needs per-route reconciliation + live test). Delivery: MANIFEST-2026-08-24-c.md. Next free ID A158.** — 2026-08-24 (batch -b) — A155 CLOSED (greened `check-doc-refs` — reworded `HANDOFF-2026-08-23`'s two dangling references to the outputs-only live-test checklist; branch-tip gate suite now fully green) · A153 follow-up done (pruned the two orphaned `computeUnitPrice`/`computeLineTotal` exports from dashboard `lib/cart.ts`; desktop copy live, untouched). Delivery: MANIFEST-2026-08-24-b.md. Next free ID A156.** — 2026-08-24 (batch -a) — A153 CLOSED (retired four superseded/orphaned dashboard-POS prototypes — `OrderHistoryTab`, `VoidModal`, `BranchSelectScreen`, dashboard `VariantModal`; deletions-only, bench tsc+build+gates green, rule 9) · A154 opened (P3, build the admin DB-migrations panel — `MigrationsPage.tsx` front-end exists, `GET /api/admin/migrations` backend never built; kept-and-to-build per owner). Delivery: MANIFEST-2026-08-24-a.md. Next free ID A155.** — 2026-08-23 — A140-A148 opened (dashboard/admin, docs-only, no zip per rule 18).** A140/A141/A142 = feature gaps in the products area: product bulk CSV import exists but is reachable only for `minimart` (A140, one wire), no bulk ingredient import incl. opening stock (A141), no bulk product-image upload (A142). A143-A148 = an "endpoints live, UI unwired" sweep — a static cross-reference of all 309 server endpoints against every `/api/` caller in dashboard/admin/desktop (matcher fixed for query strings, the admin `fetch` wrapper, and `` `${BASE}/api/…` `` calls); 39 endpoints have no client caller, of which the genuine dashboard/admin gaps are grouped as A143 (report exports 1-of-7 + inventory report), A144 (inventory/stock write-actions), A145 (branch↔user assignment), A146 (notifications/webhook observability), A147 (admin-portal endpoints), A148 (misc: modifier-create, flags, qr settings, loyalty settings read). External/till/node/tech callers and the retired `/api/enrol/code` (410) excluded; three ambiguous endpoints held for a per-page check, not entered. All static/bench (rule 9); none browser-confirmed (rule 16). `check-register-consistency` re-run green. **A149 opened (2026-08-23, docs-only): `apps/admin` has no CI type-check or build — the ratchet is invoked `server dashboard` (admin dropped) and `typecheck-baseline.json` has no admin key, so 68 `tsc` errors accrued unseen; found during A147.** **A150 closed (2026-08-23): `apps/server/.env.example` refreshed from source — retired `TECH_HMAC_SECRET` removed, production-required + at-rest + M-Pesa/eTIMS/mail vars added; render.yaml stays the deploy source of truth.** **A145 re-scoped + raised P2→P1 (2026-08-23): not a UI gap — branch↔user assignment is already wired via the staff flow; the standalone `/branches/:id/assign-user` + `/remove-user` routes are a redundant AND under-guarded writer (requireAuth only, no `staff.manage`, no business scoping → within-tenant privilege escalation + cross-tenant write). Recommend retiring both; retirement patch held for owner go-ahead.** **A151 opened (2026-08-23, P1): restaurant Split Bill (by-guest) under-collects — the pay loop never advances past guest 1 (`splitPayingGuest` never incremented; `onSuccess` frees the table without looping), and there is no even-split mode. Money-critical; not fixed on the bench. Surfaced while evaluating A8.** **Next free ID A152.** — 2026-08-22 — register trueing-up (code↔register audit, bench/static, rule 9). **A68, A71, A72 CLOSED** — verified present and wired on dev: A68 `appFlavor.ts` called from both web apps' `main.tsx`; A71/A72 `DevicesTab.tsx` renders branch/role/last-active/version + rename + stale badge. **A69, A70, D18 confirmed code-complete on dev but kept OPEN** pending a browser pass (rule 16). Notes for the next reader: A73 records its nav link as *restored* (not re-confirmed on bench); A12 shows *FIX APPLIED pending live check*. No code changed — docs-only, no zip (rule 18). Still outstanding at the process level: no handoff covers A112→A139, `schema-index.json` is stale (missing `branch_settings`), and two migration files share number 90. — 2026-08-20 — A133 opened (owner dashboard Settings consolidated into a three-section Settings group — Users and access / Devices and printers / Business, each a tabbed page; Table Turnover→Finance, KDS→top level, Payment methods→Business; 6 new files + `App.tsx`/`DashboardLayout.tsx`, back-compat redirects for old deep links; dashboard `tsc` AND `npm run build` both green on-bench; manager parity = Slice 2, specified in MANIFEST-2026-08-20-a but not built; browser confirm + owner sign-off pending; nothing merged) · A134 opened (Business › Profile tab deferred — the one genuinely new page, needs its field list before build). · A135 opened (browser review of A133: KDS board renders blank + adding a table fails — two pre-existing runtime bugs A133 only made reachable/visible, need a live node+DB to diagnose; nav-highlight + KDS array-guard fixes shipped under A133 follow-up). A136 opened (server queries columns absent from schema — stock_movements.business_id, users.pin; + new gates check-api-routes.mjs & check-api-schema-drift.mjs wired into CI with self-tests). A137 closed (bulk-create tables "Add multiple" — typed count, T-numbered, empty-state + header; auto-seed-20 declined by design). A138 closed (catch-less mutation sweep — Parking/Minimart/Petrol settings now surface save/delete errors like Restaurant; 0 swallowers remain). A134 closed (Business Profile tab — Slice 1: owner-editable identity via PATCH /api/business + business-wide receipt header/footer + 24h; currency locked after sales) · A139 opened (per-branch franchise receipt/hours override — cross-stack incl. desktop till, PROD-MIGRATE). **Next free ID A140.** — 2026-08-19 — A129 opened (delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` in migration 58 while the feature stayed live and Zod-accepted; A128's twin; fix = migration 90 re-admits `delivery` + new gate `check-push-domain-parity` wired into CI; PGlite-verified 9/9, mutation-checked; **NEEDS PROD-MIGRATE 86→90**) · A130 opened (Aggregators report queries `order_type='aggregator'` which no path writes — a dead report; a wiring decision, not a widen) · A125/A126/A127 body+changelog rows added (rule-14 catch-up: admin purge Stage-2 preview, Phase-3 glass refresh, admin Branches tab — all shipped in git without an entry) · A131 closed (delivery orders now deduct packaging, uniform with takeaway — one-condition fix in `stockEffects.ts` + test source-pin; no prod-migrate, ships with the server) · A132 closed (dashboard nav UI: accordion + desktop SVG icons; menu labels left unchanged per owner review — presentation only, no logic). **Next free ID A133.** — 2026-08-18 — A128 closed (custom-method & room_charge sales silently never synced — cloud `payments.method` was value-checked to cash/mpesa/card/credit/glovo and varchar(20); migration 89 widens to varchar(40) + swaps to a format check; A95 free-text design honoured). (A125/A126/A127 rows now added — see the 2026-08-19 entry above.) — 2026-08-17 — A119 closed (admin portal: edit business + change owner email) · A118 closed (revoke till + rotate code + health chart) · A117 opened (admin-portal plan + glass mockup) · A116 opened (digital-signage design proposal — TVs/displays; doc-only, not scheduled; `docs/SIGNAGE-DESIGN.md`) · A115 closed (health monitoring + direct Supabase keep-alive) · A114 closed (tech reveal code: stable-per-branch, auto-provisioned, self-healing) · A113 closed (tech-access: retire v1 HMAC tokens + default secret) · A112 closed (register header reconciled to the tree) · A111 opened (standardise on Node 24 LTS) · A110 closed (recharts v2 deprecation resolved repo-wide) · A109 closed (green CI: node:sqlite offline test fixture) · A108 opened (Node 20→22 runtime + npm vulnerability sweep to 0 across all five apps; desktop Electron 35→43, BLOCKED on the two-till build per rule 9). NOTE: the header Tree line (0215475 / v0.5.27) and the Open/Counts lines still predate A99–A108 — reconcile on next reading. — 2026-08-14 — A12 FIX APPLIED (recipes.ts now reads live per-branch stock via branchScope, mirroring stock.ts — Recipes drawer no longer shows stale "0"; open pending live check). D18 opened (tech token pasted into the reveal field was truncated by maxLength/upper-casing — onPaste now routes a `st2.` token straight to the token step) — A73 opened (fleet-health "Terminals" page was built+routed but unreachable — nav-drift between two Setup defs; link restored) — A72 opened (devices owner-nameable via PATCH /devices/:id/label, persists across registration; bundled "not synced >1d" badge) — A71 opened (owner Settings→Devices enriched: branch, role, absolute last-active, version, enrolled date; device rename left as a decision) — A69 extended (batch enrolment codes: one call mints N single-use branch-bound codes, admin prompts "how many tills?"; reusable branch code declined — unbounded blast radius) and A70 opened (enrolled-device roster in admin: `GET /clients/:id/devices` + Overview card). Test now 29 checks, batch guard mutation-checked. — A69 opened (enrolment issuance relocated to the admin portal, branch-bound + licence-gated + owner-resolved; owner `/api/enrol/code` retired to 410; desktop InstallPage locks the bound branch; billing reuses the existing branch-licence invoice; 25-check test rewritten + mutation-checked). Desktop = one-off per branch, unlimited tills, no trial; web = recurring, annually billed, with a 2-week trial (unchanged, confirmed). — A68 opened (deploy env badge: dashboard + admin favicon/title, env-driven per Vercel project) and D17 opened (desktop dev/prod build flavour: amber DEV icon + `electron-builder.config.js` + runtime cloud-host title). Both OPEN pending owner action (Vercel vars) and a Windows install check; see MANIFEST-2026-08-14-a.md. D3 gains a dev-channel note. — 2026-08-13 — session: D11 closed; A66 opened+closed (`LOCAL_SCHEMA_VERSION` 51→52); A67 closed. D4 implemented end-to-end (enrolment codes migration 81 + proven; issue/redeem endpoints; desktop InstallPage now Business ID + code) — OPEN pending one live test, closes D1 when it passes. D7 rollout advanced: shared IPC validator now on `escpos:setKitchenExclusions`, `auth:verifyPin`, `order:void`, `auth:enrolDevice` — ~132 channels remain, `order:create` deliberately not done blind; stays OPEN. D3 auto-update scaffold + runbook — stays OPEN. Windows render smoke-test still outstanding (A43).** |
+| Tree | `dev`, post-A184 (last pushed `f89b8ff`; this edit commits on top), desktop **v0.6.29** (owner's asks after testing 0.6.27/0.6.28: confirm table, blind close standard, success screen, History today; A374) — before it v0.6.28 (ONE release with 0.6.26 + 0.6.27 — owner: "one version bump i run one single update"; v0.6.26/v0.6.27 never tagged — A372: kitchen voids, two switches; 0.6.27 — A369: per-client switches (admin portal) for delivery fee + rider pay-out, blind close, cashier-only History, no reprint, the manager's reasons; expense payment method; migration 111. Previous: v0.6.26 (patch, not yet pushed) — A336 follow-up: a web void or refund of the till's OWN sale reaches the till with the ~20 s web-sales pull (cloud `own_reversals`, till `applyOwnReversals`). Previous: v0.6.25 tagged (pre-release, CI #441 green) — the PIN and lock screens show the client logo larger (160 × 240 / 150 × 240, a tighter white card); the manager sidebar shows it; a small logo fills the receipt box (up to 384 × 288 dots); every A4 document and the Z-reports carry it, and the A4 documents are restyled; A368: a logo uploaded on the till is saved to the cloud too. Previous: v0.6.24 tagged (pre-release, CI #439 green) — A366: only a shift's owner or a manager closes it; the update bar no longer covers the till's screens; the lock screen shows the client's logo and reads clearly; A367 order notes (local schema 58). Previous: v0.6.23 tagged (Release desktop #39, one pre-release; on T1) — A365 follow-ups: zero methods hidden, no wheel on numbers, float reminder, no PIN for a signed-in manager. Previous: v0.6.22 tagged (Release desktop #38, one pre-release; migration 110 applied) — A365: a manager confirms every shift, on every payment method; Close Day waits for them. Previous: v0.6.21 tagged (Release desktop #37, one pre-release — A364: a day close is a cash-up; a later shift reopens the day. Previous: v0.6.20 tagged (Release desktop #36, one pre-release — A363: an offline close-and-reopen never strands a drawer; sync status for managers only, "Last synced", the Z-report note; a truthful log. Previous: v0.6.19 tagged (Release desktop #35, one pre-release — A358: History for cashiers again, sauces off the kitchen ticket, "+ Add type" on the Expenses page; A359: refund on the web). Previous: v0.6.18 tagged on `5401208` (Release desktop #34, one pre-release — A355: refund from History any time, approved with the manager's own PIN; A336 stage 2; A276 drinks off the kitchen ticket; A279; A341; A356; A357. Previous: v0.6.17 tagged on `0199606` (Release desktop #33, one pre-release — A351: the manager menu in groups); v0.6.16 tagged on `2de98c7` (Release desktop #32; published as the Latest release, one copy — A349: money review (receipts, reports, CTL); A348: updates approved per business, held by default; A347: teal icon); v0.6.15 tagged on `cb3e315` (Release desktop #31, built as two drafts; publish state not confirmed — A346: Stock only with the web POS; A345: an offline sign-in says so, shows the till's saved menu and staff read-only, and becomes a cloud sign-in by itself. Previous: v0.6.14 tagged on `77a679f` (Release desktop #30 — A342 till close closes the web's shift; A343 web till; A344 payment colours); v0.6.13 tagged on `0e5e1b3` (Release desktop #29 — A339, A340); v0.6.12 tagged on `c7c24e5` (Release desktop #28 — A338: one drawer never blocks another's sync); v0.6.11 tagged on `b344c80` (Release desktop #27 — A337: previous shift reports, expenses, colour-coded Daily Sales Report); v0.6.10 tagged on `ecec08a` (Release desktop #26 — cross-sync stage 1 (A336), A335, the B5 double-count fix); v0.6.9 tagged 2026-09-27 (A334: the till joins a drawer the web opened as it, and its close includes the web's cash); v0.6.8 tagged on `7e00375` (A273 follow-up: the till sends its code + setup name); v0.6.7 tagged on `ba5aeef` (Release desktop #23 — A329 SwiftPOS teal defaults; A331); v0.6.6 tagged `bb31313`), `LOCAL_SCHEMA_VERSION` **55** (A336: orders.origin — the web's sales downloaded onto a till; 54 = A325 branding.theme_id), migrations **→ 109** (files up to 109; **109 applied to prod 2026-09-28** — owner's `information_schema` output: `recorded_by | uuid`; `scripts/schema-index.json` already carries it; **108 applied to prod 2026-09-28** — owner's `information_schema` output: `desktop_approved_version | text | YES`; `scripts/schema-index.json` updated to match; **107 applied to prod 2026-09-27** — owner's `pg_indexes`: `shifts_open_by_terminal` is a plain `CREATE INDEX … WHERE status = 'open'`, the unique index is gone; 106 applied with A325; **105 applied to prod 2026-09-22**, `verify-db-schema` PASS 103/103 tables, no drift — A311; 93 & 94 live in prod per the 2026-08-28 real-till verification; 90's A129 delivery still pending prod-migrate), web/cloud runtime **Node 24**, desktop **Electron 43** |
+| Open | **A: 0 P0 · 13 P1 · 11 P2 · 8 P3 — D: 0 P0 · 0 P1 · 0 P2 · 2 P3** (re-derived from the body by `check-register-consistency`, not hand-counted) |
+| Counts | A-P0: — · A-P1: A336 A54 A19 A20 A50 A24 A158 A160 A161 A162 A163 A164 A240 A265 A266 A274 A275 · A-P2: A352 A323 A189 A182 A22 A23 A53 A159 A197 A241 A245 A249 · A-P3: A354 A353 A186 A13 A148 A237 A243 A251 A18 A307 — D-P0: — · D-P1: — · D-P2: — · D-P3: D9 D10 |
 | Reconciliation 2026-08-17 (A99–A111) | The **Open** and **Counts** rows derive from the §A/§D open-item sections (A1–A73 + D-items) and remain accurate: **A74–A111 are recorded in the Changelog and were near-all closures**, so they add no open items. The current authoritative open list is `HANDOFF-2026-08-17.md` §7. Specifics: the open **P0 A17** (offline-auth day-15 lockout) is now carried by its built-but-**hardware-pending** fix **A99–A101** (two-till sign-off per PHASE5 §8) — so the P0 is a *fix awaiting verification*, not an unstarted finding; **A19/A20/A24** stay P1, blocked on that sign-off. **A108/A110/A111** moved the web/cloud runtime Node 20→22→24 and brought all five apps to **0 npm vulnerabilities** (shipped, CI green); the **desktop Electron 35→43** upgrade is merged but pending the same two-till build before any prod till. |
 | Header correction | The previous header said **0 P0** while §A listed **A17 as `P0 · OPEN`** — the day-15 lockout, hidden by its own count. Re-derived by reading §A: A17 is the one open P0 (A1 struck). |
 | Closed 08-10 (late) | **A5 · A6 · A9(triage) · A47 · A48 · A50 · A51 · A52 · D6.** A43 deletion ATTEMPTED AND REVERTED — it drops the only guard on a live field bug; see the entry. Corrected: A1 split, A7 re-characterised, A9 closed as never-true, A10 reopened, A12 raised to P1, A39 down to one document. Opened: **A49 · A53**. |
@@ -103,7 +103,2192 @@ Agreed plan, in order:
 ---
 ## A. OPEN — carried into tomorrow
 
-### A198 · P2 · OPEN · Branches-tab "Enrol till" mints a single-use code with nowhere to display it
+### A374 · P2 · CLOSED 2026-10-01 (verified on target, checklist v0.6.29) · History hid the delivery fee: the paid amount read as the bill
+**Verified on target 2026-10-01:** H1–H3 (today's sales; what was paid incl. the delivery fee; web POS) and D1 (3,000 + 400 by M-Pesa: M-Pesa +400, cash −400, Z-report lines) PASS. **CLOSED.**
+Found by the owner on T1 (checklist v0.6.27 D2): a 3,250 delivery with a 500 fee paid 3,750 by M-Pesa; the receipt said PAY 3,750
+and M-Pesa 3,750, but History's Total read 3,250 — "where is the 400 accounted … my mpesa will be 400 more but cash is 400 less".
+The money was right underneath: the M-Pesa payment row is 3,750 (shift panel, Z-report, expected per method and the cloud's
+reports all add payments), and the rider's 500 left cash as a pay-out tied to the sale. History showed `orders.total` — the BILL
+(the fee is pass-through, not sales) — so the fee looked lost. **BUILT:** History (till and web POS) shows what was PAID — bill +
+tip + delivery fee — with "incl. delivery 500" under it; the cloud's order list sends `tip_amount`. **Proven:** NEW
+`tests/owner-0629.test.mjs` (mutations bite). **Owner to verify:** checklist v0.6.29 D1 (and v0.6.27's D2, D4, D5).
+
+### A373 · P2 · CLOSED 2026-10-01 (verified on target, checklist v0.6.28) · The kitchen cooked a sent dish twice, and a late line never reached it
+**Verified on target 2026-10-01:** K1 (only the extra goes to the kitchen), K2 (a line added after Send reaches it at payment), K3 (no note on a sent line) PASS. **CLOSED.**
+Found building A372 on the till: a cart line knew only "sent or not" (`kotSent`), cleared by ANY change. A line of 2 sent, then
+tapped to 3, went out again as 3 (the kitchen cooked 5); reduced from 3 to 2 it went out again as 2; a changed note re-sent the
+whole line. And at payment `kot_sent` was "any line was sent", so a line added after the last Send was never printed for the
+kitchen at all — paid for, never cooked. **BUILT:** each line carries `sentQty` (how many are on a ticket) and a `lineId`; Send
+prints only quantity − sentQty; payment first sends whatever is left of a partly sent order; a note goes only on a line the kitchen
+has not seen (a sent line's note button is gone). A held tab saved before 0.6.28 reads as all sent. **Proven:**
+`apps/desktop/test/kitchen-voids.test.mjs` (shared rules + POSPage pins; mutations bite). **Owner to verify:** checklist v0.6.28 K1–K3.
+
+### A372 · P1 · CLOSED 2026-10-01 (verified on target, checklist v0.6.28) · A sent order could be cancelled after the customer paid in cash
+**Verified on target 2026-10-01:** checklist v0.6.28 23/23 PASS — V1–V5 (kitchen voids, Clear, held tab, restart), M1–M4 (manager PIN, signed-in manager, End Shift refused, offline), P1–P2 (pay before kitchen), W1–W3 (web POS), Z1–Z2 (Z-reports). **CLOSED.**
+Owner, 2026-10-01: "when a cashier clicks send to kitchen thats an order already even when the customer has not paid yet … they
+can click send to kitchen then cancle or takes back the order the customer pays they pocket the money and the kitchen staff proceed
+to prepare the meal … At the end of the day thats a loose on the business." On the till a sent order lived only on the screen:
+removing a line, pressing − or Clear (or deleting a held tab) left no record and asked no one; on the web a sent order was an open
+order on the cloud that could be dropped from the screen and left unpaid. **Decided (owner):** once sent, every item ends PAID or
+as a recorded KITCHEN VOID; "no grace period the manager has to know and cancel"; a shift does not end with an unpaid sent order;
+"pay before kitchen" for takeaway counters too. **BUILT — two switches** (admin portal, `posFeatures.ts`, OFF unless set):
+`kitchen_void_approval` (a manager approves every kitchen void — signed in as themselves or their PIN, node → cloud → the till's
+saved sign-ins as at confirm; End Shift refused while a sent order on the shift is unpaid, till and web) and `pay_before_kitchen`
+(takeaway / delivery / counter orders reach the kitchen only when paid; Send is not offered; dine-in still sends first). **For every
+client:** the till keeps a ledger of what was sent (`kitchen_lines`, local schema 60): Clear, a crash or a restart cannot lose a
+sent order — it stays listed ("Sent to the kitchen, not paid") until charged or voided, and End Shift lists it. Taking a sent item
+back (−, ✕, Clear, deleting a tab) opens the kitchen void: a reason (wrong item / wrong quantity / customer changed their mind / out
+of stock / kitchen mistake), "had the kitchen already made it?", an optional note; the kitchen and dispatch get a VOID ticket; the
+void is recorded with the cashier and approver (`kitchen_voids`, pushed to the cloud — migration 112; the till marks it synced only
+when the cloud counts it, so an older cloud never loses one). The web POS does the same on its open orders (`POST
+/api/orders/:id/kitchen-void`: the item is reduced, the order's money recomputed, an order with nothing left is voided; a sent tab is
+not dropped). The Z-report (till screen and paper, web EOD) lists every kitchen void, the total and the part already made. **Not in
+this build:** cooked-and-voided food is reported, not deducted from stock as waste; the branch node does not replicate kitchen voids
+(each till pushes its own). **Proven:** NEW `apps/desktop/test/kitchen-voids.test.mjs` 31/31 (real dist/main on SQLite + a
+stand-in cloud; 9 mutations bite); NEW `tests/kitchen-voids.test.mjs` 16/16 (the real routes on a stand-in database; 7 mutations
+bite); NEW `scripts/test-migration-112.mjs` 8/8 (PGlite); NEW `shared/printing/test/kitchen-voids.test.ts` 4/4 (2 mutations bite);
+pins moved in 6 existing suites. **Owner to verify:** checklist v0.6.28.
+
+### A371 · P3 · CLOSED 2026-10-01 (verified on target, checklist v0.6.27 D3) · The till's on-screen receipt counted a tip twice
+**Verified on target 2026-10-01:** D3 PASS. (0.6.29 then replaced the on-screen receipt with a success screen — the owner's call; the same money rule, pinned.) **CLOSED.**
+Found building the delivery fee (A369): the sale screen handed `ReceiptView` the amount due (bill + tip) as its `total`, which
+A349 made the BILL. With a tip, the on-screen receipt after a sale showed the tip as "Round Off" and PAY as bill + 2 × tip. The
+PRINTED receipt was right (it is built from the payload). **BUILT:** `POSPage` passes `payment.total` (the bill) and the delivery
+fee; `ReceiptView` prints Tip, Delivery fee and PAY = bill + tip + fee. **Proven:** `apps/desktop/test/money-reports.test.mjs` (+1 pin,
+the existing pin updated). **Owner to verify:** checklist v0.6.27 D3.
+
+### A370 · P1 · CLOSED 2026-10-01 (verified on target, checklist v0.6.27 E3) · Adding an expense from the dashboard was refused ("Validation failed")
+**Verified on target 2026-10-01:** E3 PASS. **CLOSED.**
+Found building the expense payment method (A369): `POST /api/expenses` ran `validate(CreateExpenseSchema)`, a schema asking for
+`category` and `date` — fields no caller sends (the dashboard's Expenses page and manager dashboard send `expense_category_id` and
+`expense_date`). Every expense added from the dashboard was refused 400 "Validation failed" (and a pass would have stripped the
+type, the date and Paid By — `validate` keeps only the schema's keys). In the repository since its first commit. The till (sync
+push) and the web POS (`POST /api/shifts/:id/expense`) never used this route, so their expenses were unaffected. **BUILT:** the
+schema matches the route (branch, type, description, amount, Paid By, receipt, date, payment method; empty ids allowed).
+**Proven:** `tests/prospect-features.test.mjs` runs the real schema on the dashboard's payload (a mutation restoring the old schema
+fails it). **Owner to verify:** checklist v0.6.27 E3.
+
+### A369 · P2 · CLOSED 2026-10-01 (verified on target, checklists v0.6.27 + v0.6.29) · A prospect's requests, switched per client
+**Verified on target 2026-10-01:** checklist v0.6.29 14/14 PASS — S1–S2 (standard blind close), T1–T2 (the confirm table), D1–D3 (the delivery fee in the money, the void putting the rider's money back, the web POS delivery: v0.6.27's D2, D4, D5). With v0.6.27's 20 PASS, every item verified. **CLOSED.**
+**Results 2026-10-01 (checklist v0.6.27):** 20 PASS · D2 FAIL ("no addition of delivery fee" — see A374) · D4, D5 not run. Open until D2 (as A374), D4 and D5 pass (checklist v0.6.29). **0.6.29 (owner):** `blind_shift_close` and `confirm_shows_cashier_figures` are no longer switches — standard for every client (`STANDARD_POS_FEATURES`); the admin portal lists the other five.
+Owner, 2026-09-30 (after meeting a prospect): nine requests — (1) cashiers closing a shift see no sales / per-method totals, only a
+box per method used; (2) delivery orders: a delivery fee, rider name and fee mandatory; (3) the fee is paid by the customer on top of
+the bill and the rider is paid it in cash from the drawer ("assume the delivery fee is 300, cash will be 300 less but mpesa will be
+300 more"); (4) History's type reads "Delivery — Eugene"; (5) expenses record how they were paid (cash or M-Pesa…) so the right total
+comes down; (6) cashiers' History shows only their sales, ordered by payment method or type; (7) no Reprint in History for cashiers;
+(8) at confirm the manager sees the cashier's figures, keys in their own, and gives a reason where they differ ("the manager should
+not edit … the only difference is we are making cashiers input visible to the manager and adding a reason text box"); (9) the
+Z-report showed an expense's description, not its type. "We can find a way of turning this features on and off per clients requests
+rather than killing some of them totally." **Decided (owner):** the switches live in the admin portal only; the fee is pass-through
+(not sales, not VAT); the rider's pay-out is recorded automatically per sale; a reason is required where the manager's count differs
+from the cashier's. **BUILT — five switches** (`feature_flags`, all OFF unless set; shared `posFeatures.ts`): `blind_shift_close`,
+`delivery_fee`, `cashier_own_history`, `cashier_no_reprint`, `confirm_shows_cashier_figures`. The admin portal lists them by name
+with what each does; `PUT /api/flags` refuses them (a client cannot set one); pos/init sends them; the till stores them
+(`device_config.pos_features`, only the pull writes it) and a branch node relays them. **Delivery (2–4):** a fee field beside the
+rider (till + web POS); with the switch both are required before payment; the fee rides on top like a tip — in the payment legs,
+not in `orders.total` (migration 111: `orders.delivery_fee`, `create_order_atomic` reconciles legs to total + tip + fee; `/pay` the
+same); the receipt prints it after the total, PAY includes it. The rider is paid from the drawer as a pay-out tied to the sale (till:
+`float_transactions.order_id`, local; web: the cloud records it, `float_transactions.order_id` migration 111; never twice — a till's
+sale is paid on the till); a void puts it back while the shift is open. The Z-report: "Delivery fees (in payments)" and "− Paid to
+riders". History (till + web) reads "Delivery — Eugene" (any client). **Expenses (5, 9):** "Paid with" on every expense form (till,
+web POS, dashboard); only cash leaves the drawer; M-Pesa etc. come off that method's expected total (till and cloud, confirm and
+foreign cash); `expenses.payment_method` (migration 111, default cash — every earlier expense was); the Z-report shows the TYPE,
+then the description, then the method (till keeps the type's name, `expenses.expense_type_name`, local); an "EXPENSES NOT FROM THE
+DRAWER" section. **History (6, 7):** filters by payment / type and "Order by" time / payment / type (till + web, any client); with
+the switches a cashier sees only their own sales (till: main filters; web: the cloud filters `GET /api/orders`) and has no Reprint
+(till: refused in main too). **Blind close (1):** a cashier's shift screen, close result and printed report carry no figures (the
+till's main and the cloud strip them, not only the screen) and no variance note is asked; a manager closing sees all. **Reasons
+(8):** the confirm screens (till, web POS, dashboard) show "Cashier entered …" beside each box and a reason box where the count
+differs; the till and the cloud refuse a confirm without them; `shifts.confirm_reasons` (migration 111, local schema 59) — on the
+Z-report and the dashboard list. Also fixed on the way: A370, A371. **Proven:** NEW `apps/desktop/test/prospect-features.test.mjs`
+33/33 (real dist/main on SQLite; 9 mutations bite); NEW `tests/prospect-features.test.mjs` 19/19 (the shared rules, the real
+expense schema, route pins; 7 mutations bite); NEW `scripts/test-migration-111.mjs` 10/10 (PGlite, the real function; 5 mutations
+bite); NEW `shared/printing/test/delivery-and-expenses.test.ts` 5/5 (3 mutations bite); pins moved in 9 existing suites. **Owner to
+verify:** checklist v0.6.27.
+
+### A368 · P2 · CLOSED 2026-09-30 (verified on target, checklist v0.6.25) · A logo uploaded on the till disappeared after a while
+**Verified on target 2026-09-30:** B1 (upload on the till → saved to the cloud, survives syncs, the web shows it) and B2 (offline upload waits, then lands) PASS. **CLOSED.**
+**Owner, 2026-09-30:** "when u upload the logo in the desktop app it removes it after a while why is it so? is it that the web
+config overrides it?" **Cause:** yes. Branding is remote-wins (A304): every catalogue pull writes the cloud's
+`business_branding` row over the till's, and the tech screen's upload (A301) was saved on the till only — so the next sync (≤ 10
+min, or any catalogue change) put the cloud's logo (none, or the web one) back. **Decided (owner):** the till's upload also saves to
+the cloud. **BUILT:** `branding:set` saves locally, then `queueBrandingPush` → `PUT /api/business/branding` with the till's owner
+session (accent, logo, receipt raster, toggle). Until the cloud has it, a `branding_push_pending` flag makes the pull skip branding
+and `syncAll` sends the upload **before** the pull; a 5xx / offline keeps it pending, a 4xx is reported on the tech screen and
+pulls resume. **Cloud:** `TILL_WRITE_ALLOWLIST` gains exactly `/api/business/branding` (A159 guard; settings and the business record
+stay denied); the route's own permission gate (receipt.manage / settings.manage / owner) and validation are unchanged.
+**Tests:** `apps/desktop/test/branding-cloud.test.mjs` (9, real dist/main on SQLite + a stand-in cloud; 4 mutations bite),
+`tests/terminal-write-guard.test.mjs` (+3).
+
+### A367 · P2 · CLOSED 2026-09-30 (verified on target, checklist v0.6.24) · Notes on an item and on the whole order
+**Tested on target 2026-09-30 (0.6.25):** N1–N6 PASS. N7 not found — the checklist named the wrong path (it is Settings → Business → **Restaurant setup** → **🍽 Service**, fixed in the docs); re-run pending. N8 (web POS) not reported yet. Then N7 (the owner's quick picks reach the till) and N8 (the web POS) PASS — **N1–N8 all PASS. CLOSED.**
+**Owner, 2026-09-30:** "can we add notes in the order maybe if a customer wants a mixture of 3 normal and 2 spicy chicken pieces
+or they want exta cheese if it pizza or no salt etc" → decisions: **free text + quick picks the owner sets**; a note **on each line
+and on the whole order**; notes are **free** (anything priced stays a modifier in Menu); in 0.6.24. **Before:** the cloud had
+`orders.notes` / `order_items.notes` since the baseline and the ESC/POS renderer a `** note` row, but no till or web screen could
+enter a note, the till had no columns for one, and the kitchen ticket skipped a plain dish's note (a `continue` before the note
+block). **BUILT:** one rule file `shared/orderNotes.ts` (clean, quick picks, ticket lines; 5 copies incl. the cloud and the till's
+main). **Till** — "+ Note" on every cart line (not fuel) and "+ Note for the order"; a tap never merges into a noted line; a changed
+note re-sends the line to the kitchen; held tabs keep the order note (`held_orders.order_note`); schema **58**:
+`orders.notes`, `order_items.notes`, `device_config.order_note_picks` (pulled as `noteQuickPicks`, relayed by a node); notes ride
+the LAN (an older node ignores them) and the web-sales download. **Cloud** — item notes cleaned on both order paths; the order note
+written right after `create_order_atomic` (scoped to the business; a failure is logged, never the sale's) and on `/open`;
+`/api/pos/init` sends `noteQuickPicks`; `order_note_picks` readable; the KDS and web-sales reads carry the notes;
+`REQUIRED_DESKTOP_SCHEMA` 58. **Paper** — the kitchen ticket prints `NOTE:` under the header and `** …` under each dish (one row per
+typed line, bold); the receipt prints `Note:` and `** …`; a ticket with no notes is byte-identical (bytes/sample --check).
+**Web POS** — the cashier screen (restaurant/café) has the same editor and picks; notes go to `/api/orders`, `/open`, the kitchen
+print, the receipt and a reprint. **Back office** — Settings → Business → Restaurant setup → 🍽 Service: "Quick notes for orders" beside the kitchen
+list. The on-screen till receipt (ReceiptView, owner-approved format) is unchanged. **Tests:**
+`apps/desktop/test/order-notes.test.mjs` (34, real dist/main on SQLite), `tests/order-notes.test.mjs` (16),
+`shared/printing/test/order-notes.test.ts` (7); 17 mutations bite.
+
+### A366 · P2 · CLOSED 2026-09-30 (verified on target, checklist v0.6.24) · Only the cashier who opened a shift, or a manager, can close it
+**Verified on target 2026-09-30 (on 0.6.25):** C1 (another cashier cannot close it), C2/C3 (the owner and a manager can), C4 (the web POS) PASS; also C5 (the update bar) and C6 (the lock screen) PASS. **CLOSED.**
+**Owner, 2026-09-30:** "only the shift owner can close the shift not any other cashier, maybe the manager should be able to close
+it". **Before:** the till let whoever was signed in close the open shift; the cloud's `POST /api/shifts/:id/close` accepted the
+opener, a manager, **or anyone on the same terminal** — which also let the web POS (standing in as the till) count out another
+cashier's drawer. **BUILT:** **Till** — `shiftService.shiftCloseRights` (the owner = `cashier_id`/`opened_by`, or a manager by
+`isShiftManager`, the one rule now shared with shift confirmation) is enforced in `closeShift` (`SHIFT_NOT_YOURS`) and asked by
+the screen (`shift:closeRights`): End Shift shows "This shift belongs to …. Only … or a manager can close it" instead of the count
+form; another cashier still sells, pays in/out and records expenses. **Cloud** — the close is refused (403 `SHIFT_NOT_YOURS`)
+unless the caller opened it or may manage shifts (`callerMayConfirm`); the only same-terminal exception left is the till's own
+replay (desktop surface, same till), because the till enforced the rule when the cashier counted and replays under whoever is
+signed in at sync. **Web POS** — Close Shift shows who owns the shift instead of the form unless you own it or are a manager.
+A334's joined drawer (the web opened it as the till) is now closed by its owner or a manager, not any till cashier. **Tests:**
+`apps/desktop/test/shared-drawer.test.mjs` (+3), `apps/desktop/test/shift-confirm.test.mjs` (49), `tests/shift-confirm.test.mjs`
+(28: web non-owner refused, owner and manager close, the till's replay lands, another till refused); 5 mutations bite.
+
+### A365 · P2 · CLOSED 2026-09-30 (verified on target, checklists v0.6.22 + v0.6.23) · A manager confirms every shift, on every payment method
+**Verified on target 2026-09-30:** 0.6.22 R1–R4, M1–M9 PASS; 0.6.23 follow-ups F1–F9 PASS (F8 the printed Shift Report). **CLOSED.**
+**Owner, 2026-09-29:** "a manager should be able to confirm end shift count when a cashier closes their shift and also close
+day, as is at the moment its only close day no way to confirm shift" → decisions: a manager confirms each shift, **any time,
+recommended the moment the cashier closes**; **Close Day blocks** until every shift is confirmed, and still takes its own cash
+count; the manager **recounts blind** ("incase the cashier submitted less"); **every payment method**, not only cash; the
+cashier **declares every method** at End Shift; a manager confirming a shift they worked is **allowed, flagged**; **till and web**.
+**BUILT:** **Migration 110** — `shifts.declared_methods / expected_methods / confirmed_methods` (jsonb `{"cash": n, "mpesa": n}`),
+`confirmed_by` (FK users), `confirmed_at`, `confirm_self`; a CHECK that a confirmation is whole; an index for the awaiting list.
+Shifts closed before 110 (no declaration) never await. **Cloud:** `lib/shiftConfirm.ts` (`mayConfirm` = the refund approver
+rule + shifts.manage/settings.manage; method maps; per-method lines; self flag; replay time); `POST /api/shifts/:id/close`
+stores the declaration (cash = the count); `POST /api/shifts/:id/confirm` — the till's replay (desktop, same till, the named
+person re-checked), a manager's PIN at the web POS (`findApprover` with `may: mayConfirm`), or a signed-in manager; a second
+confirmation 409; `POST /api/shifts/confirmer` (the till asks whose PIN it is); both on the till write allowlist; `GET
+/api/shifts` adds `confirmer_name`, `awaiting_confirmation`. **Till 0.6.22 (schema 57):** End Shift asks for every other method
+(M-Pesa, card, Glovo, custom tenders, any the shift took); "Manager: confirm now" on the closed shift; Manager → Close lists
+the shifts awaiting a manager with Confirm, and holds the close; `closeDayCore` refuses (`SHIFTS_UNCONFIRMED`, naming them —
+central closes too); the manager's PIN goes to the node, then the cloud, and only when neither answers to the till's saved
+sign-ins; the confirmation syncs after the close (`confirm` stage; 403 parks, 404 waits); Z-report on screen and on paper.
+**Web POS:** Close Shift declares every method; "Manager: confirm now" (PIN + blind recount). **Dashboard:** Open Shifts →
+Shift confirmations (awaiting list with a blind Confirm; recent confirmations with mismatches and self-confirms).
+`shared/shiftConfirm.ts` is one file copied to the till and the web (check-shared-sync).
+**Tests:** `apps/desktop/test/shift-confirm.test.mjs` (34, CI step), `tests/shift-confirm.test.mjs` (19, the compiled routes
+over HTTP), `scripts/test-migration-110.mjs` (6, PGlite); 15 mutations bite. **Verify on target:** checklist v0.6.22.
+**On target 2026-09-29 (T1, 0.6.22):** migration 110 applied (6 columns); R1–R4 done; **M1 PASS, M2 PASS** (End Shift declared
+card 200 / Glovo 100 / M-Pesa 0; the manager's blind confirm). **Owner's follow-ups → 0.6.23 (BUILT):** "if the method of payment
+is 0 let it not appear" → only methods the shift recorded money on are asked (`methodsToDeclare`), and the manager recounts cash
++ what the cashier declared money on + what the till recorded (`methodsToCount` — a method the cashier put at 0 but the till
+recorded still shows; a hidden one counts as 0); "remove the feature were scroll up or down reduces or increases the value" →
+`shared/numberInputs.ts` takes focus off a focused number field on a wheel turn, spinner arrows hidden in CSS (till + web);
+"add something like include opening float" → the cash label says so (till + web); "since its the manager who is logged in do
+they need to key in their password?" → no: a manager signed in confirms as themselves (till `shift:canConfirm` + main checks the
+staff session; web `maySignedInConfirm`; the cloud already accepted a signed-in manager). Tests 42 + 21; 5 more mutations bite.
+**Owner: "for the owner where can they get such a report even tabulated … a table like cashier name, shift date, confirmed
+(if its still running or not), view — when they click view now they get such a table … you can improve on my suggestion" →
+BUILT in 0.6.23:** dashboard Finance → **Shift Reports** (`pages/ShiftReportsPage.tsx`): Cashier · Till · Shift · Status
+(Running / Awaiting manager check / Confirmed by … / Self-confirmed / Force-closed / before confirmation) · Difference (what is
+over or short) · View; dates, status and "Problems" filters; CSV. View: Cashier said · Manager counted · Till recorded · Variance
+per method, the float, times, who confirmed, notes; printable. Rules in `shared/shiftConfirm.ts` (`shiftReportStatus`,
+`shiftReportLines`, `shiftDifference`); existing routes only. Tests 48 + 22; 5 more mutations bite (one found a real edge:
+unknown expected cash showed 0 — now shown as unknown).
+**On target 2026-09-29 (0.6.23 deployed, approved, T1 updated). Owner, with the printed PDF: "on the dashboard please change this
+it should not be the page screenshot but a report" → BUILT (dashboard only, no till change):** "Print report" on View builds an
+A4 **Shift Report** from the data (`lib/documentSpecs.ts` `shiftDocSpec`, through `printDocument` — the purchase-order printer):
+business header, cashier/till/times/float/status, Method · Cashier said · Manager counted · Till recorded · Variance (* where
+the counts differ), totals (Total SHORT in red), notes, Cashier / Manager signatures; "Print report" on the list builds a
+**Shift Reports** document (`shiftListDocSpec`). `printDocument` notes keep their line breaks (`white-space:pre-line`). Rendered
+in Chromium on the bench (A4 PDF) before delivery. **F8 PASS on target 2026-09-30** (dashboard deployed).
+
+### A364 · P1 · CLOSED 2026-09-30 (verified on target, checklist v0.6.21) · A closed day stopped the next shift: "That record already exists."
+**Verified on target 2026-09-30:** D1–D5 PASS. The cloud row for 2026-09-29: closed, counted 18,240 = expected 18,240 (the 12:59 cash-up 5,500 + the evening close 12,740), variance 0, notes "Cashed up 12:59: counted 5500, expected 5500, variance 0. Reopened 13:41 by Test Cashier for a new shift." **CLOSED.**
+**Found on target, 2026-09-29 (T1, 0.6.20).** The owner closed the morning shift and the day was closed; the next cashier's
+"Open your drawer" (float 2000) failed with "That record already exists." — `ensureDayOpen` found no OPEN day and inserted a
+second day row for the same date, which `business_days_till_date` (one row per till per date, local and cloud, migration 41)
+refuses; the renderer maps SQLite's UNIQUE error to that sentence. The till could not trade again that date.
+**Owner decisions 2026-09-29:** shifts follow the staff's hours ("one cashier reports from 9am to 5pm, another from 2pm to 10pm and
+another from 5pm to 12 midnight … limiting to 1 a day is a wrong move"); overlapping cashiers are on **different tills** (one shift
+per till at a time stays); a day close is a **cash-up only** — it never stops a later shift.
+**BUILT (till only; the cloud upserts days by id and already accepts closed → open):** `dayService.ensureDayOpen` reopens today's
+closed row (same id) instead of inserting a second: status open, close fields cleared, pending sync, a readable line in the notes
+("Cashed up 13:40: counted …, expected …, variance …. Reopened 14:02 by … for a new shift."), a `day_reopened` event for branch
+replicas (whitelisted; an older node leaves it waiting). The running totals go to `maintenance_state` (`day_reopened:<id>` — no
+schema change), so the next close shows the manager only the shifts since the reopen (the cash already counted is not counted again)
+and stores the WHOLE day on the row (earlier cash-ups + this one); `day_closed` now carries the row's whole notes. The Day Close
+screen says it is a cash-up. Unchanged: one open shift per till; an unclosed EARLIER day still needs a manager.
+**Tests:** `apps/desktop/test/day-reopen.test.mjs` (16, CI step) — the compiled services on SQLite; 5 mutations bite (without the
+reopen it fails with the exact `UNIQUE constraint failed: … business_days_till_date`). **Verify on target:** checklist v0.6.21.
+
+### A363 · P1 · CLOSED 2026-09-30 (verified on target, checklist v0.6.20 carried) · An offline close-and-reopen stranded the new drawer; sync status for managers only
+**Verified on target 2026-09-30:** O1 (offline close-and-reopen) PASS; S1–S4 (sync status for managers only) PASS; L1 (the log) PASS. **CLOSED.**
+**Found on target, 2026-09-29 (T1, Mama Ngina).** The web POS asked for an opening float on T1 while T1 was trading. Read in the
+data and the till log: T1 started offline at 09:54 (Nairobi); the owner closed yesterday's shift (24,740) and opened today's (3,000)
+while offline, and rang two sales (1,390 Glovo, 3,250 M-Pesa). Online again at 10:15, the till pushed yesterday's closing trading day
+and today's new one in ONE batch; `/api/sync/push` wrote them concurrently (`Promise.all`), so today's open day could land before
+yesterday's close and hit `business_days_one_open_per_till` → refused `duplicate_open_day`; today's shift then `missing_business_day`.
+The till parked both 'conflict' — and nothing ever re-sent those two refusal kinds (A338's requeue covers `duplicate_open_shift`
+only). The log said only "pushed 3 cash record(s)": refusals reached the Tech screen's Sync card, never swiftpos.log. So the cloud
+had no open shift on T1 (the web rightly asked for a float), and the two sales waited for their drawer every 30 s for hours.
+The same log showed three more defects: (a) the web-sales pull used the signed-in cashier's token and, unlike the pushes, never
+renewed it on a 401 — 250+ "HTTP 401" lines on 09-28; (b) a "recovered after" line followed EVERY failure (the error was cleared
+even after a failed pass); (c) a download dropped mid-way (net::ERR_NETWORK_IO_SUSPENDED) surfaced as an UnhandledPromiseRejection.
+**Owner decisions 2026-09-29:** "build 1-6"; sync status "lock it under the manager … a small notification at the bottom with a
+resync option"; an always-offline message "will be confusing" → no nag, cashiers see nothing; "sites have internet, you can add the
+not[e] on the zreport". **BUILT:** **Cloud:** `lib/dayOrder.ts` `closesFirst` — `/api/sync/push` writes a till's CLOSING days
+before its open ones (one group after the other). **Till 0.6.20 (`syncEngine`):** `requeueAfterDayClash` re-sends a day parked
+`duplicate_open_day` and a shift parked `missing_business_day` ONCE (a mark in `maintenance_state`, never in notes — a day's notes
+go to the cloud); every refusal is written to swiftpos.log; the web-sales pull renews the staff token on a 401 and retries;
+"recovered" only after a clean pass; `getSyncStatus` adds `parkedCount`/`parkedReason`/`lastSyncedAt` (stamped only when nothing
+waits — queued, failed or parked); `autoUpdate` catches the download promise. **Screens:** `lib/syncNotice.ts` — `maySeeSync`
+(owner/manager/supervisor, never a cashier): the POS top-bar status is managers-only; a bottom notice for managers only when
+something waits ("4 records waiting to sync · last synced today 10:15 · Sync now"), red with the cloud's reason when it refused
+something (or "Retry" for failed sales); "Last synced" on the manager screen; `zBackupNote` on the Z-report, on screen and on
+paper (`shared/printing` `backupNote`). No "offline for N hours" nag. The till's M-Pesa is a typed code, so a cashier needs no
+offline message at all. **T1's recovery:** on 0.6.20 the one-time re-send lands today's day and shift (yesterday's close is already
+up), then the two sales — proven even before the cloud deploy (test phase "the till re-sends … even before the cloud fix").
+Tests: `apps/desktop/test/day-clash-sync.test.mjs` (22, the COMPILED engine on SQLite vs a stand-in cloud that enforces one open
+day per till), `tests/day-order.test.mjs` (4, the COMPILED sync route, the index enforced at write time), `apps/desktop/test/
+sync-notice.test.mjs` (9), `shared/printing/test/shift-report-backup.test.ts` (3), `update-approval` (+1); 14 mutations bite.
+**Not done:** "(via T1)" for a peer syncing through the branch node — no peer to verify with (§N). **Verify:**
+`docs/checklists/VERIFY-CHECKLIST-v0.6.20.html` (§U unsticks T1 — do it before closing today's shift on T1).
+
+### A362 · P2 · CLOSED 2026-09-30 (verified on target, §X carried) · A cashier cannot record an expense on the web POS
+**Verified on target 2026-09-30:** §X (X1–X5) PASS. **CLOSED.**
+Owner 2026-09-28: "web pos cannot record expences on cashier". Read in the code: the web POS had **no expense screen at all**.
+POSDrawer maps `expenses.view` / `expenses.manage` to no screen, and the only cloud write, POST /api/expenses (the back office's
+Expenses page: any date, any branch, a chosen Paid By), needs `expenses.manage`. The till lets any signed-in cashier record petty
+cash into their shift (Shift → Expenses). **BUILT:** **Cloud:** NEW `POST /api/shifts/:id/expense`, the web twin of the till's,
+under the same rule as the web's float route beside it: an OPEN shift of this business, no key. Branch comes from the shift;
+`paid_by` = `recorded_by` = the signed-in person (A361, now a shared `lib/expenseRecorder.ts`), never taken from the body; a type
+from another business is refused; plain messages for a missing description or amount. The shift's expected cash subtracts it
+(`shiftExpenses`), and a till whose drawer the web shares counts it at close (A334 foreign cash). POST /api/expenses stays
+`expenses.manage`. **Web POS:** **🧾 Expense** beside 💵 Float in the top bar, for anyone on a shift. It offers a type (A360 list),
+"What was it for?" and an amount, then "Expense recorded — … recorded under your name" with **Record another**. Tests:
+`tests/web-pos-expense.test.mjs` (8) runs the COMPILED routes over HTTP as a cashier holding only the cashier keys; 5 mutations
+bite. **Verify:** a cashier on the web POS → 🧾 Expense → record one with a type → Expenses shows it (type, Recorded By = that
+cashier) → the shift's close / Z-report takes it off expected cash.
+
+### A361 · P3 · CLOSED 2026-09-30 (verified on target, §X carried) · An expense did not record who entered it
+**Verified on target 2026-09-30:** §X (X1–X5) PASS. **CLOSED.**
+Owner 2026-09-28: "expense should also capture who recorded it". Read in the code: `expenses.paid_by` is the only person on an
+expense. The till fills it with its signed-in staff (the Shift panel offers no pick), but the web's "Paid By" is an optional
+pick-list, often blank, and editable afterwards, so a web expense could have nobody on it, or someone other than the person who
+typed it. **BUILT:** migration **109** adds `expenses.recorded_by` (FK users, ON DELETE SET NULL). It is backfilled from
+`paid_by` for till rows only (a `shift_id` is written by the till's sync alone); web rows stay NULL rather than guessed. **Cloud:**
+POST /api/expenses stamps `recorded_by` from the signed-in account, never from the form; an owner with no users row records NULL
+instead of a broken FK (the inventory.ts rule). Sync stamps `e.recorded_by ?? e.paid_by`. PATCH never touches it. The list and
+POST name both people through explicit FK embeds (`payer:users!expenses_paid_by_fkey`,
+`recorder:users!expenses_recorded_by_fkey`), because a second FK to users makes the bare `users ( name )` ambiguous. **Web:** the
+Expenses list has **Recorded By** beside Paid By. The till needs no change: its paid_by already IS the recorder, and its Expenses
+screens show that name. Tests: `tests/expense-recorder.test.mjs` (10), `scripts/test-migration-109.mjs` (5, PGlite); 6 mutations
+bite. **ORDER:** run migration 109 BEFORE deploying the cloud, or the cloud's expense insert/list and the tills' expense sync fail
+on the missing column. **Verify:** a web expense shows your name under Recorded By; a till expense shows the cashier.
+
+### A360 · P2 · CLOSED 2026-09-30 (verified on target, §X carried) · A cashier cannot pick an expense type at the till
+**Verified on target 2026-09-30:** §X (X1–X5) PASS. **CLOSED.**
+Owner, backlog checklist S2: "it passes but cashier cannot select expense type". GET /api/expenses/categories needed
+`expenses.view`; cashiers hold none of the expense keys, so the till's `expense:categories` call (the signed-in cashier's own token)
+got 403, the IPC returned `[]`, and the picker was empty. The expense still synced, untyped. **BUILT:** the LIST of types needs
+only a signed-in account of the business (`requireAuth`, router-wide; business-scoped read). There is deliberately no key:
+`orders.create` is a cashier default but is not registered on every database (check-permission-parity), and type names are no
+more private than the menu. Adding, renaming and deleting stay `expenses.manage`. Cloud only, no till or migration change. Tests:
+`tests/expense-recorder.test.mjs` (A360 ×3); a mutation putting a key back bites. **Verify:** a cashier on the till → Shift →
+Expenses → the type list is filled.
+
+### A313 · P3 · CLOSED 2026-09-23 (verified on target, mamangina) · Receipt logo, slice 4 (last) — the client-facing web page: opt-in toggle + receipt preview; web receipts carry the logo (SCOPE-A295 §6, §10 items 4–5, addendum §C)
+Rule-17 sweep: one bundle (`scripts/escpos-renderer/entry.ts` → `escposRenderer.js`), one builder
+(`buildReceiptBusinessConfig`), three web receipt sites (`PaymentModal`, `printRouted`, `reprintReceipt`), and
+`usePOSData` already carrying `receiptHeader` from `/pos/init` (A255) — the logo simply follows that path.
+**Built:** bundle rebuilt from the A310 tree (23 insertions, all image-block code) and now exports the shared
+raster helpers so the browser thresholds with the ONE rule; `.d.ts` extended. `ReceiptBusinessConfig.logoRaster`
++ builder `extra.logoRaster` (already resolved by the caller — the builder never decides). `usePOSData` resolves
+the logo from `init.branding` with the SAME gate as the till (`receiptLogoEnabled && logoReceipt`, decoded by
+`monoRasterFromString`); `CashierScreen` threads it to `PaymentModal` and `printRouted`; `reprintReceipt` fetches
+`/api/business/branding` beside the business so a duplicate prints what the original did. **BrandingTab:** "Print
+logo on customer receipts" toggle (disabled without a logo, off by default), the raster thresholded at upload
+via the bundled rule, a **receipt preview** painted from the stored raster (addendum §C), save sends
+`logo_receipt` + `receipt_logo_enabled` (forced null/false when no logo), reset clears all four; the header
+comment that said "not built yet" corrected. **Proven:** `branding-web-page.test.mjs` 7→26 incl. executable
+checks on the shipped bundle (self-contained order shape so CI's server-suites job runs them without
+test-dist): receipt WITH raster emits `GS v 0`, WITHOUT does not, exactly header+data bytes added, KITCHEN
+never. No-logo web receipts **byte-identical** old bundle vs new (80 mm 1899 B, 58 mm 1427 B). Bundle
+**reproducible** (rebuild md5 == shipped). Five mutations bite (toggle saved unconditionally; POS ignores
+toggle; reprint drops the fetch; builder drops the field; bundle without exports). Dashboard tsc 0 AND the real
+Vite build (A265 class); check-api-routes 299/299; client-parity OK; tiny-bridge 29, receipt-escpos-format 3,
+pos-cart-parity 9; run-all 113/113. **Rule-20 note:** the A265 guard pins the literal
+`receiptHeader, receiptFooter, businessMode:` sequence; my first insertion split it — moved the line, kept the
+gate. **Not verified (target-only):** the page in a browser (upload → preview → toggle → save), a web sale
+printing the logo through the Go bridge, and paper. With A310–A313 all FIX BUILT, SCOPE §10 item 4 and the
+item-5 receipt preview are code-complete; A295 closes on the target checks in `VERIFY-BRANDING-PHASE1.md`
+(to be extended with §F receipt-logo checks — next docs delivery). Delivery: `docs/MANIFEST-2026-09-22-h.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** F1 PASS (web preview + opt-in toggle persist), F5 PASS (web POS + reprint print the logo) — together with A316, which was blocking this slice in the browser.
+
+### A312 · P3 · CLOSED 2026-09-23 (verified on target, mamangina) · Receipt logo, slice 3 — the till prints it: tech-feed generates the raster, print path gates on the toggle (SCOPE-A295 §10 item 4; A310→A311→A312→A313)
+Rule-17 sweep: exactly ONE desktop `BusinessConfig` build site (`ipcHandlers` printSale) and one tech-feed
+upload (`BrandingEditor` → `prepareRasterLogo` → `branding:set`). Design point: the renderer hands PIXELS
+over IPC and MAIN thresholds them with the one shared `monoRasterFromRGBA` (already a main dep) — no second
+copy of the threshold rule in the renderer. **Built:** `brandingGuard` admits `logoRgba` (bounded ≤384×240,
+length = w·h·4) and `receiptLogoEnabled` (strict boolean); clearing the logo clears the raster. `setBranding`
+thresholds OUTSIDE the transaction, stores `mono1:` in `logo_receipt`, merges undefined-keeps/null-clears,
+returns the full `BrandingRow`. `branding:set` schema widened (`logoRgba: any` — a typed array over structured
+clone; shape-checked in the guard). Print: `resolveReceiptLogo()` → `logoRaster` on the receipt config ONLY
+when the toggle is on AND a raster exists, decoded by shared/printing (malformed → nothing). Renderer:
+`logoPixelsForReceipt()` (canvas → RGBA, ≤384×240, alpha kept), `monoStringToCanvas()` (display-only decode
+for a WYSIWYG mono preview), BrandingEditor gains the toggle + the mono preview + sends pixels on save; clear
+resets all four. **Proven:** `branding-set.test.mjs` 18→42 through the REAL compiled guard + the real
+`setBranding` INSERT extracted from source and executed on node:sqlite; five mutations bite (width cap
+removed → 2 FAIL; clear no longer clears raster; print ignores toggle; bind dropped → "5 args, 6 ?";
+private threshold instead of shared). Desktop main+renderer tsc 0; ipc-parity/ipc-validation OK;
+print-resilience 55, office-role 26, tech-console 38; all desktop plain-node suites; run-all 113/113.
+**Paper artefacts delivered** (outside the repo): `receipt-with-logo-80.bin` / `-58.bin` rendered by the real
+pipeline with a synthetic block-letter logo (light field → white, grey band → white, `GS v 0` at byte 10):
+`copy /b receipt-with-logo-80.bin \\localhost\<printer>` proves the raster command on the client's hardware
+with nothing installed. **Not verified (target-only):** the on-screen editor (toggle, mono preview), a real
+upload → pixels → main → stored raster round-trip under Electron (branding:set is NEEDS_LIVE_TEST), and
+paper. Desktop change → bump at build, tag after (rule 15). Next: A313 (web page toggle + receipt preview +
+`escposRenderer.js` bundle rebuild so web receipts match). Delivery: `docs/MANIFEST-2026-09-22-g.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** F3 PASS (the till prints the logo above the name; kitchen/dispatch without), F4 PASS (toggle off → no logo, lock screen keeps it), F6 PASS (bad logo visible on screen first).
+
+### A311 · P3 · CLOSED 2026-09-23 (verified on target, mamangina) · Receipt logo, slice 2 — the data + sync half: `receipt_logo_enabled` toggle, `logo_receipt` served and pulled, schema 53 (SCOPE-A295 §10 item 4; A310→A311→A312→A313)
+Rule-17 sweep: every layer already existed and only needed the two columns threaded through — no new
+mechanism. **Built:** migration **105** (`business_branding.receipt_logo_enabled boolean NOT NULL DEFAULT
+false`, additive, on a pulled-only table so no push can be rejected; PGlite test 7/7 incl. default-OFF,
+trigger still bumps `updated_at`, idempotent). Local: `branding.receipt_logo_enabled INTEGER NOT NULL
+DEFAULT 0` via `migrateColumns` + CREATE TABLE; `LOCAL_SCHEMA_VERSION` **52→53**, `REQUIRED_DESKTOP_SCHEMA`
+53 (equality convention, `HARD_MIN` untouched), doc row added. `getBranding()` returns `logoReceipt` +
+`receiptLogoEnabled`; `applyPulledBranding` upserts both remote-wins **except** when the cloud omitted them
+(undefined = a cloud not yet on 105 → keep local; null still clears/disables). Cloud: `/pos/init` selects and
+returns both (`receiptLogoEnabled` strict `=== true`); `GET/PUT /api/business/branding` carry both, PUT
+shape-checks `logo_receipt` (`mono1:<w>:<h>:<b64>`, w≤576, payload exactly ceil(w/8)*h bytes — mirrors
+`raster.ts`'s decoder by necessity, same precedent as the HEX/RASTER regexes there) and requires a real
+boolean for the toggle. `syncEngine` maps absent-vs-null with `'k' in` checks; `referenceBundle` type
+widened. `schema-index.json` updated. **Proven:** `tests/branding-sync-pull.test.mjs` 15→26 — the upsert
+is EXTRACTED from `localDb.ts` source and EXECUTED on real SQLite with the real CREATE TABLE, and the
+bind-derivation block is extracted and executed too. Mutations bite: one bind dropped (A167 shape) →
+"8 args, 9 ?"; absent-treated-as-clear → FAIL keeps-local; toggle-no-longer-remote-wins → FAIL; server
+`!!` coercion → FAIL strict boolean. **Rule 24 catch:** the first version recomputed the keep-flags in the
+test and passed two of those mutations without running the real lines — fixed before shipping. Gates:
+server tsc 0, desktop main+renderer tsc 0, schema-drift/parity/api-schema-drift/audit/push-domain/rls/
+notnull/sql-binds/own-rows OK, LOCAL==REQUIRED suites (branch-close 28, events 27, maintenance 20,
+node-distribution 25, node-ingest 50), migrations 28/28 files, run-all 113/113. **Not verified:** migration
+105 on prod (prod is on 104 per the register Tree row) — PROD-MIGRATE owed; the pull on a real till. Next:
+A312 (desktop prints it when enabled + tech-feed generation), A313 (web toggle + preview + bundle).
+Delivery: `docs/MANIFEST-2026-09-22-f.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** F2 PASS — the till pulled the toggle + raster (tech feed shows both; `receipt_logo_enabled`=1, `logo_receipt` present).
+
+### A310 · P3 · CLOSED 2026-09-22 (paper, XP-80) · Receipt logo, slice 1 — `shared/printing` learns to print a mono raster (SCOPE-A295 §10 item 4, first of four slices A310–A313)
+Rule-17 sweep first: `logo_receipt` existed as a column on both sides (migration 104, `localDb.ts:153`) with
+nothing writing or reading it; `Block` was `text|feed|cut|drawer`; `toEscPos` had no image case;
+`BusinessConfig` had no logo field; no thresholding anywhere. Neither Electron main nor the cloud can decode a
+PNG, and this package must stay DOM-free (CI runs it under plain node) — so the colour→mono decision is made
+ONCE where a canvas exists (tech feed / web page) and stored as packed bits; a till copies bytes at print
+time, never decodes. **Built:** `src/raster.ts` (pure: `monoRasterFromRGBA` — alpha composited onto WHITE,
+Rec.601 luminance, threshold <128, box-average shrink-not-crop to 384×240; portable `mono1:w:h:base64`
+string with a null-on-malformed decoder so a bad column prints NO logo and never throws in the print path);
+fifth block kind `image` in `document.ts`; `GS v 0` emit in `escpos.ts` (xL/xH = BYTES per row; malformed
+raster DROPPED, never sent — a wrong length desyncs the printer's parser); `[logo WxH]` in the text preview;
+`BusinessConfig.logoRaster?`; `renderReceipt` prints it centred above the name — **receipts only**, kitchen
+and dispatch never. **Proven:** `test/raster.test.ts` 34/34, wired into `npm test`; five mutations bite
+(xL as width → FAIL geometry; length guard removed → FAIL dropped; alpha onto black → FAIL white; logo in
+the kitchen path → FAIL kitchen; threshold `<=` → FAIL 128). **No-logo path byte-identical:** regenerated
+`out/*.bin` md5 and `sample.js` text equal before/after the change (the guard is before==after, see A314).
+Desktop main tsc 0 via the project reference; `check-test-registration`, `check-shared-sync` green. The
+dashboard's `escposRenderer.js` bundle is NOT rebuilt here — A313. **Not verified:** paper. `GS v 0` is the
+widest-supported raster command but "only paper proves it" (bytes.ts header). Next: A311 (migration 105
+`receipt_logo_enabled`, local column, `/pos/init` + pull, server CRUD), A312 (desktop print + tech-feed
+generation), A313 (web toggle + receipt preview + bundle). Owner decision 2026-09-22: the logo is a client
+TOGGLE, opt-in (default off — SCOPE §1 "default to the quiet option"). Delivery: `docs/MANIFEST-2026-09-22-e.md`.
+**CLOSED 2026-09-22 23:23 — paper.** Owner sent `receipt-with-logo-80.bin` to an Xprinter **XP-80** over USB
+via a RAW spool (winspool `WritePrinter`, datatype RAW — the Go bridge's path). Photo: block-letter "SWIFT POS"
+crisp above "KUDO KUDO", the light field and the mid-grey band both white, no bar down the right edge, cut
+clean, rest of the receipt identical to today's. `GS v 0` with xL/xH = bytes-per-row is confirmed on the
+client's hardware. Observation from the same paper (not this item): "Thank you for your business!" printed
+twice — once from the owner footer box, once from the D8 fixed closing block. Fixture collision here, but a
+real owner typing that phrase into `receipt_footer` would see it too → **A315** (cosmetic).
+
+### A359 · P2 · CLOSED 2026-09-28 (verified on target, checklist v0.6.19) · The web POS and the manager dashboard cannot refund
+Owner on v0.6.18 (V5): "no refund option in orders or order history" → "yes add web refund". Both web places a manager uses —
+the web POS's POS Menu → Orders and the manager dashboard's Orders — render `POSOrderHistoryTab`, which only reprinted (the
+owner's own Orders page has had Void/Refund since A195/A187). **BUILT (delivery 2026-09-28-v, desktop 0.6.19 + dashboard; no cloud change):** `POSOrderHistoryTab` offers **Refund** on a completed,
+not-refunded sale to `orders.void` holders (`canRefundOrder`, `pages/orderRefund.ts`): the till's reasons, a **Manager PIN**
+(the manager's or owner's own, A355), `POST /api/orders/:id/refund` with `override_pin`, the cloud's own words on a refusal, a
+"refunded" tag afterwards. **Known limit:** a refund made on the web of a sale rung on a TILL is recorded on the cloud (reports
+right) but not pulled onto that till's own reports (the till downloads web-rung sales only — A336). *(Removed in desktop 0.6.26 — the A336 follow-up, see A336.)* **Proven:** NEW
+`tests/web-refund.test.mjs` 6/6 (the real rule + wiring); 2 mutations bite. **Owner to verify:** checklist v0.6.19 §W.
+**Target 2026-09-28 (checklist v0.6.19, tester Eugene, T1 0.6.19):** W1 PASS (screenshot: "Refunded KES 2,500.00 — hand it back in the tender it came in.", the −2,500 cash leg, "refunded" tag), W2–W5 PASS. **CLOSED.**
+
+
+### A358 · P2 · CLOSED 2026-09-28 (verified on target, checklist v0.6.19) · 0.6.18 follow-ups: cashiers lost History; sauces on the kitchen ticket; "+ Add type" on the Expenses page
+From the v0.6.18 checks. (1) **V1** — my 0.6.18 bug: `canVoid` gated the History BUTTON as well as the reversal buttons, so
+cashiers lost their order list. Owner: cashiers see **all** orders. (2) **K1** — "sauces still print in kitchen printer": 0.6.18
+kept sauces off the whole-line rule on purpose (a dish named after its sauce must stay); B Foods sells sauces as their own items
+(BBQ Sauce, Honey Mustard Sauce). Owner: "sauce rule ok". (3) **E1** — "+ Add type" lived only in POS → Shift → Expenses. Owner:
+"add it here under expense but leave it under shifts also". **BUILT (delivery 2026-09-28-v, desktop 0.6.19 + dashboard; no cloud change):** (1) POSPage: History for everyone; `reverse = canVoid ?
+reverseAction(o) : null`; the window widened (`max-w-4xl` — the longer buttons scrolled sideways, owner's screenshots).
+(2) shared `isStandaloneSauce` — a name ENDING in sauce(s)/dip(s) ("BBQ Sauce", "Garlic Dip") leaves the kitchen; one with
+"in"/"with" before it ("Wings in BBQ Sauce") stays — inside `stripKitchenIfExcluded`, so the till and the web (bundle) both.
+(3) NEW `components/ExpenseTypesPanel` on Manager → Expenses (the types + "+ Add type", same rule and route as Shift);
+`mayAddExpenseType` also true for manager-level roles (a manager role never granted `expenses.manage` saw no button and no
+reason; the cloud still decides — "Your role does not allow this change."). **Proven:** `void-refund.test.mjs` 11/11 (+1),
+`a276-soda-routing` 11/11 (+2), `kitchen-drinks` (+1, the bundle), `till-extras-0618` 11/11 (+1 and the role cases); 5
+mutations bite. **Owner to verify:** checklist v0.6.19 §H, §K, §E.
+**Target 2026-09-28 (checklist v0.6.19, tester Eugene, T1 0.6.19):** H1–H3 PASS (History for everyone), K1–K3 PASS (sauces off the kitchen ticket on the till and the web; drinks still off), E1–E4 PASS (screenshots: the Expenses page's "Expense types" with "+ Add type", a duplicate refused, "Sugar" added; Shift keeps its own). **CLOSED.**
+
+
+### A357 · P3 · CLOSED 2026-09-28 (verified on target, checklist v0.6.18) · The Overview shows VAT twice
+Owner on v0.6.17 (screenshot): "VAT COLLECTED KES 0.00" box and, under it, "VAT KES 0.00" (A349's money strip). **BUILT (delivery 2026-09-28-u, desktop 0.6.18 + cloud + dashboard + admin portal):** `MoneyStrip`
+takes `hideVat` on the two layouts that already have the "VAT collected" box, carries only what the boxes do not (CTL, refunds,
+discounts, tips) and is not drawn when none apply; the third layout (no VAT box) keeps VAT in its strip. **Proven:**
+`till-extras-0618.test.mjs`; `money-reports.test.mjs` 17/17 unchanged. **Owner to verify:** checklist v0.6.18 §M.
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** M1 PASS (screenshot: VAT only in the "VAT collected" box; the strip shows "CTL KES 146.26"). **CLOSED.**
+
+
+### A356 · P3 · CLOSED 2026-09-28 (verified on target, checklist v0.6.18) · Admin portal: "GitHub releases: HTTP 403", and every build back to 0.5.48 in the picker
+Found on 2026-09-28 (owner's screenshots): anonymous calls from Render's shared addresses had used GitHub's 60-an-hour
+allowance, the portal said only "HTTP 403" (the fix, GITHUB_RELEASES_TOKEN, was set that day); and the version picker listed
+every build back to 0.5.48. **BUILT (delivery 2026-09-28-u, desktop 0.6.18 + cloud + dashboard + admin portal):** `describeGitHubFailure` names the cause (rate limit → set GITHUB_RELEASES_TOKEN; 401 →
+token expired/revoked; 404 → repository/token access); `listDesktopReleasesOrStale` serves the last good list with a warning
+when GitHub refuses (admin list, approve, and the tills' feed — an approved update keeps flowing through a hiccup); the admin
+route answers `{ releases, warning }` for `?meta=1` and a bare array otherwise (an older portal keeps working); the portal shows
+the newest 5 plus the client's approved version, and "Show all N versions". **Proven:** NEW `tests/desktop-releases-stale.test.mjs`
+7/7 (the COMPILED lib vs a fake GitHub; `apps/admin/src/desktopVersions.ts` run for real); `desktop-update.test.mjs` 23/23; 2
+mutations bite. **Owner to verify:** checklist v0.6.18 §A.
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** A1 PASS (newest 5, 0.6.18 marked pre-release, "Show all"); A2 SKIPPED (GitHub did not refuse). **CLOSED.**
+
+
+### A355 · P1 · CLOSED 2026-09-28 (verified on target, checklist v0.6.19) · The till could not refund a sale older than 30 minutes; the approval wanted a second PIN nobody knew
+Owner on v0.6.17 (M4): "i cant find where a manager refunds" → with the path found, the refund refused his PIN: "Invalid
+supervisor PIN". Read in the code: (1) History's only reversal button was labelled **"Void"** and **disappeared 30 minutes after the
+sale** (`canVoidThis = … && ageMin <= 30`), so an older sale could not be refunded from the till at all — the window behind it was
+built to open in refund mode for exactly those; (2) every signed-in person saw it (`canVoid = true`), cashiers included; (3) the
+approval checked a separate per-person **override PIN** (the staff form forbids it matching the sign-in PIN) or a legacy business
+PIN — never the manager's own; (4) the window turned any error mentioning "PIN" into "Invalid supervisor PIN", hiding the real one
+(e.g. "No override PIN configured"). **Owner decisions 2026-09-28:** "manager can replace that [supervisor] role"; "3 is okay"
+(approve with the manager's own PIN). **BUILT (delivery 2026-09-28-u, desktop 0.6.18 + cloud + dashboard + admin portal):** **Till:** `renderer/lib/voidRefund.ts` — a completed, not-refunded sale gets **"Void /
+Refund"** inside 30 minutes and **"Refund"** after (never gone; a "refunded" tag once done); only `orders.void` / owner see them
+(App → POSPage `canVoidRefund`); the window says **"Manager PIN"** and shows the cloud's own message. **Cloud:** NEW
+`lib/approver.ts` `findApprover`: an override PIN (kept), else the approver's **own sign-in PIN** when they may approve (owner,
+owner/admin role, '*', or effective `orders.void` — a per-person revoke beats the role; a cashier's PIN never matches and is never
+reported as anyone's); `authorized_by` records who. Both void and refund routes still accept the legacy business supervisor PIN,
+then refuse with one message ("That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.",
+`INVALID_APPROVER_PIN`). The supervisor role is left in place (not deleted). **Proven:** NEW `tests/approver.test.mjs` 12/12 (the
+COMPILED rule with real bcrypt hashes + route pins); NEW `apps/desktop/test/void-refund.test.mjs` 10/10; `owner-void-refund.test.mjs`
+7/7 unchanged; 6 mutations bite. **Owner to verify:** checklist v0.6.18 §V.
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** V2 PASS (void with the manager's own PIN), V3 PASS (a 1h-old sale refunded; "refunded" tag — the old M4), V4 PASS (plain refusal). **V1 FAIL** — "The cashier should be able to see their orders currently history is not available on the cashiers window": 0.6.18 gated the History BUTTON with the reversal buttons → fixed in 0.6.19 (**A358**). V6 SKIPPED. Stays FIX BUILT until V1 passes.
+**Target 2026-09-28 (checklist v0.6.19, tester Eugene, T1 0.6.19):** H1 PASS (a cashier sees History, no reversal buttons), H2 PASS (screenshot: "Void / Refund" / "Refund" on every completed sale, "refunded" on T1--46), H3 PASS (no sideways scroll); V2–V4 PASS on 0.6.18. **CLOSED.**
+
+
+
+### A354 · P3 · OPEN (future build) · Android tablet app
+Owner 2026-09-28, filing the auth move (A353): keep it open "just like the android app is". The Android app was only ever a design
+document, never a register item — filed here so it is tracked with the other future builds. **Design:** `docs/ANDROID-APP-DESIGN.md`
+("design proposal, pre-approval. No code yet"): an Android POS on consumer tablets, the two setups (with and without a branch
+node), printing, a store-and-forward offline tier, reconciliation, data retention, the manager on the tablet, consolidated
+reporting; §15 records decisions, and its **"Open questions (need a call before build)"** section is what the owner answers before
+any code. Not scheduled.
+
+### A353 · P3 · OPEN (future build) · Move sign-in (auth) from Supabase to SwiftPOS's own auth
+Owner 2026-09-28: "I also want to start the process of moving auth from superbase to my own auth but leave that as an open item in
+the audit tracker". **Not started — scoped here only.** What depends on Supabase Auth today (read from the tree 2026-09-28):
+- **Web dashboard / web POS sign-in** — `AuthContext.tsx` (`getSession`, `onAuthStateChange`, `signOut`), `LoginPage`
+  (`signInWithPassword`), `OnboardingPage` (`signUp`), `ForcePasswordChangePage` (`updateUser`), `lib/api.ts` (the session token on
+  every call).
+- **The cloud** — `middleware/auth.ts` accepts TWO token kinds: its own SwiftPOS JWT (`JWT_SECRET`) and Supabase's
+  (`SUPABASE_JWT_SECRET`); `lib/supabase.ts` signs in with a password (`signInWithPassword` ×2); `routes/admin.ts` creates users and
+  resets passwords (`auth.admin.createUser`, `updateUserById` ×2); `routes/staff.ts` invites (`inviteUserByEmail`, which sends
+  Supabase's own email); `routes/onboarding.ts` (`getUser`); the daily summary and low-stock jobs read owners' emails from Supabase
+  Auth (`auth.admin.getUserById` ×4).
+- **The database** — 161 `auth.uid()` references across 17 migrations (row-level security policies), plus `auth.users` references.
+  Every one needs a replacement before Supabase Auth can go (the cloud's service role bypasses RLS; the dashboard's direct reads
+  do not).
+- **Already independent:** the tills (their own SwiftPOS JWTs, device tokens, PINs), the admin portal (`ADMIN_JWT_SECRET`), and
+  technician tokens (Ed25519).
+
+**Decisions needed before building:** where passwords and sessions live (the `users` table + bcrypt, already a dependency, is the
+likely home); how existing owners move over (a forced password reset on first sign-in, or verifying the old Supabase hash); the
+password-reset and invite emails (A352's mailer instead of Supabase's); what replaces `auth.uid()` in RLS (a claim set by the cloud,
+or the dashboard reading only through the cloud); Supabase Storage (`OnboardingPage` logo upload) is separate and can stay.
+Staged: the cloud issues its own web tokens alongside Supabase's → the dashboard switches → RLS moves → Supabase Auth off. Not
+scheduled.
+
+### A352 · P2 · FIX BUILT 2026-09-28 · Email: Resend primary, SendGrid and SMTP as backups (no email has been delivered — A50/A54)
+Owner 2026-09-28: "on emails i want to use sendgrid for emails" → corrected the same day: "what i need is resend is the primary, if
+it fails sendgrid kicks in or smtp the two works as backup". Today no daily summary, low-stock alert or test email has been
+delivered: Resend was never configured and Render filters SMTP (A54). **BUILT (delivery 2026-09-28-s, cloud only):** `lib/mailer.ts`
+order **Resend → SendGrid → SMTP**, each tried only when the one before is unset or refuses. SendGrid through its v3 API over
+HTTPS (`fetch`, no new dependency), so it works where SMTP is blocked. `parseFrom` sends "Name <addr>" as `{ name, email }`;
+`splitRecipients` turns the daily summary's joined "a, b" into one entry each (SendGrid refuses the joined form — found while
+building). When every configured provider refuses, `sendEmail` THROWS with each provider's reason so the jobs' per-business catch
+logs it (before, a Resend refusal with nothing behind it logged "no provider configured"); `sendEmailChecked` returns the provider
+and the reasons (the test-email route logs them and shows the UI a generic message, A200). Boot: "Resend configured (primary)",
+"SendGrid configured (backup)", a warning when there is no backup or no primary, a free-mail sender warned about (DMARC). `env.ts`
+advisories and `.env.example` name both keys. **Proven:** NEW `tests/mailer-sendgrid.test.mjs` 13/13 — the COMPILED mailer against
+fake api.resend.com / api.sendgrid.com: Resend delivers → SendGrid never called; Resend refuses → SendGrid delivers (order checked);
+both refuse → a failure naming both and a throw for the jobs; the exact SendGrid request; split recipients; the key only in
+`Authorization: Bearer` (never body or logs); no network; unset → nothing sent. 4 mutations bite. `tests/mailer-transport.test.mjs`
+34/34 unchanged. **Owner to do:** verify the sending domain in Resend AND SendGrid; Render: `RESEND_API_KEY`, `SENDGRID_API_KEY`,
+`NOTIFY_FROM_EMAIL`; deploy the cloud; dashboard "Send test email". Closes A54 when a test email and a daily summary arrive.
+
+### A351 · P3 · CLOSED 2026-09-28 (verified on target, checklist v0.6.17) · The manager menu is too long (eleven items)
+Owner on v0.6.16: "this menu is too long can we collapse some items like settings can have printer and staff, close branch and
+close day, orders and shift" → lead-dev proposal (tabs inside one page, not sidebar sections that open out: one tap on a touch
+till, the sidebar never moves) → "go with it, build 0.6.17". **BUILT (delivery 2026-09-28-r, desktop 0.6.17):** NEW pure
+`renderer/lib/managerNav.ts` — `buildManagerNav` (the groups and the tabs each role may open), `groupOf`, `openGroup`. Sidebar:
+Overview · **Sales** [Orders · Item Mix (restaurant) · Current shift · Shift report] · Expenses · **Close** [Close Day · Close
+Branch] · Menu · **Settings** [General · Printing · Staff] · Stock (A346). Every tab keeps the gate it had as its own item
+(Close: isManagerRole; Printing: stations.manage or receipt; Staff: staff.manage; General: settings/products); a group shows its
+tab bar only with 2+ tabs and leaves the sidebar with none. Close opens on Close Day; a group reopens on its last tab while the
+screen is open; Menu → Import stays under Menu. The A105 pairs (Orders|Item Mix, Current shift|Shift report) became Sales's four
+tabs — one tab bar, not two. Pages themselves unchanged. **Proven:** NEW `apps/desktop/test/manager-nav.test.mjs` 11/11 (the real
+rules type-stripped; source pins on ManagerPage); 5 mutations bite. `test/shift-reports.test.mjs` Expenses pin follows the nav
+into managerNav.ts. CI step "Desktop manager menu groups". **Owner to verify:** checklist v0.6.17 §G.
+**Target 2026-09-28 (checklist v0.6.17, tester Eugene, T1 0.6.16 → 0.6.17):** G1–G7 PASS (screenshots: the grouped sidebar; Sales tabs Orders · Item Mix · Current shift · Shift report; Settings General · Printing · Staff). **CLOSED.**
+
+
+### A350 · P2 · CLOSED 2026-09-28 (verified on target, checklist v0.6.17 + v0.6.18) · Every release came out split in two; the update feed could not serve a split release
+Found checking the v0.6.16 release (Release desktop #32, green): GitHub held TWO v0.6.16 pre-releases — `398098724` with only the
+`.blockmap`, `398098725` with `latest.yml` + the installer (its latest.yml verified correct: SwiftPOS-0.6.16-x64.exe, 107,403,292
+bytes). v0.6.15 was split the same way the day before, and v0.6.13 / v0.6.14 carry no blockmap (the other half deleted). Cause:
+electron-builder's parallel uploads each found no release for the tag and each created one. Effects on A348: the admin portal would
+list 0.6.16 as incomplete and refuse to approve it; and the public `/releases/download/v0.6.16/latest.yml` link answered **Not Found**
+(the tag resolved to the blockmap-only copy — verified), which the cloud used when no token was set. Owner: "yes build them now".
+**BUILT (cloud + release workflow; no till change, no version bump):** `release.yml` creates the tag's release (pre-release) BEFORE
+electron-builder publishes, so every upload lands in it (`EP_GH_IGNORE_TIME` so a late re-run still uploads), then fails the run
+unless the tag has exactly one release with `latest.yml` and the installer (a missing blockmap is a warning). Cloud
+`lib/desktopReleases.ts`: the copies of a version are merged into one (each file from the preferred copy that has it — published
+before draft, then newest); complete = `latest.yml` + installer (the blockmap is optional: 0.6.16+ tills do not download
+differentially); every file is fetched by GitHub's API asset URL (by id — works without a token, unambiguous), never the public
+tag link. Admin list shows `copies`. **Proven:** `tests/desktop-update.test.mjs` 23/23 (the real v0.6.16 split listed complete
+and served file by file from the copy that has it; the published copy wins; by-id downloads without a token; the workflow order);
+2 mutations bite; the workflow's verify step run against the live GitHub data fails on v0.6.16 (2 copies) as it should.
+**Owner:** fix v0.6.16 on GitHub by hand (move the blockmap into the other copy, delete the empty one, untick pre-release), deploy
+the cloud. From the next tag the release is created whole.
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** v0.6.16 was split before the fix (fixed by hand; one copy, Latest, latest.yml + installer verified). **Stays FIX BUILT** until the next tag comes out as ONE pre-release with its files (the workflow's "Verify the release" step green).
+**Target 2026-09-28 (checklist v0.6.17, tester Eugene, T1 0.6.16 → 0.6.17):** R1 PASS — v0.6.17 one pre-release (Release desktop #33, "Verify the release" green). **Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** R3 PASS — v0.6.18 one pre-release (Release desktop #34). **CLOSED.**
+
+
+### A349 · P1 · CLOSED 2026-09-28 (verified on target, checklist v0.6.19) · Pre-release money review: discounted receipts never printed; refunds and CTL missing from the till's reports
+Owner 2026-09-28, before pushing 0.6.16: "make sure Catering levy(CTL) especially on the desktop app, does it appear on receipt?
+or reports? add it in overview and any other items that was skipped. make sure everything especially money math and reporting
+they have to be spot on … check of errors how they are captured … i dont want surprices". **Found (each reproduced):**
+1. **A discounted sale's printed receipt never printed (till).** The renderer asserts the lines sum to the order total; the till
+   passes the total AFTER the discount → `splitTax` threw, `printSale` caught it as "non-blocking" (log only), and the ticket loop
+   had no per-ticket guard, so stations after the receipt in the loop were lost too. Reproduced on the real renderer.
+2. **Web POS thermal receipts:** passed `grandTotal` (bill + TIP) → a tipped or discounted web sale threw and fell back to the
+   browser dialog; and every web print passed **CTL 0** → no CTL line and VAT split on the wrong net for a CTL business. The web
+   cart / receipt / Minimart showed VAT at a fixed 16 % on the UNDISCOUNTED subtotal, with no CTL (display only — the cloud
+   recomputes and stores the right figures).
+3. **Tips:** the printed receipt had no tip line; the till's on-screen receipt printed "Round Off: −<tip>" and PAY without it.
+4. **Refunds in the till's reports:** Overview revenue and VAT, the Z-report, the Daily report's hourly lines and dine-in basis
+   ignored refunds; VAT/CTL were never reduced by a refund, so a fully refunded bill drove the Daily report's net of tax negative.
+5. **CTL missing** from the Overview and the Z-report (screen and paper); the printed receipt printed "CTL (0%) 0.00" for
+   businesses without the levy.
+6. **Overview hourly chart in UTC** (3 hours off in Kenya); the Daily report was already local.
+7. Payment-method bars used revenue as the base (tips pushed them past 100 %); the CSV's ex-tax subtotal was unrounded and
+   had no refund column.
+**BUILT (0.6.16, cloud untouched):** shared/printing `splitTax` takes the discount (taxes on the discounted net — exactly the
+stored figures), prints Discount, CTL only where levied, Tip after Total, PAY = total + tip; the no-discount receipt is byte-
+identical (golden samples pass). Till passes discount + tip (sale and every reprint); `queueTickets` guards each ticket and reports
+`failed`; `order:create` returns `printFailed` and the sale screen says "The sale is saved, but this did not print: …"; reprints
+report a failure instead of `ok`. On-screen receipt: round off excludes the tip. NEW `main/orderMoney.ts` — the cloud's
+orderTax rule in SQL (refund clamped, VAT/CTL × kept fraction) — used by the Overview (revenue kept, VAT, CTL, refunds, tips,
+discounts in a new strip on all three layouts; local-time hours; payment shares of what was paid), the Z-report (refunds, net
+sales, incl. VAT, incl. CTL, tips — screen and paper), the Daily report (headline, hourly, dine-in) and the CSV (CTL, refunds,
+tips; Refunded column; 2 dp). Web: receipts get the bill + discount + tip, the business's own CTL; cart, payment and on-screen
+receipt use `extractTaxes` (business rates, after discount); the Minimart shows VAT only at the business's rate — CTL is for
+hotels, never a minimart (owner, 2026-09-28); the web bundle rebuilt.
+**Reviewed and correct, unchanged:** change is never counted as cash (legs store the applied amount; tendered/change apart);
+refunds leave the drawer as negative payment rows (expected cash right); discount capped to the same ceiling as the cloud; the
+till's and the cloud's VAT/CTL formula identical; the cloud's reports already refund-true (`lib/orderTax.ts`); `console.error`
+reaches the till's log file. **Known, not changed:** item/category sales are not reduced by a refund (a refund is not tied to
+items); the web's shift report prints the cloud's figures as before.
+**Proven:** NEW `shared/printing/test/receipt-money.test.ts` 8/8 (worked example 1,250 − 125 → CTL 19.07, VAT 152.54, tip 50,
+PAY 1,175; no-CTL business; figures foot) · NEW `apps/desktop/test/money-reports.test.mjs` 17/17 (real Overview, Z-report, Daily
+workbook on SQLite in Nairobi time: revenue 1,770, VAT 240, CTL 30, refunds 1,180, tips 50, net of tax 1,500, hours add up,
+local hour) · NEW `tests/web-receipt-money.test.mjs` 5/5 (real web builder + committed bundle). 11 mutations bite.
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** M6 PASS (Overview hours in local time). M1–M5, M7, M8 SKIPPED (no printer on hand). **Stays FIX BUILT** — M3 (VAT and CTL on the Overview), M4 (refunds) and M5 (Z-report on screen) need no printer and can run next round.
+**Target 2026-09-28 (checklist v0.6.17, tester Eugene, T1 0.6.16 → 0.6.17):** M3 PASS (Overview VAT and CTL), M5 PASS (Z-report on screen); M4 SKIPPED (refund not findable → A355). **Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** M2 PASS (Z-report after a refund); V3 covers the old M4 (refund taken off Overview + Daily report) — PASS. **Still open for the printed receipts:** M1 (discount), M2-print (tip), M7 (web CTL receipt), M8 (no-CTL business).
+**Target 2026-09-28 (checklist v0.6.19, tester Eugene, T1 0.6.19):** P1 PASS (a discounted sale prints and adds up), P2 PASS (Tip after Total; PAY = total + tip), P3 PASS (web POS receipt with CTL), P4 PASS (no "CTL (0%)"). Every part of the money review verified on target. **CLOSED.**
+
+
+
+### A348 · P1 · CLOSED 2026-09-28 (verified on target, checklist v0.6.17) · Every published release updated every till of every client at once
+Owner 2026-09-28: "since i am rolling the update to a client is it possible to prevent auto update untill i confirm that thats
+the right thing to avoid breaking a working system?" … "can i find a way of picking only one client to run the update not all the
+clients?" … "i want to turn the repo into a private repo can that still work with auto update?" → "hold by default, per business,
+build 0.6.16". Found: every prod till polled the PUBLIC GitHub release feed (`oweyahillary/swiftpos`, anonymous), so publishing a
+release sent it to every till of every client, and making the repository private would silently stop every till updating.
+**BUILT (delivery 2026-09-28-n; migration 108 + cloud + admin portal + desktop v0.6.16):**
+- **Migration 108:** `businesses.desktop_approved_version` (x.y.z, CHECK-guarded); NULL = **hold** — every business starts held.
+- **Cloud:** NEW `lib/desktopReleases.ts` (reads GitHub Releases; one entry per version, the COMPLETE copy wins when a tag's
+  release was created twice — the v0.6.15 split drafts; complete = `latest.yml` + installer + `.blockmap`; cached 5 min) and NEW
+  `routes/desktopUpdate.ts`: `GET /api/desktop-update/status` → `{ approvedVersion, held }` for the caller's business;
+  `GET /api/desktop-update/v/:version/:file` → only the approved version, only its three updater files, a 302 to GitHub (a signed
+  link when `GITHUB_RELEASES_TOKEN` is set — the token stays in the cloud; the updater drops the till's own token on the
+  cross-host hop). Admin: `GET /api/admin/desktop-releases` (every version, pre-release/draft, what is missing) and `PATCH
+  /api/admin/clients/:id/desktop-version` (refuses a missing or incomplete release; audited `desktop_update.approve` / `.hold`).
+- **Till (0.6.16):** `autoUpdate.ts` never polls GitHub. At launch and hourly it asks the cloud; held / same / older → nothing
+  (never a downgrade); newer approved → electron-updater's generic feed at `/api/desktop-update/v/<approved>/` with the till's
+  token; a 401 is refreshed once; offline / an older cloud → hold quietly. Differential download off (each file request passes
+  the approval check). The dev flavour still never updates.
+- **Releases:** `electron-builder.config.js` publishes every build as a **pre-release**. Tills on 0.6.15 and older follow
+  GitHub's latest NON-pre-release, so they see none of them; the cloud reads pre-releases with no token while the repo is
+  public, or a read-only token once it is private.
+- **Admin portal:** client detail → "Desktop updates": Approved <version> / Held; a list of versions (pre-release, draft,
+  incomplete ones disabled with what is missing); Approve, Hold.
+**Proven:** NEW `tests/desktop-update.test.mjs` 20/20 (the real rules + the COMPILED routes and admin routes over HTTP, a fake
+GitHub: held by default, per business, only the approved version and only its updater files, the split-draft case, the token
+never reaching a till, incomplete refused, audit, a till token refused on admin); NEW `apps/desktop/test/update-approval.test.mjs`
+16/16 (the compiled check with a fake cloud and updater: hold, update, no downgrade, 401 refresh, offline, older cloud; no GitHub
+poll left); NEW `scripts/test-migration-108.mjs` 5/5 (PGlite). 11 mutations bite. CI steps; migration tests glob-discovered.
+**Owner actions:** apply migration 108 to prod; deploy cloud + admin portal; publish **0.6.16** once as a normal release (untick
+pre-release) — the last version that reaches every old till; after that, approve per client in the admin portal. Before making
+the repository private: set `GITHUB_RELEASES_TOKEN` (fine-grained, this repo, Contents: read) on Render and confirm every till is
+on 0.6.16+ (older tills would stop updating). Checklist v0.6.16.
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** U1 recorded FAIL with the note "till updated automatic to version 16" — that is R4 as designed, not the hold: T1 was on 0.6.15, which follows GitHub's latest normal release, and 0.6.16 was published as the normal latest release exactly so every till would pick up the approval check (manifest 2026-09-28-n, rollout step 3). U1 itself is the admin portal showing each client **Held** — not yet looked at. U2–U4 SKIPPED. **Stays FIX BUILT** until U1–U3 are run in the portal and U4 on the next tag (0.6.17 must reach no till until approved).
+**Target 2026-09-28 (checklist v0.6.17, tester Eugene, T1 0.6.16 → 0.6.17):** U1 PASS (Held; the list once GITHUB_RELEASES_TOKEN was set — A356), U2 PASS (held: stayed on 0.6.16 with 0.6.17 on GitHub), U3 PASS (desktop_update.approve), U4 PASS (updated to 0.6.17), U5 PASS (desktop_update.hold; no downgrade). **CLOSED.**
+
+
+### A347 · P3 · CLOSED 2026-09-28 (verified on target, checklist v0.6.16) · App icon in SwiftPOS teal
+Owner 2026-09-28: "can we change the app logo to teal green?" → "yes build the teal logo but dont bump the version first". The
+till's icon (`apps/desktop/resources/icon.ico` / `.png` — shortcut, taskbar, installer, window) and the DEV flavour's
+(`icon.dev.ico` / `.png`) were green (#22c55e). **BUILT:** every size in both `.ico` files and both PNGs recoloured pixel by pixel
+(shape, border and the DEV band untouched): green → SwiftPOS teal **#14b8a6**, the back office's `swift` colour; the border's pale
+green → pale teal. Only greenish pixels moved (hue 95–170°); the near-black face and the amber DEV band (#f59e0b) are unchanged —
+measured. Ships with the next desktop version (not bumped here, by request). The web's browser-tab icon is unchanged (not asked).
+Windows may keep showing the old icon on an updated PC until its icon cache refreshes (sign out / restart).
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** U5 PASS (the teal icon). **CLOSED.**
+
+### A346 · P2 · CLOSED 2026-09-28 (verified on target, checklist v0.6.16) · Stock is a web POS (pro) feature — the till showed it to every business
+Owner 2026-09-27, before tagging 0.6.15: "stock should not appear in the desktop app thats a web pos feature pro feature", then
+"stock should only appear if the web pos is enabled". Found: the till's manager menu showed **Stock** whenever anything tracked stock,
+with no look at the business's plan; the till was never told whether the business has the web POS. **Owner decisions:** fold into
+0.6.15 (cloud deploy before the till); shown "while web is fully usable" — web access active or in the ~3-week grace after expiry;
+hidden in the reports-only week, when locked, never subscribed, or suspended. **BUILT (delivery 2026-09-27-l addendum, cloud +
+desktop v0.6.15):** cloud `GET /api/pos/init` returns `webPosEnabled` = `getWebAccess(business, status).fullAccess` (the same
+entitlement as web sign-in, `lib/webAccess.ts`). Till: NEW `device_config.web_pos_enabled` (local schema **56**; REQUIRED 56 by
+convention), written ONLY by `setWebPosEnabled()` from the pull (a `config:save` can never switch it on; an older cloud that
+omits it leaves it alone; never told = no); a branch node relays it to its peers in the reference bundle. Manager screen: Stock
+only when `web_pos_enabled === true` AND something tracks stock; a stale jump to the Stock page shows the overview. **Proven:**
+NEW `tests/stock-web-pos.test.mjs` 8/8 — the COMPILED /init + real auth over HTTP: never subscribed → no; flag → yes; paid → yes;
+grace → yes; reports-only → no; locked → no; suspended → no; catalogue unchanged. NEW `apps/desktop/test/stock-web-pos.test.mjs`
+13/13 — real deviceConfig + SQLite + referenceBundle: schema 56, null → no, stored, kept across a save, an older cloud leaves it,
+config:save cannot switch it on, node → peer relay, screen pins. 7 mutations bite. CI step "Desktop Stock only with the web POS".
+**Owner to verify:** checklist v0.6.15 §N.
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** N1 PASS (with the web POS: Stock shows), N2 PASS (without: no Stock), N3 PASS (selling unchanged). **CLOSED.**
+
+### A345 · P2 · CLOSED 2026-09-28 (verified on target, checklist v0.6.16) · Offline manager: the back office's cloud-owned pages say "This till is not signed in"
+Owner 2026-09-27 (checklist v0.6.14, screenshots of T1 0.6.14 with the manager signed in offline): "we can sell this as an option
+fully offline till, thats why the manager has to log in confirm this is true full offline once registered". Screens: Staff and Menu
+show "This till is not signed in. Ask a manager to sign in." (Menu "0 of 0 items"); Settings → Payment methods says it cannot reach
+the cloud and shows what is active on the till. **Read in the code:** selling, shifts, expenses, Orders, Overview, Z-reports and day
+close run from the till's SQLite and work offline once registered (the menu, staff PINs and payment methods are cached by sync). The
+lists the cloud owns — menu (products, categories, combos, variants, modifiers), staff and roles, payment methods, stations, receipt
+text — are edited through `manageFetch` (`ipcHandlers.ts`) under the MANAGER's own cloud token, so the cloud applies the role rules
+(A340). An offline sign-in (`signInLocal`) has no cloud token (''), so `manageFetch` throws "Not signed in" before trying the network,
+and `humaniseError` turns that into "This till is not signed in" — wrong: the manager IS signed in, just offline. The connection
+message it already has ("No connection — menu and staff changes need internet…") is never reached. **The same stays true after the
+network returns** until the manager locks the till and signs in again (the offline session is never upgraded to a cloud token).
+The Menu page shows no items offline although the till sells from its cached menu. Not built — proposed (0.6.15, owner to confirm):
+(1) an offline session gets its own message: "You signed in while offline. Menu, staff and settings changes are saved on the cloud —
+once online, lock the till and sign in again to edit them. Selling is not affected."; (2) optional: the Menu and Staff pages show the
+till's cached lists read-only while offline; (3) optional: upgrade the offline session to a cloud token in the background when the
+network returns (a fresh PIN check against the cloud), so no re-sign-in is needed.
+**Owner decision 2026-09-27:** "build all three as 0.6.15". **BUILT (delivery 2026-09-27-l, desktop v0.6.15; no cloud or
+dashboard change):** NEW `main/offlineSession.ts`. (1) **The right words:** `manageFetch` with no cloud token and a signed-in
+person first tries the upgrade, then throws "You signed in while offline. Menu, staff and settings changes are saved on the
+cloud — once the till is online they unlock by themselves (or lock the till and sign in again). Selling is not affected." —
+every cloud-owned editor (35 handlers) shows it; nobody signed in still gets "Not signed in". The till's online void and refund
+do the same (they read the same empty token). Settings → Payment methods passes the offline wording through, and says "cloud",
+not "server" (rule 21). (2) **Read-only offline:** NEW `manage:cachedMenu` / `manage:cachedStaff` return what sync already
+brought down — only when the reason is OFFLINE (an offline sign-in, or no connection); a refusal (403) or any other answer is
+never replaced by the saved list. Menu page: amber banner with the reason + "Showing the menu saved on this till — read-only",
+Try again; prices not editable, Import hidden, the item detail is a read-only card (name, category, price, description, comes
+with). Staff page: the same banner; a node lists its branch roster, any other till the people who signed in on it; no Add, no
+Deactivate; names and roles only, never a hash. (3) **Upgrade:** an offline sign-in (`signInLocal` — saved credential, node,
+node roster) holds the PIN in the main process's memory only; it is sent to the cloud's `/api/auth/verify-pin` with the same
+body as a sign-in (`verifyPinBody`, now shared) on the next cloud-owned call and every 30 s. The cloud's answer is adopted only
+when it names the SAME person (`persistCloudSignIn`, now shared with the online sign-in); a 5xx / no network keeps trying; a
+4xx drops the PIN and the offline session carries on as before (nobody is signed out by it); locking the till, another sign-in
+or signing the till out wipes it. **Proven:** NEW `apps/desktop/test/offline-session.test.mjs` 34/34 — the REAL compiled IPC
+handlers + SQLite + real bcrypt, a fake cloud, and the renderer's humaniser RUN: the offline words on every editor and a void;
+the saved menu (combo contents, inactive hidden) and staff (no hashes); the upgrade by the sign-in's own request, the list then
+read under the manager's OWN token, once only; a 403 never falls back; a 401 asked once then dropped; a 503 kept then upgraded;
+a different person never adopted; locking wipes the PIN; the refund upgrades first. 6 mutations bite.
+`tests/till-name.test.mjs` pin follows the shared `verifyPinBody` (mutation bites). CI step "Desktop offline session".
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** O1–O8 PASS (Staff, Menu and Payment methods offline; selling unaffected; the screens unlock when the network returns; the offline sale reached the cloud; online sign-in then a drop; a void by the offline-signed-in manager). **CLOSED.**
+
+### A344 · P3 · CLOSED 2026-09-27 (verified on target, checklist v0.6.14) · Payment methods in colour
+Owner 2026-09-27: "we can make the payment method color full each with a color or something". Not built. Scope to agree: which
+surfaces (the till's and the web POS's payment buttons; the method badges in Orders, the shift panel/Z-report and the reports), and
+the colours — one fixed colour per method (Cash, M-Pesa, Card, On Account, custom tenders), readable in dark and light mode and kept
+distinct from the theme's action colour (the till-green / web-POS-green gates guard action buttons, not method identity).
+**Owner decision 2026-09-27:** buttons + reports. **BUILT (delivery 2026-09-27-j, desktop v0.6.14 + dashboard):** NEW
+`shared/paymentColours.ts` (byte-identical copies on the till and the web, in `check-shared-sync`): Cash amber, M-Pesa green,
+Card blue, On Account violet, Glovo orange; custom tenders a stable colour from a set of five. Each is the mid-tone of its hue that
+reads on BOTH the till's dark panels and the web's white (~3.6:1 on every surface — the first choice of amber/orange failed on white;
+the test caught it). Unselected method buttons are tinted in their colour (till PaymentModal, web PaymentModal incl. custom tenders);
+the SELECTED one keeps the theme highlight (action-*). A dot beside the method name in: till POS recent orders, manager Orders,
+overview breakdown bars (the bar takes the colour), Shift tab, shift panel; web order history and POS reports (bar too). Back-office
+colour gate: `lib/paymentColours.ts` baseline 5, recorded in `docs/A329-back-office-colour-classification.md` (identity colours, not
+actions). **Proven:** NEW `tests/payment-colours.test.mjs` 7/7 (real palette: dots ≥ 3:1 on 5 surfaces, label ≥ 4.5:1 on every
+tint dark and light, distinct, stable custom, one palette; screen pins); 4 mutations bite; Chromium render of both modes (sent to
+the owner).
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** M1 PASS (till buttons), M2 PASS (web POS buttons, dark and light), M3 PASS (till dots), M4 PASS (web dots). **CLOSED.**
+
+### A343 · P2 · CLOSED 2026-09-27 (verified on target, checklist v0.6.14) · A cashier's own shift on the web while another cashier runs the till
+Owner 2026-09-27: "assuming we have cashier A and B in the same shift they can run their own independent shift from different tills,
+assuming cashier A is running his shift in till 1 and logs into web they should get an option of opening their shift or continue
+selling as B but once they have created the shift and log in again in either web or desktop they should proceed to sell". Today a
+shift is the TERMINAL's session (migration 63): whoever signs in on a terminal sells into its drawer, and the web picker joins a
+till's open drawer (A273). Not built — the cash-custody model needs the owner's answers first (see the questions put 2026-09-27).
+**Owner decision 2026-09-27:** "if cashier A has a shift running on Till 1 and logs into the web it should detect the shift
+and logs him in directly … but if cashier b does the same they are asked to join cashier A shift or proceed to create a shift";
+on the desktop "they proceed to the current shift running on the till"; the web's own till "can be called branchname_web_till".
+**BUILT (delivery 2026-09-27-j, cloud + dashboard):** NEW `GET /api/shifts/web-till?branch_id=` → `{ name: "<Branch> Web Till",
+open_shift }` (the branch's existing `web:<branch>` drawer; who and when, no amounts; `webTillName()` in `lib/terminalLabel.ts`).
+Web sign-in (`CashierScreen`): the running shift is entered silently only by its opener (opened_by / cashier_id) or a cashier who
+already joined it on this browser (`mayEnterSilently`, `markJoined` — sessionStorage); a cashier's OWN open drawer — a till's or the
+web till's — is still joined silently (`ownOpenDrawer`, exactly one); anyone else gets the picker, which now lists "<Branch> Web
+Till" first and says "Anne's shift is running on T1 — Front. Join it, or start your own shift on <Branch> Web Till." Choosing the web
+till covers no till (its drawer is the branch web session). Desktop unchanged. `tests/shift-join.test.mjs` two pins updated to the
+new code (same guarantees). **Proven:** NEW `tests/web-till.test.mjs` 13/13 (the real web rules; the COMPILED /web-till over HTTP —
+only the web:<branch> drawer, 404 for another business, before /:id; screen pins); 4 mutations bite.
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** L1–L6 PASS (opener straight in; another cashier asked; own shift on the web till; straight back into it; desktop unchanged; joining remembered). **CLOSED.**
+
+### A342 · P2 · CLOSED 2026-09-28 (verified on target, checklists v0.6.14 + v0.6.16) · Closing a shift on the till should also close the web's shift for that till
+Owner 2026-09-27: "if a shift is closed on the till it should also close the web". For a SHARED drawer (web joined the till's, or the
+till joined the web's — one shift id) this already happens: B7 PASS. The case left is two drawers on one till (A338's clash — the web
+POS standing in as T1 with its own drawer while T1 has another): closing T1's leaves the web's open (checklist H3 expected exactly
+that). Not built — how the web drawer's cash is counted when the till closes it needs the owner's answer.
+**Owner decision 2026-09-27:** "Till's count covers both". **BUILT (delivery 2026-09-27-j, cloud + desktop v0.6.14):** NEW pure
+`lib/siblingDrawers.ts` (other open shifts on the SAME till key). `POST /:id/foreign-cash` now also returns `siblings { count,
+expected, shifts[who, since, expected] }`; the till adds `siblings.expected` to expected cash (computeZReport → close, Z-report, shift
+panel) and says so: panel "Also counted in this drawer: the web POS's own shift on this till (Jane), expected … Closing here closes it
+too"; Z-report screen and paper "+ Web shift on this till". `POST /:id/close` from a TILL token (surface desktop) adds the siblings'
+expected and closes them — `close_method 'counted'`, closing_float = expected, variance 0, note "Closed with T1's count (shift …) — its
+cash was counted in that drawer"; a WEB close never closes the till's. A till's close whose figures moved after the count (the web sold
+on) is recorded with a note instead of refused (a 400 there would make the till retry forever — A338's blocking). Found on the way:
+the terminal-write guard (A159, dry-run) would have BLOCKED the till's read-only `foreign-cash` / `foreign-orders` POSTs the moment
+it was enforced — added to its allowlist. **Proven:** NEW `tests/sibling-drawers.test.mjs` 9/9 — the COMPILED shifts router + REAL
+auth over HTTP: 1000 + 400 + (500 + 230) = 2130 counted once, variance 0, the web shift closed as counted with its note, another till
+and the web till untouched, a web close closes nothing else, the replayed-close note, the REAL guard allows the two POSTs; 5 mutations
+bite. `apps/desktop/test/shared-drawer.test.mjs` +3 (expected 2050 + 730 = 2780; an older cloud changes nothing); mutation bites.
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** K1 PASS (panel says the web's shift is counted here), K2 PASS (one count balances both), K3 PASS (dashboard shows both closed); **K4 SKIPPED** (a web close never closes the till's shift — bench-proven by `tests/sibling-drawers.test.mjs`) — stays FIX BUILT until K4 runs.
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** K4 PASS (a web close never closes the till's shift). Every K check has now passed on target. **CLOSED.**
+
+### A341 · P3 · CLOSED 2026-09-28 (verified on target, checklist v0.6.19) · A manager should be able to add a "type"
+Owner 2026-09-27: "a manager should be able to add type we can do this in a future build". **Not yet scoped — owner to confirm which
+list is meant.** The likely one is **expense types** (expense categories): the till's Shift → Expenses picker reads them from the cloud
+(`expense:categories` → `GET /api/expenses/categories`), and only the back office can add one today. Other candidates: product /
+category types or payment types. When confirmed: a manager-permission-gated "Add type" where the list is chosen, cloud route with the
+same role ceiling as staff (A340), and the till's picker refreshing without a restart.
+**Owner 2026-09-28: "yes A341 are expense types".** **BUILT (delivery 2026-09-28-u, desktop 0.6.18 + cloud + dashboard + admin portal):** the till's Shift → Expenses picker has **+ Add type** for
+people with `expenses.manage` (managers and the owner by default — never cashiers): a name is tidied, an existing type in any
+capitalisation is selected instead of duplicated, a new one is saved on the cloud through the dashboard's own route and
+permission (`POST /api/expenses/categories`, via `manageFetch` — offline / role messages as for the Menu page) and selected
+straight away. NEW IPC `expense:addCategory` (schema + preload). No cloud change. **Proven:** `till-extras-0618.test.mjs`
+(`renderer/lib/expenseTypes.ts` run for real + pins); mutations bite. **Owner to verify:** checklist v0.6.18 §E.
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** **E1 FAIL** — "Desktop app does not have the add type field" (looked on the manager's Expenses page; the button lived in POS → Shift → Expenses). Owner: "add it here under expense but leave it under shifts also" → **A358** (0.6.19). E2, E3 SKIPPED.
+**Target 2026-09-28 (checklist v0.6.19, tester Eugene, T1 0.6.19):** E1–E4 PASS (Manager → Expenses and Shift → Expenses; duplicates refused; a cashier sees no "+ Add type"). **CLOSED.**
+
+
+
+
+### A340 · P1 · CLOSED 2026-09-27 (verified on target, checklist v0.6.13) · A manager could make someone an owner (invite route had no role check); could grant permissions they do not hold
+Owner 2026-09-27: "also check create users i have seen the manager can create an owner that should not happen".
+**Sweep (cloud `routes/staff.ts`, dashboard `StaffTab`, till `ManageTabs` Staff):** the till's staff screen correctly calls the
+cloud under the MANAGER's own token (`manageFetch` → staff token), so the cloud is the boundary. There: `POST /` (PIN staff),
+`PATCH` and `DELETE` already refused elevated roles for non-owners — but **`POST /invite` had no role check and no branch check**:
+a manager could invite anyone as **owner** (or into any branch). Also: per-user permission **overrides** on create/update were
+written unchecked, so a manager could grant a staff member a permission they do not hold themselves (e.g. settings.manage);
+`POST /roles` let a manager mint a role named "Owner"/"Admin"; and the role pickers offered Owner to a manager — the till's always,
+the dashboard's on Settings/Users & Access (only the manager dashboard filtered). **BUILT (delivery 2026-09-27-g):** NEW pure
+`lib/roleCeiling.ts` — one rule: the owner (and admin, which the cloud treats as owner) may assign any role and grant any
+permission; anyone else may assign only non-elevated roles (owner/admin/manager/supervisor/branch_manager are elevated; unknown =
+refused) and grant only permissions they hold. Used by: `POST /invite` (role + own-branch guard, like `POST /`), `POST /` and `PATCH`
+(overrides ceiling, grants only; an unknown permission id refused), `POST /roles` (no elevated names), `PUT /roles/:id/permissions`
+(same name rule), and `GET /roles`, which now marks each role `assignable` for the caller — both pickers show only those. Owner
+behaviour unchanged. **Proven (bench):** NEW `tests/staff-role-ceiling.test.mjs` 13/13 — runs the COMPILED staff router behind the
+REAL auth middleware on a real Express server with real signed tokens (database replaced in memory): a manager cannot create /
+invite / promote an owner, cannot invite into another branch, cannot grant settings.manage (create or update) but can grant
+orders.void, cannot mint "Owner", sees Owner/Manager as not assignable; the owner can still do all of it. **Run against the OLD
+routes (dev) it goes red exactly where the owner saw it** (a manager's invite of an owner succeeds; 7 checks); a rule mutation
+bites. **Owner to verify:** see `docs/MANIFEST-2026-09-27-g.md`.
+**Target 2026-09-27 (checklist v0.6.13):** J2 PASS (till picker has no Owner), J3 PASS (dashboard picker; cashier invite works), J4 PASS (owner unaffected). **CLOSED.**
+
+### A339 · P1 · CLOSED 2026-09-27 (verified on target, checklist v0.6.14) · An offline manager sign-in lands on the cashier screen
+Owner 2026-09-27: "before pulling v0.6.10 i was offline while trying to log in as a manager it was taking me to cashier screen not
+managers screen". **Cause:** the PIN screen routes on the TOP-LEVEL `role` of the sign-in answer (`App.tsx` hasManagerRights:
+manager role, or `*`, or settings.manage). The online answer carries `role`; the offline answer (`signInLocal` — saved credential,
+branch node, node roster) carried the role only inside `staff`. A manager has no `*` and, since migration 59, no settings.manage — so
+offline they fell to the till. (The staff_session row kept the right role, so a restart routed correctly.) Not a 0.6.9/0.6.10
+regression. **BUILT:** `signInLocal` returns `role: staff.roleName`, as the online path does. **Proven:** NEW
+`apps/desktop/test/offline-manager-signin.test.mjs` 8/8 — registers the REAL compiled IPC handlers, caches a manager's and a
+cashier's credential as an online sign-in does (real pinCache, real bcrypt), takes the network away and calls the real
+`auth:verifyPin`: the manager routes to the manager screen (by the same MANAGER_ROLES list read from App.tsx), the cashier to the
+till, a wrong PIN is refused; the mutation (role removed) reproduces the owner's bug. CI step added.
+**Target 2026-09-27 (checklist v0.6.13):** J1 SKIPPED — stays FIX BUILT until an offline manager sign-in is tried.
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** J1 PASS — an offline manager sign-in reaches the manager screen. **CLOSED.** The owner's screenshots from that sign-in showed the back office's cloud-owned pages (Menu, Staff) saying "This till is not signed in" → A345.
+
+### A338 · P1 · CLOSED 2026-09-27 (verified on target, checklist v0.6.13) · A till stops syncing while the web POS has a drawer open as that till ("one should never block the other")
+Owner 2026-09-27 (till on 0.6.10): "the till is not syncing to cloud … i have tried force sync from tech screen but no change and its
+because of the cloud till which is running and it should not be the case … one should never block the other from syncing".
+**Cause (reproduced on real Postgres and on the real sync engine):** migration 63 made "one OPEN shift per terminal" a UNIQUE index
+(`shifts_one_open_per_terminal`). The web POS can stand in for a till (A273 — it adopts the till's device id); when it has a drawer
+open AS T1 and T1 has its own drawer (opened offline, before A334's join, or on a build that did not join), `/api/sync/push` refuses
+the till's shift (23505 → `duplicate_open_shift`) and the till parks it 'conflict'. Everything hanging off it follows: its floats and
+expenses are refused (`missing_shift`) and parked; every sale on it fails the `orders.shift_id` foreign key (422
+`ORDER_FK_VIOLATION`, "This sale references a record the server does not have") and goes 'failed' after 5 tries; its close waits on
+its sales forever. Nothing re-queued any of it, so Force sync changed nothing. **BUILT (delivery 2026-09-27-f, desktop v0.6.12 +
+cloud + migration 107):** (1) **Migration 107** replaces the unique index with a plain one (`shifts_open_by_terminal`, same key, same
+lookups): a drawer that already exists on a till always lands. Opening a second drawer BY HAND is still refused — by the app
+(`POST /api/shifts/open` checks before insert, 409; the web picker joins the open drawer), which is where that rule belongs.
+(2) **Cloud:** `POST /api/orders` checks the sale's drawer before writing it; a drawer not on the cloud yet → **424
+`shift_not_synced`** (retry), never an FK failure. (3) **Till:** a sale answered 424 stays pending and never counts towards 'failed';
+NEW first push stage `requeueAfterDrawerClash()` puts back what the clash parked — shifts refused as duplicate_open_shift (the
+rejection line removed from the notes the close sends on), their floats and expenses once the drawer is no longer parked, and sales
+that failed on the missing drawer once it has reached the cloud (ONCE: marked in `attempts`, because the failure path overwrites
+`last_error` — the first version looped; the test caught it). Cheap, idempotent, matches nothing on a healthy till. **Proven (bench,
+Linux, Node 22):** NEW `scripts/test-migration-107.mjs` 7/7 on PGlite — the owner's failure reproduced (the till's drawer 23505, its
+sale FK) then both land after 107; mutation (unique again) bites. NEW `apps/desktop/test/drawer-clash-sync.test.mjs` 15/15 on the
+REAL compiled `syncEngine` + SQLite against a stand-in cloud: before — drawer, float, expense parked, both sales 'failed', nothing on
+the cloud; after — all of it arrives within two passes, the web's drawer untouched, notes clean; a sale refused for another reason is
+left alone; a sale waiting for its drawer stays pending through 8 passes and goes when the drawer lands; requeue once only; 4
+mutations bite. NEW `tests/drawer-clash.test.mjs` 4/4 (the route's 424 before the write; 2 mutations). CI step added. All 30
+migration tests, every schema gate. **Order matters for the rollout:** prod-migrate 107 → deploy the cloud → install 0.6.12 on the
+till (a 0.6.10 till never re-queues its parked drawer). **Owner to verify:** see `docs/MANIFEST-2026-09-27-f.md`.
+**Prod 2026-09-27:** migration 107 applied — owner's `pg_indexes` output shows `shifts_open_by_terminal` (`CREATE INDEX … WHERE (status = 'open'::text)`) and no `shifts_one_open_per_terminal` (checklist R1). Closes after H1–H4 pass on 0.6.13.
+**Target 2026-09-27 (checklist v0.6.13):** R1 PASS (107 on prod), H1 PASS ("pending is zero"), H2 PASS, H3 PASS, H4 PASS. **CLOSED.** (Owner follow-up the same day: closing on the till should also close the web's drawer — NEW A342.)
+
+### A337 · P2 · CLOSED 2026-09-27 (verified on target, checklist v0.6.13) · Till reports: no previous shift reports; expenses missing from the shift report (its lines did not add up); a plain Daily Sales Report
+Owner 2026-09-27: "1. I should be able to print previous shift reports 2. I should be able to see expenses, and it should also be
+part of the shift report 3. formatting of the daily sales report can we color code maybe headers, total, important figures etc".
+Found in the sweep: (1) Manager → Shift → Shift report showed only the OPEN shift (`shift:current`); a closed shift's Z-report
+could be rebuilt (`shift:zreport` existed) but nothing on screen reached it. (2) **A real arithmetic gap (pre-existing):** since
+expenses were made to leave the drawer, `computeZReport` has taken them off expected cash, but neither the on-screen report
+(`ZReportView`) nor the printed one (`shared/printing/shiftReport.ts`) printed them — so "Opening float + Cash sales + Float in −
+Float out" did not equal the "Expected cash" beneath it whenever an expense was paid, and a manager reading the paper could not see
+why. Expenses were visible only for the OPEN shift, inside the POS shift panel. (3) The .xlsx used bold alone.
+**BUILT (delivery 2026-09-27-e, desktop v0.6.11):** (1) NEW `shift:history` (`listShifts` — this till's shifts, newest first,
+cashier / times / expected / variance); the Shift report view has a picker: "Current shift (live)" or any previous shift, which
+opens as its Z-report and prints through the same ESC/POS path. (2) `ZReport.totals.expenses` (already inside expected cash, the
+web's included) + `expenseLines` (description, amount, who paid); the screen and the paper print "− Expenses" between Float out and
+Expected cash and an "EXPENSES (n)" section; a long description wraps whole with the amount beneath it (58 mm). A caller that sends
+no expenses (the web POS today) prints exactly as before. NEW manager tab **Expenses** (`expense:range` → `listExpenses`): this
+till's expenses by date range, who paid, total, "not synced" marks. The web receipt bundle is rebuilt from `shared/printing`
+(`--check` passes). (3) `buildDailySalesWorkbook` split from the save dialog; seven row styles, one meaning each — title (white on
+SwiftPOS teal), section (white on dark teal), column headings (pale teal, underlined), section totals (gray, ruled), key figures
+(Total Gross, collections Total: pale amber), warnings (discrepancy / stale terminal / unreconciled difference: pale red),
+provenance (gray) — every pairing ≥ 4.5:1 (most ≥ 7) so it still reads in black and white; the figures and their order are unchanged.
+**Proven (bench, Linux, Node 22):** NEW `apps/desktop/test/shift-reports.test.mjs` 25/25 on the REAL compiled `shiftService` +
+`dailySalesReport` + SQLite, the REAL `shared/printing` renderer's text, and the REAL workbook read back with ExcelJS (1000 + 400 −
+150 = 1250 on screen and paper; lines; a previous shift reopens closed at 1250 / variance 0; only this till's shifts and expenses;
+Total Gross 400 unchanged and amber; bands, headings, totals; contrast); 6 mutations bite (one first did not apply — the compiled line
+is split; re-run, rule 23); the sweep's own first run caught a long description cut to one line — fixed. CI step added.
+**Owner to verify** (till on 0.6.11): see `docs/MANIFEST-2026-09-27-e.md`.
+**Target 2026-09-27 (checklist v0.6.13):** G1–G5 PASS (expenses on screen and paper, previous shift reports, Expenses screen, coloured daily report). **CLOSED.**
+
+### A336 · P1 · FIX BUILT 2026-09-27 (stage 1 of 3) · Web POS sales on a till's drawer never appear on the till; no branch view of other tills
+**Verified on target 2026-10-01 (checklist v0.6.26, run on the v0.6.28 install):** X1–X5 PASS — a web refund and a web void of a till sale reach the till, a till refund is counted once, web-rung sales unchanged, the totals agree. The 0.6.26 follow-up is done; **A336 stays open for stage 3** (offline void/refund with a manager PIN).
+Owner 2026-09-27: "calculations are off from web to desktop pos the orders should cross sync what i sell on the web using the same
+till should appear on the till or branch if its a different till. fix it". Found: the till never downloads orders — `orders` sync
+is push-only — so a sale the web POS rang as T1 (A273) lived only in the cloud: absent from T1's Orders list, shift panel sale
+count and method split, and Z-report lines; only its CASH reached the close (A334 foreign-cash). The manager screen on a till that
+is not the node shows "This till only". **Owner decisions (2026-09-27):** a sale rung as a DIFFERENT till → **branch view, read
+from the cloud**; voids: **manager / supervisor / owner** only; refunds: **owner / manager** only — cashiers neither; **offline
+refunds need a manager PIN**. Delivered in three stages; **stage 1 BUILT (delivery 2026-09-27-d, desktop v0.6.10 + cloud):**
+(1) NEW `POST /api/shifts/:id/foreign-orders` (read-only; authorised exactly like foreign-cash): every completed or voided sale on
+the drawer the till did not RING — the till sends `own_ids` (its local ids = the cloud's `idempotency_key`), so a sale it already
+downloaded is sent again and a later web void/refund reaches it. Pure rule `foreignOrders()` in `lib/foreignCash.ts`; payments as the
+close counts them (completed | refunded). (2) Till: NEW `webSales.ts` stores them under the CLOUD id with `orders.origin = 'web'`
+(NEW local column, schema **55**; `REQUIRED_DESKTOP_SCHEMA` 55 by convention), `sync_status 'synced'`, never in `sync_queue`,
+never offered to the branch node (`fillNodeOutbox` skips `origin` rows), never overwriting a sale the till rang. Pulled every ~20 s
+(with the catalogue poll), after every full sync, and at sign-in. They then appear in the Orders list (tagged "web"), shift panel,
+Z-report and day close; foreign-cash still covers anything not yet downloaded, and — because the till sends the downloaded ids as
+"held" — never counts one twice. (3) Manager → Orders: NEW "This till / All tills at this branch" — the branch list reads the
+cloud's `GET /api/orders` for this branch (now carrying `device_id`, "this till" marked); offline it falls back to this till and
+says so. `schema-parity-exceptions.json`: `origin` declared local-only with its reason. **Proven (bench, Linux, Node 22):** NEW
+`apps/desktop/test/web-sales.test.mjs` 25/25 on the REAL compiled `webSales` + `shiftService` + `nodeIngest` + SQLite (stored under
+the cloud id, lines, only counted payments, never queued, never blocks reconcile, own vs held ids, Z-report 1000+400+500 = 1900 once,
+idempotent, own sale untouched, web void → 1400, web refund → back out, never offered to the node, branch mapping, the panel's
+"web" line after download); 7 mutations bite (one first crashed instead of failing — fixture fixed, rule 23). NEW `tests/cross-sync.test.mjs` 16/16 (the real
+`foreignOrders`/`foreignCash`/`resolveOrderId` + route and wiring pins); 4 mutations bite. CI step "Desktop web sales on this till".
+**Stage 2 (next):** void and refund of web sales from the till, online, with the owner's roles. **Stage 3:** offline void/refund
+queued on the till; offline refunds need a manager PIN. **Owner to verify** (till on 0.6.10 + web): see `docs/MANIFEST-2026-09-27-d.md`.
+**Target 2026-09-27 (checklist v0.6.13):** F1 PASS (web sale on the till, tagged web), F2 PASS (in the shift figures); F3 (web void), F4 (branch view), F6 (fast shift push) SKIPPED — stays open for those and stages 2–3.
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** F3 PASS (web void reaches the till), F4 PASS (branch view from the cloud), F6 PASS (shift changes reach the cloud fast). **Stage 1 fully verified**; open for stages 2–3.
+**Stage 2 BUILT 2026-09-28 (delivery 2026-09-28-u, with A355):** a web POS sale on this till's drawer gets the same History
+buttons as a till sale ("Void / Refund", then "Refund"); its local id IS the cloud id, which the cloud's void/refund resolve
+directly; only owner / manager (orders.void) see the buttons, the cloud enforces the same. A refund made on the till and the
+cloud's copy of it are counted once (`apps/desktop/test/web-sales.test.mjs` +3: 1700 → 1400 → still 1400, one negative row).
+**Stage 3 (offline void/refund queued on the till, manager PIN) → desktop 0.6.19.**
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** V5: the till's History offered Refund on the web-tagged sales (screenshot); the owner recorded FAIL because the WEB lists had no refund → **A359** (0.6.19). Stays FIX BUILT (stage 2 verified with A359; stage 3 → 0.6.19+).
+**Target 2026-09-28 (checklist v0.6.19, tester Eugene, T1 0.6.19):** Stage 2 verified: the till's History reverses web-POS sales (H2; 0.6.18 V5 screenshot) and the web lists refund (A359, W1–W5). **Stays open for stage 3** — offline void/refund queued on the till (manager PIN).
+**Follow-up BUILT 2026-09-30 (delivery 2026-09-30-c, desktop 0.6.26 + cloud; no migration, schema stays 58):** the known limit of A359 — a void or refund made on the WEB of a sale the TILL rang was right on the cloud but the till's Z-report, shift figures, day close and History still counted it in full (web-rung sales already got theirs). The foreign-orders route now also returns `own_reversals` — the till's own sales (matched by `idempotency_key`, or id) that the cloud voided or refunded: pure `ownReversals()` in `lib/foreignCash.ts`, with only the refund's money-out rows. Till: NEW `applyOwnReversals` (`webSales.ts`), called from `pullWebSales` (~20 s, after every sync, at sign-in), applies them exactly as the till's own void/refund does — a void once (and the same `order_voided` event to the branch node); a refund only if the till has not refunded the sale itself, each money-out row once under the cloud's row id; web-rung rows (`origin` set) untouched. An older till ignores the field. A race closed with it: the till's own refund now mirrors locally only if the sale is not already refunded here (`mirrorTillRefund`, used by order:refund) — the pull can store the cloud's copy of that refund first. Same reach as web-rung sales: drawers still open or awaiting reconcile. **Proven:** NEW `apps/desktop/test/own-reversals.test.mjs` 18/18 on the REAL compiled `webSales` + `shiftService` + SQLite (1950 − 400 = 1550; idempotent; a till refund not counted twice; void 1250 → 1000; the node hears once; web-rung and unknown ids untouched; the refund race both ways); 5 mutations bite. `tests/cross-sync.test.mjs` +4 (20/20, the real `ownReversals`); 3 mutations bite. CI step "Desktop web reversals of the till's own sales". **Owner to verify:** checklist v0.6.26 §X. Stays open for stage 3.
+
+
+
+
+### A335 · P1 · CLOSED 2026-09-28 (verified on target, checklist v0.6.16) · The till's void and refund cannot find the till's own sales in the cloud ("Order not found")
+Found in the A336 sweep: the till voids/refunds ONLINE by posting its LOCAL order id to `/api/orders/:id/void|refund`
+(`ipcHandlers.ts`), and both routes looked the order up by `id` alone — but the cloud mints its own id and keeps the till's id as
+`idempotency_key`, so a synced till sale was never found. Same root as the B5 double count (A334). **BUILT (delivery 2026-09-27-d):**
+NEW `lib/resolveOrder.ts` — the id the caller knows (cloud id, else `idempotency_key`; a non-uuid never compared to the uuid column),
+always inside the caller's business; both routes resolve first, so every later step (stock, credit, kitchen tickets, fiscal note)
+acts on the cloud row. Web POS unchanged (it already sends cloud ids). Proven by `tests/cross-sync.test.mjs` (the real resolver; 2
+mutations). Permissions unchanged here — the owner's void/refund roles are A336 stage 2. **Owner to verify:** on the till, void a
+till sale (within 30 min) and refund another; both succeed and the dashboard shows them.
+**Target 2026-09-27 (checklist v0.6.13):** F5 SKIPPED — stays FIX BUILT until a till sale is voided and refunded from the till.
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** F5 SKIPPED again — stays FIX BUILT until a till sale is voided and refunded from the till.
+**Target 2026-09-28 (checklist v0.6.16, tester Eugene, T1 0.6.16):** F5 PASS (a till sale voided and another refunded from the till; both reached the cloud). **CLOSED.**
+
+### A334 · P1 · CLOSED 2026-09-27 (verified on target, checklists v0.6.13 + v0.6.14) · Desktop never learns of a drawer opened on the web POS → a second drawer, refused on sync
+Owner report 2026-09-26: "if i open on web pos and i log into desktop pos it should give me either the pos name or the cashiers name
+or open a till". Found in the A273 follow-up sweep: on the desktop `shifts` sync **push-only** (`syncEngine.ts:57`), so a drawer
+the web opened (as till T1) never reaches T1; T1 offers to open its own, and when that pushes the cloud refuses it as
+`duplicate_open_shift` (one open drawer per terminal, migration 63) — the till keeps selling into a drawer the cloud does not
+accept. Owner decision (2026-09-26): a different cashier signing in on the desktop is **shown the open drawer (till name,
+cashier, since when) and offered to join**; the same cashier resumes silently. **Not built — it needs cash-custody decisions:**
+the till is the cash authority and computes expected cash from its LOCAL sales (`SHIFT-DAY-WEB-PARITY-DESIGN.md` invariant 1),
+but the web's sales on that drawer live only in the cloud — a desktop close would omit them and show a false shortage.
+**Questions for the owner:** (Q1) when the desktop joins a web-opened drawer, the desktop close should include the web's sales
+on it (the till fetches their totals from the cloud at close) — or must that drawer be closed where it was opened? (Q2) the
+till is offline at sign-in and cannot see the web drawer: open locally and resolve on reconnect (show "this till's drawer was
+opened on the web — join/close"), or refuse to open offline when the till has been used on the web that day? **Proposed build
+once answered:** the till asks the cloud for its device's open shift at sign-in (online), adopts it locally under the same id
+(no second push), shows the join prompt, and — per Q1 — folds the web's cash totals into its close. Desktop release + target
+test on the till with the web (rule 16).
+**Owner answers 2026-09-26:** (Q1) **the desktop close INCLUDES the web's sales**; (Q2) offline: discouraged, and in practice a till
+with no internet has no web session either — so offline the till opens as today. **BUILT 2026-09-27 (delivery 2026-09-27-a;
+desktop v0.6.9 + cloud).** (1) **Join at sign-in:** after an ONLINE PIN sign-in the till asks the cloud `GET /api/shifts/current`
+(its own device id, 4 s cap) and `adoptCloudShift()` takes a drawer the web opened AS THIS TILL into SQLite under the SAME id,
+attached to this till's trading day, `pending` so the next push records the day on the cloud row (the push never reopens a
+closed shift). Refused when: another terminal's, not open, the till already has an open drawer, it cannot sell, or its previous
+day is unclosed. The cashier who opened it just resumes; anyone else sees "T1 — Front Counter is already open — opened by Jane at
+09:02 on the web POS … Continue" (`PinPage`). (2) **The close includes the web's cash:** NEW `POST /api/shifts/:id/foreign-cash`
+— the till sends the order/float/expense ids it holds, the cloud sums the rest with its own close arithmetic (cash payments
+completed|refunded on completed orders, floats, expenses; NEW pure `lib/foreignCash.ts`); authorised exactly like `/:id/close`;
+read-only. `computeZReport`/`closeShift`/`currentShiftReport` add it (`totals.foreign`; null = could not check). Fetched by the
+close, the Z-report, the shift panel and the manager report — **never by the POS sell gate** (`shift:current` without
+`includeForeign` stays local). The shift panel says "Includes the web POS on this drawer: 2 sales, KES 700 cash" or, offline,
+that it could not check (the cloud reconciles after sync). Applies to EVERY shared drawer — also the web joining a
+desktop-opened drawer (A273 follow-up, 26-c), whose web sales the till's close previously missed. The day close sums shift
+expected cash, so it follows. **Proven (bench, Linux, Node 22):** NEW `apps/desktop/test/shared-drawer.test.mjs` 16/16 on the REAL
+compiled `shiftService` + SQLite — same id, day attached, pending, the refusals, expected 1000+400+700−50 = 2050, a real count of
+2050 balances WITH the web's part and shows a false 650 over WITHOUT it; 4 mutations bite (two first CRASHED the test instead of
+failing their check — wrapped, rule 23); NEW `tests/foreign-cash.test.mjs` 14/14 (the real rule + route auth/read-only + IPC wiring;
+4 mutations). CI step added. 125 offline suites, 27 desktop tests, ratchet (apps/server, dashboard, admin) 0, desktop main +
+renderer tsc, dashboard build. **Owner to verify** (till on 0.6.9 + web): open a shift on the WEB covering T1 → sign in on T1 as
+the same cashier (straight in) and as another (the notice, Continue, no second drawer); ring sales on both; close on the till —
+expected includes the web's cash, the count balances; the cloud's reconciled close agrees. Delivery: `docs/MANIFEST-2026-09-27-a.md`.
+**Target 2026-09-27 (`VERIFY-LOG-2026-09-27.md`): B1–B4 and C1–C5 PASS; B5–B7 FAIL** — the till's panel showed expected 6,210 for
+3,000 float + 1,490 till sale + 230 web sale = 4,720: the till's own sale counted again as the web's. Cause: the rule matched the
+till's LOCAL ids against the cloud's ids, but the cloud mints its own and keeps the till's as `idempotency_key` (the test had
+assumed equal ids — rule 24). **Fixed in 2026-09-27-d:** matched by `idempotency_key` too (the route fetches it); the owner's
+case is a test (4,720), and id-only matching reddens it. Owner's "instant like 30 sec": shift open/float/close/force-close and a
+joined drawer now push at once; the backstop is 30 s (was 60). Re-verify B5–B7 on 0.6.10.
+**Target 2026-09-27 (checklist v0.6.13, re-run on 0.6.13):** B1, B2, B4 PASS; **B5 PASS (each sale counted once — the B5 fix confirmed)**; B7 PASS; B3 (another cashier's notice) and B6 (close balances) SKIPPED — stays FIX BUILT until those two run.
+**Target 2026-09-27 (checklist v0.6.14, tester Eugene, T1 0.6.14):** B3 PASS (another cashier is told whose shift it is), B6 PASS (the close on the till balances). Every B check has now passed on target. **CLOSED.**
+
+### A333 · P3 · CLOSED 2026-09-27 (verified on target, checklist v0.6.13) · Light mode: coloured and pale text unreadable on white (status greens ~1.7:1), dark row lines (pre-existing)
+Owner asked 2026-09-26 to log it (A329 step 3 review point 4). The back office's status/money greens (`text-green-400` — saved,
+active, received, live, prices) have no light-mode rule in `index.css`, so on the light theme's white cards they are **1.74:1**
+(Chromium, compiled CSS, 2026-09-26). They keep their colour by design (A329 — green means success); the fix is a light-mode shade
+(e.g. green 700) for the status/money classes, outside `@layer base` (A329 step 3 finding: rules for variant classes inside it are
+dropped). Not built.
+**BUILT 2026-09-27 (delivery 2026-09-27-b; dashboard deploy only)** — owner screenshot of Ingredients in light mode ("we need to work on
+the color balancing on the light mode"). Sweep: light mode is a hand-kept list of per-class overrides in `index.css` that only
+covered grays — ~300 colour classes in use, ~1,900 uses with no light rule; 21 text colours below 4.5 on white (green-400 1.74 ×113,
+red-400 2.77 ×171, amber-400 1.67 ×68, gray-200 1.24 ×53, blue-400 2.54 …); translucent gray borders (`border-gray-800/50`) stayed dark.
+**Fix (one place, generated):** NEW `scripts/build-light-colours.mjs` writes a light rule for every such class the source USES
+(52 rules): coloured text 300–500 → that colour's 700, or 800 where the 700 fails on the colour's own denser tint (amber, yellow,
+green, orange, cyan, lime); pale gray text → slate; translucent gray lines/fills → the light grays. Same meaning, readable.
+Never inside a web POS set to dark (`data-pos-theme`), nor on the always-dark sign-in / onboarding / password screens — NEW
+`data-theme-lock="dark"` marker on their 4 layouts. **Found on the way:** in light mode those screens' white text was turned
+slate on navy (**1.10:1** — near-invisible); the marker now keeps it white (19.57). Pale labels on coloured fills (teal-100 on the
+teal accent cards) left alone. Outside `@layer base` (A329: rules for variant classes are dropped there). **Proven (bench):**
+Chromium on the compiled CSS, owner's screen rebuilt from its real classes — active 1.60 → 6.54, low-stock pill 1.49 → 6.31, Import
+CSV 1.13 → 9.45, OUT 3.76 → 6.47, "All branches" 2.17 → 5.73, row lines faint; dark POS unchanged (10.74); sign-in white 19.57.
+NEW `tests/light-colours.test.mjs` 9/9 — every mapped colour ≥ 4.5 on the three light surfaces AND its own /10–/20 tint (this caught
+green/orange/cyan/lime 700 at 4.22–4.44 → moved to 800); 4 mutations bite (two first survived — a broken mutation and a check
+satisfied by one of the sign-in page's two layouts — both fixed). CI: `build-light-colours.mjs --check` (a new colour class
+without a light rule fails). `check-back-office-colour` baseline for `index.css` 0 → 14: the block's selectors + hex are the LIGHT
+shades of existing status/info colours, not actions (reviewed; no other file moved). A332 (web POS light mode) partly helped —
+its coloured text in a light POS now gets the same shades; its action hover / white labels / focus items remain.
+**Owner to verify** after the dashboard deploy: light mode on Ingredients, Purchase orders, Staff, Reports — badges, OUT, the amber
+stock pill, links readable, row lines faint; dark mode unchanged; the sign-in page in light mode shows white text.
+**Target 2026-09-27 (checklist v0.6.13):** E1–E3 PASS. **CLOSED.**
+
+### A332 · P2 · CLOSED 2026-09-27 (verified on target, checklist v0.6.13) · Web POS / shared components in light mode: themed action labels and hover below 4.5 (A328/A329 step 2 latent)
+Found 2026-09-26 while building A329 step 3, measured in Chromium on the dashboard's compiled CSS with the page in light mode (root
+without `.dark`), themes OFF (SwiftPOS teal): (1) `hover:bg-action-400` on a dark-label button (Charge, Apply, the error-boundary
+button) → the light `--action-400` is teal 700 → **3.26:1**; (2) the light theme turns every `.text-white` slate, so white-label
+`bg-action-600` fills show slate on teal 700 → **3.26:1**; (3) A328's `:root:not(.dark) .focus\:border-action-500:focus` sits inside
+`@layer base` and **never reaches the build** (Tailwind drops rules written for a variant class there) — so in light mode the themed
+focus border loses to the forced gray. The A328 contrast proof computed from the tokens; these come from the cascade, which only a
+browser run shows. Not yet checked: whether the web POS's own light toggle (`data-pos-theme`) hits the same rules. **Fix (proposed):**
+the A329 step 3 pattern — a fixed hover token for dark-label fills, white-stays-white on the 600 fills, the focus rule outside the
+layer; verify all 7 themes in both modes in Chromium. Not built (owner scope).
+**BUILT 2026-09-27 (delivery 2026-09-27-c; dashboard deploy only)** — owner: "proceed with A332". In the light-colours generator
+(`scripts/build-light-colours.mjs`, A333), three light-mode rules: (1) **white labels stay white** on a solid fill where white reads
+better than the slate the light theme turns `.text-white` into — computed per fill the source pairs with `text-white`: the theme's
+`action-600` (its 700, ≥ 5.36 for all seven themes, A328) and — the same class of defect outside the POS — `red-600` (the confirm
+dialog's Delete: 3.70 → 4.83); green-500 / red-500 / amber-600 / green-600 / blue-500 read better in slate and are left to it;
+(2) **the action hover** (`hover:bg-action-400`, all 8 uses on dark-label 500 buttons: Charge, Apply, Pay, Save…) uses the theme's
+400 FILL (`--action-d-400`) in light mode and in a light web POS, not the link-text shade; (3) **the themed focus ring** —
+A328's rule sat inside `@layer base` and never reached the build; removed there, emitted in the block. **Proven** (Chromium, the
+compiled CSS, light mode, worst of themes OFF + all 7 themes): action hover **2.51 → 6.56** (Violet), white on action-600
+**2.51 → 5.36**, red Delete 3.70 → 4.83, focus ring gray → themed. `tests/light-colours.test.mjs` 13/13 — adds: the white-keeping
+fills are exactly those where white beats slate, every theme's white-on-700 and dark-on-400 ≥ 4.5, the hover and focus rules;
+3 more mutations bite. Not changed: whether the web POS's own light toggle (`data-pos-theme="light"` under a DARK dashboard) needs
+the white-label rule — there `.text-white` is not turned slate, so white already stays white. **Owner to verify** after the
+dashboard deploy: web POS with the dashboard in light mode — hover Charge / Pay (text stays readable), split / tip buttons with
+white text, input focus rings in the theme colour; a Delete confirm shows white text; try one theme (e.g. Violet) and themes OFF.
+**Target 2026-09-27:** D1–D4 PASS (earlier), D5 PASS (theme on and off). **CLOSED.**
+
+### A331 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 C1) · Themed tills: white labels on the 600 shade fail for 5 of 7 themes (A326 latent defect)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, C1):** white labels readable on every coloured button in each theme tried.
+Found 2026-09-25 while planning A329: A326 mapped the till's `action-600` to the theme's **600** and `action-700` to its 700, but
+every till 600/700 FILL carries a **white** label — Start selling (open drawer), Stations save, Day close, the Menu workbench
+button, the report range chip, the update banner. White on a theme's 600 is 3.68–4.1:1 for Lagoon, Sky, Teal, Orchid and Blossom
+(passes only for Ocean and Violet — why the owner's Ocean/Blossom screenshots did not catch it: those screens were not in them).
+A326's proof covered dark-label fills only. **Fix:** `themeVars.ts` maps 600 → the theme's **700** and 700 → its **800** (the rule
+the web POS already uses — A328). The other 600/700 uses are three borders — deeper is only more visible. **Proven:** till test
+now checks white on 600/700 for all seven themes — worst **5.36**; reverting the mapping → worst **3.68**, FAIL. Ships in desktop
+0.6.7 with A329.
+
+### A330 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 C2) · Web POS payment modal: the "Add tip" panel is a flat grey block in light mode (pre-existing)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, C2):** the web POS tip panel is a light, subtle panel in light mode.
+Seen in the owner's A328 screenshots (POS ☀ light mode, 2026-09-25). `PaymentModal.tsx` wraps the tip controls in
+`bg-gray-800/40` — unchanged since the initial commit. The dashboard's light-mode overrides (`index.css`) cover
+`hover:bg-gray-800/40` but not the plain `bg-gray-800/40`, so in light mode the panel keeps its dark translucent grey. Fix: add
+the light override for the base class (one line), checked in both modes. Not part of theming.
+**Built 2026-09-25 (delivery 2026-09-25-d).** Wider than the tip panel: **11** translucent grey panel classes are used across the
+dashboard (`bg-gray-{700,800,900,950}/N`, ~130 uses) and **none** had a light-mode rule — every one showed as a dark grey block in
+light mode. None is a backdrop (no `fixed inset-0` with any of them) — all panels, rows, cards, badges. **Fix:** 11 light-mode
+rules in `index.css`, each the same light colour as its solid override (950 `#f8fafc`, 900 white, 800 `#f1f5f9`, 700 `#e2e8f0`) at
+the same opacity; dark mode untouched (all under `:root:not(.dark)`). The first sweep missed `bg-gray-700/40` and `/50` (only matched
+after a quote or space — they sit after `'` in conditional class strings); the NEW guard test caught them on its first run.
+**Proven:** Chromium on the compiled CSS — 11 classes × light (the light colour at the class's opacity) and dark (unchanged); a real
+forced `:hover` (CDP) on a light-mode row: BEFORE → dark `rgb(31,41,55)/0.5` at rest AND hovered; AFTER → the light colour at rest and
+hovered. NEW `tests/light-mode-translucent.test.mjs` 4/4 — fails on a deleted rule, a drifted opacity, or a new translucent grey
+without a rule. **Found, not widened (rule 12):** the file's hand-written light-mode `hover:` overrides inside the Tailwind layer are
+dropped by Tailwind (it generates the hover variant from the base rule instead), so light-mode rows show no hover change — cosmetic,
+pre-existing; a follow-up. **Owner to verify:** web POS in ☀ light → the "Add tip" panel is a light, subtle panel, not a grey block;
+dashboard light mode → Customers / Parking settings / history rows look light.
+
+### A329 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 C3) · SwiftPOS's own colour: green → teal (the logo's colour)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, C3):** the dashboard's primary buttons, links, toggles and focus rings are teal in dark and light; step 5 (a heads-up to clients) is the owner's own note, not code.
+Owner decision 2026-09-25 ("yes proceed"), prompted by: green reads as ride-hailing. Lead-dev advice given and accepted:
+(1) the SwiftPOS logo and the lock-screen default are ALREADY teal (`#0d9488`) — the product's buttons are the odd one out;
+(2) green currently means both "press this" and "paid / free / saved" — teal leaves green meaning success only (the A323
+analysis); (3) green is Safaricom / M-Pesa's colour in Kenya, and M-Pesa panels sit inside our payment screen — today's action
+green is ΔE 9.6 from M-Pesa's, teal 19.2. **Shades = the registry's Teal family, shade per job:** fills with dark labels 500
+`#14b8a6` (8.09:1), fills with white labels 700 `#0f766e` (5.47:1), text/links 400 `#2dd4bf` on dark (9.53:1) / 700 on white
+(5.47:1); the logo's `#0d9488` for the wordmark, dots and accents only (white on it is 3.74:1 — never a white-label fill).
+Status, money and M-Pesa greens stay green. Caveat: teal is ΔE 16.8 from the "paid" green — passes the rule, needs the shop-
+lighting check (slice 5). **Plan:** (1) slice 5 walk incl. Teal; (2) tills + web POS: the unthemed DEFAULT of the action tokens
+→ Teal (desktop release + dashboard deploy — small, the tokens exist since A326/A328); (3) back office: classify its ~620 greens
+(A323 4b-2 method) and point the action greens at a FIXED SwiftPOS teal — not the client theme (A323 decision); (4) the SwiftPOS
+wordmark green → teal; (5) a short heads-up to clients when it ships (every client's look changes).
+**Step 2 built 2026-09-25 (delivery 2026-09-25-e; desktop 0.6.7 + dashboard).** Themes OFF now = **SwiftPOS teal** on the tills and
+the web POS: till `index.css` defaults → Teal family (fills 500 `#14b8a6` · white-label fills and the lock curtain 700 `#0f766e` ·
+text 400 `#2dd4bf`); dashboard defaults likewise, links 700 on white (5.47:1 — the old green-400 on white was 1.8); the web POS's
+inline aliases now DEFAULT to teal, so its green AND blue primaries are teal with themes OFF. The SwiftPOS wordmark (till top bar,
+install screen) green → teal (till green ratchet 68 → 66). Status, money, data colours and M-Pesa unchanged. **Proven** (bench,
+real compiled CSS): till OFF → teal by job, white labels 5.47, status green unmoved, Ocean still applies; web OFF → all 94 inline uses
+teal by role in dashboard dark/light and POS dark/light, class tokens teal, Blossom still wins. Tests updated to the new intent (till
+20/20, web 21/21). Built before the owner's slice 5 B1 (Teal vs "paid" in shop light) — if B1 says too close, the default moves
+to a deeper shade (a handful of values). **Next:** step 3 — the back office's ~620 greens (classify; action greens → fixed SwiftPOS
+teal); step 5 — client heads-up.
+**v0.6.7 released 2026-09-25** (tag on `ba5aeef`, Release desktop #23, CI #403). **Step 3 swept 2026-09-25, not yet classified:** the
+back office (dashboard `src/` minus `pages/pos`, `components`, `layouts`) — **104 files scanned, 59 with hits,
+641 green uses** (606 Tailwind classes + 35 hex/rgba). First-pass rules: action 243, status 89,
+money 27, data 126 (charts, progress bars), review 156 in ~114 patterns (e.g. saved toasts
+`fixed bottom-6 … bg-green-500 text-white` → status; status pills `bg-green-500/10 text-green-400` → status; threshold colouring
+`splh >= 2000 ? 'text-green-400'` → status; spinners → action; the SwiftPOS logo tile on Login / ForcePasswordChange / Onboarding
+`bg-[#22c55e]` → wordmark → teal; password-strength meter → status). **Plan for the next session:** re-run the sweep (it lists every
+file), decide the review patterns, AUDIT the 243 auto-actions for the status→action direction, owner reviews the document,
+then a fixed-teal token set for the back office (`swift-400/500/600`, text switching shade with light mode — NOT the client theme,
+A323 decision), applied by script, ratchet gate over the back office, verified in dark and light.
+**Step 3 classified 2026-09-26 (delivery 2026-09-26-a; docs only — no screen changed).** Owner decisions: the back office's **blue
+primaries move to teal too**; the **admin portal stays out**. Re-swept at `bad4492`, every form (classes incl. all prefixes, hex and rgb
+by hue, named `'green'`/`'blue'` strings): **106 files scanned, 62 with hits, 1016 uses** (649 green — the 641 of 09-25 plus 3 classes
+and 5 named strings the first pattern missed — and 367 blue). Classified keep-rules first, 184 by hand, both directions audited: 3
+status/data uses the rules had called action corrected (KDS status counts, a printer's enabled dot, restock movement colour); 13
+Save/Create buttons (26 uses) the money rule had kept green corrected, + 2 filter tabs, + 3 by hand. **Result: 619 go teal** (592
+action, 6 wordmark incl. the prod favicon, 6 sign-in backdrop, 15 accent — hand calls for the owner to check) · **394 keep their
+colour** (217 status, 28 money, 108 data, 41 blue info) · 1 owner decision (the Branding preset named "SwiftPOS Blue") · 2 dropped
+(near-black). Document: `docs/A329-back-office-colour-classification.md` — every use with file:line, and every file scanned. Follow-up
+logged: status `text-green-400` has no light-mode override (~1.8:1 on white, pre-existing; keeps its colour here). **Next:** owner
+reviews the document and answers its four points → delivery -b applies fixed `swift-*` tokens by script (shade per use from the label
+it already carries), extends `check-web-pos-green.mjs` to the back office, verified in dark and light.
+**Step 3 built 2026-09-26 (delivery 2026-09-26-b; dashboard deploy only — no desktop change).** Owner answers to the document:
+(1) the Branding preset "SwiftPOS Blue" → **"SwiftPOS Teal" `#0d9488`** — the palette already had a "Teal" `#0d9488` (swatch key = hex →
+a duplicate key, and `branding-web-page` pins 8 accents), so that slot became **"Blue" `#3b82f6`**: the same 8 colours, renamed and
+re-ordered; (2) the 15 accents go teal; (3) blue/green pairs become one teal; (4) the status-green follow-up is logged — A333.
+**Applied by script** at each classified position: 610 rewritten + 9 by hand (favicon + its comment, 6 sign-in grid rgba, the focus
+rule) = **619**, count in = count out. **Fixed tokens** (`tailwind.config.js` → `index.css`, one place): `swift` teal 500 (dark
+labels 8.09) · `swift-light` 400 (its hover) · `swift-strong` 700 (white labels / knobs / ticks, 5.47) · `swift-deep` 800 (its hover,
+7.58) · `swift-logo` `#0d9488` · `swift-text` / `swift-text-hover` 400 / 300 on dark, **700 / 800 on white**. The always-dark sign-in
+screens use the fixed `swift-light` for text. Every toggle track and checkbox now `swift-strong` (their white knob/tick: 5.47; green-500
+tracks were 2.28). **Two light-mode defects found on the way, both in Chromium on the compiled CSS:** (a) the light theme turns every
+`.text-white` slate — on teal 700 that is 3.26 (2.35 on hover) → a rule keeps white labels white on `swift-strong` (5.47 / 7.58);
+the old blue-700 buttons were ~2.2 in light mode, now fixed too; (b) inside `@layer base` Tailwind DROPS a rule written for a variant
+class (`.focus\:border-x:focus`) — the green and A328 `action` focus overrides never reached the build — so the swift focus rule
+lives outside the layer (the dead green rule was removed; the action one → A332). **Proven (bench, Linux, Node 22):** Chromium on the
+real compiled CSS, dark AND light: fill 8.09 / 7.17, strong 5.47 / 5.47, hovers 10.82 / 9.59 and 7.58 / 7.58, links 9.53 / 5.47,
+link hover 11.99 / 7.58, logo 4.77, light-mode focus ring teal over the forced gray border. NEW `tests/back-office-teal.test.mjs`
+18/18 (token contrast from `index.css`; 145 teal fills paired with their label in the real source; no `action-*` in the back office;
+focus + white-label rules outside the layer; the palette); 7 mutations bite (M3 names `EtimsSettingsPage.tsx:207`). NEW gate
+`scripts/check-back-office-colour.mjs` (every form; baseline **397** = 394 keep + the "Blue" preset + 2 near-black, per file equal to
+the classification) + self-test + CI step; a planted green button fails naming the file and lines. `ui-reports-fixes` A263 pin
+re-pinned to intent (the active preset is now `bg-swift-strong`). All 122 offline suites pass; type-check ratchet (apps/server, dashboard, admin) 0;
+dashboard build OK. Not changed (already so): `bg-green-500/8` never compiled (no `/8` opacity step) — the same now as `bg-swift/8`,
+5 uses. **Owner to verify** after the dashboard deploy: back office in dark AND light — primary buttons teal (dark text on the lighter
+teal, white text on the deeper teal), links teal, toggles/ticks teal, focus rings teal; saved toasts, active badges, prices, charts
+unchanged; the browser-tab icon teal; Branding shows "SwiftPOS Teal" first and "Blue" later. **Next:** step 5 (client heads-up).
+
+### A328 · P3 · CLOSED 2026-09-25 (verified on target, web POS) · Phase 2 slice 4b-1 — the web POS + shared components follow the action theme
+Owner approved 2026-09-25 splitting 4b: the dashboard has **687** green uses in 67 files (the earlier "221" counted only
+`bg-green-500/600`); first the **web POS + shared components** (81 uses, 12 files), the ~606 back-office uses later after a product
+decision (should back-office screens take the client's theme?). **Classified first** (`docs/A328-web-pos-green-classification.md`):
+**67 action** (selected payment/split/tip options, Live tab, links, the dashboard sidebar's active section — owner call (a) —, focus
+rings, primary buttons, spinner, unread markers), **10 status**, **4 money** — 52 by rule, 29 by hand, status→action audited: none.
+Applied by script (67 = 67). **Shade rule, proven for all seven themes in both modes:** the existing labels are fixed per button —
+500 fills carry dark text, 600 fills carry white — so `action-500` = the theme's 500 (dark text ≥ 4.75 worst), `action-600` = its
+**700** (white ≥ 5.36; white on 600 fails for 5 of 7), links `action-400` = 400 on dark / **700** on white (≥ 5.36). This refines the
+proposal's "light fill 600" (dark labels on a 600 fill fail — Ocean 4.06); light-mode 500-button outlines are never weaker than
+today's green (2.28:1). **Mechanics:** Tailwind `action-400/500/600` read CSS variables defaulting to Tailwind green in both modes
+(`index.css`; links switch via `:root:not(.dark)`); `lib/themeVars.ts` (pure; uses the registry's `themeTokens`) + `ThemeLayer` inside
+`BusinessProvider` (re-reads on business change and on Branding's saved event); the light-mode focus-border override duplicated for
+the themed class. **Gate:** NEW `scripts/check-web-pos-green.mjs` (baseline 14, scope pos/components/layouts) + CI step. **Proven:**
+Chromium on the dashboard's real compiled CSS, transitions off in the test page — themes OFF: 9/9 utilities identical to green in
+dark AND light; all 7 themes × 2 modes: labels and links ≥ 4.5 (worst 4.75); Ocean exact per mode; status green unmoved; off again →
+green. (First pass read colours mid-fade — the dashboard's global transition — the A327 lesson; measurement fixed.) NEW
+`tests/web-pos-theme.test.mjs` 13/13 (runs the contrast proof from the dashboard's themes.ts); 4 mutations bite (600 → worst 3.68;
+light links 400 → 1.73). **Deploy:** dashboard only. **Owner to verify:** web POS with themes ON → Charge / Confirm, selected payment
+method, split and tip options, Dine in-style tabs in the theme; discount/tip amounts and "applied" states green; the dashboard sidebar's
+active section in the theme; light mode the same with darker links. Themes OFF → unchanged. Delivery: `docs/MANIFEST-2026-09-25-a.md`.
+**Part 2 (2026-09-25, delivery 2026-09-25-b) — the owner found it:** after part 1 was deployed, the web POS showed a **green Charge
+next to a pink Confirm**. Cause: part 1's sweep matched Tailwind green CLASSES only; `CashierScreen.tsx` (the main web POS, 2 680
+lines) and the Minimart / Parking / Petrol / login / shift / drawer screens colour with **inline hex/rgba** styles and were counted
+as zero. Re-swept with hex + `rgb(a)` + Tailwind blue classes, every scanned file listed (35; 17 with hits): **181 uses** →
+**94 action**, 41 status, 15 money, 18 data/identity (zones, fuel grades, payment methods, report charts, info panels), 13 M-Pesa
+(`docs/A328-web-pos-inline-colours.md`; owner: blue primaries take the theme, M-Pesa stays, all POS layouts in). Audit caught 2
+auto-calls in the risky direction (loyalty points; idle-pumps count) — corrected. **Mechanism:** each use becomes
+`rgb(var(--act-fill|strong|text, <its own original r g b>))` — aliases with NO default, so themes OFF falls back to each use's own
+green or blue; role per occurrence by CSS property and the element's label (white label → strong = theme 700; dark label, borders,
+dots, tints → fill = 500; text → 400 dark / 700 light, following the POS's own `data-pos-theme` toggle as well as the dashboard's).
+Rewritten by script: 94 = 94 (fill 56 · strong 20 · text 18). **Proven** in Chromium, 4 contexts (dashboard dark/light, POS toggle
+dark/light): themes OFF → 94/94 identical to their originals in every context; 7 themes → white labels ≥ 5.36, dark labels ≥ 4.96,
+text ≥ 5.36. Gate `check-web-pos-green` now matches hex/rgba/blue too (baseline 14 → 101; Charge reverted to raw hex → FAIL).
+Test 13 → 21; mutations (alias with a default; Charge raw) bite. Lesson recorded in WORKING-METHOD §9.
+**CLOSED — target run 2026-09-25** (Eugene, dashboard `9d07e57` deployed; log `docs/VERIFY-LOG-2026-09-25.md` §A328): **themes ON, Blossom** — Clock, Open Table (700 shade, white label readable), All, the T1 chip, Delivery, Spicy, Add to Order, the selected product card + badge, Charge, and in POS light mode Cash + Confirm all Blossom; prices, the tables' "free" green and the Restaurant label unchanged. **After Reset (theme cleared → Ocean)** the same controls Ocean. **Themes OFF** (admin "App themes OFF") — Charge, All, Dine in, the T6 chip, Clock and the selected card back to their original green. Follow-up found on the way: A330.
+
+### A327 · P3 · CLOSED 2026-09-25 (verified on target, web + mamangina) · Phase 2 slice 4 — the web Branding page: theme picker, live till preview, save
+Fourth slice of A323. `BrandingTab.tsx` reads `theme_id` + `themes_enabled` (A325's GET). **Themes off:** nothing new shows and
+Save sends no `theme_id` (the cloud keeps what is stored). **Themes on:** an "App theme" picker (the registry's seven; nothing chosen
+shows Ocean — what the cloud serves) with a "Suggested" badge and "Use it" from the shared pairing rule; a **Till preview** (action
+from `themeTokens`, strip + sidebar tint from `resolveBrandLayer`, money and Paid green); the **lock preview** wears the theme when
+there is no brand colour (the till's PinPage rule, A326); Save sends `theme_id`; Reset clears it too. The Phase 1 pins
+(`resolveBranding` verdict, `shownAccent`, the reset's `logo_receipt: null, receipt_logo_enabled: false`) untouched — checked before
+editing. **Proven:** headless Chromium on the REAL BrandingTab, cloud mocked, requests captured — 15/15 (off: no picker/preview, teal
+lock, no theme_id sent; on: Ocean selected, Charge + lock Ocean, no strip, Violet updates both previews, Save sends "violet", Reset
+sends null; yellow brand: lock + strip stay yellow, Sky suggested, "Use it" → Sky). First run read colours mid-fade (the dashboard's
+global theme transition) and counted the "Suggested" badge in the name — measurement fixed, not the page. NEW
+`tests/branding-theme-picker.test.mjs` 13/13 (pins + the pairing rule run from the dashboard's own themes.ts); 4 mutations bite.
+branding-web-page 26/0, branding-web-contrast 11/0, web-receipt-logo-browser 6/0; dashboard build 0; ratchet held; run-all 120/120;
+all 26 desktop tests pass. **Deploy:** dashboard only. **Owner to verify:** Business → Branding (themes on for B Foods) → App theme
+visible, pick a theme, Save → the till follows within ~20 s; set a brand colour → strip, lock curtain and sidebar take it (closes
+A326's untested path). Delivery: `docs/MANIFEST-2026-09-24-i.md`.
+**Target run 2026-09-24 (owner screenshots, dashboard deployed from `26f88a3`):** the picker shows for B Foods; Blossom picked → Save → "Saved…" → the till's PIN screen turned Blossom (name, divider, Enter) — the web → cloud → till path works. **Defect found on target:** in DARK mode (the dashboard's default) the SELECTED tile was the faintest — `ring-gray-900` is near-invisible on the dark-first dashboard while unselected tiles' `border-gray-200` renders bright — and the names (`text-gray-700`) were dim. The bench run had used LIGHT mode only. **Fixed in -j:** selected = the theme's own colour as border + 2-px ring + a ✓; unselected `border-gray-700`; names `text-gray-300` (the dashboard's dark-first classes, remapped in light mode). Re-verified in Chromium in BOTH modes on the real page: one tile selected, ringed in its colour and ticked, none other; every name ≥ 4.5:1 on the page (dark 13.66, light 7.24); the original 15-step flow still 15/15. Test 13 → 16 (a light-first ring back → 2 FAIL). Still owed: a brand colour on the till (A326's untested path). Delivery: `docs/MANIFEST-2026-09-24-k.md` (re-issue of -j: the owner's Windows run passed all 16 checks, then Node crashed on exit — libuv `UV_HANDLE_CLOSING`, a process.exit race; the test now sets process.exitCode).
+**CLOSED — target run 2026-09-25** (Eugene, till mamangina 0.6.6 + the deployed dashboard `68f65c9`; B Foods: themes ON, Violet then Blossom, brand colour #e6d300; 3 owner screenshots; log `docs/VERIFY-LOG-2026-09-25.md`): the Branding page in dark mode shows the selected theme ringed in its own colour with ✓ (the -k fix deployed); the till preview (yellow strip + tint, theme buttons) matches the real till; web → cloud → till confirmed (theme changes and the brand colour reach the till within ~20 s).
+
+### A326 · P3 · CLOSED 2026-09-24 (verified on target, mamangina, 0.6.6) · Phase 2 slice 3 — the till's colours follow the theme (only when themes are ON)
+Third slice of A323. **Classified first** (owner approved): every green class on the till, 222, in
+`docs/A326-till-green-classification.md` — **150 action** (buttons incl. Charge, selected category/item/table/tab/option, on/off
+switches, links, focus rings), **4 brand** (the in-app lock curtain), and **68 stay green**: 59 status (online/shift dots, saved,
+variance OK, updating, "Unpaid" = safe to void…), 7 money (prices, totals, revenue, price-per-litre, variant adjustments), 2 SwiftPOS
+wordmark. 134 settled by explicit rules, 88 by hand; the risky direction (status → action) audited: none. **Change:** the 154 applied
+by script from that list (154 classified = 154 rewritten; line-for-line, 28 files); Tailwind `action` / `brand` / `on-brand` colours
+read CSS variables whose DEFAULTS in `index.css` are Tailwind's exact greens (and white on the curtain) — so themes OFF is unchanged;
+`lib/themeVars.ts`: pure `computeThemeVars` (themes off → null; on → the theme's fixed shades; brand = the business's colour if it can
+be seen, else the theme's 500; on-brand black/white; brand strip; sidebar tint) + `applyThemeVars` (sets/removes on `<html>`); `App`
+applies it on every screen and re-applies on every landed pull (A321's signal); a 3-px brand strip on POS and Manager; the Manager
+sidebar tint via `var(--sidebar-tint, #111827)` (fallback IS its gray-900); the lock curtain's Enter text `text-on-brand`; the PIN
+screen uses the theme when themes are on and there is no brand colour. **Gate:** NEW `scripts/check-till-green.mjs` — per-file ratchet
+on raw green (baseline `scripts/till-green-baseline.json`, 68), `--self-test`. **Proven:** Chromium on the bench, the till's real
+compiled CSS: all 23 distinct action/brand utilities render **exactly** their green originals with themes off (0 differences); Ocean +
+yellow brand → action #3b82f6 / #60a5fa / 10 % tints, curtain #F5B800; status greens unmoved; off again → green. NEW
+`apps/desktop/test/theme-vars.test.mjs` 19/19 (real themeVars.ts via esbuild; real stylesheet via tailwindcss; wiring). Mutations —
+vars with themes off, a changed default, a fixed colour in the config, no brand fallback, no re-apply on pull — each bites; the gate
+catches Charge reverted to raw green (POSPage 11 vs 9). The rewrite's first run had a boundary bug (`hover:x` matched inside
+`disabled:hover:x`) — its own assertion stopped it; restored and re-run. Existing test pinning a green class (`kds-conn-state`) reads
+the dashboard, untouched. Renderer `vite build` 0; main + renderer tsc 0. **Owner to verify on 0.6.6:** themes OFF → the till looks
+exactly as before; themes ON (Ocean) → Charge, selected items, links and focus rings blue; Paid/Saved/online dots and prices still
+green; brand strip + lock curtain + sidebar in B Foods' own colour if it has one. Delivery: `docs/MANIFEST-2026-09-24-g.md`.
+**CI #394 failed on `8f40e02` (2026-09-24) — fixed in -h.** Step "Desktop catalogue refresh signal" (A321's test) pinned the exact PIN-page line `setAccentHex(b?.accentHex ?? null)`, which this slice intentionally changed. Missed because the pre-change sweep looked for tests pinning GREEN classes, and `run-all` does not run `apps/desktop/test` — the desktop tests were not all re-run. On the tip, every one of the 26 desktop tests was then run: only this one failed. Re-pinned to its intent (no brand colour + themes off → null is APPLIED, not ignored); both mutations bite. No release was cut from the red commit (no `v0.6.6` tag). Delivery: `docs/MANIFEST-2026-09-24-h.md`.
+**CLOSED — target run 2026-09-24 on desktop 0.6.6** (Eugene, till mamangina; tag `v0.6.6` on `bb31313`; 7 owner screenshots; log `docs/VERIFY-LOG-2026-09-24.md` §A326). Themes OFF: PIN screen and Manager unchanged (Phase 1 teal; the pre-existing blue Revenue card and nav highlight are original design). Themes ON (Ocean, no brand colour): PIN screen name/divider/Enter in Ocean; Manager sidebar Ocean tint; Start selling, the selected category "All", Dine in, table chip "T: T10", Cash (selected), + Split payment, Charge and the cart badge in Ocean; prices, Shift open / pending and the SwiftPOS wordmark stay green. Not exercised on the till: a brand colour (B Foods has none — bench-tested; a one-minute check once the web picker sets one) and switching OFF again (same mechanism as A325, proven ocean → null).
+**CLOSED — target run 2026-09-25** (Eugene, till mamangina 0.6.6 + the deployed dashboard `68f65c9`; B Foods: themes ON, Violet then Blossom, brand colour #e6d300; 3 owner screenshots; log `docs/VERIFY-LOG-2026-09-25.md`): the till's Phase 2 pieces with a brand colour — the **yellow brand strip** across the top, the **Manager sidebar tinted yellow** with readable text, and **Dine in / No table / Charge in the theme (Blossom)** — the path A326 could not exercise on 2026-09-24. The Lock-till curtain was not photographed (same brand variable as strip and sidebar; covered by the A326 test).
+
+### A325 · P3 · CLOSED 2026-09-24 (verified on target, mamangina, 0.6.5) · Phase 2 slice 2 — `theme_id` + the `themes` flag, cloud to till (migration 106, schema 54)
+Second slice of A323. **Cloud:** migration `106_branding_theme.sql` adds `business_branding.theme_id text` (nullable, no
+default, **no CHECK** — the registry is the one list; a retired id resolves to Ocean). `apps/server/src/lib/themes.ts` joins
+the sync gate (4 copies). `themeRules.ts` (pure): `effectiveThemeId(enabled, stored)` — null while the business's
+`feature_flags` key **`themes`** is off, else the chosen id or Ocean; `themeWriteError` — null clears (always), a curated id
+only with the flag. `themeAccess.ts`: the one flag query. `GET /business/branding` adds `theme_id` + `themes_enabled`;
+`PUT` validates `theme_id`; `/pos/init` serves **top-level `themeId`** (not inside `branding`: a business may have themes
+without a branding row, and `branding: null` means "leave the till alone"); **`/pos/catalogue-version` now watches
+`feature_flags`** — found in the sweep: a flag flip changes no branding row, so without this tills would wait for the 10-min
+floor. `REQUIRED_DESKTOP_SCHEMA` 54. **Till (schema 54):** `branding.theme_id` (CREATE + `migrateColumns`);
+`applyPulledTheme` writes ONLY theme_id (undefined = older cloud → keep; null clears; malformed → null); `getBranding` /
+`setBranding` report `themeId`; the pull reads `themeId` top-level and stores it only when sent. Screens are unchanged —
+slice 3 uses the value. **Admin portal:** "App themes ON/OFF" toggle beside web hosting (same audited flag endpoint; no invoice
+— price undecided). **Not relayed through branch nodes** — the node bundle relays no branding today either (pre-existing);
+tills behind a node keep their local value until they reach the cloud. Logged as a follow-up, not widened here.
+**Proven:** `scripts/test-migration-106.mjs` 8/8 on PGlite (absent before; text/nullable/no default; existing row NULL and keeps
+its colour; no CHECK; updated_at bumps; idempotent; recorded) — the migration runner now passes 29/29. `tests/theme-access.test.mjs`
+17/17 (the real built rules + route pins). `apps/desktop/test/theme-pull.test.mjs` 14/14 on the REAL localDb and a real
+schema-53 file: upgrade adds theme_id and KEEPS colour/logo/toggle; no session → no write; store; undefined keeps; null clears;
+malformed → null (an injection string included); a later branding pull keeps the theme; themes without a branding row.
+Mutations — flag ignored in effectiveThemeId, write allowed without the flag, feature_flags dropped from catalogue-version, no
+upgrade step, undefined treated as clear, any string accepted — each bites. `catalogue-refresh-signal`'s localDb shim gained the
+two `applyPulled*` exports (the pull now calls them when the cloud sends branding/theme). `tests/branding-sync-pull.test.mjs` (A304/A311) pinned the exact /init select string and "schema is 53" — both moved by this slice, found by run-all (the sweep searched for the receipt column, not for these pins); rewritten to their intent (receipt fields still selected; schema ≥ 53), each still bites. schema-index merged (+1 column,
+nothing removed — re-run `--from-db` after 106 is applied); schema-parity warnings unchanged (2); schema/api-schema drift, table
+usage OK. **Deploys:** migration 106 + cloud + desktop build (0.6.5 — schema 54) + admin. **Owner to verify:** admin → a client
+→ "Turn themes on"; within ~20 s the till's local `branding.theme_id` reads `ocean` (Tech › Database); pick nothing else yet
+(slice 4 adds the picker); turn off → `null`. Nothing on screen changes in this slice. Delivery: `docs/MANIFEST-2026-09-24-e.md`.
+**CLOSED — target run 2026-09-24 on desktop 0.6.5** (Eugene, till mamangina; tag `v0.6.5` on `b69eeca`, Release desktop #21; log `docs/VERIFY-LOG-2026-09-24.md` §A325): admin → B Foods → *Turn themes on* → the till's `SELECT theme_id FROM branding` read **`ocean`**; *Turn themes off* → **`null`** (owner screenshots). The chain admin → cloud flag → catalogue-version → till works both ways within the 20-s refresh; nothing on screen changed.
+
+### A324 · P3 · CLOSED 2026-09-24 (CI #392 on `d8428bd`) · Phase 2 slice 1 — the theme registry (`themes.ts`): seven action themes + the brand-colour rule
+First slice of A323. `shared/themes.ts` (+ byte-identical copies `apps/desktop/src/shared/themes.ts`,
+`apps/dashboard/src/lib/themes.ts`, joined to `check-shared-sync`), self-contained (no imports) so every app, the cloud
+and plain-Node tests load the same file. Holds: the 7 approved themes (Ocean, Violet, Lagoon, Orchid, Sky; Teal and
+Blossom with `tillCheck: true`) as colour families with the fixed shade per job (500/400/600/700, pressed +1, 950 tint);
+`DEFAULT_THEME_ID = 'ocean'`; the real surfaces and status colours; `RULES` (fill 3, text 4.5, tint text 7, status 15
+/ clear 20, pair 10, brand visible 3); WCAG contrast, CIEDE2000 and LCh hue; `resolveTheme` (unknown → default),
+`isThemeId`, `themeTokens`, `checkTheme` (the proposal's table as code), `suggestThemeFor` (complementary hue),
+`resolveBrandLayer` (any visible hue; null if too dark/invalid; sidebar tint keeping text ≥ 7:1). **No visible change** —
+nothing imports it yet. **Proven:** NEW `tests/themes-registry.test.mjs` 27/27 (Node 22 via strip-types, Node 24
+native): every theme passes every check; `tillCheck` set exactly for status 15–20 (Teal, Blossom); pairwise ≥ 10; the
+checker REFUSES Emerald (paid), Rose (void), Amber and Yellow (warning), and Iris beside Violet; id resolution;
+tokens; pairing (yellow → Sky, red → Lagoon, green → Orchid); brand layer (yellow/red/green/amber usable, navy and
+invalid → null). Mutations — Ocean 500 too dark, Teal flag off, Emerald added, "most different" pairing, no visibility
+rule — each bites. Sync gate bites on a one-word divergence. Dashboard tsc, desktop main tsc, the till copy under the
+renderer's settings: 0. run-all 118/118. **Closes when CI is green on the pushed commit** (no target component).
+Delivery: `docs/MANIFEST-2026-09-24-d.md`.
+**CLOSED 2026-09-24:** delivery 2026-09-24-d landed as `d8428bd` (7/7 checksums on the pulled tip, gates exit 0); CI #392 completed successfully.
+
+### A323 · P2 · OPEN (Phase 2 tracker) · Client branding Phase 2 — brand colour + curated action themes, app-wide
+Owner approved 2026-09-24 the revised proposal `docs/PROPOSAL-A295-phase2-themes.html` ("I like this, we can work with
+it") and the slice plan. **Decisions adopted:** two layers — the business's own BRAND colour (the Phase 1
+`business_branding.accent_hex`, no migration; lock screen, logo ring, sidebar tint, brand strip; rule: visible 3:1 on
+the dark till; no status rule) + a curated ACTION theme (buttons, selections, links; every check); seven themes, status
+ΔE ≥ 15 to qualify, 15–20 only after a real-till check, ≥ 10 between themes; Emerald/Rose/Amber/Red/Yellow never action
+colours, welcome as brand colours; suggested pairing = complementary hue; **nothing changes for a business until it turns
+themes ON** (its actions stay today's green, pixel-identical) — Ocean is the default only for a business that turns
+themes on without choosing; premium feature behind a per-business `feature_flags` key, off by default; receipt line order
+unchanged. **Sweep 2026-09-24:** both apps define an unused Tailwind `brand` scale (0 uses); actions are hard-coded
+`bg-green-*` — till ~108 uses, dashboard 221 in 61 files — shared with the paid/success green, so each use must be
+classified action vs status. Data path exists: `business_branding` is in the catalogue-version list (A321 refresh), the
+till mirrors branding locally, `feature_flags` has a precedent (`web_hosting`).
+| Slice | What | Ships as | State |
+|---|---|---|---|
+| 1 | Theme registry `themes.ts` + checks | code + test, no visible change | **A324** CLOSED |
+| 2 | `theme_id` (migration 106), cloud validation, `/pos/init`, till mirror, `themes` flag (off) | cloud + prod migration + desktop | **A325** CLOSED |
+| 3 | Till: CSS-variable tokens; classify the till's green uses (action vs status); brand layer; a raw-green gate | desktop | **A326** CLOSED |
+| 4 | Web: picker + live preview (**A327** CLOSED); 4b-1 web POS + shared components (**A328** CLOSED); 4b-2 back office — **decided: stays SwiftPOS-branded** (its greens → teal under A329) | dashboard | done |
+| 5 | Real-till walk of every theme (Teal, Blossom especially), then close | — | — |
+Per-branch overrides after slice 5, as their own slice.
+**Decision 2026-09-25 (lead dev, delegated by the owner): 4b-2 — the back-office pages stay SwiftPOS-branded** — they do not take the client's theme. The client's colour belongs where staff and customers see it (tills, web POS, lock screens, receipts); the management tool stays consistent for every owner, support and screenshots stay uniform, and the largest, riskiest part of the work is avoided. The back office's greens are still converted — to SwiftPOS teal — under A329. Remaining: slice 5 (on-till walk, `docs/VERIFY-BRANDING-PHASE2.md`).
+
+### A322 · P2 · CLOSED 2026-09-24 (verified on target, mamangina, 0.6.4) · Shipped screens and the test print show two reference businesses' names to every client
+Owner 2026-09-23: SwiftPOS is general-purpose — the two businesses whose logos/menus were used as test references
+must not appear anywhere a client sees. Found while checking the Phase 2 proposal for them. **Client-visible:**
+`shared/printing/src/sampleTicket.ts:21` — the business name on the technician TEST PRINT and the till's printer preview
+(so every client's printer prints the reference business's name); `apps/desktop/src/renderer/pages/ManageTabs.tsx:530` —
+the receipt-text placeholder suggests that business's social handle; `ManageTabs.tsx:1203` — a sample row in the till's
+menu-import template carries its product name. **Not client-visible (tidy-up):** code comments
+(`ticketLines.ts:207`, migration 60 header, `sampleTicket.ts:54`), the printing test fixture and its committed artefacts
+(`fixture.ts`, `SAMPLE-OUTPUT.txt`, `out/*.bin` — refresh through the A314 gate), other tests, the scope addendum,
+`VERIFY-BRANDING-PHASE1.md` A5's colour label, a checklist file named after one of them, and dated history (handoffs,
+manifests, verify logs, earlier register entries — history stays as written). Fix: neutral sample data ("Your Business",
+generic menu items and handle) in the three client-visible places first; then the non-visible tidy-up. The test print
+changes → desktop build. Not started.
+**Built 2026-09-24 (delivery 2026-09-24-a; desktop 0.6.4).** Owner approved all four recommendations; no deploy window
+open (assumed from "proceed", stated in the manifest). **Client-visible, fixed:** (1) the test print + Printers preview now
+show THIS till's business name (local `session.business_name`, the source the rest of the till uses; "Your Business" if
+none/blank) via `sampleBusinessForThisTill()` in `printWorker.ts`; the shared sample ticket is neutral — and the sweep found
+the same class one level deeper: it also carried a reference business's **Buy Goods till number, phone numbers, branch
+and a cashier's name**, all printed on every client's test print — now `000000`, `0700 000 000`, "Main Branch", "Amina".
+(2) receipt-text placeholder → `@yourbusiness`; (3) import-template sample row → "House Sauce". **Tidy-up:** comments;
+printing fixture + tests (same neutral data) → `SAMPLE-OUTPUT.txt` + all five `out/*.bin` regenerated under the A314 gate
+(which failed first, naming every stale file); desktop node-reference tests, auth-resolution, test-print-resilience labels;
+scope addendum (cases described by shape, decisions/numbers unchanged); VERIFY A5 label; `importer-proof.py`; two checklists
+renamed (`verification-checklist-restaurant.html`, `checklist-printing-twotill.html`) and neutralised; three spreadsheets of a
+reference business's real menu removed from the repo (only a `docs/history/` handoff mentions one — history is excluded
+from the citation gate by design). The web bundle does not include the sample ticket (reproducibility check unchanged).
+**Regression gate:** NEW `scripts/check-reference-names.mjs` — the ONE place the names are listed; scans apps, shared,
+scripts, tests (not docs/, not migrations/); allow-list of two (itself; the template guard that asserts absence);
+`--self-test` plants a name. CI step "No reference business names". A person's name is deliberately not listed.
+**Proven:** NEW `apps/desktop/test/test-print-business-name.test.mjs` 9/9 — the REAL compiled `printWorker` and its real
+`escpos:preview` handler on a real in-memory SQLite (better-sqlite3), Electron IPC shimmed: own name shown; no session →
+"Your Business"; blank → "Your Business"; neutral branch / till no. / cashier / phone; the test print uses the same helper.
+Mutations: preview back to `sampleBusiness` → 3 FAIL; no blank fallback → 1; tip printWorker + tip sample ticket → 8 FAIL,
+printing "Buy Goods: 3423273". Gate on the tip tree → FAIL listing the hits. printing `npm test` green (receipt-footer
+20/0, raster 40/0, bytes + sample checks PASS); node-reference 25/0 + 19/0; auth-resolution 20/0; menu-template 7/0;
+print-resilience 55/0; desktop main + renderer tsc 0; run-all 117/117 (gates OK incl. the new one); bundle --check OK.
+Wired: `npm run test:print-name` + CI "Desktop test print business name". **Owner to verify on 0.6.4:** a technician test
+print shows the client's own business name and neutral sample lines (Buy Goods 000000, Cashier Amina); the receipt-text
+placeholder and the import template show neutral samples.
+**CLOSED — target run 2026-09-24 on desktop 0.6.4** (Eugene, till mamangina; app shows v0.6.4; log `docs/VERIFY-LOG-2026-09-24.md`): (1) Printing › Printers › Till preview — the ESC/POS path this fix changed — shows **B Foods** (the till's own name), Main Branch, Tel 0700 000 000, Cashier Amina (owner screenshot); (2) Printing › Receipt — the footer placeholder reads "Thank you, visit again! / Follow us @yourbusiness" (both boxes empty, showing placeholders, matching source); (3) the downloaded menu-import template contains "House Sauce" and none of the reference names (whole file checked). No printer needed: the test print renders through the same helper as the preview (pinned by the desktop test).
+
+### A321 · P2 · CLOSED 2026-09-23 (verified on target, mamangina, 0.6.3) · Web changes reach the till's DB but the open screen never refreshes — a sign-in/out is needed
+Owner + tester 2026-09-23 (retest B1: "I had to log in and log out a cashier — it was not automatic"; owner: "the
+changes reflect but I have to login first then log out"). **Diagnosed from source, not yet fixed:**
+(1) The only thing that tells a screen to reload is `index.ts:283` — `catalogue:changed`, sent ONLY by the 20-s
+`pullIfCatalogueChanged` path, and only to `BrowserWindow.getAllWindows()[0]`. The till pulls in seven other places
+(10-min floor `index.ts:273`, startup `:240`, enrol `ipcHandlers.ts:165`, branch change `:581`, manual sync `:1126`/
+`:1138`, after a till-side menu edit `:1594`) and none of them signal — the data lands in the local DB silently.
+(2) `pullIfCatalogueChanged` treats ANY non-OK answer as "no change" (`syncEngine.ts:531`) and never reaches `syncAll`'s
+401-refresh, so an expired device token or a missing endpoint makes the 20-s path fail invisibly; the owner's symptom (POS
+grid did not refresh by itself) says it is failing on mamangina, and changes arrive by the silent 10-min floor.
+(3) The lock screen (`PinPage.tsx:48`) reads branding ONCE on mount and has no listener at all — even a working signal
+would not refresh it. The register's "tills adopt it in ~20s via A278, no restart" was never true for the lock screen.
+(4) Minor: `branch_prices` has no `updated_at` trigger, so a per-branch price edit does not move the catalogue version.
+**Planned fix (delivery after this one, desktop 0.6.3):** emit the signal from the catalogue pull itself (every path) to
+every window; PinPage listens and re-reads branding; the 20-s check refreshes on 401 and records any other failure on the
+tech screen's sync status. (4) is a separate small cloud migration if per-branch pricing is used. Owner asked to hold the
+build until testing finished (2026-09-23).
+**Built 2026-09-23 (-u; desktop — ships in 0.6.3).** (1) `syncEngine.ts`: a listener set (`onCataloguePulled`)
+notified by `syncAll` after ANY successful pull — every one of the eight pull paths goes through it, so this is the
+single signal point; a failed pull does not signal. `index.ts` registers one listener that sends `catalogue:changed` to
+EVERY window (skipping destroyed ones), replacing the 20-s-path-only send to `getAllWindows()[0]`. (2) The 20-s check
+renews the device token ahead of expiry (as `syncAll` does), refreshes and retries once on 401, and records any other
+failure as `catalogue-version check failed: … — changes will arrive with the 10-minute sync instead` on the tech
+screen's sync status (scope `version`, reported after `auth`/`sync` — cause before symptom); recovery clears it.
+(3) `PinPage.tsx` re-reads branding on the signal; a cleared branding (null) resets to the default, a read error keeps
+what is shown. Screens now reload on every landed pull (at least every 10 min) — local-DB reads; POS cart lines are
+snapshots and unaffected. **Proven:** NEW `apps/desktop/test/catalogue-refresh-signal.test.mjs` 18/18 — the REAL
+compiled engine (shims from syncEngine-failures + `isNodeRole`), a URL-routed fetch; a genuine pull runs end to end
+(pos/init → staff → stations → day-close). Mutations on a clean build each: no notify → 5 FAIL; silent non-OK → 3;
+no 401 retry → 1 (+ its dependents); old index.ts → 3; read-once PinPage → 2; tip engine → cannot load
+(`onCataloguePulled is not a function`). The first run caught a harness bug (an unrouted refresh answered 200 and
+de-configured the engine) — fixed. Wired: `npm run test:refresh` + CI "Desktop catalogue refresh signal".
+`tests/catalogue-refresh.test.mjs` (A278's): its first assertion pinned the defective wiring — rewritten to pin the
+forward-to-every-window listener; still fails on the tip `index.ts`. Neighbours unchanged: syncEngine-failures 29/0,
+device-token-refresh 21/0, sync-decouple 6/0, sync-timeout 5/0, manage-fetch-refresh 15/0, branding-set 42/0.
+run-all 117/117; desktop main + renderer tsc 0. **Not done:** (4) the `branch_prices` trigger — only if per-branch
+pricing is used. **Owner to verify on 0.6.3:** VERIFY **A2** (lock screen turns teal with no sign-in/out) and **B1**
+(price appears on the open POS grid by itself); if B1 is slow, Tech › sync status now says why. Delivery:
+`docs/MANIFEST-2026-09-23-u.md`.
+**CLOSED — Target run 2026-09-23 on desktop **0.6.3** (Eugene, till mamangina; version shown 0.6.3; log `docs/VERIFY-LOG-2026-09-23.md` §0.6.3):** A2 PASS (the lock screen changed colour with no sign-in/out) · B1 PASS (a web price change appeared on the open POS grid by itself) · A5 PASS on the till without a sign-in/out · Tech sync status clean (no `catalogue-version check failed`). Every symptom of A321 checked.
+
+### A320 · P3 · CLOSED 2026-09-23 (verified on target, mamangina) · Product UPDATE accepts a whitespace-only name and saves it as ''
+Found writing A317's test (2026-09-23): `nonEmptyString` is `z.string().min(1)` — `'   '` passes it. On CREATE the
+handler refuses it (`routes/products.ts:105`, `!name?.trim()`); on UPDATE it writes `updates.name = name.trim()`
+(`:207`) → an empty product name. Every current client trims and refuses an empty name before sending, so no path is
+known to hit it; the cloud is the only line that holds for a direct API call. Fix candidates: `.trim().min(1)` in the
+schema (then both handlers get it) or the create-style guard in PATCH. Not started (rule 12: not A317's fix).
+**Built 2026-09-23 (-q).** `schemas.ts`: `productName = z.string().trim().min(1).max(120)` used by
+`CreateProductSchema.name` and `UpdateProductSchema.name` (optional). Trim FIRST: `.min(1).trim()` measures the raw string
+and lets spaces through (mutation M2 proves it). Product-only on purpose — `nonEmptyString` serves 12 schemas. Effects:
+spaces/tabs-only name → 400 with the field-level message on update AND create (create used to reach the handler's own
+`name is required`); a real name with stray spaces is stored trimmed; the 120 limit counts the trimmed name (a
+120-character name with surrounding spaces, previously refused, now passes — benign). **Proven:**
+`tests/product-save-payloads.test.mjs` 16 → 22, the REAL built `validateLoose`. Tip schemas → 5 FAIL; min-before-trim →
+3 FAIL; update-only revert → 4 FAIL. run-all 117/117, ratchet held. Cloud deploy only. **Siblings (rule 6, NOT fixed,
+rule 12):** `PUT /api/branches/:id` writes `name` untrimmed and `PATCH /api/staff/:id` writes it when truthy — both can
+store a spaces-only name (not `''`, but it reads as blank); both use `nonEmptyString`. No client is known to send one.
+**Owner to verify after the cloud deploy:** nothing visible in normal use (clients already trim); optional: edit a
+product, clear the name to spaces, Save → "name: Cannot be empty". Delivery: `docs/MANIFEST-2026-09-23-q.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** G3 PASS — a spaces-only name refused with "name: Cannot be empty"; the product kept its name.
+
+### A319 · P2 · CLOSED 2026-09-23 (verified on target, mamangina, 0.6.3) · Web Branding page's legibility rule has drifted from the till's — rejects colours the till accepts
+Tester 2026-09-23, VERIFY-BRANDING-PHASE1 **A5 FAIL** (image: `#F5B800` → "That colour isn't legible on the lock
+screen — tills will fall back to the default"). `BrandingTab.tsx` has its OWN `isLegible`: accent ≥ 3:1 on
+`#0f172a` AND **white** text ≥ 3:1 on the accent. The till's `shared/contrast.ts resolveBranding` picks black OR
+white text, whichever reads better. Bench, same inputs: `#F5B800` — till ACCEPTS it with black text (11.74:1; 10.27:1
+on the surface), web REJECTS (white on it is 1.79:1) and tells the owner something false; its preview shows the
+default where the till would show yellow. `#b45309` / `#777777` agree on both. The file's own header already says a
+dashboard copy joins `check-shared-sync` "when the web-portal slice lands" — never done. Fix: the page uses the shared
+rule (synced copy + gate), preview uses its `buttonText`. Not started.
+**Built 2026-09-23 (-p).** Two drifts, not one: the page demanded WHITE Enter text AND measured `#0f172a`; the till's
+lock card (PinPage, desktop BrandingEditor) is `#0d1424`. **Fix:** `apps/dashboard/src/lib/contrast.ts` — a
+byte-identical copy of `shared/contrast.ts`, added to `check-shared-sync` (4 copies; vendored, not imported, because
+Vercel builds `apps/dashboard` alone — the escpos-bundle precedent). `BrandingTab.tsx`: local `lum`/`ratio`/`isLegible`
+removed; verdict = `resolveBranding(accent, '#0d1424')` (legible ⇔ no fallback); preview accent = its `accent`; preview
+Enter text = `pickButtonText`. The header of every copy now lists the dashboard copy, so the two DESKTOP copies change by
+that one comment line — behaviour identical (desktop main + renderer tsc 0, `apps/desktop/test/contrast.test.mjs` 17/17);
+rides the next desktop bump, no build needed for this. **Proven:** NEW `tests/branding-web-contrast.test.mjs` 11/11 on
+Node 22 (re-runs itself with `--experimental-strip-types`) and Node 24 (native) — runs the DASHBOARD copy: #F5B800
+accepted with black text; all 8 palette colours accepted; #1e293b still falls back; web surface == PinPage ==
+BrandingEditor. Mutations: surface back to #0f172a / verdict also demands white text / an illegible palette colour /
+preview text forced white → each 1 FAIL; tip page → 5 FAIL. (A first pin of the verdict let "also demand white" through —
+tightened to the exact three lines.) `tests/branding-web-page.test.mjs`: its A308 assertion pinned the old
+`function isLegible` — rewritten to pin the shared rule (26/26). **Real browser (bench):** the actual `BrandingTab`, type
+`#F5B800`: tip → amber warning + TEAL preview (the tester's A5 exactly); -p → "Legible ✓", yellow dot/divider/Enter, Enter
+text black (rgb 0,0,0); `#1e293b` → warning, default preview; palette `#b45309` → no message, white text. **Owner to
+verify after the dashboard deploy:** type `#F5B800` → "Legible ✓", yellow preview with black Enter; save; the till's lock
+screen shows the same. Then VERIFY A5. Delivery: `docs/MANIFEST-2026-09-23-p.md`.
+**Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** A5 NOT RUN — the only check that closes this. Stays FIX BUILT. (Web-only: type `#F5B800` → "Legible ✓", black Enter text; save; the till matches, after a sign-in/out until A321 ships.)
+**CLOSED — Target run 2026-09-23 on desktop **0.6.3** (Eugene, till mamangina; version shown 0.6.3; log `docs/VERIFY-LOG-2026-09-23.md` §0.6.3):** A5 PASS — `#F5B800` shows "Legible ✓" with black Enter text on the web, and the till shows the same.
+
+### A318 · P3 · CLOSED 2026-09-23 (verified on target, mamangina) · Products table clips its row actions — Edit/Delete invisible on categories with long descriptions
+Owner 2026-09-23 ("family meals am not able to edit prices but burgers i can"), images 3/4. Edit and Delete are
+rendered for every row unconditionally (`ProductsPage.tsx`), but the table sits in `overflow-hidden`: Family Meals
+descriptions widen the Product column (~+200 px vs Burgers), the actions column is pushed past the card edge and cut
+off with no scrollbar. Nothing category-specific. Workaround: click the price (inline editor, sends only
+`base_price` — also avoids A317). Fix: `overflow-x-auto` on the wrapper (and/or keep actions from wrapping out).
+Not started. Target-only to verify (a browser at the owner's width).
+**Built 2026-09-23 (-p).** Reproduced in a REAL browser before touching code: the actual `ProductsPage` mounted in
+headless Chromium (bench harness: the dashboard's Tailwind build, `BusinessContext` stubbed to a restaurant, `/api`
+answered with the owner's Family Meals + Burgers rows). Tip, 1100 px: **Family Meals** — Edit hit-testable 0/5, no
+user-scrollable container; **Burgers** at the same width 3/3 — the owner's report exactly. The measure counts only what
+a PERSON can do: `scrollIntoView` moves an `overflow-hidden` box, a user cannot, so programmatic scrolling is not credit.
+**Fix (`ProductsPage.tsx`):** (1) the table scrolls inside the card (`overflow-x-auto`, the house pattern of Reports /
+Webhooks / Manager); (2) the actions cell AND its header cell are `sticky right-0` with an opaque `bg-gray-900`, actions
+`whitespace-nowrap`. (1) alone made Edit REACHABLE but only by a sideways scroll whose bar sits under a 69-row table —
+not discoverable, the owner would still report "no Edit" — so (2). **After:** Edit and Delete hit-testable in every row
+at 900 / 1100 / 1280 / 1558 / 1920 px in Family Meals, Burgers and All; a real click on Edit opens that product's form;
+screenshot checked (Cost/Status pass under the pinned column). CI has no browser, so
+`tests/products-table-actions.test.mjs` (NEW, 7/7) pins the three things that produce it; mutations — no scroller,
+no sticky td, no opaque bg, no sticky th, wrap allowed — each 1 FAIL; tip file 5 FAIL.
+**Siblings NOT fixed (rule 12):** the same `rounded-xl overflow-hidden` wrapper around a `<table>` in 11 other pages —
+`BranchDetailPage`, `customers/CreditAccountsPage`, `DiscountsPage`, `settings/MinimartSettingsPage`,
+`settings/PetrolSettingsPage`, `manager/ManagerDashboard`, `inventory/InventoryPage`, `OverviewPage`,
+`stock/SuppliersPage`, `pos/TableTurnoverPage`, `OrdersPage`. Each clips only if its content outgrows the card; none
+reported. **Owner to verify after the dashboard deploy:** Menu → Family Meals at the width that hid Edit → Edit and
+Delete visible on every row; Edit opens the form. Delivery: `docs/MANIFEST-2026-09-23-p.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** G1 PASS — Family Meals and Burgers: Edit + Delete on every row; Edit opens the product.
+
+### A317 · P2 · CLOSED 2026-09-23 (verified on target, mamangina) · Product save rejects an empty description — "expected string, received null"
+Owner 2026-09-23 (image 5): editing a Burger, description empty → `description: Invalid input: expected string,
+received null`. Every client clears an empty description by sending `null` — web `ProductsPage.tsx`
+(`form.description.trim() || null`), till `MenuWorkbench.tsx` and `ManageTabs.tsx` create+update (all forwarded to
+`/api/products` by `manageFetch`). A157's `CreateProductSchema`/`UpdateProductSchema` allowed a string or absent,
+never null, so every save of a product with an empty description failed, web AND till. The column is nullable `text`
+and the handler writes null through. A157's own 08-24 entry had flagged this ("payload sends null not '' for optional
+fields") and the wiring test only regex-checked the wiring — no payload ever went through a schema (rule 24).
+**Fix:** `.nullable()` on `description` in both schemas (`apps/server/src/lib/schemas.ts`). Cloud-only: fixes the web
+and the till at once, no desktop build. **Proven:** new `tests/product-save-payloads.test.mjs` 16/16 drives the REAL
+built `validateLoose` with each caller's payload (source lines pinned so the shapes can't drift). On the tip schema it
+reproduces the owner's message verbatim. Mutations: create-only revert → 2 FAIL; update-only revert → 4 FAIL (incl.
+image 5's); `z.any()` → 3 FAIL (501 chars, a number, injected key); `min(1)` dropped from names → 1 FAIL. Refusal
+cases start from a PASSING payload so a 400 can only be the field under test (first draft was refused for the wrong
+reason — caught and fixed). **Owner to verify after the cloud deploy:** edit a product with an empty description on the
+web → Saves; the same on the till's Manage screen. Likely cause of **B1 FAIL** (see A278). Delivery: `docs/MANIFEST-2026-09-23-n.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** G2 PASS — a product with an empty description saves on the web AND on the till's Manager › Menu.
+
+### A316 · P1 · CLOSED 2026-09-23 (verified on target, mamangina) · Web receipt logo is corrupt in the browser — Branding saves 400, web never prints the logo
+Owner 2026-09-23 (image 1): Save branding → `logo_receipt must be a mono1:<w>:<h>:<base64> raster with ceil(w/8)*h
+bytes, w<=576`. `shared/printing/src/raster.ts` base64'd with `Buffer`. The web runs it in a browser via the esbuild
+bundle, whose shim fakes only `Buffer.from(array)`: encode gave `mono1:16:2:255,255,…` (decimals), decode returned
+null. So: **every Branding save carrying a logo was rejected by the cloud** (nothing saved — likely cause of **A2
+FAIL**, see A308); and the Branding receipt preview, the web POS (`usePOSData`) and web reprint (`reprintReceipt`)
+could never print a logo. The till was unaffected (Electron main has a real Buffer; the desktop renderer's preview
+has its own `atob` copy). A313's executable check loaded the bundle in Node — real Buffer present — and asserted
+only `startsWith('mono1:16:2:')`, which the broken output also satisfies (rule 24).
+**Fix:** a ~30-line base64 codec in `raster.ts`, no Buffer, no atob/btoa. Decode accepts exactly what the cloud
+accepts: its alphabet, padding stripped and re-derived (the cloud's regex allows 0–2 `=` and stores what Node's lenient
+decoder reads); anything else → null. Bundle rebuilt. **Proven:** encode identical to Node's `Buffer` on 1,440 rasters
+(w 1–96, h 1–5, random/0x00/0xFF) → the till's stored format is unchanged; decode matches Node on all 9,600
+cloud-acceptable padding variants. `raster.test.ts` 34→40 (section 8 runs the codec with `globalThis.Buffer` DELETED;
+tip code → 5 FAIL; no re-pad → 1; lenient decode → 1 — its first draft replaced a char, which a lenient decoder also
+refuses on length, so it was blind; now inserts one). New `tests/web-receipt-logo-browser.test.mjs` 6/6: runs the
+SHIPPED bundle in a child Node with Buffer deleted and judges the stored string by the cloud's regex read out of
+`routes/business.ts`; tip bundle → 3 FAIL with `mono1:16:2:109,182,219,109`; keeping Buffer → the guard fails — and
+tip bundle + Buffer kept (A313's setup) passes everything else, which is exactly how it was missed. Desktop main +
+renderer tsc 0; Node 24.21 (owner's major) too. **Owner to verify after the dashboard deploy:** choose a logo, Save
+branding → "Saved."; tick "Print logo on customer receipts" → the preview shows it; a web sale prints it. Then re-run
+VERIFY A1–A2 and F1–F6. Delivery: `docs/MANIFEST-2026-09-23-n.md`.
+**CLOSED — Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** A1 PASS ("Saved." appeared — no `logo_receipt` 400), F1 PASS (receipt preview shows the logo), F5 PASS (web POS sale AND reprint print the logo). Every symptom of A316 checked on target.
+
+### A315 · P3 · CLOSED 2026-09-23 (verified on target, mamangina, 0.6.3) · Receipt closing block can duplicate the owner's footer line
+Seen on the 2026-09-22 XP-80 paper: the owner footer box (`thankYouMessage` / `receipt_footer`) printed
+"Thank you for your business!" and the fixed D8 closing block printed the same line beneath it. The sample
+fixture happens to contain the phrase, so every sample receipt shows it twice; an owner who writes the same
+words in Settings › Printers would get the same. Options: (a) suppress the fixed line when the owner box
+already starts with it (case-insensitive); (b) drop the phrase from the fixture only. (a) is the real fix and
+is a renderer change (byte-affecting → refresh A314's artefacts in the same delivery).
+**Wider than first recorded (rule-17 sweep, 2026-09-23):** not only a fixture collision. The dashboard's
+per-device `footerMessage` defaults to exactly this phrase (`apps/dashboard/src/hooks/usePrinterSettings.ts:26`)
+and `buildReceiptBusinessConfig` falls back to it as `thankYouMessage` when `receipt_footer` is blank — so
+**every web receipt from a business with no owner footer printed it twice**; and the desktop tech test print
+(`sampleBusiness`, `printWorker.ts`) did too. Desktop SALES duplicated only when an owner typed the phrase.
+**Fix (owner ruling 2026-09-23: whole-line match, not "starts with"):** `render.ts` skips the fixed closing
+line when any authored line of the owner box — or of the delivery box, which prints in the same block — equals
+it, compared as printed (`sanitize`), trimmed, case-insensitive; custom `closingMessage` included. The owner's
+line is the one that survives. TAX RECEIPT and the credit are never suppressed. One fix site; the web bundle
+is rebuilt from it (A314's new gate proves that). **Proven:** `receipt-footer.test.ts` 11→20, driving
+`renderTicket` and counting lines on paper at 80 and 58mm. Mutations, each red naming the right case: guard
+removed (6 FAIL); "starts with" (Karibu case); case-sensitive (2); delivery box ignored (1); TAX line moved
+inside the guard (the over-suppression case). **Executed the shipped code, before/after:** the web bundle with
+the dashboard's real default footer — tip `x2` at both widths, fixed `x1` with the TAX line present; the
+desktop test-print inputs through compiled `dist/` — tip `x2`, fixed `x1`. **Not verified (rule 16):** paper
+(send the refreshed `out/receipt-80.bin` to the XP-80: one thank-you, TAX line, credit last); a web receipt
+after the dashboard deploy; a till test print on the next desktop build — this changes desktop bytes, so it
+rides the next bump (0.6.3, rule 15; no version field in the delivery, rule 22). Delivery: `docs/MANIFEST-2026-09-23-l.md` (only the manifest landed in `7a66044`) → re-issued as `docs/MANIFEST-2026-09-23-m.md`.
+**Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** G4 PASS (web receipt, blank footer → one thank-you, TAX line, credit last) · G5 PASS (paper: refreshed `out/receipt-80.bin` on the XP-80). The WEB half and the renderer are verified. **Stays FIX BUILT** for the till half: till receipts and the tech test print change only with desktop 0.6.3.
+**CLOSED — Target run 2026-09-23 on desktop **0.6.3** (Eugene, till mamangina; version shown 0.6.3; log `docs/VERIFY-LOG-2026-09-23.md` §0.6.3):** Till half: a till receipt and the technician test print show the thank-you once (A315 PASS). With G4/G5 of the retest (web + paper), both halves verified.
+
+### A314 · P3 · CLOSED 2026-09-23 (CI #376 on `74d29a1`) · `shared/printing` reference artefacts are stale — `SAMPLE-OUTPUT.txt` and `out/receipt-*.bin` predate the receipt closing block
+Found while establishing A310's byte-identical baseline: regenerating `out/` and running `sample.js` on the
+UNCHANGED tree already differs from the committed files — the receipt is 1927 bytes vs the recorded 1851, and
+`SAMPLE-OUTPUT.txt` lacks the "Thank you for your business!" / "TAX RECEIPT UPON REQUEST" lines that the
+receipt-footer test (D8/A46 era) added. So the register's earlier "sample output byte-identical" claims were
+true against the renderer of their day, not the current one, and a future "byte-identical to SAMPLE-OUTPUT"
+check would fail for a reason that has nothing to do with the change under test. `bytes.ts` is also not in
+`npm test` (only `sample.ts` is, and neither compares against the committed files). Fix (not done in A310,
+rule 13 — it is a reference refresh, not a code change): regenerate both artefacts from the current renderer
+in a delivery that changes nothing else, and add a diff-against-committed step to `npm test` so the next
+drift fails the build. Delivery: TBD.
+**Built 2026-09-23 (with A315, per the 09-23 handoff — the "changes nothing else" plan above was superseded:
+A315 moves the same bytes, so refreshing twice would have been churn).** Correction to the text above:
+NEITHER `sample.ts` nor `bytes.ts` was in `npm test`. Rule-17: the generators already existed, so the gate is a
+mode on them, not a new script. `bytes.ts --check` renders to memory and compares each stream with the
+committed `out/*.bin`, failing with file, both lengths and the first differing offset; `sample.ts --check`
+compares with `SAMPLE-OUTPUT.txt` (LF-normalised), naming the first differing line; `sample.ts --write` refreshes
+it (no shell redirect). Both `--check`s are in `npm test`, which CI already runs ("Receipt closing block"). New
+`npm run refresh-artefacts`. **Sibling class, owner-approved same delivery:** the dashboard's `escposRenderer.js`
+is a committed esbuild bundle of `shared/printing` whose reproducibility was only ever a hand-run md5 in each
+manifest — `build-escpos-renderer.mjs --check` rebuilds to a temp file and fails if stale, esbuild **pinned
+0.28.2** via `npx` (unpinned `npx --yes esbuild` would compare against whatever was latest — a wolf-crying gate;
+pinning via npx keeps the root package/lockfile out of it, rule 22); new CI step "Web receipt bundle is
+reproducible". **Baseline reproduced on the unchanged tip** (receipt-80 1927 vs committed 1851; 58mm 1423 vs
+1363; kitchen/dispatch md5-identical). **Refresh diff vs committed** = the TAX RECEIPT line on the three sample
+receipts + byte counts (receipt-80 1851→1888, receipt-58 1363→1392); kitchen/dispatch untouched. **Gate
+mutation-checked (rule 23):** stale artefacts → red naming both .bin and SAMPLE line 53; one flipped byte → red
+at offset 900; one hand-edited SAMPLE line → red at line 120; a missing .bin → red naming it; renderer changed
+without refresh (A315 reverted) → red on all three; bundle stale vs A315 → red at line 410; bundle hand-edited /
+truncated → red. **Stays green** on CRLF copies of SAMPLE and the bundle (no wolf on Windows). **Not in the
+drift set:** a with-logo `.bin` — `bytes.ts`'s decoder has no `GS v 0` case; extending it is a follow-up.
+`BYTE-CHECK.txt` / `VERIFICATION.txt` are unreferenced 2026-08-05 captures with stale counts — marked unmaintained
+in the README; deleting them is a follow-up. Closes when CI is green on the pushed commit (the gate's target is
+CI). Delivery: `docs/MANIFEST-2026-09-23-l.md` (only the manifest landed in `7a66044`) → re-issued as `docs/MANIFEST-2026-09-23-m.md`.
+
+**CLOSED 2026-09-23.** -m landed as `74d29a1` (every file checksum-matched on the pulled tip). CI #376 completed
+successfully; its printing job carries both "Receipt closing block" (now with `bytes --check` + `sample --check`) and
+the new "Web receipt bundle is reproducible". Owner's Windows run (Node 24.19.0): `PASS  SAMPLE-OUTPUT.txt matches`,
+bundle `OK — … reproducible` — the gates run on the target platform, not only CI.
+**Builder note 2026-09-23 (-n → -o):** the Windows branch regressed in -n (quoted command name → cmd.exe `%~dp0` resolved to the repo, npx-cli.js not found) and is restored in -o to the exact line that ran on the owner's box in -m. CI (Linux) was never affected. Not a reopen: A314's target (CI) held throughout.
+
+### A309 · P3 · CLOSED 2026-09-22 · CI red on `dev` (#360–#362) — `check-doc-refs` tripped by an abbreviated filename list in the `-q` manifest, while the register said "gates green"
+Found by the 2026-09-22 repo review (lead dev), confirmed from the GitHub Actions log: runs #360–#362 on `dev`
+failed at "Cited documents exist". `docs/MANIFEST-2026-09-21-q.md:31` listed the four delivery manifests as
+one full path plus three suffix-only tokens; the gate read each suffix token as a citation of a one-letter
+file that does not exist. The four manifests themselves were present. Fix (delivery `-a`, docs-only): the
+line spelled out as four full `docs/MANIFEST-2026-09-21-*` paths; gate untouched (rule 20). Verified:
+`check-doc-refs` OK (1620 citations / 1113 files), `check-register-consistency` OK, `check-root-clean` OK;
+CI green on push (owner-confirmed 2026-09-22). Process finding: the `-q` register line claimed "gates green"
+for a tree the gate had not been run on (rule 7) — the A270 class. Contributing cause: `run-all.mjs` omits
+`check-doc-refs`' neighbours only by luck; it runs it, but the session ran a narrower set. Delivery:
+`docs/MANIFEST-2026-09-22-a.md` (shipped without an ID — rule 14 debt, cleared by this entry).
+
+### A295 · P1 · CLOSED 2026-09-23 (Phase 1 verified on target, mamangina) · Client branding — Phase 1 (SCOPE-A295 §1–§11 + 2026-09-19 addendum)
+The anchor every branding slice cites (A301–A304, A308) but which had no entry of its own until 2026-09-22 —
+so it had no status, no priority, and the counts could not see it. Opened as the Phase 1 tracker; closes
+when every §10 item below is verified on target. Measured 2026-09-22 against the scope doc, not the handoff:
+
+| §10 item | Slice | State |
+|---|---|---|
+| 1 Cloud table + trigger + CRUD | A303 | CLOSED on target |
+| 2 `/pos/init` + `pullCatalogue` + local `branding` | A304 | CLOSED on target |
+| 3 PinPage two-column, accent, fallback, tech-gated branch change | A301/A302 | CLOSED on target |
+| 4 Receipt logo (mono raster header) | A310–A313 | **CLOSED on target 2026-09-23** (mamangina: F1–F6 all PASS; A310 paper 09-22) |
+| 5 Web Branding page + previews | A308 + A313 | **CLOSED on target 2026-09-23** (A1–A5 all PASS; A2/A5 on 0.6.3) |
+| 6 Contrast guard + curated set | A301/A308 | built — `shared/contrast.ts` 3:1 floor + adaptive text (addendum §B), 8-accent palette (addendum §A) |
+| 7 Branded / un-branded / bad-accent / offline / A291 propagation | A301–A304 §A–§F 25/25; A278 | **CLOSED on target 2026-09-23** (C1 offline, D1 un-branded, B1 + A2 automatic propagation on 0.6.3 — A278/A321) |
+
+Lead-dev decision 2026-09-22: **the receipt logo stays in Phase 1** (§1 names the receipt as one of the two
+surfaces a client judges; the KUDO gradient case is why the preview exists). The 2026-09-21 handoff's
+"complete end-to-end" and "receipt logo optional" are therefore overstated for Phase 1 as scoped. Next build:
+item 4 then the receipt preview (item 5). Target checks owed: A308 page → till, A278 propagation.
+Checklist: `docs/VERIFY-BRANDING-PHASE1.md`. Scope doc status line corrected in the same delivery.
+**Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** 18 PASS / 0 FAIL / 2 not run (A2, A5). §10 item 4 now CLOSED on target. **A295 stays OPEN**: item 5 needs A2 + A5; item 7 needs automatic propagation (A278 → A321, desktop 0.6.3).
+**Phase 2 proposal 2026-09-23:** `docs/PROPOSAL-A295-phase2-themes.html` — themes as one colour family with a fixed shade per job (500 till fill, 400 till text, 600 light fill, 700 light text, pressed +1, 950 tint), every number computed in the page (WCAG contrast; CIEDE2000 ≥ 20 from paid/warning/void; ≥ 10 between themes). Proposed: Ocean, Violet, Lagoon, Orchid, Sky. Not proposed: Iris (too close to Violet), Teal (borderline on paid green), Emerald/Rose/Amber (status clashes). Seven decisions listed for the owner. Nothing built.
+**PHASE 1 CLOSED — Target run 2026-09-23 on desktop **0.6.3** (Eugene, till mamangina; version shown 0.6.3; log `docs/VERIFY-LOG-2026-09-23.md` §0.6.3):** the last two §10 items (5 web page → till, 7 propagation) passed; every §10 item is now verified on the client's own till. Phase 2 (curated themes) is separate work — proposal `docs/PROPOSAL-A295-phase2-themes.html`, awaiting the owner's decisions; it gets its own register entry when started.
+**Phase 2 proposal revised 2026-09-24** (owner asked about the rejected colours and yellow brands): **two layers** — the business's own **brand colour** (lock screen, logo ring, sidebar tint, brand strip; rule: visible on the till's dark screens, 3:1; no status rule because it never marks an action or a status; no new data — it is the Phase 1 accent) and a curated **action colour** (buttons, selections, links; every check incl. status). Yellow as a button is ΔE 1.8 from the warning colour (Amber and Red are 0.0 — they ARE the status colours), but as brand trim it is 9.9–11.3:1. **Seven action themes:** Ocean, Violet, Lagoon, Orchid, Sky, plus Teal and Blossom (Pink family) at status ΔE 15–20 — ship only after a real-till check. Emerald/Rose/Amber/Red/Yellow: never action colours, welcome as brand colours. Suggested pairing = the complementary hue (yellow → Sky, red → Lagoon, green → Orchid). Decisions updated in the page; still awaiting the owner.
+
+### A296 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M1) · Item Mix (manager desktop) was hard-wired to today — add the date-range filter the Orders tab already has
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M1):** Item Mix follows Yesterday / 7 days.
+Owner request 2026-09-18: Item Mix showed "today" only, with no way to change the range, unlike the
+Orders tab beside it. `getTopProducts` already accepts a resolved range and `manager:topProducts`
+already resolves the preset (ipcHandlers.ts:1795), so this is a renderer-only wire-up — no query,
+handler, migration or schema change. `TopItemsTab` now holds a range (default today), renders the
+shared `ReportRangeBar` (exportKind='products', so it also gains a CSV export + the scope line),
+reloads on range change, and keeps the bar visible during loads like `OrdersTab`. The item cap was
+lifted 8 -> 50 so a month's mix is not clipped to eight rows. NOTE: this does NOT by itself make an
+empty Item Mix populate — if `order_items` holds no rows for the period (A297) the table stays empty
+at every range. NOT verified: desktop renderer `tsc` + on-screen render (rule 16) — authored on a
+Linux bench (no node_modules/Electron). Desktop change → bump 0.5.43 -> 0.5.44 at build, tag after
+(rules 15, 22; package.json version is NOT in this delivery). Delivery: docs/MANIFEST-2026-09-18-a.md.
+
+### A297 · P1 · CLOSED 09-18 · Manager Overview blanks because A271's IPC validation rejects the no-arg (optional) report calls — "payload must be an object"
+Symptom (target, 0.5.43 and 0.5.44, B Foods "Mama Ngina", 2026-09-18): Overview reads KES 0 / 0 / "No
+payments" while the Orders list, Shift, AND the web dashboard show the sale. ROOT CAUSE (DevTools console,
+verbatim): `[Overview] salesSummary failed: Error: IpcValidationError: payload must be an object` (same for
+topProducts). The Overview calls posApi.manager.salesSummary()/topProducts() with NO argument
+(ManagerPage.tsx:138-139, 259, 394-395); POSPage calls recentOrders() the same way. ipcSchemas types these
+as `{ ...rangeArg }` (every field optional) and the comment says the whole arg is optional — but
+guardChannel -> assertPayload -> validatePayload rejects an ABSENT payload (undefined) at the top-level
+object check BEFORE it sees the fields are all optional. So the no-arg call throws at the boundary and the
+handler (which defaults the range to today) never runs. The Orders tab and Item Mix pass an object, so they
+were the only reports that worked. Regression from A271 (IPC payload validation, 2026-09-09, after v0.5.30).
+DISPROVEN en route (kept for the next reader; these were my inferences, all wrong): (a) "ingested orders
+lack line items" — T1--23 has 2 items, total_items=46; (b) "status/date filter" — 21 orders status='completed'
+(SUM 45550), created_at inside today, app's exact window returns the rows; (c) "stale/mis-built 0.5.43
+bundle" — WRONG: 0.5.44 was rebuilt clean and Item Mix started working (A296's object payload) while the
+Overview stayed blank, which a stale build could not do; the console error is the real cause. FIX
+(ipcGuard.ts guardChannel): coerce an absent object-bag payload to {} — `assertPayload(spec, payload ?? {})`
+— so a fully-optional schema accepts a no-arg call, while a required-field channel still rejects {} (missing
+field). One line, fixes the class (Overview, Item Mix, POS recent-orders, any future optional-bag channel),
+additive (only accepts more), keeps check-ipc-validation green. Mutation-checked test:
+test/ipc-guard-optional.test.mjs (test:ipcguard). NOTE: the ipcGuard fix did NOT ship in 0.5.44 (that build
+carried only the version bump + A296 — see the superseded MANIFEST-2026-09-18-b, whose stale-build theory was
+wrong); it ships in 0.5.45. NOT verified on the bench (rule 9): desktop tsc/build + the test (imports dist)
+run on CI/target. CLOSED 2026-09-18: fix shipped in 0.5.45 and confirmed on the till (owner) — the Overview shows
+KES 650 / 1 / cash + payment split. Delivery: docs/MANIFEST-2026-09-18-c.md.
+
+### A298 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 T1) · Build provenance — stamp the git SHA + build time into every desktop build (Tech screen + launch log)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, T1):** the Technician status card shows the Build line (short code + time).
+Why: 0.5.44 shipped believing it had the A297 fix and did not; 0.5.45 was meant to carry this stamp too
+but the wrong patch was applied, so it did not either — both misses were caught only by reading the git
+tag. A visible build stamp turns "is this till running the fix?" into a glance. Adds: scripts/gen-build-info.mjs
+(runs after build:main in build:all; writes dist/main/build-info.json with `git rev-parse --short HEAD` +
+ISO time; NEVER exits non-zero — a missing git or a write failure falls back to a placeholder rather than
+break the release chain); src/main/buildInfo.ts (runtime reader — committed source, generated JSON under
+dist, falls back to 'unknown', never throws); a launch log line in index.ts; a `build` field on tech:status;
+and a Build row on the TechPage Device section. Additive — no behaviour change to any existing path, no new
+IPC channel (rides tech:status), keeps every gate green. NOT verified on the bench (rule 9): desktop
+tsc/build + on-screen render run on CI/target. Ships in 0.5.46 (missed 0.5.45). CONFIRM on target: TechPage
+→ Device shows a real SHA + time matching the release commit, and the log prints "[startup] SwiftPOS 0.5.46
+build <sha> @ <time>" -> then CLOSE. Delivery: docs/MANIFEST-2026-09-18-d.md.
+
+### A299 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 T2) · Logging — capture ALL errors (main + renderer) and event summaries into swiftpos.log, not just success lines
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, T2):** a failed test print wrote a timed error line into swiftpos.log.
+Owner request 2026-09-18 after the A297 hunt: the log recorded success paths but the actual error
+(`[Overview] salesSummary failed: IpcValidationError`) went to console.warn — main's 43 console.* calls
+bypassed logLine, the renderer's went nowhere — so diagnosis needed a DevTools screenshot. Now:
+(1) installConsoleCapture() (logFile.ts, called at whenReady) routes main's console.error/console.warn into
+the file, recursion-guarded via captured originals; (2) a renderer forwarder (main.tsx +
+window.swiftpos.logError + ipcMain.on('log:renderer') — a send/on channel, so no schema/parity impact)
+sends window.onerror / unhandledrejection / console.error / console.warn to swiftpos.log; (3) event
+SUMMARIES via logLine at sale create, void, refund, shift open/close, config save — id/total/method/count
+and changed-KEY names only, NEVER line items, customer data, or config values (device_config holds the node
+secret + cloud url), per the owner's data-leakage concern; (4) the startup build stamp (A298 SHA/time) now
+lands in the file; (5) rotation kept at the tested 1MB x2 bounded (the added volume rolls more often, not bigger). Additive;
+check-ipc-parity/validation unaffected (send/on, not invoke/handle). NOT verified on the bench (rule 9):
+desktop tsc/build + on-target — Electron cannot build here. CONFIRM on 0.5.47: force a renderer error and
+ring a sale, then confirm both appear in swiftpos.log (Tech screen shows the path) -> then CLOSE. Ships in
+0.5.47. Delivery: docs/MANIFEST-2026-09-18-f.md.
+
+### A300 · P3 · CLOSED 2026-09-28 (code evidence) · Rule 21 — getServerUrl() renamed to getCloudUrl()
+**Closed 2026-09-28 on code evidence (nothing to see on a till):** no getServerUrl left in apps/; getCloudUrl used 24 times in the till.
+The standing rule-21 debt (flagged repeatedly, no tracking ID until now): `getServerUrl()` returns the
+CLOUD url, not a LAN "server", and rule 21 says rename it. Done 2026-09-19: renamed the function + all 20
+call sites across 5 desktop files (deviceConfig, syncEngine, index, techService, ipcHandlers). The
+`device_config.server_url` COLUMN keeps its name (rule 21) and gained a comment saying it holds the cloud
+url. Pure identifier rename, no behaviour change. Bench-checked: 0 `getServerUrl` refs remain, 20
+`getCloudUrl`. NOT verified on the bench (rule 9): desktop `tsc`/build — Electron can't build here AND CI
+does NOT type-check the desktop, so the owner must run `npm run build:all` to confirm no missed reference
+before releasing. Desktop change -> 0.5.49; ships with the next desktop release. Delivery: docs/MANIFEST-2026-09-19-c.md.
+
+### A301 · P3 · CLOSED 2026-09-21 (verified on target, Till 1) · Desktop-local branding WRITE path — branding:set + raster logo prep (accent + PNG/JPEG)
+Continues A295 past the read path (A298/A299/A300 era): the desktop-local WRITE path, so a real accent/logo
+can be written to the local `branding` row and SEEN flowing through PinPage's existing read seam, before any
+cloud branding sync. Built 2026-09-21: `branding:set` end-to-end mirroring the read path — `setBranding`
+UPSERT (one-transaction read-merge-write; omit=keep, null=clear, value=set) + handler + preload + ipcSchemas
+(in NEEDS_LIVE_TEST) + posApi; pure `brandingGuard.ts` (accent must be hex; logo a PNG/JPEG data-URI under
+250 KB; SVG REJECTED — its allow-list DOM sanitiser is a later renderer+server slice, NOT the pure helper the
+A295 spec implied, rule 20); renderer `prepareRasterLogo.ts` (Canvas shrink-not-crop to <=1024px, steps down
+to fit 250 KB, no native dep). Bench-verified (weak green, rule 9): branding-set.test.mjs 18/18 (guard on the
+real dist module; UPSERT/merge via the node:sqlite stand-in, A13), 19/19 static gates incl. ipc-parity /
+ipc-validation / table-usage / test-registration, main+renderer tsc introduce no error in the new files. NOT
+verified (target-only, rule 16): Electron test:desktop on the real better-sqlite3 ABI; every mutation listed
+in the test header on the compiled dist; prepareRasterLogo (needs a DOM/Canvas); the visual lock-screen
+render. Merged to dev via PR #9 (35c7229); CI caught a missed test registration mid-flight (fixed, delivery
+-c). Follow-ups: the tech-gated FEED (accent picker + PNG/JPEG upload -> branding:set) that makes the lock
+screen visibly change, then the cloud business_branding table/sync + the SVG sanitiser slice. Desktop change
+-> version bump at the next build (rules 15, 22; no bump in this work). Deliveries: docs/MANIFEST-2026-09-21-a.md,
+docs/MANIFEST-2026-09-21-b.md, docs/MANIFEST-2026-09-21-c.md.
+
+### A302 · P3 · CLOSED 2026-09-21 (verified on target, Till 1) · Tech-gated branding FEED — accent picker + PNG/JPEG logo upload (makes A301's write path visible)
+The "minimal way to feed it" from HANDOFF-2026-09-20 §6: a technician-gated editor (new BrandingEditor.tsx,
+mounted in TechPage) that writes a client accent + logo through A301's branding:set, so a real accent/logo can
+be SEEN on the lock screen before any cloud branding UI. businessId comes from the owner session (the branding
+row PK, via auth.getSession); accent legibility is previewed with the same resolveBranding guard the lock
+screen uses; the logo goes through prepareRasterLogo (raster shrink-not-crop, PNG/JPEG only — SVG rejected
+until the sanitiser slice); every write is audited via tech.logAction and re-validated in main by brandingGuard.
+Bench-verified (rule 9, weak green): tests/branding-feed-wiring.test.mjs 8/8 (source-guard, 2 mutations
+confirmed to bite), renderer tsc 0 errors (incl. prepareRasterLogo, previously unexercised), 19/19 static
+gates incl. test-registration. NOT verified (target-only, rule 16): the on-screen editor + the lock screen
+rendering a written accent/logo (needs Electron + a DOM); prepareRasterLogo's Canvas resize at runtime. Next:
+cloud business_branding table/sync (remote-wins) + the SVG sanitiser slice. Desktop change -> version bump at
+the next build (rules 15, 22). Delivery: docs/MANIFEST-2026-09-21-e.md.
+
+### A303 · P3 · CLOSED 2026-09-21 (verified on target, Till 1) · Cloud branding store — business_branding table + server CRUD (the cloud half of A295 sync)
+The cloud source of truth for A295 client branding. Migration 104 `business_branding` (business_id PK/FK
+ON DELETE CASCADE, accent_hex, logo_png base64, logo_receipt reserved for the mono slice, updated_at via the
+set_updated_at trigger for the A291 signal), RLS + grants mirroring branch_settings (91). Server CRUD on
+business.ts: GET /branding (any member reads), PUT /branding (gated receipt.manage|settings.manage), validated
+at the persist boundary exactly like the desktop guard — hex accent, PNG/JPEG data-URI <=250 KB, SVG rejected
+(the SVG-upload research: never trust the client). LOGO IS BASE64 IN THE ROW, not an asset bucket: deviates
+from SCOPE-A295 §3's logo_asset_id but matches A301's 250 KB base64 and SCOPE §4 ("base64 for small logos") —
+a 250 KB cap does not justify an asset subsystem; noted so the SCOPE can be trued. Bench-verified (rule 9,
+weak green): test-migration-104.mjs 8/8 on PGlite (columns/types, RLS enabled, PK, trigger overrides
+updated_at, FK cascade, self-registration, idempotent re-run), server tsc 0, check-schema-drift /
+check-rls-coverage / check-api-routes green. NOT verified (target/CI): applying migration 104 on prod (owner
+action) + the live endpoints. NEXT (A304): /api/pos/init serves branding + desktop pullCatalogue writes the
+local mirror (remote-wins) — the actual sync-down; then the web branding settings page (SCOPE §6) and the SVG
+sanitiser slice. Delivery: docs/MANIFEST-2026-09-21-f.md.
+
+### A304 · P3 · CLOSED 2026-09-21 (verified on target, Till 1) · Branding sync-down — /pos/init serves branding + till pulls it to the local mirror (remote-wins)
+Connects A303's cloud store to the A301 read path. /api/pos/init returns `branding {accentHex, logoPng} | null`, and
+business_branding joins the A291 catalogue-version freshness list, so a branding edit propagates on the normal pull.
+The till's pullCatalogue threads branding through applyReferenceConfig → applyPulledBranding (new, localDb): upsert the
+single local branding row keyed by the owner session's business_id, REMOTE-WINS, only when the cloud returned a row;
+null (no cloud row) or the node path leaves the local (tech-set, A302) value intact — no wipe. Bench-verified (rule 9,
+weak green): branding-sync-pull.test.mjs 12/12 (source wiring on both ends + remote-wins upsert semantics via the
+node:sqlite stand-in, A13), server tsc 0, desktop main tsc 0 on the changed files, full static + schema/rls/api gates
+green. NOT verified (target/CI, rule 16): the end-to-end pull against a real server with migration 104 live; the lock
+screen visibly updating from a cloud edit; node-relay of branding to peers (cloud path only for now — a peer gets it on
+a direct cloud pull; node-bundle branding is a follow-up). Scope note: strict remote-wins (clear-on-cloud-null) is
+deferred until the web branding portal (SCOPE §6) exists to author branding, so A302's tech feed stays the editor in
+the meantime. NEXT: web branding settings page (SCOPE §6), the SVG sanitiser slice, and node-bundle branding relay.
+Delivery: docs/MANIFEST-2026-09-21-g.md.
+
+### A305 · P3 · CLOSED 2026-09-28 (code evidence) · Migration test runner hardened — per-test timeout + parallel pool + self-test (stops CI hangs)
+**Closed 2026-09-28 on code evidence (nothing to see on a till):** run-migration-tests.mjs runs under per-test timeouts in a pool and its --self-test is a CI step (ci.yml) — green on every CI run since.
+On 2026-09-21 a single migration test that never exited (A303/104: un-awaited async assertions racing db.close(),
+fixed in that turn) stalled the sequential, timeout-less run-migration-tests.mjs for ~30 min before anyone noticed —
+the runner had no way to fail a hang. Rewritten: every test runs under a hard per-test timeout (default 120s, env
+MIGRATION_TEST_TIMEOUT_MS) and a HANG is SIGKILLed and reported as a NAMED FAILURE, never a silent pass; the 27
+tests now run in a bounded parallel pool (default min(cpus,4), env MIGRATION_TEST_CONCURRENCY) — PGlite is
+in-process/in-memory/port-less/file-less, so instances are isolated and safe to parallelise — cutting the migration
+phase's wall-clock on multi-core CI. Failure reporting + exit code preserved. A --self-test (wired into the CI
+'Migrations against real Postgres' step, mirroring the other gates' --self-test) proves the runner reports a passing
+test ok, a failing test FAIL, and a HANGING test killed+FAIL — the safety net itself is guarded (rule 23).
+Bench-verified: --self-test 3/3 in 2s; the real runner starts, adapts to cpu count, and 104 now passes in-line (no
+hang). NOT measurable here: the parallel wall-clock win — this sandbox is 1-CPU; it's realised on CI's multi-core
+runners (rule 9). Delivery: docs/MANIFEST-2026-09-21-i.md.
+
+### A306 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 T3) · Auto-update UX — "updating" banner + manager-gated visible restart (no more silent vanish)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, T3):** the update banner and the manager-PIN restart.
+The first prod auto-update (v0.6.0) surfaced the UX gap autoUpdate.ts had flagged for follow-up: the till installs on
+quit SILENTLY, so an operator saw the app close and the desktop shortcut briefly 404 mid-swap, with no sign it was
+updating. autoUpdate.ts now tracks update state and broadcasts it (update:status push); a non-blocking renderer banner
+(UpdateBanner, mounted in App alongside the lock curtain) shows "Downloading…" / "Update ready — installs when you
+close the app". autoInstallOnAppQuit is KEPT (still updates on a normal/overnight close, never mid-service). Added
+update:getStatus + update:installNow IPC (bridged/handled/schema'd); installUpdateNow → quitAndInstall(false, true) so
+a manual update shows the installer progress and RELAUNCHES (no vanish), and is a no-op unless an update is downloaded.
+"Restart & update now" is gated to a MANAGER/TECH PIN (owner call): the banner verifies via auth.verifyPin against
+MANAGER_ROLES before invoking. "Later" only hides it for 2h then re-surfaces (gentle reminder, owner call). Bench-
+verified (rule 9): update-ux-wiring.test.mjs 13/13 (manager-gate mutation confirmed to bite), check-ipc-parity /
+ipc-validation green, desktop main+renderer tsc 0 on the changed files. NOT verified (target-only, rule 16): the
+on-screen banner and the visible installer progress on a real Windows till. Ships in the next desktop release (version
+bump at build, rules 15/22). Delivery: docs/MANIFEST-2026-09-21-j.md.
+
+**Hardened 2026-09-22 (delivery -d, lead dev):** the manager gate was renderer-only — `update:installNow` in main called `installUpdateNow()` unconditionally, so any code reaching the bridge could restart a trading till. Main now refuses with `manager_required` unless `isManager()` (dayService — the closeDay gate, rule 17) is true for the CURRENT staff session; the banner's `verifyPin` signs the manager in first so the honest path is unchanged, and the banner now surfaces a main-side refusal instead of ignoring the result. Guard: `tests/update-ux-wiring.test.mjs` 13→16, three mutations bite (gate removed / gate after install / banner ignores refusal). First cut of the assertion indexed the handler's COMMENT, not its code, and passed mutation 2 — fixed by stripping comments (rule 24, A171 class). Bench: desktop main+renderer tsc 0, ipc-parity, ipc-validation, run-all 113/113. Desktop change → bump at build, tag after (rule 15; package.json not in the zip, rule 22). Still FIX BUILT: the 0.6.1 banner check on a till is unchanged and still owed.
+
+### A307 · P3 · FIX BUILT · In-app menu template — add Large-fries paid upgrade + fuller Read me (dashboard MenuUpload)
+The dashboard's menu-upload template (MenuUpload.tsx downloadTemplate, SheetJS client-side) already demonstrated the
+drink-size upgrade ladder but not a fries upgrade — the gap behind "add large fries paid". Added a Fries-size ladder
+example (Regular Fries: Regular=0 baseline / Large=+60, illustrative) and expanded the Read me (name/plu_code match,
+sparse updates, DELETE, one-row-per-item lists, free vs upgrade ladder, purchased vs central_kitchen cost). Canonical
+title kept; the client "Kudo Kudo" file is a separate/older artifact. Bench: menu-template.test.mjs 7/7, dashboard
+tsc 0. NOTE: the MenuUpload code is on dev; this adds the register entry + test. Delivery: docs/MANIFEST-2026-09-21-l.md.
+
+### A308 · P3 · CLOSED 2026-09-23 (verified on target, mamangina, 0.6.3) · Web branding settings page — owner sets accent + logo from the dashboard (SCOPE §6)
+The client-facing branding piece: owner/admin sets accent + logo from the dashboard, not only via the till technician
+gate (A302) or the raw API (A303). New Settings › Business › Branding tab (BrandingTab.tsx): SCOPE §8.A vetted
+8-accent palette + custom hex with a WCAG legibility guard (falls back to default when illegible); PNG/JPEG logo
+resized client-side to 250 KB (shrink-not-crop, SVG rejected); LIVE lock-screen preview; saves via PUT
+/api/business/branding (A303). Tills adopt it in ~20s via A278, no restart. Wired into the Business settings nav.
+Receipt preview deferred (receipt-logo printing not built). Bench: branding-web-page.test.mjs 7/7, dashboard tsc 0.
+Delivery: docs/MANIFEST-2026-09-21-p.md.
+**Target run 2026-09-23 (Tester 1, till mamangina, desktop 0.6.2) — VERIFY-BRANDING-PHASE1 §A:** A1 PASS · **A2 FAIL**
+· A3 PASS · A4 PASS · **A5 FAIL**. A5 = **A319** (web rule rejects `#F5B800`, which the till accepts with black text).
+A2 (till didn't change within ~30 s) is most likely **A316**: A1 uploads a logo, and every save carrying a logo was
+rejected by the cloud (owner's screen shows exactly that 400), so there was nothing new to pull. Not proven — the
+tester didn't record whether "Saved." appeared. Re-run A1–A5 after A316/A319 deploy. Stays FIX BUILT.
+**Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** A1 PASS (lock-screen preview + "Saved.") · A3 PASS · A4 PASS · D1 PASS (reset → the till shows the default) · **A2 NOT RUN, A5 NOT RUN**. Stays FIX BUILT. A2 cannot pass until A321 ships: the lock screen reads branding once and never refreshes, so it would show the new branding only after a sign-in/out.
+**CLOSED — Target run 2026-09-23 on desktop **0.6.3** (Eugene, till mamangina; version shown 0.6.3; log `docs/VERIFY-LOG-2026-09-23.md` §0.6.3):** A2 PASS (page → till, automatic) · A5 PASS; with the 2026-09-23 retest's A1/A3/A4/D1, every A308 check has passed on target.
+
+### A276 · P1 · CLOSED 2026-09-28 (verified on target, checklist v0.6.18) · Kitchen ticket includes drinks — a soda prints on the KITCHEN printer (web AND desktop)
+Verified on target 2026-09-15: ringing a spicy combo + a Soda and sending to kitchen,
+the soda appears on the KITCHEN ticket (should be dispatch/receipt only). Happens on both
+the web POS and the desktop app. The shared routing unit tests pass ("kitchen does NOT
+list a drink"), so the live inputs differ from the tested ones — cause NOT yet diagnosed.
+Three suspects, needs the data to decide: (a) the imported Soda product carries is_kitchen=yes
+(the Kudo import set Shakes & Mojitos kitchen=yes; confirm what Soft Drinks got), (b) a
+print-station rule routes the drinks/uncategorised to the kitchen station, or (c) the router
+ignores the flag. Pending: Soda product settings + print-station config + both ticket photos.
+Also folds in the A209/A264 target fails ("send to kitchen prints the dispatch ticket").
+**BUILT (delivery 2026-09-28-u, desktop 0.6.18 + cloud + dashboard + admin portal):** **cause found by reading the live path.** Both printing paths —
+the till (`escposBridge.printSale`) and the web (`printRouted.ts`) — removed the kitchen from an excluded **unit** only. A standalone
+soda has no units, so its **line** routed by its category alone: a soda in a category flagged for the kitchen, or mapped to the
+kitchen station, printed there whatever the exclusions said. And those paths used only the owner's typed terms (Printers →
+Exclusions), never the built-in rule (field-approved 04 Aug 2026: "sauces and soft drinks NEVER appear on the KITCHEN ticket"),
+which lived only in the till's prose-note filter. NEW shared `KITCHEN_DRINK_TERMS`, `kitchenExclusionTerms`,
+`stripKitchenIfExcluded` (shared/printing/routing.ts, shipped in the web bundle): the built-in **drinks** terms + the owner's
+terms strip the kitchen from the LINE and each unit, on both paths; dispatch and the receipt keep them. Sauces/dips are
+deliberately NOT a whole-line rule — cooked dishes are named after their sauce ("Wings in BBQ Sauce"). **Proven:**
+`shared/printing/test/a276-soda-routing.test.ts` 9/9 (+5: a soda in a kitchen-flagged OR kitchen-mapped category stays off
+the kitchen and reaches dispatch; Coke/Minute Maid/Water lines and a Fanta combo component; BBQ-sauce wings stay on; an owner
+term on a whole line); NEW `tests/kitchen-drinks.test.mjs` 3/3 (both callers + the committed bundle); golden receipt samples
+unchanged; 2 mutations bite. **Owner to verify:** checklist v0.6.18 §K (needs a printer).
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** K1 PASS (till: no soda on the kitchen ticket). K2 first FAIL on the web — the web kitchen printer was a whole-order type; owner: "I had to add a kitchen printer i selected categories to be printed and it worked" → PASS (configuration, no code). The owner also reported "sauces still print in kitchen printer" — by design in 0.6.18; the sauce rule is **A358**. **CLOSED** (drinks).
+
+
+
+### A277 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 B1) · Receipt omits the Catering/Tourism Levy (CTL) line
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, B1):** the till receipt prints the CTL (2%) line beside VAT.
+`orders.ctl_amount` is computed and stored at sale time (migration 33) and appears in the
+daily/tax reports, but `ReceiptView.tsx` prints only Subtotal / VAT / Total — no CTL line.
+Since VAT and CTL are charged on the same net, a receipt with CTL>0 shows VAT correctly but
+hides the levy portion, an incomplete tax breakdown for a KRA receipt. Fix: add a CTL line
+to the receipt totals (show when ctl_amount>0), mirroring reports-daily. Confirm Business
+Profile exposes a ctl_rate field; if not, add it. Not exercised on target (ctl_rate=0 for the
+test business, deliberately, so the main run stays clean).
+**FIX BUILT 2026-09-21 (batch -m):** the receipt ALREADY renders CTL (ReceiptView.tsx: `ctlRate>0 && row('CTL…')`)
+and sales already compute ctl_amount — the real gap was that ctl_rate could not be SET: the dashboard Business
+Profile and the server `EDITABLE` allowlist both omitted it, so it stayed 0 and CTL never appeared. Added `ctl_rate`
+to `business.ts` EDITABLE + a 0..100 validation (mirrors vat_rate), and to `BusinessProfileTab.tsx` (type + a
+"Catering/Tourism Levy (%)" field + the save payload); GET already returns it (`select('*')`). Bench:
+`tests/ctl-rate-editable.test.mjs` 6/6 (mutation-checked), server + dashboard tsc 0. **To CLOSE (owner):** set a
+nonzero Catering/Tourism Levy in Business Profile, ring a sale, confirm the receipt shows the CTL line and the tax
+report matches. Delivery: docs/MANIFEST-2026-09-21-m.md.
+
+### A278 · P2 · CLOSED 2026-09-23 (verified on target, mamangina, 0.6.3) · Web→till changes aren't instant — a till restart is needed to pick them up
+Owner observation 2026-09-15: menu/config edits made on the web/dashboard do not reach a
+running till promptly; the till has to be restarted to see them. Want a direct real-time
+push (web → till) so changes apply without a restart. Current sync is pull/interval-based;
+this asks for an instant push channel to running tills. Cross-stack (cloud push + till
+listener). Scope/design TBD.
+**Target run 2026-09-23 (Tester 1, till mamangina, 0.6.2) — VERIFY-BRANDING-PHASE1 §B:** **B1 FAIL** · B2 PASS.
+B1 (web price change → till within ~20 s) is most likely **A317**, not propagation: a price changed through the
+product Edit form 400'd on the empty description (owner's image 5) and never saved. Not proven — whether the tester
+used the Edit form or the inline price is not recorded. Re-run B1 after the A317 cloud deploy; if it still fails with
+a save that visibly succeeded, it is a real A278 failure. Stays FIX BUILT.
+**Target run 2026-09-23 (retest; Eugene, till mamangina = B Foods / Mama Ngina, desktop 0.6.2, cloud + dashboard deployed from the tip at the time, `a5a3a3f`; log `docs/VERIFY-LOG-2026-09-23.md`):** B1 recorded PASS by the tester with the note "I had to log in and log out a cashier — it was not automatic" · B2 PASS. That is NOT this item's goal (a change applies to the running till without intervention), so it **stays open**. Diagnosis the same day, from source: the data DOES arrive (a PIN sign-in only pulls on a branch change — `ipcHandlers.ts:578` — so the price was already in the local DB before the sign-in); what is missing is telling the open screen. See **A321**.
+**A321 built 2026-09-23 (-u):** the missing refresh is fixed in desktop 0.6.3. A278 closes when VERIFY B1 passes on 0.6.3 with no sign-in/out.
+**CLOSED — Target run 2026-09-23 on desktop **0.6.3** (Eugene, till mamangina; version shown 0.6.3; log `docs/VERIFY-LOG-2026-09-23.md` §0.6.3):** B1 PASS on 0.6.3 — the web price change reached the running till with no restart and no sign-in/out. The original ask (2026-09-15) is met.
+
+### A279 · P3 · CLOSED 2026-09-28 (verified on target, checklist v0.6.18) · POS has no visible category-filter control
+Owner idea 2026-09-15: the cashier POS shows category tabs but no explicit "current filter"
+indicator or a way to add/manage filters. Small UX enhancement — a visible active-filter
+control on the POS grid.
+**BUILT (delivery 2026-09-28-u, desktop 0.6.18 + cloud + dashboard + admin portal):** a line under the category tabs whenever a category or a search narrows
+the grid — "Showing Soft Drinks · "coke" — 3 items" — with one **Clear ✕** (back to All, search emptied); an empty grid says
+"Nothing matches this filter." with **Show all products** (`renderer/lib/posFilter.ts`, POSPage). **Proven:**
+`apps/desktop/test/till-extras-0618.test.mjs` (the real rule + pins); mutation bites. **Owner to verify:** checklist v0.6.18 §F.
+**Target 2026-09-28 (checklist v0.6.18, tester Eugene, T1 0.6.18):** F1 PASS ("Showing \"RAFI\" — 2 items" + Clear), F2 PASS ("Nothing matches this filter." + Show all products) — screenshots. **CLOSED.**
+
+
+
+### A280 · P1 · FIX BUILT · A clean rebuild from baseline+migrations did NOT reproduce production
+Found 2026-09-15 while resetting the test DB. After DROP SCHEMA + full replay of
+00_baseline.sql + all forward migrations, `verify-db-schema` still FAILS: 7 columns the code
+expects are absent (category_stations.business_id; fuel_tanks.product_id/tank_name;
+parking_sessions.billed_amount/cashier_id/notes; ingredients.current_stock) plus a missing
+table (schema_migration_runs). Cause: baseline creates those tables in an older shape, then
+migration 58/60 hit "relation already exists, skipping" and never add the newer columns;
+`ingredients.current_stock` is the opposite (migration 98 dropped it, the index is stale).
+So the migration set + schema-index have drifted from prod in BOTH directions. This is a
+disaster-recovery risk (you cannot rebuild prod from the repo) and overlaps A23. Fix: make
+baseline reproduce prod (regenerate from a prod snapshot) and reconcile schema-index.json.
+Not blocking today's tests (the drifted tables are outside the shift/POS path).
+REPRODUCED 2026-09-19 (pglite replay of baseline + all 98 migrations, 0 failed): all 7 items absent,
+exactly as filed. Root causes are THREE distinct things: (1) six columns the newer migrations declared
+INSIDE `CREATE TABLE IF NOT EXISTS` that skipped because 44/baseline already made the table
+(category_stations.business_id via 60; fuel_tanks.product_id/tank_name + parking_sessions.
+billed_amount/cashier_id/notes via 58); (2) ingredients.current_stock is NOT drift — migration 98
+correctly DROPs it, the schema-index entry was just STALE; (3) schema_migration_runs is not drift either
+— migrate.mjs bootstraps it (line 96), so only a RAW replay misses it; a migrate.mjs rebuild has it.
+FIX BUILT 2026-09-19: migration 103_reconcile_a280_columns.sql adds the six columns idempotently
+(ADD COLUMN IF NOT EXISTS; category_stations uses add-nullable -> backfill from categories.business_id
+-> SET NOT NULL so it is safe even on a seeded table; types/nullability match schema-index.json). Removed
+the stale ingredients.current_stock from scripts/schema-index.json. Bench-verified: replaying baseline +
+all migrations + 103 now yields all 6 columns with the right nullability and current_stock correctly
+absent — the rebuild matches the corrected index for all 7. All schema/repo gates green.
+SAFE ON PROD: 103 is a no-op where the columns already exist (which the index implies prod has); it runs
+via migrate.mjs on the next server deploy. NOT YET VERIFIED against prod (rule 16): run
+`verify-db-schema` with the prod DATABASE_URL to confirm (a) the index matches prod / no OTHER drift, and
+(b) fuel_tanks/parking_sessions are empty on prod (dead-path). CLOSE when a migrate.mjs rebuild +
+verify-db-schema is green against prod. Delivery: docs/MANIFEST-2026-09-19-b.md.
+PROD VERIFY 2026-09-19 (owner ran verify-db-schema against prod): the gap is bigger than the 58/60 skip
+— PROD IS BEHIND ON MIGRATIONS. Unapplied on prod: 97 (user_devices.retired_at/by), 98 (drops
+ingredients.current_stock — still PRESENT on prod, now shows as an "extra" vs the corrected index), 101
+(stock_transfer_items.quantity_received + stock_transfers.receipt_note), 102 (day_close_instructions),
+plus the six A280 columns (103, new). Every prod-missing item maps to an unapplied migration — no NEW
+skip-gap beyond A280. fuel_tanks + parking_sessions confirmed EMPTY on prod (0 rows), so 103's NOT NULL
+adds are safe there. CLOSURE PATH: merge dev->main -> the prod (Render/main) deploy runs migrate.mjs
+applying 97/98/101/102/103 in order -> prod catches up -> re-run verify-db-schema against prod -> green
+-> CLOSE. CAUTION: 98 DROPS a column, so it is coupled to the reader-free code and must go via the deploy
+(not migrate-only). The merge is a full, deliberate prod release of everything accumulated on dev — take
+a prod backup first, review dev-vs-main, re-verify right after. The lag itself is the practical DR risk
+(A281 cousin): prod trailing dev by 5+ migrations.
+
+### A281 · P2 · FIX BUILT · Dev-environment web lagged the dev API — the dev Vercel project needed a manual promote
+Found 2026-09-15: the dashboard/web-POS is a separate Vercel deploy tracking `main`, while
+the API is a Render deploy tracking `dev`. Our A273/A274/A275 work was on `dev`, so the API
+had it but the web POS did not — the till picker was "missing" purely because Vercel served
+a `main` build. Cost hours to diagnose. The split means a feature isn't truly live until BOTH
+deploy, and they follow different branches. Fix/decision: align the deploy branches (or a
+documented promote flow) so front-end and back-end move together; add a visible build-commit
+somewhere so "is the front-end current?" is a glance, not an investigation.
+SETUP (owner, 2026-09-19): TWO Vercel projects — a PRODUCTION project tracking `main` and a DEVELOPMENT
+project tracking `dev` — with Render likewise (dev API on dev, prod on main). PRODUCTION always worked: a
+merge to main auto-deploys the real site, no manual step. The friction was only the DEVELOPMENT project: a
+dev push did NOT auto-deploy its dev URL — the commit had to be MANUALLY PROMOTED in Vercel — while
+Render's dev API had already auto-updated, so the dev web lagged the dev API. That was the till-picker
+symptom. Real production was never split.
+PART B FIX BUILT 2026-09-19: web build stamp — vite `define` injects commit SHA + branch
+(VERCEL_GIT_COMMIT_SHA/REF) + build time; logged to the console on boot and shown on the login footer
+(web <sha> . <ref>). Because it shows the BRANCH, a lagging dev web is a glance.
+PART A RESOLVED 2026-09-19 (owner, Vercel dashboard): set the DEVELOPMENT project's branch tracking to
+`dev`, so every dev commit now auto-deploys the dev URL — no manual promote. Dev web and dev API move
+together automatically; the real (main) production project was not affected.
+CLOSE when confirmed: next dev push, the dev URL's build-stamp SHA advances on its own (no manual step).
+Delivery: docs/MANIFEST-2026-09-19-a.md.
+
+### A273 · P1 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 W1 + W2) · Web POS had no per-register identity — all web sales in a branch shared one `web:<branch>` drawer and could not fold into a till's drawer/day
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, W1 + W2):** the web picker names "T1 — <setup name>" and "<Branch> Web Till"; the till's own cashier goes straight in with no float prompt.
+
+The cloud keys a shift on `terminalKey = device_id || terminal_code || web:<branchId>`
+(`terminalKey.ts`, migration 63). The desktop till sends a `device_id`; the web sends
+neither, so every web sale in a branch collapses to one shared `web:<branch>` drawer,
+and a shift opened on a till is invisible to the web (different key) and vice versa.
+Owner runs the **desktop as the main register, the web as a per-till backup**, so the
+web must adopt the identity of the till it is covering (Option B, `docs/SHIFT-DAY-WEB-PARITY-DESIGN.md`):
+at web shift-open the cashier picks a till; the web sends that `terminal_code`
+(+`device_id` where known) and its shift/day fold into that till. Cloud terminal key
+already supports it; the work is web-side (a branch-tills read + the picker) + a
+two-surface confirm. Cross-stack, cash custody → not a deploy-window change (rule 13).
+BUILT 2026-09-13 (delivery -b). No migration: `user_devices` already carries
+device_id/terminal_code/device_label and the cloud keys on the x-device-id header
+(migration 63), so this is additive. Cloud: new branch-scoped `GET /api/shifts/terminals`
+(business_id + branch_id, approved + not-retired, minimal shape). Web: `posTerminal.ts`
+stores the covered till per tab; `POSAuthContext` sends its device_id as x-device-id on
+every request (main **and** the 401-retry path); `ShiftModal` open mode picks the till,
+adopts its identity **before** /open, and on 409 folds into the till's existing drawer via
+/current; identity clears on close. Guards: `tests/shift-terminals-endpoint.test.mjs` (4),
+`tests/web-terminal-identity.test.mjs` (7) — both mutation-checked.
+**Behaviour change to confirm (owner):** a web shift now REQUIRES covering an enrolled
+till; a branch with no enrolled till can no longer open a web shift (was: shared
+web:<branch>). This is the Option-B model; flag if a generic web register is still wanted.
+NOT verified here (rule 16): live two-surface behaviour (till + web-as-that-till share one
+drawer; a web sale carries the till's device_id; the offline till → web → till-returns
+re-sync path), and server + dashboard tsc (no node_modules on the bench — run the ratchet
+on push). Delivery: `docs/MANIFEST-2026-09-13-b.md`.
+**Follow-up built 2026-09-26 (delivery 2026-09-26-c; owner report: "shift syncing between web pos and desktop pos … does not
+happen").** Sweep found four gaps; three fixed here, the fourth is **A334** (needs owner decisions). (1) **"A made-up name"**: no till
+ever sent its code or setup name — `enrol/redeem` and `verify-pin` bodies carried neither — so every `user_devices` row said
+"SwiftPOS till" and the picker listed identical names. Now the till sends `terminal_code` + `device_name` on enrolment and every
+sign-in; the cloud writes the name each time (**owner: the setup name always wins**, overwriting a Settings → Devices rename — the
+rename button's tooltip says so); the picker shows "T1 — Front Counter" (`tillName()`, never the generic label). (2) **The float
+prompt on an open drawer** (the 2026-09-15 target finding): NEW `GET /api/shifts/terminals/open` (branch's open drawers: who +
+when, no amounts; `/terminals` untouched) → the picker lists "T1 — Front Counter · open — Jane, since 09:02"; choosing an open till
+shows **Join this drawer** with no float field. (3) **"Same email should not be asked"**: on sign-in with no current shift, the web
+joins the till whose drawer THIS cashier opened (exactly one match; two → the picker). Owner decision also recorded for A334: a
+different cashier on the desktop is offered to **join**. **Proven (bench, Linux, Node 22):** NEW `tests/till-name.test.mjs` 12/12 —
+runs the COMPILED `registerDesktopTerminal` with the database replaced by a recorder (the exact row written), 5 mutations bite;
+NEW `tests/shift-join.test.mjs` 12/12, 5 mutations bite (one check strengthened after M2 reddened the wrong assertion — rule 24);
+A273's own tests unchanged and green (the `/terminals` handler kept byte-identical — its 900-char pin window, rule 20); 124
+offline suites, 26 desktop tests, ratchet (apps/server, dashboard, admin) 0, dashboard build, desktop main build. **Needs**: a
+desktop release (**v0.6.8** — the till must send its name), the cloud deploy (Render) and the dashboard deploy. **Owner to
+verify:** after the till signs in once on 0.6.8, the web picker shows its real name; open a shift on the desktop, sign in on the web
+as the SAME cashier → straight to selling (no picker, no float); as ANOTHER cashier → the picker shows the till "open — <name>" and
+joining asks no float. Delivery: `docs/MANIFEST-2026-09-26-c.md`.
+
+### A274 · P1 · CLOSED 2026-09-15 · Web POS could ring a sale with `shift_id:null` — no hard shift gate, and a failed /current check was swallowed
+
+The desktop till hard-gates selling on an open drawer ("No shift is open. Start a shift
+before selling."). The web CashierScreen only soft-prompted, and its mount check
+`posApi.get('/api/shifts/current').…catch(() => {})` **swallowed failures** — a transient
+error left `currentShift=null` with the Charge path still live, while every order-create
+site sent `shift_id: currentShift?.id ?? null`. A sale attached to no shift cannot be
+reconciled into any drawer and silently diverges from shift totals (P1). Fix (web-only,
+additive): the failed /current check now prompts to open instead of falling through; and
+Charge, Send-to-Kitchen and Room-charge are each disabled + guarded on `currentShift`
+(belt-and-braces so `shift_id:null` cannot be produced). Forward-compatible with A273 —
+the gate reads `currentShift` however it was scoped. Guard: `tests/web-shift-gate.test.mjs`
+(5, mutation-checked — removing any guard reds the naming assertion). NOT verified here
+(rule 16): on-screen behaviour (Charge disabled with no shift; opening one enables it; the
+sale carries the shift id) + dashboard tsc (esbuild build has no type-check — the A265
+class). Delivery: `docs/MANIFEST-2026-09-13-a.md`.
+
+### A275 · P1 · CLOSED 2026-09-15 · No remote day close — an off-site manager could not close a branch's trading day
+
+The desktop day close is node-orchestrated (`branchClose.ts`): the manager queues a
+`close_day` instruction on the branch LAN, the till executes it locally (computes its own
+expected cash + variance) and acks. `business_days` syncs to the cloud **push-only**, so a
+day cannot be closed by writing the cloud copy — closes flow up, never down, and the till
+would keep selling. Owner wants an off-site manager to be able to close (Option i,
+`docs/SHIFT-DAY-WEB-PARITY-DESIGN.md`): a **cloud-relayed** `close_day` instruction the
+till/node pulls on normal sync and runs via `executeCloseDay` locally + acks, against a
+count the **cashier at the till entered** (remote *finalise*, never a fabricated count —
+`dayService.ts` invariant). Cross-stack (cloud instruction table + endpoint + till pull +
+web manager UI); most target-bound (needs a live till to prove the pull→execute→ack loop).
+BUILT 2026-09-13 (delivery -c), Option i (i-A: the manager enters the count remotely — the
+count the cashier made at the till — and the till computes expected+variance, exactly as the
+manager enters it at the node screen today). Migration 102: `day_close_instructions` (cloud
+mirror of `node_instructions`, one-pending-per-till-per-day). Cloud route `/api/day-close`:
+manager `POST /instruct` + `GET /overview` (gated shifts.force_close|settings.manage), till
+`GET /pending` + `POST /ack` (device-scoped via X-Device-Id, same as /api/sync). Till: `syncAll`
+now pulls pending instructions and runs **executeCloseDay verbatim** (same cash arithmetic as
+the on-prem central close) then acks — idempotent, best-effort, never breaks sync. Web: manager
+"Remote day close" panel in ManagerShiftTab (lists tills with open days, queues a close against
+a cashier-entered count, polls for the ack + variance). The relay NEVER writes a business_days
+close on the cloud (closes flow up only). Guards: `tests/day-close-relay.test.mjs` (5),
+`day-close-till.test.mjs` (4), `day-close-web.test.mjs` (4) — all mutation-checked.
+NOT verified here (rule 16): the whole live loop — manager queues → till pulls on cloud sync →
+closes locally with correct expected/variance → acks → manager sees it; date-mismatch refusal;
+idempotent re-run after an ack drop; and server + dashboard tsc + a PGlite migration test on
+CI (no node_modules/Postgres on the bench). Delivery: `docs/MANIFEST-2026-09-13-c.md`.
+**Post-delivery CI fix 2026-09-14 (delivery -e):** the -c commit turned CI red — 5× `TS2559`
+in `day-close.ts` (validation calls passed `400` where `sendError`'s 3rd arg is an options
+object; per its own docs, intentional 4xx use plain `res.status(400).json`), which also
+failed Build + Server-suites; and `schema-audit.py` flagged `day_close_instructions` as
+referenced-but-not-in-index. Fix: the 5 calls → `res.status(400).json({ error })`; added
+`day_close_instructions` to `scripts/schema-index.json`. All gates green locally
+(`schema-audit.py` total 0, `check-schema-drift` OK). tsc not runnable on the bench —
+re-confirm on CI. `docs/MANIFEST-2026-09-13-e.md`.
+
+### A272 · P3 · CLOSED 2026-09-09 · Register hygiene — five items were OPEN in the heading but built in the code; re-graded to FIX BUILT
+
+A code-vs-register audit (reading the source, not the entries) found five items whose
+headings said OPEN while the code showed the work had landed — the same status-lag the
+register exists to catch, in the direction that hides progress. Each re-verified against the
+current HEAD and re-graded OPEN → FIX BUILT (which still counts as open, so no header math
+changes — the point is honesty, not closing them), with a note on the one live check each
+needs:
+- **D17** — dev/prod build flavour: config + dev icon + release-both present; all four
+  artefacts built at v0.5.39 on 2026-09-09. Needs the install check (dev writes to
+  `%APPDATA%\SwiftPOS Dev`, separate from prod).
+- **A151** — Split Bill: the heading's "under-collects / pay loop never advances" is FALSE
+  against the code; the server hard-rejects unbalanced legs (`PAYMENT_MISMATCH`). Money is
+  safe; only by-item needs a live confirm. Heading + description corrected.
+- **A188** — table layout: `hasLayout` grid fallback is in `CashierScreen`.
+- **A146** — webhook UI: `WebhooksTab.tsx` is a real mounted caller (flagged a duplicate
+  inline copy to reconcile).
+- **A139** — franchise receipts: migration + server resolution + editor all present.
+
+No code changed — register only. Verified: `check-register-consistency` green (FIX BUILT
+derives to OPEN, so counts are unchanged). Delivery: `docs/MANIFEST-2026-09-09-d.md`.
+
+### A271 · P2 · CLOSED 2026-09-09 · IPC payload validation completed across all 149 channels + a coverage gate (closes D7)
+
+D7 asked for it and I took "close it, don't nibble": every IPC channel now has a
+real payload schema, and a gate keeps it that way. Built on the existing
+`ipcValidate.ts` (4 channels hand-validated): extended the validator with nested
+`object` / `objectArray` / `enum` / `any` specs and bare-value guards
+(`expectString/Number/Boolean/Enum`) so it can describe the shapes IPC actually
+carries — flat bags, bare scalars, and the nested sale payload. Added a central
+registry `ipcSchemas.ts` giving all **149** channels an explicit decision (Schema,
+Bare descriptor, or `NO_PAYLOAD`), and `ipcGuard.ts`'s `installValidatedHandle`
+so every `handle(...)` validates against the registry before the handler runs —
+one wrapper, no per-handler boilerplate; renamed 138 `ipcMain.handle(` in
+`ipcHandlers.ts` + 11 in `printWorker.ts` to route through it (generic typing, no
+casts). `check-ipc-parity` taught to recognise the wrapper.
+
+**What makes it a close, not a snapshot:** `scripts/check-ipc-validation.mjs`
+(wired into CI) fails the build if any handled channel is missing from the
+registry OR if a registry entry is stale — mutation-checked both ways. A channel
+added tomorrow cannot ship unvalidated.
+
+**The one caveat (rule 16) — NOW CLEARED:** `order:create` is validated against
+`createLocalOrder`'s real nested shape and was listed in `NEEDS_LIVE_TEST` — it is
+the primary sale path and could not be rung on the bench. **Verified live
+2026-09-09:** a real sale on the dev-flavour till (SwiftPOS Dev 0.5.39) went
+through the validated `order:create` boundary, saved to local SQLite, AND synced
+to the cloud — so the schema written against `createLocalOrder` is correct in
+practice, not just in shape. The one caveat is resolved; **D7 is fully closed
+with nothing outstanding.**
+
+Bench-verified: desktop main `tsc` 0 errors; `check-ipc-validation`,
+`check-ipc-parity` and all meta-gates green; `tests/ipc-validate.test.mjs`
+extended 25→52 (new-spec truth table + the order:create shape + registry/guard/
+gate source guards); 96/96 offline suites. Live-verified 2026-09-09: one real
+sale through `order:create` (saved + synced). Delivery: `docs/MANIFEST-2026-09-09-b.md`
+(live confirmation recorded in `docs/MANIFEST-2026-09-09-e.md`).
+
+**CI follow-up (2026-09-09-c).** The desktop "Print resilience" job went red after
+the push: `scripts/test-print-resilience.mjs` located a handler by string-searching
+`ipcMain.handle('<channel>'`, which the rename to the validating `handle('<channel>'`
+wrapper broke — so its `body()` helper sliced from -1 and the "station writes
+refresh ONLY the two station tables" guard failed. A stale guard from the rename,
+not a behaviour regression (all four station writes still call
+`refreshStationsLocal()` and none calls `refreshCatalogue()`). FIX: taught `body()`
+to find either the wrapper or a raw `ipcMain.handle(` form (same fix already applied
+to `check-ipc-parity`). Mutation-checked: injecting `refreshCatalogue()` into a
+station write reddens it; restored 55/55. Swept the other eight desktop-job scripts
+— none string-searches `handle(`, so this was the only casualty. Delivery:
+`docs/MANIFEST-2026-09-09-c.md`.
+
+### A270 · P2 · CLOSED 2026-09-09 · CI red on `dev` (`1ab6121`) across 4 jobs — real drift + stale guards, gates restored
+
+Four CI jobs were red on `dev` and had been since ~A261/A266/A269, while recent
+register entries claimed "gates green" (they were written from narrow local runs
+of only the suites each delivery touched — the full-suite run rules 8/20 require
+was not done). Read every CI log verbatim; traced each failure to source (rule 5).
+
+**Two REAL defects** (reached `dev` because the dashboard build is esbuild-only, no
+type-check — the A265 gap):
+- Dashboard `tsc` **+6 errors** (Type-check ratchet job). Root: `escposRenderer.d.ts`
+  had drifted from its own generated bundle across A252→A269 (bundle gained
+  `stationHasContent`, `renderShiftReportEscPos`, a `type`/`proforma`-shaped station,
+  and a 4th optional `reprint` arg). Rewrote the `.d.ts` to mirror the bundle exactly
+  (5 errors). Plus a duplicate `branchName` in `ReceiptBusinessConfig`
+  (`buildReceiptOrder.ts`) — an A255 copy-paste (1 error). `tsc --noEmit` reproduced
+  6→0.
+
+**Stale tooling data** (Schema-drift job — two failing steps, CI stopped at the first):
+- `schema-audit.py` flagged `stock_transfer_items.quantity_received` — a REAL column
+  (migration 101/A221) missing from a stale `schema-index.json`. Regenerated additively
+  (`build-schema-index.mjs --merge-migrations`; +`quantity_received`, +`receipt_note`,
+  nothing removed).
+- `check-schema-drift.mjs` flagged a stale `schema-pending.json` entry (migration 77 /
+  A55 declared pending but its functions are live in `functions-index.json`). Cleared
+  the entry per the gate's own self-clearing instruction — this RE-ENABLES signature
+  checks on those functions; it does not silence.
+
+**Six STALE test guards** (Server-suites + Desktop-row-scope jobs) — the rule-23/24
+failure mode: later features drifted past text-pinned regexes. Each fixed to match the
+CURRENT correct code and **mutation-checked** (reintroduce the real defect → guard
+reddens naming the right file):
+- `tiny-bridge` A252 spec (A269 `proforma` field) and PaymentModal fallback (A266
+  `resolvedBusiness`); `ui-reports` A261 (`renderTicket` gained `proforma`);
+  `print-documents` ×4 docType (A234 moved the literals into `documentSpecs.ts`);
+  `reports-refunds` Exports hub (guard demanded the OLD `window.open` 401 bug — now
+  asserts the authed `downloadFile` and FORBIDS the bug); `mailer-transport` (now
+  enforces the A200 contract: log the diagnostic, return a generic client message).
+- `manager-receiving` was NOT a pure stale guard: A221/A228 deliberately added
+  PO-creation and transfer-initiation to the tab (each covered by its own sibling
+  test), so the guard's "receive-only, no edit path" premise was false BY DESIGN.
+  Replaced the stale blanket with the invariant that still holds and matters — the
+  receiving tab must never directly ADJUST stock — mutation-checked both ways.
+
+**What ran (rule 7):** all 96 `tests/*.test.mjs` green under CI conditions (server
+built for the 3 dist-dependent suites; 25/25 migration tests; dashboard+server
+`tsc` 0 errors); every gate green — `check-schema-drift`, `schema-audit --strict`,
+`check-api-schema-drift` (+self-test 11/11), register-consistency, doc-refs,
+root-clean, test-registration, and the parity/rls/binds/attribution set. Additive
+and behaviour-preserving throughout — no runtime code path changed (type decls, one
+duplicate line, tooling JSON, test guards), so no till risk. Rollback: revert this
+commit. Delivery: `docs/MANIFEST-2026-09-09-a.md`.
+
+### A198 · P2 · CLOSED 2026-09-03 · Branches-tab "Enrol till" mints a single-use code with nowhere to display it
 
 **Found on the 2026-09-02 admin-portal pass (during the A69 close).** The client-detail page has
 two "Enrol till" entry points — one on the Overview tab, one on the Branches tab — both calling the
@@ -114,9 +2299,1484 @@ the code server-side, then rendered nothing — and because codes are single-use
 burned one. **FIX BUILT 2026-09-02 (bench, admin `tsc` + build green):** renders the same code card
 on the Branches tab from the shared `enrolResult` state (`apps/admin/src/AdminPortal.tsx`, ~25
 lines, mirrors the Overview card). Closes on a live check: Enrol till on the Branches tab shows the
-code card with Copy. **Next free ID A199.**
+code card with Copy.
 
-### A195 · P2 · OPEN · Refunded orders still show "Completed" with no visual distinction from a clean sale
+### A199 · P1 · CLOSED 2026-09-03 (browser-verified) · Applying migration 97 500s both device lists (ambiguous `users` embed)
+
+**Regression I introduced.** Migration 97 (A184 Tier 3 Phase 1) added
+`user_devices.retired_by uuid REFERENCES public.users(id)` — a SECOND foreign key from
+`user_devices` to `users` (the first is `user_id`). PostgREST can't resolve a bare `users(...)`
+embed when two relationships exist, so the instant 97 was applied on the dev DB, BOTH device lists
+started returning 500: `GET /api/devices/fleet` (Terminals page — `users ( name )`) and
+`GET /api/devices` (Devices tab — `users ( id, name, email, roles ( name ) )`). Symptom seen live:
+the Terminals page showed "Something went wrong" and the fleet call returned 500 on
+`swiftpos-20c2.onrender.com/api/devices/fleet`. This is why applying 97 "changed nothing" — it
+swapped a missing-column 500 for an ambiguous-embed 500. **Diagnosis missed on the first pass**: I
+blamed connection/migration state before re-reading the endpoint; the owner correctly pushed back to
+review the code. **FIX BUILT** (bench — server tsc + api-routes + guard test green): both embeds
+disambiguated to the `user_id` relationship by its constraint name,
+`users!user_devices_user_id_fkey ( … )` (constraint name confirmed in `00_baseline.sql`; the embed
+alias stays `users`, so `d.users?.name` is unchanged). Only these two queries embed `users` on
+`user_devices` (swept repo-wide); every other `user_devices` query selects explicit columns and is
+unaffected. Guard test `tests/devices-users-embed.test.mjs` (4 checks, mutation-checked: a bare
+`users(` embed fails loudly). **Could NOT verify PostgREST embedding in-sandbox** (PGlite has no
+PostgREST) — final proof is the redeployed dev API returning 200 on both endpoints. Files:
+`apps/server/src/routes/devices.ts`. Delivery: `docs/MANIFEST-2026-09-03-g.md`. **Lesson banked:**
+adding an FK column to a table can silently break existing PostgREST `embed`s on that table — check
+for `table(...)` embeds whenever a migration adds a `_by`/`_id` FK. **Next free ID A200.**
+
+**CLOSED 2026-09-03 (browser-verified).** After the dev API redeployed with the fix, the Terminals
+page loads (no 500) and the Retire flow works — the ambiguous-embed error is gone. This live 200 is
+the proof the sandbox couldn't give (no PostgREST in PGlite).
+
+### A200 · P2 · CLOSED 2026-09-03 (browser-verified) · "Send test email" leaks internal hosting diagnostics to the production UI
+
+Found in the 2026-09-03 browser QA pass (A146 check). `POST /api/notifications/test-email`
+returned the mailer's raw diagnostic (`result.error`) verbatim to the client, so a failed test
+surfaced internal hosting detail on the owner's screen: SMTP port numbers, "Render blocks outbound
+25/465/587", `render.yaml declares plan: starter`, and "CHECK THE LIVE INSTANCE TYPE IN THE RENDER
+DASHBOARD FIRST". That is backend/infra information disclosure on a production surface. **FIX BUILT**
+(server tsc + guard test green): the route now `console.error`s the full diagnostic **server-side**
+and returns a clean, generic message to the client ("Test email could not be sent — email delivery
+is not configured or the mail provider is unreachable. See the server logs for details."). The
+diagnostic is preserved for operators in the logs. Guard test `tests/reports-export-auth.test.mjs`
+(pins: no `result.error` to the client; logs + generic message). Files:
+`apps/server/src/routes/notifications.ts`. Delivery: `docs/MANIFEST-2026-09-03-h.md`. Closes on a
+browser re-check: click Send test email while mail is unconfigured → a clean message, no ports/Render
+detail. **Next free ID A201.**
+
+**CLOSED 2026-09-03 (browser-verified):** Send test email now shows exactly the generic message
+("Test email could not be sent — email delivery is not configured or the mail provider is
+unreachable. See the server logs for details."), with none of the leaked strings (SMTP ports,
+"Render", "render.yaml", "plan: starter", "filtered upstream", "CHECK THE LIVE INSTANCE TYPE"). The
+underlying 502 is never exposed to the user.
+
+### A201 · P3 · CLOSED 2026-09-04 (browser-verified) · Report export can 401 on the very first click after a hard refresh (downloadFile has no token-refresh retry)
+
+Found in the 2026-09-03 export re-check. `api.request()` (JSON calls) refreshes the access token and
+retries once on a 401; the new `downloadFile()` (A143) does NOT — it fires a single fetch. So on the
+first export click **immediately** after a hard page load, before the token is hydrated/refreshed,
+the download can 401 (`Missing or malformed Authorization header`); a retry moments later succeeds.
+Intermittent, self-recovers, non-blocking (QA confirmed). Fix (not built): mirror `request()`'s
+401 → `refreshAccessToken()` → retry-once path inside `downloadFile`, or await the auth-ready state
+before enabling the export buttons. Files: `apps/dashboard/src/lib/api.ts`. **Next free ID A204.**
+
+**FIX BUILT 2026-09-04 (dashboard tsc + vite build + guard test green).** `downloadFile` now mirrors
+`request()`'s 401 handling: on a 401 with a stored access token it calls `refreshAccessToken()` and
+retries once (`isRetry` guard prevents a loop); a failed refresh signals session-expiry rather than
+looping or crashing. So the first export click immediately after a page load can no longer 401 on the
+token-hydration race. Guard test `tests/download-401-retry.test.mjs` (mutation-checked). Files:
+`apps/dashboard/src/lib/api.ts`. Delivery: `docs/MANIFEST-2026-09-04-e.md`. Closes on a re-check that
+a first-click export right after a hard refresh downloads cleanly (the race the A143 re-check flagged).
+
+**CLOSED 2026-09-04 (browser-verified).** First export click right after a hard refresh completed a
+real server round-trip (~550–740ms, Performance API) with no error/401 — the race did not recur.
+
+### A203 · P2 · CLOSED 2026-09-04 (browser-verified) · Stock transfer "Mark received" hangs; stock strands debited at source, uncredited at destination
+
+Found in the A197 transfer-flow verify. A single user despatching AND receiving a transfer is the
+common small-shop case; it trips the server's separation-of-duty guard
+(`despatched_by === req.userId` → 409 `same_user_receipt`). The frontend answered that 409 with a
+**native `window.confirm()`**, which blocks the page and cannot be dismissed by tests/automation — so
+"Mark received" appeared to **hang** (30–50s, no error, no console), the receipt never completed, and
+stock sat **debited at the source (at in_transit) but never credited at the destination**. (It is
+recoverable via Cancel, which returns the goods to source — but the QA reasonably read it as stranded
+stock.) Separately, the status route had **no try/catch**, so any throw in the stock RPCs would escape
+as an unhandled async rejection and hang the request in Express 4 regardless. **FIX BUILT** (dashboard
++ server tsc, vite build, guard test green): (1) an **in-app confirmation modal** replaces the native
+confirm — the same-user override is completed in-app (`advance(t, status, true)`), so it works for
+humans and automation; (2) the route is **wrapped in try/catch** → a failure returns 500 instead of
+hanging. Guard test `tests/transfer-receive-hang.test.mjs` (mutation-checked: restore window.confirm
+or remove the try/catch → red). Files: `apps/dashboard/src/pages/stock/StockTransfersPage.tsx`,
+`apps/server/src/routes/stock.ts`. Delivery: `docs/MANIFEST-2026-09-04-d.md`. Closes on a browser
+re-check: a single user can Mark in transit → Mark received (via the modal), stock lands at the
+destination, and the transfer reaches Received. **Design note (not blocking):** debit-at-in_transit /
+credit-at-received across two requests means an incomplete receipt leaves stock at source until
+completed or cancelled — acceptable for goods physically in transit, and recoverable; flagged for
+awareness. **Next free ID A204.**
+
+**FIRST FIX INCOMPLETE → v2 BUILT 2026-09-04.** The 2026-09-04 browser re-verify (excellent QA)
+found the v1 fix incomplete: a **blocking native dialog still fired for a normal user** on Mark
+received before the in-app modal could render (proven: it froze screenshot capture + unrelated
+fetches, and only a physical Enter cleared it — not React behaviour; neutralising `window.confirm`
+was required to see the modal). The in-app modal existed and worked, but v1 still *routed through the
+server 409 → catch* path, so any native dialog in that path (deploy-state dependent) preceded it.
+Stock debit/credit itself was verified CORRECT (Main −5 / Westlands +5). **v2 makes it impossible to
+hang:** a new `markReceived(t)` decides the same-user case on the **client** — if
+`t.despatched_by === user.id` (the list already returns `despatched_by` via `select('*')`;
+`useAuth()` gives the id), it opens the in-app modal **directly, before any server call**, so the
+`allowSameUser=false` request (and its 409/dialog) is never made; a different user marks received
+straight through. The "Mark received" button now calls `markReceived`, not `advance`. Guard test
+extended (`tests/transfer-receive-hang.test.mjs`, mutation-checked). Files:
+`apps/dashboard/src/pages/stock/StockTransfersPage.tsx`. Delivery: `docs/MANIFEST-2026-09-04-g.md`.
+**Also flag for the owner:** the v1 contradiction (a confirm firing though `dev`'s code had none on
+that path) suggests a deploy/branch mismatch — confirm which branch the dashboard deploys from. A203
+closes on a re-verify: a single user completes Mark received via the modal with **no page hang**.
+
+### A204 · P3 · CLOSED 2026-09-10 · Transfer Cancel uses a native window.confirm and sends no cancellation reason (server requires one)
+**CLOSED 2026-09-10.** Replaced the native window.confirm on the Stock Transfers Cancel button with an in-app modal that captures a required reason and threads it through advance(t,'cancelled',false,reason) into the PATCH body — mirroring the A203 same-user modal. Modal Cancel button disabled until a reason is typed, so 400 reason_required can't be hit. Guard in transfer-receive-hang.test.mjs, mutation-checked both ways; dashboard tsc 0. NOT verified here: the modal on screen + a real cancel round-trip. Delivery: docs/MANIFEST-2026-09-10-combined.md.
+
+**Original:**
+
+Found alongside A203 v2. The Stock Transfers **Cancel** button (`StockTransfersPage.tsx`) uses a
+blocking native `window.confirm()` (the last native dialog in that flow), and on confirm calls
+`advance(t,'cancelled')` which sends `{ status:'cancelled' }` with **no `reason`** — but
+`PATCH /transfers/:id/status` requires one (`400 reason_required`). So Cancel both pops a native
+dialog and then fails the request. FIX (not built): replace the confirm with an in-app modal that
+captures a cancellation reason and passes it through. Low frequency; filed P3.
+
+### A205 · P2 · CLOSED 2026-09-05 · Manager web-POS can't receive stock at all — no receive UI despite holding the permission
+**CLOSED 2026-09-05 (owner browser pass, B Fastfoods, both flows end-to-end):** GRN — created PO-0001
+(10 kg Flour @ 150), Ordered; manager Receiving → Supplier Deliveries listed it; confirmed receipt →
+Flour 42 → 52 kg exactly, PO left the open list. Transfer — created TRF-0004 (westlands → Main Branch,
+5× BBQ Sauce), In Transit; manager Receiving → Incoming Transfers listed it; confirmed → BBQ Sauce
+58 → 63 exactly, left the incoming list. No-edit confirmed: only Receive-type actions on the manager's
+Inventory/Receiving screens; no Adjust/Edit/Deactivate. One nuance on record → the reorder-threshold
+("min") input stays editable on the manager Inventory page (a reorder-alert setting, not the stock
+count — can't fabricate stock); A215 gates its route to adjust-or-receive. Tighten to owner-only later
+if desired. Follow-up filed: A221 (transfer receipt should take an actual received quantity).
+
+The permission model already intends "managers RECEIVE, only the owner ADJUSTS":
+`defaultRolePermissions.ts` denies managers `inventory.adjust` + `ingredients.manage` and grants
+`inventory.receive` + `inventory.transfer`. But the manager dashboard exposed **no receive UI** —
+`POSInventoryTab` is a read-only stock view (plus an ungated low-stock-threshold edit), and the
+manager **Overview even pointed at a non-existent action**: "If a transfer arrived, receive it in
+Inventory to clear these." So a manager holding `inventory.transfer`/`inventory.receive` had no way
+to use it. **FIX BUILT (slice 1 — incoming transfers; dashboard tsc + vite build + guard test
+green; OPEN pending browser + slice 2):** new `ManagerReceivingTab` (a **Receiving** nav item in the
+Inventory group, gated on `inventory.receive`) lists transfers that are **in transit to this branch**
+and marks them received via `PATCH /api/stock/transfers/:id/status` — gated on `inventory.transfer`,
+with **no adjust/edit path** (the tab makes exactly one mutating call, the receive). The Overview's
+broken promise now points to Receiving. Guard test `tests/manager-receiving.test.mjs`
+(mutation-checked: a stray adjust call fails the one-mutation check). Files:
+`apps/dashboard/src/pages/manager/ManagerReceivingTab.tsx` (new) + `ManagerDashboard.tsx`. **Slice 2 (supplier deliveries / GRN) — BUILT** the same day: the Receiving tab now also lists OPEN
+purchase orders for the branch (`GET /api/stock/purchase-orders?branch_id=`, status ordered/partial)
+and receives against one via a GRN (`POST /api/stock/grn`, per-item quantity that arrived), gated on
+`inventory.receive`. Both slices are RECEIVE-only — every mutation is `/status` (transfer) or `/grn`
+(delivery), no adjust/set/threshold (guard test extended, mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-04-k.md`.
+**Product decision (recorded so it is not re-flagged as a gap):** the **desktop till deliberately
+has NO inventory receive or adjust** — receiving/adjusting is a **premium, online-only capability**
+that drives online subscription, not a missing feature. Closes on a manager browser check: a manager
+sees Receiving, marks an incoming transfer received, and cannot adjust/edit stock.
+
+### A206 · P2 · CLOSED 2026-09-05 · Manager "Open POS" button opens nothing (cashier-screen guard bounces managers)
+
+The manager dashboard's bottom "Open POS" button navigates to `/pos/cashier`, but `CashierScreen`'s
+mount guard redirected anyone whose `resolveRoute` home wasn't `/pos/cashier` — a manager resolves to
+`/manager`, so it bounced them straight back and the button appeared to do nothing. But managers hold
+`orders.create` (they are entitled to ring sales), and `/pos/cashier` is the only way for a manager to
+reach the till (login also routes them to `/manager`), so before this they could **never** open the
+POS. **FIX BUILT (dashboard tsc + vite build + guard test green; OPEN pending browser):** the
+CashierScreen guard now redirects **only the owner** (`dest === '/'` — they use the full web
+dashboard, not the POS terminal); managers and cashiers both stay. Cashier/owner behaviour is
+unchanged (only managers, previously bounced, now remain). A manager exits back to `/manager` via
+Lock / End shift (which routes through `resolveRoute` again). Guard test
+`tests/pos-manager-open.test.mjs` (mutation-checked: restoring the over-broad guard goes red). Files:
+`apps/dashboard/src/pages/pos/CashierScreen.tsx`. Delivery: `docs/MANIFEST-2026-09-04-l.md`. Closes on
+a browser check: a manager clicks Open POS → the cashier screen opens (shift prompt / terminal), and
+a cashier/owner are unaffected.
+**BROWSER-VERIFIED 2026-09-05 (owner-run manager-PIN pass):** Open POS launched the cashier terminal
+(table-select + Clock / Float / Z-Report / End Shift / Lock) and stayed — no bounce; Lock returned to
+the PIN screen. CLOSED (rule 16).
+
+### A211 · P1 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M5) · Permission catalogue missing 7 keys on dump-seeded DBs — customer/receiving/ingredient/financial routes silently owner-only
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M5):** Customers and Inventory → Receiving open for a manager.
+
+The manager-PIN verify pass (A133/A205) failed because `customers.view`, `inventory.receive` and
+`reports.view` — and, by the same cause, `customers.manage`, `inventory.adjust`, `ingredients.manage`,
+`reports.financial` — are **absent from the live `permissions` catalogue** (dev, confirmed by query:
+`key_registered = false`). All 7 are first registered by migrations 09/24/27, every one of which
+`schema_migrations` lists as APPLIED; 49's `inventory.transfer` survived while these did not. The
+ledger carries a consolidated-dump fingerprint (`swiftpos_consolidated_migration`,
+`all_phases_migration`, `pos_migration_v26..v30`, `40_correct_migration_log`): the DB was dump-seeded
+and its version list hand-populated, so the per-domain `INSERT`s never ran here — "applied" != "its
+effects are present". An unregistered key can never attach to a role (the `role_permissions ->
+permissions` FK), so `requirePermission` fails closed and the nav filter hides the item — the A57
+class, now observed live rather than hypothesised. Effect on any affected DB: non-owner customer
+management, stock receiving, the ingredient catalogue and financial reports are owner-only, and the
+manager loses Receiving/Reports/Customers tabs (root cause of A133b + the A205 block). NOT fixable
+from Settings -> Roles (that screen only renders checkboxes for keys that exist). **FIX BUILT:**
+migration `99_permission_catalogue_repair.sql` registers the 7 keys verbatim from 09/24/27
+`ON CONFLICT (key) DO NOTHING`, then grants per tier mirroring `defaultRolePermissions` (manager tier
+= the 4 non-deny keys `customers.view/manage`, `inventory.receive`, `reports.view`; cashier = the 2
+customer keys; admin/owner = all 7), A61-safe normalisation, `NOT EXISTS`-guarded, fully
+`public.`-qualified (A62). PGlite test `scripts/test-migration-99.mjs` 16/16 (mutation-checked:
+neutered manager grant -> 4 red; reintroduced the A61 space-name bug -> Branch Manager red).
+**OPEN pending:** apply on dev + browser-reverify A133/A205, and run the blast-radius query on **PROD**
+(same dump-seed suspected). Note this is DB catalogue state — repo-side `check-permission-parity` was
+always green because the keys ARE registered in the repo migrations; the gate cannot see the live
+catalogue (that blind spot is A213). Delivery: `docs/MANIFEST-2026-09-05-a.md`.
+
+### A212 · P2 · CLOSED 2026-09-09 · Manager Printers tab gated on owner-only settings.manage — never visible to any manager
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+`ManagerDashboard` gated the Printers nav item on `settings.manage`, which is on `MANAGER_DENY`
+(owner-only), so no manager could ever see it — while `permission-model.md` + migration 79
+deliberately moved printers to `stations.manage` and granted it to the manager tier for exactly this.
+Confirmed by the grant query: manager `settings.manage = false`, `stations.manage = true`. **FIX
+BUILT:** one-line re-point `settings.manage` -> `stations.manage` in `ManagerDashboard.tsx`; source
+guard added to `tests/manager-nav-grouped.test.mjs` (mutation-checked: reverting the key -> red);
+dashboard tsc clean. OPEN pending browser reverify (with A211 applied so `stations.manage` resolves).
+Delivery: `docs/MANIFEST-2026-09-05-a.md`.
+
+### A213 · P2 · CLOSED 2026-09-05 · No guard that the live permission catalogue matches the code's keys (self-heal proposal)
+**CLOSED 2026-09-05 (live DB pass, post-deploy):** boot self-heal ran; live catalogue holds all 25 canonical keys — Supabase check returned expected 25, registered_live 25, missing_keys (none). The A211/A212/A220 class can no longer recur; the CI gate keeps the list complete.
+
+A211's root cause is invisible to every existing gate: `check-permission-parity` compares the repo's
+four surfaces and stays green because the keys ARE registered in the repo migrations — it never
+inspects the live `permissions` table, so a dump-seeded DB missing catalogue rows passes every check
+and fails only in a user's browser. **Proposal (durable fix, so this class cannot recur and no key is
+ever hand-registered per environment):** the server ensures the catalogue on boot from a canonical,
+code-defined key list — idempotently registering any key the code references but the DB lacks — and/or
+a startup assertion plus a gate that diffs the intended key set against a target DB. Not built; needs
+a decision on boot-time write vs. assert-and-report. Surfaced by A211.
+
+**FIX BUILT 2026-09-05 (decision: boot-time idempotent register from a canonical list):**
+- `apps/server/src/lib/permissionCatalogue.ts` — a single canonical `PERMISSION_CATALOGUE` (every key
+  with label/module/description) and `ensurePermissionsRegistered()`, which upserts it into `permissions`
+  with `onConflict: 'key', ignoreDuplicates: true` (INSERT … ON CONFLICT DO NOTHING). Registration only:
+  it never grants and never overwrites an existing row, so it can't disturb an owner's rights. Global
+  catalogue (no business_id) → one boot heals every tenant.
+- `apps/server/src/index.ts` — `void ensurePermissionsRegistered()` on boot, alongside the other
+  fire-and-forget diagnostics (never awaited, never throws; a shop's tills must not fail to start over it).
+  So any DB missing a key — for any reason, including a consolidated-dump bootstrap — self-heals on the
+  next deploy, and A211/A212/A220 cannot recur.
+- `scripts/check-permission-catalogue.mjs` — new CI gate: every key the code references (server
+  enforcement, UI nav, `hasPermission`, the default-role sets) must be in the canonical list, so a new
+  key can't be added in code without being catalogued (and therefore registered). Currently 25/25.
+- **Two latent gaps caught + closed by this:** `orders.create` and `invoice.create` are in `CASHIER_KEYS`
+  but were registered by NO migration (same class, not yet triggered) — now in the canonical catalogue.
+- Proof: `scripts/test-permission-catalogue.mjs` (PGlite) — an incomplete catalogue heals to complete,
+  idempotently, no dupes (6/6, mutation-checked). Gate mutation-checked. Server full tsc not runnable in
+  the sandbox (no server node_modules); `upsert(..., { onConflict, ignoreDuplicates })` mirrors existing
+  usage (stockEffects.ts, admin.ts) — type-correct by construction; run pinned CI tsc. Delivery:
+  `docs/MANIFEST-2026-09-05-l.md`. Needs: deploy, then confirm the boot log line
+  "catalogue verified (25 keys …)" and that a fresh/again-dumped DB shows all keys.
+
+### A214 · P2 · CLOSED 2026-09-05 · Manager Staff/Printers tab hangs forever on "Syncing branch…" (no timeout, no error path)
+**CLOSED 2026-09-05 (owner browser pass):** every sidebar item loads, including Staff — which
+previously hung indefinitely on "Syncing branch…" and now renders the branch roster (Eugene's real
+account kizzy.oweya@gmail.com plus a cashier, Bill). Printers, Customers, and Credit also load. The -c
+fix (branchSynced from the session) is live and confirmed.
+
+Found in the A133/A205 verify pass: the manager Staff tab sits on "Syncing branch…" indefinitely — no
+console error, no network activity. `ManagerDashboard` gates Staff and Printers behind `branchSynced`,
+which a `useEffect` sets true ONLY if `branches.find(b => b.id === session.branchId)` succeeds
+(`ManagerDashboard.tsx` ~1244-1248; gate ~1280). No else, no timeout, no error state: if the manager's
+branch isn't in the loaded `branches` list (empty, scope-filtered, or a null `branchId`), it spins
+forever. "No network activity" fits — the gate blocks BEFORE `StaffTab` mounts, so its fetch never
+fires. `managerBranch` is already built from `session` (line 1253), so the likely fix is to trust that
+(or add a timeout + visible error). NOT fixed — kept as its own item to avoid ballooning A133. Needs a
+browser reverify after fix.
+**FIX BUILT 2026-09-05 (reproduced live — Staff stuck on "Syncing branch…"):** the branch-sync effect
+now sets `branchSynced` from the SESSION — `if (!session?.branchId) return; if (myBranch) setActiveBranch(myBranch); setBranchSynced(true);` — so the tab is never blocked on the (possibly empty / scope-filtered)
+`branches` list containing the manager's branch. `StaffTab` already receives the session-derived
+`managerBranch`. dashboard tsc clean; source guard in `tests/manager-portal-2026-09-05.test.mjs`
+(mutation-checked). OPEN follow-up (not this fix): find WHY the `branches` list omits the manager's
+branch (likely an owner-scoped branch-list fetch) so `PrintersPage`, which reads `activeBranch` from
+context, has a full branch object. Delivery: `docs/MANIFEST-2026-09-05-c.md`. Needs browser reverify.
+
+### A215 · P1 · CLOSED 2026-09-05 · inventory.ts write routes ungated — any authenticated staffer can set branch stock (POST /adjust) and thresholds (PATCH /threshold)
+**CLOSED 2026-09-05 (owner browser pass):** manager Inventory page shows only a per-row "min" field —
+no adjust/edit/deactivate control anywhere; changed Chicken Wrap min 5→6, saved without error, persisted
+after a fresh login. (Route-level 403s not separately exercised; UI surface confirmed.)
+
+Pulling the A205 "editable low-stock min" thread (rule 6): the `inventory.ts` router carries only
+`requireAuth` (line 9), and two WRITE routes under it enforce NO permission — `POST /api/inventory/adjust`
+(sets absolute product stock via `type:'correction'`, lines 75-161) and
+`PATCH /api/inventory/:product_id/threshold` (165-182). Only `assertBranchAccess` (own-branch) applies.
+Its sibling `stock.ts` gates the equivalent ingredient routes on `inventory.adjust`/`inventory.receive`.
+`inventory.adjust` is owner-only by decision ("where shrinkage/theft hides"), so an ungated
+product-stock adjust is an authorisation gap, not cosmetic — the editable min a manager saw succeeds
+precisely because the route is ungated. From SOURCE; the Render server's deployed commit was NOT
+confirmed against this (only the dashboard deploy was verified current) — confirm that before treating
+it as live-exploitable, and do NOT fire a write at prod to test it. Fix (proposed, not built):
+`requirePermission('inventory.adjust')` on `/adjust`; decide the threshold gate (`inventory.adjust`
+vs a new `inventory.manage` vs viewer-OK). Note `inventory.adjust` must be REGISTERED first (A211) or
+the guard fails closed for everyone.
+**FIX BUILT 2026-09-05:** `inventory.ts` now imports the guards and gates the two writes — `POST /adjust`
+→ `requirePermission('inventory.adjust')` (owner-only, matching `stock.ts`'s ingredient adjust); `PATCH
+/threshold` → `requireAnyPermission('inventory.adjust','inventory.receive')` (managers who receive keep
+the reorder-threshold edit; cashiers/viewers cannot). Parity-neutral (`inventory.adjust` was already in
+the ungated=2 baseline). Source guard `tests/manager-batch-2026-09-05b.test.mjs` (mutation-checked).
+Server full tsc could NOT be run in the sandbox (server node_modules/TS absent + a pre-existing
+`tsconfig` `moduleResolution=node10` deprecation); the change mirrors `stock.ts:336` usage exactly, so
+it is type-correct by construction — run the pinned server tsc in CI. Delivery:
+`docs/MANIFEST-2026-09-05-d.md`. Needs an API check: a manager is refused `/adjust` (403); a cashier is
+refused both.
+**DECISION 2026-09-05 (owner):** the reorder "min" (threshold) field stays MANAGER-editable — a manager
+knows the expected traffic/sales for the day and should set their own reorder alert level. No change: the
+A215 gate (`inventory.adjust` OR `inventory.receive`) already permits this; it is deliberately NOT
+tightened to owner-only. Recorded so it isn't revisited.
+
+### A216 · P3 · CLOSED 2026-09-09 · Reports filter requires clicking Apply on every change
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Owner feedback in the 2026-09-05 reverify: the Reports presets (Today / 7 days / Month) and the date
+inputs only set the range — nothing loads until **Apply** is clicked (`ManagerReportsPage` `DateBar`;
+each sub-tab shares it). **FIX BUILT:** `DateBar` now debounce-auto-applies — a `useEffect` on
+`[from, to]` calls `onApply()` after 400ms, skipping the initial mount (each tab already loads once) and
+guarding empty/partial dates; presets and date edits both flow through it, and the Apply button stays as
+an immediate manual trigger. dashboard tsc clean; source guard in `tests/manager-portal-2026-09-05.test.mjs`
+(mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-c.md`.
+
+### A217 · P2 · CLOSED 2026-09-09 · Reports → Shifts shows "Unknown" for a shift Overview attributes correctly
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+In the reverify, the same open shift showed **EUGENE** on Overview but **Unknown** under Reports →
+Shifts. Not an attribution bug: a DB query proved `shifts.cashier_id` is a valid id that resolves to
+`Eugene` via the exact users join the endpoint uses, and the server `/api/reports/shifts` builds
+`cashier_name` correctly (`reports.ts:590`). The client `ShiftRow` interface declared and rendered
+**`staff_name`** (`ManagerReportsPage.tsx:52,572`), which the `/shifts` response never contains — so it
+was always `undefined ?? 'Unknown'`. (Overview reads the current session name, hence the disagreement.)
+**FIX BUILT:** `ShiftRow` and its render now read `cashier_name` (the Staff tab's separate `staff_name`,
+from `/reports/staff`, is correct and untouched). dashboard tsc clean; source guard in
+`tests/manager-portal-2026-09-05.test.mjs` (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-c.md`.
+
+### A218 · P2 · CLOSED 2026-09-05 · Managers can't INITIATE stock transfers from the portal (only receive) — feature request
+**CLOSED 2026-09-05 (owner browser pass):** Eugene created TRF-0005 (From = Main Branch, locked; To picker listed only westlands, not Main Branch), despatched it, Main Branch stock 15→10 (exactly the 5 sent); westlands received it — full loop. Picker showed "in stock: 15" matching Inventory; entering 100 was rejected ("only 15 in stock") and no transfer created.
+
+Owner request (2026-09-05): a branch manager should be able to start a transfer, not always ask the
+owner. **The server already allows it** — `POST /api/stock/transfers` is gated on `inventory.transfer`,
+which the manager tier holds (migration 76 grants it; A211 registered it) and already uses to RECEIVE
+(A205). The gap is UI-only: `ManagerReceivingTab` lists/receives incoming transfers but has no
+create/initiate form. Build (proposed): a "New transfer" form — source = the manager's own branch,
+destination = another branch, per-item quantities → `POST /api/stock/transfers`. **Dependency / decision
+before building:** the destination picker needs a branches list, and the manager's `branches`
+(BranchContext) is currently empty/owner-scoped (the A214 root). So this needs (a) a manager-scoped
+branch-list source and (b) an owner call on scope — can a manager send to ANY branch or a configured
+set, and does an outgoing transfer need owner approval? Not built pending that decision.
+
+**FIX BUILT 2026-09-05 (owner decision: from their OWN branch only; manager edits quantities):**
+- Server (`stock.ts` `POST /transfers`) — the create guard was "access to BOTH branches", which blocks a
+  single-branch manager from ever sending out. Now: SOURCE access is still required (`assertBranchAccess`
+  — you can only drain a branch you control) and the DESTINATION is validated as a real in-business
+  branch (existence check, not access). Owners keep any→any (assertBranchAccess true for all). So a
+  manager can only ever create a transfer sourced from their own branch — enforced server-side, not just
+  in the UI.
+- UI (`ManagerReceivingTab`) — a "Send stock to another branch" section: From = the manager's own branch
+  (locked, shown not chosen), To = a picker of the OTHER business branches (`GET /api/branches` filtered
+  to `id !== branchId` — no dependency on the empty BranchContext), a searchable product list with
+  per-item quantities. Creates the transfer as `pending`; an "Outgoing transfers" list then shows it with
+  a **Despatch** button (→ `in_transit`, stock leaves the source). The destination branch's manager
+  receives it via the A221 flow (separation of duty on receipt, A203, still applies).
+- Source guards `tests/manager-initiate-transfer.test.mjs` 8/8 (mutation-checked). dashboard tsc clean;
+  server full tsc not runnable in the sandbox — the guard mirrors existing `assertBranchAccess` usage.
+Not shown in the picker: live per-branch stock (`GET /api/products` is business-scoped) — a possible
+enhancement; despatch will still fail/negative on insufficient stock exactly as the owner flow does.
+Delivery: `docs/MANIFEST-2026-09-05-f.md`. Needs a browser pass: manager creates → despatches; the other
+branch receives.
+**STOCK PICKER ADDED 2026-09-05 (owner asked):** the create-transfer picker now sources live per-branch
+stock from `GET /api/inventory?branch_id=<own>` (the same endpoint `POSInventoryTab` uses), shows
+"in stock: N" per product, caps each quantity input at what's on hand (disabled at 0), and rejects
+sending more than stock before the POST. The server despatch guard is unchanged (still the backstop).
+`tests/manager-initiate-transfer.test.mjs` now 11/11 (the 3 new stock guards mutation-checked); dashboard
+tsc clean. Delivery: `docs/MANIFEST-2026-09-05-g.md`.
+
+### A219 · P3 · CLOSED 2026-09-05 · Sidebar shows the business/POS name over the branch; branch should lead
+**CLOSED 2026-09-05 (owner browser pass):** "Main Branch" bold on top, "B Fastfoods" smaller beneath. Minor transient noted (not a regression): right after login the subtitle briefly shows the generic "SwiftPOS" fallback until the business record loads, then corrects. One-line fix available if wanted (hide the subtitle until business resolves); left as-is.
+
+Owner request: the manager sidebar led with the business name (`business?.name ?? 'SwiftPOS'`) and put
+the branch underneath — a branch manager cares about their branch first. **FIX BUILT:** swapped in
+`ManagerDashboard.tsx` — `session.branchName` is now the bold primary line, the business/POS name the
+muted subtitle. dashboard tsc clean; source guard `tests/manager-batch-2026-09-05b.test.mjs`
+(mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-d.md`.
+
+### A220 · P2 · CLOSED 2026-09-05 · products.view gated in the UI but registered nowhere (parity phantom + manager Menu tab invisible)
+**CLOSED 2026-09-05 (owner browser pass, migration 100 applied):** manager Menu tab is visible and lists products by category with prices; no add/edit/delete controls.
+
+Found while running `check-permission-parity` for A215 (I had not run it in the A211/A212 batches — the
+gate was already red on `origin/dev`). The manager Menu tab (A208) gates on `products.view`, a
+cashier/manager key by design (`CASHIER_KEYS`), but no migration ever registered it → parity PHANTOM
+("UI gates on a key that exists nowhere"); and — same class as A211/A212 — `hasPermission` is always
+false for non-owners, so the Menu tab is silently invisible to every manager. **FIX BUILT:** migration
+`100_register_products_view.sql` registers `products.view` and grants it per tier (admin/owner, manager
+tier, cashier), A61-safe/idempotent/`public.`-qualified. PGlite test `scripts/test-migration-100.mjs`
+10/10 (mutation-checked). Registering it in-repo returns parity's phantom count to baseline (0) — gate
+green. OPEN pending: apply migration 100 on the DB + browser-confirm the Menu tab renders. Delivery:
+`docs/MANIFEST-2026-09-05-d.md`.
+
+### A221 · P2 · CLOSED 2026-09-05 · Transfer receipt books the SENT quantity, not the actual quantity received (short shipments silently over-book)
+**CLOSED 2026-09-05 (owner browser pass, migration 101 applied):** received 3 of 5 sent with note "2 short, damaged" → westlands Chicken Wrap rose 15→18 (not 20), transfer left the incoming list, note saved (API-confirmed). Surfacing received qty + note in the UI was filed + built as A224.
+
+Owner insight (2026-09-05): when a manager receives a transfer they only click "Mark received" and the
+system books the full SENT quantity. If fewer units arrived (breakage, short pick, loss in transit) the
+destination is credited stock that never came. Confirmed in code: the manager UI sends only
+`{status:'received'}` (`ManagerReceivingTab.receiveTransfer`), and the server builds its stock-in lines
+from `stock_transfer_items.quantity` (`stock.ts` transfer `/status`), never a received quantity. **The
+GRN / supplier-delivery flow already does this correctly** — its UI has a per-line received-qty input and
+the server books exactly what is keyed (and marks the PO `partial`) — so this gap is transfers-only.
+
+Build (proposed, NOT built — needs a schema change + one owner decision):
+- Schema: `stock_transfer_items` has only `quantity`; add `quantity_received numeric(12,3)` (migration).
+- Server: transfer `/status → received` accepts `received_items:[{product_id, quantity_received}]`,
+  applies stock-in by the RECEIVED qty (not sent), persists per-line received, records the variance.
+- UI: `ManagerReceivingTab` transfer receive gets a per-line qty input (default = sent, editable down),
+  shows the variance, sends `received_items`.
+- **Decision needed:** the shortfall (sent − received) already LEFT the source at despatch
+  (`applyProductStockOut` on `in_transit`), so a short receipt is stock lost in transit. Do we (a) just
+  record the variance as a note/flag on the transfer (simplest, visible), or (b) also raise a formal
+  shrinkage/write-off adjustment for the difference so it shows in stock-loss reports? Also: allow
+  received > sent (found extra), or clamp at sent?
+
+**FIX BUILT 2026-09-05 (owner decisions applied):** the recipient keys a received quantity per line; the
+SENT figure (`stock_transfer_items.quantity`) stays untouched as the despatch record, so sent-vs-received
+is the audit trail (never a blank recipient), plus a free-text receipt note. Shortfall handling = option
+(a): the variance is recorded (received stored per line + note on the transfer), NOT a separate
+shrinkage write-off. Received is clamped 0..sent (can't receive more than was despatched; a genuine
+overage is an owner stock adjustment). Built:
+- Migration `101_transfer_received_quantity.sql` — adds `stock_transfer_items.quantity_received` +
+  `stock_transfers.receipt_note` (additive/idempotent, A62). PGlite test `scripts/test-migration-101.mjs`
+  8/8 (mutation-checked).
+- Server (`stock.ts` transfer `/status → received`) — reads `received_items` + `receipt_note`, validates
+  each 0..sent (`invalid_received_qty`) and rejects unknown lines, books stock-in by the RECEIVED lines
+  (not the sent ones), persists `quantity_received` per line + the note. Falls back to sent when no
+  `received_items` are supplied (legacy callers unchanged).
+- UI (`ManagerReceivingTab`) — the transfer card opens an inline form: per-line received input
+  (default = sent, capped at sent), a note field, Confirm/Cancel; sends `received_items` + `receipt_note`.
+- Source guards `tests/transfer-received-qty.test.mjs` 8/8 (mutation-checked). dashboard tsc clean;
+  server full tsc not runnable in the sandbox (no server node_modules) — mirrors existing handler style.
+Delivery: `docs/MANIFEST-2026-09-05-e.md`. Needs: apply migration 101; browser-confirm a short receipt
+books the entered amount and shows the note.
+
+### A222 · P3 · CLOSED 2026-09-05 · Manager on the POS has no way back to the portal (desktop has one)
+**CLOSED 2026-09-05 (owner browser pass):** the "← Manager portal" button is present on the POS for a
+manager and returns to /manager. Confirmed working.
+
+Owner request: when a manager opens the POS from their portal ("Open POS" → `/pos/cashier`), there was no
+way back to `/manager` short of re-navigating — the desktop app has a back affordance. **FIX BUILT:**
+`CashierScreen` header now shows a "← Manager portal" button, gated on `hasManagerPortal`
+(`resolveRoute(session.permissions, session.role) === '/manager'` — the same signal that sends managers
+to the portal; role-based, so it correctly includes managers who are denied `settings.manage`, unlike the
+pre-existing `isManager` flag). Hidden for plain cashiers (no portal). dashboard tsc clean; source guard
+`tests/pos-back-to-portal.test.mjs` (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-h.md`.
+
+NOTE on the related "should the POS menu carry the new manager features?" question: the POS ☰ Menu
+(`POSDrawer`) is already permission-driven — it surfaces Reports / Inventory / Customers / Orders / etc.
+by the permissions the user holds, so added *permissions* already flow through it. The added *features*
+(Receiving, Transfers) intentionally live in the manager PORTAL, not the selling screen; duplicating them
+into the POS menu would blur the POS=selling / portal=managing split and double maintenance. The right
+pattern is fast switching between the two, which this back button completes. Not built (recommendation:
+leave as-is unless a specific in-the-moment need appears).
+
+### A223 · P3 · CLOSED 2026-09-05 · No printable documents for PO / GRN / stock transfer (owner request)
+**CLOSED 2026-09-05 (owner browser pass):** PO/GRN/transfer all print via the shared engine; verified live (PO-0001 indigo, GRN-0002 green, TRF-0005 teal). Core behaviour good. Follow-up split out: the GRN receive lacked a note field → A229 (built).
+
+Owner request (2026-09-05): print a proper document for a purchase order (to hand/email a supplier), a
+goods received note, and a stock transfer. **FIX BUILT:** new generic A4 print engine
+`apps/dashboard/src/lib/printDocument.ts` (business header → doc title/number/date → meta grid → line
+table → totals → note → signature lines; opens a print window like the POS bill; all user-supplied text
+HTML-escaped). Wired:
+- **PO** — "Print PO" on the owner `PurchaseOrdersPage` detail (ingredient, ordered, unit cost, line
+  total, grand total; supplier + expected date + status in the meta).
+- **GRN** — the receive modal now offers "Confirm & Print GRN"; on success it prints the just-created GRN
+  (from the POST `grn_number`) with received quantities + values, against its PO.
+- **Transfer** — "Print note" on outgoing transfers in the manager tab (despatch note: from/to, products,
+  quantity sent, despatched-by/received-by signatures).
+Reuses the existing thermal `printReceipt` pattern but as a separate full-page path (that one is 58/80mm).
+dashboard tsc clean; source guards `tests/print-documents.test.mjs` 7/7 (mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-05-i.md`. Possible follow-ups: a GRN history/reprint list; a received-note variant
+of the transfer doc showing sent vs received; company logo in the header.
+
+### A224 · P2 · CLOSED 2026-09-09 · Transfer received quantity + receipt note stored but invisible in the UI (A221 follow-up)
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Found in the A221 browser pass: a short receipt booked correctly (westlands 15→18, not 20) and the note
+saved (`receipt_note` confirmed via API), but nothing surfaced it — the owner Transfers list showed only
+product + the original SENT quantity, never the received quantity or the note, so a human couldn't see the
+discrepancy. Root cause: `GET /api/stock/transfers` selected `stock_transfer_items ( id, product_id,
+quantity, products(name) )` — omitting `quantity_received`; and `StockTransfersPage` rendered only Product
++ Quantity and the despatch note. **FIX BUILT:** server select now includes `quantity_received`;
+`StockTransfersPage` shows **Sent vs Received** per line (a short receipt's Received is amber) and renders
+the **Receipt note** distinctly from the despatch note (`receipt_note` was already returned via `*`).
+dashboard tsc clean; source guards `tests/transfer-received-visibility.test.mjs` 5/5 (mutation-checked).
+Delivery: `docs/MANIFEST-2026-09-05-k.md`. Needs a browser confirm: a short transfer shows Sent/Received
++ the note on the owner Transfers page.
+
+### A225 · P3 · CLOSED 2026-09-05 · No way to re-print a document after creation (reprint history)
+**CLOSED 2026-09-05 (owner browser pass):** owner PO detail lists GRNs with Reprint; owner Stock Transfers Print on every row. Cosmetic date bug split out → A230 (built).
+
+Owner request: A223 only prints a document at the moment it's created; a PO/GRN/transfer note couldn't be
+re-printed later. **FIX BUILT:** documents are now reprintable from where they live.
+- **Transfers** (`StockTransfersPage`, owner): a "Print" button on every transfer row prints a despatch
+  note, or — once received — a received note (Sent vs Received + variance + receipt note). Reuses the
+  A223 engine and A224's received data.
+- **GRNs** (`PurchaseOrdersPage`, owner): selecting a PO now fetches its goods received notes
+  (`GET /api/stock/grn?purchase_order_id=`) and lists them with a **Reprint** button each
+  (`printStoredGRN`).
+- **PO**: already reprintable via "Print PO" on any PO (A223).
+dashboard tsc clean; source guards `tests/reprint-history.test.mjs` 5/5 (mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-05-m.md`. Follow-ups still open: document status colour/accent styling (owner is
+deciding the design); a company logo in the header; a stock-take count sheet.
+
+### A226 · P3 · CLOSED 2026-09-05 · Printed documents are monochrome — add semantic status colour + accent (owner request)
+**CLOSED 2026-09-05 (owner browser pass):** GRN green #16a34a bar+pill, PO indigo #4f46e5, transfer teal #0d9488 — verified live with status pills.
+
+Owner request: colour-code the documents by meaning with an accent (a top strip). **FIX BUILT (design:
+thin top bar + status pill, semantic palette):** `printDocument` gained `accent` + `statusLabel`, an
+exported `DOC_ACCENT` palette — PO indigo `#4f46e5`, GRN green `#16a34a`, transfer despatch amber
+`#d97706`, transfer received teal `#0d9488`, cancelled red `#dc2626` — a full-width 6px top accent bar,
+and a bordered, title-cased status pill by the document number. Every caller passes the right accent (PO
+red when cancelled; GRN green; despatch amber; received teal; owner transfers by status). Accents are
+thin (bar + pill outline, not fills) to stay light on toner, `print-color-adjust:exact` keeps the bar in
+print, and status still prints as TEXT so a B&W copy loses nothing (chosen the top-bar+pill over a corner
+ribbon for exactly that print-friendliness). dashboard tsc clean; source guards
+`tests/document-styling.test.mjs` 8/8 (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-n.md`.
+Remaining doc follow-ups: company logo in the header; stock-take count sheet.
+
+### A227 · P3 · CLOSED 2026-09-05 · Manager has no history of deliveries received / transfers (only open items)
+**CLOSED 2026-09-05 (owner browser pass):** History tab lists Deliveries received (2) + Transfers (5) with direction, status pill and Print.
+
+Owner request: a branch manager should see the history of everything they've received and transferred —
+the Receiving tab only shows OPEN items to act on, with no record of completed movements. **FIX BUILT:**
+new **History** nav item (Inventory group, `inventory.receive`) → `ManagerHistoryTab`, a read-only record
+with two tabs: **Deliveries received** (GRNs at their branch, `GET /api/stock/grn?branch_id=`) and
+**Transfers** (in + out, all statuses, `GET /api/stock/transfers` filtered to their branch). Every row has
+a **Print** button that reprints the document via the shared engine (GRN green, despatch amber, received
+teal — A226). Uses only endpoints managers already reach (both are auth-only). dashboard tsc clean;
+source guards `tests/manager-history.test.mjs` 5/5 (mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-05-o.md`. Note: the GRN/transfer doc-spec builders now live in four files
+(PurchaseOrdersPage, StockTransfersPage, ManagerReceivingTab, ManagerHistoryTab); a DRY extract into a
+shared `documentSpecs` helper is a sensible follow-up before they drift.
+
+### A228 · P2 · CLOSED 2026-09-05 · Managers can't raise a PO from the portal (owner can't reorder for every branch)
+**CLOSED 2026-09-05 (owner browser pass):** manager created PO-0002 (branch-locked) → landed Ordered in Supplier deliveries, then received.
+
+Owner decision: a branch manager should raise purchase orders for their own branch — the owner can't tour
+every store to reorder. **The server already allowed it** (`POST /purchase-orders` + `PATCH …` require
+`inventory.receive`, which managers hold, and `assertBranchAccess` passes for their own branch); as with
+A218, the only gap was UI exposure. GRN issuance was likewise already live (receiving = `POST /grn`).
+**FIX BUILT (option a: straight to Ordered, no approval step):** a "New PO" button in the manager
+Receiving tab opens a create form — branch locked to their own (server-enforced via `assertBranchAccess`),
+optional supplier picker (`GET /suppliers`), searchable ingredient lines with qty + unit cost
+(`GET /ingredients?status=active`, unit cost pre-filled from the ingredient), optional expected date +
+notes. On submit it `POST`s the PO then `PATCH`es it to `ordered`, so it drops straight into the open
+supplier-deliveries list to receive — completing order → receive → history in the manager's hands.
+dashboard tsc clean; source guards `tests/manager-create-po.test.mjs` 5/5 (mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-05-p.md`. Owner can add an approval gate later (option b) if spend oversight is
+wanted; not built by choice.
+
+### A229 · P2 · CLOSED 2026-09-09 · GRN receive has no note field — a short delivery can't record why (owner GRN receive had one; manager's didn't)
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Found in the A223 browser pass: receiving a PO short (8 of 10) booked correctly but there was no field to
+say why — the GRN's note block (which the print supports) never rendered. The owner `PurchaseOrdersPage`
+GRN modal already had a note input; the **manager** receive (`ManagerReceivingTab.submitDelivery`) did
+not, and posted `/grn` with no `notes`. **FIX BUILT:** the manager receive modal now has a note textarea
+(`grnNote`), sends `notes` to `POST /grn`, and offers **Confirm & print** (prints a green GRN via the
+shared engine with the note) alongside Confirm received — parity with the owner GRN flow and the transfer
+receive (A221). dashboard tsc clean; source guards `tests/grn-note-and-date.test.mjs` (mutation-checked).
+Delivery: `docs/MANIFEST-2026-09-05-q.md`.
+
+### A230 · P3 · CLOSED 2026-09-09 · GRN reprint line shows "Invalid Date" (fmtDate broke on ISO timestamps)
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Found in the A225 pass: GRN-0001's line in the PO reprint list read "Invalid Date". Root: `fmtDate` did
+`new Date(d + 'T00:00:00')`, which is only valid for a date-only string — a GRN `created_at` is a full ISO
+timestamp, so the append produced an unparseable string (it also silently broke the printed GRN date, which
+used `new Date().toISOString()`). **FIX BUILT:** `fmtDate` now appends `T00:00:00` only for date-only
+inputs, parses timestamps as-is, and returns `—` for anything unparseable — fixing the reprint list and
+every GRN date at once. Guard in `tests/grn-note-and-date.test.mjs` (mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-05-q.md`.
+
+### A231 · P2 · CLOSED 2026-09-09 · No printable end-of-day Z report (desktop has one; needed to run a shop)
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Owner request: print a Z report per shift, like the desktop app — an end-of-day essential. **FIX BUILT:**
+the manager Reports → **Shifts** tab now has a **Print Z** button on each shift → `printZReport` builds a
+**Z REPORT** via the shared engine (violet accent, status pill): meta (cashier, branch, opened/closed),
+a lines table (orders, sales, opening float, paid in/out) and a totals block (**Expected cash · Counted
+cash · Variance**) with Counted-by/Verified-by signatures. Reads the REAL server fields — `order_revenue`
+and `cash_variance` — not the mis-typed client aliases. **Also fixed (latent, A217-class):** the Shifts
+tab itself was rendering `r.variance` / `r.total_revenue`, which the API never sends (it sends
+`cash_variance` / `order_revenue`), so the tab's revenue/variance were blank — now reads the real fields.
+No new endpoint (`GET /api/reports/shifts` already carries the data). dashboard tsc clean; source guards
+`tests/z-report.test.mjs` 5/5 (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-r.md`. Follow-up:
+tender-by-method split (cash/card/M-Pesa) needs a payments query the shifts endpoint doesn't do yet.
+
+### A232 · P3 · CLOSED 2026-09-09 · Printed documents have no company logo (owner request)
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Owner request: put the company logo on documents. `logo_url` already existed on `businesses` (baseline)
+and `GET /api/business` returned it; it just wasn't surfaced or rendered. **FIX BUILT:** the print engine
+renders `business.logo_url` in the header (max 52px, print-color-adjust) when set; `logo_url` added to the
+PATCH whitelist (`business.ts` EDITABLE), the dashboard `Business` type, and a **Logo image URL** field in
+Settings → Business profile (paste a hosted image URL — no upload infra needed tonight). All existing
+print callers pass the whole `business`, so PO/GRN/transfer/Z all pick it up automatically. dashboard tsc
+clean; source guards `tests/logo-and-stocktake.test.mjs` (mutation-checked). Delivery:
+`docs/MANIFEST-2026-09-05-s.md`. Follow-up: a file-upload (Supabase storage) instead of a pasted URL.
+
+### A233 · P3 · CLOSED 2026-09-09 · No stock-take count sheet to print (owner request)
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Owner request: a printable sheet to count physical stock against. **FIX BUILT:** a **Print count sheet**
+button on the owner Inventory page prints a **STOCK-TAKE COUNT SHEET** (slate accent) via the shared
+engine — tracked products with their System qty and **blank Counted + Variance columns** to fill in by
+hand, plus Counted-by/Verified-by signatures. dashboard tsc clean; source guards
+`tests/logo-and-stocktake.test.mjs` (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-s.md`.
+
+### A234 · P3 · CLOSED 2026-09-28 (code evidence) · Doc-spec builders duplicated across four files (drift risk)
+**Closed 2026-09-28 on code evidence (nothing to see on a till):** apps/dashboard/src/lib/documentSpecs.ts holds the three builders; the four pages call them (13 call sites).
+
+The PO/GRN/transfer document specs were copied inline across `PurchaseOrdersPage`, `StockTransfersPage`,
+`ManagerReceivingTab` and `ManagerHistoryTab` (A225–A231) — nine near-identical builders that would drift.
+**FIX BUILT (pure refactor, behaviour-preserving):** extracted `purchaseOrderDocSpec` / `grnDocSpec` /
+`transferDocSpec` (+ `docMoney`) into `apps/dashboard/src/lib/documentSpecs.ts`; every caller now maps its
+record → builder input → `printDocument`. Two deliberate standardisations, both toward the
+already-verified output: money is unified to the `Intl` "Ksh" style the owner PO/GRN used (the manager
+GRN/transfer had used a "KES" code string); and a despatch note's pill now shows the actual status rather
+than the literal "Despatch" (the two despatch callers already disagreed). Proof of no behaviour change:
+`tsc` clean + the full document test suite green after re-pointing the guards — the moved doc-type/accent/
+column/signature guards now live in `tests/document-specs.test.mjs` (mutation-checked), and each caller
+test asserts it delegates to the builder. Delivery: `docs/MANIFEST-2026-09-05-t.md`. This was the last of
+the four "sell-ready" tasks (Z report A231, logo A232, stock-take A233, DRY A234).
+
+### A235 · P2 · CLOSED 2026-09-15 · Web silent receipt printing never worked (dashboard↔bridge contract mismatch)
+
+Found while checking the print server for live testing: the bridge (`apps/print-server`) was sound, but the
+dashboard's silent path could never have worked — three mismatches. (1) **No token:** the bridge requires
+`X-Print-Token` on every print; the dashboard sent none → 401. (2) **Wrong endpoint/shape:** the dashboard
+POSTed `{printer, content: HTML}` to `/print`, which wants `{target, data: base64 ESC/POS}`; the web path is
+`/print/receipt` (send the Order JSON; the bridge renders ESC/POS via `shared/printing`). (3) **Feature off
+on deploy:** silent printing only activates when `VITE_PRINT_SERVER_URL` is set at build time. So every
+receipt fell back to the browser dialog.
+**FIX BUILT (additive — browser fallback untouched):** `localPrintServer` now stores a per-device pairing
+token and sends `X-Print-Token` on all print calls; new `printReceiptViaServer(target, order, business,
+paperWidth)` posts the Order to `/print/receipt`. `usePrinterSettings` gains a device-local
+`receiptPrinterName`. `PaymentModal.handlePrint` uses the bridge when connected + token + printer are set
+(building the Order with the existing `buildReceiptOrder`), and falls back to `window.print()` otherwise.
+The Printers page (shown when the bridge is connected) pairs the till: paste the token + pick the receipt
+printer + "Send test receipt". dashboard tsc clean; source guards `tests/silent-receipt.test.mjs` 7/7
+(mutation-checked). **Could NOT verify the actual thermal render here** (no bridge/printer in the sandbox) —
+that's the live test. Setup to run it: `docs/PRINT-SERVER-SETUP.md`. Delivery: `docs/MANIFEST-2026-09-05-u.md`.
+
+### A236 · P2 · FIX BUILT 2026-09-05 · Print bridge can't be built to an .exe (and its require paths were broken)
+
+Owner wants a double-click `SwiftPOS-PrintServer.exe` so tills need no Node install. Two problems found:
+(1) **broken require paths** — `index.js` did `require('../../../shared/printing/dist/src/transport.js')`,
+but `shared/printing` (tsc rootDir `src` → outDir `dist`) emits **flat** `dist/transport.js`; the `dist/src/`
+path resolved nowhere, so the bridge failed to load its renderer **even from source** (not just as an exe).
+(2) **no working build** — `build:win` pointed at a non-existent `sea-config.json`, and Node's SEA doesn't
+bundle dependencies, so a single-file exe would crash on that same require.
+**FIX BUILT:** corrected the two require paths (`dist/transport.js`, `dist/index.js`) — the bridge now loads
+its renderer, verified by running the bundle (`/health` → `{ok, version 2.0.0}` + prints the pair token).
+Finished the build pipeline: `build-exe.mjs` does build shared/printing → **esbuild** bundle (index.js +
+shared/printing inlined into one self-contained `build/bridge.cjs`) → SEA blob → copy the Node runtime →
+**postject** inject → `build/SwiftPOS-PrintServer.exe`; `sea-config.json` added; `package.json` gains
+`esbuild`+`postject` devDeps and `npm run build:win`; `build/` gitignored. Steps 1–2 (build + bundle)
+verified here; the SEA/postject/exe steps run on the target OS (**Windows, Node ≥ 24** — SEA doesn't
+cross-compile) and are **not runnable in this sandbox** (Linux, Node 22). Unsigned exe → SmartScreen warns
+until code-signed (documented). Build + run instructions in `docs/PRINT-SERVER-SETUP.md`. Delivery:
+`docs/MANIFEST-2026-09-05-v.md`.
+
+### A237 · P3 · FIX BUILT (re-graded 2026-09-22) · Print bridge — the Go byte-forwarder IS the live path; the Node/pkg bridge is retired, its files pending removal
+**Re-grade 2026-09-22 (lead dev, evidence from the tree, no test needed):** the heading below was stale. `apps/dashboard/src/lib/localPrintServer.ts:24` hard-codes `http://127.0.0.1:9911` (the Go bridge, `go/main.go` v4.2.0); the browser renders ESC/POS itself (A239–A255); the 2026-09-09 live print session ran on this path; nothing calls port 3001. So the "REMAINING" below was done under A239–A255 and never reflected here — the built-but-mislabeled class (09-21 handoff §5). **Decision:** the Node bridge (`apps/print-server/src/index.js`, `build-exe.mjs`, `sea-config.json`, `install-/uninstall-windows-service.bat`, the README that describes port 3001 and a browser fallback) is RETIRED. Removal is a deletions-only batch in a non-deploy window (rule 13) and closes this item; `apps/print-server/README.md` is rewritten to point at `go/README.md` in that batch. The committed 6.9 MB `go/SwiftPOS-PrintServer.exe` is a separate hygiene question (A310-class), not part of this.
+
+*Original entry, kept for the record:*
+
+Owner wants a small installer. The Node/pkg exe is ~57 MB (it embeds the Node runtime + ICU); nothing that
+embeds a JS engine gets near 2 MB. The only path to a few-MB binary is a native forwarder + browser-side
+rendering. **BUILT (verified):** `apps/print-server/go/` — a Go bridge (~5 MB, cross-compiles a Windows exe
+from any OS) that mirrors the API/security (loopback, origin allowlist, `X-Print-Token`, token file) and
+implements `POST /print` `{target, data: base64 ESC/POS}` → printer (network/share/device verified in the
+sandbox; Windows spooler RAW via `alexbrainman/printer`, untested without a physical printer). A 5.2 MB
+`SwiftPOS-PrintServer.exe` was cross-built and handed over. **REMAINING (why this is OPEN):** a thin bridge
+forwards bytes, so the dashboard must render ESC/POS in the browser (`shared/printing`'s render/escpos are
+pure; escpos uses `Buffer` → polyfill in the dashboard) and POST them to `/print`. That change hit a
+cross-package Vite/tsconfig resolution snag and can't be thermal-tested in the sandbox, so it was NOT
+shipped — the Node/pkg bridge (A236, server-render, works with the current dashboard) remains the working
+path meanwhile. Next: wire the browser render (Vite alias + Buffer + `printBytesViaServer`), verify against
+the dashboard build + a live printer, then swap to the 5 MB exe. Delivery: `docs/MANIFEST-2026-09-05-w.md`.
+
+### A238 · P2 · CLOSED 2026-09-09 · Manager Printer Setup stuck on "Select a branch" (BranchContext is owner-only) — blocks printer pairing
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Owner report (screenshot): as a manager (Eugene, Main Branch), Settings → Printers shows "Select a branch
+from the selector above to configure printers" — but the manager portal has no branch selector, so it's a
+dead end that blocks printer setup (and therefore the print-server pairing/test). Root: `PrintersPage`
+derives `branchId = activeBranchId ?? contextBranches[0]?.id ?? ''` from `BranchContext`, which runs on the
+OWNER auth (`useAuth` + `api.get('/api/branches')`) and is empty for a PIN-authed manager → `branchId=''`
+→ the empty-state early-return fires before anything (including the A235 pairing card) renders. **FIX BUILT:**
+`PrintersPage` now accepts an optional `branchId` prop and prefers it (`propBranchId ?? activeBranchId ?? …`);
+`ManagerDashboard` passes the manager's session branch (`<PrintersPage branchId={session.branchId} …/>`).
+The page renders for the manager, so the pairing card + printer config show. (The owner-only `/api/printers`
+list may be empty for a manager — the A214 auth root — but the device-local A235 pairing card, token + receipt
+printer, does not depend on it, so silent-print setup works.) dashboard tsc clean; source guard
+`tests/manager-printers-branch.test.mjs` (mutation-checked). Delivery: `docs/MANIFEST-2026-09-05-x.md`.
+
+### A244 · P2 · CLOSED 2026-09-09 · Test print dialed the printer NAME as a network host — "Send test receipt" (and station tests) failed with "no such host"
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+The dashboard's `testPrint` (`localPrintServer.ts`) posted `{ printer, target: printerName }`
+with `target` set to the **bare** printer name. The bridge only prefixes `printer:` when
+`target` is empty (`handleTest`), so a bare `XP-80` fell through `sendToPrinter`'s default
+branch and was dialed as a **network host** → `connect XP-80:9100: dial tcp: lookup XP-80: no
+such host`. A perfectly-installed Windows XP-80 (spooler, Idle) looked broken during setup.
+**Only the test path was affected** — the silent receipt (`PaymentModal` → `printBytesToServer`)
+and KOT (`printKOT`) paths already send `printer:`-prefixed targets, so real receipts route to
+the spooler correctly. **FIX:** `testPrint` now sends `target: 'printer:' + printerName`
+(spooler), matching the byte paths; covers both the "Send test receipt" button and the
+per-station test buttons (both call `testPrint`). Guard added to `tiny-bridge-printing.test.mjs`
+(18/18), mutation-checked (a bare target reddens it). **Dashboard-only — no bridge/exe change;
+redeploy the dashboard.** Rollback: revert this commit. Delivery: `docs/MANIFEST-2026-09-07-c.md`.
+
+### A269 · P2 · CLOSED 2026-09-09 · Print Bill printed a full receipt with a throwaway number — now a marked proforma BILL
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Follow-up to A268's receipt double (owner chose: make Print Bill a proforma). `printGuestCheck`
+printed a full customer receipt via a client-side `generateOrderNumber()`, so a Print Bill then a
+payment produced two receipts with different order numbers. FIX: added a `proforma` flag through
+the renderer (`PrintContext.proforma` → renderReceipt prints "BILL - NOT A RECEIPT" and omits the
+fiscal `Bill No.`), the bundle (`renderStationEscPos` reads `station.proforma`), `printRouted`
+(applies it to the receipt station only), and `printGuestCheck` (sets `proforma:true`, no fiscal
+number). The payment receipt is unchanged (the one fiscal receipt). Proven: Print Bill →
+"BILL - NOT A RECEIPT", no number; payment → "Bill No.: <real>". Bundle byte-reproducible; guard
+test. Ships with A268. NOT verified here (rule 16): on-paper on the till. A-P2 37→38.
+Delivery: `docs/MANIFEST-2026-09-07-af.md`.
+
+### A268 · P1 · CLOSED 2026-09-09 · Double printing — payment re-fired the kitchen after Send to Kitchen; Print Bill + payment print two receipts
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Owner (POS smoke): with Send to Kitchen used, confirming payment printed the kitchen +
+dispatcher tickets AGAIN (confuses the line); and Print Bill + payment print two customer
+receipts with different order numbers. Cause of the kitchen double: A264 surfaced Send to
+Kitchen in pay-first, but the pay-first `onSuccess` still fired `kinds:['kitchen','dispatch']`
+unconditionally — so an order already sent fired a second time. FIX: `onSuccess` skips the
+kitchen/dispatch fire when `sentOrderIds[activeKey]` is set (already sent). Kitchen now prints
+once. **Receipt double (separate, pending an owner decision):** `printGuestCheck` (Print Bill)
+prints a full receipt with a throwaway `generateOrderNumber()`, and payment auto-prints the
+fiscal receipt (A266) — two receipts, different numbers. The renderer has a `reprint` marker but
+no `proforma` flag, so the correct fix (mark Print Bill "BILL / not a receipt", no fiscal number
+— desktop behaviour) is a small renderer change awaiting the owner's call on the intended
+workflow. Guard test (kitchen half). NOT verified here (rule 16): the live till.
+A-P1 22→23. Delivery: `docs/MANIFEST-2026-09-07-ae.md`.
+
+### A267 · P1 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 S3 + S4) · Every POS api call 401'd after the access token expired — the ROOT of the "business null" saga
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, S3 + S4):** an hour-plus idle till and web POS still sold and synced — no sign-out, no "business null".
+
+Owner console showed `401 Unauthorized` on /api/business, /api/pos/init, /api/tables,
+/api/shifts/current, /api/promotions/active — all `api`-client calls. ROOT: the `api` client
+refreshes on 401 (`refreshAccessToken` → retry), and A260 made `getStoredAccessToken` fall
+back to any stored token — but `getStoredRefreshToken` was left surface-keyed only. A manager
+works the DASHBOARD surface where `refreshKey()` points at the absent OWNER refresh token, so
+`refreshAccessToken()` threw "No refresh token"; once the POS access token expired, refresh
+failed and EVERY call 401'd. That is why `useBusiness()` was null (→ blank receipt A266,
+"SwiftPOS" documents A260) and why the /api/business fetch fallbacks also 401'd — they were
+symptom patches; this is the cause. FIX: `getStoredRefreshToken` now falls back to whichever
+refresh token exists (the POS one the manager holds), so refresh succeeds → the access token
+renews → the 401 cascade stops → business/tables/init/etc. load. The A260/A266 fallbacks stay
+(harmless, defensive). Guard test; transpile clean. NOT verified here (rule 16): a live session
+past the access-token TTL on the till (the definitive check — no 401s after ~expiry). Web-only.
+A-P1 21→22. Delivery: `docs/MANIFEST-2026-09-07-ad.md`.
+
+### A266 · P1 · CLOSED 2026-09-15 · After payment the receipt was a blank white box and did not auto-print
+
+Owner: after Charge, the success screen showed a blank white box where the receipt preview
+should be, and the receipt did not print (they had not pre-sent to kitchen). Cause: the
+receipt preview `ReceiptView` returns an empty div when `business` is null
+(`if (!business) return <div/>`), and `business` (from `useBusiness()`) is null on the POS
+surface for managers — the same context gap A260 addressed at the token layer but which still
+leaves this component without a business. There was also no auto-print on success (only the
+manual Print button). FIX (`PaymentModal`): resolve the business by fetching `/api/business`
+(works via the POS token, like `reprintReceipt`) when the prop is null, and use that everywhere
+the receipt is built/rendered — so the preview + printed receipt always carry the business;
+and auto-print the receipt once on payment success via the silent bridge path (no browser
+dialog), matching the desktop. The Print button remains for a reprint; WhatsApp unchanged.
+Guard test. NOT verified here (rule 16): a live Charge → auto-print + a non-blank preview on
+the till. Web-only. A-P1 20→21. Delivery: `docs/MANIFEST-2026-09-07-ac.md`.
+
+### A265 · P1 · CLOSED 2026-09-15 · Charge crashed the web POS — receiptHeader was referenced but never declared
+
+Owner hit "Something went wrong" (error boundary) on Charge; console:
+`ReferenceError: receiptHeader is not defined` at the PaymentModal render. A255 added the
+receipt header/footer to `usePOSData` and USED `receiptHeader`/`receiptFooter` in
+`CashierScreen` (PaymentModal props + the Print Bill call) but never added them to the
+`usePOSData()` destructure — so opening PaymentModal (any Charge / Split) threw. It reached
+production because the dashboard build is esbuild-only (no type-check), so an undeclared
+identifier that `tsc` would flag (TS2304) transpiles cleanly and only fails at runtime; my
+esbuild transpile-checks share that blind spot. FIX: destructure `receiptHeader,
+receiptFooter` from `usePOSData` in `CashierScreen`. Guard added; A264's extras were NOT the
+cause (Charge itself was broken since A255). Verified: transpile clean, refs now declared.
+NOT verified here (rule 16): a live Charge on the till. A-P1 19→20. Web-only.
+Delivery: `docs/MANIFEST-2026-09-07-ab.md`.
+
+### A264 · P2 · FIX BUILT 2026-09-07 · Web POS cart converges on the desktop's shared core (order type + Send to Kitchen)
+
+Owner review: the web and desktop POS should share one interface — same buttons, same
+placement (cognitive memory) — with the web keeping its premium extras. Read both carts
+in full (web `CashierScreen`, desktop `POSPage`); confirmed the desktop cart has NO
+coursing/Print Bill/Transfer/Split/Room (those are web-only), and the web had no in-cart
+order-type selector and hid Send to Kitchen in `pay_first`. **FIX (web `CashierScreen`):**
+- **Order-type selector** (Dine in / Takeaway / Delivery) at the top of the cart, matching
+  the desktop toggle; `setActiveOrderType` sets the active order's recorded type (same table
+  association — changes what it books as, not its key).
+- **Send to Kitchen · Hold** now show for every restaurant order in BOTH modes (was
+  `order_first`-only); Send to Kitchen is amber (distinct from green Charge), Hold uses the
+  existing `parkOrder`.
+- **Charge** unchanged; the **web-only premium extras** (Print Bill / Transfer / Split /
+  Room) moved BELOW Charge so they never displace the shared core.
+- Layout signed off via a mockup. Coursing confirmed web-only (desktop has none) — left as
+  web richness, not added to desktop.
+- Web-only/premium (kept web, per the subscription model): Room charge (folio), cross-till
+  Transfer, Split Bill, Print Bill, live cloud reporting.
+- Web-only; no desktop change. Guard test `tests/pos-cart-parity.test.mjs` (4). NOT verified
+  here (rule 16): the live cart on the till. Delivery: `docs/MANIFEST-2026-09-07-aa.md`.
+
+### A263 · P3 · CLOSED 2026-09-09 · Report period selector — Apply button redundant, presets double-highlighted, day not default
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Owner UI review. The Reports date bar already auto-applied (debounced ~400ms) yet still
+showed a manual **Apply** button; the active preset was derived from `from===f && to===t`,
+which could light up two presets when their ranges coincided ("pick day, month also
+selects"); and some tabs defaulted to a week, not the day. FIX (`ManagerReportsPage`
+DateBar): explicit `active` preset state (exactly one highlights; cleared when the dates
+are hand-edited), removed the Apply button (a subtle "Updating…" shows while the debounced
+query runs), and every tab now defaults to **Today**. Web-only. Guard test. NOT verified
+here (rule 16): the rendered selector. Delivery: `docs/MANIFEST-2026-09-07-v.md`.
+
+### A258 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 0.6.18 screenshots) · Overview wasted space — Top Items + Payment Methods now side by side
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, 0.6.18 screenshots):** Overview Top Items and Payment Methods side by side (seen on the v0.6.18/v0.6.19 screenshots).
+**2026-09-09 browser pass found the fix was INCOMPLETE:** the side-by-side fix reached the MANAGER Overview but the OWNER OverviewPage still stacked Top sellers and Payment methods (separate grid rows). FIXED (A272-follow): swapped the owner grid so row 1 = Payment methods + Top sellers, row 2 = 7-day trend + Low stock. Guard added to ui-reports-fixes.test.mjs for the owner path (the old guard only checked the manager view — which is why this slipped). Bench: dashboard tsc 0, mutation-checked. Needs a visual confirm on the owner Overview. Delivery: docs/MANIFEST-2026-09-09-g.md.
+
+Owner UI review. On the manager Overview, Top Items sat in a 3-col grid (blank to the
+right when the hourly chart had no data) and Payment Methods was a separate full-width
+block below. Restructured `ManagerDashboard.tsx`: Hourly is full-width, then Top Items +
+Payment Methods share a 2-col grid (payment methods restacked vertically for the narrower
+column). Web-only, cosmetic. Guard `tests/ui-reports-fixes.test.mjs`. NOT verified here
+(rule 16): the rendered page. Delivery: `docs/MANIFEST-2026-09-07-s.md`.
+
+### A259 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M2) · Reports showed "Unknown" cashier and "No shifts" despite a running shift
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M2):** the owner's Staff performance names the cashiers.
+**2026-09-09 browser pass — MANAGER path PASSED, OWNER path was BROKEN:** the manager Shifts/staff view showed real names, but the owner ReportsPage Staff Performance column was BLANK (worse than "Unknown"). Root: the A259d server fix emits staff_name/staff_id, but the owner ReportsPage still read s.name/s.cashier_id (+ a s.branch column the server does not send). FIXED (A272-follow): owner StaffReport type + row now read staff_name/staff_id/avg_order_value; dropped the phantom Branch column. Guard added for the owner path. Bench: dashboard tsc 0, mutation-checked. Needs a visual confirm on the owner Reports → Staff Performance. Delivery: docs/MANIFEST-2026-09-09-g.md.
+
+Owner UI review (Reports → Staff showed "Unknown / 3 orders"; Reports → Shifts said "No
+shifts in this period" while a 76h shift was open). Two server bugs in `reports.ts`:
+(1) the staff + shift cashier lookups took `users.name` only, so a user with a NULL name
+rendered as "Unknown" — now `name || email || 'Unknown'` (there is no separate staff
+table; cashier_id IS a users id, confirmed). (2) the Shifts tab + Summary Z-report shift
+queries filtered `opened_at BETWEEN start AND end`, which EXCLUDES an open shift opened
+before the period though it is still active during it — now `opened_at <= end AND
+(status='open' OR opened_at >= start)`. The labour report's `status='closed'` query is
+intentionally left exclusive. Guard test. **A259b 2026-09-07 (Unknown persisted):** confirmed the orders' cashier_id
+does not resolve to a users row (offline/no explicit cashier). Now the staff report
+attributes through the order's SHIFT — `cashierOf(o) = o.cashier_id ?? shift.cashier_id`
+(shifts.cashier_id is NOT NULL) — so a shift's sales land on whoever opened it (Eugene's
+active shift → Eugene). Also fixed **Avg Order = 0.00**: the response now returns
+`avg_order_value = revenue/orders`. **A259c 2026-09-07 (still Unknown; avg fix confirmed live):** those orders have neither a cashier_id nor a shift_id (rung offline/desktop, both resolved null at create; no cashier_name snapshot exists to fall back on). Now attributes an unresolved order to the SHIFT whose TIME WINDOW covers it (same branch, opened_at <= created_at <= closed_at/open) so orders rung during the open shift attribute to that cashier even though the rows never recorded it. NOT verified here (rule 16): needs the live report; if it persists, the orders created_at falls outside every shift window (diagnostic query provided to the owner).
+
+**A259d 2026-09-07 — ACTUAL FIX (owner ran the query; data was fine all along).** The orders carry a valid cashier_id (Eugene) that resolves in users; the server /staff response even computed the name correctly — into a field called name / cashier_id. But the StaffRow frontend reads staff_name / staff_id. That field-name contract mismatch was the entire Unknown; the attribution work (A259/b/c) was defensive robustness, not the bug. FIX: /staff now emits staff_id, staff_name, orders, revenue, avg_order_value, voids. Traced with the real data -> Eugene, 3 orders, KES 13,600, avg 4,533.33. Lesson: check the client-server field contract before the data.
+Delivery: `docs/MANIFEST-2026-09-07-s.md`.
+
+### A260 · P2 · CLOSED 2026-09-15 · Printed documents show "SwiftPOS" instead of the client's business name
+
+Owner UI review (GRN print header read "SwiftPOS"). `printDocument` uses `business.name`,
+but the manager surfaces pass `business ?? { name: 'SwiftPOS' }` and `useBusiness()` is
+null for managers — `BusinessContext` "loads the current OWNER's business record" and gates
+on the owner session, so a manager (staff user) never populates it. **FIXED 2026-09-07 — root cause was the api token, not the context.** `accessKey()`
+returns the OWNER token key unless `onPosSurface()`; a manager works the *dashboard*
+(Receiving) where that is false, so `api` sent the absent owner token, `/api/business`
+401'd, `BusinessContext.business` stayed null, and documents fell back to "SwiftPOS".
+`getStoredAccessToken()` now falls back to whichever token exists (POS token for a
+manager) → `/api/business` succeeds → documents print the real business name. One-line
+root fix; also unblocks any other manager-dashboard `api` call that was silently 401ing.
+Guard test. NOT verified here (rule 16): a GRN/delivery print on the manager surface.
+Delivery: `docs/MANIFEST-2026-09-07-t.md`.
+
+### A261 · P3 · CLOSED 2026-09-09 · No "Reprint receipt" (duplicate) action on the Orders page
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Owner request. The shared renderer already supports duplicates (`ctx.reprint` →
+"Duplicate Print" header + RePrint timestamp), so the work is: fetch the order's full
+line items (the Orders list carries only summary + payments — needs `GET /api/orders/:id`
+with items), map to a ReceiptOrder with `reprint:{at,count}`, and print via the bridge from
+a per-row "Reprint" button. **FIXED 2026-09-07.** `renderReceiptEscPos` now takes an optional `reprint` marker
+(passed into `ctx.reprint`). New `lib/reprintReceipt.ts` fetches the stored order
+(`GET /api/orders/:id`) + business + receipt-text settings + the branch receipt
+printer, maps the order into a ReceiptOrder, and re-renders it via the SAME receipt
+renderer with `reprint:{at,count}` — so it prints a "Duplicate Print" copy (RePrint
+timestamp) identical to the original, not a redesign. Wired to a "Reprint receipt"
+button in the OrdersPage expanded row; prints via the bridge (till only). Proven:
+reprint output carries "Duplicate Print" + the business name + the order's items/total.
+Guard test. **A261b 2026-09-07:** the button was added to `OrdersPage.tsx` (the OWNER's
+table view) but the manager's Orders tab renders `POSOrderHistoryTab` (a card view) —
+added the "Reprint receipt" button there too. NOT verified here (rule 16): a physical
+reprint on the till. Bundle reproducible. Delivery: `docs/MANIFEST-2026-09-07-t.md`, `-w`.
+
+### A262 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M3) · No shift report under Shifts
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M3):** the shift report under Shifts matches the till's Z-report.
+
+Owner request ("under shift can we have shift report like desktop"). **FIX BUILT** — reuses
+the SAME shared renderer as the desktop (`renderShiftReport`, now bundled into
+`escposRenderer.js`). `GET /api/shifts/:id` extended to return the payment breakdown
+(`by_method`), `cash_sales`, `float_in/out` and a live `expected_cash_computed`. New
+`lib/printShiftReport.ts` fetches the shift, maps it to `ShiftReportData`, and prints via the
+bridge; wired to a "Shift report" button on the `ManagerShiftTab` card (beside Force-close).
+Proven: renders B Fastfoods / SHIFT REPORT (LIVE) / Eugene / sales-by-method / cash
+reconciliation = Expected KES 29,970.00 (matches the Shifts page), with a paper cut. Bundle
+reproducible; guard test. Manager Shifts tab is `ManagerShiftTab` (not OpenShiftsPage). NOT
+verified here (rule 16): a physical print on the till. Delivery: `docs/MANIFEST-2026-09-07-z.md`.
+
+### A257 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M6) · Validation errors showed "Validation failed" with no field; category placeholder was petrol-specific
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M6):** an empty product name says "Name is required".
+**2026-09-09 browser pass:** the server-error surfacing + generic placeholder PASSED, but an EMPTY category/product submit was a silent no-op (Save disabled + handler early-return, no message). FIXED (A272-follow): empty name now sets "Name is required" and the Save button is enabled so the click surfaces it — both CategoriesPage and ProductsPage. Guard + mutation-check in ui-reports-fixes.test.mjs. Needs a visual confirm. Delivery: docs/MANIFEST-2026-09-09-g.md.
+
+Found during the A157 close test (owner UI pass). (1) The `validate()`/`validateLoose()`
+middleware returns `{ error:'Validation failed', errors:[{field,message}] }`, but the api
+client used only `error`, so a rejected save showed a bare "Validation failed" with no clue
+which field (owner's product create failed on an empty name and could not tell why). FIX:
+the api client now builds the message from the `errors` array (`field: message`, joined),
+falling back to `error` — one place, every form benefits; non-validation errors unchanged.
+(2) The category / "New menu section" name placeholder was hard-coded `e.g. Diesel` (petrol),
+wrong for a restaurant — changed to `e.g. Beverages`. Web-only, cosmetic + UX. Test
+`tests/validation-wiring.test.mjs` (+2 = 7). NOT verified here (rule 16): the message on a
+real rejected save in the UI. Rollback: revert. Delivery: `docs/MANIFEST-2026-09-07-r.md`.
+
+### A256 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M4 + M5) · New default permissions never reach roles created before they existed (backfill)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M4 + M5):** a manager role created before the keys existed holds them (the menu items and pages open).
+
+**FIX BUILT 2026-09-07 — review-first script `docs/A256-permission-backfill.sql`.**
+Safe by construction: grants, per the SAME tiers as `lib/defaultRolePermissions.ts`
+(full / manager-except-`MANAGER_DENY` / cashier-subset — verified to match exactly),
+only permissions whose `permissions.created_at > businesses.created_at` (POST-onboarding,
+so it can never re-add a permission the owner deliberately removed — the reason
+migration 59 touched only empty roles; the date gate lets this safely top up partial
+roles), and only where the grant does not already exist (idempotent `NOT EXISTS`).
+Delivered as **STEP 1 preview SELECT → STEP 2 apply** (not an auto-run migration)
+because permission grants are security-sensitive and `permissions.created_at` can be
+unreliable on dump-seeded DBs — the owner runs the preview, confirms, then applies.
+NOT verified here (rule 16): the preview on the live DB + apply. Immediate single-
+business path for B Fastfoods: Settings → Roles → owner role → enable "manage
+ingredients". Delivery: `docs/MANIFEST-2026-09-07-q.md`.
+
+Root cause behind A141's "owner sees no manage CTA." Permission defaults seed AT
+ONBOARDING from the default catalogue; a permission added to the catalogue later
+(e.g. `ingredients.manage`) is never granted to roles of businesses that onboarded
+earlier, and there is no `*` wildcard — so an owner can silently lose access to a
+whole feature area with no error, just missing CTAs. **Not built.** Candidate: a
+one-time (and on-permission-add) backfill that grants each newly-added *default*
+permission to the roles that already hold that catalogue's defaults — fixing every
+gap since a business onboarded, not just ingredients. Needs a migration/idempotent
+job + a live check that it grants only intended defaults (never widens beyond the
+catalogue). Filed 2026-09-07 from the A141/A157 cloud sweep. Immediate workaround for
+B Fastfoods: Settings → Roles → owner role → enable "manage ingredients".
+
+### A255 · P2 · CLOSED 2026-09-09 · Receipt was missing branch + owner header/footer; Print Bill opened the cash drawer
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Sweep after A254 (owner: "find + fix all similar bugs"). Two more found reading the
+receipt path against the desktop/sample:
+1. **Incomplete receipt.** `/api/pos/init` returns `receiptHeader`/`receiptFooter`
+   but the web never loaded them, and `buildReceiptBusinessConfig` never set
+   `branchName`/`header`/`footerText`/`footerCredit` — so web receipts printed
+   without the **branch name, the owner's address header, the paybill/delivery
+   footer, or "Powered by SwiftPOS"** that the desktop shows. Also a mapping bug:
+   the shared renderer prints the owner footer box as **`thankYouMessage`**, not
+   `footerText` — so even once passed, `footerText` was ignored. FIX: load
+   `receiptHeader`/`receiptFooter` in `usePOSData`; thread branch + header + footer
+   through `PaymentModal` and `printRouted`; `buildReceiptBusinessConfig` sets
+   `branchName`, `header`, `footerCredit`, and maps the owner `receipt_footer` →
+   `thankYouMessage` (device `footerMessage` is the fallback). Proven: the receipt
+   now renders B Fastfoods / Main Branch / address / PIN / Tel … Payment Detail /
+   CHANGE / Buy Goods + For Delivery / Thank you / TAX RECEIPT / Powered by SwiftPOS
+   — matching `SAMPLE-OUTPUT.txt`.
+2. **Print Bill kicked the cash drawer.** The routed receipt config had
+   `openCashDrawer: true`, so printing a *proforma* opened the drawer. FIX: the
+   routed receipt (Print Bill) is `openCashDrawer: false`; the drawer opens only on
+   the actual payment receipt (`renderReceiptEscPos`, PaymentModal). Proven: payment
+   receipt emits the drawer kick (`ESC p`), the proforma does not.
+**Verified:** `tiny-bridge-printing.test.mjs` 29/29; bundle byte-reproducible; all
+transpile. Web-only. NOT verified here (rule 16): on-paper receipt content + drawer
+on the till. Ships together with A254 as the one morning deploy. Rollback: revert.
+Delivery: `docs/MANIFEST-2026-09-07-o.md`.
+
+### A254 · P1 · CLOSED 2026-09-09 · Web tickets never cut, had no bottom margin, and Master KOT printed as a 2nd dispatch (missing kitchen)
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Hardware-reported after A253. Three bugs found reading the render path:
+1. **No cut / no bottom margin (every web ticket, incl. the customer receipt).**
+   `toEscPos(doc, opts)` only emits the feed (`ESC d n`) and cut (`GS V 66 0`) when
+   `opts.{feedBeforeCut,cut,openDrawer}` are passed — but every `entry.ts` renderer
+   called `toEscPos(renderTicket(...))` with **no opts**, so nothing cut (continuous
+   paper) and nothing fed clear of the head (no bottom margin), and the drawer never
+   kicked. The station configs carried `cutPaper/feedBeforeCut` — they were dropped.
+   FIX: all renderers go through one `emit()` that passes the station's
+   cut/feed/drawer to `toEscPos`. Proven: `ESC d` + `GS V 66 0` now present on
+   receipt, kitchen and dispatch bytes.
+2. **"2 dispatch, missing kitchen."** `renderStationEscPos`/`kindOf` mapped BOTH
+   `kot` (Master KOT) and `expeditor` (Dispatcher) to the dispatch kind, so both
+   printed as dispatch tickets and no kitchen copy was produced for the Master KOT
+   (a kitchen appeared only when a separately-configured kitchen station's
+   categories happened to match — hence the intermittency). FIX: config is now
+   TYPE-aware — `kitchen`/`bar` = routed kitchen, **`kot` = all-items KITCHEN copy**,
+   `expeditor` = dispatch, `receipt` = receipt. Proven: Master KOT → KITCHEN header,
+   Dispatcher → DISPATCH header (one of each).
+3. **Blank routed tickets (similar bug).** A kitchen/bar station with none of its
+   categories in the order still printed a header-only ticket. FIX: `printRouted`
+   skips a routed station with no content (`stationHasContent`); all-items stations
+   (receipt/kot/expeditor) always print.
+Also: `kindOf` timing — `kot` now groups with the kitchen (fires at Send, prints in
+the kitchen slot), only `expeditor` is dispatch; routing ids/byCategory built from
+ROUTED stations only. Retired the now-unused `renderKitchenEscPos`/
+`renderDispatchEscPos` bundle exports (only the deleted printBill used them).
+**Verified:** `tiny-bridge-printing.test.mjs` 27/27 (added cut/feed, KOT-as-kitchen,
+empty-skip guards); bundle byte-reproducible; all transpile. Web-only. NOT verified
+here (rule 16): the physical cut + station set on the till. Rollback: revert.
+Delivery: `docs/MANIFEST-2026-09-07-n.md`.
+
+### A253 · P2 · CLOSED 2026-09-09 · Print parity Phase 4 — send-vs-pay timing split + single routed fan-out
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Phase 4 (final) of `docs/PLAN-web-print-parity.md`, matching the desktop's rule
+that food fires before payment. Rewired the three triggers onto the one routed
+engine (`printRoutedStations`, A252):
+- **Send to Kitchen** → `kinds: ['kitchen','dispatch']` — food + packing fire at
+  send (was `printKOTs`).
+- **Charge, pay-first** (no send step) → `kinds: ['kitchen','dispatch']` at payment.
+- **Print Bill** → `kinds: ['receipt']` — now a **customer proforma only** (no
+  kitchen/dispatch), where before it fired every station.
+- The customer **receipt** prints at payment (PaymentModal), unchanged.
+Folded away the old fan-out: `printKOTs`/`buildKotEscPos`/`buildKOTHtml` retired —
+`printKOT.ts` is now a types-only module (`BranchPrinter`/`KOTContext`, still
+imported by 4 files, so no churn). The long-inert `printBill.ts` (superseded A252)
+is finally deleted.
+- **Behaviour note (honest):** the routed path is bridge-only; the old `printKOTs`
+  window.print fallback is gone, so if the bridge is down kitchen/dispatch tickets
+  do not print (errors are caught, never blocking the order) — acceptable for the
+  silent-bridge model, and the receipt keeps PaymentModal's browser fallback.
+- **Verified:** `tiny-bridge-printing.test.mjs` 24/24 (added a timing-split guard:
+  Send fires kitchen+dispatch, Print Bill fires receipt, `printKOTs` gone); all
+  changed TS transpiles; bundle unchanged. Web-only. NOT verified here (rule 16):
+  live send-then-pay sequence on the till. Rollback: revert. Delivery:
+  `docs/MANIFEST-2026-09-07-m.md`.
+
+### A252 · P2 · CLOSED 2026-09-09 · Print parity Phase 3b (Option B-engine) — web routes combo COMPONENTS by category via the shared engine
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Reading the model (A250) showed the web and desktop keep separate printer configs
+(`branch_printers.category_ids` vs `print_stations`/`category_stations`), so full
+"adopt category_stations" (B-full) would be a printer-system merge + migration of
+live config. Chose **B-engine** instead (lead-dev call, owner deferred to it): run
+the shared routing engine (A249 `toUnits`/`stationsForCategory`) **fed from the
+existing `branch_printers`** — same behaviour goal, no migration, no Printers-UI
+change.
+- **NEW `printRouted.ts`** builds a `CategoryRouting` from `branch_printers`
+  (each printer is a station: `kitchen`/`bar` → routed kind, `kot`/`expeditor` →
+  all-items, `receipt` → receipt) + `categories.is_kitchen`, expands every line
+  with the shared `toUnits`, and renders each printer with `renderStationEscPos({id,
+  kind, paperWidthMm})` so the renderer routes units by `station.id`. Emits in the
+  A247 order (kitchen → customer → dispatcher); strips owner kitchen-exclusions from
+  kitchen-kind stations (desktop `stripKitchen` parity).
+- **NEW bundle exports** `renderStationEscPos` + `toUnits`/`stationsForCategory`/
+  `idsByKind` in `escposRenderer.js` (byte-reproducible). `Category.is_kitchen`
+  added (data already came via `select('*')`).
+- **Print Bill now uses `printRoutedStations`;** the old all-items
+  `printBill.ts`/`printBillToStations` (A246/A247) is **retired** (superseded).
+- **Proven:** a combo (Chicken=grill category, Soda=bar category) prints Chicken
+  on the GRILL ticket and Soda on the BAR ticket — true component-level routing that
+  line-level filtering could not do. `tiny-bridge-printing.test.mjs` 25/25;
+  bundle reproducible; all transpile clean.
+- **Not this pass:** B-full (merge onto `print_stations`/`category_stations` +
+  migrate live config) — bigger, deferred by design. `printKOTs` (Send-to-Kitchen)
+  still uses its own line-level filter; folding it onto `printRouted` (with the
+  Phase-4 timing split) is the natural follow-up.
+- Web-only; no server change. NOT verified here (rule 16): live routed print on the
+  till. `printBill.ts` deletion: a zip can't carry it — `git rm` in the apply steps.
+  Rollback: revert. Delivery: `docs/MANIFEST-2026-09-07-j.md`.
+
+### A251 · P3 · CLOSED 2026-09-15 · Print parity Phase 2b — desktop adopts the shared routing module (duplicate copy removed)
+
+Completes A249. `escposBridge.ts` no longer carries its own `toUnits`,
+`stationsForCategory`, `idsByKind`, `describeFromText`, `isExcludedFromKitchen` —
+it imports them from `@swiftpos/printing` (the shared module) and builds the
+routing tables from its local DB once per sale (`buildCategoryRouting`: the SAME
+two reads — `category_stations` + `categories.is_kitchen` — that used to live
+inside the private `stationsForCategory`). So web and desktop now run **one copy**
+of the routing; the two can no longer drift.
+- **Behaviour-preserving by construction:** the shared functions are the desktop's
+  own logic lifted verbatim (A249), and `buildCategoryRouting` reads the identical
+  SQL, so the same order produces the same tickets. The shared characterization
+  test (11) pins it. Kept local: `escposEnabled`/`setEscposEnabled`/
+  `kitchenExclusions*` (DB config) — only the pure routing moved.
+- **Verified here:** `escposBridge.ts` transpiles clean; no external code imported
+  the deleted symbols (only `printSale`/`escposEnabled`/`kitchenExclusions*` are
+  consumed elsewhere); dropped the now-unused `UnitAttribute`/`StationIds` imports
+  so `noEmitOnError` stays green.
+- **NOT verified here (rule 16/9):** the desktop `tsc -b` (CI runs it on push —
+  the `@swiftpos/printing` dist rebuilds via the `tsconfig.main.json` project
+  reference) and the runtime print on hardware. **Release gate applies:** a till
+  build carrying any routing change must trade a full shift on the **dev flavour**
+  across two tills before production — a bad routing build is a site visit — even
+  though this is behaviour-preserving.
+- Apply after `-g` (A249) and `-h` (A250). Rollback: revert this commit (restores
+  the private copies). Delivery: `docs/MANIFEST-2026-09-07-i.md`.
+
+### A250 · P2 · CLOSED 2026-09-09 · Print parity Phase 3 — kitchen exclusions now applied (drinks etc. dropped from kitchen tickets)
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+Phase 3 of `docs/PLAN-web-print-parity.md`. Reading the source corrected the plan's
+premise: **the web already routes by category** (each `BranchPrinter` carries a
+`category_ids` filter; `printKOTs` filters the cart per printer) — so the real gap
+was NOT routing. The real gap: **`/api/pos/init` returns `kitchenExclusions` but the
+web never used them**, so owner-excluded items (drinks) still printed on kitchen
+tickets — the exact thing the desktop strips. **FIX (Phase 3a):**
+- Bundled the shared `isExcludedFromKitchen` (A249) into `escposRenderer.js` — one
+  copy, same rule as the desktop; bundle stays byte-reproducible.
+- `usePOSData` now consumes + exposes `kitchenExclusions`.
+- Kitchen-kind tickets drop excluded items, everything else keeps them:
+  `printKOTs` filters `kitchen`/`kot` printers (dispatcher/bar unchanged), and
+  `printBill` renders the KITCHEN (kot) copy from an exclusion-filtered order while
+  the customer receipt + dispatcher keep the full order. Threaded through
+  `CashierScreen` (both Send-to-Kitchen calls + Print Bill).
+- **Verified:** with `['soda']` excluded, the KITCHEN ticket shows only the food
+  ("1 items to cook"); the receipt keeps Soda. `tiny-bridge-printing.test.mjs`
+  24→25; transpile-clean; bundle reproducible.
+- **NOT this phase (surfaced, needs a design call):** *component-level* routing —
+  routing each combo component by its OWN category (drink component → packer, chicken
+  → fryer). The web's per-printer `category_ids` model routes by the LINE's category;
+  the desktop uses `category_stations` + station kinds. Matching component routing
+  means either adopting the desktop's paradigm on the web or extending the per-printer
+  filter to components — an owner/design decision, not a mechanical change. Deferred.
+- Server unchanged; **web-only**, no exe rebuild. NOT verified here (rule 16): live
+  kitchen print with exclusions on the till. Rollback: revert. Delivery:
+  `docs/MANIFEST-2026-09-07-h.md`.
+
+### A249 · P2 · CLOSED 2026-09-15 · Print parity Phase 2 — routing logic extracted to shared/ (one copy, DB-free), characterization-tested
+
+Phase 2 of `docs/PLAN-web-print-parity.md`. The desktop's proven station-routing +
+unit-expansion (`toUnits`, `stationsForCategory`, `idsByKind`, `describeFromText`,
+`isExcludedFromKitchen`) lived only in `apps/desktop/src/main/escposBridge.ts`,
+reading SQLite directly — so the web could not reuse it without writing a second,
+weaker copy (the drift the plan warns against). **NEW `shared/printing/src/routing.ts`**
+lifts that logic **verbatim**, with the ONLY change being the two SQLite reads in
+`stationsForCategory` become a plain `CategoryRouting` argument (`byCategory` +
+`kitchenCategories`). Pure and browser-safe, so the web bundles it exactly as it
+bundles the renderer; the desktop will build the argument from its DB. Exported
+from `shared/printing/src/index.ts`.
+- **Characterization test** `shared/printing/test/routing.test.ts` (11, wired into
+  the package `test` script) pins the behaviour so the extraction — and any future
+  edit — provably keeps the same decisions: combo components route on their own
+  category, variants attach as attributes to the first component, a plain product +
+  variant synthesises a unit, modifiers go to dispatch only, the description
+  fallback splits lists but refuses prose, exclusions match whole words. All green
+  via tsx; the shared sample still reproduces `SAMPLE-OUTPUT.txt` (no drift).
+- **Scope (honest):** this is Phase **2a** — the shared module + proof. It unblocks
+  **Phase 3** (web routing), which bundles `routing.ts` directly, no dist rebuild.
+  **Phase 2b** — the desktop swapping its private copy for the shared one — is a
+  separate cleanup, deferred because `@swiftpos/printing` ships as built `dist` (the
+  desktop needs a package rebuild + a full desktop regression, best done where the
+  desktop builds). Until then the desktop keeps its identical private copy; no
+  behaviour change anywhere. Rollback: revert (additive; nothing consumes it yet).
+  Delivery: `docs/MANIFEST-2026-09-07-g.md`.
+
+### A248 · P2 · CLOSED 2026-09-09 · Print parity Phase 1 — web carries combo components + per-item category, so kitchen/dispatch tickets show the breakdown
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+First phase of `docs/PLAN-web-print-parity.md`. The web sold a combo as one flat
+line, so kitchen/dispatch tickets showed only the combo name — the cook couldn't
+see the components. **FIX (data-only path, no routing yet):**
+- **Server** (`/api/pos/init`) — the combo query now selects each component's
+  `category_id`, and the `comboItems` flatten carries it (`{product_id, name,
+  quantity, is_kitchen, category_id}`). Additive; the desktop, which joined
+  category_id itself, now gets it from the server too.
+- **Web** — `usePOSData` consumes `init.comboItems` (previously ignored) and
+  exposes it; `ComboComponent` type added. Resolved at **print time** (cleaner than
+  bloating every `CartItem`, so the cart is unchanged — the Phase-1 gate).
+- `buildReceiptOrder` takes the `comboItems` map and expands each combo line into
+  its components as named units (priceDelta 0 — totals unchanged), carrying
+  `is_kitchen`/`category_id` for the routing in Phase 3; `printBill` +
+  `CashierScreen` thread the map through.
+- **Verified:** a combo line now renders its components on the KITCHEN ticket
+  ("3PC CHICKEN COMBO / 3PC Chicken / Fries large / Soda 1.25L / Spice: all
+  spicy"), matching `SAMPLE-OUTPUT.txt`'s structure. Transpile-clean; test 23→24.
+- **Not yet (later phases):** category routing + kitchen exclusions (Phase 3),
+  send-vs-pay timing (Phase 4), persistent spool (Phase 5). Every component still
+  prints on every station for now.
+- **Server change → needs deploy** (Render) for the web to receive `category_id`;
+  the web tolerates its absence (routing simply falls back later). NOT verified
+  here (rule 16): live combo print on the till. Rollback: revert this commit.
+  Delivery: `docs/MANIFEST-2026-09-07-f.md`.
+
+### A247 · P3 · CLOSED 2026-09-09 · Print-Bill station order was undefined — should be kitchen → customer → dispatcher
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+`printBill.ts` fanned to the full-order printers in `branchPrinters` array order
+(whatever the API returned), so the three tickets came out in an arbitrary
+sequence. Owner's required order: **kitchen (Master KOT) → customer (Receipt) →
+dispatcher**. FIX: a `STATION_ORDER` map (`kot:0, receipt:1, expeditor:2`) sorts
+the filtered stations before the fan-out. Small, dashboard-only; guard added to
+`tiny-bridge-printing.test.mjs` (23). Part of the same feature as A246. Fuller
+desktop-parity study + phased roadmap filed at `docs/PLAN-web-print-parity.md`
+(the web still lacks combo-component data, category routing, kitchen exclusions,
+the send-vs-pay timing split, and a persistent spool — all captured there).
+Rollback: revert. Delivery: `docs/MANIFEST-2026-09-07-e.md`.
+
+### A246 · P2 · CLOSED 2026-09-09 · Restaurant "Print Bill" used a browser dialog + ad-hoc format + printed once — now silent, shared-format, fans to the 3 full-order stations
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+The web "Print Bill" called `printGuestCheck` → built ad-hoc "This is not a receipt"
+HTML and printed it through a hidden iframe → `window.print()` (the browser
+dialog); one printout; a format unlike the desktop. **FIX:**
+- Vendored the THREE shared station renderers into `escposRenderer.js` —
+  `renderReceiptEscPos`/`renderKitchenEscPos`/`renderDispatchEscPos` (receipt/
+  kitchen/dispatch presets; kitchen forced `includeUnits:'all'` since the web's
+  full-order printers print every item). Byte-reproducible via
+  `scripts/build-escpos-renderer.mjs`.
+- `buildReceiptOrder` now emits `units[]` from variants/modifiers (sub-items show
+  on all three tickets), and `buildReceiptBusinessConfig` sets **`currencyCode`**
+  — fixing `PAY: undefined`, a latent bug that also hit the live post-charge receipt.
+- New `printBill.ts` fans the order to every enabled full-order printer
+  (receipt → Customer Receipt, kot → Master KOT, expeditor → Dispatcher) via the
+  bridge, **silently**; it `alert()`s (not silently) when nothing is configured or
+  the bridge is down, so a bill is never believed-printed. `printGuestCheck`
+  rewritten to call it; the iframe/`window.print` dialog deleted.
+- **Verified:** the shared sample generator reproduces `SAMPLE-OUTPUT.txt` (the
+  golden format); a web-shaped order rendered through the regenerated bundle
+  produces the correct KITCHEN and RECEIPT layout (item names, sub-items, money
+  block, `PAY: KES …`, footer). `tiny-bridge-printing.test.mjs` 18 → 22;
+  transpile-clean.
+- **Honest constraint:** the flat web `CartItem` has no combo base/upgrade split
+  or per-unit station routing, so sub-items print as NAMES (no per-upgrade price)
+  and kitchen + dispatch both print ALL items — which matches the web's own
+  "Full order printers — always print all items" definition; per-component
+  routing (sample's Cole slaw → dispatch only) is a desktop-only combo feature.
+- **"3 printouts" needs all 3 full-order printers configured** — today only
+  Customer Receipt (XP-80) is set; add Master KOT + Dispatcher to get three.
+
+NOT verified here (rule 16): the physical print on the XP-80. NOT touched: UI
+button parity (deferred by owner), and an unrelated popup-print at
+`CashierScreen:2206` (a different receipt/report). Rollback: revert this commit.
+Delivery: `docs/MANIFEST-2026-09-07-d.md`.
+
+### A245 · P2 · CLOSED 2026-09-15 · Kill the pairing-token copy-paste — trust the dashboard origin, and survive Chrome's Local Network Access
+
+Owner: the token flow (find the exe's console, copy the token, paste it into the
+Printers page) is cumbersome; they want a running service that just works. But
+the token wasn't decoration — it's what stops any website the till visits from
+printing to the printer or enumerating printers (open CORS + Host-lock alone
+don't: a plain cross-origin POST still reaches loopback). **FIX BUILT — swap the
+token for an Origin allow-list (bridge v4.1.0 → v4.2.0):** `/print`, `/print/test`,
+`/printers` now `authorized()` = trusted `Origin` **OR** valid token. The browser
+sets `Origin` and page JS can't forge it, so the real dashboard prints with **no
+token** while a random site is refused. Allow-list is EXACT — `swiftpos-dashboard`
++ `swiftpos-three` `.vercel.app` + loopback dev — and a parsed-host suffix matcher
+(`host == d || HasSuffix(host, "."+d)`) is ready for a future owned domain; it
+**never** wildcards `vercel.app` (that would trust every tenant, incl. an
+attacker's `*.vercel.app` — runtime-proven `evil-x.vercel.app` → 403). Also added
+`Access-Control-Allow-Private-Network: true` on trusted-origin preflights so
+Chrome's Local Network Access rollout doesn't silently kill printing (research:
+Chrome PNA blocks public-https → 127.0.0.1 without it). Dashboard: token dropped
+from the receipt + KOT silent gates (origin authorises; failures still fall back
+to the browser dialog), token field relabelled optional. New per-user logon
+installer `install-startup.bat`/`uninstall-startup.bat` (Task Scheduler ONLOGON,
+runs as the signed-in user for printer visibility — a session-0 service often
+can't see user printers). **Proven at runtime on the built binary:** prod/test
+origin, NO token → 200; `evil-x.vercel.app` → 403; no-origin+no-token → 403;
+no-origin+valid-token → 200 (fallback intact); rebound Host + trusted origin →
+403; PNA header returned only to trusted origins. `go vet` + linux/win builds
+green; `tiny-bridge-printing.test.mjs` 17/17, the four new guards mutation-checked.
+**NOT verified here (rule 16):** real thermal print; the one-time Chrome LNA
+permission prompt on a real till; full dashboard tsc/vite (no node_modules —
+transpile-checked). Sits on top of A240–A243 (ship together). Delivery:
+`docs/MANIFEST-2026-09-07-b.md`.
+
+### A240 · P1 · CLOSED 2026-09-15 · Print bridge was DNS-rebinding-exploitable + leaked printer names (loopback + token were not enough)
+
+The A239 Go bridge bound to loopback and required a token on `/print`, but did NOT
+validate the **Host header** — so a malicious page the cashier visits could rebind
+its own hostname to 127.0.0.1 and drive the bridge from the browser (loopback
+binding does not stop this; see GitHub Security / NCC Group on DNS rebinding).
+`/printers` and `/health` were also token-less, so any origin could enumerate the
+till's installed printer names. **FIX BUILT (bridge v4.0.0 → v4.1.0):** `hostOK()`
+rejects any request whose Host is not `127.0.0.1`/`localhost`/`::1` with **403**,
+applied to ALL FOUR handlers incl. `/health` (the rebinding wall); the pairing
+token is now required on `/printers` too (three `tokenOK` checks: printers/print/
+test); `/health` stays open but Host-locked. Dashboard `getQZPrinters` now sends
+the token. **Proven at runtime on the built binary (rule 7), not just source:**
+correct Host → 200; rebound Host (`evil.com`) → **403** on both `/health` and
+`/print` even WITH a valid token; `/printers` no-token → 401, with-token → 200;
+`/print` no-token → 401; byte-forward to a TCP listener delivered exactly the 15
+ESC/POS bytes (`1b 40 … 1d 56 00`). `go vet` clean; linux + windows cross-builds
+green. **NOT verified here:** the Windows spooler RAW path on real hardware; the
+owner must rebuild + ship the `.exe` together with this dashboard (token-on-
+`/printers` is a paired change — an old dashboard would 401 on enumeration).
+Delivery: `docs/MANIFEST-2026-09-07-a.md`.
+
+### A241 · P2 · CLOSED 2026-09-15 · Dashboard read VITE_PRINT_SERVER_URL despite the register claiming "hard-coded, no Vercel env" — a silent-misroute trap, and the test asserted the opposite of its own name
+
+A239's manifest/entry said the bridge URL was hard-coded with no Vercel env, but
+`localPrintServer.ts` actually read `import.meta.env.VITE_PRINT_SERVER_URL` first,
+falling back to `127.0.0.1:9911`. A stale env var on a Vercel project (the
+pre-A239 friction told operators to set it to `:9100`) would silently point every
+print at the wrong port — resurrecting the exact bug A239 believed it removed.
+Worse, `tiny-bridge-printing.test.mjs`'s first assertion was NAMED "hard-coded (no
+Vercel env required)" but its regex matched the `||` fallback — it confirmed the
+env-override existed while claiming it didn't (rule-24 miss). **FIX BUILT:** the
+URL is now a literal `const SERVER_URL = 'http://127.0.0.1:9911'` with no
+build-env read; the test asserts the literal AND `doesNotMatch(/import\.meta\.env/)`,
+mutation-checked (re-adding the override turns it red). Bridge port stays
+configurable bridge-side via `PRINT_BRIDGE_PORT`. **Owner action to close A239:**
+confirm no `VITE_PRINT_SERVER_URL` is set on the dashboard/admin Vercel projects.
+Delivery: `docs/MANIFEST-2026-09-07-a.md`.
+
+### A242 · P1 · CLOSED 2026-09-09 · "⚡ Print Server" kitchen tickets never printed — KOT path still spoke the old QZ contract the v4 bridge 400s (silent loss)
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+
+A239 migrated only the customer receipt (`PaymentModal` → `printBytesToServer`).
+`printKOTs` (called from `CashierScreen`) still called the legacy `printToQZ`,
+which POSTs `{printer, content: html, …}` — a shape the v4 byte-forwarding bridge
+rejects with **400**; the error was swallowed ("a failed KOT should never block
+the order"), so any kitchen/bar/expeditor printer set to **"⚡ Print Server"**
+(`connection_type='qz'`) on PrintersPage silently produced **no ticket**. Live and
+reachable: the UI still offers "Print Server" for every station. **FIX BUILT:** a
+self-contained `buildKotEscPos()` renders the KOT to ESC/POS **in the browser**
+(mirrors `buildKOTHtml` one-for-one: station label, order#/table, items with xQty
++ variants `- group: option` + modifiers `+ option`, note, `GS V 0` cut) and
+forwards the bytes via the SAME `printBytesToServer` contract as receipts; any
+bridge error falls back to the browser-dialog KOT so a ticket is never lost.
+Deliberately **not** routed through `shared/printing`'s production renderer — it
+models combos/portions (units + attributes), and forcing the web cart's flat
+variant/modifier strings through it risked dropping a modifier (wrong food, rule
+20). `printToQZ` removed. **NOT verified here (rule 16):** a real thermal KOT
+print — the physical layout + cut must be confirmed on the till alongside the
+receipt live test. Delivery: `docs/MANIFEST-2026-09-07-a.md`.
+
+### A243 · P3 · CLOSED 2026-09-15 · Retire the dead A209/A235 print path + sweep printToQZ; honour copies; fix modifier receipt field
+
+Housekeeping surfaced by the A239 audit (rule-6 class sweep). (1) Removed dead
+`printReceiptViaServer` + `RECEIPT_PATH` (POSTed `/print/receipt`, which the Go
+bridge never implemented — the superseded A209/A235 "server renders" client;
+A209's Node print-server path is now orphaned, retire separately). (2) Removed
+`printToQZ` + `PrintConfig` entirely, and the dead QZ branch (+ unused
+`qzPrinterName` param) in `printReceipt.ts` — no caller remained after A242.
+(3) `PaymentModal` now honours `printerSettings.copies` on the byte path (renders
+once, sends N times) — the old QZ path passed copies through; the byte path had
+dropped it. (4) Fixed `buildReceiptOrder` reading `m.name` for modifiers where the
+field is `optionName` — modifiers never appeared on receipts. (5) Refreshed the
+stale `localPrintServer` docstring (said it pings `localhost:3001` / QZ Tray) and
+the Go `README` to the v4.1 security model. (6) Retired the stale
+`tests/silent-receipt.test.mjs` — it was the A235 guard asserting the
+`printReceiptViaServer`/`/print/receipt` path A239 superseded (already red on
+`dev` before this session); its still-valid checks (browser fallback, device-local
+receipt printer, PrintersPage pairing) were ported into `tiny-bridge-printing.test.mjs`.
+All source-guarded there (**14/14**, mutation-checked); **dashboard `tsc`/`vite
+build` NOT run here** (no dashboard node_modules) — changed TS was transpile-syntax
+checked only. Delivery: `docs/MANIFEST-2026-09-07-a.md`.
+
+### A239 · P2 · CLOSED 2026-09-15 · Silent printing needs a small installer + actually-matching contracts (57 MB bridge, dashboard↔bridge mismatch)
+
+Owner: the 57 MB Node bridge is too big to ship (competitors use <1 MB), and after A235–A238 nothing printed.
+Root cause (read across all three components): the dashboard, the 57 MB Node bridge, and the 5 MB Go bridge
+were built to DIFFERENT API contracts — the dashboard POSTs an order to `/print/receipt` and lists printers
+from `/printers`, but the Go bridge had neither, and neither bridge had `/printers`; the picker was a
+select over an always-empty list; and connection needed a Vercel env + origin list + https→localhost.
+**FIX BUILT (one coherent architecture — supersedes A237, changes A235's path):** move ESC/POS rendering into
+the BROWSER (vendored self-contained bundle `apps/dashboard/src/lib/escposRenderer.js`, generated from
+shared/printing by `scripts/build-escpos-renderer.mjs` with a Buffer→Uint8Array shim — sidesteps the
+cross-package Vite/tsc + Buffer snag), so the bridge is a pure **byte-forwarder** and stays tiny. New Go
+bridge **v4.0.0** (`apps/print-server/go`): `/health` + `/printers` + `/print` + `/print/test`, **open CORS**
+(the token, not the origin, protects printing — no origin list), port **9911**. Dashboard **hard-codes**
+`http://127.0.0.1:9911` (no Vercel env), `printBytesToServer` base64s the rendered bytes to `/print`,
+`PaymentModal` renders-then-forwards, and the printer picker falls back to a text input when enumeration is
+empty. **Installer: 1.61 MB** (Go `-s -w` 5 MB → UPX 1.6 MB), cross-built + handed over; /health, token
+(401→print), /print/test, and browser render (1254-byte ESC/POS with no Node Buffer) all verified in the
+sandbox. Not verifiable here: the Windows spooler RAW path + a real thermal print. dashboard tsc clean;
+`tests/tiny-bridge-printing.test.mjs` 5/5. Delivery: `docs/MANIFEST-2026-09-05-y.md`.
+
+### A207 · P2 · CLOSED 2026-09-09 · Manager web portal has no shift oversight (desktop manager has Shift + Close Day)
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Comparing the desktop manager (ManagerPage: Overview · Orders · Shift · Close Day · Close Branch ·
+Menu · Staff · Settings · Stock) against the web manager portal, the web lacked **shift oversight** —
+a manager could only reach shift controls by opening the POS (A206), with no branch-level view of open
+drawers. **FIX BUILT:** new **Shifts** tab (`ManagerShiftTab`, Finance group) lists every OPEN shift
+at the manager's branch (cashier · till · age · opening float · expected cash live, via
+`GET /api/shifts?status=open`) and lets a manager **force-close a stranded drawer** (reason required,
+recorded uncounted, `POST /api/shifts/:id/force-close`, gated on `shifts.force_close`). Normal
+cash-counted close stays on the till's own End Shift — the manager's only mutation here is
+force-close (guard-test enforced). Guard test `tests/manager-shift-tab.test.mjs` (mutation-checked).
+Files: `apps/dashboard/src/pages/manager/ManagerShiftTab.tsx` (new) + `ManagerDashboard.tsx`.
+Delivery: `docs/MANIFEST-2026-09-04-m.md`. **PRODUCT DECISION recorded — "Close Day" is NOT built on
+web:** the trading day (`business_days`) is a desktop/offline construct — the till manages and gates
+it (A104 continuous-operation is just a flag the till reads) and **syncs it up** (`sync.ts`); the web
+opens/closes no `business_days` and has no trading-day gate. The web's end-of-day unit is the SHIFT,
+now covered by this tab. Building a parallel web business-day system would duplicate the till's role
+for no gain — deliberately skipped. **Close Branch** likewise stays desktop-only (offline
+branch-server concept; the cloud is always the branch). Closes on a manager browser check: the Shifts
+tab lists open drawers and force-close (with reason) releases one. **Next free ID A210.**
+
+### A209 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 B2) · Web receipts print in a different format from the desktop (no shared render)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, B2):** the same items printed from the till and the web POS in the same layout.
+
+The desktop renders receipts as ESC/POS via `shared/printing` (`renderTicket`→`toEscPos`); the web
+printed receipt HTML via QZ Tray — a different format. Owner wants web receipts **identical to
+desktop, no changes**. Chosen approach (option B, owner decision): **the print-server renders**. The
+web sends the Order as JSON; `apps/print-server` renders it with the SAME `shared/printing` code the
+desktop uses, so the bytes — and the printed format — are identical by construction (no browser
+Buffer/bundle, no re-implementation to drift). **BUILT + PROVEN (core):** (1) print-server
+`POST /print/receipt` renders `{ target, order, business }` via `renderTicket`/`toEscPos` and sends
+the bytes (`apps/print-server/src/index.js`); (2) a pure web mapper `buildReceiptOrder` /
+`buildReceiptBusinessConfig` maps a completed sale to the exact Order/BusinessConfig JSON shape
+(money in cents, vat/ctl rates) with no rendering (`apps/dashboard/src/lib/buildReceiptOrder.ts`);
+(3) an end-to-end format test `tests/receipt-escpos-format.test.mjs` feeds a mapper-shaped Order
+through the real `shared/printing` render and asserts valid ESC/POS (init sequence, bill number, line
+item, business name) — mutation-checked. dashboard tsc + vite build green; `shared/printing` builds
+(its dist is gitignored — the print-server already builds it to run). Delivery:
+`docs/MANIFEST-2026-09-04-o.md`.
+
+**REMAINING (last-mile wiring, needs print-server config):** printer settings must carry the
+print-server **URL + token + printer target** (the print-server generates a token on first run) — a
+`PrinterSettings` addition + a small PrinterSettingsModal field set; then a `printReceiptViaServer`
+that POSTs to `/print/receipt` with the `X-Print-Token`, wired into `PaymentModal` to prefer the
+ESC/POS path when configured (falling back to the current QZ/browser path). **HARDWARE:** the actual
+"test the web printer utility" (a real receipt from a real printer via the running print-server) is
+owner-side — the bytes are proven identical to desktop, so once it prints it matches. Closes on that
+wiring + a live print. **Next free ID A210.**
+
+### A208 · P3 · CLOSED 2026-09-09 · Manager web portal has no menu view (read-only Menu tab)
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+
+Desktop managers get a Menu tab (editing); the owner set **web menu editing = owner-only**, but the
+web manager had no menu view at all — so a manager couldn't check what's on sale or a price without
+the owner. **FIX BUILT — READ-ONLY Menu tab** (`ManagerMenuTab`, top-level, gated on `products.view`):
+lists products grouped by category with price + active/inactive, plus a search. **No edit control**
+— zero mutating calls (guard-test enforced); editing stays on the owner's Products screen, honouring
+the decision. Guard test `tests/manager-menu-readonly.test.mjs` (mutation-checked: any edit call goes
+red). Files: `apps/dashboard/src/pages/manager/ManagerMenuTab.tsx` (new) + `ManagerDashboard.tsx`.
+Delivery: `docs/MANIFEST-2026-09-04-n.md`. Closes on a manager browser check: the Menu tab lists
+products/prices grouped by category and offers no way to edit. **Next free ID A209.**
+
+### A202 · P2 · CLOSED 2026-09-04 (browser-verified) · Owner dashboard hides owner-only features (client ignores the server owner-wildcard)
+
+Surfaced while investigating why the Ingredients page had no "+ Add Ingredient" button (A12 verify).
+The server treats the business owner as all-access — `requirePermission()` bypasses on `req.isOwner`
+— and migration 24 is explicit: *"owners are never role-gated (auth grants them a wildcard), so the
+owner-only permissions don't need an explicit grant."* So owner-only keys like `ingredients.manage`
+and `inventory.adjust` are deliberately **not** in the owner role's `role_permissions`. But
+`PermissionsContext` resolved the owner's rights by **filtering to the owner role's explicit
+`role_permissions`**, so `can('ingredients.manage')` returned false and the dashboard hid every
+owner-only feature the owner role isn't explicitly granted — no Add-Ingredient button, no
+inventory-adjust, etc. — even though the server would allow the action. A client/server
+authorization mismatch: the owner could not use, via the UI, features they are fully entitled to.
+**FIX BUILT** (dashboard tsc + vite build + guard test green): the owner dashboard now sets
+`permissionKeys = ['*']` (mirroring the server owner-wildcard); `roles`/`allPermissions` stay loaded
+for the Roles screen. Guard test `tests/owner-permissions-wildcard.test.mjs` pins BOTH sides (server
+owner-bypass + client wildcard, no explicit-grant filter). Files:
+`apps/dashboard/src/context/PermissionsContext.tsx`. Delivery: `docs/MANIFEST-2026-09-04-b.md`.
+Closes on a browser check: as the owner, the "+ Add Ingredient" button (and other owner-only
+actions) are visible and work. **This also unblocks the A12 verify** (needs the Add button to create
+an ingredient with stock). **Next free ID A203.**
+
+**CLOSED 2026-09-03 (prod-verified).** On the prod admin portal (`swiftpos-admin-eta`), the
+Branches-tab Enrol till on a licensed branch now shows the code card (Business ID + code(s) + Copy)
+below the branch list, matching the Overview card. Root cause of the earlier "not showing" was NOT
+this code — a **failed Render deploy** had left the prod server on an old build (the same cause as
+the `/api/admin/migrations` 404 that made the A154 Migrations panel fail on prod while dev worked);
+a successful redeploy from `main` fixed both. CLOSED per rule 16.
+
+**CLOSED 2026-09-04 (browser-verified):** as the owner, the "+ Add Ingredient" button and other owner-only actions are visible and work — client wildcard matches the server owner-bypass. Confirmed by creating an ingredient end-to-end.
+
+### A195 · P2 · CLOSED 2026-09-03 (browser-verified) · Refunded orders still show "Completed" with no visual distinction from a clean sale
 
 **Found on the 2026-09-02 prod retest (swiftpos-prod-mype, alongside the A187 close).** A refunded
 order correctly keeps status **Completed** — the sale stays on the books with a `cash -550
@@ -130,7 +3790,23 @@ from "Voided" so the two money-reversal paths aren't confused. Do NOT relabel Co
 the badge is the glance-level signal, the log is the full record. Files: dashboard Finance →
 Orders row rendering. **Next free ID A196.**
 
-### A196 · P2 · OPEN · Voided/refunded orders still appear on the KDS — ticket lifecycle not tied to order void/refund
+**FIX BUILT 2026-09-03 (bench — dashboard vite build + tsc + gates green; OPEN pending browser).**
+A refund keeps status `completed` and records the reversal as a payment leg with `status:'refunded'`
+(negative amount), and `GET /api/orders` already returns `payments ( method, amount, status )` — so
+the refund is detectable **client-side with no server change**. New pure detector
+`isRefunded(payments)` (`apps/dashboard/src/pages/orderRefund.ts`) keys off a `'refunded'` leg (not
+the order status). OrdersPage now renders an amber **"Refunded"** badge beside the green status, and
+suppresses the Refund button on an already-refunded order (the server 400s a double refund).
+Refunds are **full-only** (the handler rejects partials), so no "Partially refunded" variant was
+built. Guard test `tests/orders-refund-badge.test.mjs` (4 checks, mutation-checked; also pins the
+server producer so the `status:'refunded'` signal can't silently drift). Files:
+`apps/dashboard/src/pages/orderRefund.ts` (new) + `OrdersPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-a.md`. Closes on browser confirm: a refunded order shows the amber badge
+and offers no Refund action; a clean sale shows neither.
+
+**CLOSED 2026-09-03 (browser-verified):** refunded orders show the amber "Refunded" badge and the Refund action is withdrawn on those rows.
+
+### A196 · P2 · CLOSED 2026-09-03 · Voided/refunded orders still appear on the KDS — ticket lifecycle not tied to order void/refund
 
 **Found on the 2026-09-02 prod retest (swiftpos-prod-mype, during the A3 close).** After voiding
 (and refunding) an order, its kitchen ticket remained on `/kds`. For a **void** this is a real
@@ -145,6 +3821,12 @@ its own ID. Arguably P1 if voids are frequent, given it is direct product loss. 
 void/refund handlers + kitchen-ticket state on the server; `apps/dashboard/src/pages/kds/KDSPage.tsx`.
 **Next free ID A197.**
 
+**CLOSED 2026-09-03 (prod-verified, all three cases).** On prod (swiftpos-prod-mype, after the
+server redeploy): voiding a KDS-branch order pulls its ticket off `/kds` within ~10s and the void
+still succeeds; refunding while the ticket is `new` pulls it; refunding after advancing to
+`preparing` leaves the ticket (sale stands, food already in motion) — matches the intended policy.
+CLOSED per rule 16.
+
 ### A197 · P2 · OPEN · Inventory write-actions — transfer approve/complete + direct branch-stock set still have no UI caller (carried from A144)
 
 **Split from A144 on its 2026-09-02 close.** A144 delivered and verified the bulk stock-tracking +
@@ -155,7 +3837,21 @@ so the A144 close doesn't swallow the untested remainder. **Fix direction:** wir
 into the Inventory UI (a transfer approve/complete action + a direct set-stock control), then
 verify each end-to-end. Files: server inventory routes + dashboard Inventory. **Next free ID A198.**
 
-### A192 · P2 · OPEN · KDS display shows green "connected" + "all clear" while its ticket fetch is 401 — an auth failure reads as an empty queue
+**ALREADY BUILT — stale entry (rule 17), corrected 2026-09-04.** A source sweep shows BOTH write
+actions are already wired; the entry was written at the A144 split without re-checking:
+- **Direct branch-stock set** = `POST /api/stock/ingredients/:id/adjust` with `type:'set'` (add /
+  remove / set), wired by IngredientsPage's **Adjust** modal (`adjustType` includes `'set'`). This
+  was in fact exercised during the A12 verify on 2026-09-04 ("Adjust → Set to 42 kg on Main Branch")
+  — so the set-stock half is **already browser-verified**.
+- **Transfer approve/complete** = `PATCH /api/stock/transfers/:id/status`, wired by
+  StockTransfersPage's `advance()` with **"Mark in transit"** (despatch/approve) and **"Mark
+  received"** (complete) buttons over the server's `pending → in_transit → received / cancelled`
+  state machine.
+No code change needed. **A197 closes on one browser check** of the transfer flow: create a transfer,
+Mark in transit, Mark received, and confirm stock moves from the source to the destination branch.
+Delivery: `docs/MANIFEST-2026-09-04-c.md`.
+
+### A192 · P2 · CLOSED 2026-09-03 (browser-verified) · KDS display shows green "connected" + "all clear" while its ticket fetch is 401 — an auth failure reads as an empty queue
 
 **Found by the 2026-09-02 browser test (incidental to the A191 PASS, swiftpos-20c2).** On `/kds`
 with a stale/invalid display token, `GET /api/kitchen/tickets` returns 401 and the console logs
@@ -168,10 +3864,25 @@ treat a tickets-fetch 401/non-200 as an explicit un-paired / auth-failed state (
 "re-pair this display" prompt), never as "all clear"; drive the status dot off the last
 *successful* `/api/kitchen/tickets` response, not merely that the poll ran. Same token/RLS surface
 as A3 but a distinct observability defect, so it carries its own ID. Files:
-`apps/dashboard/src/pages/kds/KDSPage.tsx` (status + empty-state rendering). Not yet fixed
-(rule 16). **Next free ID A193.**
+`apps/dashboard/src/pages/kds/KDSPage.tsx` (status + empty-state rendering). **Next free ID A193.**
 
-### A193 · P2 · OPEN · Refund has no audit-log view — reason/authorizer are recorded but not reviewable
+**FIX BUILT 2026-09-03 (bench — dashboard vite build + tsc + gates green; OPEN pending browser).**
+`fetchTickets` now derives a connection state from the real HTTP outcome via a pure classifier
+(`apps/dashboard/src/pages/kds/kdsConn.ts` — new): only a 2xx that returns the tickets array is
+`ok`; **401/403 → `auth`** (re-pair), everything else (other non-2xx, malformed body, network
+throw) → `error`. On a non-`ok` fetch the handler now **returns before `setTickets`**, so a 401 can
+no longer blank the board to "all clear"; the last-known tickets stay on screen under an amber
+"Connection problem" strip. The header dot is driven off the state (green=live, red=not-paired,
+amber=connection problem), and an `auth` state renders a full "This display isn't paired → Re-pair"
+panel instead of the empty board. Guard test `tests/kds-conn-state.test.mjs` (7 checks,
+mutation-checked: the 401→auth branch and the no-blind-wipe guard each go red when reverted).
+Files: `apps/dashboard/src/pages/kds/kdsConn.ts` (new) + `KDSPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-a.md`. Closes on browser confirm: on `/kds` with an expired/absent token
+the display shows a RED "not paired / re-pair" state, never "all clear".
+
+**CLOSED 2026-09-03 (browser-verified):** a missing/invalid KDS token shows a pairing / "invalid token" screen, never the false green "all clear" (the tickets fetch isn't even attempted). No status dot as originally specced — the re-pair screen supersedes it.
+
+### A193 · P2 · CLOSED 2026-09-03 (browser-verified) · Refund has no audit-log view — reason/authorizer are recorded but not reviewable
 
 **Found by the 2026-09-02 browser test (swiftpos-20c2, alongside the A187 PASS).** Void writes to
 the Voids & Exceptions report (order / cashier / authorizer / reason / amount / time); Refund's
@@ -184,7 +3895,22 @@ order/cashier/authorizer/reason/amount/time, and confirm the refund handler actu
 authorizer + reason (the void path does). Not built (rule 16). Files: dashboard Reports (Voids &
 Exceptions) + the refund handler on the server. **Next free ID A194.**
 
-### A194 · P3 · OPEN · POS has no customer-name field on Takeaway/Dine-in orders
+**FIX BUILT 2026-09-03 (bench — server + dashboard tsc, vite build, schema + route gates green;
+OPEN pending browser).** Owner chose a **standalone** Refunds view (not folded into Voids). New
+`GET /api/reports/refunds` mirrors `/voids` but selects on `refunded_at` (a refund keeps status
+`completed`, so it's flagged by the refund timestamp, and dated by the refund event, not
+`created_at`); it returns order / cashier / **authorizer** / **reason** / **refunded amount** / time
+plus a per-cashier summary. Confirmed the refund handler persists `refund_reason` +
+`refund_authorized_by` + `refunded_by` (it does). New `RefundsTab` in `ReportsPage.tsx` renders it
+as a sibling tab to Voids (amber, not red). Guard test `tests/reports-refunds-and-exports.test.mjs`
+(mutation-checked: the `refunded_at` filter and the tab wiring each go red when reverted). Schema
+gates green (the refund columns are in the index). Files: `apps/server/src/routes/reports.ts`,
+`apps/dashboard/src/pages/ReportsPage.tsx`. Delivery: `docs/MANIFEST-2026-09-03-c.md`. Closes on
+browser confirm: refund an order → it appears in the Refunds tab with reason + authorizer.
+
+**CLOSED 2026-09-03 (browser-verified):** Reports → Refunds lists refunds with order, cashier, authorizer, reason, amount and time.
+
+### A194 · P3 · CLOSED 2026-09-03 (browser-verified) · POS has no customer-name field on Takeaway/Dine-in orders
 
 **Found by the 2026-09-02 browser test (swiftpos-20c2).** The POS Takeaway/Dine-in flow exposes
 only an optional "customer phone for receipt" field — no customer-name field anywhere in the cart
@@ -193,6 +3919,24 @@ why the test agent couldn't label its throwaway orders "ZZ-TEST"), and any workf
 named tickets (call-ahead, named collection) has nowhere to put the name. **Fix direction:** add
 an optional customer-name field to the POS order flow, carried onto the ticket/receipt. Feature
 gap, not a defect; not built. **Next free ID A195.**
+
+**FIX BUILT 2026-09-03 (bench — dashboard vite build + tsc + gates green; OPEN pending browser).**
+Added an optional free-text **Customer name** input to the Payment modal's charge screen (shown
+only when no loyalty customer is attached, whose name is used instead). It feeds the
+`customer_name` the create payload already carries — `(customerName.trim() || loyaltyState?.customer.name)`
+— so it flows on the cash, M-Pesa and split **new-order** paths, and it is passed to `ReceiptView`
+so the printed/preview receipt shows `Customer: <name>`. **Client-only**: the server already
+accepts + stores `customer_name` (`POST /api/orders`), and the Orders list already displays it.
+Guard test `tests/pos-customer-name.test.mjs` (4 checks, mutation-checked; pins the server persist
+so the client change can't go silent). Files: `apps/dashboard/src/pages/pos/PaymentModal.tsx`.
+Delivery: `docs/MANIFEST-2026-09-03-b.md`. **Scoped out (flagged, not built):** the order-first
+`/pay` path (dine-in opened before payment) sets `customer_name` at open-time, not at pay-time —
+a typed-at-payment name there needs `/pay` to forward it; and the KDS card doesn't show the name
+(the kitchen `tickets` select omits `customer_name`). Both are small follow-ups, kept out to stay
+one-file (rule 12). Closes on browser confirm: type a name on a takeaway sale → it prints on the
+receipt and shows on the Orders list.
+
+**CLOSED 2026-09-03 (browser-verified):** a name entered at POS prints on the receipt and shows in Finance → Orders (test order ORD-MTMFHP2R-00124S).
 
 ### A191 · P1 · CLOSED 2026-09-02 · Visiting /kds logs the owner out of the whole dashboard (tokens cleared app-wide)
 
@@ -242,7 +3986,7 @@ fetch was 401.)
 `/kds` open in one tab, returned to the dashboard and worked for ~30s — no `/login` redirect,
 owner session intact. Same result as the dev box, now confirmed on prod. CLOSED per rule 16.
 
-### A190 · P3 · OPEN · Cloud POS table tiles too big — only ~5 per row
+### A190 · P3 · CLOSED 2026-09-03 (browser-verified) · Cloud POS table tiles too big — only ~5 per row
 **Owner-flagged 2026-08-31; fixed (dev — OPEN pending browser).** Restaurant grid tiles
 were fixed 220px wide × 190px tall (name 24px) → ~5 per row. Shrunk to ~7-8: `s.slotGrid`
 → `repeat(auto-fill, minmax(140px, 1fr))` gap 8 (responsive, fills the row); `s.slotCard`
@@ -251,6 +3995,8 @@ only, values-only, no logic. `vite build` exit 0. Browser-confirm count + legibi
 **DENSITY ADJUSTED 2026-09-01.** Re-test showed 5/row with 140px (tables view runs at
 ~740px with the cart open), so `slotGrid` minmax 140→100px to reach ~7-8. Browser-confirm.
 **Next free ID A191.**
+
+**CLOSED 2026-09-03 (browser-verified):** POS floor tiles render evenly sized, several per row (T1–T10).
 
 ### A189 · P2 · OPEN · E2E / integration suites exist but run nowhere — no CI-reachable environment
 
@@ -295,7 +4041,15 @@ failed with `fetch failed` — a connection error, the local API not running on 
 users per run). Next: start `apps/server` (or point `API_BASE_URL` at the deployed dev
 API), re-run, send output.
 
-### A188 · P2 · OPEN · Cloud restaurant POS stacks every table into one box when the branch has no saved floor layout
+### A188 · P2 · CLOSED 2026-09-09 · Cloud restaurant POS stacks every table into one box when the branch has no saved floor layout
+**VERIFIED 2026-09-09** (owner + manager browser pass via Claude-in-Chrome agent): confirmed on screen — CLOSED. See docs/MANIFEST-2026-09-09-g.md.
+**Status (2026-09-09):** FIXED in code — `CashierScreen.tsx` (~line 317) adds a `hasLayout`
+guard so the absolute floor-plan positioning is used ONLY when a saved layout exists,
+otherwise it falls back to a grid (matching the desktop). Cited A188 in-line. NOT yet
+verified live (rule 16): open the restaurant POS on a branch with NO saved layout and
+confirm the tables render as a grid, not stacked. Then close.
+
+**Original:**
 
 **Owner-flagged 2026-08-31 (priority).** The cloud restaurant POS shows a single box
 (reads as "T1") where the desktop till pulls all 11 tables. Root cause: the floor-plan
@@ -313,6 +4067,12 @@ grid); Floor/Grid toggle hidden until a layout exists. `vite build` exit 0. No d
 endpoint change. Browser-confirm: restaurant POS on a branch with no floor layout →
 all tables render as a grid and are tappable; a branch WITH a layout → floor plan
 still works. **Next free ID A189.**
+
+**2026-09-03 QA note (stays OPEN).** The browser pass saw tables render as individually tappable
+tiles (T1–T10) — the "stacked into one box" symptom is absent — BUT that branch appears to have a
+real (grid-shaped) saved layout, so the actual **no-layout fallback path was not exercised**. Kept
+OPEN pending a check on a genuine no-layout branch; close it once a branch with no saved floor plan
+renders the grid.
 
 ### A187 · P1 · CLOSED 2026-09-02 · Owner dashboard has no reachable Order History / void — a completed order can't be reversed from the owner surface
 
@@ -401,6 +4161,24 @@ orders show "Completed" with no visual distinction) and A196 (voided/refunded or
 on the KDS); A193 (no refund audit-log view) still stands.
 
 ### A186 · P3 · OPEN · run-all migration suite reports a false FAIL on Windows — libuv teardown crash after the assertions pass
+**2026-09-10 — `db.close()` hypothesis TESTED ON WINDOWS AND FALSIFIED; new evidence.** Tried
+closing the PGlite handle before `process.exit` in the 6 single-`db` migration tests
+(47/50/51/52/100/101), on the theory it would give libuv's Windows async-close nothing to crash
+on (matching the pattern in the tests that already pass, 75–85). **It did not work:** on the
+owner's Windows box `run-all.mjs` still crashed, and crucially **test-migration-47 — which HAD the
+`db.close()` added — still threw** `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING),
+src\win\async.c, line 94`. So closing the handle is NOT the fix; the crash is independent of it.
+The edits were reverted (dead non-fix code is worse than an honest open item, rule 23).
+**Exact failing set identified:** `test-migration-47`, `test-migration-79`, and
+`test-migrations-41-42` crash; `48` and `99` (block-scoped, never closed) do NOT — so the crash
+does not correlate with closing/not-closing at all. What 47/79/41-42 share is being the
+longest/most-query files, pointing at PGlite worker-thread teardown, not our exit path. **Next
+candidates (still unverified, need a Windows run each):** (a) pin/upgrade `@electric-sql/pglite`
+to a build with a fixed Windows close path; (b) run each migration test as a spawned subprocess
+allowed to hard-exit so in-process libuv teardown never runs. Still P3 — CI on Ubuntu is the
+authoritative green; this is a local-Windows cosmetic annoyance and no longer hides a real red.
+
+**Prior notes:**
 **MITIGATED 2026-08-31 — downgraded P2→P3.** CI (`.github/workflows/ci.yml`,
 `server-suites` job) runs the migration suite against real Postgres on Ubuntu and it is
 green — so the authoritative signal is CI, not the one Windows box, and the false red no
@@ -442,7 +4220,7 @@ chosen, the proving check must still show the suite go RED on a real migration
 regression — a "fix" that swallows the crash by also swallowing failures is worse
 than the crash. **Next free ID A187.**
 
-### A185 · P2 · OPEN · Cloud POS restyled to the desktop till (theme + layout) — restaurant cashier first
+### A185 · P2 · CLOSED 2026-09-03 (browser-verified) · Cloud POS restyled to the desktop till (theme + layout) — restaurant cashier first
 
 **Owner request (2026-08-31):** make the cloud/web POS "look like the one on the
 desktop." Scope confirmed with the owner: theme + layout, restaurant cashier first.
@@ -490,7 +4268,9 @@ tokens, so its inner grid is unchanged by A185.
 mode is untouched. If the till look should be the *only* look, the toggle can be
 retired separately — a decision, not built here. **Next free ID A186.**
 
-### A184 · P2 · OPEN · Terminals/fleet screen shows no identity — every till reads "SwiftPOS till", can't tell them apart or retire dead ones
+**CLOSED 2026-09-03 (browser-verified):** POS (restaurant cashier) uses the dark till theme consistently.
+
+### A184 · P2 · CLOSED 2026-09-03 (browser-verified) · Terminals/fleet screen shows no identity — every till reads "SwiftPOS till", can't tell them apart or retire dead ones
 **BROWSER 2026-08-31 (confirmed NOT-PRESENT — genuine build work, not stale).** All 3
 tills display the identical "SwiftPOS till", distinguished only by an internal
 device-id hash (e.g. `f77f63d7`), app/schema version, and last-sync / last-sign-in.
@@ -538,6 +4318,60 @@ Dependencies / notes:
 
 Surfaced 2026-08-28 (requested at end of the A181/A182/A183 saga). Delivery: TBD.
 
+**FIX BUILT 2026-09-03 (Tiers 1+2; bench — server + dashboard tsc, vite build, schema + route
+gates green; OPEN pending browser + Tier 3/4).** Scoped with the owner into tiers.
+**Tier 1 (identity, no migration):** `GET /api/devices/fleet` now selects `terminal_code`,
+`device_role`, `branch_id` (→ branch name via a lookup map — user_devices has two branch FKs so
+PostgREST can't embed one) and `mac_address`; FleetPage shows terminal code, role · branch and the
+MAC in the terminal cell — so two rows for one shop are tellable apart and a reinstalled duplicate
+shows by its MAC. **MAC is blank until the A182 desktop build (parked) ships and the till reports
+it** — correct but sparse meanwhile. **Tier 2 (active session, no migration):** the fleet joins the
+OPEN shift per device (`shifts.device_id` + `status='open'`) and shows the cashier on shift + a
+green dot; the register's "maybe target-only" worry was unfounded — the shift↔device link exists.
+Guard test `tests/fleet-identity.test.mjs` (6 checks, mutation-checked). Files:
+`apps/server/src/routes/devices.ts`, `apps/dashboard/src/pages/FleetPage.tsx`.
+**Tier 3 (retire/archive) — MIGRATION DRAFTED, NOT APPLIED:** `docs/DRAFT-migration-97-user-devices-retire.sql`
+adds a nullable `retired_at`/`retired_by` (+ partial index) so a dead till drops out of the health
+view and the not-syncing banner while keeping its history; held for owner go-ahead (prod-migrate).
+**Tier 4 (merge duplicates) — deferred** (design-heavy: MAC-matched history/attribution).
+Delivery: `docs/MANIFEST-2026-09-03-d.md`. A184 stays OPEN pending the browser pass on Tiers 1+2
+and the Tier 3 decision. Closes on browser confirm: fleet rows show distinct code/role/branch/MAC
+and the on-shift cashier.
+
+**TIER 3 PHASE 1 BUILT 2026-09-03 (migration + test; PGlite 12/12, all schema gates green).** The
+drafted retire/archive migration is now real: `migrations/97_user_devices_retire.sql` (additive
+`retired_at`/`retired_by` + partial live index, self-registering, idempotent) with
+`scripts/test-migration-97.mjs` (12 checks, mutation-checked; discovered by the runner glob).
+`schema-audit`, `check-api-schema-drift` and `check-schema-drift` all stay green because **no code
+references the column yet** — Phase 1 is the migration alone. **Two-phase by design** (the schema
+index is the LIVE db, not the migrations, so code referencing `retired_at` can't ship until the
+column is live): (1) apply 97 to prod via db-migrate-prod, then refresh `scripts/schema-index.json`
+from live; (2) **Phase 2** ships the code — fleet `.is('retired_at', null)` filter,
+`PATCH /:id/retire` + `/:id/unretire`, FleetPage action — which only passes `schema-audit` once the
+column is in the live index. `docs/DRAFT-migration-97-user-devices-retire.sql` is superseded by the
+real migration (kept as the historical draft). Delivery: `docs/MANIFEST-2026-09-03-e.md`.
+
+**TIER 3 PHASE 2 BUILT 2026-09-03 (code; dashboard + server tsc, vite build, route + doc gates
+green; `schema-audit` RED-BY-DESIGN until 97 is applied + the index refreshed).** The retire
+feature: `GET /api/devices/fleet` now returns LIVE terminals only (`retired_at IS NULL`) so a
+retired till leaves the health view AND the not-syncing banner; `?retired=1` returns the archive.
+New owner-scoped `PATCH /:id/retire` (stamps `retired_at`+`retired_by`, 409 if already retired) and
+`PATCH /:id/unretire` (reversible). FleetPage gains a Live/Retired toggle and a per-row
+Retire/Restore action (retire behind a confirm). Guard test `tests/fleet-retire.test.mjs` (5 checks,
+mutation-checked). **`schema-audit` correctly reports `user_devices.retired_at`/`retired_by` as
+absent** because migration 97 is not yet applied to any DB and `schema-index.json` is the LIVE
+schema — this is the Phase 1→2 ordering gate, not a defect. **Unblock:** apply 97 to the dev DB,
+then `build-schema-index.mjs --from-db` to refresh the index; `schema-audit` then goes green and the
+code works at runtime. Files: `apps/server/src/routes/devices.ts`,
+`apps/dashboard/src/pages/FleetPage.tsx`. Delivery: `docs/MANIFEST-2026-09-03-f.md`. A184 Tier 3 is
+then code-complete; **Tier 4 (merge duplicates) remains deferred.**
+
+**CLOSED 2026-09-03 (browser-verified on the dev deploy).** Owner confirmed on the live Terminals
+page: rows show distinct identity (device hash, `node · Main Branch`, cashier), the on-shift dot +
+name render (Eugene), the Live/Retired toggle and per-row Retire/Restore work, and **retiring a till
+removes it from the Live list**. Tiers 1+2+3 all verified. **Tier 4 (merge duplicates) was never in
+the core ask and stays deferred** — open a fresh ID if/when it's wanted.
+
 
 ### A183 · P1 · CLOSED 2026-08-28 · Per-device order-number uniqueness — the durable fix for A181 collisions (migration ready, needs prod apply)
 
@@ -571,7 +4405,7 @@ With this applied, distinct terminal codes become a human-clarity nicety, not th
 only thing standing between the shop and lost sales. Surfaced + built 2026-08-27.
 Delivery: MANIFEST-2026-08-27-p.md.
 
-### A182 · P2 · OPEN · MAC-binding so a reinstalled till keeps its name/terminal code (the ROOT of A181's collisions) + session-restore guide
+### A182 · P2 · CLOSED 2026-09-15 · MAC-binding so a reinstalled till keeps its name/terminal code (the ROOT of A181's collisions) + session-restore guide
 
 Requested overnight. A181's collisions start because a reset/reinstalled till gets
 a brand-new `device_id`, shows up as a NEW device, and is re-named by hand —
@@ -645,7 +4479,8 @@ orders → `T2--1…T2--5`, re-queued; idempotent). Money path; surfaced +
 part-1-fixed 2026-08-27. Delivery: MANIFEST-2026-08-27-m.md (part 1) +
 MANIFEST-2026-08-27-n.md (recovery).
 
-### A179 · P1 · OPEN · Till-created expenses never sync (non-UUID id 500s the whole cash batch) — FIX BUILT + SELF-HEAL
+### A179 · P1 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 S2) · Till-created expenses never sync (non-UUID id 500s the whole cash batch) — FIX BUILT + SELF-HEAL
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, S2):** a till expense synced and was listed on the dashboard (it also showed a cashier could not pick a type → A360).
 
 Root cause of the field "6 pending that never move," found from the till's own
 `swiftpos.log` once A178 made the shift push visible:
@@ -723,7 +4558,8 @@ its try/catch, so a schema error there also aborts `pushPendingOrders` — worth
 decoupling the three pushes so no one of them can starve the others. Surfaced +
 fixed 2026-08-27. Delivery: MANIFEST-2026-08-27-i.md.
 
-### A168 · P2 · OPEN · Order-push 401 refreshed the wrong token for an offline shift
+### A168 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 S5) · Order-push 401 refreshed the wrong token for an offline shift
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, S5):** an offline cashier sale synced later under that cashier.
 
 `pushPendingOrders` pushes under `pushAuthHeaders()` = `_staffToken ||
 _accessToken`, so an online shift pushes under the staff token and an offline
@@ -839,7 +4675,22 @@ succeeds (rules 8, 24). The new test closes that specific seam.
 **Stays OPEN P0** until an offline sign-in is proven on a real till (cloud down),
 and the lock-curtain unlock verified on the same. Delivery: MANIFEST-2026-08-27-b.md.
 
-### A151 · P1 · OPEN · Split Bill (by-guest) under-collects — the pay loop never advances past guest 1
+### A151 · P1 · CLOSED 2026-09-09 · Split Bill (by-item) needs a live confirm — the under-collection is already fixed in code
+**VERIFIED ON THE TILL 2026-09-09** (SwiftPOS Dev 0.5.39, real thermal printer): passed in the owner's live print session — CLOSED. See docs/MANIFEST-2026-09-09-f.md.
+**Status (2026-09-09):** the heading's original claim ("the pay loop never advances past
+guest 1", under-collects) is NO LONGER TRUE against the code. That loop is gone; both split
+panels (`EvenSplitPanel`, `ByItemSplitPanel`) build N legs into one `POST /pay`, and the
+SERVER hard-rejects any set of legs that doesn't sum to the amount due — `orders.ts` ~1692,
+`if (Math.abs(legSum - amountDue) > 0.01) → 400 PAYMENT_MISMATCH`. Money CANNOT be
+under-collected: a mismatch is a rejected request, not a lost balance. Even-split was
+confirmed live earlier. What genuinely remains: the BY-ITEM allocation
+(`ByItemSplitPanel` — proportional shares, rounding remainder pushed onto the first guest)
+was never run through a live order (the original check was skipped to avoid an un-voidable
+test order). Verify on ONE by-item split with an odd cent, then close. A pure unit test of
+the allocation (extract it to a `splitAllocation.ts`) would also close the proof without a
+live order.
+
+**Original diagnosis (retained; note the described bug is fixed above):**
 **BROWSER 2026-08-31 (even-split CONFIRMED correct — the under-collection is gone).**
 3-way even split of a KES 790 order previewed 263.34 / 263.33 / 263.33 (sums exactly,
 remainder on person 1); charge button read "Charge KES 790.00 · 3 ways"; all 3 Cash
@@ -1300,7 +5151,7 @@ tombstone reaches their server, or an un-updated old till loses its only sign-in
 **Phase 2 (separate, NOT here):** device-scope the till token so a *stolen* token can't
 reach the dashboard. Delivery: MANIFEST-2026-08-24-g.md.
 
-### A160 · P1 · OPEN · Offline peers can't refresh their session without the cloud — node now brokers the refresh (Phase a+b built)
+### A160 · P1 · FIX BUILT 2026-09-07 · Offline peers can't refresh their session without the cloud — node now brokers the refresh (Phase a+b built)
 Realises your original design: **only the node needs internet; peers rely on it.** Today a
 peer refreshes its session against the CLOUD (`/api/auth/refresh`, access 15m / refresh
 30d); an offline peer whose access token lapses can't refresh and falls to a login. The
@@ -1333,7 +5184,7 @@ that a revoked token still ends the session.
 touch the cloud) stays future work; it needs A19 (node uplink) + A24 (reference down) +
 A20 (roster). Full scope: `SCOPE-node-authority-A160.md`. Delivery: MANIFEST-2026-08-24-i.md.
 
-### A161 · P1 · OPEN · Node serves no reference data downstream — the A24 snapshot channel (node-serve half built)
+### A161 · P1 · FIX BUILT 2026-09-07 · Node serves no reference data downstream — the A24 snapshot channel (node-serve half built)
 The first leg of Phase (c) node-authority. Implements the **downstream reference snapshot
 channel** that closes **A24** (catalogue/prices/variants/modifiers/stock/tables/pumps/print
 routing go stale on an offline peer) and, on the same channel later, **A20** (roster). A161
@@ -1407,7 +5258,7 @@ new price FROM the node and two tills never sell one item at two prices; and tha
 node is unreachable still falls back to the cloud. Desktop version bump due at the next build
 (rule 15). Delivery: MANIFEST-2026-08-25-b.md (supersedes -a).
 
-### A162 · P1 · OPEN · Node now forwards peer sales to the cloud — the A19 relay (node-side half built)
+### A162 · P1 · FIX BUILT 2026-09-07 · Node now forwards peer sales to the cloud — the A19 relay (node-side half built)
 Builds A19 §3 (the money-path leg, owner-agreed 08-09; see A19). A peer with no internet reaches
 the branch node over the LAN, so branch reports are right, but its own cloud `sync_queue` never
 drains and nothing forwards it — the cloud (web dashboard, eTIMS, cloud loyalty, backup) never
@@ -1487,7 +5338,7 @@ total matches the receipt (proving the stash prevents the under-total). Sequence
 §8, ideally after D3 auto-update. Desktop version bump due at the stop-double-push slice (rule 15).
 Delivery: MANIFEST-2026-08-25-d.md.
 
-### A163 · P1 · OPEN · Node now replicates the staff roster to peers — the A20 failover channel (built on bench)
+### A163 · P1 · FIX BUILT 2026-09-07 · Node now replicates the staff roster to peers — the A20 failover channel (built on bench)
 Builds A20 (owner-gated; the owner accepted replicating the branch's bcrypt PIN hashes to every
 peer, PHASE5 §10.1 "a branch is one trust domain", with the PIN-rotation-on-missing-terminal
 runbook as mitigation). A promoted till already holds every sale via distribution but an empty
@@ -1535,7 +5386,7 @@ peer yields a node that can immediately sign staff in. Sequenced after A19 per P
 after D3. Desktop version bump due at the next build (rule 15). PIN-rotation-on-missing-terminal
 runbook to be added to ops docs (owner mitigation). Delivery: MANIFEST-2026-08-25-e.md.
 
-### A164 · P1 · OPEN · Till runs as the owner and bypasses the write-guard — the cloud device-grant (Phase 1, server half built)
+### A164 · P1 · FIX BUILT 2026-09-07 (server half) · Till runs as the owner and bypasses the write-guard — the cloud device-grant (Phase 1, server half built)
 Builds SCOPE-node-authority **Phase 1 (cloud device-grant)** — the foundation the node-broker
 (Phase 2) and node-mint (Phase 3) build on, and a real security fix in its own right.
 
@@ -1720,6 +5571,8 @@ from a device could hit dashboard-mutation endpoints (products, prices, users, s
 — **179 write routes**) and edit anything. Root cause: the surface claim isn't enforced
 on writes because owner-scope overrides it.
 
+**2026-09-22 (delivery -d):** `TERMINAL_WRITE_ENFORCE` was documented nowhere outside `auth.ts` — missing from `apps/server/.env.example` and `render.yaml` (the deploy source of truth; A150 missed it). Both now carry it with the dry-run→enforce instruction; render.yaml pins `"false"` explicitly so the flip is a one-line, reviewable change. No behaviour change.
+
 **DRY-RUN SHIPPED 2026-08-24 (batch -h) — OPEN P2 pending enforce + verification.**
 New guard in `middleware/auth.ts`, gating on the `surface: 'desktop'` claim directly
 (independent of owner-scope), inside `requireAuth` so it covers every authenticated
@@ -1760,8 +5613,26 @@ show no `would block` for a legitimate write (catches older field builds and any
 analysis can't see) — that empirical check remains the close condition. Delivery:
 MANIFEST-2026-08-25-g.md.
 
-### A157 · P2 · OPEN · Input-validation schemas written but never wired — `LoginSchema`, `CreateProductSchema`, `UpdateProductSchema`, `CreateCategorySchema`
-`apps/server/src/lib/schemas.ts` defines Zod schemas for these endpoints, but no
+### A157 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M6) · Input-validation schemas written but never wired — `LoginSchema`, `CreateProductSchema`, `UpdateProductSchema`, `CreateCategorySchema`
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M6):** the product form is validated field by field.
+**FIX BUILT 2026-09-07.** New `validateLoose(schema)` in `middleware/validate.ts`
+validates the KNOWN fields and passes unknown fields through untouched
+(`.catchall(z.unknown())`, Zod-4-safe) — so wiring can't strip live fields. Wired
+on the four originally-flagged routes: `/login` (LoginSchema), product create
+(CreateProductSchema), product update (UpdateProductSchema), category create
+(CreateCategorySchema). **Also fixed a landmine:** `UpdateProductSchema` was
+`CreateProductSchema.partial()`, which KEEPS the `.default()` values — validating a
+product update would inject `track_stock:true`/`has_variants:false` and the handler
+(writes any field `!== undefined`) would silently reset them; redefined without
+defaults. Verified against the real schemas: login passes `device_id`/`terminal_code`
++ rejects a bad email; update injects nothing (only sent fields + passthrough);
+create keeps its (correct) new-product defaults. Guard test
+`tests/validation-wiring.test.mjs` (5, mutation-checked); server transpiles.
+NOT verified here (rule 16): a live login + product create/update on prod (auth/money
+path) before close. The staff/expenses/branches/discounts/shifts schemas were wired
+in an earlier pass. Delivery: `docs/MANIFEST-2026-09-07-p.md`.
+
+**Original finding.** `apps/server/src/lib/schemas.ts` defines Zod schemas for these endpoints, but no
 route uses them (0 importers). The routes read `req.body` raw — e.g. `/login`
 (`auth.ts:556`) does `const { email, password, business_id } = req.body` with no
 `.parse()`. So validation was authored and left unconnected (rule 17), and the
@@ -1849,7 +5720,17 @@ browser pass (rule 16): confirm the button shows and an import runs end-to-end o
 non-minimart business, and that minimart's Import tab is unchanged. Delivery:
 MANIFEST-2026-08-23-c.md.
 
-### A141 · P2 · OPEN · No bulk ingredient import (must seed opening stock)
+### A141 · P2 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M7) · No bulk ingredient import (must seed opening stock)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M7):** a bulk ingredient import landed with its opening stock.
+**RECONCILE 2026-09-07 — it IS built (server + client).** `POST /api/stock/ingredients/bulk`
+exists (`routes/stock.ts:215`, `requirePermission('ingredients.manage')`) and
+`stock/BulkIngredientImport.tsx` is wired into the ingredients page. The earlier
+"no /api/ingredients/bulk server-side" line was looking under the wrong path (it's
+`/api/stock/ingredients/bulk`). Remaining is NOT code: the owner's role lacks
+`ingredients.manage` (onboarded before that permission existed) — grant it in
+Settings → Roles, or land the systemic backfill filed as **A256**. Then live-verify
+a CSV import. Original notes below.
+
 **CORRECTION 2026-08-31 (agent reported "not present" — it IS built).**
 `BulkIngredientImport.tsx` is wired into `IngredientsPage.tsx` (import + `showImport`
 state) behind an **"Import CSV"** button that renders only when `canManage` is true
@@ -1926,7 +5807,7 @@ TODO) — works wherever single-image upload does. Verified: dashboard `tsc`/`vi
 green. Pending: browser test (choose a few files, confirm matches, upload, see
 images land). Delivery: MANIFEST-2026-08-23-v.md.
 
-### A143 · P2 · OPEN · Report exports & inventory report — endpoints live, no UI caller
+### A143 · P2 · CLOSED 2026-09-04 (browser-verified) · Report exports & inventory report — endpoints live, no UI caller
 **BROWSER 2026-08-31.** 3 of 6 report tabs have Export Excel (Master/DSR, Hourly
 Sales, Item Mix); Menu Matrix / Food Cost / Voids lack it (all in a no-data state).
 Master/DSR export hit `/api/reports/master` 200 (downloaded file not inspected in-
@@ -1951,6 +5832,51 @@ browser check, not closed here (rule 16). STILL OPEN: the remaining export forma
 (`daily`, `audit`, `shifts`, `pnl`, `expenses`) have no clean tab home, and
 `GET /api/reports/inventory` still has no caller — both deferred, not done.
 Delivery: MANIFEST-2026-08-23-b.md.
+
+**FIX BUILT 2026-09-03 (bench — dashboard tsc + vite build + route gate green; OPEN pending
+browser).** Owner asked for **all** the exports + an inventory report tab. Rather than force
+mismatched export buttons onto unrelated tabs, added a single **Exports** hub tab in `ReportsPage`:
+one download button per server-side format — `sales, daily, hourly, products (item mix), shifts,
+pnl, expenses, audit` — each opening `/api/reports/export/<key>?format=xlsx&from&to&branch_id`
+(all endpoints already existed in `reports-daily.ts` + `reports-export.ts`; this is the missing UI
+caller). Also added an **Inventory** tab rendering the existing `GET /api/reports/inventory`
+(sold / restocked / written-off per product) — another live-but-unwired endpoint. `check-api-routes`
+289 (both new report reads resolve). Guard test `tests/reports-refunds-and-exports.test.mjs`
+(mutation-checked). Files: `apps/dashboard/src/pages/ReportsPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-c.md`. Closes on browser confirm: each export downloads a non-empty xlsx
+and the Inventory tab renders. **Note:** the per-tab export buttons on Master/Hourly/Item-Mix stay;
+the Exports hub is the complete download surface.
+
+**EXPORTS FIX BUILT 2026-09-03 (dashboard tsc + build + guard test green; OPEN pending browser
+re-check).** The 2026-09-03 QA pass found the Inventory tab PASSes but **every export FAILs**: the
+download buttons used `window.open(API_URL/api/reports/export/…)`, which sends no Authorization
+header cross-origin, so all returned `{"error":"Missing or malformed Authorization header"}`. Fixed
+the whole class (rule 6) — the Exports hub AND the three per-tab buttons (Sales/Hourly/Item-Mix) now
+use a new authed `downloadFile()` in `apps/dashboard/src/lib/api.ts` (fetch WITH the auth + branch
+headers, save the blob), with a busy/error state on the hub. Guard test
+`tests/reports-export-auth.test.mjs` (pins: no `window.open` export remains; downloadFile carries
+auth). Files: `apps/dashboard/src/lib/api.ts`, `apps/dashboard/src/pages/ReportsPage.tsx`. Delivery:
+`docs/MANIFEST-2026-09-03-h.md`. Closes on browser re-check: each of the 8 exports downloads a
+non-empty .xlsx (Inventory tab already verified PASS).
+
+**EXPENSES ROUTE BUILT 2026-09-03 (server tsc + schema gates + guard test green; OPEN pending
+re-check).** The 2026-09-03 export re-check: the auth fix worked — **7/8 hub exports + all 3 per-tab
+buttons download real .xlsx** (verified PK/xlsx signature). But **`/export/expenses` 404'd** — the
+route was documented in `reports-export.ts`'s header and offered by the hub, yet **never
+implemented**. Built `router.get('/expenses')` (flat table: Date / Category / Description / Branch /
+Amount + Total; xlsx + csv), mirroring `/shifts` and reusing `/pnl`'s proven expenses query
+(`expense_date`, `expense_categories(name)`, branch-scoped). All 8 export routes now exist; new guard
+`tests/reports-export-routes.test.mjs` pins every hub key to a real route. `schema-audit` +
+`check-api-schema-drift` green. Also filed **A201** (the first-click-after-refresh 401 the re-check
+saw — `downloadFile` lacks `request()`'s refresh-retry; intermittent, self-recovers). Files:
+`apps/server/src/routes/reports-export.ts`. Delivery: `docs/MANIFEST-2026-09-03-i.md`. Closes on a
+re-check that the **Expenses** export downloads a non-empty .xlsx.
+
+**CLOSED 2026-09-04 (browser-verified).** The Expenses export now returns 200 with a real xlsx
+(PK/zip signature, correct content-type, 6875 bytes; the agent parsed the internal XML — title row +
+header Date/Category/Description/Branch/Amount + Total). All 8 hub exports + the 3 per-tab buttons
+download genuine .xlsx, and the Inventory tab renders. A143 done. (Residual: A201 — the first-click
+401 race — was NOT reproduced this run; stays OPEN P3 for later.)
 
 ### A144 · P2 · CLOSED 2026-09-02 · Inventory/stock write-actions — endpoints live, no UI caller
 **BROWSER 2026-08-31.** New PO and New Transfer dialogs open and cancel cleanly
@@ -2018,7 +5944,7 @@ CLOSED per rule 16 for that scope. The two write-endpoints still without a UI ca
 approve/complete, direct branch-stock set) are carried forward as **A197** so this close doesn't
 swallow the untested remainder.
 
-### A145 · P1 · OPEN · Branch↔user assignment endpoints are redundant AND under-guarded — retire them
+### A145 · P1 · CLOSED 2026-09-04 (verified in source) · Branch↔user assignment endpoints are redundant AND under-guarded — retire them
 
 Re-verified on the source (rule 17), the original framing was wrong twice over.
 
@@ -2048,6 +5974,8 @@ rule. Consequences, all silent:
 
 Zero callers in dashboard, admin, desktop, or shared — which is why it went unseen.
 
+**CLOSED 2026-09-04 (verified in source).** Already retired: `apps/server/src/routes/branches.ts` has a comment block where the two handlers were, documenting the removal and the guard rule; a repo-wide grep confirms no `router.post('/:id/assign-user')` / `router.delete('/:id/remove-user/...')` handler and **zero callers**. The safe writer (staff flow: `POST`/`PATCH /api/staff`, `requirePermission('staff.manage')` + business/branch scoping) remains. The register entry was stale (like A197). Delivery: `docs/MANIFEST-2026-09-04-f.md`.
+
 FIX (recommended): **retire both routes** (delete them). The safe capability
 already exists via the staff path; keeping a weaker duplicate writer is the
 liability (rule 20 — if the guard is missing, don't ship the thing that needs it).
@@ -2072,7 +6000,19 @@ prod-migrate; ships with the next server promote to `main`. Closes on promote +
 a quick check that the two endpoints now 404 in production (rule 16). Delivery:
 MANIFEST-2026-08-23-i.md.
 
-### A146 · P2 · OPEN · Notifications & webhook observability — endpoints live, no UI caller
+### A146 · P2 · CLOSED 2026-09-10 · Notifications & webhook observability — endpoints live, no UI caller
+**CLOSED 2026-09-10.** The UI existed (found in the 2026-09-09 browser pass) but was DUPLICATED and DIVERGED: BusinessPage imported the full standalone settings/WebhooksTab.tsx (test-send ping + per-hook delivery log), while SettingsPage carried its OWN inline copy that was a stale subset (no test-send, no delivery log). Consolidated: deleted SettingsPage's inline WebhooksTab + local Webhook type, imported the shared component — both pages now show the full A146 observability. Prop-free component, both render <WebhooksTab /> identically. Guard added to webhook-test-logs.test.mjs (one implementation, both pages import the shared one), mutation-checked; dashboard tsc 0. NOTE (pre-existing, not fixed here): ReportSchedulerTab declares useConfirm() outputs it never uses/renders — dead, left alone (out of scope). NOT verified here: the webhooks UI on screen on both pages. Delivery: docs/MANIFEST-2026-09-10-combined.md.
+
+**Original:**
+**Status (2026-09-09):** the "no UI caller" claim is stale — `settings/WebhooksTab.tsx`
+(~256 lines) is a real, mounted caller: it lists / creates / tests-delivery / toggles /
+deletes webhooks and views delivery attempts, wired into both `SettingsPage` and
+`BusinessPage`. NOT yet verified live (rule 16): exercise create + test-delivery against a
+real endpoint from the UI. NOTE: there is also an inline `WebhooksTab` defined in
+`SettingsPage.tsx` (~line 162) alongside the imported one — reconcile the duplicate before
+closing.
+
+**Original:**
 **BROWSER 2026-08-31 (FAIL — root cause found).** A test ping reached webhook.site
 (200, signed `x-swiftpos-signature`), but the SwiftPOS Deliveries log stayed "No
 deliveries recorded yet" even after reload. Cause: `POST /api/webhooks/:id/test`
@@ -2114,6 +6054,18 @@ gated on the A50/A54 mailer being configured); and `GET /api/loyalty/settings`
 lives. Browser pass pending (rule 16): add a webhook pointing at a request-bin,
 send a test, confirm the ping arrives and the delivery row appears with its status.
 Delivery: MANIFEST-2026-08-23-j.md.
+
+**2026-09-03 QA update.** The browser pass split A146 into three:
+(1) **Webhook delivery log — CONFIRMED BUILT** (batch -j, `WebhooksTab.tsx`, reachable via Settings →
+Business): a per-endpoint expandable log (When/Event/Status/Tries) driven by `GET
+/api/webhooks/:id/deliveries`, plus "Send test". The QA reported it "missing" only because the
+business has **zero webhook endpoints configured**, so there is nothing to expand — expected, not a
+gap. Add an endpoint + fire a test to see the log populate.
+(2) **Debug-info leak on Send-test-email → split out as A200** and FIX BUILT this session.
+(3) **Test email does not actually deliver** — this is the mail blocker A54/A50 (needs
+`RESEND_API_KEY` + a **verified sending domain**). Owner is buying a domain and will finish the email
+last; **the email-delivery close is tracked under A54** (domain dependency). A146 stays OPEN only on
+that email half; the observability (webhook log) + the leak (A200) are handled.
 
 ### A147 · P2 · CLOSED 2026-09-02 · Admin-portal endpoints — live, no caller in the admin app
 
@@ -2187,6 +6139,24 @@ each have no settings home in the dashboard, so wiring them means building a sma
 settings section, not a wire. Recommendation: leave A148 parked at P3 unless a
 specific one of these is wanted; say which and it becomes a scoped build. Delivery
 of this verification: MANIFEST-2026-08-23-l.md.
+
+**PARTIAL FIX BUILT 2026-09-04.** Owner asked to clear the tail. The one clean sub-item is done:
+**add an option to a SAVED modifier group** — `VariantsDrawer` now renders a per-group "+ Add option"
+control (name + price) that calls the live, guarded `POST /api/modifiers/options`
+(`requirePermission('products.manage')` + business-scoped) and refreshes. Guard test
+`tests/modifier-option-add.test.mjs` (mutation-checked); dashboard tsc + build green. **2026-09-04 re-verify: the add-option control did NOT render** on the deployed build, but the code
+is correct and on `dev` — a source re-read confirms a single modifier-group render (`modifierGroups.map`)
+with the "+ Add option" button placed after the options, in the default state, ungated. The likely
+cause is **deploy lag**: A148 and A203-v2 shipped in the same commit (39ff357), but A203-*v1* (prior
+commit) also shows the modal, so A203 passing does not prove 39ff357 is live; the deployed build was
+probably the prior commit (has A201 + A203-v1, NOT A148). Re-test after confirming the dashboard is at
+39ff357. Discriminator: on Mark received, a PATCH firing BEFORE the modal = v1 (A148 not live); no
+PATCH until Proceed = v2 (A148 live → real bug). **The other
+three are PARKED by decision (not building):** `PUT /api/flags/:key` (owners don't self-manage flags —
+overlaps the admin toggle), `GET`/`PATCH /api/qr/settings` and `GET /api/loyalty/settings` (each needs
+a new settings surface, low value; revisit if QR-ordering / loyalty tuning is wanted). A148 closes on
+a browser check of the add-option control; the parked three are recorded as deferred. Delivery:
+`docs/MANIFEST-2026-09-04-f.md`.
 
 ### A149 · P3 · CLOSED 2026-08-31 · Admin app has no CI type-check or build — 68 type errors accrued unseen
 **CLOSED 2026-08-31.** `.github/workflows/ci.yml` now covers admin: the `typecheck`
@@ -2270,7 +6240,8 @@ file, no runtime code touched, nothing to verify on a target — closed on the
 bench. render.yaml remains the deployment source of truth. Delivery:
 MANIFEST-2026-08-23-g.md.
 
-### A129 · P1 · OPEN · Delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` (A128's twin)
+### A129 · P1 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 S1) · Delivery sales silently never sync — cloud `orders.order_type` dropped `delivery` (A128's twin)
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, S1):** a Delivery sale rang on the till reached the dashboard as type delivery.
 
 Same shape as A128, on a different column. Migration 58 ("universal business
 types") DROPped and re-ADDed `orders_order_type_check` with a narrowed five-value
@@ -2313,6 +6284,17 @@ All 18 gates + doc-refs green on the bench.
 
 **NEEDS PROD-MIGRATE** (86→90, on `main` via the DB-migrate Action). Delivery:
 MANIFEST-2026-08-19-a.md.
+
+**DUPLICATE-90 RESOLVED 2026-09-04.** The two files sharing number 90 —
+`90_order_type_delivery_check.sql` (the authoritative A129 fix: 6-value set, delivery only; nothing
+writes aggregator/other) and the rogue `90_restore_order_types.sql` (8-value set, admits
+aggregator/other against the A129 decision) — are no longer both live. The rogue file is **archived**
+to `migrations/archive/90_restore_order_types.sql`, leaving one authoritative migration at number 90
+(`test-migration-90.mjs` tests it, 9/9). Effect: on any DB where both were already applied, delivery
+stays admitted (both admitted it) — no change; on a fresh migrate, only the 6-value delivery_check
+runs, which is the decided state. Removes the ordering ambiguity flagged since 2026-08-22. **A129
+itself still needs the prod-migrate + a live check** (a delivery sale reaches the cloud/dashboard) to
+close — owner-side. Delivery: `docs/MANIFEST-2026-09-04-f.md`.
 
 ### A130 · P2 · CLOSED 2026-08-31 · Aggregators report is the display half of a never-wired feature
 **CLOSED 2026-08-31 (browser-confirmed).** Reports shows 6 tabs (Master/DSR, Hourly
@@ -2429,7 +6411,14 @@ type-check or `cd apps/dashboard && npm run build`. Static preview:
 `nav-preview.html`. No server/DB/desktop change, no migrate. Delivery:
 MANIFEST-2026-08-19-c.md.
 
-### A133 · P2 · OPEN · Settings menu consolidated — owner dashboard (Slice 1 delivered for review)
+### A133 · P2 · CLOSED 2026-09-05 · Settings menu consolidated — owner dashboard (Slice 1) + manager grouped sidebar (Slice 2)
+**CLOSED 2026-09-05 (owner browser pass — Slice 2, manager grouped sidebar, verified live):** the
+manager sidebar renders exactly per the QA spec — Overview (top) → INVENTORY (Inventory · Receiving) →
+FINANCE (Orders · Shifts · Reports · Turnover · Expenses) → CUSTOMERS (Customers · Credit) → SETTINGS
+(Staff · Printers) → Open POS / Sign out, via `GROUP_ORDER` in `ManagerDashboard.tsx`. Every item was
+clicked and loads. Slice 1 (owner Settings, 3 sections) was browser-confirmed 2026-08-31. Sole residual
+never blocking and now moot enough to close: the owner old-link redirect check was "inconclusive"
+(unmapped routes bounce to `/login`); reopen a P3 if a specific stale deep-link is found in the wild.
 **BROWSER 2026-08-31 (Slice 1 confirmed).** Owner Settings shows exactly 3 sections
 (Users and access, Devices and printers, Business); `/dashboard/settings` lands on
 the first section with the active item highlighted. Still pending: manager view (no
@@ -2508,6 +6497,17 @@ about the dashboard). (C) Section padding: every page rendered inside the three
 Settings sections carries its own `p-6` (StationsPage was the only gap, already
 fixed). Dashboard `tsc` + `npm run build` both green on-bench; browser recheck still
 owner's.
+
+**SLICE 2 BUILT 2026-09-04 (manager dashboard nav parity; dashboard tsc + vite build + guard test
+green; OPEN pending browser).** The manager dashboard's flat sidebar
+(`apps/dashboard/src/pages/manager/ManagerDashboard.tsx`) now groups into labelled sections — the
+same group→items pattern Slice 1 gave the owner. Each `NAV_ITEMS` entry carries a `group`; the
+sidebar iterates `GROUP_ORDER` rendering an uppercase section header per non-top group and honouring
+the permission filter (a group with no permitted items renders nothing). Grouping: top-level
+Overview; **Inventory** (Inventory · Receiving); **Finance** (Orders · Reports · Turnover · Expenses);
+**Customers** (Customers · Credit); **Settings** (Staff · Printers). Guard test
+`tests/manager-nav-grouped.test.mjs` (mutation-checked). Delivery: `docs/MANIFEST-2026-09-04-j.md`.
+A133 closes on a manager (PIN) browser check of the grouped sidebar.
 
 ### A134 · P3 · CLOSED 2026-08-20 · Business › Profile settings tab (deferred from A133)
 
@@ -2690,7 +6690,15 @@ files handle their mutations. Verified: the swallower check (mutation + zero err
 handling) is now 0 across the dashboard; `tsc` + `npm run build` green. Loads that swallow
 (different symptom — empty data, not a failed action) were deliberately left.
 
-### A139 · P3 · OPEN · Per-branch (franchise) receipt text + hours overriding the business default
+### A139 · P3 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 B3) · Per-branch (franchise) receipt text + hours overriding the business default
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, B3):** a branch receipt header/footer printed on both the till and the web POS instead of the business default.
+**Status (2026-09-09):** BUILT — migration `91_branch_settings.sql`, server resolution in
+`pos.ts` / `branches.ts`, and a mounted editor `settings/BranchReceiptOverrides.tsx`. The
+body already noted "BUILT 2026-08-20"; the heading just wasn't flipped. NOT yet verified
+live (rule 16): set a per-branch receipt override + hours, confirm the branch's receipts
+use it and the DESKTOP till honours it. Then close.
+
+**Original:**
 
 Split out of A134 (Slice 2). Owner wants receipt header/footer and the 24-hour setting
 settable PER BRANCH for franchises, superseding the business-wide values. Cross-stack
@@ -2771,7 +6779,20 @@ rotated. **No document in this repo records that it was.** The script prevents
 the next leak, not the last one. Until someone confirms the rotation in writing,
 treat a P0 credential as live in an artefact that left the building.
 
-### A54 · P1 · OPEN (blocked on the owner) · Mail still undelivered — and A50's recorded diagnosis was wrong
+### A54 · P1 · OPEN (owner action) · Mail still undelivered — and A50's recorded diagnosis was wrong
+**RECONCILE 2026-09-07 (cloud sweep).** The CODE half is done: `mailer.ts` already
+carries the "CORRECTION, 2026-08-10 (register A54)" block that replaces the false
+"Not two problems; one" with the correct two-fault account (IPv4 pin closed the
+ENETUNREACH half; the Connection timeout is a SEPARATE fault — Render blocks
+outbound SMTP), and the boot check now distinguishes ENETUNREACH / timeout / EAUTH
+/ ECONNREFUSED with specific hints. The false-confidence trap is gone. `mailer.ts`
+also has the **Resend HTTP path** (`new Resend()` when `RESEND_API_KEY` is set),
+which bypasses the blocked SMTP egress entirely. **Remaining is OWNER ACTION, not
+code: set `RESEND_API_KEY` + `NOTIFY_FROM_EMAIL` (verified domain) on the server;**
+then A146's "Send test email" button confirms delivery. Original notes below.
+**2026-09-28 → A352:** Resend primary, SendGrid (over HTTPS) then SMTP as backups. Remaining owner action:
+`RESEND_API_KEY` + `SENDGRID_API_KEY` + `NOTIFY_FROM_EMAIL` (verified in both); closes when a test email and a daily summary arrive.
+
 **Third recurrence of A50.** Production log, 2026-08-10 20:57 UTC, on `dev`
 @ `0215475`:
 
@@ -3016,7 +7037,8 @@ where key in ('products.manage','settings.manage','staff.manage',
               'expenses.manage','expenses.view','orders.void');
 ```
 
-### A58 · P1 · FIX SHIPPED 2026-08-11, CONFIRMATION WANTED · Three manager nav items
+### A58 · P1 · CLOSED 2026-09-28 (verified on target, backlog checklist 2026-09-29 M4) · Three manager nav items
+**Closed 2026-09-28 — verified on target (backlog checklist 2026-09-29, M4):** the manager's web menu has Orders, Inventory and Expenses, all opening.
 Migration 75 registers `orders.view_all` and `inventory.view` and grants them to
 manager / supervisor / branch_manager / admin / owner, following migration 49's
 precedent and its stated reason: *a permission nobody holds gets granted to
@@ -3477,7 +7499,19 @@ and an "Opening-hours" title that must not read as OPEN-the-status); and the gat
 still reports the header agreeing with the body, so no existing entry's status
 changed under the new parser. Not a ratchet — a correctness fix with a test.
 
-### A17 · P0 · OPEN · A peer till cannot sell "offline forever" — it locks out on day 15
+### A17 · P0 · CLOSED 2026-09-07 · A peer till cannot sell "offline forever" — it locks out on day 15
+
+**CLOSED 2026-09-07 — owner A101 hardware sign-off, two tills (dev flavour).** The
+node-first offline-auth chain (the A101/PHASE5 work: node exposes an auth route,
+peers sign in via the node over the LAN, and a node-configured till's offline door
+no longer time-expires) was verified on hardware and passed. Directly resolves the
+three failures below: **Test 2** (cloud down, node up → the peer still signs in via
+the node) closes the day-15 lockout, and **Test 4** (clock set forward 30+ days →
+still signs in) closes the 14-day cache expiry. The dev→main release checklist gate
+was cleared alongside (A101 PASSED item checked). A standalone till with no node
+still expires at 14 days — intended. Follow-ups tracked separately: A160 (node-
+brokered session refresh — likely covered by the same pass, confirm), and A19 (node
+→cloud sales relay) is now unblocked/buildable.
 **Stated design (owner, 08-09):** the main/server till is registered online once;
 client tills then rely on the server till and **can keep selling without
 internet indefinitely.** The code does not support that today, in three ways.
@@ -3546,7 +7580,10 @@ so the last-resort cache is populated only by cloud verifies (fine while the nod
 is the daily authority). TO CLOSE: ship to tills + a live two-till offline test.
 Delivery of this correction: MANIFEST-2026-08-23-s.md.
 
-### A18 · P1 · OPEN · `nodeServer.ts` documents an architecture that no longer exists
+### A18 · P3 · NOTE · `nodeServer.ts` header is a tracking marker until PHASE5 §3 lands (no defect today)
+**Re-graded 2026-09-10 (P1 OPEN → P3 NOTE):** nothing to fix — the header was already corrected (08-09) and accurately describes the current tree. It is a reminder to revert the header when PHASE5-NODE-AUTHORITY §3 lands (node becomes the sole cloud uplink again). Kept as a NOTE (like A13) so it stops reading as a live P1 defect while the reminder survives. Delivery: docs/MANIFEST-2026-09-10-combined.md.
+
+**Original finding (context):**
 Its header states the node is *"the SOLE uplink to the cloud: peer tills never
 push to the cloud directly, so an order reaches the cloud by exactly one path
 (till → node → cloud)"*, and that received peer orders are *"re-enqueued into
@@ -3566,7 +7603,7 @@ This is the file a new reader opens to learn the architecture. Header corrected
 header becomes true again and the corrected one must be corrected back. Noted
 here so that does not read as a regression.
 
-### A19 · P1 · OPEN · A permanently-offline peer's sales never reach the cloud
+### A19 · P1 · FIX BUILT · A permanently-offline peer's sales never reach the cloud
 Follows from A18. A peer till pushes to two independent destinations: the cloud
 (`sync_queue`) and the node (`node_queue`). Under the stated design the peer has
 no internet, so:
@@ -3626,9 +7663,21 @@ D3 auto-update (a bad routing build is a site visit). Pairs with A17's deploymen
 reach cloud (web dashboard, eTIMS, cloud loyalty, backup). Target-only: closing
 needs a live node + peer + cloud, verifying a peer sale reaches cloud once, with
 the peer's original id and no duplicate. Not built on the bench (rule 16/20).
+CORRECTION 2026-09-18: heading read "FIX BUILT 2026-09-07" but the code shows it UNBUILT — the cloud
+enqueue at syncEngine.ts:2041 fires for every order unconditionally (peer or not), and nodeIngest still
+stamps peer rows PEER_SYNC_STATUS to keep them OUT of the node's cloud push (replica, not relay). Both
+§3 fix points are absent. Reverted the heading to OPEN to match the code and the 08-23 body note.
 Delivery of this status note: MANIFEST-2026-08-23-t.md.
+**RE-GRADED FIX BUILT 2026-09-21 — the 09-18 OPEN note was mistaken.** The node→cloud relay was wired in 3dc17b2
+(2026-08-25), before that note. enqueuePeerRelay writes the peer's ORIGINAL cloud payload into the node's own
+sync_queue (a SEPARATE row, not the PEER_SYNC_STATUS replica the note saw); the node's push relays it with the peer's
+idempotency key. The peer attaches _relayPayload (the A94 receipt snapshot, full items+variants+modifiers) in
+fillNodeOutbox; buildPeerRelay refuses anything lossy. Bench: peer-relay.test.mjs 28/28 (payload accepted, modifier
+price survives, idempotency_key stays end-to-end). Change point 1 (peer stops double-pushing) deliberately NOT built
+— keeps a belt-and-suspenders on a money path. To CLOSE: pilot target test (live node + offline peer + cloud). See
+the A19 pilot checklist. Delivery: docs/MANIFEST-2026-09-21-o.md.
 
-### A20 · P1 · OPEN · Failover cannot open the shop — the staff roster does not replicate
+### A20 · P1 · FIX BUILT 2026-09-07 · Failover cannot open the shop — the staff roster does not replicate
 Follows from the owner's failover requirement (08-09) plus PHASE5 §4a. Promotion
 already works well — `tech:promoteToNode` (`ipcHandlers.ts:1746`) is
 session-gated, audited, clears `node_url` and starts serving; `collectDistribution`
@@ -3734,12 +7783,30 @@ server must be able to verify that a caller is the branch's node before any
 credential can cross that boundary. **D14 first (register the device), then D4
 (enrol it), then §4b.**
 
-### A22 · P2 · OPEN · Promotion has no split-brain check
-`promoteToNode` clears `node_url` and starts serving immediately with no check
-that the old node is gone. An old node that was merely unplugged, then
-reconnected, gives the branch two nodes and peers pointed at either. Nothing
-detects it. Low urgency while promotion is a human tech-session action, but a
-node that can reach another node on its own branch should say so loudly. §10.5.
+### A22 · P2 · FIX BUILT 2026-09-13 · Promotion had no split-brain check — now guarded on promote + surfaced in the fleet
+`promoteToNode` cleared `node_url` and started serving with no check that the old
+node is gone. An old node merely unplugged, then reconnected, gives the branch two
+nodes and peers pointed at either. §10.5.
+
+**Rule-17 finding:** detection already existed — `confirmServingRole` (migration 74)
+records a conflicting serving claim in `role_conflict_at`/`role_conflict_with`,
+refuses branch credentials, and even names A22. The gap was purely that it "said so"
+only to the **server console**. So the delta was surfacing + the promote-time guard.
+**FIX BUILT 2026-09-13 (delivery -d):**
+  - **Till (`ipcHandlers.ts`):** `tech:promoteToNode` now probes the current `node_url`
+    (existing `probeNode`) BEFORE the role flip; if a live node answers it refuses
+    (`code: 'node_reachable'`) — you can't create a second server while the first is up.
+  - **Cloud (`devices.ts` `GET /fleet`):** selects and exposes `role_conflict_at`
+    (`servingConflict`/`conflictAt`).
+  - **Web (`FleetPage.tsx`):** a loud red "Split-brain — two servers on this branch"
+    badge on the conflicted device, so the reconnect-after-promotion case (which
+    confirmServingRole records) is visible to the owner.
+Guard: `tests/split-brain-surfacing.test.mjs` (3, mutation-checked).
+NOT verified here (rule 16): the live two-node scenario (promote-while-up refusal on a
+real till; a reconnected old node lighting the fleet badge) + server/dashboard tsc.
+Optional follow-up (noted, not built): a node-LOCAL banner (surface the conflict in the
+sync response so the conflicted node itself warns on-screen, not just the owner's fleet).
+Delivery: `docs/MANIFEST-2026-09-13-d.md`.
 
 ### A23 · P2 · OPEN · Distribution lag is the real RPO and is not measured
 Promotion cannot recover rows the dead node originated but never distributed —
@@ -5182,7 +9249,7 @@ finding — a report showing permanent zeros — is what is fixed. What the benc
 cannot prove and a live check should: the report returning real restocked/
 written-off numbers against a database with actual `stock_movements` rows.
 
-### A24 · P1 · OPEN · Reference data goes permanently stale on an offline peer
+### A24 · P1 · FIX BUILT 2026-09-07 · Reference data goes permanently stale on an offline peer
 
 **FIRST PAYLOAD DESIGNED 08-10** — `docs/PHASE6-BRANCH-SETTINGS.md`. Printer
 settings rather than the staff roster, deliberately: if downstream distribution
@@ -5583,7 +9650,7 @@ is unrouted and the Printers tab renders `PrinterSetupScreen`. (Line ref drifted
 from the original 1061-65 after the A59 edits; the comment is now at the `case
 'printers'` render.) Renderer `tsc` green.
 
-### A12 · **P1** · OPEN · `ingredients.current_stock` has had no writer since migration 23
+### A12 · **P1** · CLOSED 2026-09-04 (browser-verified) · `ingredients.current_stock` has had no writer since migration 23
 **Raised from P3/INVESTIGATE to P1 on 08-10 — it is no longer a question. It is
 B6's sequel, exactly as this entry predicted, and it is live.**
 
@@ -5624,6 +9691,22 @@ with branch stock shows the true figure in the Recipes drawer (not "0 in red"),
 and matches `IngredientsPage` for the same branch. **Follow-up, not done:** the
 "dead column inside a live table" class still has no gate — a column-level
 read/write comparator is the missing check (`check-table-usage` is table-level).
+
+**PHASE 6 BUILT 2026-09-04 (migration + test; PGlite 8/8, schema gates green).** Confirmed with a
+repo-wide sweep: **zero writers and zero explicit readers** of `ingredients.current_stock` remain
+(recipes.ts + stock.ts serve the live per-branch value; the create insert doesn't set it; stock.ts's
+`select('*')` pulls it but overrides it). So the drop migration 23 deferred is now safe:
+`migrations/98_drop_ingredients_current_stock.sql` (idempotent `DROP COLUMN IF EXISTS`) +
+`scripts/test-migration-98.mjs` (8 checks, mutation-checked — drops the dead column, keeps the row +
+the LIVE `ingredient_stock_levels.current_stock`). **This also answers the "missing gate":** once the
+column is dropped and `schema-index.json` refreshed, **`schema-audit` becomes the column-level guard
+for free** — any future code that reads `ingredients.current_stock` fails the gate (the column no
+longer exists in the live schema). No bespoke comparator needed. Delivery:
+`docs/MANIFEST-2026-09-04-a.md`. **A12 closes on:** (1) live check — an ingredient with branch stock
+shows the true figure in the Recipes drawer (not "0 in red") and matches IngredientsPage; (2)
+migration 98 applied to prod + index refreshed. Both owner-side.
+
+**CLOSED 2026-09-04 (browser-verified):** created "Flour", set 42 kg on Main Branch, added to a recipe; the Recipe drawer shows the LIVE figure ("42 in stock") matching Ingredients, never a frozen red "0". Per-branch verified (Westlands 0; All-Branches summed 42). Migration 98 applied cleanly; the class is now guarded by schema-audit.
 
 ### A13 · P3 · NOTE · Two suites run on `node:sqlite`, not the app's driver
 `test-node-ingest`, `test-sync-rejection-routing`. They say so themselves. A
@@ -5856,7 +9939,10 @@ appearing under Setup and opening the fleet table.
 
 Every item below was verified against source at `a80c224`, not against docs.
 
-### D1 · P0 · Owner login is a dead end when they own two businesses
+### D1 · P0 · CLOSED 2026-09-10 · Owner login is a dead end when they own two businesses
+**CLOSED 2026-09-10 — verified already resolved by the A158 enrolment work; the heading was never flipped.** The dead-end required the desktop's owner email/password login, which no longer exists. Server `/api/auth/desktop-login` is RETIRED (A158) → 410 Gone (auth.ts:709); the 409 MULTIPLE_BUSINESSES now lives only on the web /login. The desktop activates via a one-time enrolment code (/enrol/redeem) — no owner credentials, no business picker. Renderer sweep: only 6-digit PIN fields; "back to owner" returns to the ENROLMENT flow, not a login. No code path can produce the 409 dead-end. Clears the last open P0. Delivery: docs/MANIFEST-2026-09-10-combined.md.
+
+**Original:**
 `auth.ts:603` — `/desktop-login` returns 409 `MULTIPLE_BUSINESSES` with *"Choose
 which one to open."* `ipcHandlers.ts:83` throws `data.error` and drops `code`.
 There is no picker anywhere in `apps/desktop`. The owner reads an instruction
@@ -5868,7 +9954,27 @@ Closed by the D4 enrolment work, which removes owner login from the till.
 See §E. Held orders now sit in SQLite, one row per tab. D9 (cross-till recall)
 remains open — that needs server state, not local storage.
 
-### D3 · P1 · OPEN · No auto-update — scaffold added, release pipeline outstanding
+### D3 · P1 · CLOSED 09-18 · No auto-update — scaffold added, release pipeline outstanding
+CLOSED 2026-09-18 (owner-confirmed on target): auto-update works — tills pulled 0.5.45 (the A297 Overview fix) and 0.5.46 (A298 provenance) via electron-updater / GitHub Releases, unattended.
+**WIRED 2026-09-10 (was a dormant scaffold).** electron-updater is now a dependency;
+`autoUpdate.ts` is built (tsconfig exclude removed) and called from `index.ts`
+(guarded, never throws out); the PROD flavour publishes to GitHub Releases
+(`oweyahillary/swiftpos`) while the DEV flavour publishes nowhere and is skipped at
+runtime by name — so a dev till can't pull a prod release or vice versa. A
+tag-triggered `.github/workflows/release.yml` builds + `--publish always` on Windows,
+which is what closes A1 (no more hand-built pos.zip). Runs UNSIGNED for now: the loop
+works; Windows SmartScreen shows on first install until a cert is added
+(CSC_LINK/CSC_KEY_PASSWORD secrets — a config flip, not a code change). Guard:
+`tests/autoupdate-wiring.test.mjs` (12 checks, mutation-checked). Bench-verified:
+desktop main tsc 0, 97/97 offline suites, gates green.
+**NOT verified (rule 16, close condition):** the end-to-end loop on a real Windows
+till — push a `v*` tag, install the published prod build, bump+tag again, confirm the
+running till downloads and installs on next quit. Owner-only remaining bits: optionally
+add a signing cert; cut the first release. **ROLLOUT (rule 13):** unsigned first
+installs need a one-time "Run anyway" click; a POS on an unattended till is the case
+where a cert matters most (see runbook §4). Delivery: `docs/MANIFEST-2026-09-10-D3.md`.
+
+**Original:**
 No `electron-updater`, no `autoUpdater`. Every release is a hand-installed `.exe`
 per till; `localDb.ts` says so itself. Root cause of A1 — no release pipeline is
 why `pos.zip` gets hand-built from a working folder. Also the tax on every other
@@ -5892,7 +9998,8 @@ signing certificate, cut the first published release, run the end-to-end check,
 and put the release in CI (which is what actually closes A1). Stays OPEN — a
 scaffold that has never run is not a fix.
 
-### D4 · P1 · OPEN · Owner portal credential used to provision the till — implemented, pending live verification
+### D4 · P1 · CLOSED 09-18 · Owner portal credential used to provision the till — implemented, pending live verification
+CLOSED 2026-09-18 (owner-confirmed on target): the till is enrolled and operating as a node (device_role=node, terminal_code=T1, per the Tech DB console).
 No device-scoped enrolment. Couples portal and till blast radius, and is the D1
 dead end: the owner's credentials belong to a person, and a two-business owner
 cannot say which business a till serves.
@@ -5959,13 +10066,36 @@ the fleet's state. `X-Schema-Version` puts it on every push; ask the machines.
 `localDb.ts` explains 43/44/45 in detail, then goes silent through 51. Six
 generations with no record, on the mechanism deciding whether a field till works.
 
-### D7 · P2 · OPEN · IPC channels have no per-channel payload validation — shared mechanism now added, rollout pending
+### D7 · P2 · CLOSED 2026-09-09 (A271) · IPC channels have no per-channel payload validation — now every channel is validated + a gate keeps it closed
 `check-ipc-parity` proves a channel is bridged AND handled, not that its two
 sides agree on the payload. 136 channels crossed the boundary unchecked; a
 renderer sending the wrong shape surfaced as an undefined-dereference deep in a
 handler, or a silent wrong write. This is the gap §L already names, and what
 P-09 and P-11 were.
 
+**CLOSED 2026-09-09 (A271) — every channel validated, coverage gated.** The
+partial adoption below is now complete: all **149** handled channels have an
+explicit payload decision in a central registry (`ipcSchemas.ts` — a Schema, a
+bare-value descriptor, or `NO_PAYLOAD`), and every `handle(...)` routes through
+`installValidatedHandle` (`ipcGuard.ts`), which validates the payload against
+that registry before the handler runs. The validator (`ipcValidate.ts`) gained
+nested-object / object-array / enum / any specs and bare-value guards so the
+shapes IPC actually carries — incl. the nested sale payload — get a real schema.
+`order:create` IS validated (against `createLocalOrder`'s real shape: the money
+fields + nested `items[]`) but is listed in `NEEDS_LIVE_TEST` — it is the primary
+sale path and could not be run on the bench, so ONE real order on a dev-flavour
+till confirms it before production. **What keeps it closed:**
+`scripts/check-ipc-validation.mjs` (wired into CI) fails the build if any handled
+channel lacks a registry entry, or if a registry entry is stale — so a channel
+added tomorrow cannot ship unvalidated. Tested: `tests/ipc-validate.test.mjs`
+extended to 52 checks (truth table incl. the new specs + the order:create shape;
+registry/guard/gate source guards), and the gate mutation-checked both ways.
+Bench-verified: desktop main `tsc` 0 errors, all gates green, 96/96 offline
+suites. NOT verified here (rule 16): the `order:create` schema on one live sale
+(the one caveat), and the desktop runtime suite (`npm run test:desktop`, a
+target-machine step). Delivery: `docs/MANIFEST-2026-09-09-b.md`.
+
+**Original diagnosis + partial rollout (retained for history):**
 **Shared mechanism added (08-13), rollout under way.** `apps/desktop/src/main/ipcValidate.ts` —
 a dependency-free validator (the desktop has no zod, and adding one is its own
 footprint call): `validatePayload` / `assertPayload` for object payloads,
@@ -5990,7 +10120,35 @@ skips prints kitchen **and** dispatch. `escposBridge.ts:409` filters targets to
 bound stations. Kitchen bound + dispatch unbound = the dispatch slip prints on
 neither system, silently. Dormant while thermal is off.
 
-### D9 · P3 · OPEN · Held orders are not visible across tills
+### D9 · P3 · FIX BUILT (core only) 2026-09-10 · Held orders are not visible across tills
+**CORE BUILT 2026-09-10 — the node-authoritative claim/lease/audit, benchable half
+only.** Owner chose a soft-lock/lease model (see `docs/D9-decision-brief.md`): any
+till sees every open tab; a till claims an atomic LOCK to edit/charge/clear; the
+lock is a 90s LEASE renewed on every edit (an active tab never expires, a crashed
+till frees the table in 90s); CLEAR and a forced lock-STEAL are the audited,
+manager-notified events; a normal claim→edit→charge is not. Built:
+`apps/desktop/src/main/nodeTabs.ts` — the node tab store (schema with
+locked_by/lock_expires/opened_by/last_changed_by) and the atomic operations
+(`registerTab`, `listOpenTabs`, `claimTab`, `updateTab`, `releaseTab`, `deleteTab`,
+`stealAudit`). The claim is one conditional `UPDATE … WHERE (unlocked OR mine OR
+lease-expired)` whose `.changes` is 1 for exactly one caller — the D4 enrolment-burn
+shape, so two tills cannot both win. Proven: `apps/desktop/test/node-tabs-claim.test.mjs`
+(17 checks — first-claim-wins, live-lock 409, holder re-claim idempotent, edit renews
+lease + holder-gated 423, expired-lease steal flagged, release, clear-audited-and-
+holder-gated, charge-not-audited). Desktop main tsc 0.
+**NOT built yet (deliberately — the risky, unverifiable-here half, rule 12/16):**
+(1) wiring `nodeTabs` into `nodeServer.ts` routes + `nodeClient.ts` + the desktop
+`held:*` IPC/UI (the Open-vs-Locked-by indicator, claim-on-recall); (2) the
+audit→manager-notification hop — the clear/steal audit record must ride local→cloud
+sync into the existing `notifications` table (server), a multi-hop integration; and
+(3) the LIVE cross-till behaviour — poll lag, a till dropping offline mid-charge, two
+real tills racing — which only a two-till rig proves and is the whole point of the
+feature. Do NOT ship to a real floor until (3) passes; a double-charged table is worse
+than the current gap. Owner still to confirm: lease = 90s (chosen), audit on
+clear + forced-steal (chosen); poll interval 3–5s (assumed) needs a load check.
+Delivery: `docs/MANIFEST-2026-09-10-D9-core.md`.
+
+**Original:**
 Tabs (open restaurant tables — food cooking, no bill yet) are **local to one
 till** by design: one row per tab in that till's SQLite, out of the sync queue.
 `heldOrders.ts` says so and points here — *"Cross-till recall is register D9 and
@@ -6017,7 +10175,7 @@ enrolment burn), so there is no peer-to-peer race to reconcile and delete
 propagates for free. The claim is benchable; the multi-till behaviour is not.
 **P3, on the worst-failure path, owner-decision-gated — should NOT ride the client
 rollout.** Left unbuilt on purpose: a double-charged table is worse than the gap.
-### D10 · P3 · `ipcHandlers.ts` at 1,639 lines
+### D10 · P3 · `ipcHandlers.ts` at 2,214 lines
 ### D11 · P1 · CLOSED 08-13 · `/api/pos/init` licensed the till from the wrong branch, and 500'd on zero main branches
 `pos.ts` fetched only the `is_main` branch with `.single()` and gated the desktop
 licence on **that** branch's `desktop_licensed` — regardless of which branch the
@@ -6065,13 +10223,17 @@ this same session, not silently worked around.
 ### D12 · P1 · CLOSED 08-08 · Inbound sync failures were entirely silent
 See §E.
 
-### D13 · P0 · PARTLY CLOSED 08-08 · Refresh rotation
+### D13 · P0 · CLOSED 08-15 · Refresh rotation
 Client side done — single-flight guard and stale-token retry, see §E.
 **The crash window remains open** and cannot be closed from the client: the
 server revokes the consumed token before the response is even sent, so any
 interruption between there and the till's `UPDATE session` strands a dead token.
 Only a server-side grace period fixes it — a briefly-superseded token returning
 the current pair instead of a 401. That is the outstanding part of D13.
+CLOSED 2026-08-15 (A88): the server grace window WAS built — `lib/refreshGrace.ts`
+(`refreshGraceDecision`) wired into `auth.ts` reissues the current pair instead of
+a 401, with `tests/refresh-grace.test.mjs` covering it. The "outstanding part"
+above is superseded; the heading lagged the changelog until this 2026-09-18 sweep.
 
 ### D13 (original finding) · Refresh rotation with a non-atomic persist and no guard
 `auth.ts:50-51` — access 15m, refresh 30d, **rotating**; `auth.ts:736` revokes
@@ -6108,7 +10270,26 @@ different columns, one of them a decoy. Drop or rename it.
 
 ---
 
-### D17 · P3 · OPEN · Desktop build has no dev/prod flavour (icon, appId, userData, update channel)
+### D17 · P3 · CLOSED 2026-09-09 · Desktop build has no dev/prod flavour (icon, appId, userData, update channel)
+**CLOSED 2026-09-09 — verified on hardware.** All checks passed: `npm run release:both none`
+built all four artefacts at v0.5.39 (SwiftPOS + SwiftPOS Dev, installer + portable); the dev
+flavour installed and runs; it shows as "SwiftPOS **DEV**" with the amber dev icon, visibly
+distinct from prod; and it writes to `%APPDATA%\SwiftPOS Dev`, a separate data folder from
+production's `%APPDATA%\SwiftPOS` — so dev trading cannot touch the production database. The
+dev/prod flavour is real and safe to trade on. Delivery: `docs/MANIFEST-2026-09-09-e.md`.
+
+**Status (2026-09-09):** BUILT — the flavour machinery is present and now proven to
+build. `apps/desktop/electron-builder.config.js` switches icon / productName / appId on
+`SWIFTPOS_ENV`; `resources/icon.dev.*` exist; `scripts/release-both.mjs` builds prod + dev
+at ONE version; runtime data isolation is automatic (Electron derives `userData` from
+`productName`, so "SwiftPOS Dev" → `%APPDATA%\SwiftPOS Dev`, separate from prod's DB).
+On 2026-09-09 `npm run release:both none` produced all four artefacts
+(SwiftPOS + SwiftPOS Dev, installer + portable) at v0.5.39. NOT yet verified (rule 16):
+install the dev flavour and confirm it shows "SwiftPOS Dev" with the amber icon AND writes
+to `%APPDATA%\SwiftPOS Dev` while a prod install keeps `%APPDATA%\SwiftPOS` — the data
+separation is the point. Once that install check passes, close this.
+
+**Original:**
 
 The desktop build was one identity regardless of which cloud it targets: same
 icon, same `com.swiftpos.desktop` appId, same `%APPDATA%\SwiftPOS` data folder.
@@ -6160,7 +10341,18 @@ dev build could be offered a prod installer — recorded in DESKTOP-AUTOUPDATE.m
 
 ---
 
-### D18 · P2 · OPEN · A tech token pasted into the reveal field is truncated — "not allowing the full string"
+### D18 · P2 · CLOSED 09-18 · A tech token pasted into the reveal field is truncated — "not allowing the full string"
+CLOSED 2026-09-18 (owner-confirmed on target): the owner pasted a tech token and used the resulting Tech DB console to run the A297 diagnostic SQL — full paste + tech session confirmed end to end.
+**FIX BUILT / guarded 2026-09-10.** The fix is present in `PinPage.tsx`: the reveal field's
+`onPaste` detects an `st2.` token, `preventDefault()`s (bypassing the `maxLength={12}` +
+upper-casing that truncated it), sets the FULL token, and jumps to the token step. Guard added:
+`tests/tech-token-paste.test.mjs` (6 checks, mutation-checked — disabling the `st2.` detection
+reddens it). Renderer-only, safe (the reveal code grants nothing on its own; the token is
+branch-scoped + cryptographically verified). NOT verified here (rule 16): paste the token on the
+amber build and confirm it lands on the token step with the full value. Delivery:
+`docs/MANIFEST-2026-09-10-D18.md`.
+
+**Original:**
 
 > **2026-08-22 (code↔register audit).** Code-complete on dev: the reveal-code flow now shows the branch reveal code beside the token and supports rotate (`AdminPortal.tsx`), and the 08-14 note records an `onPaste` fix routing an `st2.` token to the token step. Kept OPEN — the paste/truncation behaviour needs a browser pass before close (rule 16).
 
@@ -6372,6 +10564,99 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 
 | Date | Change |
 |---|---|
+| 2026-10-01 (n) | **Results recorded — checklist v0.6.29: 14/14 PASS** (Eugene, T1 v0.6.29): R0–R1, S1–S2 (blind close standard), T1–T2 (confirm table, till + web + dashboard), P1–P2 (success screen), H1–H3 (History today, paid incl. fee), D1–D3 (v0.6.27's D2, D4, D5 re-run). → **A369, A374 CLOSED.** Nothing from 0.6.26–0.6.29 is open; A336 stays open for stage 3. |
+| 2026-10-01 (m) | **Results recorded.** Checklist v0.6.28 **23/23 PASS** (Eugene, T1 v0.6.28) → **A372, A373 CLOSED**. Checklist v0.6.27 **20 PASS · 1 FAIL · 2 not run**: E3 → **A370 CLOSED**, D3 → **A371 CLOSED**; D2 FAIL → **NEW A374 · P2 · FIX BUILT (0.6.29)**: History showed the bill, not what was paid, so the delivery fee looked lost; D4, D5 not run — **A369 stays open**. **Desktop 0.6.29 BUILT (owner, 2026-10-01):** blind close and the cashier's figures at confirm STANDARD for every client (no longer switches); the confirm screen is one table — cashier, shift open–close, per method cashier / manager / reason (till, web POS, dashboard); after payment a success screen with no print button (till; was the receipt view + Print receipt); History is today's sales, all of them (was the last 30), showing what was paid incl. the delivery fee (till + web). NEW `tests/owner-0629.test.mjs`; pins moved in 6 suites. |
+| 2026-10-01 (l) | **Results recorded — checklist v0.6.26: 8/8 PASS** (Eugene, T1 on the v0.6.28 install): R0–R2, X1 web refund of a till sale, X2 web void of a till sale, X3 a till refund counted once, X4 web-rung sales unchanged, X5 the totals agree. The A336 follow-up (0.6.26) is verified; A336 stays open for stage 3. v0.6.27 and v0.6.28 checklists still to run. |
+| 2026-10-01 (k) | **Release number on the websites and the cloud** (owner: "can we add versioning on the website also so that i can tell which one i am running?"). NEW `shared/release.ts` (RELEASE = the till's version — `tests/release-version.test.mjs` fails if they part; copied to cloud, dashboard, admin portal). The dashboard sidebar, the web POS drawer, the login page and the admin portal show "SwiftPOS v0.6.28 · <commit Vercel built>" and the cloud's own (`GET /api/version`, `/api/admin/version`, signed in only — `/health` still tells anonymous callers nothing); amber when the website and the cloud differ. Rides v0.6.28 (website/cloud only; the till unchanged). |
+| 2026-10-01 (j) | **NEW A372 · P1 · FIX BUILT (desktop 0.6.28 + cloud + migration 112 + web POS)** — a sent order could be cancelled after the customer paid in cash; now it is paid or a recorded kitchen void (reason, made or not, manager with `kitchen_void_approval`, VOID ticket, Z-report), End Shift refused while one is unpaid, `pay_before_kitchen` switch. **NEW A373 · P2 · FIX BUILT** — a sent line re-sent in full on any change (cooked twice), and a line added after the last Send never printed for the kitchen. NEW tests: desktop kitchen-voids (31), cloud kitchen-voids (16), migration 112 (8), printing kitchen-voids (4). |
+| 2026-09-30 (i) | **NEW A369 · P2 · FIX BUILT (desktop 0.6.27 + cloud + migration 111)** — a prospect's nine requests, five of them per-client switches set in the admin portal. **NEW A370 · P1 · FIX BUILT** — the dashboard's Add expense was refused by a schema that never matched the route. **NEW A371 · P3 · FIX BUILT** — the till's on-screen receipt counted a tip twice. |
+| 2026-09-30 (h) | **A336 follow-up BUILT (desktop 0.6.26 + cloud).** A web void or refund of a sale the till rang reaches that till (cloud `own_reversals` with the web-sales pull; till `applyOwnReversals`). A359's known limit removed. NEW `apps/desktop/test/own-reversals.test.mjs` (18; CI step), `tests/cross-sync.test.mjs` +4. Also closes a refund race (the till's own refund mirrored only if not already refunded — `mirrorTillRefund`). A336 stays open (stage 3). |
+| 2026-09-30 (g) | **Results recorded.** 0.6.24: N7, N8 PASS → **A367 CLOSED** (N1–N8). 0.6.25: P1 (bigger receipt logo), D1 (A4 document: logo + corporate layout), D2 (Z-reports carry the logo) PASS — with B1, B2, G1–G3 earlier, **every v0.6.25 check PASS**. |
+| 2026-09-30 (f) | **Results recorded.** 0.6.25: B1, B2, G1, G2, G3 PASS; P1, D1, D2 skipped (to run). 0.6.24: C1, C2/C3, C4, C5, C6 PASS; N1–N6 PASS; N7 not found (my checklist gave Settings → Business → Service; it is Restaurant setup → 🍽 Service — docs fixed); N8 not reported. **CLOSED:** A366, A368. A367 open (N7, N8). |
+| 2026-09-30 (e) | **Results recorded.** 0.6.21 D2, D3, D4 PASS (D1, D5 earlier) → **A364 CLOSED**. 0.6.25: `0673b03` + CI fix `91cb590` (a cloud test loaded shared/printing/dist, which the server job does not build — moved to the package's own suite); CI #441 green; v0.6.25 pre-release (Release desktop #41); cloud + dashboard deployed; B Foods approved; T1 on 0.6.25. |
+| 2026-09-30 (d) | **NEW A368 · P2 · FIX BUILT (desktop 0.6.25 + cloud)** — a till-uploaded logo was overwritten by the next pull (remote-wins); it now saves to the cloud too (write guard: exactly /api/business/branding). Also: the manager sidebar shows the logo; the A4 documents take the Branding logo and are restyled (corporate); the thermal and web Z-reports carry the logo; a small logo is scaled up to fill the receipt box and the box is 384 × 288 dots (was 240 high). **desktop 0.6.25 BUILT.** The PIN screen's client logo up to 160 × 240 (was 88 × 220) on a tighter white card; the lock screen's up to 150 × 240. 0.6.24 landed as `6b12bed` (CI #439 green; v0.6.24 pre-release). Test: `lock-curtain-brand` 7 (+2); 2 mutations bite. |
+| 2026-09-30 (c) | **Results recorded.** 0.6.23: F1–F7, F9 PASS (F8 earlier). 0.6.22: M3–M9 PASS. Carried: S1–S4, O1, L1, X1–X5 PASS. **CLOSED:** A365, A363, A362, A361, A360. Open from these builds: A364 (D2–D4), A366 + A367 (0.6.24, held). |
+| 2026-09-30 (b) | **NEW A367 · P2 · FIX BUILT — desktop 0.6.24 (schema 58) + cloud.** Owner: notes in the order ("3 normal and 2 spicy", "extra cheese", "no salt"). A note on each line and on the order, free text + the owner's quick picks, free of charge; stored on the till and the cloud, printed on the kitchen ticket and the receipt, shown on the KDS; web POS cashier screen too. Kitchen ticket fix: a plain dish's note was skipped. Tests 34 + 16 + 7; 17 mutations bite. Held with 0.6.24 — no patch until the owner says. |
+| 2026-09-30 (a) | **NEW A366 · P2 · FIX BUILT — desktop 0.6.24 + cloud.** Owner: only the shift owner (or a manager) can close a shift. Till enforces it in `closeShift` and shows who owns the shift; the cloud refuses a non-owner non-manager close (the till's own replay excepted); the web POS shows the owner instead of the form. F8 PASS. Tests 49 + 28 (+3 shared-drawer); 5 mutations bite. |
+| 2026-09-29 (e) | **A365:** Shift Reports print a report, not the page (owner, with the PDF): A4 Shift Report + Shift Reports list documents from the data, via `printDocument`; dashboard only. Rendered in Chromium on the bench. |
+| 2026-09-29 (d) | **A365 on target:** migration 110 applied; 0.6.22 on T1; M1, M2 PASS. Owner's follow-ups built as **desktop 0.6.23**: zero-recorded methods not asked (declare + recount), no wheel/spinner on number fields (till + web), "include the opening float", a signed-in manager confirms without a PIN; NEW dashboard Shift Reports (list + View per-method table, filters, CSV). Tests 48 + 22; 10 mutations bite. |
+| 2026-09-29 (c) | **NEW A365 · P2 · FIX BUILT — desktop 0.6.22 + cloud + migration 110.** Owner: a manager confirms every cashier's shift before the day closes, blind, on every payment method, till and web; self-confirmation flagged. The cashier declares every method at End Shift; confirm now or later (till Close tab, web POS, dashboard); Close Day refuses until all are confirmed. Tests 34 + 19 + 6; 15 mutations bite. |
+| 2026-09-29 (b) | **NEW A364 · P1 · FIX BUILT — desktop 0.6.21.** After the day was closed on T1, the next shift failed "That record already exists." (a second day row for the date). Owner: shifts follow staff hours; overlap is on different tills; a day close is a cash-up only. The till now reopens today's day (same id), keeps the earlier cash-up in notes and running totals; the next close counts only the shifts since and stores the whole day. `test/day-reopen.test.mjs` 16, 5 mutations bite. |
+| 2026-09-29 (a) | **NEW A363 · P1 · FIX BUILT — desktop 0.6.20 + cloud.** T1 closed yesterday and opened today offline; online, both trading days went up in one push, the cloud wrote them concurrently, today's open day was refused (one open day per till) and its shift parked; nothing re-sent them, the log did not say, the web asked for a float on a trading till. BUILT: `lib/dayOrder.ts` closesFirst in `/api/sync/push`; till `requeueAfterDayClash` (once), refusals logged, web-sales 401 renewal, "recovered" only after a clean pass, updater download promise caught; `lib/syncNotice.ts` — sync status for managers only, bottom notice (red on refusals), "Last synced", Z-report note (screen + paper). Owner: "build 1-6", "sites have internet, you can add the note on the zreport". Tests: day-clash-sync 22, day-order 4, sync-notice 9, shift-report-backup 3, update-approval +1; 14 mutations bite. Version 0.6.20 bumped in the patch. Delivered as a patch (the owner commits). |
+| 2026-09-28 (z) | **NEW A362** (owner: "web pos cannot record expences on cashier" — the web POS had no expense screen; the only cloud write needs expenses.manage). BUILT: `POST /api/shifts/:id/expense` (open shift of this business, no key — as the web float route and the till; paid_by = recorded_by = the signed-in person via the shared `lib/expenseRecorder.ts`) + web POS **🧾 Expense**. `tests/web-pos-expense.test.mjs` 8/8 (compiled routes, a cashier token), 5 mutations bite. Delivered as a patch (the owner commits). |
+| 2026-09-28 (y) | **Migration 109 applied to prod** (owner's `information_schema`: `expenses.recorded_by | uuid`). A361 is now live once the cloud and dashboard are deployed from `fc64dde` or later; A360 and A361 stay FIX BUILT until a cashier's type pick and a Recorded By name are seen on target. |
+| 2026-09-28 (x) | **Backlog checklist on target: 25 pass / 0 fail / 4 skip** (`docs/VERIFY-LOG-2026-09-28.md`). CLOSED A129, A179, A267, A168 (§S) · A277, A209, A139 (§B) · A296, A258, A259, A262, A58, A211, A256, A257, A157, A141 (§M) · A298, A299, A306 (§T) · A331, A330, A329 (§C) · A273 (§W) · A300, A305, A234 (code evidence). §N: N1, N2, N5, N6 skipped; N3/N4 marked pass but run on ONE till (no peer), so A19, A20, A22, A24, A160–A164, D9 stay open. Kept open: A280 (prod check), A281 (dev auto-promote), A236/A237. NEW A360 (S2 note: a cashier could not pick an expense type — GET /categories now signed-in only) and A361 (owner: "expense should also capture who recorded it" — migration 109 `expenses.recorded_by`, cloud stamp, web column). Delivered as a patch (the owner commits). |
+| 2026-09-28 (w) | **Checklist v0.6.19 on target: 26 pass / 0 fail / 1 skip** (tester Eugene, T1 0.6.19). CLOSED A355 (H1–H3 + 0.6.18 V2–V4), A358 (H, K, E), A359 (W1–W5), A341 (E1–E4), A349 (P1–P4 — the money review complete). A336 stage 2 verified; stage 3 open. Delivered as a patch (the owner commits). |
+| 2026-09-28 (v) | **Checklists v0.6.17 + v0.6.18 recorded** (`docs/VERIFY-LOG-2026-09-28.md`). CLOSED A348 (U1–U5), A350 (R1 + R3), A351 (G1–G7), A276 (K1; K2 by a web Kitchen station), A279 (F1–F2), A356 (A1), A357 (M1). NEW A358 (History for cashiers — my 0.6.18 regression; standalone sauces off the kitchen; "+ Add type" on the Expenses page) and A359 (refund on the web lists), built for desktop 0.6.19 — delivered as a patch (from now on the owner commits everything; no Claude commits). |
+| 2026-09-28 (u) | **Desktop 0.6.18 + cloud + dashboard + admin portal built.** NEW A355 (P1: History reversal never vanishes; "Void / Refund" → "Refund"; cashiers see none; the manager's own sign-in PIN approves via `lib/approver.ts`; the cloud's message shown), A336 stage 2 (web sales reversed from the till; counted once), A276 FIX BUILT (drinks rule on whole lines, both paths, built-in drinks terms), A279 / A341 FIX BUILT, NEW A356 (GitHub refusal named + last good list; short version picker), NEW A357 (VAT once). Tests: approver 12, void-refund 10, till-extras 10, kitchen-drinks 3, desktop-releases-stale 7, a276 +5, web-sales +3; 13 mutations bite. |
+| 2026-09-28 (t) | **A353 + A354 opened (future builds, not scheduled).** A353: move auth off Supabase — scoped from the tree (web sign-in, the cloud's dual token check and its admin/staff/job calls, 161 `auth.uid()` in 17 migrations; tills, admin portal and technician tokens already independent). A354: the Android tablet app, tracked here from `docs/ANDROID-APP-DESIGN.md`. |
+| 2026-09-28 (s) | **A352 built (cloud).** Email order Resend (primary) → SendGrid (HTTPS) → SMTP; recipients split for SendGrid; every provider refusing throws for the jobs. `tests/mailer-sendgrid.test.mjs` (13, 4 mutations). A54 note: owner sets `RESEND_API_KEY` + `SENDGRID_API_KEY` + `NOTIFY_FROM_EMAIL`. |
+| 2026-09-28 (r) | **A351 built (desktop 0.6.17).** Manager sidebar in groups — Sales, Close, Settings as one page with tabs each; per-tab permissions kept; `lib/managerNav.ts` + `test/manager-nav.test.mjs` (11, 5 mutations). Checklist v0.6.17 (26 checks: §R one pre-release, §U the per-client hold end to end, §G the menu, §M printer-free money checks). |
+| 2026-09-28 (q) | **Checklist v0.6.16 on target: 20 pass / 1 fail / 15 skip** (tester Eugene, T1 0.6.16). CLOSED A345 (O1–O8), A346 (N1–N3), A347 (U5), A342 (K4), A335 (F5). U1 recorded FAIL ("till updated automatic to version 16") — the 0.6.15 → 0.6.16 update was the planned last fleet-wide release (R4), not the hold; U1 (portal shows Held) still to run. Open for skipped checks: A348 (U1–U4), A349 (M1–M5, M7, M8; M6 PASS), A350 (next tag). |
+| 2026-09-27 (j) | **A342 + A343 + A344 built.** Till close closes the web's shift on that till, one count (`siblingDrawers`, foreign-cash `siblings`, desktop /close); terminal-write allowlist + foreign-cash/foreign-orders. Web till "<Branch> Web Till" (`GET /api/shifts/web-till`), web sign-in asks non-openers to join or start their own. Payment method colours (`shared/paymentColours.ts`, buttons + dots + bars). Tests `sibling-drawers` 9, `web-till` 13, `payment-colours` 7, shared-drawer +3; 14 mutations. Desktop v0.6.14; cloud + dashboard deploy. |
+| 2026-09-27 (i) | **Checklist v0.6.13 on target: 31 pass / 0 fail / 8 skip** (tester Max, T1 0.6.13). CLOSED A338 (H1–H4), A340 (J2–J4), A337 (G1–G5), A332 (D5), A333 (E1–E3). Open for skipped checks: A339 (J1), A334 (B3, B6; B5 PASS), A336 (F3, F4, F6), A335 (F5). NEW A342, A343, A344. Docs only. |
+| 2026-09-27 (h) | **Migration 107 applied to prod** (owner's `pg_indexes` output). NEW rollout checklist `docs/checklists/VERIFY-CHECKLIST-v0.6.13.html` + `docs/VERIFY-CHECKLIST-v0.6.13.md` (39 checks: §R rollout, §H sync, §J sign-in/roles, §B shared shift, §F web sales, §G reports, §D/E light mode, §X regression) — checked in Chromium at phone width. NEW A341 (P3, open). Docs only. |
+| 2026-09-27 (g) | **A339 + A340 built.** Offline sign-in answer carries `role` (manager → manager screen). NEW `lib/roleCeiling.ts`; `POST /invite` gains the role + branch guards it never had; overrides ceiling on create/update; no elevated custom-role names; `GET /roles` marks `assignable`, both pickers filter. `staff-role-ceiling` 13/13 (compiled router + real auth over HTTP; red on the old routes), `offline-manager-signin` 8/8 (real IPC handler). Desktop v0.6.13; cloud + dashboard deploy. |
+| 2026-09-27 (f) | **A338 built — one drawer never blocks another's sync.** Migration 107 (unique one-open-per-terminal index → plain index); `POST /api/orders` answers 424 `shift_not_synced` for a drawer not yet on the cloud; till keeps such sales pending and re-queues what a clash parked (shifts, floats, expenses; sales once). `test-migration-107` 7/7 (PGlite, owner's failure reproduced), `drawer-clash-sync` 15/15 (real engine), `drawer-clash` 4/4; 7 mutations. Desktop v0.6.12; PROD-MIGRATE 107 owed. |
+| 2026-09-27 (e) | **A337 built.** Previous shift reports (NEW `shift:history`, picker in Shift report, print any); expenses on the Z-report screen + paper ("− Expenses" line — the reconciliation now adds up — and EXPENSES section; wraps on 58 mm) and NEW manager Expenses tab (`expense:range`); Daily Sales Report colour-coded (7 row styles, figures unchanged, `buildDailySalesWorkbook` split out). Web receipt bundle rebuilt. `shift-reports` 25/25 (real engine, renderer, workbook), 6 mutations. Desktop v0.6.11. |
+| 2026-09-27 (d) | **Cross-sync stage 1 (A336) + A335 + B5 fix.** NEW `POST /api/shifts/:id/foreign-orders` (pure `foreignOrders`); till `webSales.ts` downloads the web's sales on its drawers (cloud id, `origin 'web'`, schema 55, synced, never queued or relayed) every ~20 s / full sync / sign-in; Orders tab "All tills at this branch" from the cloud. A335: void/refund resolve by id or `idempotency_key`. B5: foreign-cash matches `idempotency_key` (6,210 → 4,720). Shift changes push at once; backstop 30 s. Tests `web-sales` 25/25 (real engine + SQLite), `cross-sync` 16/16, `foreign-cash` 17/17; 12 mutations. Shift panel's "Includes the web POS" line counts downloaded + not-yet-downloaded web sales. VERIFY-LOG-2026-09-27. Desktop v0.6.10. |
+| 2026-09-27 (c) | **A332 built.** Light-colours generator: white stays white on fills where it beats slate (action-600, red-600 — computed per fill), light-mode action hover = the theme's 400 fill, themed focus ring moved out of `@layer base` (never compiled). Chromium worst of OFF + 7 themes: hover 2.51 → 6.56, white on action-600 2.51 → 5.36, Delete 3.70 → 4.83. `light-colours` 13/13, 3 more mutations. Dashboard only. |
+| 2026-09-27 (b) | **A333 built — light mode colours.** NEW `scripts/build-light-colours.mjs` → 52 light rules in `index.css` (coloured text → 700/800, pale gray → slate, translucent gray lines); excluded inside a dark web POS and `data-theme-lock="dark"` screens (NEW marker on sign-in / onboarding / password; their white text was 1.10:1 in light mode). Chromium before→after on the owner's screen; `light-colours` test 9/9 (4 mutations); CI `--check` step; back-office colour baseline `index.css` 0 → 14 (light status shades, reviewed). Dashboard only. |
+| 2026-09-27 (a) | **A334 built.** Till adopts the web-opened drawer at an online sign-in (same id, own trading day, pending push; refusals); join notice for another cashier; NEW `POST /api/shifts/:id/foreign-cash` (pure `foreignCash.ts`, close arithmetic, close's auth, read-only); close / Z-report / shift panel / manager report include the web's cash, the sell gate never waits. Tests: desktop `shared-drawer` 16/16 (real shiftService + SQLite), `foreign-cash` 14/14; 8 mutations. CI step. Desktop v0.6.9. |
+| 2026-09-26 (c) | **A273 follow-up (web ↔ desktop shifts).** Tills send `terminal_code` + setup name on enrol/sign-in; cloud writes it every time (setup name wins); picker `tillName()`. NEW `GET /api/shifts/terminals/open` (who + when, no amounts); picker shows open drawers; joining asks no float; sign-in joins the cashier's own open till. Tests `till-name` 12/12 (runs compiled registration), `shift-join` 12/12; 10 mutations. NEW A334 (P1, desktop side — decisions needed). Needs desktop v0.6.8 + cloud + dashboard deploys. |
+| 2026-09-26 (b) | **A329 step 3 built.** 619 back-office uses → fixed SwiftPOS teal by script (610 + 9 by hand); 7 `swift-*` tokens in `index.css`; toggles/ticks `swift-strong`; palette "SwiftPOS Teal" + "Blue" (same 8 colours); favicon teal. Light mode: white labels kept white on teal 700 (was 3.26), focus rule outside `@layer base` (inside, Tailwind drops it). Chromium dark + light all ≥ 4.5 by job. NEW `check-back-office-colour.mjs` (baseline 397) + CI step; NEW `back-office-teal.test.mjs` 18/18, 7 mutations. A263 pin re-pinned. NEW A332 (P2), A333 (P3). Dashboard deploy only. |
+| 2026-09-26 (a) | **A329 step 3 classified (docs only).** Back office re-swept at `bad4492` (106 files; classes, hex/rgb by hue, named strings): 1016 green + blue uses; 619 → teal (592 action, 6 wordmark, 6 backdrop, 15 accent), 394 keep (status/money/data/info), 1 owner decision, 2 dropped; both directions audited (3 + 16 corrected, 3 by hand). Owner: blue primaries move too; admin portal out. `docs/A329-back-office-colour-classification.md`. |
+| 2026-09-25 (f) | **Session close.** A329: v0.6.7 released; step 3 sweep recorded (641 uses, 104 files scanned) with its plan; three web-POS test labels brought in line with A329 (checks unchanged). HANDOFF-2026-09-25. |
+| 2026-09-25 (e) | **SwiftPOS teal (tills + web POS) + A331.** Defaults → Teal family by job; web aliases default teal; wordmark teal; A331 600→700 / 700→800 (white labels ≥ 5.36 all themes). Bench: till + web OFF teal in every context, ON unchanged. Desktop 0.6.7 + dashboard. |
+| 2026-09-25 (d) | **A330.** 11 light-mode rules (light colour at the same opacity), dark untouched; Chromium 11×2 + a real forced hover (before dark / after light); guard test 4/4 caught 2 classes the first sweep missed. Dashboard deploy only. |
+| 2026-09-25 (c) | **Decisions + closure.** A328 CLOSED (owner screenshots: Blossom, Ocean after reset, OFF). 4b-2 decided (back office stays SwiftPOS-branded). A329 opened: SwiftPOS green → teal (Teal family; logo #0d9488 for accents; M-Pesa distance 9.6 → 19.2). A330 opened (tip panel, light mode). Docs only. |
+| 2026-09-25 (b) | **A328 part 2.** Inline-colour sweep (hex/rgba/blue; all 35 files listed): 94 themed via per-use fallbacks; OFF identical in 4 contexts; 7 themes ≥ 4.5 everywhere; gate sees hex; test 21/21. Dashboard deploy only. |
+| 2026-09-25 (a) | **4b-1 + closures.** A328: 81 web-POS/component greens classified (67 action), applied by script; themes OFF identical in dark+light; labels/links ≥ 4.5 for 7 themes × 2 modes; gate + test 13/13, 4 mutations bite. A326 + A327 CLOSED (owner's screenshots). Dashboard deploy only. |
+| 2026-09-24 (j) | **A327 dark-mode fix.** Selected theme tile was the faintest in dark mode (light-first grey ring on a dark-first dashboard). Now the theme's own colour + ✓; Chromium dark + light 8/8, original flow 15/15; test 16/16. |
+| 2026-09-24 (i) | **Phase 2 slice 4.** A327: picker/preview/save on the real BrandingTab in Chromium 15/15 with requests captured; test 13/13, 4 mutations bite; run-all 120/120; 26 desktop tests pass. A326 CLOSED (owner's 0.6.6 screenshots). Dashboard deploy only. |
+| 2026-09-24 (h) | **CI fix for slice 3.** #394 failed at "Desktop catalogue refresh signal": a stale pin on `PinPage.tsx` (the line A326 changed). Re-pinned to its intent (18/18, 2 mutations bite). All 26 `apps/desktop/test` files run on the tip — only this one had failed. v0.6.6 not tagged from the red commit. |
+| 2026-09-24 (f) | **Phase 2 slice 3.** A326: 222 greens classified (150 action · 4 brand · 68 stay), applied by script; themes OFF pixel-identical in Chromium (23/23); test 19/19, 5 mutations bite; `check-till-green` ratchet. A325 CLOSED (owner: ocean / null). Needs desktop 0.6.6. Issued as -g: -f's test spawned `node_modules/.bin/tailwindcss` (a `.cmd` on Windows) and stopped the owner's chain before commit; now runs Tailwind's JS entry with `process.execPath`. |
+| 2026-09-24 (e) | **Phase 2 slice 2.** A325: migration 106 + test (8/8, runner 29/29); cloud rules + routes (17/17); till real-localDb test (14/14) incl. the schema-53 upgrade keeping colour/logo; 6 mutations bite; admin toggle; catalogue-version watches feature_flags. A324 CLOSED. Needs migration 106, cloud deploy, desktop 0.6.5, admin deploy. |
+| 2026-09-24 (d) | **Phase 2 slice 1.** A323 tracker opened with the approved decisions and the slice plan; A324 `themes.ts` (3 synced copies) + `tests/themes-registry.test.mjs` 27/27, 5 mutations bite, checker refuses the rejected families; run-all 118/118. |
+| 2026-09-24 (c) | **Phase 2 proposal revised + Render clarified.** Two-layer model (brand colour for identity, curated action colour for buttons); 7 themes (Teal, Blossom after a till check); brand table shows yellow/red/green/amber visible as brands but unsafe as buttons (yellow ΔE 1.8 from warning); complementary pairing. Owner: two Render services — `swiftpos-20c2` is development (so `env: development` is correct); production separate; dev→main merge after Phase 2 (needs its own checklist: prod DB/migrations, env vars, the cloud URL tills use). Closes the 2026-09-23 evening handoff's next-session item 3. |
+| 2026-09-24 (b) | **A322 CLOSED on target.** Printing › Printers preview shows "B Foods" + neutral sample; receipt placeholder neutral; template has "House Sauce", no reference names. v0.6.4: tag on `5b3ce9c`, Release desktop #20 green, running on mamangina. |
+| 2026-09-24 (a) | **A322 FIX BUILT + desktop v0.6.4 row.** Real printWorker test 9/9 (3 mutations bite; tip prints "Buy Goods: 3423273"); new gate (fails on the tip, self-test); artefacts regenerated under the A314 gate; run-all 117/117. Renames/removals under rule 13 with no deploy window open (assumed from "proceed"). |
+| 2026-09-23 (y) | **Session close.** Evening handoff (13 deliveries -l…-x, every push landed, CI #374→#387 green; 14 closed, A322 open; next: A322, then Phase 2 decisions). `docs/WORKING-METHOD.md`: the protocol this session ran on, written down at the owner's request so future sessions follow it unchanged; it sits on rules 1–24 and records rule 18's retirement. |
+| 2026-09-23 (x) | **Branding Phase 1 closed.** 0.6.3 target run (Eugene, mamangina): A2 PASS, B1 PASS, A5 PASS, A315 PASS, sync status clean. CLOSED: A295, A278, A308, A315, A319, A321. Tree row: v0.6.3 running on the till. Timings (seconds) and the §6 regression line were not recorded. A278 was absent from the Counts row (pre-existing omission; the gate counts the body). |
+| 2026-09-23 (w) | **Phase 2 theme proposal + A322.** `docs/PROPOSAL-A295-phase2-themes.html`: live-computed vetting of 10 colour families against the till's real surfaces and status colours; 5 proposed. Rendered in Chromium: no errors, no sideways scroll at 390 px, no client names. A322 opened: client-visible reference-business names in the test print, the receipt-text placeholder and the import template (33 files mention them in total; history left as written). |
+| 2026-09-23 (v) | **Desktop v0.6.3.** Tree row → v0.6.3, to be committed WITH the owner's `npm version 0.6.3 --no-git-tag-version` (package.json + package-lock.json — not in the zip, rule 22). Tag `v0.6.3` after CI is green on that commit → Release desktop. Ships A321 + A315 till half. `LOCAL_SCHEMA_VERSION` stays 53 (no local-DB change since 0.6.2). |
+| 2026-09-23 (u) | **A321 FIX BUILT.** One signal point in syncAll for all eight pull paths → every window; PinPage re-reads branding; 20-s check: proactive renew, 401 refresh+retry, failures recorded. New desktop test 18/18 (real engine, genuine pull), 5 mutations bite; A278's source test updated; run-all 117/117. Needs desktop 0.6.3 (with A315's till half). |
+| 2026-09-23 (t) | **Retest recorded; 7 closed on target.** A311 A312 A313 A316 A317 A318 A320 CLOSED (mamangina). A315 web half + paper verified, till half owed (0.6.3). A308/A319 wait on A2/A5 (not run). A278 stays open: B1's price arrived only after a sign-in/out → **A321** opened with the source diagnosis (one signal path of eight; silent 20-s failures; lock screen never listens; branch_prices has no trigger). A295 item 4 closed; A295 open on items 5 and 7. |
+| 2026-09-23 (s) | **Docs only — HTML retest checklist.** `docs/checklists/verify-branding-phase1.html` (was an untracked tester file; now committed like the other checklists). 20 items A1–G5 from the -r markdown; Pass/Fail/Skip; record prompts on A1/A5/B1/G2; a Fail needs a note; progress kept in the browser; output in the first run's `A1: PASS … Summary … Failed:` format. Driven in headless Chromium: marks/notes survive reload, missing-note flag, generated text checked, no page errors, no sideways scroll at 390 px, dark mode checked. |
+| 2026-09-23 (r) | **Docs only — retest checklist.** `docs/VERIFY-BRANDING-PHASE1.md`: A5's second example expected `#777777` to be rejected, but the till's rule (and, since -p, the web's) accepts it with black text — a correct system would have been marked FAIL; now `#1e293b`. A1 records whether "Saved." appeared (A316); B1 uses the Edit form on an empty-description product and records it (A317); F5 note on the web's single thank-you; new §G (A318, A317 web+till, A320, A315 web + paper); results template. Till path checked in source (Manager › Menu). |
+| 2026-09-23 (q) | **A320 FIX BUILT.** productName = trim → min(1) → max(120) in both product schemas. product-save-payloads 16 → 22 on the real middleware; 3 mutations bite (incl. min-before-trim). run-all 117/117, ratchet held. Branches/staff siblings listed on A320. Delivery -q. |
+| 2026-09-23 (p) | **A318 + A319 FIX BUILT.** Both reproduced in headless Chromium on the REAL components before the fix and re-measured after (bench harness, not shipped). New tests products-table-actions 7/7 and branding-web-contrast 11/11, all mutation-checked; branding-web-page 26/26 with its A308 pin updated. check-shared-sync 7 copies agree (contrast.ts ×4). run-all 117/117, ratchet held, dashboard build, print-resilience 55/0, desktop main+renderer tsc 0, desktop contrast 17/17. 11 sibling tables with the same clipping wrapper listed on A318, not fixed. Delivery -p. |
+| 2026-09-23 (o) | **Builder Windows fix (regression in -n).** -n landed (`b646b51`, 9/9 checksums, gates 0, CI #377 green) but the owner's `build-escpos-renderer.mjs --check` failed: the quoted `"npx.cmd"` makes cmd.exe resolve `%~dp0` to the current folder, so npx looked for npm inside the repo. My Linux sim used a sh stand-in for npx.cmd and could not see cmd.exe's rules (rule 9). -o builds -m's exact line (proven string-equal) as one string. Still owed: the owner's Windows run. The commit went through despite the failure because the pasted block had no `&&` — command blocks now chain. |
+| 2026-09-23 (n) | **A316 + A317 FIX BUILT; A314 CLOSED; A318/A319/A320 OPEN; VERIFY-BRANDING-PHASE1 results on A308/A278.** raster.test 34→40, new web-receipt-logo-browser 6/6 and product-save-payloads 16/16, all mutation-checked (two blind first drafts caught). run-all 115/115, ratchet held, dashboard build, print-resilience 55/0, desktop main + renderer tsc 0; new tests + printing suite also on Node 24.21. DEP0190: old builder emits it on Node 24, new does not (with --throw-deprecation). Delivery -n. |
+| 2026-09-23 (m) | **Delivery -l re-issued as -m.** `7a66044` committed only `MANIFEST-2026-09-23-l.md`; A314/A315 code, artefacts, gates and register were not in the tree (CI #375 green because nothing new ran). -m = the same 13 files + `build-escpos-renderer.mjs` spawning `npx.cmd` through a quoted shell on win32 (owner's Windows run: `spawnSync npx ENOENT`). Windows branch exercised on Linux via a shim, incl. a spaced temp path; still owed: one run on the owner's Windows box. |
+| 2026-09-23 (l) | **A315 FIX BUILT (no duplicate closing thank-you) · A314 FIX BUILT (artefacts refreshed + drift gates: `npm test` for SAMPLE/out bins, CI for the web bundle).** receipt-footer 11→20, 5 mutations bite; gate 7 mutations bite, green on CRLF; shipped web bundle and desktop test-print executed before/after (x2 → x1). run-all 113/113, ratchet held, dashboard build, print-resilience 55/0, desktop main + renderer tsc 0. Desktop bytes change → next bump. Delivery -l. |
+| 2026-09-23 | **v0.6.2 released** (re-run after a GitHub 500 on asset upload; owner-confirmed). CI #373 green after -j. Session handoff `HANDOFF-2026-09-23.md`. Delivery -k. |
+| 2026-09-23 | **Tree row corrected** (desktop v0.6.2, schema 53, migration 105 applied to prod with verify-db-schema PASS). CI on `dev` had gone red at `check-register-consistency` on the v0.6.2 bump commit `ea8416a` because the bump shipped without this row — lead-dev error (the bump instructions omitted the register edit). Gate untouched. Delivery -j. |
+| 2026-09-22 (late) | **A310 CLOSED on paper (XP-80, RAW spool) · A315 OPENED (closing block duplicates owner footer line).** `VERIFY-BRANDING-PHASE1.md` gains §F (receipt-logo till/browser checks). Session handoff written. Counts unchanged (one closed, one opened, both P3). Delivery -i. |
+| 2026-09-22 | **A313 FIX BUILT (receipt logo slice 4, last: web page toggle + receipt preview; web receipts carry the logo; bundle rebuilt + reproducible).** 26/26 with executable bundle checks, 5 mutations bite; no-logo web bytes identical; Vite build green; run-all 113/113. A310–A313 all FIX BUILT — receipt logo code-complete, target checks owed. A-P3 23→24. Delivery -h. |
+| 2026-09-22 | **A312 FIX BUILT (receipt logo slice 3: till prints it when the toggle is on; tech feed generates the raster + toggle + mono preview).** Real guard + real INSERT executed, 5 mutations bite; run-all 113/113. Paper bins delivered. A-P3 22→23. Delivery -g. |
+| 2026-09-22 | **A311 FIX BUILT (receipt logo slice 2: migration 105 toggle, `logo_receipt` served + pulled, schema 53).** Real upsert SQL executed in test, 4 mutations bite (one rule-24 catch fixed). All schema gates + run-all 113/113. A-P3 21→22. PROD-MIGRATE 105 owed. Delivery -f. |
+| 2026-09-22 | **A310 FIX BUILT (receipt logo slice 1: `shared/printing` mono raster + `GS v 0`) · A314 OPENED (stale SAMPLE-OUTPUT/out bins).** 34/34 mutation-checked; no-logo bytes identical before/after; desktop main tsc 0. A-P3 19→21. Delivery -e. |
+| 2026-09-22 | **A306 hardened (main-side `isManager()` gate on `update:installNow`) · A159 flag documented in `.env.example` + `render.yaml`.** Delivery -d. Guard 13→16, mutation-checked; run-all 113/113; desktop tsc 0. Counts unchanged (both stay FIX BUILT/OPEN pending target). |
+| 2026-09-22 | **A309 CLOSED · A295 OPENED (Phase 1 tracker, P1) · A237 re-graded FIX BUILT.** Docs-only housekeeping after the 2026-09-22 repo review. CI on `dev` was red #360–#362 (doc-refs, fixed in `-a`). Branding Phase 1 measured against SCOPE-A295 §10: items 1–3, 6 done on target; item 4 (receipt logo) and the receipt preview NOT built; receipt logo stays in Phase 1 by lead-dev decision. Node print bridge retired on tree evidence. Delivery `docs/MANIFEST-2026-09-22-b.md`. |
+| 2026-09-20 | **A295 Slice 1c — branding read path (desktop).** Local `branding` table in `localDb.ts` (business_id / accent_hex / logo_png / logo_receipt / synced_at; additive, ungated, not cleared by clearCatalogue) + `getBranding()` (fail-soft → null). New `branding:get` IPC: main handler + preload bridge + posApi type + ipcSchemas NO_PAYLOAD. `PinPage` seam now reads `posApi.branding.get()` on mount → resolveBranding (fail-soft to the SwiftPOS default). The table is EMPTY until the cloud/sync slice fills it, so the lock screen still renders the teal default — this is the plumbing that lets a real client accent/logo appear once that slice lands. BENCH: all gates green (ipc-parity 150/150, ipc-validation 150/150, table-usage, shared-sync, register), esbuild-clean on all 6 touched files. NOT verified: desktop tsc/build + localDb-open + IPC round-trip on target (rule 16) — run build:all + test:desktop + launch before relying on it. A295 stays OPEN (P1 read path built; cloud fill + till/manager + portal upload + receipt raster ahead). |
+| 2026-09-20 | **A295 — desktop lock-screen branding BUILT (P1, part).** `contrast.ts` accent guard (pure WCAG luminance/ratio + `resolveBranding`: black/white button text by contrast + reject-illegible-accent → SwiftPOS-default fallback), 3 gate-synced copies (`shared/` + desktop `src/shared` + `src/main` so `dist/main` is testable), `contrast.test.mjs` (17, mutation-checked). `PinPage` reflowed to a fixed 720×500 two-column card; accent on divider/active-dot/Enter only; logo on a white logo-card (SwiftPOS SP-badge default) with the tech long-press moved onto it; cashier branch-change removed (§2). Default accent set to **teal #0d9488** (was green) + matching default logo. Client accent/logo NOT wired yet — the PinPage branding source is a null seam → renders the SwiftPOS default. VERIFIED ON TARGET (Windows / Electron 43): `build:all` + full `test:desktop` green (contrast 17/17), all gates green (shared-sync / test-reg / ipc-parity / table-usage / register), app runs. Scope: lock screen only — `branding` table + `branding:get` reader (Slice 1c), till/manager screens, cloud `business_branding` + server CRUD + portal upload (validation spec in `docs/A295-SLICE1C-UPLOAD-VALIDATION.md`), and the receipt mono raster still ahead. A295 stays OPEN (P1 part built). Owner-applied on branch `a295-slice1a`. |
+| 2026-09-20 | **Tree line trued up (no finding).** migrations →102→**→103** — 103 (`reconcile_a280_columns`, A280) has been in the tree; the Tree-line count lagged (the Tree-line gate checks only the desktop version, so the migration number drifted unchecked). Docs-only; no finding opened or closed; `check-register-consistency` green. |
+| 2026-09-19 | **A295 spec refined** (branding, from a 2 real-client-logo review — Taste Town, KUDO). Added to SCOPE-A295-branding.md: the curated 8-accent palette (contrast-vetted), an ADAPTIVE button-text rule (black/white by accent luminance, so a bright brand colour like yellow is usable legibly), logo-on-a-chip for the dark lock screen + a mandatory receipt preview for mono, and the two clients as worked examples. Still OPEN (spec only; build after prod provisioning). |
+| 2026-09-19 | **A300 rule-21 rename + README count.** getServerUrl() -> getCloudUrl() (function + 20 call sites across 5 desktop files; server_url column kept per rule 21, commented). README "77 migrations" corrected to 99. Desktop -> 0.5.49. NOT bench-verified: desktop tsc/build (CI does not type-check desktop) — run build:all before release. |
+| 2026-09-19 | **A280 prod verify.** verify-db-schema vs prod: prod is behind on migrations (97/98/101/102 unapplied) plus the 6-col 58/60 skip (103). All prod-missing items map to unapplied migrations; no new skip-gap. fuel_tanks/parking_sessions empty on prod -> 103 safe. Closes after a dev->main deploy applies 97-103 and re-verify is green. Still FIX BUILT. |
+| 2026-09-19 | **A280 -> FIX BUILT.** Reproduced the rebuild failure (pglite replay). Migration 103 adds the 6 columns skipped by 58/60 (idempotent ADD COLUMN IF NOT EXISTS; category_stations backfilled then SET NOT NULL). Removed stale ingredients.current_stock from schema-index (98 dropped it). schema_migration_runs is a migrate.mjs artifact, not drift. Bench-verified: replay now matches the corrected index for all 7. Prod verify pending (rule 16). No count change (FIX BUILT still open). |
+| 2026-09-19 | **A281 -> FIX BUILT.** Corrected the note: TWO Vercel projects (prod tracks main, dev tracks dev); real production was never split — the friction was the dev project needing a manual promote. Part A resolved by owner: dev project now tracks `dev` (auto-deploy). Closes on one dev-push confirmation. |
+| 2026-09-19 | **A281 Part B — web build stamp.** vite define injects commit SHA/branch/time (Vercel git env); logged on boot + shown on the login footer. Web-only (Vercel), no desktop version bump. Part A (branch alignment) is an infra decision, pending owner. A281 stays OPEN. |
+| 2026-09-18 | **A19 heading corrected FIX BUILT -> OPEN.** The heading overclaimed: code verified unbuilt (cloud enqueue unconditional at syncEngine.ts:2041; node stamps peer rows PEER_SYNC_STATUS to keep them out of its cloud push). Matches the 08-23 body note. Still P1 open (no count change). Docs-only (rule 18). |
+| 2026-09-18 | **A299 logging — capture all errors + event summaries in swiftpos.log.** Main console.error/warn routed to the file (installConsoleCapture); renderer forwarder over a send/on channel; event summaries at sale/void/refund/shift/config (id/total/method/count + changed keys only — no line items, customer data, or config values); startup build stamp logged; rotation kept at 1MB (tested design). Ships 0.5.47. Open P3 13->14. Desktop code, bench-authored (rule 9). |
+| 2026-09-18 | **D3, D4, D18 CLOSED — owner-confirmed on target.** D3 auto-update: tills pulled 0.5.45 + 0.5.46 unattended via electron-updater. D4 enrolment: device is enrolled and running as a node (device_role=node, terminal_code=T1). D18 tech-token paste: owner pasted a token and used the Tech DB console to run the A297 diagnostics — full paste + tech session end to end. Open D-P1 2→0, D-P2 1→0. Docs-only (rule 18). |
+| 2026-09-18 | **Register/reality sweep (docs + one gate).** Reconciled the register to what actually ships after the A296–A298 desktop work: **A297 CLOSED** (Overview IPC-guard fix confirmed on the till, 0.5.45); **D13 CLOSED** (heading lagged — A88 built the server grace window on 08-15); **D10** line count corrected 1,639→2,214; **Tree line** updated (desktop v0.5.38→**v0.5.46**, migrations →94→**→102**, last-pushed→`f89b8ff`). Added a **Tree-line check** to `check-register-consistency` (the desktop version in the \| Tree \| row must equal apps/desktop/package.json — the field that drifted silently because the count check only reads \| Open \|; mutation-checked). Open P1 19→18. D3/D4/D18 left OPEN pending owner on-till re-confirm. `check-register-consistency` + `check-doc-refs` + `check-root-clean` green. Docs + gate only, no desktop change (rule 18). |
 | 2026-08-28 | **A169 VERIFIED CLOSED + A181 T2 recovery confirmed (live cloud data).** Cloud rows show one till (`55e8dd9f`) crediting two different cashiers — `T001--6` to Bill, the rest to Eugene — proving per-order cashier attribution (not till, not owner); `credited_to`+`device_id` per row is the owner’s "which cashier, which till" ask. A181’s recovered `T2--6`/`T2--7` (old till `4396d282`) confirmed present, closing its last residual thread. Open P1 19→18. Docs-only (rule 18). |
 | 2026-08-28 | **Four live P0s VERIFIED CLOSED on a real Windows till (v0.5.38 · win32).** A181/A183 — online sale `T001--1` reached the cloud DSR and offline-accrued sales drained to 0 on reconnect with no order-number collision (migration 94 per-device index live in prod). A167 — offline PIN sign-in, no NULL-token crash. A152 — on a real Render 503 (suspended service) offline auth fell through AND a wrong PIN was still rejected. A177 — pending queue drains on reconnect. A17 stays OPEN (build task). Open P0 5→1, P1 20→19. Non-blocking: A183 repo test + its `-p` delivery manifest still absent (rule 14); A181 historical `T2--%` recovery query un-run. Docs-only, no zip (rule 18). |
 | 2026-08-20 | **A139 built (server-side; desktop unchanged).** Per-branch receipt header/footer + 24h overrides for franchises. Migration 91 `branch_settings` (PGlite-verified); `/pos/init` overlays this branch's overrides onto the business default (branch wins, absent→inherit) — the till already sends `?branch_id` so no desktop change; `GET/POST /api/branches/:id/settings` (upsert/clear) with tenant guard; per-branch editor on the branch detail page. Server+dashboard tsc/build, drift + route gates green. Stays OPEN: **NEEDS PROD-MIGRATE 90→91** + one till confirm. |
@@ -6517,3 +10802,12 @@ channel exists, not that its arguments agree. That is the next gate worth buildi
 | 2026-08-09 | Owner's design clarification: node is branch source of truth, sole cloud uplink, may stay offline forever and may authorise. A17/A19 resolved to a design; `PHASE5-NODE-AUTHORITY.md` written for approval. Reverses D16's override-PIN decision (§5) and makes D4/D14 prerequisites (§7). |
 | 2026-08-09 | Batch 1 (server). A14 Beryl root cause found and fixed, A15 error classification, A16 CI gap, A2 closed. Beryl post-commit hypothesis ruled out by idempotency deduction. 17 new tests, mutation-checked. |
 | 2026-08-08 (eve) | D2, D12, D13 (client half), D16 offline sign-in, A1 packaging closed. Migration 46 applied. 78 desktop tests added, green on Windows/Node 20 with SQLite suites on the real Electron ABI. Working rules moved into the handoff §0. |
+
+A284 → FIX BUILT — extraMetadata.productName per flavour so app.getName()/userData differ (dev → %APPDATA%\SwiftPOS Dev, prod → %APPDATA%\SwiftPOS); ends shared swiftpos.db/log/token/backups. Dev re-enrols once on the new build. Awaiting rebuild to confirm folders split on-target.
+
+A283 → FIX BUILT — build/installer.nsh (branch-node firewall rule, TCP 4100-4103 private) committed via git add -f and un-ignored; nsis.include restored. Reverses the A282 removal now that the file ships. Awaiting a green release build WITH the include to confirm CI finds the file.
+
+A291 → FIX BUILT — instant web→till propagation: server /api/pos/catalogue-version + desktop 20s pullIfCatalogueChanged poll (pulls only on change); 10-min floor retained. v1 covers trigger-backed tables; v2 triggers pending. Awaiting end-to-end on 0.5.43.
+A293 → FIX BUILT — Overview showed 0 despite correct data: getSalesSummary rejected when a sibling sub-query (payments/hourly) threw on a migrated schema. Isolated payments + hourly (row always returns); getTopProducts fail-soft. Awaiting on-target confirm on 0.5.43.
+A289 → REVISED — window-title cloud host now a pure flavour gate: PROD never shows the host, DEV always does. Removed PROD_CLOUD_HOSTS.
+A295 → OPEN (P1 lock screen BUILT on target — teal #0d9488 default accent + reflowed branded PinPage, contrast guard tested; client accent/logo not wired yet) — Client branding P1 (lock screen ✓ built · receipt logo pending) + P2 (curated themes, branch overrides, footer). Next: branding table + branding:get reader (Slice 1c) to feed real client branding through the PinPage seam; then till/manager screens, cloud business_branding + server CRUD + portal/desktop logo upload (validation spec: docs/A295-SLICE1C-UPLOAD-VALIDATION.md), and the receipt mono raster. Rides A291. Spec: docs/SCOPE-A295-branding.md.

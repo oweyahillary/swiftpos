@@ -45,6 +45,7 @@ import { dialog, BrowserWindow } from 'electron';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig } from './deviceConfig';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
+import { refundedSql, vatKeptSql, ctlKeptSql } from './orderMoney';
 
 const FONT = 'Arial';
 const MONEY = '#,##0.00;(#,##0.00);-';
@@ -123,9 +124,11 @@ function readTotals(from: string, to: string, deviceId: string | null): Totals {
   const r = db.prepare(`
     SELECT COUNT(*) AS bills,
            COALESCE(SUM(total), 0)                        AS gross_before_refunds,
-           COALESCE(SUM(COALESCE(refunded_amount, 0)), 0) AS refunded,
-           COALESCE(SUM(vat_amount), 0)                   AS vat,
-           COALESCE(SUM(ctl_amount), 0)                   AS ctl
+           COALESCE(SUM(${refundedSql()}), 0)             AS refunded,
+           -- A349: VAT and CTL reduced by the refunded share (orderMoney.ts — the cloud's orderTax rule). At full
+           -- value, a fully refunded bill still counted its tax and pushed net sales below zero.
+           COALESCE(SUM(${vatKeptSql()}), 0)              AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0)              AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
            ${scopeClause(deviceId)}
@@ -169,9 +172,9 @@ function readTotals(from: string, to: string, deviceId: string | null): Totals {
 function dineInNet(from: string, to: string, deviceId: string | null): number {
   const db = getLocalDb();
   const r = db.prepare(`
-    SELECT COALESCE(SUM(total), 0) AS gross,
-           COALESCE(SUM(vat_amount), 0) AS vat,
-           COALESCE(SUM(ctl_amount), 0) AS ctl
+    SELECT COALESCE(SUM(total - ${refundedSql()}), 0) AS gross,
+           COALESCE(SUM(${vatKeptSql()}), 0) AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0) AS ctl
       FROM orders
      WHERE status = 'completed' AND order_type = 'dine_in'
        AND created_at >= ? AND created_at <= ?
@@ -198,9 +201,10 @@ function readHourly(from: string, to: string, deviceId: string | null) {
   return db.prepare(`
     SELECT strftime('%H', created_at, 'localtime') AS hour,
            COUNT(*) AS bills,
-           COALESCE(SUM(total), 0) AS gross,
-           COALESCE(SUM(vat_amount), 0) AS vat,
-           COALESCE(SUM(ctl_amount), 0) AS ctl
+           -- A349: net of refunds, so the hours add up to the day's figure above them.
+           COALESCE(SUM(total - ${refundedSql()}), 0) AS gross,
+           COALESCE(SUM(${vatKeptSql()}), 0) AS vat,
+           COALESCE(SUM(${ctlKeptSql()}), 0) AS ctl
       FROM orders
      WHERE status = 'completed' AND created_at >= ? AND created_at <= ?
            ${scopeClause(deviceId)}
@@ -279,10 +283,58 @@ function readByTerminal(from: string, to: string): TerminalLine[] {
   }));
 }
 
+/**
+ * 0.6.11 — colour, for reading at a glance (owner: "color code maybe headers, total, important figures").
+ * The FIGURES and their order are untouched; only fills and fonts are added. A few meanings, one colour each,
+ * so the colour carries information rather than decoration:
+ *   title    the business name — white on SwiftPOS teal
+ *   section  each section's name — white on dark teal
+ *   head     column headings — dark teal on pale teal, underlined
+ *   total    a section's total — bold on light gray, ruled above
+ *   key      the day's headline figures (Total Gross, collections Total) — dark amber on pale amber
+ *   warn     anything that does not add up or may be incomplete — dark red on pale red
+ *   meta     generated-on / provenance lines — gray
+ * Every pairing is at least 7:1, so it still reads printed or photocopied in black and white.
+ */
+export type RowStyle = 'title' | 'section' | 'head' | 'total' | 'key' | 'warn' | 'meta';
+export const ROW_STYLES: Record<RowStyle, { font: string; fill?: string; size?: number; bold?: boolean; ruleAbove?: boolean; ruleBelow?: boolean }> = {
+  title:   { font: 'FFFFFFFF', fill: 'FF0F766E', size: 14, bold: true },
+  section: { font: 'FFFFFFFF', fill: 'FF134E4A', size: 11, bold: true },
+  head:    { font: 'FF134E4A', fill: 'FFCCFBF1', bold: true, ruleBelow: true },
+  total:   { font: 'FF111827', fill: 'FFF3F4F6', bold: true, ruleAbove: true },
+  key:     { font: 'FF78350F', fill: 'FFFEF3C7', bold: true, ruleAbove: true },
+  warn:    { font: 'FF991B1B', fill: 'FFFEE2E2', bold: true },
+  meta:    { font: 'FF4B5563', size: 9 },
+};
+/** Columns a styled row spans — the sheet's width, so a band reads as one row, not a lonely cell. */
+const STYLE_SPAN = 5;
+
 export async function exportDailySalesReport(
   req: DailyReportRequest,
 ): Promise<{ ok: boolean; path?: string; error?: string }> {
   try {
+    const { wb, suggested } = await buildDailySalesWorkbook(req);
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const res = await dialog.showSaveDialog(win!, {
+      title: 'Save Daily Sales Report',
+      defaultPath: suggested,
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+    if (res.canceled || !res.filePath) return { ok: false };
+
+    const target = res.filePath.endsWith('.xlsx') ? res.filePath : `${res.filePath}.xlsx`;
+    await wb.xlsx.writeFile(target);
+    return { ok: true, path: target };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? 'Could not write the report' };
+  }
+}
+
+/** The workbook itself — separated from the save dialog (0.6.11) so a test can read what it contains. */
+export async function buildDailySalesWorkbook(
+  req: DailyReportRequest,
+): Promise<{ wb: ExcelJS.Workbook; suggested: string }> {
+  {
     const range = resolveRange(req.preset ?? 'today', req.from, req.to);
     const scope = getReportScope();
     const db = getLocalDb();
@@ -323,7 +375,7 @@ export async function exportDailySalesReport(
     ];
 
     let row = 1;
-    const put = (values: unknown[], opts: { bold?: boolean; fmt?: string } = {}) => {
+    const put = (values: unknown[], opts: { bold?: boolean; fmt?: string; style?: RowStyle } = {}) => {
       const r = ws.getRow(row++);
       values.forEach((v, i) => {
         const c = r.getCell(i + 1);
@@ -331,16 +383,23 @@ export async function exportDailySalesReport(
         c.font = { name: FONT, size: 10, bold: !!opts.bold };
         if (typeof v === 'number' && opts.fmt) c.numFmt = opts.fmt;
       });
+      if (opts.style) {
+        const st = ROW_STYLES[opts.style];
+        const thin = { style: 'thin' as const, color: { argb: st.font } };
+        for (let i = 1; i <= STYLE_SPAN; i++) {
+          const c = r.getCell(i);
+          c.font = { name: FONT, size: st.size ?? 10, bold: st.bold ?? !!opts.bold, color: { argb: st.font } };
+          if (st.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: st.fill } };
+          if (st.ruleAbove || st.ruleBelow) c.border = { ...(st.ruleAbove ? { top: thin } : {}), ...(st.ruleBelow ? { bottom: thin } : {}) };
+        }
+      }
       return r;
     };
     const blank = () => { row++; };
-    const section = (title: string) => {
-      const r = put([title], { bold: true });
-      r.getCell(1).font = { name: FONT, size: 11, bold: true };
-    };
+    const section = (title: string) => { put([title], { style: 'section' }); };
 
     // ── Header ───────────────────────────────────────────────────────────────
-    put([session?.business_name ?? 'SwiftPOS'], { bold: true });
+    put([session?.business_name ?? 'SwiftPOS'], { style: 'title' });
     put([cfg?.terminal_code ?? 'NA']);
     // WHICH TERMINALS. Distinct from scope.scopeLabel below, which describes
     // where the DATA came from (this till / synced from the cloud). Both matter
@@ -348,9 +407,9 @@ export async function exportDailySalesReport(
     // stale, or single-till and current.
     put([`Terminals: ${terminalScope}`], { bold: true });
     put([`Daily_Sales_Report_Detail(${range.label})`]);
-    put([`Generated On: ${new Date().toLocaleString('en-KE')}`]);
+    put([`Generated On: ${new Date().toLocaleString('en-KE')}`], { style: 'meta' });
     // Provenance, in the file. Not decoration — see the note at the top.
-    put([`Covers: ${scope.scopeLabel}`]);
+    put([`Covers: ${scope.scopeLabel}`], { style: 'meta' });
     blank();
 
     // ── Per-terminal breakdown ───────────────────────────────────────────────
@@ -360,7 +419,7 @@ export async function exportDailySalesReport(
     // difference.
     if (wantBranch && byTerminal.length) {
       section('By Terminal');
-      put(['Terminal', 'Bills', 'Gross', 'Last order'], { bold: true });
+      put(['Terminal', 'Bills', 'Gross', 'Last order'], { style: 'head' });
       for (const line of byTerminal) {
         put([
           line.terminalCode ?? line.deviceId ?? 'Unattributed',
@@ -369,11 +428,11 @@ export async function exportDailySalesReport(
           line.lastSeen ? new Date(line.lastSeen).toLocaleString('en-KE') : '—',
         ]);
       }
-      put(['TOTAL', byTerminal.reduce((a, x) => a + x.bills, 0), terminalSum, ''], { bold: true });
+      put(['TOTAL', byTerminal.reduce((a, x) => a + x.bills, 0), terminalSum, ''], { style: 'total' });
 
       if (!footsOk) {
         // Do not print a total that does not foot without saying so.
-        put([`DISCREPANCY: terminal figures sum to ${terminalSum.toFixed(2)} against a branch total of ${t.grossSales.toFixed(2)}. Do not rely on this report until it is explained.`], { bold: true });
+        put([`DISCREPANCY: terminal figures sum to ${terminalSum.toFixed(2)} against a branch total of ${t.grossSales.toFixed(2)}. Do not rely on this report until it is explained.`], { style: 'warn' });
       }
 
       // A branch report is only as complete as the peers that have reached this
@@ -381,14 +440,14 @@ export async function exportDailySalesReport(
       const stale = byTerminal.filter(x =>
         x.lastSeen && (Date.now() - new Date(x.lastSeen).getTime()) > 2 * 60 * 60 * 1000);
       for (const x of stale) {
-        put([`${x.terminalCode ?? x.deviceId}: nothing since ${new Date(x.lastSeen!).toLocaleString('en-KE')} — figures may be incomplete.`]);
+        put([`${x.terminalCode ?? x.deviceId}: nothing since ${new Date(x.lastSeen!).toLocaleString('en-KE')} — figures may be incomplete.`], { style: 'warn' });
       }
       blank();
     }
 
     // ── Daily Sales Report ───────────────────────────────────────────────────
     section('Daily Sales Report');
-    put(['Hour', 'Bills', 'Sale Type', 'Amount', 'Gross Amount'], { bold: true });
+    put(['Hour', 'Bills', 'Sale Type', 'Amount', 'Gross Amount'], { style: 'head' });
     for (const h of hourly) {
       const gross = Number(h.gross);
       put([`${h.hour}:00`, Number(h.bills), 'Sale',
@@ -404,14 +463,14 @@ export async function exportDailySalesReport(
       `Total Covers (${t.covers ?? 'not recorded'}) / Total Bills (${t.bills})`,
       apc === null ? 'Total APC (n/a)' : `Total APC (${apc.toFixed(2)})`,
       'Total Sales', money2(t.netSales), money2(t.grossSales),
-    ], { bold: true, fmt: MONEY });
+    ], { style: 'total', fmt: MONEY });
     blank();
 
     // ── Grand Total ──────────────────────────────────────────────────────────
     section('Grand Total');
     put(['Total Sale', money2(t.netSales)], { fmt: MONEY });
     put(['RoundOff', t.roundOff], { fmt: MONEY });
-    put(['Total Gross', money2(t.grossSales)], { bold: true, fmt: MONEY });
+    put(['Total Gross', money2(t.grossSales)], { style: 'key', fmt: MONEY });
     put(['Total Bills', t.bills], { fmt: INT });
     put(['Total Covers', t.covers ?? 'not recorded'], { fmt: INT });
     // Says WHY it is unavailable rather than printing 0.00. A zero APC reads as a
@@ -423,7 +482,7 @@ export async function exportDailySalesReport(
 
     // ── Collection Breakup ───────────────────────────────────────────────────
     section('Collection Breakup');
-    put(['Mode', 'Amount'], { bold: true });
+    put(['Mode', 'Amount'], { style: 'head' });
     let collected = 0;
     for (const m of MODE_ROWS) {
       const amt = m.methods.reduce((s, k) => s + (byMode.get(k) ?? 0), 0);
@@ -437,7 +496,7 @@ export async function exportDailySalesReport(
     for (const [method, amt] of byMode) {
       if (!listed.has(method)) { collected += amt; put([method, money2(amt)], { fmt: MONEY }); }
     }
-    put(['Total', money2(collected)], { bold: true, fmt: MONEY });
+    put(['Total', money2(collected)], { style: 'key', fmt: MONEY });
     // Collections are compared against the CHARGED total (gross + round-off), not
     // the exact gross.
     //
@@ -450,41 +509,29 @@ export async function exportDailySalesReport(
     const charged = money2(t.grossSales + t.roundOff);
     const diff = money2(collected - charged);
     if (Math.abs(diff) >= 0.01) {
-      put(['Unreconciled difference', diff], { bold: true, fmt: MONEY });
+      put(['Unreconciled difference', diff], { style: 'warn', fmt: MONEY });
     }
     blank();
 
     // ── Tax Breakup ──────────────────────────────────────────────────────────
     section('Tax Breakup');
-    put(['Tax Name', 'Rate', 'Amount'], { bold: true });
+    put(['Tax Name', 'Rate', 'Amount'], { style: 'head' });
     if (ctlRate > 0 || t.ctl > 0) put([`CTL ${ctlRate}%`, ctlRate, money2(t.ctl)], { fmt: MONEY });
     if (vatRate > 0 || t.vat > 0) put([`VAT ${vatRate}%`, vatRate, money2(t.vat)], { fmt: MONEY });
-    put(['Tax Total', '', money2(t.ctl + t.vat)], { bold: true, fmt: MONEY });
+    put(['Tax Total', '', money2(t.ctl + t.vat)], { style: 'total', fmt: MONEY });
     blank();
 
     // ── Charge Breakup ───────────────────────────────────────────────────────
     // SwiftPOS has no service-charge concept. Kept so the section order matches
     // the report staff already read; the source prints 0.0 here too.
     section('Charge Breakup');
-    put(['Charge Name', 'Charge Rate', 'Charge Amount'], { bold: true });
-    put(['Charge Total', '', 0], { bold: true, fmt: MONEY });
+    put(['Charge Name', 'Charge Rate', 'Charge Amount'], { style: 'head' });
+    put(['Charge Total', '', 0], { style: 'total', fmt: MONEY });
 
     const safe = (s: string) => s.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-|-$/g, '');
     const suggested =
       `Daily_Sales_Report_${safe(session?.business_name ?? 'SwiftPOS')}_${safe(range.label)}.xlsx`;
 
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    const res = await dialog.showSaveDialog(win!, {
-      title: 'Save Daily Sales Report',
-      defaultPath: suggested,
-      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
-    });
-    if (res.canceled || !res.filePath) return { ok: false };
-
-    const target = res.filePath.endsWith('.xlsx') ? res.filePath : `${res.filePath}.xlsx`;
-    await wb.xlsx.writeFile(target);
-    return { ok: true, path: target };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? 'Could not write the report' };
+    return { wb, suggested };
   }
 }

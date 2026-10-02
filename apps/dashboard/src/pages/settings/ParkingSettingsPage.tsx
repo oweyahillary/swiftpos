@@ -47,7 +47,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${checked ? 'bg-blue-600' : 'bg-gray-700'}`}
+      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${checked ? 'bg-swift-strong' : 'bg-gray-700'}`}
     >
       <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
     </button>
@@ -163,7 +163,7 @@ export default function ParkingSettingsPage() {
         </div>
         <button
           onClick={() => setEditBay({ ...EMPTY_BAY })}
-          className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+          className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
         >
           + Add Bay
         </button>
@@ -191,7 +191,7 @@ export default function ParkingSettingsPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
-              tab === t.key ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+              tab === t.key ? 'border-swift text-swift-text' : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
           >
             {t.label}
@@ -210,7 +210,7 @@ export default function ParkingSettingsPage() {
               <div className="text-gray-500 text-sm">No bays yet — add your first bay to get started</div>
               <button
                 onClick={() => setEditBay({ ...EMPTY_BAY })}
-                className="mt-4 px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold rounded-lg transition-colors"
+                className="mt-4 px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm font-bold rounded-lg transition-colors"
               >
                 + Add first bay
               </button>
@@ -233,7 +233,7 @@ export default function ParkingSettingsPage() {
                       <div className="flex gap-2 mt-2">
                         <button
                           onClick={() => setEditBay({ ...bay })}
-                          className="px-2.5 py-1 text-xs text-blue-400 border border-gray-700 rounded-md hover:border-blue-500/50 hover:bg-blue-500/5 transition-colors"
+                          className="px-2.5 py-1 text-xs text-swift-text border border-gray-700 rounded-md hover:border-swift/50 hover:bg-swift/5 transition-colors"
                         >
                           Edit
                         </button>
@@ -430,7 +430,7 @@ export default function ParkingSettingsPage() {
 
             <div className="flex gap-2.5 mt-5">
               <button onClick={() => setEditBay(null)} className="flex-1 py-2.5 bg-transparent border border-gray-700 rounded-lg text-gray-400 text-sm cursor-pointer hover:border-gray-600 transition-colors">Cancel</button>
-              <button onClick={saveBay} disabled={saving} className="flex-1 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
+              <button onClick={saveBay} disabled={saving} className="flex-1 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-50 border-none rounded-lg text-white text-sm font-bold cursor-pointer transition-colors">
                 {saving ? 'Saving…' : editBay.id ? 'Save changes' : 'Create bay'}
               </button>
             </div>

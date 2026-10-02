@@ -174,7 +174,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
               <button
                 onClick={seedDefaults}
                 disabled={busy === 'seed'}
-                className="bg-green-500 hover:bg-green-400 disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+                className="bg-action-500 hover:bg-action-400 disabled:opacity-40 text-gray-950 font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
               >
                 {busy === 'seed' ? 'Creating…' : 'Create default stations'}
               </button>
@@ -232,7 +232,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                               onClick={() => toggleCategory(st, c.id)}
                               className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
                                 on
-                                  ? 'bg-green-500/15 border-green-500/40 text-green-300'
+                                  ? 'bg-action-500/15 border-action-500/40 text-action-300'
                                   : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
                               } disabled:opacity-50`}
                             >
@@ -303,7 +303,7 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
             <button
               onClick={addStation}
               disabled={busy === 'new' || !newName.trim()}
-              className="bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500
+              className="bg-action-600 hover:bg-action-500 disabled:bg-gray-700 disabled:text-gray-500
                          text-white rounded-lg px-4 text-sm font-medium transition-colors whitespace-nowrap"
             >
               {busy === 'new' ? 'Adding…' : 'Add'}

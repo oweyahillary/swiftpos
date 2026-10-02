@@ -8,6 +8,14 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173 },
+  // A281: stamp the web build with its commit so "is the front-end current?" is a
+  // glance, not an investigation (the till-picker "missing" because Vercel served a
+  // main build cost hours). Vercel exposes these at build; falls back for local.
+  define: {
+    __WEB_BUILD_SHA__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'dev'),
+    __WEB_BUILD_REF__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_REF || 'local'),
+    __WEB_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   build: {
     target: 'es2020',
     cssCodeSplit: true,

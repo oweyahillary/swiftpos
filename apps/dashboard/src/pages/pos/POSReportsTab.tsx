@@ -5,6 +5,8 @@
  * Permission required: reports.view
  */
 
+import MethodDot from '../../components/MethodDot';
+import { methodColour } from '../../lib/paymentColours';
 import { useState, useEffect } from 'react';
 import { usePOSAuth } from '../../context/POSAuthContext';
 import { localDateStr } from '../../lib/localDate';
@@ -113,9 +115,9 @@ export default function POSReportsTab({ currency }: { currency: string }) {
                   : 0;
                 return (
                   <div key={method} style={s.methodRow}>
-                    <span style={s.methodLabel}>{METHOD_LABELS[method] ?? method}</span>
+                    <span style={s.methodLabel}><MethodDot method={method} />{METHOD_LABELS[method] ?? method}</span>
                     <div style={s.barTrack}>
-                      <div style={{ ...s.barFill, width: `${pct}%` }} />
+                      <div style={{ ...s.barFill, width: `${pct}%`, background: methodColour(method).dot }} />
                     </div>
                     <span style={s.methodAmt}>{fmt(amount, currency)}</span>
                   </div>
@@ -170,14 +172,14 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 7, color: '#f1f5f9', fontSize: 13, width: '100%', boxSizing: 'border-box' as const,
   },
   applyBtn: {
-    padding: '7px 16px', background: '#3b82f6', border: 'none', borderRadius: 7,
+    padding: '7px 16px', background: 'rgb(var(--act-strong, 59 130 246))', border: 'none', borderRadius: 7,
     color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0,
   },
   error:   { color: '#fca5a5', fontSize: 13, margin: '8px 0' },
   center:  { display: 'flex', justifyContent: 'center', padding: 32 },
   spinner: {
     display: 'inline-block', width: 24, height: 24,
-    border: '2px solid #334155', borderTop: '2px solid #3b82f6', borderRadius: '50%',
+    border: '2px solid #334155', borderTop: '2px solid rgb(var(--act-fill, 59 130 246))', borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
   cards:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 },

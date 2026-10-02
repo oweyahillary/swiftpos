@@ -1,7 +1,7 @@
 > **README ACCURACY, 2026-08-11 (register A7).** This file describes the web
 > dashboard and the Express API. It does **not** yet cover: the Electron desktop
 > till (`apps/desktop`), offline mode, the branch-node architecture and failover,
-> eTIMS, the print server (`apps/print-server`), or `apps/admin`. There are 77
+> eTIMS, the print server (`apps/print-server`), or `apps/admin`. There are 99
 > migrations, not the two listed below, and each app installs its own
 > dependencies — there is no root workspace. Treat `docs/AUDIT-REGISTER.md` and
 > the handoffs as authoritative until this is rewritten.

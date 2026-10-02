@@ -93,7 +93,7 @@ export default function ReportSchedulerTab() {
           <p className="text-gray-500 text-xs">Sends every night at the scheduled time</p>
         </div>
         <button onClick={() => setSchedule(s => ({ ...s, enabled: !s.enabled }))}
-          className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${schedule.enabled ? 'bg-green-500' : 'bg-gray-700'}`}>
+          className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${schedule.enabled ? 'bg-swift-strong' : 'bg-gray-700'}`}>
           <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${schedule.enabled ? 'left-5' : 'left-0.5'}`} />
         </button>
       </div>
@@ -104,7 +104,7 @@ export default function ReportSchedulerTab() {
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Send time (EAT)</label>
             <input type="time" value={schedule.send_time}
               onChange={e => setSchedule(s => ({ ...s, send_time: e.target.value }))}
-              className="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 w-40" />
+              className="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift w-40" />
           </div>
 
           <div>
@@ -113,9 +113,9 @@ export default function ReportSchedulerTab() {
               <input value={newEmail} onChange={e => setNewEmail(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addEmail()}
                 placeholder="owner@example.com"
-                className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               <button onClick={addEmail}
-                className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm rounded-xl transition-colors">Add</button>
+                className="px-4 py-2 bg-swift-strong hover:bg-swift-deep text-white text-sm rounded-xl transition-colors">Add</button>
             </div>
             {schedule.recipients.length === 0
               ? <p className="text-gray-600 text-xs">No recipients yet — add at least one email.</p>
@@ -141,7 +141,7 @@ export default function ReportSchedulerTab() {
                 <label key={opt.key} className="flex items-center gap-3 cursor-pointer">
                   <div onClick={() => setSchedule(s => ({ ...s, [opt.key]: !s[opt.key as keyof Schedule] }))}
                     className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      schedule[opt.key as keyof Schedule] ? 'bg-blue-600 border-blue-600' : 'border-gray-600'
+                      schedule[opt.key as keyof Schedule] ? 'bg-swift-strong border-swift-strong' : 'border-gray-600'
                     }`}>
                     {schedule[opt.key as keyof Schedule] && <span className="text-white text-[10px] font-bold">✓</span>}
                   </div>
@@ -157,7 +157,7 @@ export default function ReportSchedulerTab() {
       {saved && <p className="text-green-400 text-sm">✓ Saved</p>}
 
       <button onClick={save} disabled={saving || (schedule.enabled && schedule.recipients.length === 0)}
-        className="px-6 py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-xl transition-colors">
+        className="px-6 py-2.5 bg-swift-strong hover:bg-swift-deep disabled:opacity-40 text-white text-sm font-bold rounded-xl transition-colors">
         {saving ? 'Saving…' : 'Save schedule'}
       </button>
     </div>

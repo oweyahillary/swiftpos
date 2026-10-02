@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { requireAnyPermission, hasFullSettingsAccess } from '../middleware/rbac';
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
+import { themesEnabled, themeWriteError } from '../lib/themeAccess';
 
 const router = safeRouter();
 
@@ -71,6 +72,8 @@ const READABLE_SETTING_KEYS = new Set([
   // than inferred from the item name: a keyword guess is wrong occasionally and
   // silently, and the cook is the one who finds out mid-service.
   'kitchen_exclusions',
+  // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
+  'order_note_picks',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something
@@ -105,7 +108,7 @@ router.get('/', requireAuth, async (req, res) => {
 // because historical amounts are denominated in it; `email` here is the business
 // CONTACT email, not a login credential.
 router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (req, res) => {
-  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'currency'] as const;
+  const EDITABLE = ['name', 'address', 'phone', 'email', 'tax_pin', 'vat_rate', 'ctl_rate', 'currency', 'logo_url'] as const;
   const updates: Record<string, unknown> = {};
   for (const k of EDITABLE) if (k in req.body) updates[k] = req.body[k];
 
@@ -125,6 +128,14 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
     }
     updates.vat_rate = v;
   }
+  if ('ctl_rate' in updates) {
+    const v = Number(updates.ctl_rate);
+    if (Number.isNaN(v) || v < 0 || v > 100) {
+      res.status(400).json({ error: 'CTL rate must be between 0 and 100' });
+      return;
+    }
+    updates.ctl_rate = v;   // A277: Catering/Tourism Levy — same net as VAT; drives the receipt CTL line
+  }
   if ('currency' in updates) {
     const { data: current } = await supabase
       .from('businesses').select('currency').eq('id', req.businessId).single();
@@ -141,6 +152,105 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
 
   const { data, error } = await supabase
     .from('businesses').update(updates).eq('id', req.businessId).select().single();
+  if (error) { sendError(res, error); return; }
+  res.json(data);
+});
+
+// GET /api/business/branding
+// The client branding row (accent + logo) for this business, or null when unset (A303).
+// Any authenticated member may read it — the till reads it via /pos/init; this is the portal's read.
+router.get('/branding', requireAuth, async (req, res) => {
+  const [{ data, error }, enabled] = await Promise.all([
+    supabase
+      .from('business_branding')
+      .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
+      .eq('business_id', req.businessId)
+      .maybeSingle(),
+    themesEnabled(req.businessId),   // A325: the web shows the theme picker only when the business has themes
+  ]);
+  if (error) { sendError(res, error); return; }
+  // Shape kept for existing callers: the row (or null) — plus themes_enabled, which is not a column.
+  res.json(data ? { ...data, themes_enabled: enabled } : (enabled ? { themes_enabled: true } : null));
+});
+
+// PUT /api/business/branding
+// Upsert the client branding row (A303). Gated like other business settings. Validation
+// mirrors the desktop guard (brandingGuard) at the persist boundary — never trust the client
+// (the SVG-upload research: a direct request skips any browser check): accent must be a hex
+// colour; a logo must be a PNG/JPEG base64 data-URI under 250 KB; SVG is rejected until the
+// sanitiser slice. Omitted field = leave as-is; explicit null = clear.
+router.put('/branding', requireAuth, requireAnyPermission('receipt.manage', 'settings.manage'), async (req, res) => {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(req.body ?? {}, k);
+  const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+  const RASTER = /^data:image\/(?:png|jpeg);base64,/i;
+  const MAX_LOGO_BYTES = 250 * 1024;
+
+  const row: Record<string, unknown> = { business_id: req.businessId, updated_at: new Date().toISOString() };
+
+  if (has('accent_hex')) {
+    const a = req.body.accent_hex;
+    if (a !== null) {
+      if (typeof a !== 'string' || !HEX.test(a.trim())) {
+        res.status(400).json({ error: 'accent_hex must be a #RGB or #RRGGBB hex colour' });
+        return;
+      }
+      row.accent_hex = a.trim().toLowerCase();
+    } else { row.accent_hex = null; }
+  }
+
+  if (has('logo_png')) {
+    const l = req.body.logo_png;
+    if (l !== null) {
+      if (typeof l !== 'string') { res.status(400).json({ error: 'logo_png must be a data-URI string' }); return; }
+      if (/^data:image\/svg\+xml/i.test(l)) {
+        res.status(400).json({ error: 'SVG logos are not accepted yet — upload a PNG or JPEG' });
+        return;
+      }
+      if (!RASTER.test(l)) { res.status(400).json({ error: 'logo_png must be a data:image/png or data:image/jpeg base64 data-URI' }); return; }
+      const b64 = l.slice(l.indexOf(',') + 1);
+      const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+      const bytes = Math.floor((b64.length * 3) / 4) - pad;
+      if (bytes > MAX_LOGO_BYTES) { res.status(400).json({ error: `logo is ${(bytes / 1024).toFixed(0)} KB; the cap is 250 KB` }); return; }
+      row.logo_png = l;
+    } else { row.logo_png = null; }
+  }
+
+  // A311: the receipt raster. Shape-checked here (mirrors shared/printing raster.ts's decoder — the
+  // cloud (apps/server) does not depend on that package, same precedent as the HEX/RASTER regexes
+  // above mirroring brandingGuard): prefix, integer dims, width within an 80 mm head, and the
+  // base64 payload EXACTLY ceil(w/8)*h bytes. A wrong length is what desyncs a printer's parser.
+  if (has('logo_receipt')) {
+    const v = req.body.logo_receipt;
+    if (v !== null) {
+      const m = typeof v === 'string' ? /^mono1:(\d+):(\d+):([A-Za-z0-9+/]+={0,2})$/.exec(v) : null;
+      const w = m ? Number(m[1]) : 0, h = m ? Number(m[2]) : 0;
+      const bytes = m ? Buffer.from(m[3], 'base64').length : -1;
+      if (!m || w < 1 || w > 576 || h < 1 || h > 1024 || bytes !== Math.ceil(w / 8) * h) {
+        res.status(400).json({ error: 'logo_receipt must be a mono1:<w>:<h>:<base64> raster with ceil(w/8)*h bytes, w<=576' });
+        return;
+      }
+      row.logo_receipt = v;
+    } else { row.logo_receipt = null; }
+  }
+  if (has('receipt_logo_enabled')) {
+    if (typeof req.body.receipt_logo_enabled !== 'boolean') {
+      res.status(400).json({ error: 'receipt_logo_enabled must be true or false' });
+      return;
+    }
+    row.receipt_logo_enabled = req.body.receipt_logo_enabled;
+  }
+  if (has('theme_id')) {
+    // A325: a curated id (shared/themes.ts) or null; choosing one needs the business's 'themes' flag.
+    const err = themeWriteError(req.body.theme_id, await themesEnabled(req.businessId));
+    if (err) { res.status(400).json({ error: err }); return; }
+    row.theme_id = req.body.theme_id;
+  }
+
+  const { data, error } = await supabase
+    .from('business_branding')
+    .upsert(row, { onConflict: 'business_id' })
+    .select('accent_hex, logo_png, logo_receipt, receipt_logo_enabled, theme_id, updated_at')
+    .single();
   if (error) { sendError(res, error); return; }
   res.json(data);
 });

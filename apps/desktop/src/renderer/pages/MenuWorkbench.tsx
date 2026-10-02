@@ -26,7 +26,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { posApi } from '../lib/posApi';
+import { posApi, type OfflineManage } from '../lib/posApi';
 import ChoicesEditor from '../components/ChoicesEditor';
 
 interface Category { id: string; name: string }
@@ -58,6 +58,9 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
   const [needsReview, setNeedsReview] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // A345: set while the cloud is out of reach (an offline sign-in, or no connection) — the page then shows what this till
+  // has saved, read-only, and says why.
+  const [offline, setOffline] = useState<OfflineManage | null>(null);
 
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<string>('all');
@@ -73,16 +76,30 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
     setError('');
     // Independent, not Promise.all: one failing call must not blank the screen
     // into "no menu items", which reads as an empty menu rather than a failure.
-    const [p, c, combos] = await Promise.all([
-      posApi.manage.listProducts().catch(e => { setError(e?.message ?? 'Could not load products'); return null; }),
+    let loadError = '';
+    let [p, c, combos] = await Promise.all([
+      posApi.manage.listProducts().catch(e => { loadError = e?.message ?? 'Could not load products'; return null; }),
       posApi.manage.listCategories().catch(() => null),
       posApi.manage.listCombos().catch(() => null),
     ]);
+    // A345: the cloud is out of reach for an OFFLINE reason → the menu this till sells from, read-only. Any other failure
+    // (a refusal, a cloud error) is shown as it is and nothing is substituted.
+    let off: OfflineManage | null = null;
+    if (!Array.isArray(p)) {
+      const cached = await posApi.manage.cachedMenu().catch(() => null);
+      if (cached?.offline) {
+        off = cached.offline;
+        p = cached.products; c = cached.categories; combos = cached.combos;
+        loadError = '';
+      }
+    }
+    setOffline(off);
+    if (loadError) setError(loadError);
     if (Array.isArray(p)) setProducts(p);
     if (Array.isArray(c)) setCategories(c);
     // One pass over every product's groups. Only run on load, and failures are
-    // silent: a review badge is useful, not load-bearing.
-    if (Array.isArray(p)) {
+    // silent: a review badge is useful, not load-bearing. Not offline: every call would fail.
+    if (Array.isArray(p) && !off) {
       void Promise.all(p.map(async (prod: Product) => {
         try {
           const gs = await posApi.manage.listVariantGroups(prod.id);
@@ -184,7 +201,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
           </p>
         </div>
         <div className="flex gap-2">
-          {onOpenImport && (
+          {onOpenImport && !offline && (
             <button onClick={onOpenImport}
               className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5 transition-colors">
               Import / export
@@ -197,6 +214,20 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
         </div>
       </div>
 
+      {offline && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm text-amber-300">{offline.message}</p>
+            <p className="text-xs text-gray-300 mt-1">
+              Showing the menu saved on this till — read-only. The till sells from this menu.
+            </p>
+          </div>
+          <button onClick={load}
+            className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5 transition-colors">
+            Try again
+          </button>
+        </div>
+      )}
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
           <p className="text-sm text-red-300">{error}</p>
@@ -237,7 +268,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
               title={count === 0 && key !== 'all' ? `No ${label.toLowerCase()} in this menu` : undefined}
               onClick={() => setTypeFilter(key)}
               className={`px-3 py-2 text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                typeFilter === key ? 'bg-green-500/10 text-green-400'
+                typeFilter === key ? 'bg-action-500/10 text-action-400'
                   : key === 'review' && count > 0 ? 'bg-gray-800 text-amber-400 hover:text-amber-300'
                   : 'bg-gray-800 text-gray-400 hover:text-white'
               }`}
@@ -288,7 +319,7 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
                   return (
                     <tr
                       key={p.id}
-                      className={`${selected === p.id ? 'bg-green-500/5' : 'hover:bg-gray-800/40'} transition-colors`}
+                      className={`${selected === p.id ? 'bg-action-500/5' : 'hover:bg-gray-800/40'} transition-colors`}
                     >
                       <td className="px-3 py-2 cursor-pointer" onClick={() => setSelected(p.id)}>
                         <span className="text-white">{p.name}</span>
@@ -316,7 +347,8 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
                           onChange={e => setPriceDrafts(d => ({ ...d, [p.id]: e.target.value }))}
                           onBlur={() => savePrice(p)}
                           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                          disabled={savingId === p.id}
+                          disabled={savingId === p.id || !!offline}
+                          readOnly={!!offline}
                           className={`w-24 text-right tabular-nums bg-gray-900 border rounded px-2 py-1 text-white
                             ${dirty ? 'border-amber-500' : 'border-gray-700'} disabled:opacity-50`}
                         />
@@ -335,6 +367,13 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
             <p className="text-sm text-gray-500 text-center py-10">
               Select an item to see what it comes with.
             </p>
+          ) : offline ? (
+            <SavedItemDetail
+              product={sel}
+              components={comboItems[sel.id] ?? []}
+              currency={currency}
+              catName={catName}
+            />
           ) : (
             <ItemDetail
               product={sel}
@@ -347,6 +386,54 @@ export default function MenuWorkbench({ currency, onOpenImport }: Props) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A345: one item as this till has it saved — shown while the cloud is out of reach. Nothing here can be changed. */
+function SavedItemDetail({
+  product, components, currency, catName,
+}: {
+  product: Product;
+  components: any[];
+  currency: string;
+  catName: (id: string | null) => string;
+}) {
+  const label = 'block text-xs text-gray-400 mb-1';
+  const section = 'text-xs font-semibold text-gray-300 uppercase tracking-wide';
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className={label}>Name</p>
+        <p className="text-white">{product.name}</p>
+      </div>
+      <div>
+        <p className={label}>Category</p>
+        <p className="text-gray-300 text-sm">{catName(product.category_id)}</p>
+      </div>
+      <div>
+        <p className={label}>Price</p>
+        <p className="text-gray-300 text-sm tabular-nums">{currency} {Number(product.base_price ?? 0).toLocaleString()}</p>
+      </div>
+      {product.description && (
+        <div>
+          <p className={label}>Description</p>
+          <p className="text-gray-300 text-sm">{product.description}</p>
+        </div>
+      )}
+      <div className="border-t border-gray-800 pt-3">
+        <p className={section}>Comes with</p>
+        {components.length === 0 ? (
+          <p className="text-xs text-gray-500 mt-1">Nothing — this is a single item.</p>
+        ) : (
+          <ul className="mt-1 space-y-0.5">
+            {components.map((c, i) => (
+              <li key={i} className="text-sm text-gray-300">{c.quantity ?? 1} × {c.name}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <p className="text-xs text-gray-400">Read-only while offline. Choices and extras are edited once the till is online.</p>
     </div>
   );
 }
@@ -433,7 +520,7 @@ function ItemDetail({
       <button
         onClick={save}
         disabled={busy}
-        className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white
+        className="w-full bg-action-600 hover:bg-action-500 disabled:bg-gray-700 text-white
                    rounded-lg py-2 text-sm font-medium transition-colors"
       >
         {busy ? 'Saving…' : 'Save details'}

@@ -66,6 +66,10 @@ function buildSales(rangeLabel: string, range: ReturnType<typeof resolveRange>):
     row(['Orders', d.summary.totalOrders]),
     row(['Average order', d.summary.avgOrderValue.toFixed(2)]),
     row(['VAT', d.summary.totalVat.toFixed(2)]),
+    // A349: the levy, refunds (revenue above is net of them) and tips (in the payments, not revenue).
+    row(['CTL', Number(d.summary.totalCtl ?? 0).toFixed(2)]),
+    row(['Refunds', Number(d.summary.totalRefunded ?? 0).toFixed(2)]),
+    row(['Tips', Number(d.summary.totalTips ?? 0).toFixed(2)]),
     row(['Discounts', d.summary.totalDiscount.toFixed(2)]),
     '',
     row(['Payment method', 'Amount']),
@@ -84,7 +88,7 @@ function buildOrders(rangeLabel: string, range: ReturnType<typeof resolveRange>)
   const lines = [
     ...scopeHeader(rangeLabel),
     row(['Order number', 'Date', 'Type', 'Status', 'Cashier', 'Terminal',
-         'Subtotal ex-tax', 'CTL', 'VAT', 'Discount', 'Tip', 'Total', 'Payment methods']),
+         'Subtotal ex-tax', 'CTL', 'VAT', 'Discount', 'Tip', 'Total', 'Refunded', 'Payment methods']),
     ...orders.map(o => row([
       o.order_number,
       o.created_at,
@@ -92,12 +96,15 @@ function buildOrders(rangeLabel: string, range: ReturnType<typeof resolveRange>)
       o.status,
       o.cashier_name ?? '',
       o.device_id ?? '',
-      Number(o.total ?? 0) - Number(o.vat_amount ?? 0) - Number(o.ctl_amount ?? 0),
+      // A349: 2 dp (was raw float: 635.5899999999999).
+      (Number(o.total ?? 0) - Number(o.vat_amount ?? 0) - Number(o.ctl_amount ?? 0)).toFixed(2),
       Number(o.ctl_amount ?? 0).toFixed(2),
       Number(o.vat_amount ?? 0).toFixed(2),
       Number(o.discount_amount ?? 0).toFixed(2),
       Number(o.tip_amount ?? 0).toFixed(2),
       Number(o.total ?? 0).toFixed(2),
+      // A349: what was handed back on this bill (Total stays the sale; the summary below nets it).
+      Number(o.refunded_amount ?? 0).toFixed(2),
       // Semicolons, not commas: a comma here would need quoting and is easy to
       // misread as a column break when someone scans the file by eye.
       (o.payments ?? []).map((p: any) => `${p.method} ${Number(p.amount).toFixed(2)}`).join('; '),
@@ -105,6 +112,8 @@ function buildOrders(rangeLabel: string, range: ReturnType<typeof resolveRange>)
     '',
     row(['Orders in range', orders.length]),
     row(['Total', orders.reduce((s, o) => s + Number(o.total ?? 0), 0).toFixed(2)]),
+    // A349: completed bills less refunds — the same "revenue" as the Overview and the Daily Sales Report.
+    row(['Refunded', orders.reduce((s, o) => s + Number(o.refunded_amount ?? 0), 0).toFixed(2)]),
   ];
   return BOM + lines.join('\r\n');
 }

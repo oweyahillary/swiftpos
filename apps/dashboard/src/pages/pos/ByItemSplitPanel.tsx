@@ -125,7 +125,7 @@ export default function ByItemSplitPanel({
                   onClick={() => setAssign(prev => prev.map((x, idx) => idx === i ? g : x))}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                     assign[i] === g
-                      ? 'bg-green-500/10 border-green-500 text-green-400'
+                      ? 'bg-action-500/10 border-action-500 text-action-400'
                       : 'bg-gray-800 border-gray-700 text-gray-500 hover:border-gray-600'
                   }`}>
                   G{g + 1}
@@ -152,7 +152,7 @@ export default function ByItemSplitPanel({
                       onClick={() => setMeta(prev => prev.map((x, idx) => idx === g ? { ...x, method: m.id } : x))}
                       className={`py-2 rounded-lg text-xs font-medium border transition-colors ${
                         (meta[g]?.method ?? 'cash') === m.id
-                          ? 'bg-green-500/10 border-green-500 text-green-400'
+                          ? 'bg-action-500/10 border-action-500 text-action-400'
                           : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
                       }`}>
                       {m.icon} {m.label}
@@ -186,7 +186,7 @@ export default function ByItemSplitPanel({
           </button>
         )}
         <button onClick={charge} disabled={!canConfirm}
-          className="flex-[2] py-3 rounded-xl bg-green-600 text-white text-sm font-bold disabled:opacity-40">
+          className="flex-[2] py-3 rounded-xl bg-action-600 text-white text-sm font-bold disabled:opacity-40">
           {canConfirm ? `Charge ${fmt(total, currency)}` : 'Assign items to ≥2 guests'}
         </button>
       </div>

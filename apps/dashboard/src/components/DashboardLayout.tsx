@@ -5,6 +5,7 @@ import { useTheme }    from '../context/ThemeContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import BranchSelector from './BranchSelector';
+import ReleaseBadge from './ReleaseBadge';
 import { useBranch } from '../context/BranchContext';
 
 // ── Icon set — monochrome outline, ported from the desktop app's style ────────
@@ -139,6 +140,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/orders',   label: 'Orders',   icon: 'reports' },
       { to: '/dashboard/expenses', label: 'Expenses', icon: 'expenses' },
       { to: '/dashboard/reports',  label: 'Reports',  icon: 'reports' },
+      // A365 (0.6.23): every cashier's shift — running, awaiting a manager, confirmed — and View for the per-method table.
+      { to: '/dashboard/shift-reports', label: 'Shift Reports', icon: 'reports' },
       // Table Turnover moved out of Settings — it is a report, not configuration.
       { to: '/dashboard/turnover', label: 'Table Turnover', icon: 'turnover', verticals: FOOD_VERTICALS },
       // Under Finance rather than Settings: it is a cash-custody action, and it is
@@ -188,7 +191,7 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
     <div>
       <button onClick={onToggle} aria-expanded={isOpen}
         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors group ${
-          hasActive ? 'text-green-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          hasActive ? 'text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
         }`}>
         <div className="flex items-center gap-3">
           <NavIcon name={group.icon} className="flex-shrink-0" />
@@ -196,7 +199,7 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
         </div>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
           className={`transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''} ${
-            hasActive ? 'text-green-400' : 'text-gray-600 group-hover:text-gray-400'
+            hasActive ? 'text-action-400' : 'text-gray-600 group-hover:text-gray-400'
           }`}>
           <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -209,7 +212,7 @@ function NavGroupItem({ group, isOpen, onToggle }: { group: NavGroup; isOpen: bo
                 || group.items.some(s => s.to !== item.to && s.to.startsWith(item.to + '/')))}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  isActive ? 'bg-green-500/10 text-green-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  isActive ? 'bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                 }`
               }>
               <NavIcon name={item.icon} className="flex-shrink-0" />
@@ -429,7 +432,7 @@ export default function DashboardLayout() {
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
                   <p className="text-white text-sm font-semibold">Notifications</p>
                   {unreadCount > 0 && (
-                    <button onClick={markAllRead} className="text-xs text-green-500 hover:text-green-400 transition-colors">
+                    <button onClick={markAllRead} className="text-xs text-action-500 hover:text-action-400 transition-colors">
                       Mark all read
                     </button>
                   )}
@@ -442,12 +445,12 @@ export default function DashboardLayout() {
                     </div>
                   ) : notifications.map(n => (
                     <div key={n.id} onClick={() => { if (!n.read_at) markRead(n.id); }}
-                      className={`flex gap-3 px-4 py-3 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/40 ${!n.read_at ? 'bg-green-500/5' : ''}`}>
+                      className={`flex gap-3 px-4 py-3 border-b border-gray-800/50 cursor-pointer hover:bg-gray-800/40 ${!n.read_at ? 'bg-action-500/5' : ''}`}>
                       <NavIcon name={TYPE_ICON[n.type] ?? TYPE_ICON.default} className="flex-shrink-0 mt-0.5 text-gray-400" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <p className={`text-xs font-medium leading-tight ${n.read_at ? 'text-gray-400' : 'text-white'}`}>{n.title}</p>
-                          {!n.read_at && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-500 mt-1" />}
+                          {!n.read_at && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-action-500 mt-1" />}
                         </div>
                         {n.message && <p className="text-gray-500 text-xs mt-0.5 line-clamp-2">{n.message}</p>}
                         <p className="text-gray-600 text-xs mt-1">{fmtTime(n.created_at)}</p>
@@ -477,7 +480,7 @@ export default function DashboardLayout() {
               <NavLink key={entry.to} to={entry.to} title={entry.hint} end={entry.end ?? entry.to === '/dashboard'}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive ? 'bg-green-500/10 text-green-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    isActive ? 'bg-action-500/10 text-action-400' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                   }`
                 }>
                 <NavIcon name={entry.icon} className="flex-shrink-0" />
@@ -499,6 +502,8 @@ export default function DashboardLayout() {
             Sign out
           </button>
           <p className="px-3 pt-1 text-[10px] text-gray-600 select-none">Powered by SwiftPOS</p>
+          {/* 0.6.28: which release this website and the cloud run */}
+          <div className="px-3"><ReleaseBadge getCloud={() => api.get('/api/version')} /></div>
         </div>
       </aside>
 

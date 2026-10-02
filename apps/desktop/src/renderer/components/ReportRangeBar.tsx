@@ -37,9 +37,11 @@ interface Props {
   exportKind?: 'sales' | 'orders' | 'products';
   /** Show the Daily Sales Report (.xlsx) button — the incumbent's layout. */
   showDailyReport?: boolean;
+  /** Cross-sync stage 1: the caller is showing the whole branch from the cloud — say so instead of this till's scope. */
+  scopeOverride?: string | null;
 }
 
-export default function ReportRangeBar({ value, onChange, exportKind, showDailyReport }: Props) {
+export default function ReportRangeBar({ value, onChange, exportKind, showDailyReport, scopeOverride }: Props) {
   const [scope, setScope] = useState<{ scopeLabel: string; coversBranch: boolean; earliestOrder: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -94,7 +96,7 @@ export default function ReportRangeBar({ value, onChange, exportKind, showDailyR
               key={p.key}
               onClick={() => onChange({ ...value, preset: p.key })}
               className={`px-2.5 py-1.5 text-xs transition-colors ${
-                preset === p.key ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-400 hover:text-white'
+                preset === p.key ? 'bg-action-500/10 text-action-400' : 'bg-gray-800 text-gray-400 hover:text-white'
               }`}
             >
               {p.label}
@@ -125,8 +127,8 @@ export default function ReportRangeBar({ value, onChange, exportKind, showDailyR
             <button
               onClick={dailyReport}
               disabled={busy}
-              className="flex items-center gap-1.5 text-xs text-white bg-green-600/80
-                         hover:bg-green-600 rounded-lg px-3 py-1.5 disabled:opacity-50
+              className="flex items-center gap-1.5 text-xs text-white bg-action-600/80
+                         hover:bg-action-600 rounded-lg px-3 py-1.5 disabled:opacity-50
                          transition-colors"
             >
               {busy ? 'Saving…' : '⭳ Daily Sales Report (Excel)'}
@@ -148,7 +150,9 @@ export default function ReportRangeBar({ value, onChange, exportKind, showDailyR
 
       {/* Scope. Amber when this is one till's data, because that is the case a
           manager can misread as the whole shop. */}
-      {scope && (
+      {scopeOverride ? (
+        <p data-testid="scope-cloud" className="text-[11px] text-gray-500">✓ {scopeOverride}</p>
+      ) : scope && (
         <p className={`text-[11px] ${scope.coversBranch ? 'text-gray-500' : 'text-amber-400/80'}`}>
           {scope.coversBranch ? '✓ ' : '⚠ '}{scope.scopeLabel}
           {scope.earliestOrder && (

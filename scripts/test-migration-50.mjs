@@ -54,4 +54,5 @@ let again=true;
 try { await db.exec(fs.readFileSync(new URL('../migrations/50_order_sync_status_and_idempotency.sql', import.meta.url),'utf8')); } catch(e){ again=false; console.log('   ',e.message); }
 ok('re-runnable', again);
 console.log(`\n${pass} passed, ${fail} failed`);
+await db.close().catch(() => {});  // A186: close PGlite before exit so libuv's Windows async-close path can't crash on teardown.
 process.exit(fail?1:0);

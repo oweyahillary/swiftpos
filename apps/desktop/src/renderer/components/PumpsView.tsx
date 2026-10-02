@@ -85,7 +85,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
                   disabled={!priced}
                   className={`text-left rounded-xl border p-4 transition-colors ${
                     priced
-                      ? 'bg-gray-800 border-gray-700 hover:border-green-500'
+                      ? 'bg-gray-800 border-gray-700 hover:border-action-500'
                       : 'bg-gray-900 border-gray-800 opacity-60 cursor-not-allowed'
                   }`}
                 >
@@ -130,7 +130,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
               value={edited === 'amount' ? amountStr : (amount ? amount.toFixed(2) : '')}
               onChange={(e) => { setEdited('amount'); setAmountStr(e.target.value); }}
               placeholder="0.00"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-2xl text-white text-right focus:outline-none focus:border-green-500 mb-3"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-2xl text-white text-right focus:outline-none focus:border-action-500 mb-3"
             />
 
             <label className="block text-xs text-gray-400 mb-1">Litres</label>
@@ -140,7 +140,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
               value={edited === 'litres' ? litresStr : (litres ? litres.toFixed(2) : '')}
               onChange={(e) => { setEdited('litres'); setLitresStr(e.target.value); }}
               placeholder="0.00"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-2xl text-white text-right focus:outline-none focus:border-green-500 mb-4"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-2xl text-white text-right focus:outline-none focus:border-action-500 mb-4"
             />
 
             <div className="grid grid-cols-4 gap-2 mb-5">
@@ -148,7 +148,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
                 <button
                   key={q}
                   onClick={() => { setEdited('amount'); setAmountStr(String(q)); }}
-                  className="bg-gray-800 border border-gray-700 hover:border-green-500 text-gray-200 text-sm rounded-lg py-2 transition-colors"
+                  className="bg-gray-800 border border-gray-700 hover:border-action-500 text-gray-200 text-sm rounded-lg py-2 transition-colors"
                 >
                   {q.toLocaleString()}
                 </button>
@@ -170,7 +170,7 @@ export default function PumpsView({ pumps, currency, onAddFuel, onShowProducts }
               <button
                 onClick={confirm}
                 disabled={amount <= 0 || litres <= 0}
-                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:hover:bg-green-500 text-gray-950 font-semibold rounded-lg py-3 transition-colors"
+                className="flex-1 bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:hover:bg-action-500 text-gray-950 font-semibold rounded-lg py-3 transition-colors"
               >
                 Add to sale
               </button>
