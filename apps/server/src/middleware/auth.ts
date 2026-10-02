@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { terminalWriteDenied } from '../lib/terminalWrites';
 import { supabase } from '../lib/supabase';
 import { resolveOwnerBusinesses, firstOrNull } from '../lib/ownerBusiness';
 import jwt from 'jsonwebtoken';
@@ -13,6 +14,8 @@ declare global {
       permissionKeys:     string[];
       isOwner:            boolean;
       surface:            string | null;
+      /** A159: the token is a person's PIN sign-in on a till (not the till's device token). */
+      pinSignIn:          boolean;
       sessionId:          string | null;
       permissionsVersion: number;
     }
@@ -100,6 +103,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.permissionKeys     = payload.permissionKeys ?? [];
     req.isOwner            = payload.isOwner ?? false;
     req.surface            = payload.surface ?? null;
+    req.pinSignIn          = (payload as { pinSignIn?: unknown }).pinSignIn === true;
     req.sessionId          = payload.sessionId ?? null;
     req.permissionsVersion = payload.permissionsVersion ?? 0;
 
@@ -249,42 +253,20 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
 // Ships DRY-RUN by default (log-only) so a missed allowlist entry cannot break
 // sync on a money system: it logs "would block" and lets the request through.
 // Set TERMINAL_WRITE_ENFORCE=true to enforce (403) once the logs are clean.
-const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const TILL_WRITE_ALLOWLIST: RegExp[] = [
-  /^\/api\/orders(\/|$|\?)/,              // sales push (incl. /:id/void, /:id/refund)
-  /^\/api\/sync\/push(\/|$|\?)/,          // business_days / shifts / floats / expenses
-  /^\/api\/branch-prices\/sync(\/|$|\?)/, // price reconciliation
-  /^\/api\/shifts\/[^/]+\/(close|force-close|foreign-cash|foreign-orders|confirm)(\/|$|\?)/, // shift close / force-close — the till's own,
-                                          // A365: + confirm — the till replays a manager's confirmation it took
-                                          // A342: + foreign-cash / foreign-orders, the till's READ-ONLY POSTs for the
-                                          // web's part of its drawer (A334, A336) — dry-run logged "would block" for them
-                                          // server-reconciled action (expected_cash/variance); NOT a
-                                          // blanket /api/shifts open, so a shift DELETE from a till stays denied
-  /^\/api\/shifts\/confirmer(\/|$|\?)/,    // A365: who a manager's PIN belongs to (read-only; the till confirms locally)
-  /^\/api\/business\/branding(\?|$)/,     // 0.6.25 (owner's decision): a logo uploaded on the till's tech screen is saved to
-                                          // the cloud too, else the next pull put the old one back. Exactly this one route
-                                          // (PUT, receipt.manage / settings.manage / owner); /api/business/settings stays denied
-  /^\/api\/auth\//,                       // verify-pin, set-pin, refresh, logout (no dashboard mutations live here)
-  /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
-];
+// The rule itself — the till's own writes, the manager screens' writes for a person's PIN sign-in only — lives in
+// lib/terminalWrites.ts (pure, so the tests run it, and a test checks it against every cloud write in the till's source).
 export const TERMINAL_WRITE_ENFORCE =
   String(process.env.TERMINAL_WRITE_ENFORCE || '').toLowerCase() === 'true';
 
-/** Pure decision: should a desktop-surface write to `path` be denied? */
-export function terminalWriteDenied(surface: string | null | undefined, method: string, path: string): boolean {
-  if (surface !== 'desktop') return false;           // only till tokens are gated
-  if (!WRITE_METHODS.has(method)) return false;       // reads are always allowed
-  const p = (path || '').split('?')[0];
-  return !TILL_WRITE_ALLOWLIST.some((re) => re.test(p));
-}
+export { terminalWriteDenied };
 
 /** Guard wrapper. Returns true if the request was BLOCKED (response sent). */
 function terminalWriteBlocked(req: Request, res: Response): boolean {
   const path = req.originalUrl || req.url || '';
-  if (!terminalWriteDenied(req.surface, req.method, path)) return false;
+  if (!terminalWriteDenied(req.surface, req.method, path, req.pinSignIn === true)) return false;
   console.warn(
     `[terminal-write-guard]${TERMINAL_WRITE_ENFORCE ? '' : ' DRY-RUN'} ` +
-    `desktop-surface ${req.method} ${path.split('?')[0]} — ` +
+    `desktop-surface ${req.method} ${path.split('?')[0]} (${req.pinSignIn ? 'staff PIN sign-in' : 'device token'}) — ` +
     `${TERMINAL_WRITE_ENFORCE ? 'BLOCKED' : 'would block'}`,
   );
   if (!TERMINAL_WRITE_ENFORCE) return false;          // dry-run: observe, don't break
