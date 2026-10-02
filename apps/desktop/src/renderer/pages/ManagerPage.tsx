@@ -1384,7 +1384,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;
-      case 'settings': return <SettingsPanel canEdit={canManageSettings || canManageProducts} />;
+      case 'settings': return <SettingsPanel canEdit={canManageSettings || canManageProducts}
+                                             isOwner={String(staff?.role ?? '').toLowerCase() === 'owner'} />;   // 0.6.30
       // PrintersScreen (A83/A90): sub-tabs under one "Printing" nav item —
       // Stations, Printers, Exclusions (all stations.manage) and Receipt
       // (receipt.manage/settings.manage). Per-tab gating passed in below.

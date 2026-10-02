@@ -50,7 +50,8 @@ ok('void: owner self-authorises (skips PIN)', () => {
     'owner branch must set authorizedBy = req.userId (self-authorised)');
 });
 ok('void: audit trail recorded (who + why)', () => {
-  assert.match(voidBody, /voided_by:\s*req\.userId/, 'must record voided_by = req.userId');
+  // 0.6.30: a till's offline replay records the person who did it at the counter (else the caller).
+  assert.match(voidBody, /voided_by: replay \? \(replay\.actorId \?\? req\.userId\) : req\.userId/, 'must record voided_by = req.userId');
   assert.match(voidBody, /void_reason:\s*reason/,    'must record the void_reason');
   assert.match(voidBody, /A reason is required to void/, 'reason must be required');
 });
@@ -60,9 +61,10 @@ ok('void: cashier/till path still requires the override PIN', () => {
 });
 
 ok('void: owner voids at any age; staff stay window-limited', () => {
-  // owners bypass the 30-min window; non-owners still hit VOID_WINDOW_EXPIRED
-  assert.match(voidBody, /orderAge > VOID_WINDOW_MINUTES && !req\.isOwner/,
-    'window check must exempt owners (orderAge > window && !req.isOwner)');
+  // owners bypass the window; non-owners still hit VOID_WINDOW_EXPIRED. 0.6.30: the window is the owner's setting
+  // (shared/reversalRules.ts voidWindowOpen exempts the owner; a till's offline replay was checked on the till).
+  assert.match(voidBody, /if \(!replay && !voidWindowOpen\(orderAge, rules, !!req\.isOwner\)\)/,
+    'window check must exempt owners (voidWindowOpen(age, rules, req.isOwner))');
   assert.match(voidBody, /VOID_WINDOW_EXPIRED/, 'the window rejection must still exist for non-owners');
 });
 
@@ -72,7 +74,7 @@ ok('refund: owner self-authorises (skips PIN)', () => {
     'owner branch must set authorizedBy = req.userId (self-authorised)');
 });
 ok('refund: audit trail recorded (who + why)', () => {
-  assert.match(refundBody, /refunded_by:\s*req\.userId/, 'must record refunded_by = req.userId');
+  assert.match(refundBody, /refunded_by:\s*replay \? \(replay\.actorId \?\? req\.userId\) : req\.userId/, 'must record refunded_by = req.userId');
   assert.match(refundBody, /refund_reason:\s*String\(reason\)\.trim\(\)/, 'must record the refund_reason');
   assert.match(refundBody, /refund_authorized_by:\s*authorizedBy/, 'must record refund_authorized_by');
   assert.match(refundBody, /A reason is required to refund/, 'reason must be required');

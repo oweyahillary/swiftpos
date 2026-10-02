@@ -65,7 +65,7 @@ ok('a dine-in order opened from the web keeps its order note', () => {
 });
 ok('pos/init sends the quick picks (always a list)', () => {
   const pos = read('apps/server/src/routes/pos.ts');
-  assert.match(pos, /'continuous_operation', 'order_note_picks'\]\)/);
+  assert.match(pos, /'continuous_operation', 'order_note_picks',\s*\.\.\.REVERSAL_SETTING_KEYS\]\)/);   // 0.6.30: + the owner's void/refund rules
   assert.match(pos, /\n\s+noteQuickPicks: parseNotePicks\(receiptTextRows\?\.find\(\(r: any\) => r\.key === 'order_note_picks'\)\?\.value\)/);
 });
 ok('the owner\'s list is readable by the settings page', () => {

@@ -1,7 +1,7 @@
 /**
  * VoidModal — reversing a sale, in either of the two ways that exist.
  *
- *   VOID    "this should not have happened" — within 30 minutes, the order
+ *   VOID    "this should not have happened" — within the owner's void window (default 30 minutes), the order
  *           leaves the sales figures entirely.
  *   REFUND  "it happened, the money is going back" — any time, the sale stands
  *           and the reversal is recorded against it (audit M3).
@@ -14,11 +14,15 @@
  *
  * Both require a reason. Both require a manager's authorisation (A355: their own PIN) once money has
  * changed hands. The server enforces all of it; this collects it.
+ *
+ * 0.6.30 (A336 stage 3): the window is the owner's (Settings; `windowMin`). When the till cannot reach the cloud it
+ * does the void or refund itself by the owner's offline rules and sends it to the cloud later — this says so.
  */
 
 import { useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { ageMinutes, VOID_WINDOW_MIN, reverseErrorMessage } from '../lib/voidRefund';
+import { ageMinutes, VOID_WINDOW_MIN, reverseErrorMessage, isWindowClosed } from '../lib/voidRefund';
+import { windowLabel } from '../../shared/reversalRules';
 
 interface Order {
   id: string;
@@ -31,6 +35,8 @@ interface Order {
 interface Props {
   order: Order;
   currency: string;
+  /** 0.6.30: the owner's void window in minutes (default 30). */
+  windowMin?: number;
   onSuccess: () => void;
   onClose: () => void;
 }
@@ -56,10 +62,11 @@ const REFUND_REASONS = [
   'Other',
 ];
 
-export default function VoidModal({ order, currency, onSuccess, onClose }: Props) {
+export default function VoidModal({ order, currency, windowMin = VOID_WINDOW_MIN, onSuccess, onClose }: Props) {
   const isPaid    = (order.payments ?? []).length > 0;
   const ageMin    = ageMinutes(order);
-  const isExpired = ageMin > VOID_WINDOW_MIN;
+  const isExpired = ageMin > windowMin;
+  const windowText = windowLabel(windowMin);
 
   // Past the window, void is not an option the server will honour — open in the
   // mode that can actually succeed.
@@ -71,6 +78,8 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
   const [pin,         setPin]         = useState('');
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
+  // 0.6.30: done on the till while offline — say so before closing (it reaches the cloud when the till reconnects).
+  const [offlineDone, setOfflineDone] = useState<string | null>(null);
 
   const finalReason = reason === 'Other' ? customReason : reason;
 
@@ -87,18 +96,21 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
     }
     setLoading(true); setError('');
     try {
-      if (isRefund) {
-        await posApi.order.refund(order.id, finalReason.trim(), pin.trim());
-      } else {
-        await posApi.order.void(order.id, finalReason.trim(), isPaid ? pin.trim() : undefined);
+      const r = isRefund
+        ? await posApi.order.refund(order.id, finalReason.trim(), pin.trim())
+        : await posApi.order.void(order.id, finalReason.trim(), isPaid ? pin.trim() : undefined);
+      if (r?.offline) {
+        setOfflineDone(`${isRefund ? 'Refunded' : 'Voided'} on this till while offline${r.approvedBy ? ` — approved by ${r.approvedBy}` : ''}. `
+          + 'It goes to the cloud as soon as the till reconnects.');
+        return;
       }
       onSuccess();
     } catch (e: any) {
       const msg = e?.message ?? (isRefund ? 'Refund failed' : 'Void failed');
-      if (msg.includes('30 minutes') || msg.includes('VOID_WINDOW')) {
+      if (!isRefund && isWindowClosed(msg)) {
         // Don't leave them stuck — switch to the thing that will work.
         setMode('refund');
-        setError(`This order is ${ageMin} minutes old, past the 30-minute void window. Refund it instead.`);
+        setError(`This order is ${ageMin} minutes old, past the ${windowText} void window. Refund it instead.`);
       } else {
         // A355: the cloud's own words (a wrong PIN, a missing permission, an already-refunded sale) — this used to
         // turn anything mentioning "PIN" into "Invalid supervisor PIN", hiding the real reason.
@@ -137,7 +149,7 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
             )}
             {isExpired && (
               <span className="text-xs px-2.5 py-1 bg-red-500/15 text-red-400 rounded-full font-medium border border-red-500/20">
-                {ageMin}m old — past the 30-minute void window
+                {ageMin}m old — past the {windowText} void window
               </span>
             )}
             {!isPaid && !isExpired && (
@@ -232,6 +244,12 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
             </div>
           )}
 
+          {offlineDone && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3" data-testid="reverse-offline-done">
+              <p className="text-amber-300 text-sm">{offlineDone}</p>
+            </div>
+          )}
+
           {/* Error */}
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
@@ -241,6 +259,14 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
         </div>
 
         {/* Footer */}
+        {offlineDone ? (
+        <div className="px-6 pb-6 flex gap-3">
+          <button onClick={onSuccess}
+            className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl text-sm font-semibold transition-colors">
+            Done
+          </button>
+        </div>
+        ) : (
         <div className="px-6 pb-6 flex gap-3">
           <button onClick={onClose} disabled={loading}
             className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
@@ -258,6 +284,7 @@ export default function VoidModal({ order, currency, onSuccess, onClose }: Props
               : (isRefund ? `Refund ${fmt(order.total)}` : 'Confirm Void')}
           </button>
         </div>
+        )}
       </div>
     </div>
   );

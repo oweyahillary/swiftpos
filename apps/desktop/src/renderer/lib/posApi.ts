@@ -307,6 +307,8 @@ declare global {
         features: () => Promise<PosFeatures>;
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
         history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
+        /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
+        reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
@@ -315,8 +317,8 @@ declare global {
       order: {
         /** A349: printFailed names tickets that could not be produced (shown to the cashier); [] when all went out. */
         create: (payload: any) => Promise<{ orderId: string; printFailed?: string[] }>;
-        void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean }>;
-        refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number }>;
+        void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; offline?: boolean; approvedBy?: string | null }>;
+        refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
       };
       sync: {
         trigger: () => Promise<{ pulled: boolean; pushed: number; errors: string[] }>;
@@ -515,6 +517,8 @@ declare global {
         setReceiptText: (header: string, footer: string) => Promise<any>;
         getContinuousOperation: () => Promise<{ enabled: boolean }>;
         setContinuousOperation: (enabled: boolean) => Promise<any>;
+        /** 0.6.30: the owner's void/refund rules (void_window_minutes, offline_refund_methods, offline_reverse_web_sales). */
+        setReversalRule: (key: string, value: unknown) => Promise<any>;
       };
       manager: {
         reportScope: () => Promise<{

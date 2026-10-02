@@ -14,6 +14,7 @@
  * Pure, so the test runs these exact rules.
  */
 
+/** The default void window. 0.6.30: the owner sets the real one (shared/reversalRules.ts; `pos.reversalRules()`). */
 export const VOID_WINDOW_MIN = 30;
 
 export interface HistoryOrder {
@@ -35,10 +36,10 @@ export function isRefunded(order: HistoryOrder): boolean {
 }
 
 /** The History button for a sale: null = none (not completed, or already refunded). */
-export function reverseAction(order: HistoryOrder, nowMs: number = Date.now()):
+export function reverseAction(order: HistoryOrder, nowMs: number = Date.now(), windowMin: number = VOID_WINDOW_MIN):
   { label: 'Void / Refund' | 'Refund'; mode: 'void' | 'refund' } | null {
   if (order.status !== 'completed' || isRefunded(order)) return null;
-  return ageMinutes(order, nowMs) <= VOID_WINDOW_MIN
+  return ageMinutes(order, nowMs) <= windowMin
     ? { label: 'Void / Refund', mode: 'void' }
     : { label: 'Refund', mode: 'refund' };
 }
@@ -59,4 +60,9 @@ export function reverseErrorMessage(raw: string | null | undefined, fallback: st
   const msg = String(raw ?? '').trim() || fallback;
   const clearPin = /INVALID_APPROVER_PIN|PIN was not recognised|invalid .*pin|pin .*invalid/i.test(msg);
   return { message: msg, clearPin };
+}
+
+/** 0.6.30: the refusal says the void window has closed (the cloud's or the till's offline words) — switch to refund. */
+export function isWindowClosed(raw: string | null | undefined): boolean {
+  return /VOID_WINDOW|voided within|void window/i.test(String(raw ?? ''));
 }

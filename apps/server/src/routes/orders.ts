@@ -16,18 +16,20 @@ import { terminalKey, terminalKeyFromRequest, deviceIdFromRequest } from '../lib
 import { checkDeviceBranch } from '../lib/deviceBinding';
 import { getTier } from './loyalty';
 import { verifyPin } from './auth';
-import { findApprover, type ApproverRow } from '../lib/approver';
+import { findApprover, mayApprove, type ApproverRow } from '../lib/approver';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
 import { applyStockEffects } from '../lib/stockEffects';
 import { fiscaliseInvoice, fiscaliseCreditNote } from '../lib/etims';
 import { sendReceiptWhatsApp } from '../lib/whatsapp';
 import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
-import { callerMayConfirm } from '../lib/shiftConfirm';
+import { callerMayConfirm, replayTime } from '../lib/shiftConfirm';
 import { cleanDeliveryFee } from '../lib/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
 import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
-import { confirmerByPin } from '../lib/confirmerLookup';
+import { confirmerByPin, confirmerRows } from '../lib/confirmerLookup';
+import { businessReversalRules } from '../lib/reversalSettings';
+import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -1013,7 +1015,44 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // POST /api/orders/:id/void
-const VOID_WINDOW_MINUTES = 30;
+// 0.6.30: the void window is the owner's setting (void_window_minutes, default 30 — lib/reversalRules.ts).
+
+// ── 0.6.30 (A336 stage 3): a till's replay of a void or refund it made while it could not reach the cloud ──────────
+// The till verified the approving manager's PIN itself (as A365's shift confirmation does) and applied the owner's
+// rules (the window, the methods allowed offline, its own sales). The cloud re-checks what it can: the request comes
+// from a till (a desktop sign-in), from THE till that holds the sale (its own, or a web sale on its drawer), and the
+// person named as approver may approve voids and refunds. It does not refuse a replay on the window — the money has
+// already moved at the counter, and refusing would leave the till and the cloud disagreeing for good.
+function isTillReplay(req: any): boolean {
+  return req.surface === 'desktop' && typeof req.body?.offline_approved_by === 'string' && !!req.body.offline_approved_by;
+}
+
+// The signed-in person at push time may be a cashier (the till sends with whoever is signed in) — the replay carries
+// its own approver, so it does not need orders.void on the token. Everything else still does.
+const reversalGate = (req: any, res: any, next: any) =>
+  isTillReplay(req) ? next() : requirePermission('orders.void')(req, res, next);
+
+type TillReplay = { approverId: string; actorId: string | null; at: string };
+
+async function checkTillReplay(req: any, order: any): Promise<TillReplay | { status: number; body: Record<string, string> }> {
+  const dev = deviceIdFromRequest(req);
+  let holds = !!dev && order.device_id === dev;
+  if (!holds && dev && order.shift_id) {
+    const { data: s } = await supabase.from('shifts').select('device_id')
+      .eq('id', order.shift_id).eq('business_id', req.businessId).maybeSingle();
+    holds = (s as { device_id?: string | null } | null)?.device_id === dev;
+  }
+  if (!holds) {
+    return { status: 403, body: { error: 'Only the till that holds this sale can send its offline void or refund.', code: 'NOT_THIS_TILL' } };
+  }
+  const { rows, ownerId } = await confirmerRows(req.businessId);
+  const approver = rows.find((r) => r.id === req.body.offline_approved_by);
+  if (!approver || !mayApprove(approver, ownerId)) {
+    return { status: 403, body: { error: 'The person who approved this may not approve voids or refunds.', code: 'NOT_AN_APPROVER' } };
+  }
+  const actor = typeof req.body?.offline_by === 'string' ? rows.find((r) => r.id === req.body.offline_by) : undefined;
+  return { approverId: approver.id, actorId: actor?.id ?? null, at: replayTime(req.body?.approved_at) };
+}
 
 // A335: the till voids and refunds by ITS id (our idempotency_key); the web by ours.
 const cloudOrderId = (ref: string, businessId: string) => resolveOrderId(ref, async (column, value) => {
@@ -1028,7 +1067,7 @@ const cloudOrderId = (ref: string, businessId: string) => resolveOrderId(ref, as
 //
 // Distinct from a void, and deliberately so:
 //
-//   VOID    "this sale should not have happened" — within 30 minutes, order
+//   VOID    "this sale should not have happened" — within the owner's window (default 30 minutes), order
 //           becomes 'voided', drops out of sales entirely.
 //   REFUND  "the sale happened, the money is going back" — any time, order stays
 //           'completed', reversal recorded against it.
@@ -1040,7 +1079,7 @@ const cloudOrderId = (ref: string, businessId: string) => resolveOrderId(ref, as
 // Full refunds only. A partial needs line-level selection to restore the right
 // stock and to recompute the tax split, and half-right money handling is worse
 // than none — staff can refund in full and re-ring what the customer keeps.
-router.post('/:id/refund', requirePermission('orders.void'), async (req, res) => {
+router.post('/:id/refund', reversalGate, async (req, res) => {
   const { reason, override_pin, supervisor_pin, authorizer_id } = req.body;
   const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
@@ -1070,8 +1109,16 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
     return;
   }
   if (order.refunded_at) {
-    res.status(400).json({ error: 'That order has already been refunded' });
+    // 0.6.30: the code lets a till's replay whose answer was lost know it is done.
+    res.status(400).json({ error: 'That order has already been refunded', code: 'ALREADY_REFUNDED' });
     return;
+  }
+
+  let replay: TillReplay | null = null;
+  if (isTillReplay(req)) {
+    const r = await checkTillReplay(req, order);
+    if ('status' in r) { res.status(r.status).json(r.body); return; }
+    replay = r;
   }
 
   // What was actually taken, per leg. Refunding is bounded by this rather than
@@ -1093,7 +1140,10 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
   // the event worth gating, and it is the same event in both cases.
   let authorizedBy: string | null = null;
 
-  if (req.isOwner) {
+  if (replay) {
+    // 0.6.30: approved on the till with the manager's PIN while it was offline.
+    authorizedBy = replay.approverId;
+  } else if (req.isOwner) {
     // A187: an owner refunding from the dashboard self-authorises — no
     // second-signature PIN. The audit trail is preserved: refunded_by = req.userId
     // and refund_authorized_by = the same owner (set below).
@@ -1139,10 +1189,10 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
     const { error: uErr } = await supabase
       .from('orders')
       .update({
-        refunded_at:          new Date().toISOString(),
+        refunded_at:          replay?.at ?? new Date().toISOString(),
         refunded_amount:      round2(takenTotal),
         refund_reason:        String(reason).trim(),
-        refunded_by:          req.userId,
+        refunded_by:          replay ? (replay.actorId ?? req.userId) : req.userId,
         refund_authorized_by: authorizedBy,
       })
       .eq('id', orderId);
@@ -1232,7 +1282,7 @@ router.post('/:id/refund', requirePermission('orders.void'), async (req, res) =>
   }
 });
 
-router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
+router.post('/:id/void', reversalGate, async (req, res) => {
   const { reason, supervisor_pin, override_pin, authorizer_id } = req.body;
   const orderId = await cloudOrderId(req.params.id, req.businessId!);
 
@@ -1253,16 +1303,26 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
     .single();
 
   if (oErr || !order) { res.status(404).json({ error: 'Order not found' }); return; }
-  if (order.status === 'voided') { res.status(400).json({ error: 'Order is already voided' }); return; }
+  if (order.status === 'voided') { res.status(400).json({ error: 'Order is already voided', code: 'ALREADY_VOIDED' }); return; }
+
+  let replay: TillReplay | null = null;
+  if (isTillReplay(req)) {
+    const r = await checkTillReplay(req, order);
+    if ('status' in r) { res.status(r.status).json(r.body); return; }
+    replay = r;
+  }
 
   const orderAge = (Date.now() - new Date(order.created_at).getTime()) / 60000;
   // Owners may void at any age — the books are theirs, a reason is still required and
   // recorded (voided_by + reason). Staff/supervisor voids stay window-limited: that
   // window is a shrinkage control against a cashier quietly erasing an old sale.
-  if (orderAge > VOID_WINDOW_MINUTES && !req.isOwner) {
+  // 0.6.30: the window is the owner's setting (default 30 minutes). A till's offline replay was checked on the till.
+  const rules = await businessReversalRules(req.businessId);
+  if (!replay && !voidWindowOpen(orderAge, rules, !!req.isOwner)) {
     res.status(403).json({
-      error: `Orders can only be voided within ${VOID_WINDOW_MINUTES} minutes of creation`,
+      error: `Orders can only be voided within ${windowLabel(rules.voidWindowMinutes)} of the sale — refund it instead`,
       code: 'VOID_WINDOW_EXPIRED',
+      windowMinutes: rules.voidWindowMinutes,
     });
     return;
   }
@@ -1279,7 +1339,10 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
   const isPaid = completedPayments.length > 0;
 
   let authorizedBy: string | null = null;
-  if (isPaid && req.isOwner) {
+  if (replay) {
+    // 0.6.30: approved on the till with the manager's PIN while it was offline (paid or not — it names its approver).
+    authorizedBy = replay.approverId;
+  } else if (isPaid && req.isOwner) {
     // A187: an owner voiding from the dashboard self-authorises — no
     // second-signature PIN. Audit trail preserved: voided_by = req.userId
     // and authorized_by = the same owner (set below).
@@ -1306,7 +1369,8 @@ router.post('/:id/void', requirePermission('orders.void'), async (req, res) => {
     // 1. Mark order voided
     const { error: vErr } = await supabase
       .from('orders')
-      .update({ status: 'voided', void_reason: reason, voided_at: new Date().toISOString(), voided_by: req.userId, authorized_by: authorizedBy })
+      .update({ status: 'voided', void_reason: reason, voided_at: replay?.at ?? new Date().toISOString(),
+                voided_by: replay ? (replay.actorId ?? req.userId) : req.userId, authorized_by: authorizedBy })
       .eq('id', orderId);
     if (vErr) throw vErr;
 

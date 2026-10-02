@@ -666,6 +666,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/kitchen-voids.test.mjs
 
+      # 0.6.30 (A336 stage 3) — void / refund while the till cannot reach the cloud: the owner's window, methods and scope;
+      # a manager or the owner only; applied on the till, replayed to the cloud with its approver once the sale is there.
+      - name: Desktop offline void and refund (owner's rules, replay)
+        working-directory: apps/desktop
+        run: node --no-warnings test/offline-reversal.test.mjs
+
       # A336 follow-up (0.6.26) — a void or refund made on the web of a sale this till rang reaches the till (Z-report, shift).
       - name: Desktop web reversals of the till's own sales
         working-directory: apps/desktop

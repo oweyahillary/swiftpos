@@ -42,6 +42,7 @@ const KitchenDisplayRoute = lazy(() => import('./pages/settings/KitchenDisplayTa
 const BusinessPage        = lazy(() => import('./pages/settings/BusinessPage'));
 const BusinessProfileTab  = lazy(() => import('./pages/settings/BusinessProfileTab'));
 const BrandingTab         = lazy(() => import('./pages/settings/BrandingTab'));
+const VoidRefundRulesTab  = lazy(() => import('./pages/settings/VoidRefundRulesTab'));
 const VerticalSetupRoute  = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.VerticalSetupRoute })));
 const IntegrationsRoute   = lazy(() => import('./pages/settings/BusinessPage').then(m => ({ default: m.IntegrationsRoute })));
 const ReportsPage             = lazy(() => import('./pages/ReportsPage'));
@@ -169,6 +170,7 @@ export default function App() {
                         <Route path="branches"     element={<BranchesPage />} />
                         <Route path="tax"          element={<EtimsSettingsPage />} />
                         <Route path="payments"     element={<PaymentMethodsPage />} />
+                        <Route path="voids-refunds" element={<VoidRefundRulesTab />} />
                         <Route path="setup"        element={<VerticalSetupRoute />} />
                         <Route path="integrations" element={<IntegrationsRoute />} />
                       </Route>

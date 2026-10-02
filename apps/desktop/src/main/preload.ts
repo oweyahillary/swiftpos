@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
     features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
     history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
+    reversalRules: () => ipcRenderer.invoke('pos:reversalRules'),   // 0.6.30
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
@@ -231,6 +232,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setReceiptText: (header: string, footer: string)     => ipcRenderer.invoke('manage:setReceiptText', { header, footer }),
     getContinuousOperation: ()                           => ipcRenderer.invoke('manage:getContinuousOperation'),
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
+    setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
   },
 
   manager: {

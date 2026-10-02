@@ -146,6 +146,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:notePicks':      NO_PAYLOAD,
   'pos:features':       NO_PAYLOAD,
   'pos:history':        NO_PAYLOAD,
+  'pos:reversalRules':  NO_PAYLOAD,   // 0.6.30
 
   // ── escpos (kitchen exclusions + production + spool) ──────────────────────
   'escpos:kitchenExclusions':      NO_PAYLOAD,
@@ -265,6 +266,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:setReceiptText':      { header: { t: 'string' }, footer: { t: 'string' } },
   'manage:getContinuousOperation': NO_PAYLOAD,
   'manage:setContinuousOperation': { kind: 'boolean' },
+  'manage:setReversalRule':        { key: { t: 'string', min: 1 }, value: { t: 'any' } },   // 0.6.30
 
   // ── manager (reports) ─────────────────────────────────────────────────────
   // salesSummary/topProducts/recentOrders take r?: RangeArg. The whole arg is

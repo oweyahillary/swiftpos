@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
+import { parseReversalRules, REVERSAL_SETTING_KEYS } from '../lib/reversalRules';
 import { parsePosFeatures, POS_FEATURE_KEYS } from '../lib/posFeatures';
 import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
@@ -180,7 +181,8 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'order_note_picks']),
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'order_note_picks',
+        ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
     // back to when unbound. maybeSingle, not single: one_main_branch_per_business
@@ -405,6 +407,9 @@ router.get('/init', async (req, res) => {
         .eq('business_id', req.businessId).in('key', [...POS_FEATURE_KEYS]);
       return parsePosFeatures(data ?? []);
     })(),
+    // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules — always every rule, defaults where
+    // unset. Older tills ignore it.
+    reversalRules: parseReversalRules((receiptTextRows ?? []) as Array<{ key: string; value: unknown }>),
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they

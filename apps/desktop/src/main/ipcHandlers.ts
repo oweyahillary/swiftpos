@@ -39,7 +39,9 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
-import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules } from './deviceConfig';
+import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
+import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
@@ -2246,6 +2248,23 @@ export function registerIpcHandlers() {
     return out;
   });
 
+  // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules, from Manager → Settings. The cloud
+  // stores only what the owner sends (routes/business.ts refuses anyone else); this till uses the new value at once.
+  handle('manage:setReversalRule', async (_e, payload) => {
+    const { key, value } = assertPayload<{ key: string; value: unknown }>({ key: { t: 'string', min: 1 }, value: { t: 'any' } }, payload);
+    if (!isReversalSettingKey(key)) throw new Error('Not a void or refund rule.');
+    const clean = reversalSettingValue(key, value);
+    if (clean === null) throw new Error('That value is not allowed.');
+    const out = await manageFetch('/api/business/settings', 'POST', { key, value: JSON.parse(clean) });
+    const now = getReversalRules();
+    setReversalRules({
+      voidWindowMinutes: key === 'void_window_minutes' ? JSON.parse(clean) : now.voidWindowMinutes,
+      offlineRefundMethods: key === 'offline_refund_methods' ? JSON.parse(clean) : now.offlineRefundMethods,
+      offlineReverseWebSales: key === 'offline_reverse_web_sales' ? JSON.parse(clean) : now.offlineReverseWebSales,
+    });
+    return out;
+  });
+
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
 
   // Range is optional so existing callers keep today's behaviour untouched.
@@ -2383,6 +2402,61 @@ export function registerIpcHandlers() {
     `).all(shift.id);
   });
 
+  // ── 0.6.30 (A336 stage 3): void / refund while the cloud cannot be reached ─────────────────────────────────────
+  // The online path below is tried first; only "could not reach the cloud" (no network, a gateway error, an offline
+  // sign-in that cannot become a cloud one) falls through to here. The approver's PIN goes to the branch node first,
+  // else this till's saved sign-ins (the A365 chain); the owner's rules decide the rest (offlineReversal.ts).
+  const signedInPerson = (): LocalPerson | null => {
+    const st = getLocalDb().prepare(`SELECT staff_id, staff_name, role_name, permissions FROM staff_session WHERE id=1`).get() as
+      { staff_id: string; staff_name: string; role_name: string | null; permissions: string | null } | undefined;
+    return st?.staff_id ? { id: st.staff_id, name: st.staff_name ?? null, roleName: st.role_name, permissions: st.permissions ?? '{}' } : null;
+  };
+  const NOT_AN_APPROVER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
+  async function identifyApproverOffline(pin: string): Promise<LocalPerson> {
+    const cfg = getDeviceConfig();
+    const branchId = cfg?.branch_id ?? '';
+    const asPerson = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }): LocalPerson => {
+      const p = { id: staff.staffId, name: staff.name ?? null, roleName: staff.roleName, permissions: staff.permissions };
+      if (!mayReverseLocal(p)) throw new Error(NOT_AN_APPROVER);
+      return p;
+    };
+    if (cfg?.node_url && !isNodeRole(cfg?.device_role)) {
+      const r = await verifyPinAtNodeClient(pin, branchId);
+      if (r.status === 'ok') return asPerson(r.staff);
+      if (r.status === 'rejected') throw new Error(NOT_AN_APPROVER);
+    }
+    if (isNodeRole(cfg?.device_role)) {
+      const v = verifyPinAtNode(pin, branchId);
+      if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_AN_APPROVER : v.message);
+      return asPerson(v.staff);
+    }
+    const v = verifyPinOffline(pin, branchId);
+    if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_AN_APPROVER : v.message);
+    return asPerson(v.staff);
+  }
+  async function reverseWhileOffline(kind: 'void' | 'refund', orderId: string, reason: string, pin: string | undefined) {
+    const actor = signedInPerson();
+    const approver = String(pin ?? '').trim()
+      ? await identifyApproverOffline(String(pin).trim())
+      : (mayReverseLocal(actor) ? actor : null);
+    if (!approver) throw new Error('Enter the PIN of a manager (or the owner) on duty.');
+    const r = reverseOffline({
+      kind, orderId: String(orderId), reason: String(reason ?? ''), actor, approver,
+      rules: getReversalRules(), deviceId: getDeviceConfig()?.device_id ?? null,
+    });
+    if (kind === 'void') emitEvent('order_voided', String(orderId), { status: 'voided', voided_at: r.at });
+    logLine('sale', `offline ${kind} ${orderId}${kind === 'refund' ? ` ${r.refunded}` : ''} approved by ${approver.name ?? approver.id}`
+      + ` — ${String(reason ?? '').slice(0, 120)}`);
+    pushNow();
+    return { ok: true, offline: true, refunded: r.refunded, approvedBy: approver.name ?? null };
+  }
+  /** A gateway answer is "the cloud is not there", not the cloud's answer (a 500 may have half-applied — not retried). */
+  const cloudUnreachable = (status: number) => status === 502 || status === 503 || status === 504;
+  const REVERSE_TIMEOUT_MS = 15_000;
+
+  // ── 0.6.30: the owner's rules, for History's labels and the void/refund window ──
+  handle('pos:reversalRules', async () => getReversalRules());
+
   // ── Order void (manager/supervisor only — server enforces permission) ──────
   handle('order:void', async (_event, payload) => {
     // D7: the void identifier and reason must be present and well-typed before we
@@ -2405,20 +2479,32 @@ export function registerIpcHandlers() {
     const staffRow = { token: readStaffTokens().token };
     const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
-    if (!token) throw new Error(offlineSessionNow() ? OFFLINE_SESSION_MESSAGE : 'Not signed in');
+    const approvalPin = override_pin ?? supervisor_pin;
+    // 0.6.30: an offline sign-in that cannot become a cloud one yet — void here, by the owner's offline rules.
+    if (!token) {
+      if (offlineSessionNow()) return reverseWhileOffline('void', String(orderId), reason, approvalPin);
+      throw new Error('Not signed in');
+    }
 
-    const res = await fetch(`${cfg.server_url}/api/orders/${orderId}/void`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      // The server accepts an authorizer_id + that person's override PIN, which
-      // records WHO approved the void rather than just that someone knew a PIN.
-      body: JSON.stringify({
-        reason,
-        ...(supervisor_pin ? { supervisor_pin } : {}),
-        ...(override_pin   ? { override_pin }   : {}),
-        ...(authorizer_id  ? { authorizer_id }  : {}),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${cfg.server_url}/api/orders/${orderId}/void`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        // The server accepts an authorizer_id + that person's override PIN, which
+        // records WHO approved the void rather than just that someone knew a PIN.
+        body: JSON.stringify({
+          reason,
+          ...(supervisor_pin ? { supervisor_pin } : {}),
+          ...(override_pin   ? { override_pin }   : {}),
+          ...(authorizer_id  ? { authorizer_id }  : {}),
+        }),
+        signal: AbortSignal.timeout(REVERSE_TIMEOUT_MS),
+      });
+    } catch {
+      return reverseWhileOffline('void', String(orderId), reason, approvalPin);   // 0.6.30: the cloud is not there
+    }
+    if (cloudUnreachable(res.status)) return reverseWhileOffline('void', String(orderId), reason, approvalPin);
     const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     if (!res.ok) {
       // requirePermission answers a bare "Forbidden" and puts the useful part in
@@ -2446,9 +2532,9 @@ export function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Refund a completed sale (audit M3). Online only, like void — money leaving
-  // the drawer needs supervisor authorisation, and authorising offline would
-  // mean trusting a PIN this till cannot verify.
+  // Refund a completed sale (audit M3). Money leaving the drawer needs a manager's authorisation. 0.6.30: offline too
+  // now — the till checks the approver's PIN (node, else its saved sign-ins) and the owner's offline rules
+  // (reverseWhileOffline above); online, the cloud decides as before.
   handle('order:refund', async (_event, { orderId, reason, override_pin, authorizer_id }:
     { orderId: string; reason: string; override_pin?: string; authorizer_id?: string }) => {
     const cfg = getDeviceConfig();
@@ -2458,17 +2544,28 @@ export function registerIpcHandlers() {
     const staffRow = { token: readStaffTokens().token };
     const ownerRow = { token: readSessionTokens().token };
     const token = staffRow?.token ?? ownerRow?.token;
-    if (!token) throw new Error(offlineSessionNow() ? OFFLINE_SESSION_MESSAGE : 'Not signed in');
+    // 0.6.30: an offline sign-in that cannot become a cloud one yet — refund here, by the owner's offline rules.
+    if (!token) {
+      if (offlineSessionNow()) return reverseWhileOffline('refund', String(orderId), reason, override_pin);
+      throw new Error('Not signed in');
+    }
 
-    const res = await fetch(`${cfg.server_url}/api/orders/${orderId}/refund`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        reason,
-        ...(override_pin  ? { override_pin }  : {}),
-        ...(authorizer_id ? { authorizer_id } : {}),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${cfg.server_url}/api/orders/${orderId}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          reason,
+          ...(override_pin  ? { override_pin }  : {}),
+          ...(authorizer_id ? { authorizer_id } : {}),
+        }),
+        signal: AbortSignal.timeout(REVERSE_TIMEOUT_MS),
+      });
+    } catch {
+      return reverseWhileOffline('refund', String(orderId), reason, override_pin);   // 0.6.30: the cloud is not there
+    }
+    if (cloudUnreachable(res.status)) return reverseWhileOffline('refund', String(orderId), reason, override_pin);
     const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     if (!res.ok) {
       const detail = typeof data?.detail === 'string' ? data.detail : '';

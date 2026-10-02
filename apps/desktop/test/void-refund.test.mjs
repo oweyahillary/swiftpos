@@ -78,7 +78,7 @@ const pos = read('src/renderer/pages/POSPage.tsx');
 ok('POSPage: History buttons from reverseAction, gated on canVoidRefund (no more "canVoid = true")', () => {
   assert.match(pos, /const canVoid = canVoidRefund;/);
   assert.ok(!/const canVoid = true;/.test(pos));
-  assert.match(pos, /const reverse  = canVoid \? reverseAction\(o\) : null;/);
+  assert.match(pos, /const reverse  = canVoid \? reverseAction\(o, Date\.now\(\), voidWindowMin\) : null;/);   // 0.6.30: the owner's window
   assert.match(pos, /\{reverse && \(\s*<button[\s\S]*?\{reverse\.label\}/);
   assert.ok(!/ageMin <= 30/.test(pos) && !/>expired</.test(pos), 'the 30-minute cut-off and the "expired" label are gone');
   assert.match(pos, /\{isRefunded\(o\) && \(/);
@@ -99,7 +99,8 @@ ok('VoidModal: "Manager PIN", the cloud\'s message, no "Invalid supervisor PIN" 
   assert.match(vm, /const shown = reverseErrorMessage\(msg, isRefund \? 'Refund failed' : 'Void failed'\);/);
   const code = vm.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   assert.ok(!/Invalid supervisor PIN/.test(code) && !/Supervisor PIN/.test(code));
-  assert.match(vm, /const isExpired = ageMin > VOID_WINDOW_MIN;/);
+  assert.match(vm, /const isExpired = ageMin > windowMin;/);   // 0.6.30: the owner's window (default VOID_WINDOW_MIN)
+  assert.match(vm, /windowMin = VOID_WINDOW_MIN,/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

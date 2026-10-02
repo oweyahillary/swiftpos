@@ -15,7 +15,7 @@ import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -28,6 +28,7 @@ import { unpackRosterSnapshot } from './rosterSnapshot';
 import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
+import { replayOutcome } from './offlineReversal';
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth, emitEvent,
@@ -397,6 +398,8 @@ async function runPushStages(errors: string[]): Promise<number> {
   await stage('reconcile', () => reconcileClosedShifts(errors));
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
   await stage('confirm', () => pushShiftConfirmations(errors));
+  // 0.6.30 (A336 stage 3): then the voids and refunds made while offline — after the order push, so the sale is there.
+  await stage('reversals', () => pushOfflineReversals(errors));
   await stage('node push', () => pushToNode(errors));
   // A363: the manager's "Last synced" — stamped only when this pass left nothing waiting for the cloud.
   await stage('last synced', async () => noteSyncedIfClear());
@@ -695,7 +698,7 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
 export function getSyncStatus(): {
   online: boolean; pendingCount: number; failedCount: number;
   /** A178: the pending count split by table, so the tech screen shows what's stuck. */
-  pendingBreakdown?: { orders: number; shifts: number; floats: number; expenses: number; days: number };
+  pendingBreakdown?: { orders: number; shifts: number; floats: number; expenses: number; days: number; reversals?: number };
   /** Why the failed ones failed. A count alone gives the cashier nothing to act on. */
   failedReason?: string;
   failedSince?: string;
@@ -760,7 +763,13 @@ export function getSyncStatus(): {
       (SELECT COUNT(*) FROM expenses           WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS expenses,
       (SELECT COUNT(*) FROM business_days      WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS days
   `).get({ dev: ownDevice }) as { shifts: number; floats: number; expenses: number; days: number };
-  const localPending = { count: bd.shifts + bd.floats + bd.expenses + bd.days };
+  // 0.6.30: an offline void/refund still to reach the cloud is waiting too (a status read never throws — schema 61).
+  let reversals = 0;
+  try {
+    reversals = (db.prepare(`SELECT COUNT(*) AS n FROM pending_reversals WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')`)
+      .get(ownDevice) as { n: number }).n;
+  } catch { /* keep the zero */ }
+  const localPending = { count: bd.shifts + bd.floats + bd.expenses + bd.days + reversals };
   // A363: a status read never throws — the badge must render even on a database missing a newer table.
   let parked: { count: number; reason: string | null } = { count: 0, reason: null };
   try { parked = parkedSummary(ownDevice); } catch { /* keep the zero */ }
@@ -768,7 +777,7 @@ export function getSyncStatus(): {
     online: isOnline(),
     pendingCount: pending.count + localPending.count,
     failedCount: failed.count,
-    pendingBreakdown: { orders: pending.count, shifts: bd.shifts, floats: bd.floats, expenses: bd.expenses, days: bd.days },
+    pendingBreakdown: { orders: pending.count, shifts: bd.shifts, floats: bd.floats, expenses: bd.expenses, days: bd.days, reversals },
     failedReason: failureRow?.last_error ?? undefined,
     failedSince: failureRow?.since ?? undefined,
     pullError: currentInboundFailure()?.message ?? undefined,
@@ -792,7 +801,13 @@ function parkedSummary(ownDevice: string | null): { count: number; reason: strin
       (SELECT COUNT(*) FROM float_transactions WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) +
       (SELECT COUNT(*) FROM expenses           WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')) AS n
   `).get({ dev: ownDevice }) as { n: number };
-  if (!row.n) return { count: 0, reason: null };
+  // 0.6.30: an offline void/refund the cloud refused is parked too, with the cloud's words.
+  let refused: { n: number; why: string | null } = { n: 0, why: null };
+  try {
+    refused = db.prepare(`SELECT COUNT(*) AS n, MAX(last_error) AS why FROM pending_reversals WHERE sync_status='refused' AND COALESCE(device_id,'') = COALESCE(?,'')`)
+      .get(ownDevice) as { n: number; why: string | null };
+  } catch { /* a database before schema 61 */ }
+  if (!row.n) return refused.n ? { count: refused.n, reason: refused.why ? `Offline void/refund refused: ${refused.why}` : null } : { count: 0, reason: null };
   const note = db.prepare(`
     SELECT notes FROM (
       SELECT notes, created_at FROM shifts        WHERE sync_status='conflict' AND COALESCE(device_id,'') = COALESCE(:dev,'')
@@ -801,7 +816,7 @@ function parkedSummary(ownDevice: string | null): { count: number; reason: strin
     ) WHERE notes LIKE '%Sync rejected:%' ORDER BY created_at DESC LIMIT 1
   `).get({ dev: ownDevice }) as { notes: string } | undefined;
   const m = note?.notes.match(/Sync rejected:\s*([^\n]+)/);
-  return { count: row.n, reason: m ? m[1].trim() : null };
+  return { count: row.n + refused.n, reason: m ? m[1].trim() : (refused.why ? `Offline void/refund refused: ${refused.why}` : null) };
 }
 
 const LAST_SYNCED_KEY = 'last_synced_at';
@@ -1004,6 +1019,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setOrderNotePicks(c.noteQuickPicks);
   // 0.6.27: the per-client POS switches. undefined = not said → keep.
   setPosFeatures(c.posFeatures);
+  // 0.6.30: the owner's void window and offline void/refund rules. undefined = not said → keep.
+  setReversalRules(c.reversalRules);
 }
 
 async function pullCatalogue(): Promise<boolean> {
@@ -1113,6 +1130,7 @@ async function pullCatalogue(): Promise<boolean> {
       webPosEnabled: typeof _j.webPosEnabled === 'boolean' ? _j.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
       posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
+      reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
@@ -2292,6 +2310,58 @@ async function pushShiftConfirmations(errors: string[]): Promise<number> {
     }
   }
   if (sent) logLine('sync', `A365 pushed ${sent} shift confirmation(s)`);
+  return sent;
+}
+
+/**
+ * 0.6.30 (A336 stage 3): replay the voids and refunds this till made while it could not reach the cloud
+ * (offlineReversal.ts). One request each, to the same routes the online path uses, carrying who approved it and when
+ * (the cloud re-checks the approver and that this till holds the sale). Only once the sale itself is on the cloud — a
+ * till's own sale after its order push; a web sale is the cloud's already. See replayOutcome for what each answer means.
+ */
+async function pushOfflineReversals(errors: string[]): Promise<number> {
+  const db = getLocalDb();
+  let rows: Array<{ id: string; order_id: string; kind: 'void' | 'refund'; reason: string; approved_by: string; done_by: string | null; approved_at: string }>;
+  try {
+    rows = db.prepare(`
+      SELECT r.id, r.order_id, r.kind, r.reason, r.approved_by, r.done_by, r.approved_at
+        FROM pending_reversals r JOIN orders o ON o.id = r.order_id
+       -- own: a till replays what it did at its own counter.
+       WHERE r.sync_status = 'pending' AND COALESCE(r.device_id,'') = COALESCE(?,'')
+         AND (o.sync_status = 'synced' OR o.origin = 'web')
+       ORDER BY r.approved_at ASC LIMIT 50
+    `).all(getDeviceConfig()?.device_id ?? null) as any[];
+  } catch { return 0; }   // a database before schema 61
+  let sent = 0;
+  for (const r of rows) {
+    const post = () => syncFetch(`${_serverUrl}/api/orders/${encodeURIComponent(r.order_id)}/${r.kind}`, {
+      method: 'POST', headers: pushAuthHeaders(),
+      body: JSON.stringify({
+        reason: r.reason, offline_approved_by: r.approved_by, approved_at: r.approved_at,
+        ...(r.done_by ? { offline_by: r.done_by } : {}),
+      }),
+    });
+    try {
+      let res = await post();
+      if (res.status === 401 && await refreshStaffToken()) res = await post();
+      const body = await res.json().catch(() => ({} as any));
+      const outcome = replayOutcome(r.kind, res.status, body);
+      if (outcome === 'done') {
+        db.prepare(`UPDATE pending_reversals SET sync_status = 'synced', last_error = NULL WHERE id = ?`).run(r.id);
+        sent++;
+      } else if (outcome === 'refused') {
+        const why = describeServerError(body, res.status);
+        db.prepare(`UPDATE pending_reversals SET sync_status = 'refused', last_error = ? WHERE id = ?`).run(why, r.id);
+        logLine('sync', `offline ${r.kind} refused by the cloud (order ${r.order_id}): ${why}`);
+        errors.push(`Offline ${r.kind}: ${why}`);
+      } else {
+        db.prepare(`UPDATE pending_reversals SET last_error = ? WHERE id = ?`).run(describeServerError(body, res.status), r.id);
+      }
+    } catch (err: any) {
+      errors.push(`Offline ${r.kind}: ${err?.message ?? err}`);
+    }
+  }
+  if (sent) logLine('sync', `pushed ${sent} offline void/refund(s)`);
   return sent;
 }
 

@@ -15,6 +15,7 @@ import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
 import { isRefunded } from './orderRefund';
 import { reprintOrderReceipt } from '../lib/reprintReceipt';
+import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
 
 interface Payment { method: string; amount: number; status: string; }
 interface Order {
@@ -33,7 +34,6 @@ interface Order {
 interface OrdersResponse { orders: Order[]; total: number; }
 
 const PAGE_SIZE = 25;
-const VOID_WINDOW_MINUTES = 30;
 
 const ageMin = (iso: string) => (Date.now() - new Date(iso).getTime()) / 60000;
 
@@ -47,14 +47,14 @@ function currentUserIsOwner(): boolean {
 
 /**
  * Which actions to offer. Owner: Void anytime + Refund on completed sales (their
- * choice). Staff/manager: Void only within the 30-min window, Refund after — the
- * server enforces the same rule via req.isOwner.
+ * choice). Staff/manager: Void only within the owner's void window (0.6.30: Settings, default 30 minutes), Refund
+ * after — the server enforces the same rule via req.isOwner.
  */
-function actionsFor(o: Order, isOwner: boolean): ('void' | 'refund')[] {
+function actionsFor(o: Order, isOwner: boolean, windowMin: number): ('void' | 'refund')[] {
   if (o.status === 'voided' || o.status === 'refunded') return [];
   if (o.status !== 'completed' && o.status !== 'pending') return [];
   if (isOwner) return o.status === 'completed' ? ['void', 'refund'] : ['void'];
-  if (ageMin(o.created_at) <= VOID_WINDOW_MINUTES) return ['void'];
+  if (ageMin(o.created_at) <= windowMin) return ['void'];
   return o.status === 'completed' ? ['refund'] : [];
 }
 
@@ -74,6 +74,13 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   const canAct = can('orders.void');
   const isOwner = currentUserIsOwner();
   const cols = canAct ? 7 : 6;
+  // 0.6.30: the owner's void window (business settings; default 30 minutes).
+  const [windowMin, setWindowMin] = useState(DEFAULT_VOID_WINDOW_MINUTES);
+  useEffect(() => {
+    api.get<Array<{ key: string; value: unknown }>>('/api/business/settings')
+      .then((rows) => setWindowMin(parseReversalRules(rows ?? []).voidWindowMinutes))
+      .catch(() => { /* the default; the cloud enforces the real one */ });
+  }, []);
 
   const [orders, setOrders]   = useState<Order[]>([]);
   const [total, setTotal]     = useState(0);
@@ -224,13 +231,13 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                   <td className="px-4 py-2 text-gray-400">{o.customer_name ?? '—'}</td>
                   {canAct && (
                     <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {actionsFor(o, isOwner).includes('void') && (
+                      {actionsFor(o, isOwner, windowMin).includes('void') && (
                         <button
                           onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setActionError(''); }}
                           className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
                         >Void</button>
                       )}
-                      {actionsFor(o, isOwner).includes('refund') && !isRefunded(o.payments) && (
+                      {actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments) && (
                         <button
                           onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setActionError(''); }}
                           className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
@@ -304,10 +311,10 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
             <h2 className="text-lg font-semibold text-white mb-1 capitalize">
               {action.type} order {action.order.order_number}
             </h2>
-            <p className={`text-sm mb-4 ${action.type === 'void' && ageMin(action.order.created_at) > VOID_WINDOW_MINUTES ? 'text-amber-400' : 'text-gray-400'}`}>
+            <p className={`text-sm mb-4 ${action.type === 'void' && ageMin(action.order.created_at) > windowMin ? 'text-amber-400' : 'text-gray-400'}`}>
               {action.type === 'void'
-                ? (ageMin(action.order.created_at) > VOID_WINDOW_MINUTES
-                    ? '⚠️ This order is older than the 30-minute window — it may be from a closed, reconciled period (drawer balanced, Z-report run, possibly filed to eTIMS). Voiding removes the sale entirely and changes already-counted figures. A Refund keeps the sale on the books with a reversal — usually the safer choice for an old order.'
+                ? (ageMin(action.order.created_at) > windowMin
+                    ? `⚠️ This order is older than the ${windowLabel(windowMin)} void window — it may be from a closed, reconciled period (drawer balanced, Z-report run, possibly filed to eTIMS). Voiding removes the sale entirely and changes already-counted figures. A Refund keeps the sale on the books with a reversal — usually the safer choice for an old order.`
                     : 'Voiding removes this sale entirely.')
                 : 'Refunding returns the money; the sale stays on the books with a reversal recorded.'}
               {' '}A reason is required and is recorded against your name.

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import PaymentMethodsPanel from './PaymentMethodsPanel';
+import ReversalRulesPanel from './ReversalRulesPanel';
 
 // The till's Settings screen (A104) — business-wide options plus the payment
 // methods manager moved in here. 24-hour operation controls whether an unclosed
 // prior day hard-locks the till at rollover or gets a short grace window first.
-export default function SettingsPanel({ canEdit = true }: { canEdit?: boolean }) {
+export default function SettingsPanel({ canEdit = true, isOwner = false }: { canEdit?: boolean; isOwner?: boolean }) {
   const [continuous, setContinuous] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -69,6 +70,11 @@ export default function SettingsPanel({ canEdit = true }: { canEdit?: boolean })
           {error && <span className="text-xs text-red-400">{error}</span>}
           {saved && !error && <span className="text-xs text-emerald-400">Saved</span>}
         </div>
+      </section>
+
+      {/* 0.6.30: the owner's void window and offline void/refund rules. */}
+      <section className="border-t border-gray-800 pt-6">
+        <ReversalRulesPanel isOwner={isOwner} />
       </section>
 
       {/* Payment methods, moved here from its own tab. */}
