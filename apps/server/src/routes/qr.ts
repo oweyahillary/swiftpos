@@ -15,6 +15,7 @@ import { supabase }    from '../lib/supabase';
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 import { requireAuth } from '../middleware/auth';
+import { showsOnDay } from '../lib/productDays';
 
 const router = safeRouter();
 
@@ -47,11 +48,17 @@ router.get('/:slug/menu', async (req, res) => {
     .from('products')
     // PostgREST alias: the column is base_price; the public menu contract
     // (QRMenuPage.tsx Product.price) stays `price`.
-    .select('id, name, description, price:base_price, image_url, category_id, has_modifiers')
+    .select('id, name, description, price:base_price, image_url, category_id, has_modifiers, show_days')
     .eq('business_id', biz.id)
     .eq('status', 'active')
     .eq('is_combo', false)   // don't show raw combo-only items
     .order('name');
+  // 0.6.31: a product shown only on chosen days is on the customer menu those days — the business's day (East Africa
+  // Time, as the reports use: UTC+3, no daylight saving).
+  const bizDay = new Date(Date.now() + 3 * 3600_000).getUTCDay();
+  const menuProducts = (products ?? [])
+    .filter((p: any) => showsOnDay(p.show_days, bizDay))
+    .map(({ show_days: _days, ...p }: any) => p);
 
   // Get table name if provided
   let tableName: string | null = null;
@@ -69,7 +76,7 @@ router.get('/:slug/menu', async (req, res) => {
     table_id:  table_id ?? null,
     table_name: tableName,
     categories: categories ?? [],
-    products:   products ?? [],
+    products:   menuProducts,
   });
 });
 

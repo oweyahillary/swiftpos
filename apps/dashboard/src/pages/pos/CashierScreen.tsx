@@ -32,6 +32,7 @@ import { deliveryProblem, cleanDeliveryFee } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
+import { onGrid } from '../../lib/productDays';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1006,7 +1007,9 @@ export default function CashierScreen() {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     // For petrol stations, show only fuel products on the product grid
     const matchFuel = isPetrol ? (p as any).is_fuel === true : !(p as any).is_fuel;
-    return p.status === 'active' && matchCat && matchSearch && matchFuel;
+    // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
+    const matchDay = onGrid((p as any).show_days, search.trim() !== '');
+    return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
   });
 
   const currentOrderLabel = activeKey

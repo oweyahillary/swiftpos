@@ -68,6 +68,7 @@ import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession,
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
+import { cleanShowDays } from './productDays';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
 // and on logout (so the next user never sees stale data on boot).
@@ -810,6 +811,7 @@ export function registerIpcHandlers() {
       has_variants: p.has_variants === 1,
       has_modifiers: p.has_modifiers === 1,
       track_stock: p.track_stock === 1,
+      show_days: cleanShowDays(p.show_days) ?? null,   // 0.6.31: the grid shows it only on these days (search: any day)
       categories: p.category_name ? { name: p.category_name, color: p.category_color } : null,
     }));
 

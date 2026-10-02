@@ -35,6 +35,7 @@ import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
 import KitchenVoidModal from '../components/KitchenVoidModal';
 import { sentQtyOf, unsentQtyOf, anySent, voidQtyFor, maySendBeforePay } from '../../shared/kitchenLines';
+import { onGrid } from '../../shared/productDays';
 
 interface Props {
   business: { id: string; name: string; currency: string };
@@ -984,7 +985,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     const matchFuel   = flags.isPetrol
       ? (p as any).is_fuel === true
       : !(p as any).is_fuel;
-    return p.status === 'active' && matchCat && matchSearch && matchFuel;
+    // 0.6.31: a product shown only on chosen days is on the grid those days; any day, a search finds it (and sells it).
+    const matchDay    = onGrid((p as any).show_days, search.trim() !== '');
+    return p.status === 'active' && matchCat && matchSearch && matchFuel && matchDay;
   });
   // A279: which filter the grid is showing, and one Clear back to everything.
   const gridFilter = {

@@ -75,9 +75,10 @@ await ok('the till hears them with pos/init (every rule, defaults where unset)',
   assert.match(p, /\.\.\.REVERSAL_SETTING_KEYS\]\),/);
   assert.match(p, /reversalRules: parseReversalRules\(\(receiptTextRows \?\? \[\]\)/);
 });
-await ok('local schema 61 is required (by convention, with the till)', () => {
-  assert.match(read('apps/server/src/lib/desktopSchema.ts'), /export const REQUIRED_DESKTOP_SCHEMA = 61;/);
-  assert.match(read('apps/desktop/src/main/localDb.ts'), /export const LOCAL_SCHEMA_VERSION = 61;/);
+await ok('local schema 61+ is required (by convention, with the till)', () => {
+  // At least 61 — a later release moves both on (0.6.31: 62).
+  assert.ok(Number(/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/.exec(read('apps/server/src/lib/desktopSchema.ts'))[1]) >= 61);
+  assert.ok(Number(/export const LOCAL_SCHEMA_VERSION = (\d+);/.exec(read('apps/desktop/src/main/localDb.ts'))[1]) >= 61);
 });
 await ok('the web: Settings › Business › Voids & refunds, and the Orders page follows the owner\'s window', () => {
   assert.match(read('apps/dashboard/src/pages/settings/BusinessPage.tsx'), /\{ to: 'voids-refunds', label: 'Voids & refunds' \}/);
