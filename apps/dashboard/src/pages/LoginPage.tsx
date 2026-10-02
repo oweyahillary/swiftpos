@@ -3,9 +3,17 @@ import { RELEASE, releaseLabel } from '../lib/release';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
+import { useTenant, tenantSignInFields } from '../lib/tenant';
+import { TenantBrand, UnknownTenantAddress } from '../components/TenantBrand';
 
 // Error codes returned by POST /api/auth/login for specific access issues
 const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: string }> = {
+  // A378: signed in on a client's own address with an account of another business.
+  NOT_THIS_BUSINESS: {
+    icon:  '🏪',
+    title: 'Not this business',
+    body:  'This sign-in address belongs to another business. Use your own business\'s address, or the main SwiftPOS sign-in.',
+  },
   WEB_HOSTING_REQUIRED: {
     icon:  '🔒',
     title: 'Web portal access not enabled',
@@ -20,6 +28,7 @@ const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: st
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const tenant = useTenant();   // A378: on a client's own address — their logo, and sign-in locked to them
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw]     = useState(false);
@@ -74,7 +83,7 @@ export default function LoginPage() {
           '/api/auth/login',
           // business_id is only present on the second attempt, after the owner
           // has picked one from the 409 below.
-          { email, password, ...(chosenBusinessId ? { business_id: chosenBusinessId } : {}) },
+          { email, password, ...(chosenBusinessId ? { business_id: chosenBusinessId } : {}), ...tenantSignInFields() },
         );
       } catch (serverErr: any) {
         // api.ts preserves the `code` field from the server JSON response
@@ -122,6 +131,9 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // A378: an address no business has — say so instead of a form that could not sign anyone in.
+  if (tenant.status === 'unknown') return <UnknownTenantAddress subdomain={tenant.subdomain} />;
 
   // ── Render access-blocked screen ────────────────────────────────────────────
   const accessError = errorCode ? ACCESS_ERROR_CODES[errorCode] : null;
@@ -185,10 +197,14 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="text-center mb-8">
+          {tenant.status === 'found' ? (
+            <div className="mb-3"><TenantBrand tenant={tenant.tenant} /></div>
+          ) : (
           <div className="inline-flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
             <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
           </div>
+          )}
           <p className="text-[#334155] text-sm">Sign in to your dashboard</p>
         </div>
 

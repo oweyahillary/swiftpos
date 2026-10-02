@@ -15,6 +15,7 @@ import { reportMailReadiness }  from './lib/mailer';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
+import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -57,6 +58,9 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // Electron / curl / server-to-server
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    // A378: a client's own sign-in address (https://africanfries.<TENANT_ROOT_DOMAIN>) and the root's other https
+    // addresses — one label deep, https only (shared/tenantHost.ts). Off while TENANT_ROOT_DOMAIN is unset.
+    if (isTenantOrigin(origin, process.env.TENANT_ROOT_DOMAIN)) return callback(null, true);
     callback(new Error(`CORS: origin '${origin}' not allowed`));
   },
   credentials: true,

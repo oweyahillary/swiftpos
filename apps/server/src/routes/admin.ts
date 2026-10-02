@@ -66,6 +66,8 @@ import { signTechToken, generateRevealCode } from '../lib/techToken';
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';
 import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
+import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
+import { signInAddress, tenantRootDomain } from '../lib/tenant';
 
 const router = safeRouter();
 
@@ -567,6 +569,9 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
     recent_orders: recentOrders ?? [],
     revenue_mtd:   revenueMtd,
     features:      flags ?? [],
+    // A378: the full sign-in address, or null (none set, or TENANT_ROOT_DOMAIN not configured on the cloud).
+    sign_in_address:    signInAddress((biz as any).subdomain),
+    tenant_root_domain: tenantRootDomain() || null,
   });
 });
 
@@ -683,10 +688,26 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
   if (tax_pin   !== undefined) updates.tax_pin   = tax_pin;
   if (vat_rate  !== undefined) updates.vat_rate  = vat_rate;
   if (currency  !== undefined) updates.currency  = currency;
+  // A378: the client's own sign-in address (africanfries.<root>). SwiftPOS sets it here, never the client.
+  if (req.body.subdomain !== undefined) {
+    const sub = cleanSubdomain(req.body.subdomain);
+    if (sub === undefined) {
+      const why = typeof req.body.subdomain === 'string' ? subdomainProblem(req.body.subdomain.trim().toLowerCase()) : null;
+      res.status(400).json({ error: `Sign-in address: ${why ?? 'not a valid subdomain'}` });
+      return;
+    }
+    updates.subdomain = sub;
+  }
 
   const { data, error } = await supabase
     .from('businesses').update(updates).eq('id', id).select().single();
-  if (error) { sendError(res, error); return; }
+  if (error) {
+    if ((error as any).code === '23505' && updates.subdomain) {
+      res.status(409).json({ error: `Sign-in address "${updates.subdomain}" is already used by another client.` });
+      return;
+    }
+    sendError(res, error); return;
+  }
 
   await writeAdminAudit({
     adminId: req.adminId, adminEmail: req.adminEmail,

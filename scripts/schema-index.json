@@ -188,7 +188,8 @@
     "web_access_expires_at": "\"timestamp with time zone\"",
     "ctl_rate": "\"numeric\" NOT NULL",
     "suspended_at": "\"timestamp with time zone\"",
-    "desktop_approved_version": "\"text\""
+    "desktop_approved_version": "\"text\"",
+    "subdomain": "\"text\""
   },
   "categories": {
     "id": "\"uuid\" NOT NULL",

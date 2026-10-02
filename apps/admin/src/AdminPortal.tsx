@@ -4,6 +4,7 @@ import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
+import { cleanSubdomain, subdomainProblem } from "./lib/tenantHost";   // A378: a client's own sign-in address
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -651,6 +652,10 @@ function ClientDetailPage({ client, req, onBack }) {
   const [desktopWarning, setDesktopWarning] = useState(null);
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [savingDesktop, setSavingDesktop] = useState(false);
+  // A378: the client's own sign-in address (africanfries.<root>) — SwiftPOS sets it here, never the client.
+  const [subDraft, setSubDraft] = useState(null);          // null = not editing
+  const [subError, setSubError] = useState("");
+  const [savingSub, setSavingSub] = useState(false);
   const { askConfirm, askPrompt, modal } = useModal();
 
   useEffect(() => {
@@ -925,6 +930,22 @@ function ClientDetailPage({ client, req, onBack }) {
     } catch (e) { setError(e?.message ?? "Failed to change owner email"); }
   }
 
+  // A378: set or clear the client's sign-in address. Checked here first (shared/tenantHost.ts), then by the cloud.
+  async function saveSubdomain() {
+    const raw = String(subDraft ?? "").trim().toLowerCase();
+    const clean = cleanSubdomain(raw);
+    if (clean === undefined) { setSubError(subdomainProblem(raw) ?? "Not a valid address."); return; }
+    setSavingSub(true); setSubError("");
+    try {
+      await req("PATCH", `/clients/${client.id}`, { subdomain: clean });
+      const fresh = await req("GET", `/clients/${client.id}`);   // the cloud builds the full address
+      setDetail(prev => ({ ...prev, subdomain: fresh?.subdomain ?? clean, sign_in_address: fresh?.sign_in_address ?? null,
+                           tenant_root_domain: fresh?.tenant_root_domain ?? null }));
+      setSubDraft(null);
+    } catch (e) { setSubError(e?.message ?? "Could not save the sign-in address"); }
+    finally { setSavingSub(false); }
+  }
+
   // G5: edit the business's core details (wires the existing PATCH /clients/:id).
   async function saveEdit() {
     if (!editForm.name.trim()) { await askConfirm("Business name can't be empty."); return; }
@@ -1197,6 +1218,41 @@ function ClientDetailPage({ client, req, onBack }) {
                 <span style={{ fontSize: 12 }}>{v}</span>
               </div>
             ))}
+            {/* A378: the client's own sign-in address — their logo on the sign-in page; only their people sign in there. */}
+            <div data-testid="signin-address" style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Sign-in address</div>
+              {subDraft === null ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: d.subdomain ? C.text : C.muted }}>
+                    {d.sign_in_address || (d.subdomain ? `${d.subdomain}.<root domain>` : "None — signs in on the main address")}
+                  </span>
+                  <button onClick={() => { setSubDraft(d.subdomain || ""); setSubError(""); }}
+                          style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>
+                    {d.subdomain ? "Change" : "Set"}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <input style={{ ...S.input, width: 180 }} value={subDraft} autoFocus placeholder="e.g. africanfries"
+                         onChange={e => { setSubDraft(e.target.value.toLowerCase()); setSubError(""); }} />
+                  <span style={{ fontSize: 12, color: C.muted }}>.{d.tenant_root_domain || "<root domain>"}</span>
+                  <button disabled={savingSub} onClick={saveSubdomain} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "5px 10px" }}>
+                    {savingSub ? "…" : "Save"}
+                  </button>
+                  <button disabled={savingSub} onClick={() => { setSubDraft(null); setSubError(""); }}
+                          style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>Cancel</button>
+                </div>
+              )}
+              {subError && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{subError}</div>}
+              {d.subdomain && !d.tenant_root_domain && (
+                <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 6 }}>
+                  TENANT_ROOT_DOMAIN is not set on the cloud — the address is saved but not live yet.
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+                Leave empty and save to remove. Only this client's owner and staff can sign in on it.
+              </div>
+            </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", gap: 12 }}>

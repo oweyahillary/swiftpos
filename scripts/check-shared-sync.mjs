@@ -97,6 +97,16 @@ const SHARED = [
     ],
   },
   {
+    // A378: a client's own sign-in address (africanfries.<root>) — the subdomain rule, the host reader, the CORS check.
+    name: 'tenantHost.ts',
+    copies: [
+      'shared/tenantHost.ts',
+      'apps/server/src/lib/tenantHost.ts',       // the cloud validates what the admin sets, locks sign-in, allows the origin
+      'apps/dashboard/src/lib/tenantHost.ts',    // the sign-in pages read the address they are on
+      'apps/admin/src/lib/tenantHost.ts',        // the admin portal checks a subdomain before saving
+    ],
+  },
+  {
     // 0.6.31: a product shown on the POS grid / QR menu only on chosen days (still found by search and sold any day).
     name: 'productDays.ts',
     copies: [
