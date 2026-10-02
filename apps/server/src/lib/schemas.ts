@@ -11,6 +11,7 @@ export const LoginSchema = z.object({
   email: z.string().email('Must be a valid email'),
   password: z.string().min(1, 'Password is required'),
   business_id: uuid.optional(),
+  subdomain: z.string().max(63).optional(),   // A378: signed in on a client's own address
 });
 
 // ── Orders ────────────────────────────────────────────────────────────────────

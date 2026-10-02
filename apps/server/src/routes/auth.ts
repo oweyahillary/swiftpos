@@ -43,6 +43,7 @@ import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth';
+import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a client's own sign-in address
 import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshGraceDecision } from '../lib/refreshGrace';
@@ -560,10 +561,19 @@ async function checkDeviceRegistration(
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
 router.post('/login', validateLoose(LoginSchema), async (req, res) => {
-  const { email, password, business_id } = req.body;
+  const { email, password, business_id, subdomain } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: 'email and password are required' });
+    return;
+  }
+
+  // A378: signed in on a client's own address (africanfries.<root>) — only that business may be opened. Looked up
+  // BEFORE the password is checked, so an unknown address never says whether a password was right.
+  const tenant = await findTenant(subdomain);
+  if (tenant.kind === 'error') { res.status(503).json({ error: 'Could not sign you in right now — please try again' }); return; }
+  if (tenant.kind === 'unknown') {
+    res.status(404).json({ error: 'No SwiftPOS business uses this address.', code: 'UNKNOWN_SUBDOMAIN' });
     return;
   }
 
@@ -581,7 +591,16 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   // picks one; without it, a second business produces a 409 naming both rather
   // than a silent guess about which shop's till you are opening.
   const owned = await resolveOwnerBusinesses(
-    data.user.id, 'id, name, currency, type, status', business_id ?? null);
+    data.user.id, 'id, name, currency, type, status',
+    tenant.kind === 'found' ? tenant.tenant.id : (business_id ?? null));
+
+  // A378: on a client's address the account must own THAT business — not another one it also owns, and no choice list.
+  if (tenant.kind === 'found') {
+    if (owned.kind !== 'error' && !ownedTenantBusiness(owned, tenant.tenant.id)) {
+      res.status(403).json({ error: `This account is not part of ${tenant.tenant.name}.`, code: 'NOT_THIS_BUSINESS' });
+      return;
+    }
+  }
 
   if (owned.kind === 'error') {
     res.status(503).json({ error: 'Could not sign you in right now — please try again' });
@@ -1033,10 +1052,18 @@ router.post('/logout', async (req, res) => {
 // ── POST /api/auth/pos-login ──────────────────────────────────────────────────
 
 router.post('/pos-login', async (req, res) => {
-  const { email, pin, branch_id, surface: callerSurface } = req.body;
+  const { email, pin, branch_id, surface: callerSurface, subdomain } = req.body;
 
   if (!email || !pin) {
     res.status(400).json({ error: 'email and pin are required' });
+    return;
+  }
+
+  // A378: on a client's own address only that business's people may sign in (see the filter below).
+  const tenant = await findTenant(subdomain);
+  if (tenant.kind === 'error') { res.status(503).json({ error: 'Could not sign you in right now — please try again' }); return; }
+  if (tenant.kind === 'unknown') {
+    res.status(404).json({ error: 'No SwiftPOS business uses this address.', code: 'UNKNOWN_SUBDOMAIN' });
     return;
   }
 
@@ -1108,6 +1135,11 @@ router.post('/pos-login', async (req, res) => {
   let matches = (candidates ?? []).filter(
     (u: any) => String(u.email ?? '').trim().toLowerCase() === needle,
   );
+  // A378: a client's address admits that business's people only — the same answer as a wrong email, so the address
+  // does not tell anyone which emails exist elsewhere. It also settles an email registered with two businesses.
+  if (tenant.kind === 'found') {
+    matches = matches.filter((u: any) => u.business_id === tenant.tenant.id);
+  }
 
   // Same email in more than one business: the branch being logged in to says
   // which tenant is meant. The branch is validated against the user's own

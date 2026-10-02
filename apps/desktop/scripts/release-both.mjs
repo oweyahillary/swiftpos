@@ -18,8 +18,8 @@
  *   FLAVOUR_DRYRUN=1 node scripts/release-both.mjs   # print the plan, run nothing
  *
  * Output (apps/desktop/release/), all at the same version V:
- *   SwiftPOS-V-x64.exe          SwiftPOS-V-portable.exe        (prod)
- *   SwiftPOS Dev-V-x64.exe      SwiftPOS-Dev-V-portable.exe    (dev)
+ *   SwiftPOS-V.exe (64+32-bit)  SwiftPOS-V-portable.exe        (prod)
+ *   SwiftPOS Dev-V.exe          SwiftPOS-Dev-V-portable.exe    (dev)
  */
 import { spawnSync } from 'node:child_process';
 

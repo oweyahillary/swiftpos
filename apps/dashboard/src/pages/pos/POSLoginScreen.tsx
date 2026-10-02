@@ -14,6 +14,8 @@ import { resolveRoute } from '../../lib/posRouting';
 
 import { API_URL } from '../../lib/config';
 import { getDeviceHint } from '../../lib/deviceFingerprint';
+import { useTenant, tenantSignInFields } from '../../lib/tenant';
+import { TenantBrand, UnknownTenantAddress } from '../../components/TenantBrand';
 const BASE_URL = API_URL;
 const PIN_MIN = 4;
 const PIN_MAX = 6;
@@ -25,6 +27,7 @@ export default function POSLoginScreen() {
   const navigate = useNavigate();
   const { setCashierSession, session } = usePOSAuth();
   const { business } = useBusiness();
+  const tenant = useTenant();   // A378: on a client's own address — their logo, and sign-in locked to them
 
   const [step, setStep]               = useState<Step>('login');
   const [email, setEmail]             = useState('');
@@ -81,6 +84,7 @@ export default function POSLoginScreen() {
           pin:         pinVal,
           surface:     'web',
           device_hint: await getDeviceHint(),
+          ...tenantSignInFields(),
         }),
       });
       const data = await res.json();
@@ -161,6 +165,7 @@ export default function POSLoginScreen() {
           pin,
           branch_id: branch.id,
           surface:   'web',
+          ...tenantSignInFields(),
         }),
       });
       const data = await res.json();
@@ -242,6 +247,9 @@ export default function POSLoginScreen() {
 
   // ── Login form ─────────────────────────────────────────────────────────────
 
+  // A378: an address no business has — say so instead of a keypad that could not sign anyone in.
+  if (tenant.status === 'unknown') return <UnknownTenantAddress subdomain={tenant.subdomain} />;
+
   // ── Device pending / rejected screens ─────────────────────────────────────
   if (deviceRejected) {
     return (
@@ -279,11 +287,13 @@ export default function POSLoginScreen() {
   return (
     <div style={st.root}>
       <div style={st.header}>
-        <div style={st.logo}><span>⚡</span><span style={st.logoText}>SwiftPOS</span></div>
+        {tenant.status === 'found'
+          ? <TenantBrand tenant={tenant.tenant} />
+          : <div style={st.logo}><span>⚡</span><span style={st.logoText}>SwiftPOS</span></div>}
       </div>
       <div style={st.main}>
         <div style={st.card}>
-          {business?.name && <div style={st.bizPill}>{business.name}</div>}
+          {business?.name && tenant.status !== 'found' && <div style={st.bizPill}>{business.name}</div>}
           <h2 style={st.title}>Staff Login</h2>
           <p style={st.subtitle}>Enter your email and PIN</p>
 

@@ -41,6 +41,7 @@ import { fuelTanksRouter, pumpsRouter } from './fueltanks';
 import combosRoutes        from './combos';
 import reservationsRoutes  from './reservations';
 import qrRoutes            from './qr';
+import tenantRoutes        from './tenant';   // A378: a client's sign-in address (name + logo, public)
 import etimsRoutes         from './etims';
 import adminRoutes         from './admin';
 import techRoutes          from './tech';
@@ -60,6 +61,7 @@ router.use('/promotions',     promotionsRoutes);
 router.use('/combos',         combosRoutes);
 router.use('/reservations',   reservationsRoutes);
 router.use('/qr',             qrRoutes);
+router.use('/tenant',         tenantRoutes);
 router.use('/flags',          flagsRoutes);
 router.use('/version',        versionRoutes);
 router.use('/tables',         tablesRoutes);

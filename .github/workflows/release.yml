@@ -29,6 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 2026-10-02: the tag must point at the commit that carries its version. v0.6.32 was first pushed on main's A376
+      # merge (still 0.6.31): three runs built a 0.6.31 installer, uploaded it over the v0.6.31 release and failed only at
+      # the last check. Stop in seconds instead, and say how to tag.
+      - name: Check the tag matches the desktop version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG="$GITHUB_REF_NAME"; V="${TAG#v}"
+          PKG=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "$PKG" != "$V" ]; then
+            echo "::error::$TAG points at $(git rev-parse --short HEAD), whose apps/desktop/package.json is $PKG, not $V. Tag the commit that carries $V: git fetch origin && git push origin origin/dev:refs/tags/$TAG (delete the wrong tag first: git push origin :refs/tags/$TAG)"
+            exit 1
+          fi
+          echo "OK - $TAG is version $PKG ($(git rev-parse --short HEAD))."
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -67,6 +82,12 @@ jobs:
           TAG="$GITHUB_REF_NAME"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists - the build uploads into it."
+            # 2026-10-02: deleting a tag turns its release into a DRAFT; a re-tag then uploaded v0.6.32 into the draft,
+            # which tills cannot download. Publish it again (still a pre-release - held until approved).
+            if [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true" ]; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+              echo "Release $TAG was a draft - published (pre-release)."
+            fi
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --title "${TAG#v}" \
               --notes "Desktop ${TAG#v}. Held for every client until approved in the admin portal (Desktop updates)."
@@ -85,11 +106,12 @@ jobs:
           # otherwise refuses an existing release published over 2 hours ago).
           EP_GH_IGNORE_TIME: 'true'
           # CSC_LINK / CSC_KEY_PASSWORD: add as repo secrets to sign (optional today).
-        run: npx electron-builder --win nsis --config electron-builder.config.js --publish always
+        # 0.6.32: --x64 --ia32 → ONE installer for 64-bit and 32-bit Windows (SwiftPOS-<version>.exe).
+        run: npx electron-builder --win nsis --x64 --ia32 --config electron-builder.config.js --publish always
 
       # A350: fail loudly unless the tag has exactly ONE release carrying latest.yml and the installer — a split or a
       # missing file is caught here, on the release run, not by an owner opening GitHub or a till that cannot update.
-      - name: Verify the release (one copy, latest.yml + installer)
+      - name: Verify the release (one published copy, latest.yml + installer)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
@@ -100,9 +122,13 @@ jobs:
           NAMES=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" --jq ".[] | select(.tag_name == \"$TAG\") | .assets[].name")
           echo "Releases for $TAG: $COPIES"; echo "$NAMES"
           [ "$COPIES" = "1" ] || { echo "::error::$COPIES releases exist for $TAG - expected exactly one."; exit 1; }
-          for f in latest.yml "SwiftPOS-$V-x64.exe"; do
+          # A draft is invisible to tills (its files need a signed-in GitHub user) - publish it on GitHub.
+          DRAFT=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" --jq ".[] | select(.tag_name == \"$TAG\") | .draft")
+          [ "$DRAFT" = "false" ] || { echo "::error::$TAG is a DRAFT - tills cannot download it. Publish it on GitHub (Releases > Edit > Publish, keep pre-release)."; exit 1; }
+          # 0.6.32: the combined 64-bit + 32-bit installer is SwiftPOS-<version>.exe (before: SwiftPOS-<version>-x64.exe).
+          for f in latest.yml "SwiftPOS-$V.exe"; do
             echo "$NAMES" | grep -qxF "$f" || { echo "::error::$TAG is missing $f"; exit 1; }
           done
           # The blockmap only serves differential downloads, which 0.6.16+ tills do not use (autoUpdate.ts) — warn only.
-          echo "$NAMES" | grep -qxF "SwiftPOS-$V-x64.exe.blockmap" || echo "::warning::$TAG has no .blockmap (not needed by 0.6.16+ tills)"
+          echo "$NAMES" | grep -qxF "SwiftPOS-$V.exe.blockmap" || echo "::warning::$TAG has no .blockmap (not needed by 0.6.16+ tills)"
           echo "OK - $TAG is one release with latest.yml and the installer."
