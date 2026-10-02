@@ -18,6 +18,7 @@ import crypto from 'crypto';
 import { getLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
 import { parsePosFeatures, type PosFeatures } from './posFeatures';
+import { rulesFromWire, type ReversalRules } from './reversalRules';
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -92,6 +93,9 @@ export interface DeviceConfig {
   /** 0.6.27: the per-client POS switches (a JSON object), pulled with the catalogue. NULL = not told yet → all off
    *  (shared/posFeatures.ts parsePosFeatures). Written only by setPosFeatures() from the pull. */
   pos_features: string | null;
+  /** 0.6.30: the owner's void window and offline void/refund rules (a JSON object), pulled with the catalogue. NULL =
+   *  not told yet → the defaults (shared/reversalRules.ts). Written only by setReversalRules() from the pull. */
+  reversal_rules: string | null;
   configured: boolean;
 }
 
@@ -126,6 +130,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     web_pos_enabled: row.web_pos_enabled == null ? null : row.web_pos_enabled === 1,
     order_note_picks: row.order_note_picks ?? null,
     pos_features: row.pos_features ?? null,
+    reversal_rules: row.reversal_rules ?? null,
     configured: row.configured === 1,
   };
 }
@@ -180,6 +185,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     order_note_picks: current?.order_note_picks ?? null,
     // 0.6.27: never from the patch — only setPosFeatures() (the pull) writes it; the INSERT below leaves it alone.
     pos_features: current?.pos_features ?? null,
+    // 0.6.30: never from the patch — only setReversalRules() (the pull) writes it; the INSERT below leaves it alone.
+    reversal_rules: current?.reversal_rules ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -293,6 +300,22 @@ export function setPosFeatures(features: Record<string, boolean> | null | undefi
 /** 0.6.27: the switches as the till last heard them (all off until told). */
 export function getPosFeatures(): PosFeatures {
   return parsePosFeatures(getDeviceConfig()?.pos_features ?? null);
+}
+
+/**
+ * 0.6.30: cache the owner's void window and offline void/refund rules. undefined/null = not said (older cloud or node)
+ * → keep. The ONLY writer, so a renderer's config:save can never widen them.
+ */
+export function setReversalRules(rules: unknown): void {
+  if (!rules || typeof rules !== 'object') return;
+  getLocalDb().prepare(`UPDATE device_config SET reversal_rules = ? WHERE id = 1`).run(JSON.stringify(rulesFromWire(rules)));
+}
+
+/** 0.6.30: the rules as the till last heard them (the defaults until told). */
+export function getReversalRules(): ReversalRules {
+  const raw = getDeviceConfig()?.reversal_rules;
+  if (typeof raw !== 'string' || !raw) return rulesFromWire(null);
+  try { return rulesFromWire(JSON.parse(raw)); } catch { return rulesFromWire(null); }
 }
 
 /** A367: cache the owner's quick picks for order notes. undefined/null = not said (older cloud or node) → keep. */

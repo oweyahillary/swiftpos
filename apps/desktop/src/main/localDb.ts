@@ -602,6 +602,27 @@ function initSchema(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_kitchen_voids_shift ON kitchen_voids(shift_id);
 
+    -- ── 0.6.30 (61): voids and refunds made while the till could not reach the cloud (A336 stage 3) ──────────────
+    -- pending_reversals — LOCAL, replayed one by one to POST /api/orders/:id/void|refund (not /api/sync/push) once the
+    -- sale itself is on the cloud. The till applied it at the counter (the order is voided / the refund rows are
+    -- written); this row carries who approved it (the manager whose PIN the till checked) and when, so the cloud
+    -- records the same thing. sync_status: pending → synced, or refused (the cloud said no, nothing a retry fixes).
+    CREATE TABLE IF NOT EXISTS pending_reversals (
+      id               TEXT PRIMARY KEY,
+      order_id         TEXT NOT NULL,
+      kind             TEXT NOT NULL,
+      reason           TEXT NOT NULL,
+      approved_by      TEXT NOT NULL,
+      approved_by_name TEXT,
+      done_by          TEXT,
+      amount           REAL NOT NULL DEFAULT 0,
+      device_id        TEXT,
+      approved_at      TEXT NOT NULL,
+      sync_status      TEXT NOT NULL DEFAULT 'pending',
+      last_error       TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_reversals_status ON pending_reversals(sync_status);
+
     -- Branch price overrides set by the manager on THIS device (the branch
     -- authority). LOCAL ORIGIN — the manager owns the branch's prices offline.
     -- Kept in its own table (not just products.branch_price) for two reasons:
@@ -1103,6 +1124,9 @@ function initSchema(db: Database.Database) {
     ['order_note_picks', 'TEXT'],
     // 0.6.27 (59): the per-client POS switches (JSON object). Pulled (posFeatures), never pushed. NULL = all off.
     ['pos_features', 'TEXT'],
+    // 0.6.30 (61): the owner's void window and offline void/refund rules (JSON object). Pulled (reversalRules), never
+    // pushed. NULL = not told yet → the defaults (30 minutes, cash, the till's own sales).
+    ['reversal_rules', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1193,7 +1217,9 @@ function initSchema(db: Database.Database) {
 // itself syncs as before). REQUIRED moves with it by convention.
 // 60 adds 0.6.28: kitchen_lines (local only — what is on a kitchen ticket per order) and kitchen_voids (pushed through
 // /api/sync/push; migration 112). REQUIRED moves with it.
-export const LOCAL_SCHEMA_VERSION = 60;
+// 61 adds 0.6.30 (A336 stage 3): pending_reversals (offline voids/refunds, replayed to /api/orders/:id/void|refund)
+// and device_config.reversal_rules (pulled). REQUIRED moves with it by convention.
+export const LOCAL_SCHEMA_VERSION = 61;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

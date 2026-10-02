@@ -51,7 +51,9 @@
 /** 59 = 0.6.27: POS switches, delivery fee, expense method, confirm reasons. Additive; a till on 58 keeps syncing. */
 /** 60 = 0.6.28: kitchen_lines (local) and kitchen_voids (pushed, migration 112). A till on 59 keeps syncing; it simply
  *  sends no kitchen voids. */
-export const REQUIRED_DESKTOP_SCHEMA = 60;
+/** 61 = 0.6.30: pending_reversals (offline voids/refunds, replayed to /api/orders/:id/void|refund) and
+ *  device_config.reversal_rules (pulled). A till on 60 keeps syncing; it simply cannot void or refund offline. */
+export const REQUIRED_DESKTOP_SCHEMA = 61;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -338,6 +338,23 @@ if (schemaIndex) {
       `currently validating against a database that no longer exists. Regenerate:\n` +
       `        run scripts/build-schema-index.sql, then node scripts/build-schema-index.mjs --from-db result.json`);
   }
+
+  // 2026-10-02: every entry must be in the exact shape build-schema-index.sql produces — "<type>" or "<type>" NOT NULL.
+  // Entries added by hand for migrations 110–112 carried their DEFAULT clauses; the live introspection never emits a
+  // DEFAULT, so verify-db-schema.mjs (the production migrate's last step) failed on a correct database. Nothing else
+  // compares the index against a live database, so the shape is held here.
+  const badShape = [];
+  for (const [table, cols] of Object.entries(schemaIndex)) {
+    for (const [col, type] of Object.entries(cols ?? {})) {
+      if (typeof type !== 'string' || !/^"[^"]+"( NOT NULL)?$/.test(type)) badShape.push(`${table}.${col}: ${type}`);
+    }
+  }
+  if (badShape.length) {
+    add('error', 'scripts/schema-index.json',
+      `${badShape.length} entr(y/ies) not in the introspection's shape ("<type>" or "<type>" NOT NULL — no DEFAULT)`,
+      `${badShape.slice(0, 12).join('\n     ')}\n` +
+      `     -> verify-db-schema.mjs compares these strings with the live database verbatim; this shape can never match.`);
+  }
 }
 
 // ── report ──────────────────────────────────────────────────────────────────

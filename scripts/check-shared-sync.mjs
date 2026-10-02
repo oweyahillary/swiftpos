@@ -97,6 +97,17 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.30 (A336 stage 3): the owner's void window and the offline void/refund rules (methods, web sales).
+    name: 'reversalRules.ts',
+    copies: [
+      'shared/reversalRules.ts',
+      'apps/desktop/src/shared/reversalRules.ts',
+      'apps/desktop/src/main/reversalRules.ts',  // the main process applies them offline (rootDir is src/main)
+      'apps/dashboard/src/lib/reversalRules.ts',
+      'apps/server/src/lib/reversalRules.ts',    // the cloud's void window and the till's replay
+    ],
+  },
+  {
     // 0.6.27: how an expense was paid (only cash leaves the drawer) and its Z-report line (the type first).
     name: 'expenseMethod.ts',
     copies: [

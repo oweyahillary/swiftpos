@@ -21,7 +21,8 @@ import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
-import { reverseAction, isRefunded, ageMinutes } from '../lib/voidRefund';
+import { reverseAction, isRefunded, ageMinutes, VOID_WINDOW_MIN } from '../lib/voidRefund';
+import { windowLabel } from '../../shared/reversalRules';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
 import { syncNotice } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
@@ -230,8 +231,11 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [historyMethod, setHistoryMethod] = useState('');
   const [historyType, setHistoryType] = useState('');
   const [historySort, setHistorySort] = useState<HistorySort>('time');
+  // 0.6.30: the owner's void window (minutes; default 30) — History's Void / Refund label follows it.
+  const [voidWindowMin, setVoidWindowMin] = useState(VOID_WINDOW_MIN);
   const loadHistory = async () => {
     const h = await posApi.pos.history();
+    posApi.pos.reversalRules().then((r) => setVoidWindowMin(r.voidWindowMinutes)).catch(() => { /* the default */ });
     setRecentOrders(h.orders);
     setHistoryCanReprint(h.scope.canReprint);
     setHistoryOwnOnly(h.scope.ownOnly);
@@ -1741,7 +1745,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
               <div>
                 <h2 className="text-white font-semibold">Order History</h2>
-                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? 'Today\'s orders · void within 30 minutes of the sale, refund any time after' : historyOwnOnly ? 'Your sales today' : 'Today\'s orders on this till'}</p>
+                <p className="text-gray-300 text-xs mt-0.5">{canVoid ? `Today's orders · void within ${windowLabel(voidWindowMin)} of the sale, refund any time after` : historyOwnOnly ? 'Your sales today' : 'Today\'s orders on this till'}</p>
                 {reprintNote && <p className="text-emerald-400 text-xs mt-1">{reprintNote}</p>}
               </div>
               <button onClick={() => { setReprintNote(''); setShowHistory(false); }}
@@ -1790,7 +1794,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                       const method   = orderMethod(o);
                       const ageMin   = ageMinutes(o);
                       // A355: "Void / Refund" inside the void window, "Refund" after it (it used to vanish at 30 min).
-                      const reverse  = canVoid ? reverseAction(o) : null;
+                      const reverse  = canVoid ? reverseAction(o, Date.now(), voidWindowMin) : null;
                       const fmtMoney = (n: number) =>
                         `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (
@@ -1872,6 +1876,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         <VoidModal
           order={voidTarget}
           currency={currency}
+          windowMin={voidWindowMin}
           onSuccess={() => {
             setVoidTarget(null);
             // Refresh local order list so the voided status shows immediately

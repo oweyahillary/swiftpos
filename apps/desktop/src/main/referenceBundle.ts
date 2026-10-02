@@ -28,6 +28,7 @@
 // state products.is_kitchen and the users->roles reshape are exactly the kind of
 // mapping that breaks silently, so they get a test that fails when they regress.
 import { parsePosFeatures } from './posFeatures';
+import { rulesFromWire, type ReversalRules } from './reversalRules';
 
 // ── Cloud-shaped output ──────────────────────────────────────────────────────
 // Field names and value types match what pullCatalogue destructures, NOT the
@@ -56,6 +57,8 @@ export interface ReferenceBundle {
     noteQuickPicks?: string[] | null;
     /** 0.6.27: the per-client POS switches; null = the node has not been told. */
     posFeatures?: Record<string, boolean> | null;
+    /** 0.6.30: the owner's void window and offline void/refund rules; null = the node has not been told. */
+    reversalRules?: ReversalRules | null;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -100,6 +103,7 @@ export interface ReferenceRows {
     webPosEnabled?: boolean | null;   // A346
     noteQuickPicks?: string[] | null; // A367
     posFeatures?: Record<string, boolean> | null; // 0.6.27
+    reversalRules?: ReversalRules | null;         // 0.6.30
   };
 }
 
@@ -204,6 +208,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
+      reversalRules: rows.config.reversalRules ?? null,   // 0.6.30: relayed so a peer applies the owner's rules offline
     },
     variantGroups: rows.variantGroups,
     variantOptions: rows.variantOptions,
@@ -276,6 +281,11 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
       })(),
       // 0.6.27: null until the node itself has heard from the cloud (a peer then keeps its own value).
       posFeatures: typeof cfg?.pos_features === 'string' ? parsePosFeatures(cfg.pos_features) : null,
+      // 0.6.30: likewise null until the node has heard the owner's rules from the cloud.
+      reversalRules: (() => {
+        if (typeof cfg?.reversal_rules !== 'string') return null;
+        try { return rulesFromWire(JSON.parse(cfg.reversal_rules)); } catch { return null; }
+      })(),
     },
   };
 
@@ -326,6 +336,8 @@ export interface AcquiredReference {
     noteQuickPicks?: string[];
     /** 0.6.27: the per-client POS switches. undefined = not said (older cloud / older node) → keep. */
     posFeatures?: Record<string, boolean>;
+    /** 0.6.30: the owner's void/refund rules. undefined = not said (older cloud / older node) → keep. */
+    reversalRules?: ReversalRules;
   };
 }
 
@@ -370,6 +382,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
+      reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
     },
   };
 }

@@ -7,6 +7,7 @@ import { requireAnyPermission, hasFullSettingsAccess } from '../middleware/rbac'
 import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError } from '../lib/themeAccess';
+import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
 
 const router = safeRouter();
 
@@ -74,6 +75,8 @@ const READABLE_SETTING_KEYS = new Set([
   'kitchen_exclusions',
   // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
   'order_note_picks',
+  // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules (lib/reversalRules.ts).
+  'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something
@@ -338,6 +341,29 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
       // that offered them the field. A45 is what the vaguer message cost.
       detail: `receipt.manage may only write receipt_header and receipt_footer, not "${key}"`,
     });
+    return;
+  }
+
+  // ── 0.6.30 (A336 stage 3): the void/refund rules are the OWNER's ───────────
+  // "for offline we will let the owner decide" — a manager holding settings.manage may not widen their own void
+  // window or the methods they may refund offline. Only a value lib/reversalRules.ts accepts is stored.
+  if (isReversalSettingKey(key)) {
+    if (!req.isOwner) {
+      res.status(403).json({ error: 'Only the owner can change the void and refund rules.', code: 'OWNER_ONLY' });
+      return;
+    }
+    const clean = reversalSettingValue(key, value);
+    if (clean === null) {
+      res.status(400).json({ error: `That is not a valid value for ${key}.`, code: 'INVALID_VALUE' });
+      return;
+    }
+    const { data: existingRule } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: ruleErr } = existingRule
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingRule.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (ruleErr) { sendError(res, ruleErr); return; }
+    res.json({ key, value: clean });
     return;
   }
 

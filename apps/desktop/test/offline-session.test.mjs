@@ -17,7 +17,7 @@
 //   - the upgrade adopts a different person's answer (no staff-id check)      → "…a different person is never adopted" fails
 //   - cachedStaff ignores manageOfflineReason (always returns the saved list)  → "a refusal is never replaced …" fails
 //   - clearStaffSession no longer clears the PIN                               → "locking the till wipes the held PIN …" fails
-//   - void/refund without the upgrade attempt and the offline message          → "a void with an offline sign-in …" fails
+//   - void/refund without the upgrade attempt and the offline path (0.6.30)    → "a void with an offline sign-in …" fails
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -217,8 +217,10 @@ ok('…and nobody signed in sees no saved lists', lockedMenu.offline === null);
 await call('auth:clearStaffSession');
 online = false; await call('auth:verifyPin', { pin: '4321', branch_id: 'br-1' });
 const vOff = await attempt(() => call('order:void', { orderId: 'o-1', reason: 'wrong item' }));
-ok('a void with an offline sign-in says it signed in offline (not "This till is not signed in")',
-  /signed in while offline/.test(vOff.error?.message ?? ''), vOff.error?.message);
+// 0.6.30 (A336 stage 3): an offline sign-in no longer refuses a void — the till voids offline by the owner's rules, so
+// with no approver's PIN it asks for one (never "This till is not signed in").
+ok('a void with an offline sign-in goes the offline way: it asks for a manager\'s PIN (not "This till is not signed in")',
+  /Enter the PIN of a manager/.test(vOff.error?.message ?? '') && !/not signed in/i.test(vOff.error?.message ?? ''), vOff.error?.message);
 online = true;
 verifyAnswer = () => ({ status: 200, json: { staff: { id: 'u-mary', name: 'Mary', role: 'manager' }, permissions: {}, accessToken: 'cloud-tok-v', refreshToken: 'x' } });
 n = calls.length;

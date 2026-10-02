@@ -36,6 +36,7 @@ export function useBusinessTabs() {
     { to: 'branches',     label: 'Branches' },
     { to: 'tax',          label: 'Tax & compliance' },
     { to: 'payments',     label: 'Payments' },
+    { to: 'voids-refunds', label: 'Voids & refunds' },   // 0.6.30 (A336 stage 3): the owner's rules
     { to: 'setup',        label: setupLabel },
     { to: 'integrations', label: 'Integrations' },
   ];

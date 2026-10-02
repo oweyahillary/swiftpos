@@ -365,7 +365,7 @@
     "sync_status": "\"character varying\" NOT NULL",
     "shift_id": "\"uuid\"",
     "recorded_by": "\"uuid\"",
-    "payment_method": "\"character varying\" NOT NULL DEFAULT 'cash'::character varying"
+    "payment_method": "\"character varying\" NOT NULL"
   },
   "feature_flags": {
     "id": "\"uuid\" NOT NULL",
@@ -493,7 +493,7 @@
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "kitchen_voids": {
-    "id": "\"uuid\" NOT NULL DEFAULT gen_random_uuid()",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\"",
     "shift_id": "\"uuid\"",
@@ -502,17 +502,17 @@
     "product_id": "\"uuid\"",
     "product_name": "\"text\" NOT NULL",
     "quantity": "\"numeric\" NOT NULL",
-    "unit_price": "\"numeric\" NOT NULL DEFAULT 0",
-    "amount": "\"numeric\" NOT NULL DEFAULT 0",
+    "unit_price": "\"numeric\" NOT NULL",
+    "amount": "\"numeric\" NOT NULL",
     "reason": "\"text\" NOT NULL",
     "note": "\"text\"",
-    "cooked": "\"boolean\" NOT NULL DEFAULT false",
+    "cooked": "\"boolean\" NOT NULL",
     "cashier_id": "\"uuid\"",
     "cashier_name": "\"text\"",
     "approved_by": "\"uuid\"",
     "approved_by_name": "\"text\"",
     "device_id": "\"text\"",
-    "created_at": "\"timestamp with time zone\" NOT NULL DEFAULT now()"
+    "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "loyalty_transactions": {
     "id": "\"uuid\" NOT NULL",
@@ -671,7 +671,7 @@
     "refund_reason": "\"text\"",
     "refunded_by": "\"uuid\"",
     "refund_authorized_by": "\"uuid\"",
-    "delivery_fee": "\"numeric\" NOT NULL DEFAULT 0"
+    "delivery_fee": "\"numeric\" NOT NULL"
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",
@@ -1029,7 +1029,7 @@
     "confirmed_methods": "\"jsonb\"",
     "confirmed_by": "\"uuid\"",
     "confirmed_at": "\"timestamp with time zone\"",
-    "confirm_self": "\"boolean\" NOT NULL DEFAULT false",
+    "confirm_self": "\"boolean\" NOT NULL",
     "confirm_reasons": "\"jsonb\""
   },
   "slot_options": {
