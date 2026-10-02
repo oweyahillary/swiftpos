@@ -61,12 +61,19 @@ module.exports = {
     // release per tag (no latest.yml/blockmap) and can't run installer.nsh or
     // self-update — not something a till would deploy. Build portable locally
     // on demand if ever needed; don't publish it.
-    target: ['nsis'],
+    // 0.6.32 (owner, 2026-10-02: a client's till is Windows 10 32-bit, 4 GB): ONE installer for 64-bit AND 32-bit
+    // Windows — it installs the build that fits the machine. The auto-updater follows it (latest.yml names this file),
+    // so a 32-bit till keeps updating to 32-bit. Electron publishes win32-ia32; better-sqlite3 is rebuilt per arch.
+    // About twice the download of a 64-bit-only installer. Windows 7/8 are not supported by this Electron at all.
+    target: [{ target: 'nsis', arch: ['x64', 'ia32'] }],
     icon: dev ? 'resources/icon.dev.ico' : 'resources/icon.ico',
     artifactName: '${productName}-${version}-${arch}.${ext}',
   },
   mac: { target: ['dmg'] },
   nsis: {
+    // 0.6.32: the combined installer's name, fixed — "SwiftPOS-0.6.32.exe" (no arch: it carries both). The release
+    // workflow checks for exactly this name; the cloud's update feed serves any .exe of the approved release.
+    artifactName: '${productName}-${version}.${ext}',
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     perMachine: true,

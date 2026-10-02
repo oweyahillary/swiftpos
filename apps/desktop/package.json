@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.6.31",
+  "version": "0.6.32",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "build:main": "tsc -b tsconfig.main.json --force",
     "postinstall": "electron-builder install-app-deps",
     "pack:dir": "electron-builder --dir --config.directories.output=build-out",
-    "pack:installer": "electron-builder --win nsis --config electron-builder.config.js --config.directories.output=release",
+    "pack:installer": "electron-builder --win nsis --x64 --ia32 --config electron-builder.config.js --config.directories.output=release",
     "pack:portable": "electron-builder --win portable --config electron-builder.config.js --config.directories.output=release",
     "pack:lowmem": "electron-builder --win nsis --config.directories.output=release --config.compression=store",
     "build:all": "npm run clean && npm run build:main && npm run gen:buildinfo && npm run build:renderer",

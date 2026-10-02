@@ -35,7 +35,8 @@ router.get('/status', async (req, res) => {
   res.json({ approvedVersion: version, held: version === null });
 });
 
-// The generic feed for ONE version: /v/0.6.16/latest.yml, /v/0.6.16/SwiftPOS-0.6.16-x64.exe (+ .blockmap).
+// The generic feed for ONE version: /v/0.6.16/latest.yml, /v/0.6.16/SwiftPOS-0.6.16-x64.exe (+ .blockmap); from 0.6.32
+// the one installer for 64-bit and 32-bit Windows, /v/0.6.32/SwiftPOS-0.6.32.exe.
 router.get('/v/:version/:file', async (req, res) => {
   const want = String(req.params.version);
   const file = String(req.params.file);
