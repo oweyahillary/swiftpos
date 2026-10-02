@@ -34,6 +34,7 @@ import {
   nodeQueueDepth, emitEvent,
 } from './nodeIngest';
 import { v4 as uuid } from 'uuid';
+import { cleanShowDays } from './productDays';
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -1305,15 +1306,15 @@ async function pullCatalogue(): Promise<boolean> {
     }
 
     const upsertProd = db.prepare(`
-      INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, synced_at)
-      VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @synced_at)
+      INSERT INTO products (id, category_id, name, description, base_price, branch_price, image_url, has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days, synced_at)
+      VALUES (@id, @category_id, @name, @description, @base_price, @branch_price, @image_url, @has_variants, @has_modifiers, @track_stock, @status, @barcode, @plu, @is_fuel, @is_kitchen, @show_days, @synced_at)
       ON CONFLICT(id) DO UPDATE SET
         category_id=excluded.category_id, name=excluded.name, description=excluded.description,
         base_price=excluded.base_price, branch_price=excluded.branch_price, image_url=excluded.image_url,
         has_variants=excluded.has_variants, has_modifiers=excluded.has_modifiers,
         track_stock=excluded.track_stock, status=excluded.status,
         barcode=excluded.barcode, plu=excluded.plu, is_fuel=excluded.is_fuel,
-        is_kitchen=excluded.is_kitchen,
+        is_kitchen=excluded.is_kitchen, show_days=excluded.show_days,
         synced_at=excluded.synced_at
     `);
     for (const p of products) {
@@ -1328,6 +1329,8 @@ async function pullCatalogue(): Promise<boolean> {
         branch_price:  (p as any).branch_price ?? null,
         // Preserve the tri-state: null must stay null, not become 0.
         is_kitchen:    typeof (p as any).is_kitchen === 'boolean' ? ((p as any).is_kitchen ? 1 : 0) : null,
+        // 0.6.31: the days it is on the grid (JSON array); null = every day. An older cloud sends none → every day.
+        show_days:     (() => { const d = cleanShowDays((p as any).show_days); return d ? JSON.stringify(d) : null; })(),
         synced_at:     now,
       });
     }

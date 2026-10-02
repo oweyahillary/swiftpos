@@ -83,6 +83,9 @@ interface TokenPayload {
   permissionsVersion: number;
   sessionId:          string;
   surface?:           string;
+  /** A159: a person's PIN sign-in on a till — may use the manager screens' writes (lib/terminalWrites.ts). Carried
+   *  through refresh with the rest of the payload. The till's device token (enrolment) never has it. */
+  pinSignIn?:         boolean;
 }
 
 interface IssuedTokenPair {
@@ -1470,6 +1473,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     permissionsVersion: pv,
     sessionId,
     surface:            req.surface ?? 'web',
+    ...(req.surface === 'desktop' ? { pinSignIn: true } : {}),   // A159: a person, not the till's device token
   };
 
   const { accessToken, refreshToken } = issueTokenPair(tokenPayload);

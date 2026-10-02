@@ -23,6 +23,10 @@ on:
       - 'migrations/**'
       - 'scripts/migrate.mjs'
       - '.github/workflows/db-migrate-prod.yml'
+      # 2026-10-02: the job's last step checks production against these — a fix to either must re-run that check on
+      # merge (the PR #10 run failed on index entries alone, and the fix touched nothing above, so nothing re-ran it).
+      - 'scripts/schema-index.json'
+      - 'scripts/verify-db-schema.mjs'
   workflow_dispatch: {}   # allows a manual re-run from the Actions tab
 
 # Never cancel a migration mid-flight; queue instead.

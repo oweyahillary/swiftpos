@@ -21,6 +21,7 @@ import { requirePermission } from '../middleware/rbac';
 import { supabase }  from '../lib/supabase';
 import { buildProductPatch, rowMatchKeys } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
+import { cleanShowDays } from '../lib/productDays';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -99,7 +100,7 @@ router.post('/', requirePermission('products.manage'), validateLoose(CreateProdu
     cost_price, reorder_level,
     pieces_per_unit, unit_label, source,
     tax_type, kra_item_class_code,
-    is_kitchen,
+    is_kitchen, show_days,
   } = req.body;
 
   if (!name?.trim()) {
@@ -124,6 +125,10 @@ router.post('/', requirePermission('products.manage'), validateLoose(CreateProdu
     res.status(400).json({ error: `sold_by must be one of: ${validSoldBy.join(', ')}` });
     return;
   }
+
+  // 0.6.31: the days the product is on the POS grid (null = every day; lib/productDays.ts).
+  const createDays = cleanShowDays(show_days);
+  if (createDays === undefined) { res.status(400).json({ error: 'show_days must be a list of days (0 = Sunday … 6 = Saturday)' }); return; }
 
   // Check barcode uniqueness within business
   if (barcode) {
@@ -164,6 +169,7 @@ router.post('/', requirePermission('products.manage'), validateLoose(CreateProdu
       reorder_level:  reorder_level ?? null,
       tax_type:            tax_type ?? 'B',
       kra_item_class_code: kra_item_class_code?.trim() ?? null,
+      show_days:      createDays,
       status:         'active',
     })
     .select('*, categories(name, color, icon)')
@@ -184,8 +190,14 @@ router.patch('/:id', requirePermission('products.manage'), validateLoose(UpdateP
     cost_price, reorder_level,
     pieces_per_unit, unit_label, source,
     tax_type, kra_item_class_code,
-    is_kitchen,
+    is_kitchen, show_days,
   } = req.body;
+
+  // 0.6.31: the days the product is on the POS grid; null clears it (every day).
+  const updateDays = show_days === undefined ? undefined : cleanShowDays(show_days);
+  if (show_days !== undefined && updateDays === undefined) {
+    res.status(400).json({ error: 'show_days must be a list of days (0 = Sunday … 6 = Saturday)' }); return;
+  }
 
   // If barcode is being changed, check uniqueness
   if (barcode) {
@@ -218,6 +230,7 @@ router.patch('/:id', requirePermission('products.manage'), validateLoose(UpdateP
   // category. `?? null` on purpose — sending null is how the override is
   // CLEARED, and coercing it to false would silently mean "never cook this".
   if (is_kitchen    !== undefined) updates.is_kitchen    = is_kitchen === null ? null : !!is_kitchen;
+  if (show_days     !== undefined) updates.show_days     = updateDays;   // 0.6.31
   if (barcode       !== undefined) updates.barcode       = barcode?.trim() ?? null;
   if (plu_code      !== undefined) updates.plu_code      = plu_code?.trim() ?? null;
   if (sold_by           !== undefined) updates.sold_by           = sold_by;

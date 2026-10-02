@@ -15,6 +15,7 @@
 //
 // PURE: no DB, no request. Category-name -> id resolution and the actual
 // insert/update live in the route; this only decides what to write.
+import { cleanShowDays } from './productDays';
 
 const SOLD_BY = ['each', 'weight', 'volume', 'piece'];
 const SOURCE  = ['purchased', 'central_kitchen'];
@@ -110,6 +111,16 @@ export function buildProductPatch(row: Record<string, any>, opts: PatchOpts): Pa
     patch.source = v;
   }
 
+  // 0.6.31: show_days — "Tue, Thu" (or "every day" / DELETE for every day). Shown on the grid only those days.
+  const daysRaw = val(row, 'show_days', 'show_on_days', 'days');
+  if (daysRaw !== undefined) {
+    if (isDelete(daysRaw)) patch.show_days = null;
+    else {
+      const d = cleanShowDays(daysRaw);
+      if (d === undefined) return { error: `invalid show_days: ${daysRaw} (use day names like Tue, Thu)` };
+      patch.show_days = d;
+    }
+  }
   const kitchen = val(row, 'is_kitchen');
   if (kitchen !== undefined) {
     const b = parseBool(kitchen);

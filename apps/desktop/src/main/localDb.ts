@@ -1165,6 +1165,9 @@ function initSchema(db: Database.Database) {
     // which is why it is nullable INTEGER rather than a 0/1 default: "nobody
     // has said" and "explicitly not kitchen" are different answers.
     ['is_kitchen', 'INTEGER'],
+    // 0.6.31 (62): the days the product is on the POS grid, a JSON array (0 = Sunday … 6 = Saturday). Pulled, never
+    // pushed. NULL = every day. Off the grid on other days but still found by search and sold (shared/productDays.ts).
+    ['show_days', 'TEXT'],
   ]);
 }
 
@@ -1219,7 +1222,8 @@ function initSchema(db: Database.Database) {
 // /api/sync/push; migration 112). REQUIRED moves with it.
 // 61 adds 0.6.30 (A336 stage 3): pending_reversals (offline voids/refunds, replayed to /api/orders/:id/void|refund)
 // and device_config.reversal_rules (pulled). REQUIRED moves with it by convention.
-export const LOCAL_SCHEMA_VERSION = 61;
+// 62 adds 0.6.31: products.show_days (pulled; migration 113) — the days a product is on the grid. REQUIRED moves with it.
+export const LOCAL_SCHEMA_VERSION = 62;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

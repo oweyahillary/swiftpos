@@ -10,7 +10,7 @@
 // may read any branch); (3) it becomes subject to the per-request account-status
 // + permissions-version recheck (auth.ts:111 runs only for !isOwner), so revoking
 // the owner stops the device. It keeps ['*'] so rbac still lets the till do its
-// job. NOTE: the A159 terminal write-guard (terminalWriteDenied, auth.ts:256)
+// job. NOTE: the A159 terminal write-guard (terminalWriteDenied, lib/terminalWrites.ts)
 // gates on surface==='desktop' ALONE, not isOwner, so it already bounds any
 // desktop token regardless of this flag — do not rely on isOwner:false for that.
 //

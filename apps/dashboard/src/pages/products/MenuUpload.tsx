@@ -106,12 +106,13 @@ export default function MenuUpload({
       ['• free  — e.g. Normal / Spicy. Put 0 in price_added; spice is never an upsell.'],
       ['• upgrade — a ladder e.g. 350ml / 1.25L, or Regular / Large fries. ONE option MUST be 0 (baseline); the rest add money.'],
       ['COST: purchased items set cost_price; central_kitchen items leave it blank (worked out from Recipe × ingredient unit_cost).'],
+      ['SHOW_DAYS (optional): e.g. Tue, Thu — the item is on the POS grid and QR menu only those days; any day a search still finds and sells it. Blank = every day.'],
     ]), 'Read me');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['name', 'category', 'price', 'cost_price', 'description', 'sold_by', 'unit_label', 'pieces_per_unit',
-        'track_stock', 'source', 'is_kitchen', 'tax_type', 'kra_item_class_code', 'reorder_level', 'plu_code', 'barcode', 'status'],
+        'track_stock', 'source', 'is_kitchen', 'tax_type', 'kra_item_class_code', 'reorder_level', 'plu_code', 'barcode', 'status', 'show_days'],
       ['Crispy Chicken Burger', 'Burgers', 550, '', 'Crispy fillet + house sauce', 'each', 'pc', 1,
-        'yes', 'central_kitchen', 'yes', 'B', '', '', 'CCB01', '', 'active'],
+        'yes', 'central_kitchen', 'yes', 'B', '', '', 'CCB01', '', 'active', ''],
     ]), 'Products');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['product', 'group', 'type', 'option', 'price_added', 'notes'],

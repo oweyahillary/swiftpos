@@ -97,6 +97,17 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.31: a product shown on the POS grid / QR menu only on chosen days (still found by search and sold any day).
+    name: 'productDays.ts',
+    copies: [
+      'shared/productDays.ts',
+      'apps/desktop/src/shared/productDays.ts',
+      'apps/desktop/src/main/productDays.ts',    // the main process cleans what the pull stores (rootDir is src/main)
+      'apps/dashboard/src/lib/productDays.ts',
+      'apps/server/src/lib/productDays.ts',      // the cloud validates show_days on write and filters the QR menu
+    ],
+  },
+  {
     // 0.6.30 (A336 stage 3): the owner's void window and the offline void/refund rules (methods, web sales).
     name: 'reversalRules.ts',
     copies: [

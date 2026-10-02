@@ -11,6 +11,7 @@ import BulkPriceEditor from './BulkPriceEditor';
 import RecipeDrawer from './RecipeDrawer';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import { ProductTableSkeleton } from '../pos/cashier/POSSkeletons';
+import { cleanShowDays, showDaysLabel, DAY_SHORT } from '../../lib/productDays';
 
 const EMPTY_FORM = {
   name: '',
@@ -25,6 +26,7 @@ const EMPTY_FORM = {
   sold_by: 'each',
   is_fuel: false,
   fuel_unit: 'L',
+  show_days: [] as number[],   // 0.6.31: [] = every day
 };
 
 export default function ProductsPage() {
@@ -160,6 +162,7 @@ export default function ProductsPage() {
       sold_by: (p as any).sold_by ?? 'each',
       is_fuel: (p as any).is_fuel ?? false,
       fuel_unit: (p as any).fuel_unit ?? 'L',
+      show_days: cleanShowDays((p as any).show_days) ?? [],
     });
     setImageFile(null);
     setImagePreview(p.image_url);
@@ -210,6 +213,7 @@ export default function ProductsPage() {
       sold_by: form.is_fuel ? 'volume' : form.sold_by,
       is_fuel: form.is_fuel,
       fuel_unit: form.is_fuel ? (form.fuel_unit || 'L') : null,
+      show_days: cleanShowDays(form.show_days) ?? null,   // 0.6.31: none or all seven = every day
     };
 
     try {
@@ -642,6 +646,28 @@ export default function ProductsPage() {
                 <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${form.track_stock ? 'left-5' : 'left-0.5'}`} />
               </button>
               <label className="text-sm text-gray-400">Track stock for this product</label>
+            </div>
+
+            {/* 0.6.31: show on the POS grid / QR menu only on chosen days. Still sold any day — a search finds it. */}
+            <div data-testid="show-days">
+              <label className="block text-sm text-gray-400 mb-1.5">Show on the POS on</label>
+              <div className="flex flex-wrap gap-1.5">
+                {DAY_SHORT.map((label, day) => {
+                  const on = form.show_days.includes(day);
+                  return (
+                    <button key={label} type="button"
+                      onClick={() => setForm(f => ({ ...f, show_days: on ? f.show_days.filter(d => d !== day) : [...f.show_days, day].sort() }))}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${on
+                        ? 'bg-swift-strong border-swift-strong text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5">
+                {showDaysLabel(form.show_days)}. On other days it is off the product grid and the QR menu, but a search
+                still finds it and it sells at its normal price. Pick none (or all) for every day.
+              </p>
             </div>
 
             {/* Fuel product — petrol stations only. Marks the product as a fuel

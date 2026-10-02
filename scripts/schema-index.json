@@ -850,7 +850,8 @@
     "kra_item_class_code": "\"text\"",
     "is_kitchen": "\"boolean\"",
     "menu_visible": "\"boolean\" NOT NULL",
-    "portions": "\"integer\" NOT NULL"
+    "portions": "\"integer\" NOT NULL",
+    "show_days": "\"ARRAY\""
   },
   "promotions": {
     "id": "\"uuid\" NOT NULL",

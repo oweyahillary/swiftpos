@@ -29,6 +29,7 @@
 // mapping that breaks silently, so they get a test that fails when they regress.
 import { parsePosFeatures } from './posFeatures';
 import { rulesFromWire, type ReversalRules } from './reversalRules';
+import { cleanShowDays } from './productDays';
 
 // ── Cloud-shaped output ──────────────────────────────────────────────────────
 // Field names and value types match what pullCatalogue destructures, NOT the
@@ -167,6 +168,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
     plu: p.plu ?? null,
     is_fuel: asBool(p.is_fuel),
     is_kitchen: asTriBool(p.is_kitchen),   // tri-state — see asTriBool
+    show_days: cleanShowDays(p.show_days) ?? null,   // 0.6.31: relayed so a peer shows the same products each day
   }));
 
   const categories = rows.categories.map(c => ({
@@ -246,7 +248,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
 
   const rows: ReferenceRows = {
     products: all(`SELECT id, category_id, name, description, base_price, branch_price, image_url,
-                          has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen
+                          has_variants, has_modifiers, track_stock, status, barcode, plu, is_fuel, is_kitchen, show_days
                    FROM products`),
     categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen FROM categories`),
     comboItems: all(`SELECT combo_id, product_id, name, quantity, sort_order, is_kitchen FROM combo_items ORDER BY combo_id, sort_order`),

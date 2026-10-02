@@ -666,6 +666,11 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/kitchen-voids.test.mjs
 
+      # 0.6.31 — a product shown on the grid only on chosen days (still found by search and sold any day); node relay.
+      - name: Desktop products shown on chosen days
+        working-directory: apps/desktop
+        run: node --no-warnings test/product-days.test.mjs
+
       # 0.6.30 (A336 stage 3) — void / refund while the till cannot reach the cloud: the owner's window, methods and scope;
       # a manager or the owner only; applied on the till, replayed to the cloud with its approver once the sale is there.
       - name: Desktop offline void and refund (owner's rules, replay)
