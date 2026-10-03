@@ -129,7 +129,7 @@ export default function InstallPage({ onComplete }: Props) {
       const r = await posApi.config.testConnection(cleanUrl);
       if (r.ok) {
         setVerified(true);
-        setTestMsg({ kind: 'ok', text: 'Connected — SwiftPOS server responded.' });
+        setTestMsg({ kind: 'ok', text: 'Connected — ZapTill server responded.' });
       } else if (r.reachable) {
         // Something answered, but it is not our /health endpoint. By far the
         // most common cause is a URL carrying an extra path, e.g. pasting the
@@ -138,7 +138,7 @@ export default function InstallPage({ onComplete }: Props) {
         setTestMsg({
           kind: 'warn',
           text: r.status === 404
-            ? `Something answered but it is not the SwiftPOS server (HTTP 404). Check the address is the base URL only — no /health or other path on the end.`
+            ? `Something answered but it is not the ZapTill server (HTTP 404). Check the address is the base URL only — no /health or other path on the end.`
             : `Reachable but unhealthy (HTTP ${r.status}). The server is up but not responding correctly.`,
         });
       } else {
@@ -254,7 +254,7 @@ export default function InstallPage({ onComplete }: Props) {
       <div className="w-full max-w-md">
 
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-teal-400">SwiftPOS</h1>
+          <h1 className="text-3xl font-bold text-teal-400">ZapTill</h1>
           <p className="text-gray-300 text-sm mt-1">Device setup · step {stepNum} of 3</p>
         </div>
 
@@ -504,7 +504,7 @@ export default function InstallPage({ onComplete }: Props) {
         </div>
 
         <p className="text-center text-gray-400 text-xs mt-6">
-          SwiftPOS v{posApi.version} · {posApi.platform}
+          ZapTill v{posApi.version} · {posApi.platform}
         </p>
       </div>
     </div>

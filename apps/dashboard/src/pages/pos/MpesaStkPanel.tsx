@@ -74,7 +74,7 @@ export default function MpesaStkPanel({ total, currency, orderId, onSuccess, onC
         amount:   Math.ceil(total),
         order_id: orderId,
         account_reference: orderId.slice(-12),
-        description: 'SwiftPOS payment',
+        description: 'ZapTill payment',
       });
 
       setCheckoutId(res.checkoutRequestId);

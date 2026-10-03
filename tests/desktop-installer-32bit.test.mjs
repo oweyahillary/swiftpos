@@ -28,14 +28,14 @@ const cfg = require(path.join(ROOT, 'apps/desktop/electron-builder.config.js'));
 ok('the Windows installer carries both 64-bit and 32-bit (one NSIS target)', () => {
   assert.deepStrictEqual(cfg.win.target, [{ target: 'nsis', arch: ['x64', 'ia32'] }]);
 });
-ok('its name is fixed and carries no arch: SwiftPOS-<version>.exe', () => {
+ok('its name is fixed and carries no arch: ZapTill-<version>.exe', () => {
   assert.strictEqual(cfg.nsis.artifactName, '${productName}-${version}.${ext}');
-  assert.strictEqual(cfg.productName, 'SwiftPOS');
+  assert.strictEqual(cfg.productName, 'ZapTill');   // 0.6.36 (A386)
 });
 ok('the release run builds both and checks for that exact file', () => {
   const wf = read('.github/workflows/release.yml');
   assert.match(wf, /npx electron-builder --win nsis --x64 --ia32 --config electron-builder\.config\.js --publish always/);
-  assert.match(wf, /for f in latest\.yml "SwiftPOS-\$V\.exe"; do/);
+  assert.match(wf, /for f in latest\.yml "ZapTill-\$V\.exe"; do/);   // 0.6.36 (A386): ZapTill-<version>.exe
   assert.ok(!/SwiftPOS-\$V-x64\.exe/.test(wf), 'the release check still expects the 64-bit-only name');
 });
 // 2026-10-02: v0.6.32 was tagged on main's A376 merge (0.6.31) three times, then uploaded into a DRAFT release.

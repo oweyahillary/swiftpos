@@ -164,14 +164,14 @@ export default function App() {
   }
 
   const help = helpOpen
-    ? <HelpScreen businessName={session?.business?.name ?? 'SwiftPOS'} onClose={() => setHelpOpen(false)} />
+    ? <HelpScreen businessName={session?.business?.name ?? 'ZapTill'} onClose={() => setHelpOpen(false)} />
     : null;
 
   if (state === 'pin') {
     return (
       <>
       <PinPage
-        businessName={session?.business?.name ?? 'SwiftPOS'}
+        businessName={session?.business?.name ?? 'ZapTill'}
         onStaffLogin={handleStaffLogin}
         onBackToOwner={handleSignOut}
         onTechUnlock={() => setState('tech')}

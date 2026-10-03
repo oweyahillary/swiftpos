@@ -175,7 +175,7 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
 
       {rule}
       <div style={{ textAlign: 'center', marginTop: '8px' }}>
-        <p style={{ fontSize: '10px', color: '#555' }}>Powered by SwiftPOS</p>
+        <p style={{ fontSize: '10px', color: '#555' }}>Powered by ZapTill</p>
       </div>
     </div>
   );

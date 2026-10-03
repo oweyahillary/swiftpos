@@ -151,7 +151,7 @@ router.get('/sales', async (req, res) => {
 
   // Excel
   const wb = new ExcelJS.Workbook();
-  wb.creator   = 'SwiftPOS';
+  wb.creator   = 'ZapTill';
   wb.created   = new Date();
 
   // Sales sheet
@@ -271,7 +271,7 @@ router.get('/products', async (req, res) => {
   }
 
   const wb  = new ExcelJS.Workbook();
-  wb.creator = 'SwiftPOS';
+  wb.creator = 'ZapTill';
   const ws  = wb.addWorksheet('Top Products', { views: [{ state: 'frozen', ySplit: 2 }] });
 
   ws.mergeCells('A1:E1');
@@ -360,7 +360,7 @@ router.get('/pnl', async (req, res) => {
   }
 
   const wb  = new ExcelJS.Workbook();
-  wb.creator = 'SwiftPOS';
+  wb.creator = 'ZapTill';
   const ws  = wb.addWorksheet('P&L');
 
   ws.mergeCells('A1:B1');
@@ -454,7 +454,7 @@ router.get('/shifts', async (req, res) => {
   }
 
   const wb  = new ExcelJS.Workbook();
-  wb.creator = 'SwiftPOS';
+  wb.creator = 'ZapTill';
   const ws  = wb.addWorksheet('Shifts');
   ws.mergeCells('A1:G1');
   ws.getCell('A1').value = `Shift Reconciliation — ${fmtDate(start)} to ${fmtDate(end)}`;
@@ -529,7 +529,7 @@ router.get('/expenses', async (req, res) => {
   }
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'SwiftPOS';
+  wb.creator = 'ZapTill';
   const ws = wb.addWorksheet('Expenses');
   ws.mergeCells('A1:E1');
   ws.getCell('A1').value = `Expenses — ${fmtDate(start)} to ${fmtDate(end)}`;

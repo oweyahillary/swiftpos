@@ -15,7 +15,7 @@ func sendSpooler(name string, data []byte) error {
 		return fmt.Errorf("open printer %q: %w", name, err)
 	}
 	defer p.Close()
-	if err := p.StartRawDocument("SwiftPOS Receipt"); err != nil {
+	if err := p.StartRawDocument("ZapTill Receipt"); err != nil {
 		return fmt.Errorf("start doc: %w", err)
 	}
 	defer p.EndDocument()

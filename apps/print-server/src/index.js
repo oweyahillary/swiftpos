@@ -211,7 +211,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`SwiftPOS Print Bridge ${VERSION} on http://127.0.0.1:${PORT}`);
+  console.log(`ZapTill Print Bridge ${VERSION} on http://127.0.0.1:${PORT}`);
   console.log(`Bound to loopback only. Not reachable from the network.`);
   console.log(``);
   console.log(`Pair token (paste into the till's printer settings):`);

@@ -29,12 +29,12 @@ const CONFIRM = process.argv.includes('--confirm');
 const pathArg = process.argv.slice(2).find(a => !a.startsWith('--'));
 
 function defaultDb() {
+  // 0.6.36 (A386): the till's folder is %APPDATA%\\ZapTill (it was SwiftPOS — the till moves it on first start).
   const home = os.homedir();
-  if (process.platform === 'win32')
-    return path.join(process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming'), 'SwiftPOS', 'swiftpos.db');
-  if (process.platform === 'darwin')
-    return path.join(home, 'Library', 'Application Support', 'SwiftPOS', 'swiftpos.db');
-  return path.join(home, '.config', 'SwiftPOS', 'swiftpos.db');
+  const base = process.platform === 'win32' ? (process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming'))
+    : process.platform === 'darwin' ? path.join(home, 'Library', 'Application Support') : path.join(home, '.config');
+  const found = ['ZapTill', 'SwiftPOS'].map((n) => path.join(base, n, 'swiftpos.db')).find((p) => fs.existsSync(p));
+  return found ?? path.join(base, 'ZapTill', 'swiftpos.db');
 }
 
 const dbPath = pathArg ?? defaultDb();

@@ -42,7 +42,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // Clients cannot self-provision branches. Contact SwiftPOS to add a branch.
 router.post('/', requireAuth, (_req, res) => {
   res.status(403).json({
-    error: 'Branch creation is managed by SwiftPOS agents. Contact SwiftPOS to add a branch.',
+    error: 'Branch creation is managed by ZapTill agents. Contact ZapTill to add a branch.',
     code:  'BRANCH_CREATION_RESTRICTED',
   });
 });

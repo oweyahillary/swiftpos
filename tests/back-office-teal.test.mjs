@@ -117,9 +117,9 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.A329_TS) {
   // ── The owner's decisions ──
   const tab = read('src/pages/settings/BrandingTab.tsx');
   const pal = [...tab.slice(tab.indexOf('const PALETTE'), tab.indexOf('];', tab.indexOf('const PALETTE'))).matchAll(/name: '([^']+)',\s*hex: '(#[0-9a-f]{6})'/gi)].map((m) => [m[1], m[2].toLowerCase()]);
-  ok('palette: "SwiftPOS Teal" #0d9488 first; no "SwiftPOS Blue"', pal[0]?.[0] === 'SwiftPOS Teal' && pal[0]?.[1] === '#0d9488' && !pal.some((p) => p[0] === 'SwiftPOS Blue'));
+  ok('palette: "ZapTill Teal" #0d9488 first; no "SwiftPOS Blue"', pal[0]?.[0] === 'ZapTill Teal' && pal[0]?.[1] === '#0d9488' && !pal.some((p) => p[0] === 'SwiftPOS Blue' || p[0] === 'ZapTill Blue'));
   ok(`palette: 8 distinct colours (keys are the hex) — ${pal.length} listed`, pal.length === 8 && new Set(pal.map((p) => p[1])).size === 8);
-  ok('the prod favicon is the logo teal', /prod: \{ label: 'S', title: 'SwiftPOS', color: '#0d9488'/.test(read('src/lib/appFlavor.ts')));
+  ok('the prod favicon is the logo teal', /prod: \{ label: 'Z', title: 'ZapTill', color: '#0d9488'/.test(read('src/lib/appFlavor.ts')));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

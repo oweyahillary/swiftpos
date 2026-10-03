@@ -353,7 +353,7 @@ export default function FleetPage() {
       <p className="text-xs text-gray-500 dark:text-gray-500">
         <strong>Last sync</strong> is when the terminal last pushed sales. It matters
         more than sign-in: a till can be signed in and trading while silently failing
-        to sync, and nothing else in SwiftPOS would show it.
+        to sync, and nothing else in ZapTill would show it.
         Amber past {WARN_HOURS}h, red past {ALERT_HOURS}h.
       </p>
     </div>

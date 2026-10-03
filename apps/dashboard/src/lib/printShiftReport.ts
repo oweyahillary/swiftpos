@@ -22,7 +22,7 @@ export async function printShiftReport(shiftId: string): Promise<{ ok: boolean; 
   catch (e: any) { return { ok: false, message: e?.message ?? 'Could not load the shift.' }; }
 
   const [business, branding, printers] = await Promise.all([
-    api.get<any>('/api/business').catch(() => ({ name: 'SwiftPOS', currency: 'KES' })),
+    api.get<any>('/api/business').catch(() => ({ name: 'ZapTill', currency: 'KES' })),
     // 0.6.25: the receipt logo heads the Z-report too — same raster and switch as the receipt (A313).
     api.get<{ logo_receipt: string | null; receipt_logo_enabled: boolean } | null>('/api/business/branding').catch(() => null),
     api.get<BranchPrinter[]>(`/api/printers?branch_id=${shift.branch_id}`).catch(() => [] as BranchPrinter[]),
@@ -33,7 +33,7 @@ export async function printShiftReport(shiftId: string): Promise<{ ok: boolean; 
 
   const data = {
     logoRaster:   branding?.receipt_logo_enabled && branding.logo_receipt ? monoRasterFromString(branding.logo_receipt) ?? undefined : undefined,
-    businessName: business?.name ?? 'SwiftPOS',
+    businessName: business?.name ?? 'ZapTill',
     branchName:   shift.branch_name ?? undefined,
     currencyCode: business?.currency ?? 'KES',
 
@@ -59,7 +59,7 @@ export async function printShiftReport(shiftId: string): Promise<{ ok: boolean; 
     variance:     shift.cash_variance == null ? null : cents(shift.cash_variance),
     notes:        shift.notes ?? null,
     printedAt:    new Date(),
-    footerCredit: 'Powered by SwiftPOS',
+    footerCredit: 'Powered by ZapTill',
   };
 
   try {

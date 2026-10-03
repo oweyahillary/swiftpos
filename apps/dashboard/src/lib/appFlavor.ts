@@ -14,8 +14,8 @@
 type Flavor = { label: string; title: string; color: string; fg: string };
 
 const FLAVORS: Record<string, Flavor> = {
-  prod: { label: 'S', title: 'SwiftPOS', color: '#0d9488', fg: '#ffffff' },
-  dev: { label: 'SD', title: '[DEV] SwiftPOS', color: '#f59e0b', fg: '#0f172a' },
+  prod: { label: 'Z', title: 'ZapTill', color: '#0d9488', fg: '#ffffff' },
+  dev: { label: 'ZD', title: '[DEV] ZapTill', color: '#f59e0b', fg: '#0f172a' },
 };
 
 function faviconDataUri(f: Flavor): string {

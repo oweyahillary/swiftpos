@@ -107,9 +107,9 @@ router.post("/test-email", async (req, res) => {
 
   const result = await sendEmailChecked({
     to,
-    subject: "SwiftPOS test email",
+    subject: "ZapTill test email",
     html:
-      "<p>This is a SwiftPOS test email.</p>" +
+      "<p>This is a ZapTill test email.</p>" +
       "<p>If you are reading this, notification delivery is working.</p>" +
       `<p style="color:#888">Sent ${new Date().toISOString()}</p>`,
   });

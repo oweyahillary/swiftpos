@@ -200,7 +200,7 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
     {
       // The approved footer stack, IN ORDER: payments → owner box (verbatim,
       // rule only when non-empty) → fixed closing block (thank-you · TAX
-      // RECEIPT · Powered by SwiftPOS) → final rule.
+      // RECEIPT · Powered by ZapTill) → final rule.
       // Anchored search: each element must appear AFTER the previous one —
       // the lock comment above the stack names the same strings, so a naive
       // indexOf finds prose, not elements.
@@ -208,7 +208,7 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
       const iBox = RB.indexOf('lines(footerText).length > 0 && (', iPay);
       const iFix = RB.indexOf("footerMessage || 'Thank you for your business!'", iBox);
       const iTax = RB.indexOf('TAX RECEIPT UPON REQUEST', iFix);
-      const iPow = RB.indexOf('Powered by SwiftPOS', iTax);
+      const iPow = RB.indexOf('Powered by ZapTill', iTax);
       ok('footer stack order: payments → owner box → fixed block → Powered last',
          iPay > -1 && iPay < iBox && iBox < iFix && iFix < iTax && iTax < iPow);
       ok('empty owner box leaves NO orphan rule (rule lives inside the conditional)',

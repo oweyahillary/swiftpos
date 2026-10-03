@@ -172,7 +172,7 @@ export function buildDocumentHtml(spec: PrintDocSpec, logo?: string | null, prin
   ${totalsHtml}
   ${noteHtml}
   ${sigHtml}
-  <div class="foot"><span>${esc(business.name)} &nbsp;·&nbsp; ${esc(docType)} ${esc(number)}</span><span>Printed ${esc(stamp)} &nbsp;·&nbsp; SwiftPOS</span></div>
+  <div class="foot"><span>${esc(business.name)} &nbsp;·&nbsp; ${esc(docType)} ${esc(number)}</span><span>Printed ${esc(stamp)} &nbsp;·&nbsp; ZapTill</span></div>
   </div>
 </body></html>`;
 }

@@ -203,7 +203,7 @@ function GenericPermissionView({ permissionKey }: RichProps) {
       <div style={gv.hint}>
         <span>💡</span>
         <span>
-          This permission allows <code style={gv.inlineCode}>{permissionKey}</code> actions in SwiftPOS.
+          This permission allows <code style={gv.inlineCode}>{permissionKey}</code> actions in ZapTill.
           Contact your administrator for more information.
         </span>
       </div>

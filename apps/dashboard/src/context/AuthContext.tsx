@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    clearAllTokens();              // wipe ALL SwiftPOS tokens + cashier session
+    clearAllTokens();              // wipe ALL ZapTill tokens + cashier session
     await supabase.auth.signOut(); // triggers onAuthStateChange → session = null
   };
 

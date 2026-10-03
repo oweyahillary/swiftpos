@@ -20,7 +20,7 @@ router.use(requireAuth);
 // POST /api/enrol/code — RETIRED (register A69). Issuance moved to the admin portal.
 router.post('/code', async (_req: any, res) => {
   res.status(410).json({
-    error: 'Enrolment codes are now issued from the SwiftPOS admin portal, not here.',
+    error: 'Enrolment codes are now issued from the ZapTill admin portal, not here.',
     code:  'ENROL_ISSUE_MOVED',
   });
 });

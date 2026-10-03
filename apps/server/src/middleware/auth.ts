@@ -238,7 +238,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 export function requireWebSurface(req: Request, res: Response, next: NextFunction) {
   if (req.isOwner || req.surface !== 'desktop') { next(); return; }
   res.status(403).json({
-    error: 'This feature requires web portal access. Please contact SwiftPOS to upgrade.',
+    error: 'This feature requires web portal access. Please contact ZapTill to upgrade.',
     code:  'WEB_SURFACE_REQUIRED',
   });
 }

@@ -55,8 +55,8 @@ export default function EnrolPage({ onComplete }: Props) {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22c55e] flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
-            <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
+            <div className="w-8 h-8 rounded-lg bg-[#22c55e] flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
+            <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
           </div>
           <p className="text-[#334155] text-sm">Activate this terminal</p>
         </div>
@@ -119,7 +119,7 @@ export default function EnrolPage({ onComplete }: Props) {
         </div>
 
         <p className="text-center text-[#1e293b] text-xs mt-6">
-          SwiftPOS v{posApi.version} · {posApi.platform} · offline-first terminal
+          ZapTill v{posApi.version} · {posApi.platform} · offline-first terminal
         </p>
       </div>
     </div>

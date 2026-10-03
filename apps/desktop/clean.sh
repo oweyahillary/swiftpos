@@ -39,9 +39,9 @@ echo
 # --- 2. Local DB (opt-in only) ----------------------------------------------
 if [ "$DO_DB" = "1" ]; then
   echo "[2/3] Resetting local database (DEV ONLY)..."
-  # Dev (unpackaged) uses %APPDATA%\desktop ; packaged build uses %APPDATA%\SwiftPOS.
+  # Dev (unpackaged) uses %APPDATA%\desktop ; packaged build uses %APPDATA%\ZapTill (SwiftPOS before 0.6.36).
   APPDATA_UNIX="$(cygpath "$APPDATA" 2>/dev/null || echo "$HOME/AppData/Roaming")"
-  for d in "$APPDATA_UNIX/desktop" "$APPDATA_UNIX/SwiftPOS"; do
+  for d in "$APPDATA_UNIX/desktop" "$APPDATA_UNIX/ZapTill" "$APPDATA_UNIX/SwiftPOS"; do
     rm -f "$d/swiftpos.db" "$d/swiftpos.db-wal" "$d/swiftpos.db-shm"
   done
   echo "      local database reset."

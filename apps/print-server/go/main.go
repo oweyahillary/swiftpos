@@ -50,7 +50,7 @@ func main() {
 	http.HandleFunc("/print/test", handleTest)
 
 	addr := "127.0.0.1:" + port
-	fmt.Printf("SwiftPOS Print Bridge %s on http://%s\n", version, addr)
+	fmt.Printf("ZapTill Print Bridge %s on http://%s\n", version, addr)
 	fmt.Printf("Bound to loopback only; Host-locked + origin-allowlisted (DNS-rebinding safe).\n\n")
 	fmt.Printf("Trusted dashboards print with no pairing. Optional manual token:\n   %s\n\n", token)
 	fmt.Printf("Stored at %s. Delete it and restart to rotate.\n", tokenPath())
@@ -305,7 +305,7 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 // testTicket is a minimal ESC/POS test receipt (init, text, feed, cut).
 func testTicket() []byte {
 	esc := []byte{0x1b, 0x40} // ESC @ init
-	esc = append(esc, []byte("\n   SwiftPOS print test\n   ")...)
+	esc = append(esc, []byte("\n   ZapTill print test\n   ")...)
 	esc = append(esc, []byte(time.Now().Format("2006-01-02 15:04:05"))...)
 	esc = append(esc, []byte("\n\n   If you can read this,\n   silent printing works.\n\n\n")...)
 	esc = append(esc, 0x1d, 0x56, 0x00) // GS V 0 full cut

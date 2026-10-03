@@ -1006,7 +1006,7 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (typeof c.receiptFooter === 'string') saveDeviceConfig({ receipt_footer: c.receiptFooter });
   if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
   setBusinessDayCutoff(c.businessDayCutoff);   // 0.6.34: undefined (older cloud / node) keeps the till's value
-  setSupportContact(c.support);                // 0.6.35: undefined keeps; null = no tech (SwiftPOS support)
+  setSupportContact(c.support);                // 0.6.35: undefined keeps; null = no tech (ZapTill support)
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
   // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
   // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a

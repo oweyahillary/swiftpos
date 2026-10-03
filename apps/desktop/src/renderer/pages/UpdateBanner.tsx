@@ -91,12 +91,12 @@ export default function UpdateBanner({ branchId }: Props) {
       {downloading ? (
         <>
           <span className="font-semibold text-green-400">Updating…</span>
-          <span className="flex-1">Downloading SwiftPOS {status.version ?? ''}{typeof status.percent === 'number' ? ` — ${status.percent}%` : ''}. You can keep working.</span>
+          <span className="flex-1">Downloading ZapTill {status.version ?? ''}{typeof status.percent === 'number' ? ` — ${status.percent}%` : ''}. You can keep working.</span>
         </>
       ) : (
         <>
           <span className="font-semibold text-green-400">Update ready</span>
-          <span className="flex-1">SwiftPOS {status.version ?? ''} will install automatically when you close the app.</span>
+          <span className="flex-1">ZapTill {status.version ?? ''} will install automatically when you close the app.</span>
           {!pinMode ? (
             <>
               <button onClick={() => { setPinMode(true); setMsg(''); }}

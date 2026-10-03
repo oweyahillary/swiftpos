@@ -54,8 +54,8 @@ goto :afterdb
 
 :resetdb
 echo        Deleting swiftpos.db from known locations...
-rem  Dev (unpackaged) uses %%APPDATA%%\desktop ; packaged build uses %%APPDATA%%\SwiftPOS.
-for %%D in ("%APPDATA%\desktop" "%APPDATA%\SwiftPOS") do (
+rem  Dev (unpackaged) uses %%APPDATA%%\desktop ; packaged build uses %%APPDATA%%\ZapTill (SwiftPOS before 0.6.36).
+for %%D in ("%APPDATA%\desktop" "%APPDATA%\ZapTill" "%APPDATA%\SwiftPOS") do (
   if exist "%%~D\swiftpos.db"     del /q "%%~D\swiftpos.db"
   if exist "%%~D\swiftpos.db-wal" del /q "%%~D\swiftpos.db-wal"
   if exist "%%~D\swiftpos.db-shm" del /q "%%~D\swiftpos.db-shm"

@@ -142,7 +142,7 @@ export default function InventoryPage() {
               number: new Date().toLocaleDateString('en-KE'),
               dateLabel: new Date().toLocaleString('en-KE'),
               accent: '#475569',
-              business: business ?? { name: 'SwiftPOS' },
+              business: business ?? { name: 'ZapTill' },
               meta: [{ label: 'Prepared', value: new Date().toLocaleString('en-KE') }],
               columns: [
                 { label: 'Product' }, { label: 'System qty', align: 'right' },

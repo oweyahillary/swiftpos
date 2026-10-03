@@ -23,7 +23,7 @@ export default function HelpPage() {
     fetch(`${API_URL}/api/business/support`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (j) setContact(supportContact(j.support)); })
-      .catch(() => { /* SwiftPOS support's numbers stay */ });
+      .catch(() => { /* ZapTill support's numbers stay */ });
   }, []);
 
   const phones = contact.phones.map(displayPhone);

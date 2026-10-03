@@ -231,7 +231,7 @@ public static class SwiftRaw {
         Marshal.GetLastWin32Error() + ")");
     try {
       DOCINFO di = new DOCINFO();
-      di.pDocName = "SwiftPOS ticket";
+      di.pDocName = "ZapTill ticket";
       di.pDatatype = "RAW";
       if (!StartDocPrinter(h, 1, ref di))
         throw new Exception("StartDocPrinter failed (" + Marshal.GetLastWin32Error() + ")");

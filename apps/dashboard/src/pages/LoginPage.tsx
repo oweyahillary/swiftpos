@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { RELEASE, releaseLabel } from '../lib/release';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
@@ -13,17 +12,17 @@ const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: st
   NOT_THIS_BUSINESS: {
     icon:  '🏪',
     title: 'Not this business',
-    body:  'This sign-in address belongs to another business. Use your own business\'s address, or the main SwiftPOS sign-in.',
+    body:  'This sign-in address belongs to another business. Use your own business\'s address, or the main ZapTill sign-in.',
   },
   WEB_HOSTING_REQUIRED: {
     icon:  '🔒',
     title: 'Web portal access not enabled',
-    body:  'Your licence covers the desktop POS app only. To access the web dashboard and cloud portal, contact SwiftPOS to upgrade your plan (KES 10,000).',
+    body:  'Your licence covers the desktop POS app only. To access the web dashboard and cloud portal, contact ZapTill to upgrade your plan (KES 10,000).',
   },
   ACCOUNT_SUSPENDED: {
     icon:  '⛔',
     title: 'Account suspended',
-    body:  'Your account has been suspended. Please contact SwiftPOS support to resolve this.',
+    body:  'Your account has been suspended. Please contact ZapTill support to resolve this.',
   },
 };
 
@@ -167,12 +166,12 @@ export default function LoginPage() {
                 ← Back to login
               </button>
               <a
-                href={`https://wa.me/${import.meta.env.VITE_SUPPORT_WHATSAPP || whatsappNumber(DEFAULT_SUPPORT_PHONES[0])}?text=Hi, I'd like to upgrade my SwiftPOS account to include web hosting access.`}
+                href={`https://wa.me/${import.meta.env.VITE_SUPPORT_WHATSAPP || whatsappNumber(DEFAULT_SUPPORT_PHONES[0])}?text=Hi, I'd like to upgrade my ZapTill account to include web hosting access.`}
                 target="_blank"
                 rel="noreferrer"
                 className="flex-1 bg-swift-strong hover:bg-swift-deep text-white text-sm font-medium rounded-xl py-2.5 transition-colors text-center"
               >
-                Contact SwiftPOS
+                Contact ZapTill
               </a>
             </div>
           </div>
@@ -200,10 +199,13 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           {tenant.status === 'found' ? (
             <div className="mb-3"><TenantBrand tenant={tenant.tenant} /></div>
+          ) : tenant.status === 'loading' ? (
+            // 0.6.36: on a client's address, no brand at all until the cloud says whose it is (no flash of ZapTill).
+            <div className="mb-3 h-[60px]" aria-hidden data-testid="tenant-loading" />
           ) : (
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
-            <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
+            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
+            <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
           </div>
           )}
           <p className="text-[#334155] text-sm">Sign in to your dashboard</p>
@@ -308,17 +310,13 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-[#1e293b] text-xs mt-6">
-          No account? Contact your SwiftPOS agent to get set up.
+          No account? Contact your ZapTill agent to get set up.
         </p>
         {/* 0.6.35 (A384): forgot the password, locked out — what to do and who to call. */}
         <p className="text-center text-xs mt-2">
           <a href="/help" className="text-gray-400 hover:text-white underline" data-testid="login-help">Need help?</a>
         </p>
-        {/* 0.6.28: the release (was the commit alone, in near-invisible ink) — "which one am I running?" */}
-        <p className="text-center text-gray-500 text-xs mt-2" title={`${__WEB_BUILD_REF__} · built ${__WEB_BUILD_TIME__}`}
-           data-testid="login-release">
-          SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}
-        </p>
+        {/* 0.6.36 (owner): no version on the sign-in page — it shows in the menu once signed in (ReleaseBadge). */}
       </div>
     </div>
   );

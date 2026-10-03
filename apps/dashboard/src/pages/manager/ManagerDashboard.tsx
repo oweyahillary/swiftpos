@@ -1319,7 +1319,7 @@ export default function ManagerDashboard() {
           {sidebarOpen && (
             <div className="min-w-0">
               <p className="text-sm font-bold text-white truncate">{session.branchName}</p>
-              <p className="text-xs text-gray-500 truncate">{business?.name ?? 'SwiftPOS'}</p>
+              <p className="text-xs text-gray-500 truncate">{business?.name ?? 'ZapTill'}</p>
             </div>
           )}
         </div>

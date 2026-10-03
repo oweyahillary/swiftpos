@@ -392,7 +392,7 @@ export default function PrintersPage({ branchId: propBranchId, branchName }: { b
         <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 flex gap-3">
           <span className="text-xl flex-shrink-0">🖨️</span>
           <div>
-            <p className="text-blue-300 text-sm font-medium">Enable silent printing with SwiftPOS Print Server</p>
+            <p className="text-blue-300 text-sm font-medium">Enable silent printing with ZapTill Print Server</p>
             <p className="text-blue-400/60 text-xs mt-0.5">
               Install <span className="font-mono text-blue-300">SwiftPOS-PrintServer.exe</span> from your installation folder, then run <span className="font-mono text-blue-300">install-startup.bat</span> to start it automatically at logon. Receipts and KOTs will print instantly with no dialog — and no token to paste on this dashboard.
             </p>

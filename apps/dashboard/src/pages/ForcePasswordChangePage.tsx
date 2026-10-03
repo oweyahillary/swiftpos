@@ -66,8 +66,8 @@ export default function ForcePasswordChangePage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
-            <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
+            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
+            <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
           </div>
           <p className="text-[#334155] text-sm">Welcome — let's secure your account</p>
         </div>
@@ -78,7 +78,7 @@ export default function ForcePasswordChangePage() {
           <div className="flex items-start gap-3 px-4 py-3 bg-[#f59e0b]/5 border border-[#f59e0b]/20 rounded-xl">
             <span className="text-yellow-400 text-base flex-shrink-0 mt-0.5">🔐</span>
             <p className="text-xs text-[#94a3b8] leading-relaxed">
-              Your account was set up by a SwiftPOS agent. Please choose a new private password before continuing.
+              Your account was set up by a ZapTill agent. Please choose a new private password before continuing.
             </p>
           </div>
 

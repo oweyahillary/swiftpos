@@ -212,7 +212,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
         {business.tax_pin && (
           <p style={{ fontSize: '10px', marginTop: '2px' }}>VAT Reg: {business.tax_pin}</p>
         )}
-        <p style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>Powered by SwiftPOS</p>
+        <p style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>Powered by ZapTill</p>
       </div>
     </div>
   );

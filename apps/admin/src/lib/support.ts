@@ -11,7 +11,7 @@
  */
 
 /** SwiftPOS support — shown when a client has no tech allocated. */
-export const DEFAULT_SUPPORT_NAME = 'SwiftPOS support';
+export const DEFAULT_SUPPORT_NAME = 'ZapTill support';
 export const DEFAULT_SUPPORT_PHONES = ['0717675635', '0782972023'] as const;
 
 /**
@@ -51,7 +51,7 @@ export function supportContact(raw: unknown): SupportContact {
   const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null;
   const phone = r ? cleanPhone(r.phone) : null;
   if (phone) {
-    const name = typeof r!.name === 'string' && r!.name.trim() ? r!.name.trim().slice(0, 80) : 'Your SwiftPOS technician';
+    const name = typeof r!.name === 'string' && r!.name.trim() ? r!.name.trim().slice(0, 80) : 'Your ZapTill technician';
     return { name, phones: [phone], assigned: true };
   }
   return { name: DEFAULT_SUPPORT_NAME, phones: [...DEFAULT_SUPPORT_PHONES], assigned: false };

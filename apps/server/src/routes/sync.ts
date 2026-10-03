@@ -58,7 +58,7 @@ router.post('/push', async (req, res) => {
   if (clientSchema && clientSchema < HARD_MIN_DESKTOP_SCHEMA) {
     res.status(426).json({
       error: `This till is running schema ${clientSchema}; this server needs at least ` +
-             `${HARD_MIN_DESKTOP_SCHEMA}. Install the current SwiftPOS build on this terminal.`,
+             `${HARD_MIN_DESKTOP_SCHEMA}. Install the current ZapTill build on this terminal.`,
       code: 'desktop_upgrade_required',
     });
     return;

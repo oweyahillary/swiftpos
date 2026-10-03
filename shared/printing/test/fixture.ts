@@ -14,7 +14,7 @@ export const business: BusinessConfig = {
   tillNumber: '000000',
   thankYouMessage: 'Thank you for your business!',
   deliveryMessage: 'For delivery call 0700 000 000',
-  footerCredit: 'Powered by SwiftPOS',
+  footerCredit: 'Powered by ZapTill',
   currencyCode: 'KES',
   vatRate: 16,
   ctlRate: 2,

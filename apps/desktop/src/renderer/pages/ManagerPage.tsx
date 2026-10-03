@@ -1475,7 +1475,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
               nowhere to answer it outside the install wizard. */}
           {sidebarOpen && (
             <p className="px-3 pt-1 pb-2 text-[11px] text-gray-400">
-              SwiftPOS v{posApi.version} · {posApi.platform}
+              ZapTill v{posApi.version} · {posApi.platform}
             </p>
           )}
           {onSwitchAccount && canManageSettings && (

@@ -295,7 +295,7 @@ router.post('/stk-push', requireAuth, async (req, res) => {
       PhoneNumber:       formattedPhone,
       CallBackURL:       callbackUrl,
       AccountReference:  (account_reference ?? order_id).slice(0, 12),
-      TransactionDesc:   (description ?? 'SwiftPOS Payment').slice(0, 13),
+      TransactionDesc:   (description ?? 'ZapTill Payment').slice(0, 13),
     };
 
     const stkRes = await fetch(`${DARAJA_BASE}/mpesa/stkpush/v1/processrequest`, {

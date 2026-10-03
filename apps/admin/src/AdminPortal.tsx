@@ -4,7 +4,7 @@ import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
-import { cleanSubdomain, subdomainProblem } from "./lib/tenantHost";   // A378: a client's own sign-in address
+import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenantHost";   // A378: a client's own sign-in address
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
 
 
@@ -285,7 +285,7 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 380, padding: 40, background: C.surface, borderRadius: 16, border: `1px solid ${C.border}` }}>
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: C.accent, fontFamily: "'Space Grotesk', sans-serif" }}>SwiftPOS</div>
+          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: C.accent, fontFamily: "'Space Grotesk', sans-serif" }}>ZapTill</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Admin Command Centre</div>
         </div>
 
@@ -329,7 +329,7 @@ function ReleaseLine() {
   const differ = releasesDiffer(RELEASE, cloud?.release);
   return (
     <div data-testid="release-badge" style={{ fontSize: 10, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
-      <div>SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}</div>
+      <div>ZapTill {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}</div>
       {cloud && <div style={differ ? { color: "#f59e0b" } : undefined}>cloud {releaseLabel(cloud.release, cloud.commit)}{differ ? " — not the same release" : ""}</div>}
     </div>
   );
@@ -364,7 +364,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
         className={`sp-sidebar${isOpen ? " sp-sidebar-open" : ""}`}>
         <div style={{ padding: "20px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.accent, letterSpacing: "-0.01em", fontFamily: "'Space Grotesk', sans-serif" }}>SwiftPOS</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: C.accent, letterSpacing: "-0.01em", fontFamily: "'Space Grotesk', sans-serif" }}>ZapTill</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Admin Portal</div>
           </div>
           {/* Close button — mobile only */}
@@ -443,7 +443,7 @@ function DashboardPage({ req }) {
     <div style={S.content}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Fleet Dashboard</h1>
-        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>SwiftPOS client overview</p>
+        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>ZapTill client overview</p>
       </div>
 
       {/* KPI row */}
@@ -565,7 +565,7 @@ function SupportTechPicker({ req, clientId, current, onSaved }) {
 
   const shown = current?.phone
     ? `${current.name} · ${displayPhone(current.phone)}`
-    : current ? `${current.name} — no number yet (the shop sees SwiftPOS support)` : `None — SwiftPOS support (${DEFAULT_SUPPORT_PHONES.map(displayPhone).join(" / ")})`;
+    : current ? `${current.name} — no number yet (the shop sees ZapTill support)` : `None — ZapTill support (${DEFAULT_SUPPORT_PHONES.map(displayPhone).join(" / ")})`;
 
   return (
     <div data-testid="support-tech" style={{ marginTop: 14 }}>
@@ -573,7 +573,7 @@ function SupportTechPicker({ req, clientId, current, onSaved }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <select style={{ ...S.input, width: 220 }} disabled={saving || techs === null}
           value={current?.id ?? ""} onChange={e => choose(e.target.value)}>
-          <option value="">None (SwiftPOS support)</option>
+          <option value="">None (ZapTill support)</option>
           {(techs || []).map(t => (
             <option key={t.id} value={t.id}>{t.name}{t.phone ? ` · ${displayPhone(t.phone)}` : " (no number)"}</option>
           ))}
@@ -1336,7 +1336,7 @@ function ClientDetailPage({ client, req, onBack }) {
                   <span style={{ fontSize: 12, fontFamily: "monospace", color: d.subdomain ? C.text : C.muted }}>
                     {d.sign_in_address || (d.subdomain ? `${d.subdomain}.<root domain>` : "None — signs in on the main address")}
                   </span>
-                  <button onClick={() => { setSubDraft(d.subdomain || ""); setSubError(""); }}
+                  <button onClick={() => { setSubDraft(d.subdomain || suggestSubdomain(d.name)); setSubError(""); }}
                           style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>
                     {d.subdomain ? "Change" : "Set"}
                   </button>
@@ -2045,7 +2045,7 @@ function SettingsPage({ req, apiUrl, setApiUrl }) {
       <div className="sp-two-col" style={{ alignItems: "start", marginBottom: 0 }}>
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>API Connection</div>
-          <label style={S.label}>SwiftPOS Server URL</label>
+          <label style={S.label}>ZapTill Server URL</label>
           <input style={S.input} value={apiInput} onChange={e => setApiInput(e.target.value)} />
           <button onClick={() => { setApiUrl(apiInput); localStorage.setItem("swiftpos_admin_api", apiInput); }}
             style={{ ...S.btn, ...S.btnPrimary, marginTop: 12 }}>Save</button>

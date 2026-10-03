@@ -49,7 +49,7 @@ show('CUSTOMER RECEIPT', { order, business, station: receiptPreset('st-till', 'T
 show('CUSTOMER RECEIPT — duplicate, optional fields off', {
   order,
   business: { name: 'Your Business', currencyCode: 'KES', vatRate: 16, ctlRate: 2,
-              thankYouMessage: 'Thank you for your business!', footerCredit: 'Powered by SwiftPOS' },
+              thankYouMessage: 'Thank you for your business!', footerCredit: 'Powered by ZapTill' },
   station: receiptPreset('st-till', 'Till'),
   reprint: { at: new Date(2026, 7, 5, 21, 6, 9), count: 2 },
 });

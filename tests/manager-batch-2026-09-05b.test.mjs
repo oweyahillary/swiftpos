@@ -36,7 +36,7 @@ ok('A219: sidebar renders branchName as the bold primary line', () => {
     'the bold sidebar line must be the branch name');
 });
 ok('A219: business name drops to the muted subtitle', () => {
-  assert.match(md, /text-xs text-gray-500 truncate">\{business\?\.name \?\? 'SwiftPOS'\}/,
+  assert.match(md, /text-xs text-gray-500 truncate">\{business\?\.name \?\? 'ZapTill'\}/,
     'the business/POS name must be the subtitle, not the primary label');
 });
 

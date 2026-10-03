@@ -57,7 +57,7 @@ ok('user text is escaped (names, cells)', () => {
 });
 ok('a footer names the business and the document, with when it was printed', () => {
   const h = D.buildDocumentHtml(spec, BRAND, new Date(2026, 8, 30, 14, 5));
-  assert.match(h, /<div class="foot"><span>B Foods &lt;&amp;&gt; &nbsp;·&nbsp; PURCHASE ORDER PO-0001<\/span><span>Printed [^<]*2026[^<]* &nbsp;·&nbsp; SwiftPOS<\/span><\/div>/);
+  assert.match(h, /<div class="foot"><span>B Foods &lt;&amp;&gt; &nbsp;·&nbsp; PURCHASE ORDER PO-0001<\/span><span>Printed [^<]*2026[^<]* &nbsp;·&nbsp; ZapTill<\/span><\/div>/);
 });
 ok('corporate layout: accent title, shaded table header, totals box, signature guidance', () => {
   const h = D.buildDocumentHtml(spec, BRAND);

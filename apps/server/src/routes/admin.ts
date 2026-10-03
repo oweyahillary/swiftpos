@@ -1928,7 +1928,7 @@ router.get('/watchdog', requireAdmin, async (_req, res) => {
 
 router.post('/watchdog/test', requireSuperAdmin, async (req: any, res) => {
   const who = req.adminEmail ?? 'an admin';
-  const sent = await notifyAdmin('SwiftPOS test alert',
-    `🧪 SwiftPOS test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);
+  const sent = await notifyAdmin('ZapTill test alert',
+    `🧪 ZapTill test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);
   res.json({ channels: alertChannels(), sent });
 });

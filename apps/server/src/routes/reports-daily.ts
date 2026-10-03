@@ -98,7 +98,7 @@ function sendCsv(res: any, rows: (string | number)[][], filename: string) {
 
 async function businessName(businessId: string): Promise<string> {
   const { data } = await supabase.from('businesses').select('name').eq('id', businessId).maybeSingle();
-  return data?.name ?? 'SwiftPOS';
+  return data?.name ?? 'ZapTill';
 }
 
 /** Orders in range, completed only, with their payments and items. */
@@ -214,7 +214,7 @@ router.get('/daily', async (req: any, res) => {
     if (format === 'csv') { sendCsv(res, blocks, `daily_sales_${label}.csv`); return; }
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'SwiftPOS';
+    wb.creator = 'ZapTill';
     const ws = wb.addWorksheet('Daily Sales');
     blocks.forEach(b => ws.addRow(b));
 
@@ -278,7 +278,7 @@ router.get('/hourly', async (req: any, res) => {
     if (format === 'csv') { sendCsv(res, rows, `hourly_sales_${label}.csv`); return; }
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'SwiftPOS';
+    wb.creator = 'ZapTill';
     const ws = wb.addWorksheet('By Hour');
     rows.forEach(r => ws.addRow(r));
     styleTitle(ws.getRow(1)); styleTitle(ws.getRow(2)); styleHeader(ws.getRow(6));
@@ -365,7 +365,7 @@ router.get('/audit', async (req: any, res) => {
     if (format === 'csv') { sendCsv(res, head, `audit_${label}.csv`); return; }
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'SwiftPOS';
+    wb.creator = 'ZapTill';
     const ws = wb.addWorksheet('Audit');
     head.forEach(r => ws.addRow(r));
     styleTitle(ws.getRow(1)); styleTitle(ws.getRow(2));
