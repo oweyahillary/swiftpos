@@ -505,6 +505,8 @@ function DashboardPage({ req }) {
         </div>
       </div>
 
+      <WatchdogCard req={req} />
+
       {/* Health table */}
       <div style={S.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -535,6 +537,69 @@ function DashboardPage({ req }) {
         </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── WATCHDOG (A383) ──────────────────────────────────────────────────────────
+// What the cloud's watchdog found and has not seen clear, and whether its alerts can reach the admin (Telegram / email).
+// Its own load: a failure here never hides the fleet dashboard.
+function WatchdogCard({ req }) {
+  const [data, setData]       = useState(null);
+  const [error, setError]     = useState("");
+  const [testing, setTesting] = useState(false);
+  const [result, setResult]   = useState("");
+
+  const load = useCallback(() => {
+    req("GET", "/watchdog").then(setData).catch(e => setError(e?.message || "Couldn't load the watchdog."));
+  }, [req]);
+  useEffect(() => { load(); }, [load]);
+
+  const test = async () => {
+    setTesting(true); setResult("");
+    try {
+      const r = await req("POST", "/watchdog/test");
+      const parts = [
+        r.channels?.telegram ? (r.sent?.telegram ? "Telegram ✓" : "Telegram ✗ (see the server log)") : "Telegram not set",
+        r.channels?.email ? (r.sent?.email ? "Email ✓" : "Email ✗ (see the server log)") : "Email not set",
+      ];
+      setResult(parts.join(" · "));
+    } catch (e) { setResult(e?.message || "Test failed."); }
+    finally { setTesting(false); }
+  };
+
+  const alerts = data?.alerts || [];
+  const crit = alerts.filter(a => a.severity === "critical");
+  const warn = alerts.filter(a => a.severity !== "critical");
+  const ch = data?.channels;
+
+  return (
+    <div style={{ ...S.card, marginBottom: 16 }} data-testid="watchdog-card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Watchdog</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+            Checks every 10 minutes · critical problems sent at once, the rest in the 07:45 digest ·{" "}
+            Telegram {ch?.telegram ? "on" : "off"} · Email {ch?.email ? "on" : "off"}
+          </div>
+        </div>
+        <button onClick={test} disabled={testing} style={{ ...S.btn, ...S.btnPrimary }} data-testid="watchdog-test">
+          {testing ? "Sending…" : "Send test alert"}
+        </button>
+      </div>
+      {result && <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>{result}</div>}
+      {error && <div style={{ fontSize: 12, color: C.danger }}>{error}</div>}
+      {data && !alerts.length && <div style={{ fontSize: 13, color: "#22c55e" }}>No open problems.</div>}
+      {[...crit, ...warn].map(a => (
+        <div key={a.id} style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
+          <span style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flexShrink: 0, background: a.severity === "critical" ? C.danger : "#f59e0b" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{a.title}</div>
+            {a.detail && <div style={{ fontSize: 12, color: C.muted }}>{a.detail}</div>}
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>since {timeAgo(a.first_seen_at)}</div>
+        </div>
+      ))}
     </div>
   );
 }

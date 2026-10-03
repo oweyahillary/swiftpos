@@ -1325,6 +1325,19 @@
     "status": "\"text\" NOT NULL",
     "notes": "\"text\""
   },
+  "watchdog_alerts": {
+    "id": "\"uuid\" NOT NULL",
+    "alert_key": "\"text\" NOT NULL",
+    "severity": "\"text\" NOT NULL",
+    "business_id": "\"uuid\"",
+    "title": "\"text\" NOT NULL",
+    "detail": "\"text\"",
+    "first_seen_at": "\"timestamp with time zone\" NOT NULL",
+    "last_seen_at": "\"timestamp with time zone\" NOT NULL",
+    "last_notified_at": "\"timestamp with time zone\"",
+    "notify_count": "\"integer\" NOT NULL",
+    "resolved_at": "\"timestamp with time zone\""
+  },
   "webhook_deliveries": {
     "id": "\"uuid\" NOT NULL",
     "webhook_id": "\"uuid\" NOT NULL",

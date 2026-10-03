@@ -13,6 +13,8 @@ import { checkSchema, schemaAdvice } from './lib/schemaCheck';
 import { startDailySummaryJob } from './jobs/dailySummary';
 import { reportMailReadiness }  from './lib/mailer';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
+import { startWatchdogJob }     from './jobs/watchdog';          // A383
+import { recordServerError, recordFailedSignIn, isSignInFailure } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
@@ -127,6 +129,17 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: limiterKey,
+});
+
+// A383: the watchdog counts what the database cannot tell it — server errors (a burst alerts the admin) and
+// refused sign-ins (the morning digest). After the response is sent; never changes it.
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const path = req.originalUrl || req.url || '';
+    if (res.statusCode >= 500) recordServerError(path);
+    else if (isSignInFailure(req.method, path, res.statusCode)) recordFailedSignIn();
+  });
+  next();
 });
 
 app.use('/api/auth',       authLimiter);
@@ -258,4 +271,5 @@ app.listen(PORT, () => {
 
   startDailySummaryJob();
   startEtimsRetryJob();
+  startWatchdogJob();
 });

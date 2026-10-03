@@ -68,6 +68,7 @@ import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
+import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
 
 const router = safeRouter();
 
@@ -1874,4 +1875,25 @@ router.post('/mode-switch/:id/cancel', requireAdmin, async (req, res) => {
     .eq('id', req.params.id)
     .eq('status', 'pending');
   res.json({ success: true });
+});
+
+// ── Watchdog (A383) ──────────────────────────────────────────────────────────
+// What the cloud's watchdog has found and not yet seen clear, and which channels are set (Telegram / email). The test
+// sends one message through both, so the admin knows an alert would reach them before a real one is needed.
+router.get('/watchdog', requireAdmin, async (_req, res) => {
+  const { data, error } = await supabase
+    .from('watchdog_alerts')
+    .select('id, alert_key, severity, business_id, title, detail, first_seen_at, last_seen_at, last_notified_at, notify_count')
+    .is('resolved_at', null)
+    .order('first_seen_at', { ascending: false })
+    .limit(200);
+  if (error) { res.status(500).json({ error: 'Could not read the watchdog alerts' }); return; }
+  res.json({ channels: alertChannels(), alerts: data ?? [] });
+});
+
+router.post('/watchdog/test', requireSuperAdmin, async (req: any, res) => {
+  const who = req.adminEmail ?? 'an admin';
+  const sent = await notifyAdmin('SwiftPOS test alert',
+    `🧪 SwiftPOS test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);
+  res.json({ channels: alertChannels(), sent });
 });
