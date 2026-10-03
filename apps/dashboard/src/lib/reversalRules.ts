@@ -12,10 +12,13 @@
  *                              A refund hands back every leg in the tender it came in on; offline, every leg must be one
  *                              of these — M-Pesa or card money cannot be checked or sent back without the network.
  *   offline_reverse_web_sales  offline, a till reverses its OWN sales only; with this on, also the web sales it holds.
- *   delivery_free_allowed      0.6.33 — with the client's 'delivery_fee' switch, a delivery may go without a fee (free
- *                              delivery): the cashier still names the rider but may leave the fee empty. Off by default.
- *                              Owner, 2026-10-02: "can we add an option of free delivery where its not a must for the
- *                              cashier to key in delivery fee? but that can be turned on and of by the hotel owner".
+ *   delivery_free_allowed      0.6.33 — with the client's 'delivery_fee' switch, the cashier may mark a delivery FREE:
+ *                              the fee is still entered and the rider is still paid it from the drawer, but the customer
+ *                              pays none of it (shared/delivery.ts). Off by default. Owner, 2026-10-02: "free delivery …
+ *                              turned on and of by the hotel owner" · "the rider is still paid by the shop so delivery fee
+ *                              is a must but the customer does not pay it".
+ *   delivery_free_over         0.6.33 — a delivery whose BILL reaches this amount is free automatically (the shop pays
+ *                              the rider; shared/delivery.ts autoFreeDelivery). Empty / 0 = off (the default).
  *
  * Set by the owner — on the web (Settings) and on the till (Manager → Settings, signed in as the owner). Stored in
  * business_settings; pos/init carries them to the till.
@@ -28,7 +31,7 @@ export const MIN_VOID_WINDOW_MINUTES = 1;
 export const MAX_VOID_WINDOW_MINUTES = 1440;   // a day
 export const DEFAULT_OFFLINE_REFUND_METHODS: readonly string[] = ['cash'];
 
-export const REVERSAL_SETTING_KEYS = ['void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed'] as const;
+export const REVERSAL_SETTING_KEYS = ['void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed', 'delivery_free_over'] as const;
 export type ReversalSettingKey = (typeof REVERSAL_SETTING_KEYS)[number];
 
 export interface ReversalRules {
@@ -36,6 +39,7 @@ export interface ReversalRules {
   offlineRefundMethods: string[];
   offlineReverseWebSales: boolean;
   freeDeliveryAllowed: boolean;   // 0.6.33
+  freeDeliveryOver: number | null;   // 0.6.33: a bill from this amount delivers free; null = off
 }
 
 export function defaultReversalRules(): ReversalRules {
@@ -44,6 +48,7 @@ export function defaultReversalRules(): ReversalRules {
     offlineRefundMethods: [...DEFAULT_OFFLINE_REFUND_METHODS],
     offlineReverseWebSales: false,
     freeDeliveryAllowed: false,
+    freeDeliveryOver: null,
   };
 }
 
@@ -84,6 +89,21 @@ export function cleanRefundMethods(raw: unknown): string[] | null {
   return out.slice(0, 20);
 }
 
+export const MAX_FREE_DELIVERY_OVER = 1_000_000;
+
+/**
+ * 0.6.33: the free-delivery threshold — a whole or 2-decimal amount 1..MAX; 0, empty or null = OFF (returns 0); anything
+ * unreadable → undefined (refused).
+ */
+export function cleanFreeOver(raw: unknown): number | undefined {
+  let v = unwrap(raw);
+  if (typeof v === 'string') v = unwrap(v);
+  if (v === null || v === undefined || v === '' || v === false) return 0;
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\s*\d+(\.\d{1,2})?\s*$/.test(v) ? Number(v) : NaN);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_FREE_DELIVERY_OVER) return undefined;
+  return Math.round(n * 100) / 100;
+}
+
 export function cleanOnOff(raw: unknown): boolean | null {
   let v = unwrap(raw);
   if (typeof v === 'string') v = unwrap(v);
@@ -100,6 +120,7 @@ export function reversalSettingValue(key: string, raw: unknown): string | null {
   if (key === 'void_window_minutes') { const n = cleanVoidWindow(raw); return n === null ? null : JSON.stringify(n); }
   if (key === 'offline_refund_methods') { const m = cleanRefundMethods(raw); return m === null ? null : JSON.stringify(m); }
   if (key === 'offline_reverse_web_sales' || key === 'delivery_free_allowed') { const b = cleanOnOff(raw); return b === null ? null : JSON.stringify(b); }
+  if (key === 'delivery_free_over') { const n = cleanFreeOver(raw); return n === undefined ? null : JSON.stringify(n); }
   return null;
 }
 
@@ -117,6 +138,7 @@ export function parseReversalRules(
     offlineRefundMethods: cleanRefundMethods(get('offline_refund_methods')) ?? d.offlineRefundMethods,
     offlineReverseWebSales: cleanOnOff(get('offline_reverse_web_sales')) ?? d.offlineReverseWebSales,
     freeDeliveryAllowed: cleanOnOff(get('delivery_free_allowed')) ?? d.freeDeliveryAllowed,
+    freeDeliveryOver: cleanFreeOver(get('delivery_free_over')) || d.freeDeliveryOver,
   };
 }
 
@@ -128,6 +150,7 @@ export function rulesFromWire(raw: unknown): ReversalRules {
     offline_refund_methods: r.offlineRefundMethods,
     offline_reverse_web_sales: r.offlineReverseWebSales,
     delivery_free_allowed: r.freeDeliveryAllowed,
+    delivery_free_over: r.freeDeliveryOver,
   });
 }
 

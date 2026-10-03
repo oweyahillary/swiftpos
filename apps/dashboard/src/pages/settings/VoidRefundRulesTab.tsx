@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import {
   parseReversalRules, defaultReversalRules, windowLabel, type ReversalRules,
-  MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES,
+  MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES, MAX_FREE_DELIVERY_OVER,
 } from '../../lib/reversalRules';
 
 // Settings › Business › Voids & refunds — 0.6.30 (A336 stage 3). The owner's rules (lib/reversalRules.ts):
 //   • the void window — how long after a sale a manager may still void it (default 30 minutes; the owner always may);
 //   • which payment methods a till may refund while it cannot reach the cloud (default cash);
 //   • whether, offline, a till may also reverse the web sales on its drawer (default: its own sales only).
-//   • 0.6.33: whether a delivery may go with no fee (free delivery) when the client's deliveries need one.
+//   • 0.6.33: whether the cashier may mark a delivery FREE (the shop pays the rider; the customer pays no fee).
 // The same are on the till (Manager → Settings, signed in as the owner). Only the owner can change them — the
 // cloud refuses anyone else (routes/business.ts).
 
@@ -26,6 +26,7 @@ export default function VoidRefundRulesTab() {
   const [rules, setRules]     = useState<ReversalRules>(defaultReversalRules());
   const [methods, setMethods] = useState(BUILT_IN);
   const [windowText, setWindowText] = useState(String(defaultReversalRules().voidWindowMinutes));
+  const [overText, setOverText] = useState('');   // 0.6.33: free delivery from this bill amount
   const [loading, setLoading] = useState(true);
   const [toast, setToast]     = useState('');
 
@@ -41,6 +42,7 @@ export default function VoidRefundRulesTab() {
       const r = parseReversalRules(kv ?? []);
       setRules(r);
       setWindowText(String(r.voidWindowMinutes));
+      setOverText(r.freeDeliveryOver ? String(r.freeDeliveryOver) : '');
       const extra = (custom ?? [])
         .filter((m) => m?.code && m.is_active !== false && !BUILT_IN.some((b) => b.code === m.code))
         .map((m) => ({ code: String(m.code).toLowerCase(), name: m.name }));
@@ -83,6 +85,17 @@ export default function VoidRefundRulesTab() {
 
   const web = rules.offlineReverseWebSales;
   const free = rules.freeDeliveryAllowed;   // 0.6.33
+  function saveOver() {   // 0.6.33: empty = off
+    const t = overText.trim();
+    const n = t === '' ? 0 : Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > MAX_FREE_DELIVERY_OVER) {
+      showToast(`Enter an amount up to ${MAX_FREE_DELIVERY_OVER.toLocaleString()}, or leave it empty`);
+      setOverText(rules.freeDeliveryOver ? String(rules.freeDeliveryOver) : '');
+      return;
+    }
+    if ((n || null) === rules.freeDeliveryOver) return;
+    void save('delivery_free_over', n, { ...rules, freeDeliveryOver: n || null });
+  }
 
   return (
     <div className="p-6 max-w-2xl space-y-8" data-testid="void-refund-rules">
@@ -173,8 +186,9 @@ export default function VoidRefundRulesTab() {
           <div>
             <h3 className="text-white font-semibold">Allow free delivery</h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              When your deliveries need a fee, turn this on to let the cashier leave the fee empty for a free delivery —
-              on the tills and the web POS. The rider's name is still needed. Off: every delivery needs its fee.
+              When your deliveries carry a fee, turn this on to let the cashier tick <b>Free delivery</b> — on the tills and
+              the web POS. The cashier still enters the fee and the rider is still paid it from the drawer; the customer
+              pays none of it (the shop does). Off: the customer always pays the fee.
             </p>
           </div>
           <button
@@ -185,6 +199,22 @@ export default function VoidRefundRulesTab() {
           >
             <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${free ? 'left-5' : 'left-0.5'}`} />
           </button>
+        </div>
+        {/* 0.6.33: automatic free delivery from a bill amount. */}
+        <div className="mt-5">
+          <h3 className="text-white font-semibold">Free delivery from a bill of</h3>
+          <p className="text-gray-500 text-sm mt-0.5 mb-3">
+            A delivery whose bill reaches this amount is free automatically — the customer pays no fee and the rider is
+            still paid it from the drawer. Leave empty for none.
+          </p>
+          <input
+            type="number" inputMode="decimal" min={0} value={overText} placeholder="None"
+            onChange={(e) => setOverText(e.target.value)}
+            onBlur={saveOver}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className="w-40 bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift"
+            data-testid="free-delivery-over"
+          />
         </div>
       </section>
     </div>

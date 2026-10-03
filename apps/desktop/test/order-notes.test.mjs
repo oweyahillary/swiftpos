@@ -162,7 +162,7 @@ ok('a held order keeps its note, and a recall brings it back',
 ok('the note editor is on every line (not a fuel line) and on the order',
   /data-testid="line-note-btn"/.test(pos) && /data-testid="order-note-btn"/.test(pos) && /<NoteModal/.test(pos));
 const ipc = read('src/main/ipcHandlers.ts');
-ok('a held tab stores the order note', /INSERT INTO held_orders \(id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note(, delivery_fee)?\)/.test(ipc)
+ok('a held tab stores the order note', /INSERT INTO held_orders \(id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note(, delivery_fee(, delivery_free)?)?\)/.test(ipc)
   && /orderNote: r\.order_note \?\? undefined/.test(ipc));
 ok('the receipt and kitchen ticket get the order note', /note:\s+payload\.notes \?\? null/.test(ipc));
 const bridge = read('src/main/escposBridge.ts');

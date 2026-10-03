@@ -256,6 +256,8 @@ export interface SaleForPrint {
   tip?: number;
   /** 0.6.27: the delivery fee on top of the bill (PAY = total + tip + fee). 0 = none. */
   deliveryFee?: number;
+  /** 0.6.33: a free delivery — the shop pays the rider; the receipt says "Delivery: FREE" and PAY leaves the fee out. */
+  deliveryFree?: boolean;
   kotCount: number;
   /** A367: the cashier's note on the whole order. */
   note?: string | null;
@@ -380,6 +382,7 @@ export function printSale(
         discount:       toCents(sale.discount ?? 0),
         tip:            toCents(sale.tip ?? 0),
         deliveryFee:    toCents(sale.deliveryFee ?? 0),   // 0.6.27
+        deliveryFree:   sale.deliveryFree === true,       // 0.6.33
         kotCount:       sale.kotCount,
         note:           cleanNote(sale.note, ORDER_NOTE_MAX) ?? undefined,   // A367
       },

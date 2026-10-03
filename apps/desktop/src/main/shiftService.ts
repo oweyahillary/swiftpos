@@ -21,6 +21,7 @@ import { nonCashExpenses, expenseLabel } from './expenseMethod';
 import { reasonsNeeded, cleanReasons, missingReasons } from './confirmReasons';
 import { kitchenVoidsForShift, type KitchenVoidLine } from './kitchenService';
 import type { KitchenVoidSummary } from './kitchenLines';
+import { riderSummary, type RiderLine } from './delivery';   // 0.6.33: the riders summary
 
 /**
  * A334 (2026-09-26): cash on a SHARED drawer that this till does not hold — sales, floats and
@@ -93,6 +94,8 @@ export interface ZReport {
     /** 0.6.27: delivery fees customers paid on top of their bills (in the payments, not sales), and the part of
      *  floatOut that paid riders their fees in cash (this till's own pay-outs, net of any put back by a void). */
     deliveryFees?: number;
+    freeDeliveries?: number;   // 0.6.33: the riders' fees on free deliveries (the shop paid; not in the payments)
+    riders?: RiderLine[];      // 0.6.33: one line per rider (deliveries, fees paid by customers, free ones)
     riderPayouts?: number;
     /** 0.6.27: pay-ins that put a voided delivery's fee back (inside floatIn; shown with the riders' line). */
     riderReturned?: number;
@@ -315,9 +318,18 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
   `).get(shiftId) as { c: number };
 
   // 0.6.27: delivery fees (pass-through) and what the drawer paid riders — why cash is lower and M-Pesa higher.
-  const deliveryFees = (db.prepare(`
-    SELECT COALESCE(SUM(COALESCE(delivery_fee, 0)), 0) AS n FROM orders WHERE shift_id=? AND status != 'voided'
-  `).get(shiftId) as { n: number }).n;
+  // 0.6.33: a FREE delivery's fee is not in the payments (the customer paid none) — counted apart, as the shop's cost.
+  const fees = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN COALESCE(delivery_free, 0) = 0 THEN COALESCE(delivery_fee, 0) ELSE 0 END), 0) AS paid,
+           COALESCE(SUM(CASE WHEN COALESCE(delivery_free, 0) = 1 THEN COALESCE(delivery_fee, 0) ELSE 0 END), 0) AS free
+      FROM orders WHERE shift_id=? AND status != 'voided'
+  `).get(shiftId) as { paid: number; free: number };
+  const deliveryFees = fees.paid;
+  // 0.6.33: the riders summary — each rider's deliveries this shift, the fees customers paid, the free ones.
+  const riders = riderSummary(db.prepare(`
+    SELECT delivery_person, delivery_fee, delivery_free FROM orders
+     WHERE shift_id=? AND status != 'voided' AND order_type = 'delivery'
+  `).all(shiftId) as Array<{ delivery_person: string | null; delivery_fee: number | null; delivery_free: number | null }>);
   const rider = db.prepare(`
     SELECT COALESCE(SUM(CASE WHEN type='float_out' THEN amount ELSE 0 END), 0) AS paid,
            COALESCE(SUM(CASE WHEN type='float_in'  THEN amount ELSE 0 END), 0) AS back
@@ -421,6 +433,8 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       expenses: Number(expensesOut),
       expensesByMethod,
       deliveryFees: money2(Number(deliveryFees)),
+      freeDeliveries: money2(Number(fees.free)),   // 0.6.33
+      riders,                                      // 0.6.33
       riderPayouts: money2(Number(rider.paid)),
       riderReturned: money2(Number(rider.back)),
     },
@@ -507,6 +521,8 @@ export function blindReport(z: ZReport): ZReport & { blind: true; declareMethods
       cashSales: 0, expectedCash: 0, foreign: z.totals.foreign ? { ...z.totals.foreign, orders: 0, cash_sales: 0 } : z.totals.foreign,
       webSales: z.totals.webSales ? { orders: 0, cash_sales: 0 } : z.totals.webSales,
       deliveryFees: zero(z.totals.deliveryFees) as number,
+      freeDeliveries: zero(z.totals.freeDeliveries) as number,
+      riders: z.totals.riders ? [] : z.totals.riders,   // 0.6.33: money per rider — not for a blind close
     },
     confirmation: z.confirmation ? { ...z.confirmation, lines: z.confirmation.lines.map((l) => ({ ...l, expected: null, variance: null })) } : z.confirmation,
   };

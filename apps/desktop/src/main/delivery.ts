@@ -34,31 +34,62 @@ export function cleanDeliveryFee(raw: unknown): number {
 
 /**
  * Why a delivery order cannot be paid yet, or null when it can. Only with the switch on, and only for a delivery.
- * `fee` is what the cashier typed (text or number). `freeAllowed` (0.6.33, the owner's 'delivery_free_allowed' rule): the
- * fee may be left empty or 0 — a free delivery — but anything else typed must still be a real fee.
+ * `fee` is what the cashier typed (text or number). The fee is required even on a FREE delivery (0.6.33): the rider is
+ * still paid it — by the shop instead of the customer.
  */
-export function deliveryProblem(
-  featureOn: boolean, orderType: string | null | undefined, rider: unknown, fee: unknown, freeAllowed = false,
-): string | null {
+export function deliveryProblem(featureOn: boolean, orderType: string | null | undefined, rider: unknown, fee: unknown): string | null {
   if (!featureOn || orderType !== 'delivery') return null;
   if (!cleanRider(rider)) return 'Enter the rider’s name for this delivery.';
-  if (cleanDeliveryFee(fee) > 0) return null;
-  if (freeAllowed && isNoFee(fee)) return null;
-  return freeAllowed
-    ? 'Enter a valid delivery fee, or leave it empty for free delivery.'
-    : 'Enter the delivery fee for this delivery.';
+  if (cleanDeliveryFee(fee) <= 0) return 'Enter the delivery fee for this delivery.';
+  return null;
 }
 
-/** Nothing typed, or zero: what a free delivery looks like (0.6.33). */
-export function isNoFee(fee: unknown): boolean {
-  if (fee == null) return true;
-  const s = String(fee).replace(/,/g, '').trim();
-  return s === '' || (Number.isFinite(Number(s)) && Number(s) === 0);
+/**
+ * 0.6.33 — FREE DELIVERY. Owner, 2026-10-02: "free delivery … the rider is still paid by the shop so delivery fee is a
+ * must but the customer does not pay it". A free delivery keeps its fee (`delivery_fee` = what the rider is paid, in cash
+ * from the drawer, as on every delivery) and is marked `delivery_free`; the customer's bill and payments leave the fee
+ * out. Offered to the cashier only when the owner allows it (the 'delivery_free_allowed' rule, shared/reversalRules.ts).
+ */
+
+/** What the CUSTOMER pays for delivery: the fee, or 0 on a free delivery (the shop pays the rider). */
+export function customerDeliveryFee(fee: unknown, free: unknown): number {
+  return free === true || free === 1 || free === '1' || free === 'true' ? 0 : cleanDeliveryFee(fee);
 }
 
-/** The fee box's hint: required, or optional when the owner allows free delivery (0.6.33). */
-export function deliveryFeePlaceholder(freeAllowed: boolean): string {
-  return freeAllowed ? 'Delivery fee (empty = free)' : 'Delivery fee';
+/** Is this order a free delivery? Only a delivery with a fee can be one (the flag is ignored otherwise). */
+export function isFreeDelivery(orderType: string | null | undefined, fee: unknown, free: unknown): boolean {
+  return orderType === 'delivery' && cleanDeliveryFee(fee) > 0 && customerDeliveryFee(fee, free) === 0;
+}
+
+/**
+ * 0.6.33: free delivery above an amount (the owner's 'delivery_free_over'). A delivery whose BILL (after discounts, before
+ * any tip) reaches the threshold is free automatically — the shop pays the rider. null / 0 = off.
+ */
+export function autoFreeDelivery(billTotal: number, over: number | null | undefined): boolean {
+  return over != null && over > 0 && Math.round((Number(billTotal) || 0) * 100) >= Math.round(over * 100);
+}
+
+/** 0.6.33 — one rider's deliveries in a shift: how many, the fees customers paid, the free ones the shop paid. */
+export interface RiderLine { rider: string; deliveries: number; feesPaid: number; freeCount: number; freeFees: number }
+
+/**
+ * Riders summary (Z-report): one line per rider, from the shift's delivery orders (not voided), by name as typed
+ * (cleaned; case-insensitive). Riders with the most deliveries first. A delivery with no rider is "No rider".
+ */
+export function riderSummary(orders: Array<{ delivery_person?: string | null; delivery_fee?: unknown; delivery_free?: unknown }>): RiderLine[] {
+  const by = new Map<string, RiderLine>();
+  for (const o of orders ?? []) {
+    const name = cleanRider(o.delivery_person) ?? 'No rider';
+    const key = name.toLowerCase();
+    const line = by.get(key) ?? { rider: name, deliveries: 0, feesPaid: 0, freeCount: 0, freeFees: 0 };
+    const fee = cleanDeliveryFee(o.delivery_fee);
+    const free = fee > 0 && customerDeliveryFee(fee, o.delivery_free) === 0;
+    line.deliveries += 1;
+    if (free) { line.freeCount += 1; line.freeFees = Math.round((line.freeFees + fee) * 100) / 100; }
+    else line.feesPaid = Math.round((line.feesPaid + fee) * 100) / 100;
+    by.set(key, line);
+  }
+  return [...by.values()].sort((a, b) => b.deliveries - a.deliveries || a.rider.localeCompare(b.rider));
 }
 
 /** "Delivery — Eugene" for a delivery with a rider; otherwise the type in words ("Dine in", "Takeaway"). */

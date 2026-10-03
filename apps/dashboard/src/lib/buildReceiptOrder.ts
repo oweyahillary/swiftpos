@@ -33,6 +33,8 @@ export interface ReceiptOrder {
   tip?: number;
   /** 0.6.27: delivery fee on top of the bill (cents); printed with the tip, PAY includes it. */
   deliveryFee?: number;
+  /** 0.6.33: a free delivery — "Delivery: FREE", the fee not in PAY. */
+  deliveryFree?: boolean;
   kotCount: number;
   /** A367: the note on the whole order. */
   note?: string;
@@ -70,6 +72,8 @@ export function buildReceiptOrder(a: {
   tip?: number;
   /** 0.6.27: the delivery fee on top of the bill. */
   deliveryFee?: number;
+  /** 0.6.33: a free delivery (the shop pays the rider). */
+  deliveryFree?: boolean;
   change: number;
   payments: { method: string; amount: number }[];
   tableNumber?: string;
@@ -119,6 +123,7 @@ export function buildReceiptOrder(a: {
     discount:    toCents(a.discount ?? 0),
     tip:         toCents(a.tip ?? 0),
     deliveryFee: toCents(a.deliveryFee ?? 0),   // 0.6.27
+    deliveryFree: a.deliveryFree === true,      // 0.6.33
     kotCount:    0,
     note:        a.orderNote || undefined,   // A367
   };

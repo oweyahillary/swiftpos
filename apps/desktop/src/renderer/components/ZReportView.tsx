@@ -73,7 +73,22 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {(totals.tips ?? 0) > 0 && row('Tips (in payments)', money(totals.tips!))}
       {/* 0.6.27: delivery fees — on top of the bills, not sales; the method the customer paid with carries them. */}
       {(totals.deliveryFees ?? 0) > 0 && row('Delivery fees (in payments)', money(totals.deliveryFees!))}
+      {/* 0.6.33: free deliveries — the shop paid these riders (in "Paid to riders"); the customers did not. */}
+      {(totals.freeDeliveries ?? 0) > 0 && row('Free deliveries (shop paid)', money(totals.freeDeliveries!))}
       {row('Voids', String(totals.voidCount))}
+      {/* 0.6.33: the riders — deliveries each, and what they were paid (the free ones by the shop). */}
+      {(totals.riders ?? []).length > 0 && (
+        <div data-testid="z-riders">
+          {rule}
+          {row('RIDERS', '', { bold: true })}
+          {(totals.riders ?? []).map((x) => (
+            <div key={x.rider}>
+              {row(`${x.rider} (${x.deliveries})`, money(x.feesPaid + x.freeFees))}
+              {x.freeCount > 0 && row(`  incl. ${x.freeCount} free (shop paid)`, money(x.freeFees))}
+            </div>
+          ))}
+        </div>
+      )}
 
       {rule}
       <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>CASH RECONCILIATION</p>

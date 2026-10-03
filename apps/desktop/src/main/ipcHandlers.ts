@@ -236,6 +236,7 @@ export function registerIpcHandlers() {
     table_number: string; delivery_person: string | null; cart: string; held_at: string;
     order_note?: string | null;   // A367 (58)
     delivery_fee?: number | null; // 0.6.27 (59)
+    delivery_free?: number | null; // 0.6.33 (63)
   };
 
   // A tab whose cart JSON will not parse is returned with an EMPTY cart rather
@@ -259,6 +260,7 @@ export function registerIpcHandlers() {
       deliveryPerson: r.delivery_person ?? undefined,
       orderNote: r.order_note ?? undefined,   // A367
       deliveryFee: r.delivery_fee ? Number(r.delivery_fee) : undefined,   // 0.6.27
+      deliveryFree: r.delivery_free ? true : undefined,   // 0.6.33
       cart,
       heldAt: r.held_at,
       corrupt: corrupt || undefined,
@@ -281,14 +283,15 @@ export function registerIpcHandlers() {
       ...order,
     };
     db.prepare(`
-      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note, delivery_fee)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO held_orders (id, order_number, label, order_type, table_number, delivery_person, cart, held_at, order_note, delivery_fee, delivery_free)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       held.id, held.orderNumber, held.label, held.orderType,
       held.tableNumber ?? '', held.deliveryPerson ?? null,
       JSON.stringify(held.cart ?? []), held.heldAt,
       cleanNote(held.orderNote, ORDER_NOTE_MAX),   // A367: the order's note survives a hold (the lines' notes ride in the cart)
       cleanDeliveryFee(held.deliveryFee) || null,  // 0.6.27: a held delivery keeps its fee with its rider
+      held.deliveryFree ? 1 : null,                // 0.6.33: …and whether it is free
     );
     return { ...held, cart: held.cart ?? [] };
   });
@@ -1023,6 +1026,7 @@ export function registerIpcHandlers() {
           discount:       Number(payload.discount_amount ?? 0),
           tip:            Number(payload.tip_amount ?? 0),
           deliveryFee:    Number(payload.delivery_fee ?? 0),   // 0.6.27: after the total with the tip; PAY includes it
+          deliveryFree:   payload.delivery_free === true,       // 0.6.33: "Delivery: FREE" — the fee is not the customer's
           // "How many kitchen tickets did this order produce" — the number the
           // expeditor counts against what arrives at the pass. Counted from
           // stations that will ACTUALLY print here; a station with no printer
@@ -2264,6 +2268,7 @@ export function registerIpcHandlers() {
       offlineRefundMethods: key === 'offline_refund_methods' ? JSON.parse(clean) : now.offlineRefundMethods,
       offlineReverseWebSales: key === 'offline_reverse_web_sales' ? JSON.parse(clean) : now.offlineReverseWebSales,
       freeDeliveryAllowed: key === 'delivery_free_allowed' ? JSON.parse(clean) : now.freeDeliveryAllowed,   // 0.6.33
+      freeDeliveryOver: key === 'delivery_free_over' ? (JSON.parse(clean) || null) : now.freeDeliveryOver,  // 0.6.33
     });
     return out;
   });

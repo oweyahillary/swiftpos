@@ -285,7 +285,7 @@ export function getRecentOrders(limit = 30, range?: ReportRange, cashierId?: str
   const orders = db.prepare(`
     SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
            discount_amount, tip_amount, refunded_amount, created_at, cashier_id, shift_id, device_id,
-           delivery_person, delivery_fee,   -- 0.6.27: History's type reads "Delivery — Eugene"
+           delivery_person, delivery_fee, delivery_free,   -- 0.6.27 (0.6.33 free): History's type reads "Delivery — Eugene"
            origin   -- 'web' = rung on the web POS on this till's drawer (cross-sync stage 1)
     FROM orders
     ${where}

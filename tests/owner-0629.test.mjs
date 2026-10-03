@@ -50,9 +50,10 @@ await ok('History is today\'s sales, all of it (till and web)', () => {
   assert.match(web, /const midnight = new Date\(\); midnight\.setHours\(0, 0, 0, 0\);\s*params\.set\('date_from', midnight\.toISOString\(\)\);/);
 });
 await ok('History shows what was paid — the bill + tip + delivery fee (till and web; the cloud sends the tip)', () => {
-  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /fmtMoney\(Number\(o\.total\) \+ Number\(o\.tip_amount \?\? 0\) \+ Number\(o\.delivery_fee \?\? 0\)\)/);
-  assert.match(read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx'), /Number\(o\.total\) \+ Number\(o\.tip_amount \?\? 0\) \+ Number\(o\.delivery_fee \?\? 0\)/);
-  assert.match(read('apps/server/src/routes/orders.ts'), /cashier_id, delivery_person, delivery_fee, tip_amount,\n\s+payments \( method, amount, status \)/);
+  // 0.6.33: the delivery fee the CUSTOMER paid — none on a free delivery (the shop paid the rider).
+  assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /fmtMoney\(Number\(o\.total\) \+ Number\(o\.tip_amount \?\? 0\) \+ customerDeliveryFee\(o\.delivery_fee, o\.delivery_free\)\)/);
+  assert.match(read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx'), /Number\(o\.total\) \+ Number\(o\.tip_amount \?\? 0\) \+ customerDeliveryFee\(o\.delivery_fee, o\.delivery_free\)/);
+  assert.match(read('apps/server/src/routes/orders.ts'), /cashier_id, delivery_person, delivery_fee, delivery_free, tip_amount,\n\s+payments \( method, amount, status \)/);
 });
 await ok('after payment: a success screen, no print button (till)', () => {
   const pos = read('apps/desktop/src/renderer/pages/POSPage.tsx');

@@ -25,7 +25,7 @@ const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`);
 const R = await import(pathToFileURL(path.join(ROOT, 'shared/reversalRules.ts')).href);
 
 await ok('defaults: a 30-minute void window, cash refunds offline, the till\'s own sales', () => {
-  assert.deepEqual(R.parseReversalRules([]), { voidWindowMinutes: 30, offlineRefundMethods: ['cash'], offlineReverseWebSales: false, freeDeliveryAllowed: false });
+  assert.deepEqual(R.parseReversalRules([]), { voidWindowMinutes: 30, offlineRefundMethods: ['cash'], offlineReverseWebSales: false, freeDeliveryAllowed: false, freeDeliveryOver: null });
 });
 await ok('the owner may raise or lower the window (1 minute to a day); anything else is refused', () => {
   assert.equal(R.reversalSettingValue('void_window_minutes', 10), '10');
@@ -40,7 +40,7 @@ await ok('a stored value round-trips through the cloud\'s settings rows', () => 
   const rows = [{ key: 'void_window_minutes', value: R.reversalSettingValue('void_window_minutes', 45) },
                 { key: 'offline_refund_methods', value: R.reversalSettingValue('offline_refund_methods', ['cash', 'mpesa']) },
                 { key: 'offline_reverse_web_sales', value: R.reversalSettingValue('offline_reverse_web_sales', true) }];
-  assert.deepEqual(R.parseReversalRules(rows), { voidWindowMinutes: 45, offlineRefundMethods: ['cash', 'mpesa'], offlineReverseWebSales: true, freeDeliveryAllowed: false });
+  assert.deepEqual(R.parseReversalRules(rows), { voidWindowMinutes: 45, offlineRefundMethods: ['cash', 'mpesa'], offlineReverseWebSales: true, freeDeliveryAllowed: false, freeDeliveryOver: null });
   assert.deepEqual(R.rulesFromWire(R.parseReversalRules(rows)), R.parseReversalRules(rows));
 });
 

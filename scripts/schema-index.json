@@ -672,7 +672,8 @@
     "refund_reason": "\"text\"",
     "refunded_by": "\"uuid\"",
     "refund_authorized_by": "\"uuid\"",
-    "delivery_fee": "\"numeric\" NOT NULL"
+    "delivery_fee": "\"numeric\" NOT NULL",
+    "delivery_free": "\"boolean\" NOT NULL"
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",

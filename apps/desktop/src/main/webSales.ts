@@ -67,11 +67,11 @@ export function applyWebOrders(
     INSERT INTO orders (id, business_id, branch_id, order_number, order_type, status, subtotal, vat_amount,
       discount_amount, total, created_at, device_id, sync_status, covers, tip_amount, customer_id, customer_name,
       customer_phone, idempotency_key, cashier_id, shift_id, void_reason, voided_at, voided_by, refunded_at,
-      refunded_amount, refund_reason, delivery_person, ctl_amount, notes, delivery_fee, origin)
+      refunded_amount, refund_reason, delivery_person, ctl_amount, notes, delivery_fee, delivery_free, origin)
     VALUES (@id, @business_id, @branch_id, @order_number, @order_type, @status, @subtotal, @vat_amount,
       @discount_amount, @total, @created_at, @device_id, 'synced', @covers, @tip_amount, @customer_id, @customer_name,
       @customer_phone, @idempotency_key, @cashier_id, @shift_id, @void_reason, @voided_at, @voided_by, @refunded_at,
-      @refunded_amount, @refund_reason, @delivery_person, @ctl_amount, @notes, @delivery_fee, 'web')
+      @refunded_amount, @refund_reason, @delivery_person, @ctl_amount, @notes, @delivery_fee, @delivery_free, 'web')
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status, void_reason = excluded.void_reason, voided_at = excluded.voided_at,
       voided_by = excluded.voided_by, refunded_at = excluded.refunded_at, refunded_amount = excluded.refunded_amount,
@@ -115,6 +115,7 @@ export function applyWebOrders(
         delivery_person: o.delivery_person ?? null, ctl_amount: n(o.ctl_amount),
         notes: o.notes ?? null,   // A367
         delivery_fee: n((o as any).delivery_fee),   // 0.6.27
+        delivery_free: (o as any).delivery_free === true ? 1 : 0,   // 0.6.33
       });
       delItems.run(o.id); delPays.run(o.id);
       for (const it of o.order_items ?? []) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import {
-  defaultReversalRules, windowLabel, MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES, type ReversalRules,
+  defaultReversalRules, windowLabel, MIN_VOID_WINDOW_MINUTES, MAX_VOID_WINDOW_MINUTES, MAX_FREE_DELIVERY_OVER, type ReversalRules,
 } from '../../shared/reversalRules';
 
 // 0.6.30 (A336 stage 3) — Manager → Settings → Voids & refunds: the owner's rules (shared/reversalRules.ts).
@@ -19,12 +19,15 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
   const [rules, setRules] = useState<ReversalRules>(defaultReversalRules());
   const [methods, setMethods] = useState(BUILT_IN);
   const [windowText, setWindowText] = useState(String(defaultReversalRules().voidWindowMinutes));
+  const [overText, setOverText] = useState('');   // 0.6.33
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    posApi.pos.reversalRules().then((r) => { setRules(r); setWindowText(String(r.voidWindowMinutes)); }).catch(() => {});
+    posApi.pos.reversalRules().then((r) => {
+      setRules(r); setWindowText(String(r.voidWindowMinutes)); setOverText(r.freeDeliveryOver ? String(r.freeDeliveryOver) : '');
+    }).catch(() => {});
     posApi.pos.paymentMethods().then((list) => {
       const extra = (list ?? []).filter((m) => m?.code && !BUILT_IN.some((b) => b.code === m.code))
         .map((m) => ({ code: String(m.code).toLowerCase(), name: m.name }));
@@ -64,6 +67,16 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
 
   const web = rules.offlineReverseWebSales;
   const free = rules.freeDeliveryAllowed;   // 0.6.33
+  const saveOver = () => {   // 0.6.33: free delivery from this bill amount; empty = off
+    const t = overText.trim();
+    const n = t === '' ? 0 : Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > MAX_FREE_DELIVERY_OVER) {
+      setError(`Enter an amount up to ${MAX_FREE_DELIVERY_OVER.toLocaleString()}, or leave it empty.`);
+      setOverText(rules.freeDeliveryOver ? String(rules.freeDeliveryOver) : '');
+      return;
+    }
+    if ((n || null) !== rules.freeDeliveryOver) void save('delivery_free_over', n, { ...rules, freeDeliveryOver: n || null });
+  };
   const locked = !isOwner || busy;
 
   return (
@@ -125,12 +138,12 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
         </button>
       </div>
 
-      {/* 0.6.33: free delivery (owner, 2026-10-02) — with the client's delivery-fee switch, the cashier may leave the fee
-          empty. The rider's name is still required. */}
+      {/* 0.6.33: free delivery (owner, 2026-10-02) — with the client's delivery-fee switch, the cashier may tick Free
+          delivery: the fee is still entered and paid to the rider from the drawer; the customer pays none of it. */}
       <div className="flex items-start justify-between gap-4 border border-gray-800 rounded-xl p-4" data-testid="free-delivery-rule">
         <div className="flex-1">
           <p className="text-white text-sm font-medium">Allow free delivery</p>
-          <p className="text-xs text-gray-400 mt-1">On: a delivery may go with no fee — the cashier leaves the fee empty. The rider's name is still needed. Off: every delivery needs its fee.</p>
+          <p className="text-xs text-gray-400 mt-1">On: the cashier may tick Free delivery. The fee is still entered and the rider is still paid it from the drawer; the customer pays none of it. Off: the customer always pays the fee.</p>
         </div>
         <button
           onClick={() => void save('delivery_free_allowed', !free, { ...rules, freeDeliveryAllowed: !free })}
@@ -139,6 +152,20 @@ export default function ReversalRulesPanel({ isOwner }: { isOwner: boolean }) {
         >
           <span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${free ? 'left-6' : 'left-1'}`} />
         </button>
+      </div>
+
+      {/* 0.6.33: free delivery above an amount — automatic, the shop pays the rider. */}
+      <div className="border border-gray-800 rounded-xl p-4">
+        <p className="text-white text-sm font-medium">Free delivery from a bill of</p>
+        <p className="text-xs text-gray-400 mt-1">A delivery whose bill reaches this amount is free automatically: the customer pays no fee, the rider is still paid it from the drawer. Leave empty for none.</p>
+        <input
+          type="number" inputMode="decimal" min={0} value={overText} disabled={locked} placeholder="None"
+          onChange={(e) => setOverText(e.target.value)}
+          onBlur={saveOver}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          className="mt-3 w-32 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm disabled:opacity-50"
+          data-testid="till-free-over"
+        />
       </div>
 
       <div className="h-4">

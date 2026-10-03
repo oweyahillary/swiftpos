@@ -29,7 +29,7 @@ import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
 import { noteLines } from '../../shared/orderNotes';
 import { historyView, historyChoices, orderMethod, type HistorySort } from '../../shared/historyView';
-import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, deliveryFeePlaceholder } from '../../shared/delivery';
+import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '../../shared/delivery';
 import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
@@ -142,14 +142,25 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   }, []);
   // 0.6.27: the delivery fee the customer pays on top (with the 'delivery_fee' switch), and why Pay is held back.
   const [deliveryFee, setDeliveryFee] = useState('');
-  // 0.6.33: the owner allows free delivery — the fee may be left empty (Manager → Settings / the web's owner rules).
-  const [freeDelivery, setFreeDelivery] = useState(false);
+  // 0.6.33: FREE DELIVERY — offered when the owner allows it (Manager → Settings / the web's owner rules). The cashier
+  // still enters the fee (the rider is paid it from the drawer, as on every delivery); ticked, the customer pays none of it.
+  const [freeDeliveryAllowed, setFreeDeliveryAllowed] = useState(false);
+  const [freeDeliveryOver, setFreeDeliveryOver] = useState<number | null>(null);   // 0.6.33: free from this bill amount
+  const [deliveryIsFree, setDeliveryIsFree] = useState(false);
   useEffect(() => {
     if (orderType !== 'delivery') return;
-    posApi.pos.reversalRules().then((r) => setFreeDelivery(r.freeDeliveryAllowed === true)).catch(() => { /* fee required */ });
+    posApi.pos.reversalRules().then((r) => {
+      setFreeDeliveryAllowed(r.freeDeliveryAllowed === true);
+      setFreeDeliveryOver(typeof r.freeDeliveryOver === 'number' && r.freeDeliveryOver > 0 ? r.freeDeliveryOver : null);
+    }).catch(() => { /* not offered */ });
   }, [orderType]);
   const [deliveryMsg, setDeliveryMsg] = useState('');
-  const feeDue = posFeatures.delivery_fee && orderType === 'delivery' ? cleanDeliveryFee(deliveryFee) : 0;
+  // The rider's fee (paid from the drawer) and what the CUSTOMER pays for delivery (0 when free).
+  const riderFee = posFeatures.delivery_fee && orderType === 'delivery' ? cleanDeliveryFee(deliveryFee) : 0;
+  // Free when the cashier ticks it (owner allows), or automatically from the owner's amount (the bill at Charge).
+  const autoFree = riderFee > 0 && autoFreeDelivery(cartSubtotal(cart), freeDeliveryOver);
+  const freeNow = riderFee > 0 && ((freeDeliveryAllowed && deliveryIsFree) || autoFree);
+  const feeDue = freeNow ? 0 : riderFee;
   const [tableNumber, setTableNumber] = useState('');
   // Diners on this bill, for Average Per Cover. Dine-in only: a takeaway bag is
   // one transaction, not one diner, and a forced headcount there would fill APC
@@ -532,7 +543,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   };
 
   // The order surface back to empty. Internal: after a sale, a hold, or a kitchen void of everything sent.
-  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryMsg(''); setOrderNote(''); };
+  const resetOrder = () => { setCart([]); setOrderNumber(null); setTableNumber(''); setCovers(''); setKitchenMsg(''); setKotCount(0); setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); setOrderNote(''); };
 
   // The Clear button. 0.6.28: an order with items on a kitchen ticket is cleared only by voiding them — Clear was the
   // quiet way to make a sent (and paid-in-cash) order disappear. Hold keeps it instead.
@@ -749,7 +760,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         ? `Delivery ${deliveryPerson.trim() || num.slice(-4)}`
         : `Takeaway ${num.slice(-4)}`;
     await holdOrder({ orderNumber: num, label, orderType, tableNumber, cart, deliveryPerson: deliveryPerson.trim() || undefined,
-      orderNote: orderNote.trim() || undefined, deliveryFee: cleanDeliveryFee(deliveryFee) || undefined });
+      orderNote: orderNote.trim() || undefined, deliveryFee: cleanDeliveryFee(deliveryFee) || undefined,
+      deliveryFree: deliveryIsFree || undefined });
     setHeldOrders(await listHeldOrders());
     resetOrder();   // held, not cleared — its sent items stay on the ledger with the tab
     setOrderType(flags.defaultOrderType);
@@ -769,6 +781,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         setOrderType(held.orderType);
         setDeliveryPerson(held.deliveryPerson ?? '');
         setDeliveryFee(held.deliveryFee ? String(held.deliveryFee) : '');
+        setDeliveryIsFree(held.deliveryFree === true);   // 0.6.33
         setOrderNote(held.orderNote ?? '');
         setTableNumber(held.tableNumber);
         setOrderNumber(held.orderNumber);
@@ -798,7 +811,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // mid-order it leaves the view alone.
   const chooseOrderType = (val: 'dine_in' | 'takeaway' | 'delivery') => {
     setOrderType(val);
-    if (val !== 'delivery') { setDeliveryPerson(''); setDeliveryFee(''); setDeliveryMsg(''); }
+    if (val !== 'delivery') { setDeliveryPerson(''); setDeliveryFee(''); setDeliveryIsFree(false); setDeliveryMsg(''); }
     if (val === 'delivery') {
       setTableNumber('');
       setView('products');
@@ -839,6 +852,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setOrderType(held.orderType);
     setDeliveryPerson(held.deliveryPerson ?? '');
     setDeliveryFee(held.deliveryFee ? String(held.deliveryFee) : '');
+    setDeliveryIsFree(held.deliveryFree === true);   // 0.6.33
     setOrderNote(held.orderNote ?? '');
     setTableNumber(held.tableNumber);
     setOrderNumber(held.orderNumber);
@@ -906,7 +920,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         order_type: flags.isPetrol ? 'fuel_sale' : flags.isRestaurant ? orderType : 'retail',
         delivery_person: orderType === 'delivery' ? (deliveryPerson.trim() || null) : null,
         // 0.6.27: the fee on top of the bill ('delivery_fee' switch) — in the legs like the tip; the till pays the rider it.
-        ...(payment.deliveryFee > 0 ? { delivery_fee: payment.deliveryFee } : {}),
+        // 0.6.33: on a FREE delivery the fee is still the rider's (the drawer pays it) but not in the customer's legs.
+        ...(riderFee > 0 ? { delivery_fee: riderFee, ...(freeNow ? { delivery_free: true } : {}) } : {}),
         subtotal,
         discount_amount: payment.discountAmount,
         // The BILL, excluding tip. The tip rides in tip_amount and shows up in
@@ -953,7 +968,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         payments: payment.legs,
       });
 
-      setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim() });
+      setCompletedOrder({ orderNumber: num, payment, tableNumber, orderType, deliveryPerson: deliveryPerson.trim(), deliveryFree: freeNow });
       setShowPayment(false);
       // A349: the sale is saved either way; a ticket that could not be produced is said, never left to the log.
       const failed = Array.isArray(created?.printFailed) ? created.printFailed : [];
@@ -1029,6 +1044,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <Row l="Bill" v={fmtMoney(p.total)} />
             {p.tipAmount > 0 && <Row l="Tip" v={fmtMoney(p.tipAmount)} />}
             {p.deliveryFee > 0 && <Row l={`Delivery fee${completedOrder.deliveryPerson ? ` (${completedOrder.deliveryPerson})` : ''}`} v={fmtMoney(p.deliveryFee)} />}
+            {completedOrder.deliveryFree && <Row l={`Delivery${completedOrder.deliveryPerson ? ` (${completedOrder.deliveryPerson})` : ''}`} v="FREE" />}
             <div className="border-t border-gray-800 my-1" />
             <Row l="Paid" v={fmtMoney(p.amountDue)} strong />
             {p.legs.map((l, i) => <Row key={i} l={`  ${methodLabel(l.method)}`} v={fmtMoney(Number(l.amount) || 0)} />)}
@@ -1464,10 +1480,18 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                     value={deliveryFee}
                     onChange={e => { setDeliveryFee(e.target.value); setDeliveryMsg(''); }}
                     onWheel={e => (e.target as HTMLInputElement).blur()}
-                    placeholder={deliveryFeePlaceholder(freeDelivery)}
+                    placeholder="Delivery fee"
                     data-testid="delivery-fee"
                     className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors"
                   />
+                )}
+                {/* 0.6.33: free delivery — the fee is still entered (the rider is paid it); the customer pays none of it. */}
+                {orderType === 'delivery' && posFeatures.delivery_fee && (freeDeliveryAllowed || autoFree) && (
+                  <label className="flex items-center gap-1.5 text-xs text-gray-200 whitespace-nowrap" title="The shop pays the rider; the customer pays no delivery fee">
+                    <input type="checkbox" className="w-3.5 h-3.5" checked={deliveryIsFree || autoFree} disabled={autoFree} data-testid="delivery-free"
+                      onChange={e => setDeliveryIsFree(e.target.checked)} />
+                    {autoFree && freeDeliveryOver ? `Free delivery (over ${freeDeliveryOver.toLocaleString()})` : 'Free delivery'}
+                  </label>
                 )}
                 {orderType === 'dine_in' && (
                   <input
@@ -1622,9 +1646,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             </div>
             <button
               onClick={() => {
-                // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment
-                // (0.6.33: the fee may be empty when the owner allows free delivery).
-                const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee, freeDelivery);
+                // 0.6.27: with the 'delivery_fee' switch a delivery needs its rider and its fee before payment (0.6.33: a
+                // free delivery too — the rider is still paid it).
+                const problem = deliveryProblem(posFeatures.delivery_fee, orderType, deliveryPerson, deliveryFee);
                 if (problem) { setDeliveryMsg(problem); return; }
                 setShowPayment(true);
               }}
@@ -1828,9 +1852,10 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                           {/* 0.6.29 (owner, D2): what the customer PAID — the bill plus any tip and delivery fee (the M-Pesa
                               received). The bill alone hid the fee: "where is the 400 accounted". */}
                           <td className="px-4 py-2.5 font-semibold text-white tabular-nums" data-testid="history-paid">
-                            {fmtMoney(Number(o.total) + Number(o.tip_amount ?? 0) + Number(o.delivery_fee ?? 0))}
-                            {Number(o.delivery_fee ?? 0) > 0 && (
-                              <span className="block text-[10px] font-normal text-gray-400">incl. delivery {fmtMoney(Number(o.delivery_fee))}</span>
+                            {fmtMoney(Number(o.total) + Number(o.tip_amount ?? 0) + customerDeliveryFee(o.delivery_fee, o.delivery_free))}
+                            {Number(o.delivery_fee ?? 0) > 0 && (o.delivery_free
+                              ? <span className="block text-[10px] font-normal text-gray-400">free delivery (shop paid {fmtMoney(Number(o.delivery_fee))})</span>
+                              : <span className="block text-[10px] font-normal text-gray-400">incl. delivery {fmtMoney(Number(o.delivery_fee))}</span>
                             )}
                           </td>
                           <td className="px-4 py-2.5">

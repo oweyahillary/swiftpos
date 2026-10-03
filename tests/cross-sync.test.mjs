@@ -100,7 +100,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
   });
   await ok('the order list carries device_id (the branch view marks this till)', () => {
     // 0.6.27: then cashier_id, delivery_person, delivery_fee (History's own-sales filter and "Delivery — Eugene").
-    assert.match(orders, /created_at, branch_id, customer_name, device_id,\n\s+cashier_id, delivery_person, delivery_fee, tip_amount,\n\s+payments \( method, amount, status \)/);   // 0.6.29 + tip_amount (History shows what was paid)
+    assert.match(orders, /created_at, branch_id, customer_name, device_id,\n\s+cashier_id, delivery_person, delivery_fee, delivery_free, tip_amount,\n\s+payments \( method, amount, status \)/);   // 0.6.29 + tip_amount (History shows what was paid); 0.6.33 + delivery_free
   });
   const sh = read('apps/server/src/routes/shifts.ts');
   const route = sh.slice(sh.indexOf("router.post('/:id/foreign-orders'"), sh.indexOf("router.post('/:id/close'"));

@@ -14,7 +14,7 @@ import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { cleanDeliveryFee, riderPayoutReason } from './delivery';
+import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
 import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
@@ -2433,11 +2433,14 @@ export function createLocalOrder(orderPayload: any): string {
   const deliveryFee = orderPayload.order_type === 'delivery' ? cleanDeliveryFee(orderPayload.delivery_fee) : 0;
   // What travels to the cloud is the same cleaned figure (its create_order_atomic reconciles the legs to total + tip + fee).
   if (deliveryFee > 0) orderPayload.delivery_fee = deliveryFee; else delete orderPayload.delivery_fee;
+  // 0.6.33: a FREE delivery — the fee is still the rider's (paid from the drawer below), the customer paid none of it.
+  const deliveryFree = isFreeDelivery(orderPayload.order_type, deliveryFee, orderPayload.delivery_free);
+  if (deliveryFree) orderPayload.delivery_free = true; else delete orderPayload.delivery_free;
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, delivery_free, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -2459,11 +2462,13 @@ export function createLocalOrder(orderPayload: any): string {
       // A367: the order's note, cleaned the same way the cloud cleans it (shared/orderNotes.ts).
       cleanNote(orderPayload.notes, ORDER_NOTE_MAX),
       deliveryFee,   // 0.6.27: on top of the bill, in the legs (like the tip); not in total
+      deliveryFree ? 1 : 0,   // 0.6.33: free — the shop pays the rider; not in the legs
     );
 
     // 0.6.27 (the prospect's request 3): the rider is paid the delivery fee in CASH from this drawer, now — recorded as
     // a pay-out tied to the sale, so expected cash is the fee lower while the method the customer paid with carries it.
-    // It syncs like any pay-out; voiding the sale puts it back (reverseRiderPayout).
+    // It syncs like any pay-out; voiding the sale puts it back (reverseRiderPayout). 0.6.33: a FREE delivery too — the
+    // shop still pays the rider; only the customer did not.
     if (deliveryFee > 0) {
       const sh = db.prepare(`SELECT branch_id, cashier_id FROM shifts WHERE id=?`).get(shiftId) as { branch_id: string; cashier_id: string } | undefined;
       db.prepare(`

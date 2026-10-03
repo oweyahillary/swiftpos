@@ -11,7 +11,7 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
 import { canRefundOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
 import { historyView, orderMethod, type HistorySort } from '../../lib/historyView';
-import { orderTypeLabel } from '../../lib/delivery';
+import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';   // 0.6.33: + free delivery
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ interface Order {
   payments: Payment[];
   delivery_person?: string | null;   // 0.6.27
   delivery_fee?: number | null;      // 0.6.27
+  delivery_free?: boolean | null;    // 0.6.33: the shop paid the rider; not in what the customer paid
   tip_amount?: number | null;        // 0.6.29
 }
 /** 0.6.27: own_only — the cloud narrowed the list to this cashier's sales; can_reprint — Reprint is offered. */
@@ -53,8 +54,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 const PAGE_SIZE = 20;
 /** 0.6.29: what the customer paid — the bill, any tip and any delivery fee (the payments add up to this). */
-const paidOf = (o: { total: number; tip_amount?: number | null; delivery_fee?: number | null }) =>
-  Number(o.total) + Number(o.tip_amount ?? 0) + Number(o.delivery_fee ?? 0);
+const paidOf = (o: { total: number; tip_amount?: number | null; delivery_fee?: number | null; delivery_free?: boolean | null }) =>
+  Number(o.total) + Number(o.tip_amount ?? 0) + customerDeliveryFee(o.delivery_fee, o.delivery_free);   // 0.6.33
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -206,7 +207,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   </span>
                   {isRefunded(order.payments) && <span style={s.refundedBadge}>refunded</span>}
                   {/* 0.6.29 (owner, D2): what the customer PAID — the bill + tip + delivery fee (the fee was hidden). */}
-                  <span style={s.total} data-testid="history-paid">{fmt(paidOf(order), currency)}{Number(order.delivery_fee ?? 0) > 0 ? ` (incl. delivery ${fmt(Number(order.delivery_fee), currency)})` : ''}</span>
+                  <span style={s.total} data-testid="history-paid">{fmt(paidOf(order), currency)}{Number(order.delivery_fee ?? 0) > 0 ? (order.delivery_free ? ' (free delivery)' : ` (incl. delivery ${fmt(Number(order.delivery_fee), currency)})`) : ''}</span>
                   <span style={s.chevron}>{isOpen ? '▲' : '▼'}</span>
                 </div>
               </button>

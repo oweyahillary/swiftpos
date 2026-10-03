@@ -54,6 +54,8 @@ export async function printShiftReport(
     ctl:        totals.ctlLevied ? toCents(totals.ctl ?? 0) : null,
     tips:       totals.tips == null ? null : toCents(totals.tips),
     deliveryFees: totals.deliveryFees ? toCents(totals.deliveryFees) : null,   // 0.6.27
+    freeDeliveries: totals.freeDeliveries ? toCents(totals.freeDeliveries) : null,   // 0.6.33
+    riders: (totals.riders ?? []).map((x) => ({ ...x, feesPaid: toCents(x.feesPaid), freeFees: toCents(x.freeFees) })),   // 0.6.33
     voidCount:  totals.voidCount,
 
     openingFloat: toCents(shift.opening_float),

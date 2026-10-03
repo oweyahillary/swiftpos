@@ -660,6 +660,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/prospect-features.test.mjs
 
+      # 0.6.33 — free delivery: the shop pays the rider (the drawer pay-out stays), the customer pays no fee; the Z-report
+      # keeps the two apart (the real compiled main on SQLite).
+      - name: Desktop free delivery (the shop pays the rider)
+        working-directory: apps/desktop
+        run: node --no-warnings test/free-delivery.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)

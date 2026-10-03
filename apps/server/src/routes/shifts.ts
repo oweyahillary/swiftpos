@@ -336,7 +336,7 @@ router.post('/:id/foreign-orders', async (req, res) => {
         id, order_number, order_type, status, subtotal, vat_amount, discount_amount, total, tip_amount,
         ctl_amount, covers, customer_id, customer_name, customer_phone, idempotency_key, cashier_id,
         shift_id, branch_id, created_at, void_reason, voided_at, voided_by, refunded_at,
-        refunded_amount, refund_reason, delivery_person, notes, delivery_fee,
+        refunded_amount, refund_reason, delivery_person, notes, delivery_fee, delivery_free,
         order_items ( id, product_id, product_name, category_name, unit_price, quantity, subtotal, course, fire_status, notes ),
         payments ( id, method, amount, amount_tendered, change_given, reference, status, created_at )
       `)

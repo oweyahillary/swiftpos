@@ -24,7 +24,7 @@ import { sendReceiptWhatsApp } from '../lib/whatsapp';
 import { cleanNote, ORDER_NOTE_MAX } from '../lib/orderNotes';
 import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { callerMayConfirm, replayTime } from '../lib/shiftConfirm';
-import { cleanDeliveryFee } from '../lib/delivery';
+import { cleanDeliveryFee, customerDeliveryFee, isFreeDelivery } from '../lib/delivery';
 import { payRider, returnRiderPayout } from '../lib/riderPayout';
 import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenLines';
 import { confirmerByPin, confirmerRows } from '../lib/confirmerLookup';
@@ -409,8 +409,11 @@ router.post('/', async (req, res) => {
     notes: orderNoteRaw = null,
     // 0.6.27: the delivery fee paid on top of the bill (pass-through, like the tip). Only on a delivery.
     delivery_fee: deliveryFeeRaw = 0,
+    // 0.6.33: a FREE delivery — the shop pays the rider the fee, the customer does not (migration 115).
+    delivery_free: deliveryFreeRaw = false,
   } = req.body;
   const deliveryFee = order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
+  const deliveryFree = isFreeDelivery(order_type, deliveryFee, deliveryFreeRaw);
 
   // Normalise to array — support both old single `payment` and new `payments` array
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -690,6 +693,7 @@ router.post('/', async (req, res) => {
       total: authTotal,
       tip_amount: Math.max(0, Number(tip_amount) || 0),
       delivery_fee: deliveryFee,   // 0.6.27: create_order_atomic (migration 111) reconciles legs to total + tip + fee
+      delivery_free: deliveryFree, // 0.6.33: …without the fee when free (migration 115); the rider is still paid it
       shift_id: resolvedShiftId,
       seated_at: order_type === 'dine_in' ? new Date().toISOString() : null,
       idempotency_key: idempotencyKey || crypto.randomUUID(),
@@ -939,7 +943,7 @@ router.get('/', async (req, res) => {
     .select(`
       id, order_number, order_type, status, subtotal, vat_amount, discount_amount,
       loyalty_points_used, total, created_at, branch_id, customer_name, device_id,
-      cashier_id, delivery_person, delivery_fee, tip_amount,
+      cashier_id, delivery_person, delivery_fee, delivery_free, tip_amount,
       payments ( method, amount, status )${method ? ', pm:payments!inner ( method )' : ''}
     `, { count: 'exact' })
     .eq('business_id', req.businessId)
@@ -1808,6 +1812,7 @@ router.post('/:id/pay', async (req, res) => {
     discount_id = null,
     tip_amount = 0,
     delivery_fee: deliveryFeeRaw = 0,   // 0.6.27: on top of the bill on a delivery (pass-through, like the tip)
+    delivery_free: deliveryFreeRaw = false,   // 0.6.33: the shop pays the rider; the customer pays no fee
   } = req.body;
 
   const paymentLegs: PaymentLegInput[] = Array.isArray(payments) && payments.length > 0
@@ -1916,7 +1921,8 @@ router.post('/:id/pay', async (req, res) => {
     const payTip = Math.max(0, Number(tip_amount) || 0);
     // 0.6.27: the delivery fee rides on top like the tip (create_order_atomic agrees, migration 111).
     const payFee = order.order_type === 'delivery' ? cleanDeliveryFee(deliveryFeeRaw) : 0;
-    const amountDue = round2(payTotal + payTip + payFee);
+    const payFree = isFreeDelivery(order.order_type, payFee, deliveryFreeRaw);   // 0.6.33
+    const amountDue = round2(payTotal + payTip + customerDeliveryFee(payFee, payFree));
     const legSum = paymentLegs.reduce((s, l) => s + (Number(l.amount) || 0), 0);
     if (Math.abs(legSum - amountDue) > 0.01) {
       res.status(400).json({
@@ -1976,6 +1982,7 @@ router.post('/:id/pay', async (req, res) => {
       // an unexplained cash surplus at close.
       tip_amount:      payTip,
       delivery_fee:    payFee,   // 0.6.27
+      delivery_free:   payFree,  // 0.6.33
       // Points redeemed on this order. The counter path has always written this
       // (it is read back by GET /orders); the dine-in path never did, so every
       // table order reported zero points redeemed however many were taken.
@@ -2011,11 +2018,12 @@ router.post('/:id/pay', async (req, res) => {
       // whoever reconciles the day, not in front of the cashier mid-service.
       const { data: settled } = await supabase
         .from('orders')
-        .select('id, order_number, status, total, tip_amount, delivery_fee')
+        .select('id, order_number, status, total, tip_amount, delivery_fee, delivery_free')
         .eq('id', order.id)
         .single();
 
-      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0) + Number((settled as any)?.delivery_fee ?? 0));
+      const settledDue = round2(Number(settled?.total ?? 0) + Number(settled?.tip_amount ?? 0)
+        + customerDeliveryFee((settled as any)?.delivery_fee, (settled as any)?.delivery_free));   // 0.6.33
       if (settled && Math.abs(settledDue - amountDue) > 0.01) {
         await supabase.from('payment_exceptions').insert({
           business_id:     req.businessId,

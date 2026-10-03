@@ -147,6 +147,9 @@ export interface ZReport {
     /** 0.6.27: delivery fees (pass-through, in the payments); riders paid from the drawer (inside floatOut), and any
      *  put back by a void (inside floatIn). */
     deliveryFees?: number;
+    freeDeliveries?: number;   // 0.6.33
+    /** 0.6.33: one line per rider this shift. */
+    riders?: { rider: string; deliveries: number; feesPaid: number; freeCount: number; freeFees: number }[];
     riderPayouts?: number;
     riderReturned?: number;
   };
@@ -308,7 +311,7 @@ declare global {
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
         history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
-        reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean }>;
+        reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean; freeDeliveryOver: number | null }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;

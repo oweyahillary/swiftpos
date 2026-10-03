@@ -26,6 +26,8 @@ interface Props {
   tip?: number;
   /** 0.6.27: the delivery fee on top of the bill. */
   deliveryFee?: number;
+  /** 0.6.33: a free delivery — "Delivery: FREE" (the shop pays the rider). */
+  deliveryFree?: boolean;
   loyaltyDiscount?: number;
   promoDiscount?: number;
   promoName?: string;
@@ -53,7 +55,7 @@ function fmtMethod(method: string) {
 const ReceiptView = forwardRef<HTMLDivElement, Props>((
   {
     business, branchName, orderNumber, cart, total, subtotal, vatAmount, ctlAmount = 0, ctlRate = 0, currency,
-    payments, tendered, change, tip = 0, deliveryFee = 0,
+    payments, tendered, change, tip = 0, deliveryFee = 0, deliveryFree = false,
     loyaltyDiscount = 0, promoDiscount = 0, promoName, customerName,
     footerMessage = 'Thank you for your business!',
     etims = null,
@@ -140,6 +142,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
         {line('TOTAL', `${currency} ${fmtMoney(total)}`, true)}
         {tip > 0 && line('Tip', `${currency} ${fmtMoney(tip)}`)}
         {deliveryFee > 0 && line('Delivery fee', `${currency} ${fmtMoney(deliveryFee)}`)}
+        {deliveryFree && line('Delivery', 'FREE')}
         {(tip > 0 || deliveryFee > 0) && line('TOTAL PAID', `${currency} ${fmtMoney(total + tip + deliveryFee)}`, true)}
       </div>
 

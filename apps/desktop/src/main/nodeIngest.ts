@@ -57,6 +57,7 @@ const COLUMNS: Record<ReplicatedTable, string[]> = {
     'customer_phone', 'created_at', 'device_id', 'pump_id', 'seq',
     'notes',   // A367 (58): the order's note. An older node ignores it; an older peer sends none (NULL).
     'delivery_fee',   // 0.6.27 (59): on top of the bill (pass-through). Same rule as notes.
+    'delivery_free',  // 0.6.33 (63): a free delivery (the shop paid the rider). Same rule as notes.
   ],
   shifts: [
     'id', 'business_id', 'branch_id', 'cashier_id', 'opened_at', 'closed_at', 'status',
