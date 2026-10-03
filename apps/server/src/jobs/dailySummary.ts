@@ -4,6 +4,8 @@ import { chunkIn } from '../lib/pgQuery';
 import { sendEmail } from '../lib/mailer';
 import { toZonedTime, fromZonedTime, format as tzFormat } from 'date-fns-tz';
 import { decideDailySend } from './reportScheduleDecision';
+import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';   // 0.6.34
+import { getDayCutoff } from '../lib/dayCutoff';
 
 /**
  * Daily summary job — runs every 15 min and, for each business that has enabled
@@ -82,7 +84,12 @@ async function runDailySummary(): Promise<void> {
         continue;
       }
 
-      await sendSummaryForBusiness(biz, dateFrom, dateTo, recipients);
+      // 0.6.34: the business's own day (its "Business day ends at" cut-off) — with the default 00:00 this is exactly
+      // dateFrom..dateTo above; with 04:00 a bar's night counts to the evening it started.
+      const cutoff = await getDayCutoff(biz.id);
+      const range = cutoff ? businessRangeEAT(businessDateEAT(now, cutoff), businessDateEAT(now, cutoff), cutoff)
+                           : { start: dateFrom, end: dateTo };
+      await sendSummaryForBusiness(biz, range.start, range.end, recipients);
       // Stamp AFTER a successful send, so a failure retries on the next run
       // rather than being silently marked done.
       await writeLastSent(biz.id, nowEatDate);

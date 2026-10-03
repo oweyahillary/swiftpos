@@ -97,6 +97,16 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.34: when the business day ends (the owner's cut-off, 00:00–06:00) — the till's day gate, the cloud's reports.
+    name: 'businessDay.ts',
+    copies: [
+      'shared/businessDay.ts',
+      'apps/server/src/lib/businessDay.ts',      // the cloud validates the setting and dates its reports and daily email
+      'apps/desktop/src/main/businessDay.ts',    // the till's day gate and its business date (rootDir is src/main)
+      'apps/dashboard/src/lib/businessDay.ts',   // the settings screen checks the time before saving
+    ],
+  },
+  {
     // A378: a client's own sign-in address (africanfries.<root>) — the subdomain rule, the host reader, the CORS check.
     name: 'tenantHost.ts',
     copies: [

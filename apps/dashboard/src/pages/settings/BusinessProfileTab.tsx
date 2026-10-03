@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
+import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
 
 // Settings › Business › Profile (A134). The one vertical-neutral home for
 // company-level settings: editable identity (via PATCH /api/business) plus the
@@ -90,6 +91,8 @@ export default function BusinessProfileTab() {
   if (!record) return <div className="p-6 text-gray-500 text-sm">Could not load your business profile.</div>;
 
   const continuous = settings.continuous_operation === 'true';
+  // 0.6.34: every half hour from midnight to 06:00 (lib/businessDay.ts).
+  const CUTOFF_CHOICES = Array.from({ length: MAX_CUTOFF_MINUTES / 30 + 1 }, (_, i) => cutoffLabel(i * 30));
 
   return (
     <div className="p-6 max-w-2xl space-y-8">
@@ -172,6 +175,24 @@ export default function BusinessProfileTab() {
           >
             <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${continuous ? 'left-5' : 'left-0.5'}`} />
           </button>
+        </div>
+        {/* 0.6.34: when the business day ends — a bar trading past midnight keeps selling until the day's end. */}
+        <div className="flex items-center justify-between mt-6 gap-4">
+          <div>
+            <h3 className="text-white font-semibold">Business day ends at</h3>
+            <p className="text-gray-500 text-sm mt-0.5">
+              Sales before this time count to the night before — on the tills, the reports and the daily email. A bar open
+              until 3 am sets 04:00, and closes the day after service. Midnight (00:00) unless you change it.
+            </p>
+          </div>
+          <select
+            value={cutoffLabel(cleanCutoff(settings.business_day_cutoff) ?? 0)}
+            onChange={e => saveSetting('business_day_cutoff', e.target.value)}
+            data-testid="business-day-cutoff"
+            className="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white text-sm flex-shrink-0"
+          >
+            {CUTOFF_CHOICES.map(t => <option key={t} value={t}>{t === '00:00' ? '00:00 (midnight)' : t}</option>)}
+          </select>
         </div>
       </section>
 

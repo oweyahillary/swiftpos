@@ -10,6 +10,7 @@ import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
 import { getWebAccess } from '../lib/webAccess';
+import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
 
 const router = safeRouter();
 
@@ -181,7 +182,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'order_note_picks',
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'order_note_picks',
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -216,7 +217,7 @@ router.get('/init', async (req, res) => {
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation'])
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'])
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -379,6 +380,8 @@ router.get('/init', async (req, res) => {
     // a short grace window at rollover instead of an immediate hard lock, so a
     // round-the-clock branch keeps trading while a manager closes the day.
     continuousOperation: receiptText.continuous_operation === 'true',
+    // 0.6.34: when the business day ends, minutes after midnight (0 = midnight); the branch's own value wins.
+    businessDayCutoff: cleanCutoff(receiptText.business_day_cutoff) ?? 0,
     // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
     webPosEnabled,
     receiptFooter: receiptText.receipt_footer ?? '',

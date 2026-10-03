@@ -10,7 +10,8 @@
 
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
-import { rulesFromWire } from '../../../lib/reversalRules';   // 0.6.33: the owner's free-delivery rule
+import { rulesFromWire } from '../../../lib/reversalRules';
+import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
@@ -110,6 +111,7 @@ export function usePOSData(): POSData {
       setKitchenExclusions(init.kitchenExclusions ?? []);
       setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
+      setWebDayCutoff((init as any).businessDayCutoff);   // 0.6.34: History's "today" follows the business day
       setFreeDeliveryAllowed(rulesFromWire(init.reversalRules ?? null).freeDeliveryAllowed);   // 0.6.33 (none → not offered)
       setFreeDeliveryOver(rulesFromWire(init.reversalRules ?? null).freeDeliveryOver);         // 0.6.33 (none → off)
       setReceiptHeader(init.receiptHeader ?? '');

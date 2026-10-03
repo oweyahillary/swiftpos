@@ -1131,6 +1131,9 @@ function initSchema(db: Database.Database) {
     // 0.6.30 (61): the owner's void window and offline void/refund rules (JSON object). Pulled (reversalRules), never
     // pushed. NULL = not told yet → the defaults (30 minutes, cash, the till's own sales).
     ['reversal_rules', 'TEXT'],
+    // 0.6.34 (64): minutes after midnight the business day ends (0 = midnight). Pulled (businessDayCutoff), never
+    // pushed. NULL/0 = midnight, as every till before 0.6.34.
+    ['business_day_cutoff', 'INTEGER'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1228,7 +1231,8 @@ function initSchema(db: Database.Database) {
 // and device_config.reversal_rules (pulled). REQUIRED moves with it by convention.
 // 62 adds 0.6.31: products.show_days (pulled; migration 113) — the days a product is on the grid. REQUIRED moves with it.
 // 63 adds 0.6.33: orders.delivery_free + held_orders.delivery_free (free delivery; the order payload, migration 115).
-export const LOCAL_SCHEMA_VERSION = 63;
+// 64 adds 0.6.34: device_config.business_day_cutoff (pulled) — when the business day ends. REQUIRED moves with it.
+export const LOCAL_SCHEMA_VERSION = 64;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

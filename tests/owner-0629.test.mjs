@@ -47,7 +47,7 @@ await ok('one table at confirm — cashier, shift open–close; per method: cash
 await ok('History is today\'s sales, all of it (till and web)', () => {
   assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /orders: getRecentOrders\(0, resolveRange\('today'\), scope\.ownOnly \? scope\.staffId : null\)/);
   const web = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
-  assert.match(web, /const midnight = new Date\(\); midnight\.setHours\(0, 0, 0, 0\);\s*params\.set\('date_from', midnight\.toISOString\(\)\);/);
+  assert.match(web, /const dayStart = new Date\(new Date\(by, bm - 1, bd, 0, 0, 0, 0\)\.getTime\(\) \+ cut \* 60_000\);\s*params\.set\('date_from', dayStart\.toISOString\(\)\);/);   // 0.6.34: from the business day's start
 });
 await ok('History shows what was paid — the bill + tip + delivery fee (till and web; the cloud sends the tip)', () => {
   // 0.6.33: the delivery fee the CUSTOMER paid — none on a free delivery (the shop paid the rider).

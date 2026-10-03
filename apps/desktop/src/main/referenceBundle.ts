@@ -52,6 +52,8 @@ export interface ReferenceBundle {
     kitchenExclusions: string[] | null;
     paymentMethods: Array<{ code: string; name: string }>;
     continuousOperation: boolean | null;
+    /** 0.6.34: when the business day ends (minutes after midnight); null = the node has not been told. */
+    businessDayCutoff?: number | null;
     /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
     webPosEnabled?: boolean | null;
     /** A367: the owner's quick picks for order notes; null = the node has not been told. */
@@ -101,6 +103,7 @@ export interface ReferenceRows {
     receiptFooter: string | null;
     kitchenExclusions: string[] | null;
     continuousOperation: boolean | null;
+    businessDayCutoff?: number | null; // 0.6.34
     webPosEnabled?: boolean | null;   // A346
     noteQuickPicks?: string[] | null; // A367
     posFeatures?: Record<string, boolean> | null; // 0.6.27
@@ -207,6 +210,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       kitchenExclusions: rows.config.kitchenExclusions,
       paymentMethods,
       continuousOperation: rows.config.continuousOperation,
+      businessDayCutoff: rows.config.businessDayCutoff ?? null,   // 0.6.34: relayed so a peer's day ends with the node's
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
@@ -276,6 +280,8 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         typeof cfg?.continuous_operation === 'boolean' ? cfg.continuous_operation
         : cfg?.continuous_operation == null ? null
         : asBool(cfg.continuous_operation),
+      // 0.6.34: the node's cut-off (0 = midnight — the node defaults to midnight until told, as a peer does).
+      businessDayCutoff: typeof cfg?.business_day_cutoff === 'number' ? cfg.business_day_cutoff : null,
       webPosEnabled: typeof cfg?.web_pos_enabled === 'boolean' ? cfg.web_pos_enabled : null,
       noteQuickPicks: (() => {   // A367
         if (typeof cfg?.order_note_picks !== 'string') return null;
@@ -328,6 +334,8 @@ export interface AcquiredReference {
     receiptFooter: string | null;
     kitchenExclusions: string[] | null;
     continuousOperation: boolean | null;
+    /** 0.6.34: when the business day ends (minutes after midnight). undefined = not said (older cloud / node) → keep. */
+    businessDayCutoff?: number;
     branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null } | null;
     /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
      *  which relays no branding today) → the till keeps its local value. */
@@ -380,6 +388,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       receiptFooter: typeof pi.receiptFooter === 'string' ? pi.receiptFooter : null,
       kitchenExclusions: Array.isArray(pi.kitchenExclusions) ? pi.kitchenExclusions : null,
       continuousOperation: typeof pi.continuousOperation === 'boolean' ? pi.continuousOperation : null,
+      businessDayCutoff: typeof pi.businessDayCutoff === 'number' ? pi.businessDayCutoff : undefined,   // 0.6.34
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367

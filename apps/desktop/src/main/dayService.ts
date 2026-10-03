@@ -31,8 +31,9 @@
 import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
 import { v4 as uuid } from 'uuid';
+import { businessDateLocal, businessDayEndLocal } from './businessDay';   // 0.6.34
 
 /** Same rule as the renderer's hasManagerRights (App.tsx) so the two agree. */
 const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
@@ -69,9 +70,13 @@ export interface BusinessDay {
  * belongs to. Using UTC would roll the day over at 03:00 Nairobi and split a
  * late evening's takings across two days.
  */
+/**
+ * Today's BUSINESS date on this till. 0.6.34: the day ends at the owner's cut-off ("Business day ends at", 00:00–06:00;
+ * shared/businessDay.ts), not at midnight — at 01:30 with a 04:00 cut-off it is still yesterday's business day, so a bar
+ * keeps trading through the night. With the default (00:00) this is the calendar date, as before.
+ */
 export function businessDateNow(d = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return businessDateLocal(d, getBusinessDayCutoff());
 }
 
 function deviceIdentity() {
@@ -173,7 +178,8 @@ export function checkDayGate(): DayGate {
     // from midnight during which the till keeps trading behind a reminder; after
     // it, the hard lock stands and only a manager can clear it. A non-continuous
     // business locks immediately, as before.
-    const startOfToday = new Date(`${today}T00:00:00`).getTime();
+    // 0.6.34: the grace counts from when the open day ENDED (its cut-off), not from midnight.
+    const startOfToday = businessDayEndLocal(open.business_date, getBusinessDayCutoff()).getTime();
     const graceUntil = startOfToday + GRACE_HOURS * 60 * 60 * 1000;
     const inGrace = getDeviceConfig()?.continuous_operation === true && Date.now() < graceUntil;
 

@@ -11,7 +11,9 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 import { reprintOrderReceipt } from '../../lib/reprintReceipt';
 import { canRefundOrder, isRefunded, REFUND_REASONS } from '../orderRefund';
 import { historyView, orderMethod, type HistorySort } from '../../lib/historyView';
-import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';   // 0.6.33: + free delivery
+import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';
+import { businessDateLocal } from '../../lib/businessDay';   // 0.6.34
+import { getWebDayCutoff } from '../../lib/webDayCutoff';   // 0.6.33: + free delivery
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -113,8 +115,11 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
         offset: String((p - 1) * PAGE_SIZE),
       });
       // 0.6.29 (owner): "it should show everything of the days sales" — today's (from local midnight), page by page.
-      const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
-      params.set('date_from', midnight.toISOString());
+      // 0.6.34: from the start of the BUSINESS day (the owner's cut-off) — at 01:30 with a 04:00 cut-off, the evening.
+      const cut = getWebDayCutoff();
+      const [by, bm, bd] = businessDateLocal(new Date(), cut).split('-').map(Number);
+      const dayStart = new Date(new Date(by, bm - 1, bd, 0, 0, 0, 0).getTime() + cut * 60_000);
+      params.set('date_from', dayStart.toISOString());
       if (q) params.set('search', q);
       if (t) params.set('order_type', t);
       if (m) params.set('method', m);
