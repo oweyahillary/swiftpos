@@ -150,7 +150,7 @@ const order = {
 const business = {
   name: 'Your Business', branchName: 'Main Branch',
   currencyCode: 'KES', vatRate: 16, ctlRate: 2,
-  footerCredit: 'Powered by SwiftPOS',
+  footerCredit: 'Powered by ZapTill',
 };
 
 // ── The description fallback, verbatim from escposBridge.describeFromText ──

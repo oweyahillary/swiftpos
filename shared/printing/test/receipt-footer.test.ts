@@ -7,7 +7,7 @@
  *
  *     the owner's editable box, verbatim line for line
  *     a rule, only when that box has content
- *     the CLOSING BLOCK — thank-you · TAX RECEIPT · Powered by SwiftPOS
+ *     the CLOSING BLOCK — thank-you · TAX RECEIPT · Powered by ZapTill
  *
  * The closing block lived only in ReceiptView.tsx, the HTML receipt. 0.5.27
  * removed the HTML SALE path (register D8) and the thermal renderer had never
@@ -45,7 +45,7 @@ const ok = (name: string, fn: () => void) => {
 
 const BASE: BusinessConfig = {
   name: 'Your Business', currencyCode: 'KES', vatRate: 16, ctlRate: 2,
-  footerCredit: 'Powered by SwiftPOS',
+  footerCredit: 'Powered by ZapTill',
 } as BusinessConfig;
 
 /** Render a receipt and return its lines, trimmed of the preview margins. */
@@ -89,14 +89,14 @@ ok('thank-you, then TAX RECEIPT, then the credit', () => {
   const p = paper({});
   const t = indexOf(p, 'Thank you for your business!');
   const x = indexOf(p, 'TAX RECEIPT UPON REQUEST');
-  const c = indexOf(p, 'Powered by SwiftPOS');
+  const c = indexOf(p, 'Powered by ZapTill');
   assert.ok(t >= 0 && x >= 0 && c >= 0, `missing a line: thanks=${t} tax=${x} credit=${c}`);
   assert.ok(t < x, 'the thank-you must come above the tax line');
   assert.ok(x < c, 'the tax line must come above the credit');
 });
 ok('the credit is the last printed line', () => {
   const p = paper({}).filter(Boolean);
-  assert.ok(p[p.length - 1].includes('Powered by SwiftPOS'),
+  assert.ok(p[p.length - 1].includes('Powered by ZapTill'),
     `last line was "${p[p.length - 1]}"`);
 });
 
@@ -113,7 +113,7 @@ ok('zero-rated -> the tax line is ABSENT', () => {
 ok('a zero-rated receipt still gets the thank-you and the credit', () => {
   const p = paper({ vatRate: 0 });
   assert.ok(has(p, 'Thank you for your business!'));
-  assert.ok(has(p, 'Powered by SwiftPOS'));
+  assert.ok(has(p, 'Powered by ZapTill'));
 });
 
 // ── 4. 58mm, where centring and wrapping actually bite ─────────────────────
@@ -122,7 +122,7 @@ ok('the whole closing block survives narrow paper', () => {
   const p = paper({}, 58);
   assert.ok(has(p, 'Thank you for your business!'), 'thank-you lost at 58mm');
   assert.ok(has(p, 'TAX RECEIPT UPON REQUEST'), 'tax line lost at 58mm');
-  assert.ok(has(p, 'Powered by SwiftPOS'), 'credit lost at 58mm');
+  assert.ok(has(p, 'Powered by ZapTill'), 'credit lost at 58mm');
 });
 ok('no closing line is cut off at 58mm', () => {
   for (const line of paper({}, 58)) {
@@ -191,7 +191,7 @@ ok('suppressing the thank-you never takes the TAX line or the credit with it', (
   const p = paper({ thankYouMessage: 'Thank you for your business!' });
   assert.ok(has(p, 'TAX RECEIPT UPON REQUEST'), 'tax line lost');
   const last = p.filter(Boolean);
-  assert.ok(last[last.length - 1].includes('Powered by SwiftPOS'), 'credit is no longer last');
+  assert.ok(last[last.length - 1].includes('Powered by ZapTill'), 'credit is no longer last');
   assert.ok(indexOf(p, 'Thank you for your business!') < indexOf(p, 'TAX RECEIPT UPON REQUEST'),
     'the surviving thank-you must still sit above the tax line');
 });
