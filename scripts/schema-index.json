@@ -31,7 +31,8 @@
     "is_active": "\"boolean\" NOT NULL",
     "last_login_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "updated_at": "\"timestamp with time zone\" NOT NULL"
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "phone": "\"text\""
   },
   "api_keys": {
     "id": "\"uuid\" NOT NULL",
@@ -189,7 +190,8 @@
     "ctl_rate": "\"numeric\" NOT NULL",
     "suspended_at": "\"timestamp with time zone\"",
     "desktop_approved_version": "\"text\"",
-    "subdomain": "\"text\""
+    "subdomain": "\"text\"",
+    "support_admin_id": "\"uuid\""
   },
   "categories": {
     "id": "\"uuid\" NOT NULL",

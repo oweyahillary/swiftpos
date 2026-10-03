@@ -1211,6 +1211,8 @@ export default function CashierScreen() {
               >🔒 End Shift</button>
             </>
           )}
+          {/* 0.6.35 (A384): "What to do when" — a new tab, so the cart in progress is never lost. */}
+          <button style={s.lockBtn} data-testid="webpos-help" onClick={() => window.open('/help', '_blank', 'noopener')}>? Help</button>
           <button style={s.lockBtn} onClick={() => setShowLockConfirm(true)}>🔒 Lock</button>
         </div>
       </header>

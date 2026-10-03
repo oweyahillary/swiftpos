@@ -312,6 +312,8 @@ declare global {
         history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
         reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean; freeDeliveryOver: number | null }>;
+        /** 0.6.35 (A384): the Help screen — who to call (the shop's tech or SwiftPOS support), this till's name and version. */
+        help: () => Promise<{ contact: { name: string; phones: string[]; assigned: boolean }; till: string | null; version: string }>;
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;

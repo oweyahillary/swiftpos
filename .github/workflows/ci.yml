@@ -672,6 +672,11 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/business-day.test.mjs
 
+      # 0.6.35 (A384) — Help: who to call — the shop's own tech (pulled; relayed by a branch server), or SwiftPOS support.
+      - name: Desktop Help shows the shop's tech or SwiftPOS support
+        working-directory: apps/desktop
+        run: node --no-warnings test/support-help.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)

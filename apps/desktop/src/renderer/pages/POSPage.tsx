@@ -45,6 +45,8 @@ interface Props {
   // change had to sign out and re-enter a PIN to get back to the Menu tab,
   // which on a setup day is that loop every few minutes.
   onOpenManager?: () => void;
+  /** 0.6.35 (A384): open "What to do when". */
+  onHelp?: () => void;
   /**
    * May this person change printer configuration? Same test as onOpenManager,
    * but passed explicitly rather than inferred from it — inferring a permission
@@ -68,7 +70,7 @@ const newLineId = () => (globalThis.crypto?.randomUUID?.() ?? `l-${Date.now()}-$
 const withLineIds = (cart: CartItem[]): CartItem[] =>
   (cart ?? []).map((i) => ({ ...i, lineId: i.lineId ?? newLineId(), sentQty: sentQtyOf(i) }));
 
-export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false }: Props) {
+export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -1217,6 +1219,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               title="Back to manager tools"
             >
               ← Manager
+            </button>
+          )}
+          {onHelp && (
+            <button onClick={onHelp} data-testid="pos-help" title="What to do when…"
+              className="text-xs text-gray-300 hover:text-white transition-colors">
+              ? Help
             </button>
           )}
           <button onClick={onLogout} className="text-xs text-gray-300 hover:text-red-400 transition-colors">

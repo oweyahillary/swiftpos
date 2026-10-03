@@ -11,6 +11,7 @@ import { maySeeSync } from './lib/syncNotice';
 import { mayAddExpenseType } from './lib/expenseTypes';
 import TechPage from './pages/TechPage';
 import UpdateBanner from './pages/UpdateBanner';
+import HelpScreen from './components/HelpScreen';   // 0.6.35 (A384)
 import { computeThemeVars, applyThemeVars } from './lib/themeVars';
 
 type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
@@ -24,6 +25,9 @@ export default function App() {
   // A52 — the idle lock. A CURTAIN over whatever is mounted, never a reset: the
   // cart and the part-entered payment stay exactly where they are behind it.
   const [locked, setLocked] = useState(false);
+  // 0.6.35 (A384): "What to do when" — over whatever is showing (the PIN pad, the POS, the manager screens), offline.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const openHelp = () => setHelpOpen(true);
 
   // A326 (client branding Phase 2): the business's action theme + brand colour, applied as CSS variables on <html>
   // for every screen. Re-read on every landed pull (A321's signal), so an admin switching themes on/off or a new
@@ -159,14 +163,22 @@ export default function App() {
     return <EnrolPage onComplete={handleEnrolComplete} />;
   }
 
+  const help = helpOpen
+    ? <HelpScreen businessName={session?.business?.name ?? 'SwiftPOS'} onClose={() => setHelpOpen(false)} />
+    : null;
+
   if (state === 'pin') {
     return (
+      <>
       <PinPage
         businessName={session?.business?.name ?? 'SwiftPOS'}
         onStaffLogin={handleStaffLogin}
         onBackToOwner={handleSignOut}
         onTechUnlock={() => setState('tech')}
+        onHelp={openHelp}
       />
+      {help}
+      </>
     );
   }
 
@@ -199,7 +211,9 @@ export default function App() {
         onOpenPOS={() => setState('pos')}
         onLogout={handleEndShift}
         onSwitchAccount={handleSignOut}
+        onHelp={openHelp}
       />
+      {help}
       {curtain}
       {updateBanner}
       {strip}
@@ -219,7 +233,9 @@ export default function App() {
       canVoidRefund={mayVoidRefund(staff)}
       canSeeSync={maySeeSync(staff as any)}
       canAddExpenseType={mayAddExpenseType(staff)}
+      onHelp={openHelp}
     />
+    {help}
     {curtain}
     {updateBanner}
     {strip}

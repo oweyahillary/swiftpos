@@ -10,6 +10,7 @@ import { themesEnabled, themeWriteError } from '../lib/themeAccess';
 import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
+import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 
 const router = safeRouter();
 
@@ -161,6 +162,12 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
     .from('businesses').update(updates).eq('id', req.businessId).select().single();
   if (error) { sendError(res, error); return; }
   res.json(data);
+});
+
+// GET /api/business/support — 0.6.35 (A384): who this shop calls — its tech (admin portal), or null (SwiftPOS support).
+// Any signed-in member: the web's Help page shows it.
+router.get('/support', requireAuth, async (req, res) => {
+  res.json({ support: await getSupportContact(req.businessId) });
 });
 
 // GET /api/business/branding

@@ -39,7 +39,7 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
-import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
@@ -2464,6 +2464,17 @@ export function registerIpcHandlers() {
 
   // ── 0.6.30: the owner's rules, for History's labels and the void/refund window ──
   handle('pos:reversalRules', async () => getReversalRules());
+
+  // ── 0.6.35 (A384): the Help screen — who to call (the shop's tech, or SwiftPOS support) and which till this is ──
+  // Offline, before anyone signs in (the PIN pad has Help: a locked-out cashier needs it most).
+  handle('pos:help', async () => {
+    const cfg = getDeviceConfig();
+    return {
+      contact: getSupportContact(),
+      till: cfg?.terminal_code || cfg?.device_name || null,
+      version: app.getVersion(),
+    };
+  });
 
   // ── Order void (manager/supervisor only — server enforces permission) ──────
   handle('order:void', async (_event, payload) => {
