@@ -289,7 +289,9 @@ export default function POSLoginScreen() {
       <div style={st.header}>
         {tenant.status === 'found'
           ? <TenantBrand tenant={tenant.tenant} />
-          : <div style={st.logo}><span>⚡</span><span style={st.logoText}>ZapTill</span></div>}
+          : tenant.status === 'loading'
+            ? <div style={{ height: 60 }} aria-hidden data-testid="tenant-loading" />   // 0.6.36: no flash of ZapTill
+            : <div style={st.logo}><span>⚡</span><span style={st.logoText}>ZapTill</span></div>}
       </div>
       <div style={st.main}>
         <div style={st.card}>

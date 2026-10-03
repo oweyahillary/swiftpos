@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { RELEASE, releaseLabel } from '../lib/release';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
@@ -200,6 +199,9 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           {tenant.status === 'found' ? (
             <div className="mb-3"><TenantBrand tenant={tenant.tenant} /></div>
+          ) : tenant.status === 'loading' ? (
+            // 0.6.36: on a client's address, no brand at all until the cloud says whose it is (no flash of ZapTill).
+            <div className="mb-3 h-[60px]" aria-hidden data-testid="tenant-loading" />
           ) : (
           <div className="inline-flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
@@ -314,11 +316,7 @@ export default function LoginPage() {
         <p className="text-center text-xs mt-2">
           <a href="/help" className="text-gray-400 hover:text-white underline" data-testid="login-help">Need help?</a>
         </p>
-        {/* 0.6.28: the release (was the commit alone, in near-invisible ink) — "which one am I running?" */}
-        <p className="text-center text-gray-500 text-xs mt-2" title={`${__WEB_BUILD_REF__} · built ${__WEB_BUILD_TIME__}`}
-           data-testid="login-release">
-          ZapTill {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}
-        </p>
+        {/* 0.6.36 (owner): no version on the sign-in page — it shows in the menu once signed in (ReleaseBadge). */}
       </div>
     </div>
   );
