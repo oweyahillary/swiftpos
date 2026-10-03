@@ -32,7 +32,7 @@
  *   MPESA_ENVIRONMENT      — 'sandbox' | 'production'. REQUIRED in production
  *                            (lib/env.ts). Unset no longer disables the callback
  *                            IP allowlist — see isAllowedCallbackIp.
- *   MPESA_CALLBACK_BASE_URL — public HTTPS base URL (e.g. https://api.swiftpos.co.ke)
+ *   MPESA_CALLBACK_BASE_URL — public HTTPS base URL (e.g. https://api.zaptill.co.ke)
  *
  * DEVELOPMENT SETUP
  * ──────────────────
@@ -52,7 +52,7 @@ import { sendError }   from '../lib/sendError';
 const router = safeRouter();
 
 const ENV            = process.env.MPESA_ENVIRONMENT ?? 'sandbox';
-const CALLBACK_BASE  = process.env.MPESA_CALLBACK_BASE_URL ?? 'https://api.swiftpos.co.ke';
+const CALLBACK_BASE  = process.env.MPESA_CALLBACK_BASE_URL ?? 'https://api.zaptill.co.ke';
 
 const DARAJA_BASE = ENV === 'production'
   ? 'https://api.safaricom.co.ke'

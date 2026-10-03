@@ -8,7 +8,7 @@
 import { supabase } from './supabase';
 import { cleanRootDomain, subdomainProblem } from './tenantHost';
 
-/** The root domain the client addresses sit under (TENANT_ROOT_DOMAIN, e.g. "swiftpos.co.ke"); '' = feature off. */
+/** The root domain the client addresses sit under (TENANT_ROOT_DOMAIN, e.g. "zaptill.co.ke"); '' = feature off. */
 export function tenantRootDomain(): string {
   return cleanRootDomain(process.env.TENANT_ROOT_DOMAIN);
 }

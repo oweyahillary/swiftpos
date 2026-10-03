@@ -52,7 +52,7 @@ app.use(helmet({
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // Set CORS_ORIGINS as a comma-separated list in .env:
-//   CORS_ORIGINS=https://app.swiftpos.co.ke,http://localhost:5173
+//   CORS_ORIGINS=https://app.zaptill.co.ke,http://localhost:5173
 const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:4173,http://localhost:5174')
   .split(',').map(o => o.trim()).filter(Boolean);
 

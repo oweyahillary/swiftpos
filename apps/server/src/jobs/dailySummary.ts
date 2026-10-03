@@ -515,7 +515,7 @@ function buildSummaryEmail(opts: {
 
   <!-- CTA -->
   <tr><td style="padding-top:28px;text-align:center;">
-    <a href="${process.env.DASHBOARD_URL ?? 'https://app.swiftpos.co.ke'}/dashboard/reports"
+    <a href="${process.env.DASHBOARD_URL ?? 'https://app.zaptill.co.ke'}/dashboard/reports"
        style="display:inline-block;background:#22c55e;color:#000;font-weight:700;font-size:14px;padding:14px 32px;border-radius:8px;text-decoration:none;">
       View full reports →
     </a>

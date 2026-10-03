@@ -256,7 +256,7 @@ function HealthBar({ score }) {
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
-  const [email, setEmail]     = useState("admin@swiftpos.co.ke");
+  const [email, setEmail]     = useState("admin@zaptill.co.ke");
   const [password, setPass]   = useState("");
   const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);

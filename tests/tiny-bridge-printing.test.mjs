@@ -78,6 +78,11 @@ ok('origin allowlist is exact — never wildcards a shared hosting suffix', () =
   // and there must be NO allowlist entry that is a bare/duplicated vercel.app value
   assert.doesNotMatch(go, /allowedOrigins = map\[string\]bool\{[^}]*"https:\/\/vercel\.app"/s);
 });
+ok('2026-10-03: the dashboard on zaptill.co.ke (and the clients\' sign-in addresses under it) may print with no token', () => {
+  assert.match(go, /var ownedDomains = \[\]string\{\s*"zaptill\.co\.ke",\s*\}/);
+  // never a shared suffix
+  assert.doesNotMatch(go, /var ownedDomains = \[\]string\{[^}]*"(vercel\.app|onrender\.com|co\.ke)"/s);
+});
 ok('bridge sends the Private Network Access header for trusted origins', () => {
   assert.match(go, /Access-Control-Request-Private-Network.*==.*"true"/);
   assert.match(go, /Set\("Access-Control-Allow-Private-Network", "true"\)/);

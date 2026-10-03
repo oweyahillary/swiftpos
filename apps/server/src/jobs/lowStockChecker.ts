@@ -337,7 +337,7 @@ function buildLowIngredientEmail(opts: {
               </td>
             </tr>
           </table>
-          <a href="${process.env.DASHBOARD_URL ?? 'https://app.swiftpos.co.ke'}/dashboard/stock/ingredients"
+          <a href="${process.env.DASHBOARD_URL ?? 'https://app.zaptill.co.ke'}/dashboard/stock/ingredients"
              style="display:inline-block;background:#22c55e;color:#000;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">
             View ingredients →
           </a>
@@ -408,7 +408,7 @@ function buildLowStockEmail(opts: {
                 </tr>
               </table>
 
-              <a href="${process.env.DASHBOARD_URL ?? 'https://app.swiftpos.co.ke'}/dashboard/inventory"
+              <a href="${process.env.DASHBOARD_URL ?? 'https://app.zaptill.co.ke'}/dashboard/inventory"
                  style="display:inline-block;background:#22c55e;color:#000;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">
                 View inventory →
               </a>

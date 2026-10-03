@@ -35,7 +35,7 @@ function makeNodeSecret(): string {
   return out;
 }
 
-const CLOUD_URL_HINT = 'https://api.your-swiftpos-domain.com';
+const CLOUD_URL_HINT = 'https://api.zaptill.co.ke';
 
 type Step = 'connection' | 'activate' | 'bind';
 interface Branch { id: string; name: string }

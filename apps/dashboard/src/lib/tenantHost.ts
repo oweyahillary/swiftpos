@@ -1,5 +1,5 @@
 /**
- * tenantHost.ts — A378: a client's own sign-in address, e.g. africanfries.swiftpos.co.ke.
+ * tenantHost.ts — A378: a client's own sign-in address, e.g. africanfries.zaptill.co.ke.
  *
  * Owner, 2026-10-02: "is there a way we can customize each client to use their subdomain eg africanfries … to log in we
  * can even add their logo on the sign in page". Decisions (owner, 2026-10-02): a field of its own (`businesses.subdomain`,
@@ -7,7 +7,7 @@
  * admin portal, not the client.
  *
  * The root domain is configuration, never written here: TENANT_ROOT_DOMAIN on the cloud, VITE_TENANT_ROOT_DOMAIN on the
- * web (e.g. "swiftpos.co.ke"). Unset = the feature is off and every address behaves as before.
+ * web (e.g. "zaptill.co.ke"). Unset = the feature is off and every address behaves as before.
  *
  * ONE file: shared/tenantHost.ts, copied to the cloud, the web and the admin portal (scripts/check-shared-sync.mjs).
  */
@@ -44,14 +44,14 @@ export function cleanSubdomain(raw: unknown): string | null | undefined {
   return subdomainProblem(s) ? undefined : s;
 }
 
-/** The root domain from configuration, cleaned ("Swiftpos.co.ke." → "swiftpos.co.ke"); '' when unset. */
+/** The root domain from configuration, cleaned ("Zaptill.co.ke." → "zaptill.co.ke"); '' when unset. */
 export function cleanRootDomain(raw: unknown): string {
   return typeof raw === 'string' ? raw.trim().toLowerCase().replace(/^\.+|\.+$/g, '') : '';
 }
 
 /**
- * The client's subdomain in a hostname ("africanfries.swiftpos.co.ke" → "africanfries"), or null: no root configured,
- * another domain, the root itself, a deeper name ("a.b.swiftpos.co.ke"), a reserved name (app., www., …) or a malformed one.
+ * The client's subdomain in a hostname ("africanfries.zaptill.co.ke" → "africanfries"), or null: no root configured,
+ * another domain, the root itself, a deeper name ("a.b.zaptill.co.ke"), a reserved name (app., www., …) or a malformed one.
  */
 export function subdomainFromHost(hostname: unknown, rootDomain: unknown): string | null {
   const root = cleanRootDomain(rootDomain);
@@ -66,7 +66,7 @@ export function subdomainFromHost(hostname: unknown, rootDomain: unknown): strin
 /**
  * May a browser on this origin call the cloud? An https address on the root domain itself or one level under it (a
  * client's address, or one of ours such as app.). Never http, never a deeper name, never a look-alike
- * ("evilswiftpos.co.ke", "swiftpos.co.ke.evil.com").
+ * ("evilzaptill.co.ke", "zaptill.co.ke.evil.com").
  */
 export function isTenantOrigin(origin: unknown, rootDomain: unknown): boolean {
   const root = cleanRootDomain(rootDomain);

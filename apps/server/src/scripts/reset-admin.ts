@@ -2,7 +2,7 @@
  * Reset / seed the default SwiftPOS admin account.
  *
  * Credentials come from env (never hardcoded):
- *   ADMIN_EMAIL     optional, defaults to admin@swiftpos.co.ke
+ *   ADMIN_EMAIL     optional, defaults to admin@zaptill.co.ke
  *   ADMIN_PASSWORD  required — the script refuses to run without it
  *
  * Run from repo root:
@@ -16,7 +16,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import { supabase } from '../lib/supabase';
 
-const EMAIL    = process.env.ADMIN_EMAIL ?? 'admin@swiftpos.co.ke';
+const EMAIL    = process.env.ADMIN_EMAIL ?? 'admin@zaptill.co.ke';
 const PASSWORD = process.env.ADMIN_PASSWORD;
 
 async function run() {
