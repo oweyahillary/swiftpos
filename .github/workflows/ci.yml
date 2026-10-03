@@ -683,6 +683,18 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/user-data-move.test.mjs
 
+      # 0.6.37 (A387) — a cashier's History shows only the payment methods the manager chose (a split sale: only its
+      # allowed part); a cashier never reprints. Real deviceConfig / referenceBundle / historyScope / getRecentOrders.
+      - name: Desktop cashier History by payment method
+        working-directory: apps/desktop
+        run: node --no-warnings test/cashier-history.test.mjs
+
+      # 0.6.37 (A388) — a manager approves a pay out and an expense on the spot (PIN, offline too); the approver is kept,
+      # pushed and printed on the Z-report. Real IPC handlers, no network.
+      - name: Desktop pay out and expense approval
+        working-directory: apps/desktop
+        run: node --no-warnings test/payout-approval.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)

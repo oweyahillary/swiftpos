@@ -11,6 +11,7 @@ import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
 import { getWebAccess } from '../lib/webAccess';
 import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
+import { cleanHistoryMethods } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 
 const router = safeRouter();
@@ -183,7 +184,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'order_note_picks',
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'order_note_picks',
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -218,7 +219,7 @@ router.get('/init', async (req, res) => {
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'])
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods'])
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -383,6 +384,8 @@ router.get('/init', async (req, res) => {
     continuousOperation: receiptText.continuous_operation === 'true',
     // 0.6.34: when the business day ends, minutes after midnight (0 = midnight); the branch's own value wins.
     businessDayCutoff: cleanCutoff(receiptText.business_day_cutoff) ?? 0,
+    // 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method); the branch's own value wins.
+    cashierHistoryMethods: cleanHistoryMethods(receiptText.cashier_history_methods) ?? [],
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

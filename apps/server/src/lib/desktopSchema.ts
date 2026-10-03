@@ -57,7 +57,9 @@
 /** 63 = 0.6.33: orders.delivery_free (free delivery; migration 115). A till on 62 keeps syncing; its deliveries are paid. */
 /** 64 = 0.6.34: device_config.business_day_cutoff (pulled). A till on 63 keeps syncing; its day ends at midnight. */
 /** 65 = 0.6.35: device_config.support_contact (pulled). A till on 64 keeps syncing; its Help shows SwiftPOS support. */
-export const REQUIRED_DESKTOP_SCHEMA = 65;
+/** 66 = 0.6.37: device_config.cashier_history_methods (pulled) and expenses/float_transactions.approved_by (pushed;
+ *  migration 118). A till on 65 keeps syncing; its cashiers see every method and its pay-outs carry no approver. */
+export const REQUIRED_DESKTOP_SCHEMA = 66;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

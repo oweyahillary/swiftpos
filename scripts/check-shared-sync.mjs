@@ -107,6 +107,17 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.37 (A387): which payment methods a cashier's History shows (the manager's choice); cashiers never reprint.
+    name: 'cashierHistory.ts',
+    copies: [
+      'shared/cashierHistory.ts',
+      'apps/server/src/lib/cashierHistory.ts',   // the cloud narrows GET /api/orders (the web POS) and checks the setting
+      'apps/desktop/src/main/cashierHistory.ts', // the till narrows its History (rootDir is src/main)
+      'apps/desktop/src/shared/cashierHistory.ts', // the till's manager screen
+      'apps/dashboard/src/lib/cashierHistory.ts', // the settings screen
+    ],
+  },
+  {
     // 0.6.35 (A384): who a shop calls — its own tech (allocated in the admin portal) or SwiftPOS support's numbers.
     name: 'support.ts',
     copies: [

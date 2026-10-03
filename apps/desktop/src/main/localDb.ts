@@ -810,6 +810,10 @@ function initSchema(db: Database.Database) {
   migrateColumns(db, 'expenses', [['payment_method', 'TEXT'], ['expense_type_name', 'TEXT']]);
   migrateColumns(db, 'shifts', [['confirm_reasons', 'TEXT']]);
   migrateColumns(db, 'float_transactions', [['order_id', 'TEXT']]);
+  // 0.6.37 (66): the manager who approved a cash-out (pay-out) or an expense, by PIN or signed in — pushed (migration
+  // 118) and shown on the Z-report. NULL = before 66, a pay-in, or a rider's fee (paid by the sale, not asked).
+  migrateColumns(db, 'expenses', [['approved_by', 'TEXT'], ['approved_by_name', 'TEXT']]);
+  migrateColumns(db, 'float_transactions', [['approved_by', 'TEXT'], ['approved_by_name', 'TEXT']]);
   // 0.6.33 (63): a FREE delivery — the shop pays the rider the fee, the customer does not (migration 115). orders.
   // delivery_fee stays the rider's fee (the drawer pay-out); delivery_free = 1 keeps it out of what the customer paid.
   migrateColumns(db, 'orders', [['delivery_free', 'INTEGER DEFAULT 0']]);
@@ -1137,6 +1141,9 @@ function initSchema(db: Database.Database) {
     // 0.6.35 (65): the shop's own tech, JSON {name, phone} or 'null' (none → SwiftPOS support). Pulled (support),
     // never pushed. NULL = not told yet → SwiftPOS support's numbers on the Help screen.
     ['support_contact', 'TEXT'],
+    // 0.6.37 (66): the payment methods a cashier's History shows, a JSON list ([] = every method). Pulled
+    // (cashierHistoryMethods) or set by a manager on this till; never pushed. NULL = not told yet = every method.
+    ['cashier_history_methods', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1236,7 +1243,9 @@ function initSchema(db: Database.Database) {
 // 63 adds 0.6.33: orders.delivery_free + held_orders.delivery_free (free delivery; the order payload, migration 115).
 // 64 adds 0.6.34: device_config.business_day_cutoff (pulled) — when the business day ends. REQUIRED moves with it.
 // 65 adds 0.6.35: device_config.support_contact (pulled) — the shop's own tech on the Help screen. REQUIRED moves with it.
-export const LOCAL_SCHEMA_VERSION = 65;
+// 66 adds 0.6.37: device_config.cashier_history_methods (pulled) and expenses/float_transactions.approved_by (pushed:
+// the manager who approved a cash-out or an expense). REQUIRED moves with it.
+export const LOCAL_SCHEMA_VERSION = 66;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

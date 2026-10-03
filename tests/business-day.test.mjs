@@ -49,13 +49,13 @@ await ok('the setting is stored only as a valid "HH:MM"; a branch may override i
   assert.match(b, /if \(key === BUSINESS_DAY_CUTOFF_KEY\) \{\s*const clean = cutoffSettingValue\(value\);\s*if \(clean === null\) \{/);
   assert.match(b, /'continuous_operation',\s*\/\/[^\n]*\n\s*'business_day_cutoff',/);
   const br = read('apps/server/src/routes/branches.ts');
-  assert.match(br, /const OVERRIDABLE_KEYS = \['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'\];/);
+  assert.match(br, /const OVERRIDABLE_KEYS = \['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff',[^\]]*\];/);   // 0.6.37: + History methods
   assert.match(br, /if \(key === 'business_day_cutoff'\) \{\s*const clean = cutoffSettingValue\(value\);/);
 });
 await ok('the till hears it with pos/init (the branch\'s own wins)', () => {
   const p = read('apps/server/src/routes/pos.ts');
-  assert.match(p, /'continuous_operation', 'business_day_cutoff', 'order_note_picks',/);
-  assert.match(p, /\.in\('key', \['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'\]\)/);
+  assert.match(p, /'continuous_operation', 'business_day_cutoff', (?:'cashier_history_methods', )?'order_note_picks',/);   // 0.6.37
+  assert.match(p, /\.in\('key', \['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff'(?:, 'cashier_history_methods')?\]\)/);
   assert.match(p, /businessDayCutoff: cleanCutoff\(receiptText\.business_day_cutoff\) \?\? 0,/);
 });
 await ok('the reports and the daily email count the business day', () => {

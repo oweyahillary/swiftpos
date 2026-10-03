@@ -9,6 +9,9 @@
  * RUNS the COMPILED shifts and expenses routers behind the real auth middleware over HTTP (database in memory; JWTs signed
  * with a per-run random secret) as a CASHIER holding only the cashier default keys.
  *
+ * 0.6.37 (A388, owner: "Manager approve cashout and expense" — "Manager PIN on the spot"): the cashier sends a manager's
+ * PIN; with none, or a PIN that is not a manager's, nothing is written. The approver is stored with the expense.
+ *
  * MUTATIONS TO CONFIRM BITE: a permission on POST /:id/expense → "a cashier records" fails; the open-shift filter dropped →
  * "a closed shift refuses" fails; paid_by/recorded_by from the body → "under the signed-in cashier" fails; the category
  * business check dropped → "another business's type" fails; a key back on GET /categories → "a cashier reads the types" fails.
@@ -40,11 +43,15 @@ const { supabase } = require(path.join(DIST, 'lib/supabase.js'));
 const BZ = '11111111-1111-4111-8111-111111111111', BR = '22222222-2222-4222-8222-222222222222';
 const OTHER = '99999999-9999-4999-8999-999999999999';
 const CASHIER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const MARY = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';   // 0.6.37: a manager whose PIN approves (4321)
+const bcrypt = createRequire(path.join(ROOT, 'apps/server/package.json'))('bcrypt');
 const OPEN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', CLOSED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const GAS = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', FOREIGN_TYPE = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const db = {
   businesses: [{ id: BZ, name: 'B Foods', status: 'active' }],
-  users: [{ id: CASHIER, business_id: BZ, name: 'Jane', status: 'active' }],
+  users: [{ id: CASHIER, business_id: BZ, name: 'Jane', status: 'active' },
+          { id: MARY, business_id: BZ, name: 'Mary', status: 'active', pin_hash: bcrypt.hashSync('4321', 4),
+            roles: { name: 'manager', role_permissions: [{ permissions: { key: 'shifts.manage' } }] }, user_permissions: [] }],
   shifts: [
     { id: OPEN, business_id: BZ, branch_id: BR, status: 'open' },
     { id: CLOSED, business_id: BZ, branch_id: BR, status: 'closed' },
@@ -98,18 +105,27 @@ try {
     const r = await call('POST', '/api/expenses/categories', { name: 'Sneaky' });
     assert.equal(r.status, 403);
   });
-  await ok('A362: a cashier records an expense into their open shift, under the signed-in cashier (A361)', async () => {
+  await ok('0.6.37: no manager\'s PIN, or the cashier\'s own / a wrong one → refused, nothing written', async () => {
+    const n = db.expenses.length;
+    const none = await call('POST', `/api/shifts/${OPEN}/expense`, { description: 'Gas', amount: 500 });
+    assert.equal(none.status, 403); assert.equal(none.body.code, 'PAYOUT_APPROVAL_REQUIRED');
+    const wrong = await call('POST', `/api/shifts/${OPEN}/expense`, { description: 'Gas', amount: 500, pin: '1111' });
+    assert.equal(wrong.status, 403); assert.equal(wrong.body.code, 'INVALID_CONFIRMER_PIN');
+    assert.equal(db.expenses.length, n, 'nothing written');
+  });
+  await ok('A362: a cashier records an expense into their open shift, under the signed-in cashier (A361), approved by a manager\'s PIN (0.6.37)', async () => {
     const r = await call('POST', `/api/shifts/${OPEN}/expense`,
-      { description: '  Gas refill ', amount: 500, expense_category_id: GAS, paid_by: 'someone-else', recorded_by: 'someone-else' });
+      { description: '  Gas refill ', amount: 500, expense_category_id: GAS, paid_by: 'someone-else', recorded_by: 'someone-else', pin: '4321' });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     const e = db.expenses.at(-1);
     assert.equal(e.shift_id, OPEN); assert.equal(e.branch_id, BR); assert.equal(e.business_id, BZ);
     assert.equal(e.description, 'Gas refill'); assert.equal(e.amount, 500); assert.equal(e.expense_category_id, GAS);
     assert.equal(e.paid_by, CASHIER); assert.equal(e.recorded_by, CASHIER);
     assert.match(e.expense_date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(e.approved_by, MARY); assert.equal(e.approved_by_name, 'Mary');
   });
   await ok('A362: an expense with no type goes through untyped', async () => {
-    const r = await call('POST', `/api/shifts/${OPEN}/expense`, { description: 'Water', amount: 50 });
+    const r = await call('POST', `/api/shifts/${OPEN}/expense`, { description: 'Water', amount: 50, pin: '4321' });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     assert.equal(db.expenses.at(-1).expense_category_id, null);
   });
@@ -122,7 +138,7 @@ try {
     assert.equal(db.expenses.length, n, 'nothing written');
   });
   await ok('A362: another business\'s expense type is refused', async () => {
-    const r = await call('POST', `/api/shifts/${OPEN}/expense`, { description: 'x', amount: 5, expense_category_id: FOREIGN_TYPE });
+    const r = await call('POST', `/api/shifts/${OPEN}/expense`, { description: 'x', amount: 5, expense_category_id: FOREIGN_TYPE, pin: '4321' });
     assert.equal(r.status, 400); assert.match(r.body.error, /no longer exists/);
   });
   await ok('the back-office POST /api/expenses stays expenses.manage', async () => {
@@ -136,7 +152,7 @@ try {
   await ok('A362: the web POS has "🧾 Expense" beside Float, for anyone on the shift, posting to this route', async () => {
     assert.match(screen, /onClick=\{\(\) => setShiftModal\('expense'\)\}/);
     assert.match(modal, /export type ShiftModalMode = [^;]*'expense'/);
-    assert.match(modal, /await posApi\.post\(`\/api\/shifts\/\$\{shiftId\}\/expense`, \{\s+description,\s+amount,\s+expense_category_id: expTypeId \|\| undefined,/);
+    assert.match(modal, /await posApi\.post<\{ approved_by_name\?: string \| null \}>\(`\/api\/shifts\/\$\{shiftId\}\/expense`, \{\s+description,\s+amount,\s+expense_category_id: expTypeId \|\| undefined,/);
     assert.match(modal, /posApi\.get<\{ id: string; name: string \}\[\]>\('\/api\/expenses\/categories'\)/);
   });
 } finally { server.close(); }

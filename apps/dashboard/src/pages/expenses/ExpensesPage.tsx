@@ -30,6 +30,7 @@ interface Expense {
   paid_by: string | null;
   paid_by_name: string | null;
   recorded_by_name?: string | null;   // A361: who entered it (stamped by the cloud)
+  approved_by_name?: string | null;   // 0.6.37 (A388): the manager who approved it at the POS
   payment_method?: string;            // 0.6.27: how it was paid (only cash leaves a drawer)
 }
 
@@ -439,7 +440,8 @@ export default function ExpensesPage() {
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.branch_name ?? '—'}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{EXPENSE_METHODS.find(m => m.code === (e.payment_method ?? 'cash'))?.name ?? e.payment_method}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{e.paid_by_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{e.recorded_by_name ?? '—'}
+                        {e.approved_by_name && <span className="block text-[10px] text-gray-500">approved {e.approved_by_name}</span>}</td>
                       <td className="px-4 py-3 text-right font-semibold text-red-300 whitespace-nowrap">
                         {fmt(e.amount, currency)}
                       </td>

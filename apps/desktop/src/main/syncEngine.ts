@@ -15,7 +15,7 @@ import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -1007,6 +1007,7 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
   setBusinessDayCutoff(c.businessDayCutoff);   // 0.6.34: undefined (older cloud / node) keeps the till's value
   setSupportContact(c.support);                // 0.6.35: undefined keeps; null = no tech (ZapTill support)
+  setCashierHistoryMethods(c.cashierHistoryMethods);   // 0.6.37: undefined (older cloud / node) keeps
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
   // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
   // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
@@ -1118,6 +1119,7 @@ async function pullCatalogue(): Promise<boolean> {
       continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
       businessDayCutoff: typeof _j.businessDayCutoff === 'number' ? _j.businessDayCutoff : undefined,   // 0.6.34
       support: 'support' in _j ? (_j.support ?? null) : undefined,   // 0.6.35: an older cloud sends no key → keep
+      cashierHistoryMethods: Array.isArray(_j.cashierHistoryMethods) ? _j.cashierHistoryMethods : undefined,   // 0.6.37
       // A304: null when the business has no branding row → applyReferenceConfig skips it,
       // keeping any local value. A row (even with null fields) is remote-wins.
       branding: (_j.branding && typeof _j.branding === 'object')
@@ -1587,14 +1589,16 @@ async function pushLocalRecords(errors: string[]): Promise<number> {
     -- the real error in the sync log.
   `).all(ownDevice) as any[];
   const floats = db.prepare(`
-    SELECT id, shift_id, branch_id, cashier_id, type, amount, reason, created_at
+    SELECT id, shift_id, branch_id, cashier_id, type, amount, reason, created_at,
+           approved_by, approved_by_name   -- 0.6.37 (A388; a cloud before 118 ignores them)
     FROM float_transactions WHERE sync_status='pending'
       AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
   const expenses = db.prepare(`
     SELECT id, business_id, branch_id, expense_category_id, description, amount,
            paid_by, expense_date, shift_id, created_at,
-           COALESCE(payment_method, 'cash') AS payment_method   -- 0.6.27 (a cloud before 111 ignores it)
+           COALESCE(payment_method, 'cash') AS payment_method,   -- 0.6.27 (a cloud before 111 ignores it)
+           approved_by, approved_by_name                        -- 0.6.37 (A388; a cloud before 118 ignores them)
     FROM expenses WHERE sync_status='pending' AND COALESCE(device_id,'') = COALESCE(?,'')
   `).all(ownDevice) as any[];
   // Trading days. Pushed like shifts: the till originates them and the cloud is

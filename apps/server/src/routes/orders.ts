@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { cashierHistoryView } from '../lib/cashierHistory';   // 0.6.37 (A387)
+import { getHistoryMethods } from '../lib/historyMethods';
 import { classifyOrderCreateError } from '../lib/orderErrors';
 import { pickCashier, claimNeedsValidation } from '../lib/cashier';
 import { sendError } from '../lib/sendError';
@@ -937,6 +939,11 @@ router.get('/', async (req, res) => {
 
   // Owner: may filter by any branch_id or get all. Staff: locked to their branch.
   const scopedBranch = branchScope(req);
+  // 0.6.37 (A387): a cashier sees only the payment methods the manager chose ([] = every; a manager always every). The
+  // filter is in the query, so the count and the pages are right; the split sales are trimmed below.
+  const manager = callerMayConfirm(req);
+  const historyMethods = manager ? [] : await getHistoryMethods(req.businessId, scopedBranch ?? (req as any).branchId ?? null);
+  const joinPm = !!method || historyMethods.length > 0;
 
   let query = supabase
     .from('orders')
@@ -944,7 +951,7 @@ router.get('/', async (req, res) => {
       id, order_number, order_type, status, subtotal, vat_amount, discount_amount,
       loyalty_points_used, total, created_at, branch_id, customer_name, device_id,
       cashier_id, delivery_person, delivery_fee, delivery_free, tip_amount,
-      payments ( method, amount, status )${method ? ', pm:payments!inner ( method )' : ''}
+      payments ( method, amount, status )${joinPm ? ', pm:payments!inner ( method )' : ''}
     `, { count: 'exact' })
     .eq('business_id', req.businessId)
     .order('created_at', { ascending: false })
@@ -958,17 +965,20 @@ router.get('/', async (req, res) => {
   // 0.6.27: History narrowed by order type or payment method (the web POS's Orders filters).
   if (typeof order_type === 'string' && order_type) query = query.eq('order_type', order_type);
   if (typeof method === 'string' && method)         query = query.eq('pm.method', method.toLowerCase());
+  if (historyMethods.length)                        query = query.in('pm.method', historyMethods);
   // 0.6.27: 'cashier_own_history' (admin portal) — a cashier sees only the sales they rang; a manager sees all.
-  const manager = callerMayConfirm(req);
   const features = await businessPosFeatures(req.businessId);
   const ownOnly = !manager && features.cashier_own_history;
   if (ownOnly) query = query.eq('cashier_id', req.userId ?? '00000000-0000-0000-0000-000000000000');
 
   const { data, error, count } = await query;
   if (error) { sendError(res, error); return; }
-  // can_reprint: 'cashier_no_reprint' (admin portal) — the web POS hides Reprint for a cashier.
-  res.json({ orders: (data ?? []).map(({ pm, ...o }: any) => o), total: count ?? 0, own_only: ownOnly,
-             can_reprint: manager || !features.cashier_no_reprint });
+  let orders = (data ?? []).map(({ pm, ...o }: any) => o);
+  // 0.6.37 (A387): a split sale shows a cashier only its allowed part (shared/cashierHistory.ts).
+  if (historyMethods.length) orders = cashierHistoryView(orders, historyMethods);
+  // can_reprint: 0.6.37 (owner) — a cashier never reprints a receipt; a manager and the owner may.
+  res.json({ orders, total: count ?? 0, own_only: ownOnly,
+             history_methods: historyMethods, can_reprint: manager });
 });
 
 // GET /api/orders/:id

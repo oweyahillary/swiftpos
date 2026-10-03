@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useBusiness } from '../../context/BusinessContext';
 import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
+import HistoryMethodsPicker from './HistoryMethodsPicker';   // 0.6.37 (A387)
 
 // Settings › Business › Profile (A134). The one vertical-neutral home for
 // company-level settings: editable identity (via PATCH /api/business) plus the
@@ -193,6 +194,16 @@ export default function BusinessProfileTab() {
           >
             {CUTOFF_CHOICES.map(t => <option key={t} value={t}>{t === '00:00' ? '00:00 (midnight)' : t}</option>)}
           </select>
+        </div>
+        {/* 0.6.37 (A387): which payment methods a cashier's History shows; cashiers never reprint. */}
+        <div className="mt-6">
+          <h3 className="text-white font-semibold">What cashiers see in History</h3>
+          <p className="text-gray-500 text-sm mt-0.5 mb-3">
+            A cashier's History — on the tills and the web POS — shows only sales paid by the methods ticked here; a split
+            sale shows only its ticked part. Cashiers never reprint a receipt. Managers and the owner see every sale.
+          </p>
+          <HistoryMethodsPicker value={settings.cashier_history_methods}
+            onChange={(list) => saveSetting('cashier_history_methods', JSON.stringify(list))} />
         </div>
       </section>
 

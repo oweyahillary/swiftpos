@@ -45,7 +45,7 @@ await ok('one table at confirm — cashier, shift open–close; per method: cash
   assert.match(read('apps/desktop/src/renderer/pages/ShiftPanel.tsx'), /openedAt=\{finalReport\.shift\.opened_at\} closedAt=\{finalReport\.shift\.closed_at\}/);
 });
 await ok('History is today\'s sales, all of it (till and web)', () => {
-  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /orders: getRecentOrders\(0, resolveRange\('today'\), scope\.ownOnly \? scope\.staffId : null\)/);
+  assert.match(read('apps/desktop/src/main/ipcHandlers.ts'), /orders = getRecentOrders\(0, resolveRange\('today'\), scope\.ownOnly \? scope\.staffId : null\)/);   // 0.6.37: then by method
   const web = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
   assert.match(web, /const dayStart = new Date\(new Date\(by, bm - 1, bd, 0, 0, 0, 0\)\.getTime\(\) \+ cut \* 60_000\);\s*params\.set\('date_from', dayStart\.toISOString\(\)\);/);   // 0.6.34: from the business day's start
 });

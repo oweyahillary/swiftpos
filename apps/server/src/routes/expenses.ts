@@ -132,7 +132,7 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
       expense_category_id, expense_categories ( name ),
       paid_by, payer:users!expenses_paid_by_fkey ( name ),
       recorded_by, recorder:users!expenses_recorded_by_fkey ( name ),
-      payment_method
+      payment_method, approved_by_name
     `)
     .eq('business_id', req.businessId)
     .gte('expense_date', (from as string) || start.slice(0, 10))
@@ -163,6 +163,7 @@ router.get('/', requirePermission('expenses.view'), async (req, res) => {
     recorded_by: e.recorded_by ?? null,
     recorded_by_name: e.recorder?.name ?? null,
     payment_method: e.payment_method ?? 'cash',   // 0.6.27
+    approved_by_name: e.approved_by_name ?? null,   // 0.6.37 (A388): the manager who approved it at the POS
   }));
 
   const total = expenses.reduce((s: number, e: any) => s + e.amount, 0);

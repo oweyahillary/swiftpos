@@ -548,6 +548,18 @@ function renderShiftReport(r, paperWidthMm) {
       }
     }
   }
+  if (r.payoutLines && r.payoutLines.length) {
+    d.line(rule(cols));
+    d.line(`PAY-OUTS (${r.payoutLines.length})`, { bold: true });
+    for (const e of r.payoutLines) {
+      const amt = money(e.amount);
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else {
+        d.lines(wrap(e.description, cols));
+        d.line(" ".repeat(Math.max(0, cols - amt.length)) + amt);
+      }
+    }
+  }
   if (r.kitchenVoids && r.kitchenVoids.lines.length) {
     d.line(rule(cols));
     d.line(`KITCHEN VOIDS (${r.kitchenVoids.lines.length})`, { bold: true });
