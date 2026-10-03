@@ -93,9 +93,9 @@
     "vite": "^6.3.3",
     "wait-on": "^8.0.3"
   },
-  "description": "SwiftPOS offline-first point of sale terminal",
-  "author": "SwiftPOS",
-  "productName": "SwiftPOS",
+  "description": "ZapTill offline-first point of sale terminal",
+  "author": "ZapTill",
+  "productName": "ZapTill",
   "overrides": {
     "exceljs": {
       "uuid": "^11.1.1"

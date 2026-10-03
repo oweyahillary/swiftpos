@@ -8,12 +8,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // ── Locate the database ──────────────────────────────────────────────────────
 function defaultDbPaths() {
+  // 0.6.36 (A386): %APPDATA%\\ZapTill first (the till moves its SwiftPOS folder there on first start).
   const home = os.homedir();
-  switch (process.platform) {
-    case 'win32': return [path.join(process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming'), 'SwiftPOS', 'swiftpos.db')];
-    case 'darwin': return [path.join(home, 'Library', 'Application Support', 'SwiftPOS', 'swiftpos.db')];
-    default: return [path.join(home, '.config', 'SwiftPOS', 'swiftpos.db')];
-  }
+  const base = process.platform === 'win32' ? (process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming'))
+    : process.platform === 'darwin' ? path.join(home, 'Library', 'Application Support') : path.join(home, '.config');
+  return ['ZapTill', 'SwiftPOS'].map((n) => path.join(base, n, 'swiftpos.db'));
 }
 
 const dbPath = process.argv[2] ?? defaultDbPaths().find(p => fs.existsSync(p));

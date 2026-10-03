@@ -677,6 +677,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/support-help.test.mjs
 
+      # 0.6.36 (A386) — the app is renamed ZapTill: the till's data folder (database, sign-in key, backups) moves from
+      # %APPDATA%\SwiftPOS to %APPDATA%\ZapTill on first start; real compiled userDataMove on real folders.
+      - name: Desktop data folder moves with the app name
+        working-directory: apps/desktop
+        run: node --no-warnings test/user-data-move.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)

@@ -17,6 +17,7 @@ import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
 import { getBuildInfo } from './buildInfo';
 import { installConsoleCapture, logLine } from './logFile';
+import { moveTillData, oldFolderNames, type MoveResult } from './userDataMove';   // A386
 
 const isDev = !app.isPackaged;
 
@@ -40,42 +41,22 @@ function cloudBadgeTitle(): string {
 }
 
 /**
- * Moves the data folder from the old name to the new one, once.
+ * Moves the till's data folder to the app's current name, once (lib: userDataMove.ts).
  *
- * Electron derives userData from package.json's top-level `productName`, or
- * `name` when that is absent. It was absent, so every till has been storing its
- * database in %APPDATA%\desktop\ — a generic folder name for a point-of-sale
- * system, undiscoverable for support and easy to mistake for something else.
+ * The app was renamed twice: %APPDATA%\desktop (no productName, before A284) → %APPDATA%\SwiftPOS → %APPDATA%\ZapTill
+ * (0.6.36, A386). Each rename points Electron's userData at a new, empty folder; the till's database, log, backups and
+ * the key to its saved sign-in (Chromium's Local State) are carried across here.
  *
- * Setting productName fixes new installs but STRANDS existing ones: the app
- * would look in %APPDATA%\SwiftPOS\, find nothing, and present the install
- * wizard to a till that is already configured and may hold unsynced sales. So
- * the old folder is moved across on first launch.
- *
- * Runs before anything opens the database — which is why getDbPath() had to
- * become lazy. Deliberately conservative:
- *   - only when the new folder does NOT already exist, so it can never
- *     overwrite a working install
- *   - a rename, not a copy, so there is no window where both exist and a till
- *     could be opened against the wrong one
- *   - a failure is logged and swallowed; a folder move must never stop a till
- *     from starting, and the worst case is a re-run of the wizard
+ * Runs at the very top of startup — before the single-instance lock and before 'ready' — so Electron has not yet made a
+ * fresh Local State in the new folder; if something did get there first, the old data wins. The result is logged once
+ * the log is up (startup can't log to the file yet: the file lives in this very folder).
  */
+let userDataMoveResult: MoveResult | null = null;
 function migrateUserDataFolder(): void {
-  try {
-    const newDir = app.getPath('userData');            // ...\AppData\Roaming\SwiftPOS
-    const oldDir = path.join(path.dirname(newDir), 'desktop');
-
-    if (newDir === oldDir) return;                     // nothing to do
-    if (fs.existsSync(newDir)) return;                 // already migrated, or a fresh install
-    if (!fs.existsSync(path.join(oldDir, 'swiftpos.db'))) return;  // not ours — don't touch it
-
-    fs.renameSync(oldDir, newDir);
-    console.log(`[userData] moved ${oldDir} -> ${newDir}`);
-  } catch (err) {
-    console.error('[userData] migration failed, continuing with a fresh folder:', (err as Error).message);
-  }
+  const newDir = app.getPath('userData');            // ...\AppData\Roaming\ZapTill (or "ZapTill Dev")
+  userDataMoveResult = moveTillData(newDir, oldFolderNames(path.basename(newDir)));
 }
+migrateUserDataFolder();
 
 /**
  * Replaces Electron's default menu with a minimal hidden one.
@@ -200,8 +181,9 @@ app.whenReady().then(() => {
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {
-    // MUST come before anything opens the database.
-    migrateUserDataFolder();
+    // A386: the data-folder move ran at the top of startup (before the lock and 'ready'); record what it did.
+    if (userDataMoveResult?.moved) logLine('startup', `data folder moved from ${userDataMoveResult.from} (${userDataMoveResult.mode})`);
+    else if (userDataMoveResult?.reason === 'failed') logLine('startup', `data folder move FAILED: ${userDataMoveResult.error}`);
 
     installMenu();
 

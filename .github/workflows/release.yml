@@ -126,9 +126,10 @@ jobs:
           DRAFT=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" --jq ".[] | select(.tag_name == \"$TAG\") | .draft")
           [ "$DRAFT" = "false" ] || { echo "::error::$TAG is a DRAFT - tills cannot download it. Publish it on GitHub (Releases > Edit > Publish, keep pre-release)."; exit 1; }
           # 0.6.32: the combined 64-bit + 32-bit installer is SwiftPOS-<version>.exe (before: SwiftPOS-<version>-x64.exe).
-          for f in latest.yml "SwiftPOS-$V.exe"; do
+          # 0.6.36 (A386): the installer is ZapTill-<version>.exe (SwiftPOS-<version>.exe before).
+          for f in latest.yml "ZapTill-$V.exe"; do
             echo "$NAMES" | grep -qxF "$f" || { echo "::error::$TAG is missing $f"; exit 1; }
           done
           # The blockmap only serves differential downloads, which 0.6.16+ tills do not use (autoUpdate.ts) — warn only.
-          echo "$NAMES" | grep -qxF "SwiftPOS-$V.exe.blockmap" || echo "::warning::$TAG has no .blockmap (not needed by 0.6.16+ tills)"
+          echo "$NAMES" | grep -qxF "ZapTill-$V.exe.blockmap" || echo "::warning::$TAG has no .blockmap (not needed by 0.6.16+ tills)"
           echo "OK - $TAG is one release with latest.yml and the installer."

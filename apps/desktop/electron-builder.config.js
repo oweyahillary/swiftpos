@@ -15,7 +15,10 @@
  */
 const dev = String(process.env.SWIFTPOS_ENV || 'prod').toLowerCase() === 'dev';
 
-const name = dev ? 'SwiftPOS Dev' : 'SwiftPOS';
+// 0.6.36 (A386): the product is ZapTill — the installer, the Start-menu and Apps entry, and the data folder
+// (%APPDATA%\\ZapTill; the till moves %APPDATA%\\SwiftPOS across on first start — src/main/userDataMove.ts). The appId stays
+// com.swiftpos.desktop on purpose: it is how Windows and the updater know this is the SAME app, so it updates in place.
+const name = dev ? 'ZapTill Dev' : 'ZapTill';
 
 module.exports = {
   appId: dev ? 'com.swiftpos.desktop.dev' : 'com.swiftpos.desktop',

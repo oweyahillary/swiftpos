@@ -21,13 +21,15 @@ const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`);
 
 const T = await import(pathToFileURL(path.join(ROOT, 'shared/tenantHost.ts')).href);
 
-await ok('kept: the till keeps its data folder, install identity and update file names', () => {
+await ok('the Windows app is ZapTill; it keeps its app id (updates in place) and carries its data folder across', () => {
   const pkg = JSON.parse(read('apps/desktop/package.json'));
-  assert.strictEqual(pkg.productName, 'SwiftPOS');
+  assert.strictEqual(pkg.productName, 'ZapTill');
   const eb = read('apps/desktop/electron-builder.config.js');
-  assert.match(eb, /const name = dev \? 'SwiftPOS Dev' : 'SwiftPOS';/);
-  assert.match(eb, /appId: dev \? 'com\.swiftpos\.desktop\.dev' : 'com\.swiftpos\.desktop'/);
+  assert.match(eb, /const name = dev \? 'ZapTill Dev' : 'ZapTill';/);
+  assert.match(eb, /appId: dev \? 'com\.swiftpos\.desktop\.dev' : 'com\.swiftpos\.desktop'/);   // same app to Windows
   assert.match(read('apps/desktop/src/main/localDb.ts'), /'swiftpos\.db'/);
+  assert.match(read('apps/desktop/src/main/userDataMove.ts'), /return dev \? \['SwiftPOS Dev'\] : \['SwiftPOS', 'desktop'\];/);
+  assert.match(read('.github/workflows/release.yml'), /for f in latest\.yml "ZapTill-\$V\.exe"; do/);
 });
 await ok('kept: webhook headers, print-server exe and task names, branch-server firewall rule', () => {
   assert.match(read('apps/server/src/lib/webhooks.ts'), /'X-SwiftPOS-Event'/);
