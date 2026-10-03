@@ -1216,40 +1216,6 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
   // on a big menu. Silence would look like a hang.
   const [variantProgress, setVariantProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // A starter file that shows the shape rather than describing it. Every row is
-  // a comment in disguise: a quoted description containing a comma, a category
-  // that is cooked and one that is not, and Hot/Cold Sides split apart to show
-  // why — the kitchen flag lives on the CATEGORY, so a category holding both
-  // fries and cole slaw cannot route either of them correctly.
-  const downloadSample = () => {
-    const csv = [
-      'name,price,category,description,kitchen,variant1,variant1_options,addon1,addon1_options',
-      // Spice is a CHOICE — exactly one answer. The upgrades are ADD-ONS: the
-      // customer may take large chips, a bigger soda, both, or neither. Putting
-      // both upgrades in one choice group would make them mutually exclusive.
-      '3 Piece Meal,400,Combos,,yes,Spice,Normal | Spicy,Upgrades,Large fries +60 | 500ml soda +50',
-      'Chicken Burger,390,Burgers,"Chicken breast, lettuce, tomato",yes,Spice,Normal | Spicy,Extras,Add cheese +50 | Add bacon +80',
-      'Crispy Burger,690,Burgers,,yes,,,,',
-      'Chicken Wrap,550,Wraps,,yes,,,,',
-      'French Fries,200,Hot Sides,,yes,Size,Medium | Large +70,,',
-      'Cole Slaw,200,Cold Sides,Prepared at the counter,no,,,,',
-      'House Sauce,100,Sauces,,no,,,,',
-      'Shake Chocolate,350,Shakes & Mojitos,Made beside the till,no,,,,',
-      'Soda 500ml,120,Soft Drinks,,no,,,,',
-      'Water 500ml,100,Soft Drinks,,no,,,,',
-    ].join('\r\n') + '\r\n';
-
-    // BOM so Excel opens it as UTF-8 instead of mangling any accented names.
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = 'swiftpos-menu-sample.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
   const [fileName, setFileName] = useState('');
   const [existing, setExisting] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
@@ -1446,18 +1412,12 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
           onChange={e => { const f = e.target.files?.[0]; if (f) readFile(f); }}
           className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-800 file:text-gray-200 hover:file:bg-gray-700" />
 
-        <button onClick={downloadSample}
-          className="mt-3 text-xs text-action-400 hover:text-action-300 transition-colors">
-          ↓ Download a sample file to fill in
-        </button>
+        {/* 0.6.37 (owner): no sample menu on the till — no sample file, no sample rows. */}
 
         <div className="mt-4 text-xs text-gray-300">
           <p className="text-gray-400 mb-1">Columns</p>
           <p><span className="text-gray-300 font-mono">name</span>, <span className="text-gray-300 font-mono">price</span> — required.
             {' '}<span className="font-mono">category</span>, <span className="font-mono">description</span>, <span className="font-mono">kitchen</span> — optional.</p>
-          <pre className="mt-2 bg-gray-950 rounded-lg p-3 overflow-x-auto text-gray-400">{`name,price,category,description,kitchen
-Chicken Burger,390,Burgers,"Chicken breast, lettuce, tomato",yes
-Coca-Cola 1.25L,230,Soft Drinks,,no`}</pre>
           <p className="mt-2">
             Put a description in quotes if it contains commas.{' '}
             <span className="text-gray-400">kitchen</span> marks the whole category as cooked-to-order —
@@ -1476,8 +1436,6 @@ Coca-Cola 1.25L,230,Soft Drinks,,no`}</pre>
             <span className="font-mono text-gray-300">|</span> and put any price difference after
             the name.
           </p>
-          <pre className="mt-2 bg-gray-950 rounded-lg p-3 overflow-x-auto text-gray-400">{`variant1,variant1_options
-Spice,Normal | Spicy`}</pre>
 
           <p className="text-gray-300 mt-3 mb-1">Add-ons — tick any</p>
           <p>
@@ -1486,8 +1444,6 @@ Spice,Normal | Spicy`}</pre>
             Same syntax, different behaviour: the cashier may tick{' '}
             <span className="text-gray-200">any number</span> and each adds its own price.
           </p>
-          <pre className="mt-2 bg-gray-950 rounded-lg p-3 overflow-x-auto text-gray-400">{`addon1,addon1_options
-Upgrades,Large fries +60 | 500ml soda +50`}</pre>
 
           <p className="mt-2">
             Use a <span className="text-gray-200">choice</span> where exactly one answer makes sense,

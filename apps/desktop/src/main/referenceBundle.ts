@@ -31,6 +31,7 @@ import { parsePosFeatures } from './posFeatures';
 import { rulesFromWire, type ReversalRules } from './reversalRules';
 import { cleanShowDays } from './productDays';
 import { supportWire } from './support';   // 0.6.35 (A384)
+import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 
 // ── Cloud-shaped output ──────────────────────────────────────────────────────
 // Field names and value types match what pullCatalogue destructures, NOT the
@@ -57,6 +58,8 @@ export interface ReferenceBundle {
     businessDayCutoff?: number | null;
     /** 0.6.35: the shop's own tech ({name, phone}, or null = none); undefined = the node has not been told. */
     support?: { name: string | null; phone: string | null } | null;
+    /** 0.6.37: the payment methods a cashier's History shows ([] = every); undefined = the node has not been told. */
+    cashierHistoryMethods?: string[];
     /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
     webPosEnabled?: boolean | null;
     /** A367: the owner's quick picks for order notes; null = the node has not been told. */
@@ -108,6 +111,7 @@ export interface ReferenceRows {
     continuousOperation: boolean | null;
     businessDayCutoff?: number | null; // 0.6.34
     support?: { name: string | null; phone: string | null } | null; // 0.6.35
+    cashierHistoryMethods?: string[]; // 0.6.37
     webPosEnabled?: boolean | null;   // A346
     noteQuickPicks?: string[] | null; // A367
     posFeatures?: Record<string, boolean> | null; // 0.6.27
@@ -216,6 +220,7 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       continuousOperation: rows.config.continuousOperation,
       businessDayCutoff: rows.config.businessDayCutoff ?? null,   // 0.6.34: relayed so a peer's day ends with the node's
       support: rows.config.support,                       // 0.6.35: relayed so a peer's Help shows the shop's tech
+      cashierHistoryMethods: rows.config.cashierHistoryMethods,   // 0.6.37: relayed so a peer's History follows the manager
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
@@ -287,6 +292,9 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         : asBool(cfg.continuous_operation),
       // 0.6.34: the node's cut-off (0 = midnight — the node defaults to midnight until told, as a peer does).
       businessDayCutoff: typeof cfg?.business_day_cutoff === 'number' ? cfg.business_day_cutoff : null,
+      // 0.6.37: undefined until the node itself has been told (a peer then keeps its own value).
+      cashierHistoryMethods: typeof cfg?.cashier_history_methods === 'string'
+        ? (cleanHistoryMethods(cfg.cashier_history_methods) ?? undefined) : undefined,
       // 0.6.35: undefined until the node itself has heard from the cloud (a peer then keeps its own value).
       support: (() => {
         if (typeof cfg?.support_contact !== 'string') return undefined;
@@ -348,6 +356,8 @@ export interface AcquiredReference {
     businessDayCutoff?: number;
     /** 0.6.35: the shop's own tech. undefined = not said (older cloud / node) → keep; null = none (SwiftPOS support). */
     support?: { name: string | null; phone: string | null } | null;
+    /** 0.6.37: the payment methods a cashier's History shows. undefined = not said → keep. */
+    cashierHistoryMethods?: string[];
     branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null } | null;
     /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
      *  which relays no branding today) → the till keeps its local value. */
@@ -402,6 +412,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       continuousOperation: typeof pi.continuousOperation === 'boolean' ? pi.continuousOperation : null,
       businessDayCutoff: typeof pi.businessDayCutoff === 'number' ? pi.businessDayCutoff : undefined,   // 0.6.34
       support: pi && typeof pi === 'object' && 'support' in pi ? supportWire(pi.support) : undefined,   // 0.6.35
+      cashierHistoryMethods: Array.isArray(pi.cashierHistoryMethods) ? (cleanHistoryMethods(pi.cashierHistoryMethods) ?? undefined) : undefined,   // 0.6.37
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367

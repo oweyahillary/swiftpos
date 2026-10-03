@@ -69,6 +69,8 @@ export async function printShiftReport(
     expenses:     totals.expenses == null ? null : toCents(totals.expenses),
     // 0.6.27 (request 9): the expense TYPE first ("Transport — boda · M-Pesa"), not only the description.
     expenseLines: (report.expenseLines ?? []).map(e => ({ description: e.label ?? e.description, amount: toCents(e.amount) })),
+    // 0.6.37 (A388): the cash-outs and who approved each ("Gas refill · approved Mary").
+    payoutLines: (report.payoutLines ?? []).map(p => ({ description: p.label, amount: toCents(p.amount) })),
     // A363: what of the shift is not on the cloud yet — the same words as the on-screen report.
     backupNote: zBackupNote(report.notBackedUp),
     // 0.6.28: kitchen voids — what was sent and taken back, why, and who approved.

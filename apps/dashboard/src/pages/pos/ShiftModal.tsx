@@ -120,6 +120,8 @@ export default function ShiftModal({
   const [floatAmount, setFloatAmount] = useState('');
   const [floatReason, setFloatReason] = useState('');
   const [floatDone, setFloatDone]   = useState(false);
+  // 0.6.37 (A388): a pay-out and an expense need a manager — signed in (no PIN), or their PIN typed here.
+  const [approvePin, setApprovePin] = useState('');
 
   // A362: petty-cash expense out of this drawer (the till's Shift → Expenses, on the web)
   const [expTypes, setExpTypes]   = useState<{ id: string; name: string }[]>([]);
@@ -128,7 +130,7 @@ export default function ShiftModal({
   const [expMethod, setExpMethod] = useState('cash');
   const [expDesc, setExpDesc]     = useState('');
   const [expAmount, setExpAmount] = useState('');
-  const [expDone, setExpDone]     = useState<{ description: string; amount: number } | null>(null);
+  const [expDone, setExpDone]     = useState<{ description: string; amount: number; approvedBy?: string | null } | null>(null);
 
   // Clock in/out
   const [clockPin, setClockPin]       = useState('');
@@ -306,6 +308,8 @@ export default function ShiftModal({
     if (!shiftId) return;
     const amount = parseFloat(floatAmount);
     if (isNaN(amount) || amount <= 0) { setError('Enter an amount greater than zero'); return; }
+    const needPin = floatType === 'float_out' && !signedInManager;
+    if (needPin && !approvePin.trim()) { setError('A manager must approve a pay out — enter a manager’s PIN.'); return; }
 
     setLoading(true);
     setError('');
@@ -314,7 +318,9 @@ export default function ShiftModal({
         type: floatType,
         amount,
         reason: floatReason || null,
+        ...(needPin ? { pin: approvePin.trim() } : {}),   // 0.6.37 (A388)
       });
+      setApprovePin('');
       setFloatDone(true);
       onFloatRecorded?.();
     } catch (e: any) {
@@ -338,17 +344,20 @@ export default function ShiftModal({
     const amount = parseFloat(expAmount);
     if (!description) { setError('Say what the money was for'); return; }
     if (isNaN(amount) || amount <= 0) { setError('Enter an amount greater than zero'); return; }
+    if (!signedInManager && !approvePin.trim()) { setError('A manager must approve an expense — enter a manager’s PIN.'); return; }
 
     setLoading(true);
     setError('');
     try {
-      await posApi.post(`/api/shifts/${shiftId}/expense`, {
+      const saved = await posApi.post<{ approved_by_name?: string | null }>(`/api/shifts/${shiftId}/expense`, {
         description,
         amount,
         expense_category_id: expTypeId || undefined,
         payment_method: expMethod,   // 0.6.27
+        ...(!signedInManager ? { pin: approvePin.trim() } : {}),   // 0.6.37 (A388)
       });
-      setExpDone({ description, amount });
+      setApprovePin('');
+      setExpDone({ description, amount, approvedBy: saved?.approved_by_name ?? null });
     } catch (e: any) {
       setError(e?.message ?? 'Could not record the expense');
     } finally {
@@ -356,7 +365,7 @@ export default function ShiftModal({
     }
   };
 
-  const anotherExpense = () => { setExpDone(null); setExpDesc(''); setExpAmount(''); setExpTypeId(''); setExpMethod('cash'); setError(''); };
+  const anotherExpense = () => { setExpDone(null); setExpDesc(''); setExpAmount(''); setExpTypeId(''); setExpMethod('cash'); setApprovePin(''); setError(''); };
 
   // ── Clock in/out handler ────────────────────────────────────────────────────
 
@@ -719,6 +728,15 @@ export default function ShiftModal({
               onChange={e => setFloatReason(e.target.value)}
             />
 
+            {/* 0.6.37 (A388): a manager approves a pay out on the spot. */}
+            {floatType === 'float_out' && !signedInManager && (
+              <>
+                <label style={s.label}>Manager PIN (approves the pay out)</label>
+                <input style={s.input} type="password" inputMode="numeric" autoComplete="off" value={approvePin}
+                  onChange={e => setApprovePin(e.target.value.replace(/\D/g, '').slice(0, 8))} data-testid="payout-pin" />
+              </>
+            )}
+
             {error && <p style={s.error}>{error}</p>}
 
             <div style={s.actions}>
@@ -778,6 +796,15 @@ export default function ShiftModal({
               ))}
             </select>
 
+            {/* 0.6.37 (A388): a manager approves every expense on the spot. */}
+            {!signedInManager && (
+              <>
+                <label style={s.label}>Manager PIN (approves the expense)</label>
+                <input style={s.input} type="password" inputMode="numeric" autoComplete="off" value={approvePin}
+                  onChange={e => setApprovePin(e.target.value.replace(/\D/g, '').slice(0, 8))} data-testid="expense-pin" />
+              </>
+            )}
+
             {error && <p style={s.error}>{error}</p>}
 
             <div style={s.actions}>
@@ -793,7 +820,7 @@ export default function ShiftModal({
           <>
             <div style={s.iconRow}><span style={s.icon}>✅</span></div>
             <h2 style={s.title}>Expense recorded</h2>
-            <p style={s.subtitle}>{expDone.description} — {fmt(expDone.amount, currency)}, recorded under your name.</p>
+            <p style={s.subtitle}>{expDone.description} — {fmt(expDone.amount, currency)}, recorded under your name{expDone.approvedBy ? `, approved by ${expDone.approvedBy}` : ''}.</p>
             <div style={s.actions}>
               <button style={s.cancelBtn} onClick={anotherExpense}>Record another</button>
               <button style={s.primaryBtn} onClick={onClose}>Close</button>

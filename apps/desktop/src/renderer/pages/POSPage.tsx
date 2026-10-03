@@ -1860,8 +1860,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                           {/* 0.6.29 (owner, D2): what the customer PAID — the bill plus any tip and delivery fee (the M-Pesa
                               received). The bill alone hid the fee: "where is the 400 accounted". */}
                           <td className="px-4 py-2.5 font-semibold text-white tabular-nums" data-testid="history-paid">
-                            {fmtMoney(Number(o.total) + Number(o.tip_amount ?? 0) + customerDeliveryFee(o.delivery_fee, o.delivery_free))}
-                            {Number(o.delivery_fee ?? 0) > 0 && (o.delivery_free
+                            {/* 0.6.37 (A387): a cashier sees only the allowed part of a split sale — that amount, never the bill. */}
+                            {o.history_partial ? fmtMoney(Number(o.history_shown_total ?? 0))
+                              : fmtMoney(Number(o.total) + Number(o.tip_amount ?? 0) + customerDeliveryFee(o.delivery_fee, o.delivery_free))}
+                            {o.history_partial && (
+                              <span data-testid="history-partial" className="block text-[10px] font-normal text-gray-400">part of a split payment</span>
+                            )}
+                            {!o.history_partial && Number(o.delivery_fee ?? 0) > 0 && (o.delivery_free
                               ? <span className="block text-[10px] font-normal text-gray-400">free delivery (shop paid {fmtMoney(Number(o.delivery_fee))})</span>
                               : <span className="block text-[10px] font-normal text-gray-400">incl. delivery {fmtMoney(Number(o.delivery_fee))}</span>
                             )}

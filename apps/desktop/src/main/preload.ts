@@ -169,7 +169,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
     stale: () => ipcRenderer.invoke('shift:stale'),
     forceClose: (reason: string) => ipcRenderer.invoke('shift:forceClose', { reason }),
-    float:   (type: 'float_in' | 'float_out', amount: number, reason?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason }),
+    float:   (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason, pin }),   // 0.6.37: pin
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
     // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).
     awaiting: ()                                                         => ipcRenderer.invoke('shift:awaiting'),
@@ -234,6 +234,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getContinuousOperation: ()                           => ipcRenderer.invoke('manage:getContinuousOperation'),
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
     setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
+    getCashierHistoryMethods: ()                         => ipcRenderer.invoke('manage:getCashierHistoryMethods'),   // 0.6.37
+    setCashierHistoryMethods: (methods: string[])        => ipcRenderer.invoke('manage:setCashierHistoryMethods', methods),
   },
 
   manager: {
@@ -329,7 +331,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   expense: {
     categories: () => ipcRenderer.invoke('expense:categories'),
     addCategory: (name: string) => ipcRenderer.invoke('expense:addCategory', { name }),   // A341
-    create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string }) =>
+    create: (payload: { description: string; amount: number; expense_category_id?: string; paid_by?: string; pin?: string }) =>
               ipcRenderer.invoke('expense:create', payload),
     list: () => ipcRenderer.invoke('expense:list'),
     range: (range?: any) => ipcRenderer.invoke('expense:range', range),

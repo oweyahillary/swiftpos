@@ -129,7 +129,8 @@ signIn('u-mgr', 'Mary', 'manager');
 ok('a manager sees every sale and may reprint', !S.historyScope().ownOnly && S.historyScope().canReprint && M.getRecentOrders(30).length === 4);
 features(false);
 signIn('u-amy', 'Amy', 'cashier');
-ok('switches off: a cashier sees all and may reprint, as before', !S.historyScope().ownOnly && S.historyScope().canReprint);
+// 0.6.37 (owner: "never reprints a receipt"): a cashier never reprints, whatever the switch.
+ok('switches off: a cashier sees all, and still never reprints (0.6.37)', !S.historyScope().ownOnly && !S.historyScope().canReprint);
 features(true);
 
 // ── 5 + 9: expenses ──────────────────────────────────────────────────────────

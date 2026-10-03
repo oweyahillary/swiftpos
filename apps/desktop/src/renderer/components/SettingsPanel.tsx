@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import PaymentMethodsPanel from './PaymentMethodsPanel';
 import ReversalRulesPanel from './ReversalRulesPanel';
+import CashierHistoryPanel from './CashierHistoryPanel';
 
 // The till's Settings screen (A104) — business-wide options plus the payment
 // methods manager moved in here. 24-hour operation controls whether an unclosed
@@ -75,6 +76,11 @@ export default function SettingsPanel({ canEdit = true, isOwner = false }: { can
       {/* 0.6.30: the owner's void window and offline void/refund rules. */}
       <section className="border-t border-gray-800 pt-6">
         <ReversalRulesPanel isOwner={isOwner} />
+      </section>
+
+      {/* 0.6.37 (A387): the payment methods a cashier's History shows. */}
+      <section className="border-t border-gray-800 pt-6">
+        <CashierHistoryPanel canEdit={canEdit} />
       </section>
 
       {/* Payment methods, moved here from its own tab. */}

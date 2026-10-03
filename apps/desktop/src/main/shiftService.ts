@@ -13,7 +13,7 @@
 import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
-import { getDeviceConfig, canSell, getPosFeatures } from './deviceConfig';
+import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods } from './deviceConfig';
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
@@ -104,7 +104,12 @@ export interface ZReport {
    *  0.6.27: `label` is what the report prints — the expense TYPE first, then the description, then the method when
    *  not cash; `payment_method` how it was paid. */
   expenseLines: { description: string; amount: number; created_at: string; paid_by_name: string | null;
-                  label?: string; category_name?: string | null; payment_method?: string }[];
+                  label?: string; category_name?: string | null; payment_method?: string;
+                  /** 0.6.37 (A388): the manager who approved it (null = before 0.6.37). */
+                  approved_by_name?: string | null }[];
+  /** 0.6.37 (A388): this till's cash-outs (pay-outs not made for a sale) on the shift, with who approved each — the
+   *  owner reads them beside the expenses. Optional so an older caller or a stored report still renders. */
+  payoutLines?: { reason: string | null; amount: number; created_at: string; approved_by_name: string | null; label: string }[];
   /** A363 (owner: "add the note on the zreport"): what of this shift is not yet on the cloud — its sales still queued
    *  or failed, and whether the cloud refused the drawer itself. Optional so an older caller or a stored report renders. */
   notBackedUp?: { sales: number; drawerRefused: boolean };
@@ -241,7 +246,9 @@ export function openShift(opening_float = 0, drawerLabel?: string | null): any {
 }
 
 // Record a float_in / float_out movement on the open shift.
-export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?: string): any {
+// 0.6.37 (A388): `approver` — the manager who approved a cash-out (ipcHandlers asks for it; a pay-in needs none).
+export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?: string,
+                         approver?: { id: string; name: string | null } | null): any {
   const db = getLocalDb();
   if (type !== 'float_in' && type !== 'float_out') throw new Error('type must be float_in or float_out');
   if (!(Number(amount) > 0)) throw new Error('amount must be greater than zero');
@@ -258,12 +265,19 @@ export function addFloat(type: 'float_in' | 'float_out', amount: number, reason?
   // simply stop reaching the server, and the shift's expected cash would be
   // wrong by exactly the floats nobody could see.
   db.prepare(`
-    INSERT INTO float_transactions (id, shift_id, branch_id, cashier_id, type, amount, reason, created_at, device_id, sync_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    INSERT INTO float_transactions (id, shift_id, branch_id, cashier_id, type, amount, reason, created_at, device_id,
+                                    approved_by, approved_by_name, sync_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
   `).run(id, shift.id, shift.branch_id, shift.cashier_id, type, Number(amount), reason ?? null, now,
-         getDeviceConfig()?.device_id ?? null);
+         getDeviceConfig()?.device_id ?? null, approver?.id ?? null, approver?.name ?? null);
 
   return db.prepare(`SELECT * FROM float_transactions WHERE id=?`).get(id);
+}
+
+/** 0.6.37 (A388): " · approved Mary" on a Z-report line; nothing for a line recorded before approvals. */
+export function approvedSuffix(name: string | null | undefined): string {
+  const n = String(name ?? '').trim();
+  return n ? ` · approved ${n}` : '';
 }
 
 // Compute the Z-report for a shift (open = live preview, closed = final figures).
@@ -368,13 +382,22 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     .map((m) => [String(m.code).toLowerCase(), m.name]));
   const expenseLines = (db.prepare(`
     SELECT e.description, e.amount, e.created_at, u.name AS paid_by_name, e.expense_type_name AS category_name,
-           COALESCE(NULLIF(LOWER(TRIM(e.payment_method)), ''), 'cash') AS payment_method
-      FROM expenses e LEFT JOIN users u ON u.id = e.paid_by
+           COALESCE(NULLIF(LOWER(TRIM(e.payment_method)), ''), 'cash') AS payment_method,
+           COALESCE(e.approved_by_name, a.name) AS approved_by_name   -- 0.6.37 (A388)
+      FROM expenses e LEFT JOIN users u ON u.id = e.paid_by LEFT JOIN users a ON a.id = e.approved_by
      WHERE e.shift_id = ? ORDER BY e.created_at
   `).all(shiftId) as { description: string; amount: number; created_at: string; paid_by_name: string | null;
-                       category_name: string | null; payment_method: string }[])
+                       category_name: string | null; payment_method: string; approved_by_name: string | null }[])
     .map((x) => ({ ...x, amount: Number(x.amount),
-                   label: expenseLabel(x.category_name, x.description, x.payment_method, methodNames.get(x.payment_method) ?? null) }));
+                   label: expenseLabel(x.category_name, x.description, x.payment_method, methodNames.get(x.payment_method) ?? null)
+                     + approvedSuffix(x.approved_by_name) }));
+  // 0.6.37 (A388): the cash-outs and who approved them (a rider's fee is in the riders' line, not here).
+  const payoutLines = (db.prepare(`
+    SELECT f.reason, f.amount, f.created_at, COALESCE(f.approved_by_name, a.name) AS approved_by_name
+      FROM float_transactions f LEFT JOIN users a ON a.id = f.approved_by
+     WHERE f.shift_id = ? AND f.type = 'float_out' AND f.order_id IS NULL ORDER BY f.created_at
+  `).all(shiftId) as { reason: string | null; amount: number; created_at: string; approved_by_name: string | null }[])
+    .map((x) => ({ ...x, amount: Number(x.amount), label: (x.reason?.trim() || 'Pay-out') + approvedSuffix(x.approved_by_name) }));
 
   // A363: what of this shift has not reached the cloud yet — shown on the report so a close never hides it.
   const notBackedUp = {
@@ -439,6 +462,7 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       riderReturned: money2(Number(rider.back)),
     },
     expenseLines,
+    payoutLines,
     kitchenVoids: kitchenVoidsForShift(shiftId),   // 0.6.28
     businessName: session.business_name,
     currency: session.currency ?? 'KES',
@@ -472,7 +496,9 @@ export function shiftCloseRights(shift: { cashier_id?: string | null; opened_by?
  * History. A manager (the shift-manager rule) always sees every sale and may reprint. Nobody signed in → own-only
  * with nobody to match, i.e. nothing, when the switch is on.
  */
-export interface HistoryScope { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }
+export interface HistoryScope { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean;
+  /** 0.6.37 (A387): the payment methods this person's History shows ([] = every; a manager always every). */
+  methods: string[] }
 /** The signed-in person, and whether they are a manager for shift purposes (isShiftManager). */
 function signedIn(): { staffId: string | null; manager: boolean } {
   const st = getLocalDb().prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get() as
@@ -486,7 +512,9 @@ export function historyScope(): HistoryScope {
     staffId,
     manager,
     ownOnly: f.cashier_own_history && !manager,
-    canReprint: !(f.cashier_no_reprint && !manager),
+    // 0.6.37 (owner): "never reprints a receipt" — a cashier never reprints; a manager and the owner may.
+    canReprint: manager,
+    methods: manager ? [] : getCashierHistoryMethods(),
   };
 }
 

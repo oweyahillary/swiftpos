@@ -33,9 +33,11 @@ interface Order {
   delivery_fee?: number | null;      // 0.6.27
   delivery_free?: boolean | null;    // 0.6.33: the shop paid the rider; not in what the customer paid
   tip_amount?: number | null;        // 0.6.29
+  history_partial?: boolean;         // 0.6.37 (A387): a cashier sees only the allowed part of this split sale
+  history_shown_total?: number;      //   … and this is that part's amount (never the whole bill)
 }
 /** 0.6.27: own_only — the cloud narrowed the list to this cashier's sales; can_reprint — Reprint is offered. */
-interface OrdersResponse { orders: Order[]; total: number; own_only?: boolean; can_reprint?: boolean; }
+interface OrdersResponse { orders: Order[]; total: number; own_only?: boolean; can_reprint?: boolean; history_methods?: string[]; }
 
 // 0.6.27: the types a filter offers (the cloud filters; the list is paged).
 const TYPE_CHOICES = ['dine_in', 'takeaway', 'delivery', 'retail'];
@@ -129,7 +131,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
       setOrders(res.orders ?? []);
       setTotal(res.total ?? 0);
       setOwnOnly(res.own_only === true);
-      setCanReprint(res.can_reprint !== false);
+      setCanReprint(res.can_reprint === true);   // 0.6.37: a cashier never reprints
       setPage(p);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load orders');
@@ -212,7 +214,9 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                   </span>
                   {isRefunded(order.payments) && <span style={s.refundedBadge}>refunded</span>}
                   {/* 0.6.29 (owner, D2): what the customer PAID — the bill + tip + delivery fee (the fee was hidden). */}
-                  <span style={s.total} data-testid="history-paid">{fmt(paidOf(order), currency)}{Number(order.delivery_fee ?? 0) > 0 ? (order.delivery_free ? ' (free delivery)' : ` (incl. delivery ${fmt(Number(order.delivery_fee), currency)})`) : ''}</span>
+                  <span style={s.total} data-testid="history-paid">{order.history_partial
+                    ? `${fmt(Number(order.history_shown_total ?? 0), currency)} (part of a split payment)`
+                    : <>{fmt(paidOf(order), currency)}{Number(order.delivery_fee ?? 0) > 0 ? (order.delivery_free ? ' (free delivery)' : ` (incl. delivery ${fmt(Number(order.delivery_fee), currency)})`) : ''}</>}</span>
                   <span style={s.chevron}>{isOpen ? '▲' : '▼'}</span>
                 </div>
               </button>
@@ -224,6 +228,8 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     <span style={s.detailLabel}>Type</span>
                     <span style={s.detailVal}>{orderTypeLabel(order.order_type, order.delivery_person)}</span>
                   </div>
+                  {/* 0.6.37 (A387): a cashier's part of a split sale shows only its allowed payments, not the bill. */}
+                  {!order.history_partial && <>
                   <div style={s.detailRow}>
                     <span style={s.detailLabel}>Subtotal</span>
                     <span style={s.detailVal}>{fmt(order.subtotal, currency)}</span>
@@ -238,6 +244,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     <span style={{ ...s.detailLabel, fontWeight: 700, color: '#f1f5f9' }}>Total</span>
                     <span style={{ ...s.detailVal, fontWeight: 700, color: '#22c55e' }}>{fmt(order.total, currency)}</span>
                   </div>
+                  </>}
                   {order.payments.map((p, i) => (
                     <div key={i} style={{ ...s.detailRow, marginTop: 2 }}>
                       <span style={s.detailLabel}><MethodDot method={p.method} />{METHOD_ICON[p.method] ?? '💰'} {p.method}</span>

@@ -46,6 +46,10 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const [floatType, setFloatType] = useState<'float_in' | 'float_out'>('float_out');
   const [floatAmount, setFloatAmount] = useState('');
   const [floatReason, setFloatReason] = useState('');
+  // 0.6.37 (A388): a cash-out and an expense need a manager — signed in (no PIN), or their PIN typed here.
+  const [isManager, setIsManager] = useState(false);
+  const [floatPin, setFloatPin] = useState('');
+  const [expPin, setExpPin] = useState('');
 
   // Close form
   const [closingFloat, setClosingFloat] = useState('');
@@ -117,6 +121,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     // Load expense categories (online only — falls back to empty list offline)
     posApi.expense.categories().then(setCategories).catch(() => {});
     posApi.pos.paymentMethods().then(setMethodOptions).catch(() => {});   // A365
+    posApi.shift.canConfirm().then(setIsManager).catch(() => setIsManager(false));   // 0.6.37: no PIN for a manager
   }, []);
 
   // Reload expense list whenever the expenses tab is opened
@@ -140,10 +145,12 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
 
   const handleFloat = async () => {
     if (!(Number(floatAmount) > 0)) { setError('Enter an amount greater than zero'); return; }
+    if (floatType === 'float_out' && !isManager && !floatPin.trim()) { setError('A manager must approve a pay out — enter a manager’s PIN.'); return; }
     setBusy(true); setError('');
     try {
-      const r = await posApi.shift.float(floatType, Number(floatAmount), floatReason.trim() || undefined);
-      setReport(r); onShiftChange(r); setFloatAmount(''); setFloatReason('');
+      const r = await posApi.shift.float(floatType, Number(floatAmount), floatReason.trim() || undefined,
+        floatType === 'float_out' && floatPin.trim() ? floatPin.trim() : undefined);
+      setReport(r); onShiftChange(r); setFloatAmount(''); setFloatReason(''); setFloatPin('');
     } catch (e: any) { setError(e?.message ?? 'Could not record float'); }
     finally { setBusy(false); }
   };
@@ -151,18 +158,20 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
   const handleExpense = async () => {
     if (!expDesc.trim())           { setExpError('Description is required'); return; }
     if (!(Number(expAmount) > 0))  { setExpError('Enter a valid amount'); return; }
+    if (!isManager && !expPin.trim()) { setExpError('A manager must approve an expense — enter a manager’s PIN.'); return; }
     setExpBusy(true); setExpError(''); setExpSuccess('');
     try {
-      await posApi.expense.create({
+      const saved = await posApi.expense.create({
         description: expDesc.trim(),
         amount: Number(expAmount),
         expense_category_id: expCatId || undefined,
         // 0.6.27: the type's name rides with it (the Z-report shows the TYPE, offline too), and how it was paid.
         category_name: categories.find(c => c.id === expCatId)?.name,
         payment_method: expMethod,
+        pin: expPin.trim() || undefined,   // 0.6.37 (A388)
       });
-      setExpDesc(''); setExpAmount(''); setExpCatId(''); setExpMethod('cash');
-      setExpSuccess('Expense saved — will sync on next connection');
+      setExpDesc(''); setExpAmount(''); setExpCatId(''); setExpMethod('cash'); setExpPin('');
+      setExpSuccess(`Expense saved${saved?.approvedBy ? ` — approved by ${saved.approvedBy}` : ''}. It syncs on the next connection.`);
       const list = await posApi.expense.list();
       setExpList(list);
     } catch (e: any) { setExpError(e?.message ?? 'Could not save expense'); }
@@ -336,6 +345,11 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 </div>
                 <input type="number" inputMode="decimal" value={floatAmount} onChange={e => setFloatAmount(e.target.value)} placeholder={`Amount (${currency})`} className={inputCls} />
                 <input type="text" value={floatReason} onChange={e => setFloatReason(e.target.value)} placeholder="Reason (optional)" className={inputCls} />
+                {floatType === 'float_out' && !isManager && (
+                  <input type="password" inputMode="numeric" autoComplete="off" value={floatPin} data-testid="payout-pin"
+                    onChange={e => setFloatPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="Manager PIN (approves the pay out)" className={inputCls} />
+                )}
                 <button onClick={handleFloat} disabled={busy} className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
                   Record {floatType === 'float_out' ? 'pay out' : 'pay in'}
                 </button>
@@ -548,6 +562,12 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   )}
                 </div>
 
+                {/* 0.6.37 (A388): a manager approves every expense — signed in, or their PIN here. */}
+                {!isManager && (
+                  <input type="password" inputMode="numeric" autoComplete="off" value={expPin} data-testid="expense-pin"
+                    onChange={e => setExpPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="Manager PIN (approves the expense)" className={inputCls} />
+                )}
                 {expError   && <p className="text-red-400 text-xs">{expError}</p>}
                 {expSuccess && <p className="text-green-400 text-xs">{expSuccess}</p>}
 

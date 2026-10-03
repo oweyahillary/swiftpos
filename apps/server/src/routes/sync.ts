@@ -458,6 +458,9 @@ router.post('/push', async (req, res) => {
           amount:     Number(f.amount),
           reason:     f.reason ?? null,
           created_at: f.created_at,
+          // 0.6.37 (A388): who approved a pay-out. Never a reason to refuse the row: a bad id is dropped, not rejected.
+          approved_by:      isUuid(f.approved_by) ? String(f.approved_by) : null,
+          approved_by_name: typeof f.approved_by_name === 'string' ? f.approved_by_name.slice(0, 100) : null,
         };
         const { error } = await supabase.from('float_transactions').upsert(row, { onConflict: 'id' });
         return { id: f.id, code: (error as { code?: string })?.code, error: error?.message };
@@ -507,6 +510,9 @@ router.post('/push', async (req, res) => {
             shift_id:            e.shift_id ?? null,
             // 0.6.27: how it was paid — only cash leaves the drawer. A till before 59 sends none → cash.
             payment_method:      cleanExpenseMethod(e.payment_method),
+            // 0.6.37 (A388): who approved it (a till before 66 sends none). A bad id is dropped, not rejected.
+            approved_by:         isUuid(e.approved_by) ? String(e.approved_by) : null,
+            approved_by_name:    typeof e.approved_by_name === 'string' ? e.approved_by_name.slice(0, 100) : null,
           };
           const { error } = await supabase.from('expenses').upsert(row, { onConflict: 'id' });
           return { id: e.id, code: (error as { code?: string })?.code, error: error?.message };

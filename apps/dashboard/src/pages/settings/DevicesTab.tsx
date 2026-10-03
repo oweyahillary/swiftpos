@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { deviceLabelShown } from '../../lib/posTerminal';   // 0.6.37: old "SwiftPOS till" reads ZapTill
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
 import Toast from '../../components/Toast';
@@ -210,7 +211,7 @@ export default function DevicesTab() {
             <div key={d.id} className="flex items-center justify-between gap-4 py-2 border-t border-amber-500/20">
               <div className="min-w-0">
                 <p className="text-white text-sm font-medium truncate">
-                  {d.users?.name ?? 'Unknown staff'} · {d.device_label ?? 'Unknown device'}
+                  {d.users?.name ?? 'Unknown staff'} · {deviceLabelShown(d.device_label) ?? 'Unknown device'}
                 </p>
                 <p className="text-amber-400/70 text-xs mt-0.5">
                   {d.users?.roles?.name} · {d.ip_address ?? 'Unknown IP'} · {timeAgo(d.requested_at)}
@@ -307,7 +308,7 @@ export default function DevicesTab() {
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1">
-                      <span className="text-gray-400 text-xs">{d.device_label ?? 'Unnamed device'}</span>
+                      <span className="text-gray-400 text-xs">{deviceLabelShown(d.device_label) ?? 'Unnamed device'}</span>
                       <button
                         onClick={() => { setEditingId(d.id); setEditValue(d.device_label ?? ''); }}
                         className="text-gray-600 hover:text-gray-300 text-xs"

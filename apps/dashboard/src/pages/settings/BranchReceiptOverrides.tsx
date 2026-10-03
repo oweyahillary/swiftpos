@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
+import { cleanHistoryMethods } from '../../lib/cashierHistory';   // 0.6.37 (A387)
+import HistoryMethodsPicker from './HistoryMethodsPicker';
 
 // A139: per-branch receipt text + hours that override the business default for a
 // franchise branch. A branch either INHERITS the business default (no row) or
@@ -57,6 +59,9 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
   // 0.6.34: the business-day end — the branch's own, or the business default.
   const cutOverridden  = 'business_day_cutoff' in overrides;
   const cutDefault     = cutoffLabel(cleanCutoff(defaults.business_day_cutoff) ?? 0);
+  // 0.6.37 (A387): the methods a cashier's History shows — the branch's own, or the business default.
+  const hmOverridden   = 'cashier_history_methods' in overrides;
+  const hmDefault      = cleanHistoryMethods(defaults.cashier_history_methods ?? null) ?? [];
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
@@ -157,6 +162,32 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
             </label>
           </div>
         </div>
+      </div>
+
+      {/* 0.6.37 (A387): this branch's own choice of what cashiers see in History. */}
+      <div className="border-t border-gray-800 pt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">What cashiers see in History</div>
+            <div className="text-xs text-gray-600 mt-0.5">
+              {hmOverridden ? 'Overridden for this branch'
+                : `Using business default (${hmDefault.length ? hmDefault.join(', ') : 'every method'})`}
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+            <input
+              type="checkbox" checked={hmOverridden}
+              onChange={e => e.target.checked ? save('cashier_history_methods', JSON.stringify(hmDefault)) : save('cashier_history_methods', null)}
+            />
+            Override
+          </label>
+        </div>
+        {hmOverridden && (
+          <div className="mt-3">
+            <HistoryMethodsPicker value={overrides.cashier_history_methods}
+              onChange={(list) => save('cashier_history_methods', JSON.stringify(list))} />
+          </div>
+        )}
       </div>
     </div>
   );

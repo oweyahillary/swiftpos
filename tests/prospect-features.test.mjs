@@ -151,7 +151,7 @@ await ok('History filters and orders by payment method or type (never changes th
 });
 await ok('the cloud narrows a cashier to their own sales and says whether Reprint is offered (a manager sees all)', () => {
   assert.match(orders, /const ownOnly = !manager && features\.cashier_own_history;\s*if \(ownOnly\) query = query\.eq\('cashier_id', req\.userId/);
-  assert.match(orders, /can_reprint: manager \|\| !features\.cashier_no_reprint/);
+  assert.match(orders, /can_reprint: manager \}\);/);   // 0.6.37: a cashier never reprints
   const h = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
   assert.match(h, /\{canReprint && <button/);
   assert.match(h, /\{orderTypeLabel\(order\.order_type, order\.delivery_person\)\}/);

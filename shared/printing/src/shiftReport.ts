@@ -81,6 +81,8 @@ export interface ShiftReportData {
   siblingCash?: Cents | null;
   /** 0.6.11: the expense lines behind it. */
   expenseLines?: { description: string; amount: Cents }[];
+  /** 0.6.37 (A388): the cash-outs (pay-outs not made for a sale), each with the manager who approved it. */
+  payoutLines?: { description: string; amount: Cents }[];
   /** 0.6.28: items taken back after they were sent to the kitchen — one line each ("2x Chicken — Wrong item · made ·
    *  approved Jane"), the total and the part already made (wasted). null/absent = none. */
   kitchenVoids?: { lines: { description: string; amount: Cents }[]; total: Cents; madeTotal: Cents } | null;
@@ -217,6 +219,17 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
       const amt = money(e.amount);
       // Fits → one line. Otherwise the description wraps WHOLE (it is what the owner reads to know what the cash
       // was for) and the amount sits right-aligned beneath it.
+      if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
+      else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
+    }
+  }
+
+  // 0.6.37 (A388): the cash-outs and the manager who approved each — wrapped like the expense lines.
+  if (r.payoutLines && r.payoutLines.length) {
+    d.line(rule(cols));
+    d.line(`PAY-OUTS (${r.payoutLines.length})`, { bold: true });
+    for (const e of r.payoutLines) {
+      const amt = money(e.amount);
       if (e.description.length + amt.length + 1 <= cols) d.line(pair(cols, e.description, amt));
       else { d.lines(wrap(e.description, cols)); d.line(' '.repeat(Math.max(0, cols - amt.length)) + amt); }
     }

@@ -155,7 +155,9 @@ export interface ZReport {
   };
   /** 0.6.11: this till's expense lines on the shift. 0.6.27: `label` = type — description · method. */
   expenseLines?: { description: string; amount: number; created_at: string; paid_by_name: string | null;
-                   label?: string; category_name?: string | null; payment_method?: string }[];
+                   label?: string; category_name?: string | null; payment_method?: string; approved_by_name?: string | null }[];
+  /** 0.6.37 (A388): the cash-outs on this shift and the manager who approved each (`label` = reason · approved …). */
+  payoutLines?: { reason: string | null; amount: number; created_at: string; approved_by_name: string | null; label: string }[];
   /** A363: what of this shift is not on the cloud yet. */
   notBackedUp?: { sales: number; drawerRefused: boolean };
   /** 0.6.28: items taken back after they were sent to the kitchen on this shift. */
@@ -309,7 +311,7 @@ declare global {
         /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
         features: () => Promise<PosFeatures>;
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
-        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean }; orders: any[] }>;
+        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; methods: string[] }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
         reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean; freeDeliveryOver: number | null }>;
         /** 0.6.35 (A384): the Help screen — who to call (the shop's tech or SwiftPOS support), this till's name and version. */
@@ -460,7 +462,8 @@ declare global {
         forceClose: (reason: string) => Promise<ZReport>;
         current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
-        float: (type: 'float_in' | 'float_out', amount: number, reason?: string) => Promise<ZReport | null>;
+        /** 0.6.37 (A388): a pay out needs a manager — signed in, or `pin` (a manager's). */
+        float: (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => Promise<ZReport | null>;
         close: (closing_float: number, notes?: string, declared?: Record<string, number>) => Promise<ZReport>;
         /** A365: this till's shifts awaiting a manager's confirmation. */
         awaiting: () => Promise<AwaitingShift[]>;
@@ -524,6 +527,9 @@ declare global {
         setContinuousOperation: (enabled: boolean) => Promise<any>;
         /** 0.6.30: the owner's void/refund rules (void_window_minutes, offline_refund_methods, offline_reverse_web_sales). */
         setReversalRule: (key: string, value: unknown) => Promise<any>;
+        /** 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method). Manager (settings.manage). */
+        getCashierHistoryMethods: () => Promise<{ methods: string[] }>;
+        setCashierHistoryMethods: (methods: string[]) => Promise<any>;
       };
       manager: {
         reportScope: () => Promise<{
@@ -558,7 +564,9 @@ declare global {
         addCategory: (name: string) => Promise<{ id: string; name: string }>;
         create: (p: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
                   /** 0.6.27: how it was paid ('cash' leaves the drawer) and the type's name. */
-                  payment_method?: string; category_name?: string }) => Promise<{ id: string }>;
+                  payment_method?: string; category_name?: string;
+                  /** 0.6.37 (A388): a manager's PIN — every expense needs a manager (none when one is signed in). */
+                  pin?: string }) => Promise<{ id: string; approvedBy?: string | null }>;
         list: () => Promise<any[]>;
         /** 0.6.11: expenses paid out on this till in a date range. */
         range: (range?: ReportRangeArg) => Promise<{ rows: ExpenseRow[]; total: number; label: string }>;

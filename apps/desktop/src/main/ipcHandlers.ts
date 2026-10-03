@@ -19,6 +19,7 @@ import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenE
 import { expectStringArray, assertPayload } from './ipcValidate';
 import { installValidatedHandle } from './ipcGuard';
 import { getBuildInfo } from './buildInfo';
+import { cashierHistoryView, historyMethodsSettingValue, CASHIER_HISTORY_METHODS_KEY } from './cashierHistory';   // 0.6.37 (A387)
 import { printerShares } from './printService';
 import { kitchenPreset, dispatchPreset, receiptPreset, monoRasterFromString, type MonoRaster } from '@swiftpos/printing';
 
@@ -39,7 +40,7 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
-import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
@@ -1648,8 +1649,11 @@ export function registerIpcHandlers() {
     return currentShiftReport();
   });
 
-  handle('shift:float', async (_event, { type, amount, reason }: { type: 'float_in' | 'float_out'; amount: number; reason?: string }) => {
-    addFloat(type, Number(amount), reason);
+  handle('shift:float', async (_event, { type, amount, reason, pin }: { type: 'float_in' | 'float_out'; amount: number; reason?: string; pin?: string }) => {
+    // 0.6.37 (A388): a cash-out needs a manager — signed in, or their PIN on the spot. A pay-in needs nobody.
+    const approver = type === 'float_out' ? await payoutApprover(pin) : null;
+    addFloat(type, Number(amount), reason, approver);
+    if (approver) logLine('shift', `pay-out ${Number(amount)} approved by ${approver.name ?? approver.id}`);
     pushNow();
     return currentShiftReport();
   });
@@ -1676,6 +1680,8 @@ export function registerIpcHandlers() {
   const mayConfirmLocal = (staff: { roleName?: string | null; permissions?: unknown }) =>
     isShiftManager(staff.roleName, (staff.permissions ?? {}) as Record<string, unknown>);
   const NOT_A_CONFIRMER = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
+  // 0.6.37 (A388): a cash-out or an expense with no manager signed in and no PIN.
+  const PAYOUT_APPROVAL_NEEDED = 'A manager must approve this — enter a manager’s PIN.';
   async function identifyConfirmer(pin: string): Promise<{ id: string; name: string | null }> {
     const cfg = getDeviceConfig();
     const branchId = cfg?.branch_id ?? '';
@@ -1728,6 +1734,18 @@ export function registerIpcHandlers() {
     return mayConfirmLocal({ roleName: st.role_name, permissions }) ? { id: st.staff_id, name: st.staff_name } : null;
   };
   handle('shift:canConfirm', async () => signedInConfirmer() !== null);
+
+  // 0.6.37 (A388) — owner, 2026-10-03: "Manager approve cashout and expense" — "Manager PIN on the spot". A manager
+  // signed in on this till approves as themselves; anyone else enters a manager's PIN, checked like a shift
+  // confirmation (the branch node, the cloud, else this till's saved sign-ins — so it works offline). The approver is
+  // stored on the row, pushed, and printed on the Z-report.
+  async function payoutApprover(pin?: string): Promise<{ id: string; name: string | null }> {
+    const p = String(pin ?? '').trim();
+    if (p) return identifyConfirmer(p);
+    const me = signedInConfirmer();
+    if (me) return me;
+    throw new Error(PAYOUT_APPROVAL_NEEDED);
+  }
 
   handle('shift:confirm', async (_event, payload) => {
     const { shiftId, pin, counts, reasons } = assertPayload<{ shiftId: string; pin?: string; counts: Record<string, number>; reasons?: Record<string, string> }>(
@@ -2273,6 +2291,17 @@ export function registerIpcHandlers() {
     return out;
   });
 
+  // 0.6.37 (A387): the payment methods a cashier's History shows, from Manager → Settings. The cloud stores it for the
+  // business (settings.manage); this till uses the new list at once, the others on their next pull.
+  handle('manage:getCashierHistoryMethods', async () => ({ methods: getCashierHistoryMethods() }));
+  handle('manage:setCashierHistoryMethods', async (_e, methods) => {
+    const clean = historyMethodsSettingValue(methods);
+    if (clean === null) throw new Error('Choose payment methods from the list.');
+    const out = await manageFetch('/api/business/settings', 'POST', { key: CASHIER_HISTORY_METHODS_KEY, value: JSON.parse(clean) });
+    setCashierHistoryMethods(clean);
+    return out;
+  });
+
   // ── Manager dashboard reports (local SQLite — D9 tiered depth) ────────────
 
   // Range is optional so existing callers keep today's behaviour untouched.
@@ -2286,7 +2315,9 @@ export function registerIpcHandlers() {
     const scope = historyScope();
     if (scope.ownOnly && !scope.staffId) return { scope, orders: [] };
     // 0.6.29 (owner): "it should show everything of the days sales" — today's, all of them (it was the last 30).
-    return { scope, orders: getRecentOrders(0, resolveRange('today'), scope.ownOnly ? scope.staffId : null) };
+    const orders = getRecentOrders(0, resolveRange('today'), scope.ownOnly ? scope.staffId : null);
+    // 0.6.37 (A387): a cashier sees only the payment methods the manager chose (a split sale: only its allowed part).
+    return { scope, orders: scope.methods.length ? cashierHistoryView(orders as any[], scope.methods) : orders };
   });
   handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
     getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));
@@ -2351,10 +2382,11 @@ export function registerIpcHandlers() {
 
   // Save expense locally (syncs up on next push pass)
   handle('expense:create', async (_event, {
-    description, amount, expense_category_id, paid_by, payment_method, category_name,
+    description, amount, expense_category_id, paid_by, payment_method, category_name, pin,
   }: { description: string; amount: number; expense_category_id?: string; paid_by?: string;
-       payment_method?: string; category_name?: string }) => {
+       payment_method?: string; category_name?: string; pin?: string }) => {
     const db = getLocalDb();
+    const approver = await payoutApprover(pin);   // 0.6.37 (A388): every expense needs a manager
     const session  = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as any;
     const staff    = db.prepare(`SELECT branch_id, staff_id FROM staff_session WHERE id=1`).get() as any;
     const shift    = db.prepare(`SELECT id FROM shifts WHERE status='open'
@@ -2372,8 +2404,9 @@ export function registerIpcHandlers() {
     db.prepare(`
       INSERT INTO expenses
         (id, business_id, branch_id, expense_category_id, description, amount,
-         paid_by, expense_date, shift_id, created_at, device_id, payment_method, expense_type_name, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+         paid_by, expense_date, shift_id, created_at, device_id, payment_method, expense_type_name,
+         approved_by, approved_by_name, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       id, session.business_id, staff.branch_id,
       expense_category_id ?? null, description, amount,
@@ -2386,8 +2419,10 @@ export function registerIpcHandlers() {
       // 0.6.27: how it was paid (only cash leaves the drawer) and the type's name (the Z-report shows it, offline too).
       cleanExpenseMethod(payment_method),
       expense_category_id ? (String(category_name ?? '').trim().slice(0, 100) || null) : null,
+      approver.id, approver.name,
     );
-    return { id };
+    logLine('shift', `expense ${Number(amount)} approved by ${approver.name ?? approver.id}`);
+    return { id, approvedBy: approver.name };
   });
 
   // 0.6.11 (owner: "I should be able to see expenses") — the manager's Expenses screen, by date range.

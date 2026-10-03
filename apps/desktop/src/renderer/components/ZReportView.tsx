@@ -131,6 +131,19 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
         </>
       )}
 
+      {/* 0.6.37 (A388): the cash-outs and the manager who approved each. */}
+      {(report.payoutLines?.length ?? 0) > 0 && (
+        <>
+          {rule}
+          <p data-testid="z-payouts" style={{ fontWeight: 'bold', marginBottom: '4px' }}>PAY-OUTS ({report.payoutLines!.length})</p>
+          {report.payoutLines!.map((p, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+              <span>{p.label}</span><span>{money(p.amount)}</span>
+            </div>
+          ))}
+        </>
+      )}
+
       {/* 0.6.28: items sent to the kitchen and taken back — why, made or not, who approved. */}
       {(report.kitchenVoids?.lines.length ?? 0) > 0 && (
         <>

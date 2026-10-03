@@ -21,6 +21,7 @@ import { parsePosFeatures, type PosFeatures } from './posFeatures';
 import { rulesFromWire, type ReversalRules } from './reversalRules';
 import { cleanCutoff } from './businessDay';   // 0.6.34
 import { supportContact, supportWire, type SupportContact } from './support';   // 0.6.35 (A384)
+import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -104,6 +105,10 @@ export interface DeviceConfig {
   /** 0.6.35 (A384): the shop's own tech (JSON {name, phone} or 'null' = none → SwiftPOS support), pulled with the
    *  catalogue. NULL = not told yet. Written only by setSupportContact() from the pull. */
   support_contact: string | null;
+  /** 0.6.37 (A387): the payment methods a cashier's History shows (JSON list; [] = every method), pulled with the
+   *  catalogue. NULL = not told yet (every method). Written only by setCashierHistoryMethods() from the pull or a
+   *  manager's change on this till. */
+  cashier_history_methods: string | null;
   configured: boolean;
 }
 
@@ -141,6 +146,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     pos_features: row.pos_features ?? null,
     reversal_rules: row.reversal_rules ?? null,
     support_contact: row.support_contact ?? null,
+    cashier_history_methods: row.cashier_history_methods ?? null,
     configured: row.configured === 1,
   };
 }
@@ -201,6 +207,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     reversal_rules: current?.reversal_rules ?? null,
     // 0.6.35: never from the patch — only setSupportContact() (the pull) writes it; the INSERT below leaves it alone.
     support_contact: current?.support_contact ?? null,
+    // 0.6.37: never from the patch — only setCashierHistoryMethods() writes it; the INSERT below leaves it alone.
+    cashier_history_methods: current?.cashier_history_methods ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -350,6 +358,22 @@ export function getSupportContact(): SupportContact {
   const raw = getDeviceConfig()?.support_contact;
   if (typeof raw !== 'string' || !raw) return supportContact(null);
   try { return supportContact(JSON.parse(raw)); } catch { return supportContact(null); }
+}
+
+/**
+ * 0.6.37 (A387): cache the payment methods a cashier's History shows. undefined = not said (older cloud or node) →
+ * keep; a list ([] = every method) is stored; anything else is ignored.
+ */
+export function setCashierHistoryMethods(raw: unknown): void {
+  if (raw === undefined) return;
+  const m = cleanHistoryMethods(raw);
+  if (m === undefined) return;
+  getLocalDb().prepare(`UPDATE device_config SET cashier_history_methods = ? WHERE id = 1`).run(JSON.stringify(m));
+}
+
+/** 0.6.37 (A387): the methods a cashier's History shows on this till ([] = every method, also until told). */
+export function getCashierHistoryMethods(): string[] {
+  return cleanHistoryMethods(getDeviceConfig()?.cashier_history_methods ?? null) ?? [];
 }
 
 /** 0.6.34: when the business day ends on this till (0 = midnight until told). */

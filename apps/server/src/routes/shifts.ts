@@ -18,6 +18,7 @@ import { businessPosFeatures } from '../lib/posFeatureFlags';
 import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from '../lib/siblingDrawers';
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin } from '../lib/confirmerLookup';
+import { payoutApprover } from '../lib/payoutApproval';   // 0.6.37 (A388)
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -879,7 +880,8 @@ router.post('/:id/force-close', requireAnyPermission('shifts.force_close', 'sett
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/shifts/:id/float
 // Records a float_in or float_out transaction during an open shift.
-// Body: { type: 'float_in'|'float_out', amount, reason? }
+// Body: { type: 'float_in'|'float_out', amount, reason?, pin? }
+// 0.6.37 (A388): a pay-out (float_out) needs a manager — signed in, or `pin` (a manager's). A pay-in needs nobody.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/:id/float', async (req, res) => {
   const { id } = req.params;
@@ -908,6 +910,13 @@ router.post('/:id/float', async (req, res) => {
     return;
   }
 
+  let approver: { id: string; name: string | null } | null = null;
+  if (type === 'float_out') {
+    const a = await payoutApprover(req);
+    if (a.ok === false) { res.status(a.status).json({ error: a.error, code: a.code }); return; }
+    approver = a.approver;
+  }
+
   const { data, error } = await supabase
     .from('float_transactions')
     .insert({
@@ -917,6 +926,8 @@ router.post('/:id/float', async (req, res) => {
       type,
       amount: Number(amount),
       reason: reason ?? null,
+      approved_by: approver?.id ?? null,         // 0.6.37 (A388)
+      approved_by_name: approver?.name ?? null,
     })
     .select()
     .single();
@@ -956,6 +967,10 @@ router.post('/:id/expense', async (req, res) => {
   if (shiftErr) { sendError(res, shiftErr); return; }
   if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
 
+  // 0.6.37 (A388): every expense from the POS needs a manager — signed in, or `pin` (a manager's).
+  const approval = await payoutApprover(req);
+  if (approval.ok === false) { res.status(approval.status).json({ error: approval.error, code: approval.code }); return; }
+
   if (categoryId) {
     const { data: cat } = await supabase.from('expense_categories').select('id')
       .eq('id', categoryId).eq('business_id', req.businessId).maybeSingle();
@@ -976,8 +991,10 @@ router.post('/:id/expense', async (req, res) => {
       recorded_by:         who,
       expense_date:        new Date().toISOString().slice(0, 10),   // as the till and POST /api/expenses do
       payment_method:      paymentMethod,
+      approved_by:         approval.approver.id,       // 0.6.37 (A388)
+      approved_by_name:    approval.approver.name,
     })
-    .select('id, description, amount, expense_date, expense_category_id, created_at, payment_method')
+    .select('id, description, amount, expense_date, expense_category_id, created_at, payment_method, approved_by_name')
     .single();
 
   if (error) { sendError(res, error); return; }

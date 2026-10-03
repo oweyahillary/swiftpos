@@ -89,7 +89,7 @@ export default function BulkIngredientImport({
       <a
         className="inline-flex items-center gap-1.5 text-sm text-swift-text hover:text-swift-text-hover mb-3 no-underline"
         href={`data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE)}`}
-        download="swiftpos_ingredients_template.csv"
+        download="zaptill_ingredients_template.csv"
       >
         ⬇ Download CSV template
       </a>

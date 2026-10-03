@@ -10,6 +10,8 @@ import { themesEnabled, themeWriteError } from '../lib/themeAccess';
 import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
+import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
+import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 
 const router = safeRouter();
@@ -73,6 +75,8 @@ const READABLE_SETTING_KEYS = new Set([
   'continuous_operation',
   // 0.6.34: when the business day ends ("HH:MM", 00:00–06:00) — a bar trading past midnight (lib/businessDay.ts).
   'business_day_cutoff',
+  // 0.6.37 (A387): the payment methods a cashier's History shows (a JSON list; [] = every method).
+  'cashier_history_methods',
   // Names that must never reach a kitchen ticket — drinks, sauces, packaged
   // sides. A JSON array of strings, or one name per line. Owner-stated rather
   // than inferred from the item name: a keyword guess is wrong occasionally and
@@ -392,6 +396,24 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (cutErr) { sendError(res, cutErr); return; }
     invalidateDayCutoff(req.businessId);
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── 0.6.37 (A387): the methods a cashier's History shows — a manager's choice (settings.manage, checked above) ──
+  if (key === CASHIER_HISTORY_METHODS_KEY) {
+    const clean = historyMethodsSettingValue(value);
+    if (clean === null) {
+      res.status(400).json({ error: 'Choose payment methods from the list.', code: 'INVALID_VALUE' });
+      return;
+    }
+    const { data: existingHm } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: hmErr } = existingHm
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingHm.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (hmErr) { sendError(res, hmErr); return; }
+    invalidateHistoryMethods(req.businessId);
     res.json({ key, value: clean });
     return;
   }

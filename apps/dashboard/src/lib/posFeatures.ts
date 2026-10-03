@@ -23,7 +23,8 @@ export const POS_FEATURES = [
   {
     key: 'cashier_no_reprint',
     label: 'No reprint for cashiers',
-    description: 'Cashiers cannot reprint a receipt from History. Managers can.',
+    // 0.6.37 (owner, 2026-10-03: "never reprints a receipt"): now always so — the switch no longer changes anything.
+    description: 'Always on since 0.6.37: cashiers never reprint a receipt from History. Managers can.',
   },
   // 0.6.28 (owner, 2026-10-01: a sent order cancelled after the customer paid in cash — "the cashier pockets the money").
   {

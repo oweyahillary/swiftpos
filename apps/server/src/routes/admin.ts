@@ -620,7 +620,7 @@ router.get('/clients/:id/export', requireAdmin, async (req: any, res) => {
     businessId: id, businessName: business.name,
   });
 
-  res.setHeader('Content-Disposition', `attachment; filename="swiftpos-export-${id}.json"`);
+  res.setHeader('Content-Disposition', `attachment; filename="zaptill-export-${id}.json"`);
   res.json({
     exported_at: new Date().toISOString(),
     note: 'Normal user data due for purge at the 6-month grace. Financial/tax records (orders, payments, invoices, eTIMS) are retained separately per retention policy and are not included here.',

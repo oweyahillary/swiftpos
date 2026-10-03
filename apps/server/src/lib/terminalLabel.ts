@@ -10,8 +10,12 @@
 // 2026-09-26 — **the setup name always wins**: it overwrites the cloud label each
 // time, including a rename made in Settings → Devices.
 
-/** The labels the cloud invents when a till reports no name. The web POS hides them. */
+/** The labels the cloud invents when a till reports no name (0.6.37: "ZapTill till" — the first three). The web POS hides them. */
 export const GENERIC_TERMINAL_LABELS = [
+  'ZapTill till',
+  'ZapTill till (branch server)',
+  'ZapTill office server (view only)',
+  // 0.6.37: the names given before the rename — tills already stored under them are still recognised (and hidden).
   'SwiftPOS till',
   'SwiftPOS till (branch server)',
   'SwiftPOS office server (view only)',

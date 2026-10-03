@@ -368,7 +368,9 @@
     "sync_status": "\"character varying\" NOT NULL",
     "shift_id": "\"uuid\"",
     "recorded_by": "\"uuid\"",
-    "payment_method": "\"character varying\" NOT NULL"
+    "payment_method": "\"character varying\" NOT NULL",
+    "approved_by": "\"uuid\"",
+    "approved_by_name": "\"text\""
   },
   "feature_flags": {
     "id": "\"uuid\" NOT NULL",
@@ -389,7 +391,9 @@
     "amount": "\"numeric\" NOT NULL",
     "reason": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "order_id": "\"uuid\""
+    "order_id": "\"uuid\"",
+    "approved_by": "\"uuid\"",
+    "approved_by_name": "\"text\""
   },
   "fuel_tanks": {
     "id": "\"uuid\" NOT NULL",

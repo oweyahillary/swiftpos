@@ -214,7 +214,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'day:close':              { countedCash: { t: 'number' }, notes: { t: 'string', optional: true } },
   'shift:forceClose':       { reason: { t: 'string' } },
   'shift:open':             { opening_float: { t: 'number' }, drawer_label: { t: 'string', optional: true } },
-  'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true } },
+  'shift:float':            { type: { t: 'enum', values: ['float_in','float_out'] }, amount: { t: 'number' }, reason: { t: 'string', optional: true }, pin: { t: 'string', optional: true } },   // 0.6.37: pin
   'shift:close':            { closing_float: { t: 'number' }, notes: { t: 'string', optional: true }, declared: { t: 'any', optional: true } },
   'shift:awaiting':         NO_PAYLOAD,
   'shift:canConfirm':       NO_PAYLOAD,
@@ -268,6 +268,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:getContinuousOperation': NO_PAYLOAD,
   'manage:setContinuousOperation': { kind: 'boolean' },
   'manage:setReversalRule':        { key: { t: 'string', min: 1 }, value: { t: 'any' } },   // 0.6.30
+  'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
+  'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 
   // ── manager (reports) ─────────────────────────────────────────────────────
   // salesSummary/topProducts/recentOrders take r?: RangeArg. The whole arg is
@@ -293,7 +295,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── expense ───────────────────────────────────────────────────────────────
   'expense:categories': NO_PAYLOAD,
   'expense:addCategory': { name: { t: 'string', min: 1 } },   // A341
-  'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, category_name: { t: 'string', optional: true } },
+  'expense:create':     { description: { t: 'string' }, amount: { t: 'number' }, expense_category_id: { t: 'string', optional: true }, paid_by: { t: 'string', optional: true }, payment_method: { t: 'string', optional: true }, category_name: { t: 'string', optional: true }, pin: { t: 'string', optional: true } },   // 0.6.37: pin
   'expense:list':       NO_PAYLOAD,
   'expense:range':      { ...rangeArg },
 

@@ -53,10 +53,21 @@ export function setCoveredTerminal(t: CoveredTerminal | null): void {
  * compares the two). Never shown as a till's name: they are the same for every till.
  */
 export const GENERIC_TERMINAL_LABELS: readonly string[] = [
+  'ZapTill till',
+  'ZapTill till (branch server)',
+  'ZapTill office server (view only)',
+  // 0.6.37: the names given before the rename — tills already stored under them are still recognised (and hidden).
   'SwiftPOS till',
   'SwiftPOS till (branch server)',
   'SwiftPOS office server (view only)',
 ];
+
+/** 0.6.37: a stored label as Settings › Devices shows it — a till named before the rename ("SwiftPOS till") reads
+ *  "ZapTill till". Anything else unchanged. */
+export function deviceLabelShown(label: string | null | undefined): string | null {
+  if (label == null) return null;
+  return label.startsWith('SwiftPOS ') && GENERIC_TERMINAL_LABELS.includes(label) ? 'ZapTill ' + label.slice('SwiftPOS '.length) : label;
+}
 
 /**
  * A till's name as a cashier sees it: "T1 — Front Counter" (code + the name typed at the

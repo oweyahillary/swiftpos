@@ -145,7 +145,7 @@ router.get('/sales', async (req, res) => {
       (order.payments ?? []).map((p: any) => p.method).join('+'),
       (order as any).branches?.name ?? '',
     ]);
-    sendCsv(res, headers, rows, `swiftpos_sales_${dateLabel}.csv`);
+    sendCsv(res, headers, rows, `zaptill_sales_${dateLabel}.csv`);
     return;
   }
 
@@ -217,7 +217,7 @@ router.get('/sales', async (req, res) => {
   autoWidth(ws);
   autoWidth(ws2);
 
-  await sendExcel(res, wb, `swiftpos_sales_${dateLabel}.xlsx`);
+  await sendExcel(res, wb, `zaptill_sales_${dateLabel}.xlsx`);
 });
 
 // ── GET /api/reports/export/products ─────────────────────────────────────────
@@ -265,7 +265,7 @@ router.get('/products', async (req, res) => {
     sendCsv(res,
       ['Product', 'Category', 'Qty Sold', 'Revenue', 'Orders'],
       rows.map(r => [r.name, r.category, r.qty, fmtMoney(r.revenue), r.orders]),
-      `swiftpos_products_${dateLabel}.csv`,
+      `zaptill_products_${dateLabel}.csv`,
     );
     return;
   }
@@ -291,7 +291,7 @@ router.get('/products', async (req, res) => {
   });
 
   autoWidth(ws);
-  await sendExcel(res, wb, `swiftpos_products_${dateLabel}.xlsx`);
+  await sendExcel(res, wb, `zaptill_products_${dateLabel}.xlsx`);
 });
 
 // ── GET /api/reports/export/pnl ───────────────────────────────────────────────
@@ -354,7 +354,7 @@ router.get('/pnl', async (req, res) => {
         ['Operating expenses',  fmtMoney(totalExpenses)],
         ['Net profit',          fmtMoney(netProfit)],
       ],
-      `swiftpos_pnl_${dateLabel}.csv`,
+      `zaptill_pnl_${dateLabel}.csv`,
     );
     return;
   }
@@ -410,7 +410,7 @@ router.get('/pnl', async (req, res) => {
   autoWidth(ws, 20);
   ws.getColumn(1).width = 32;
 
-  await sendExcel(res, wb, `swiftpos_pnl_${dateLabel}.xlsx`);
+  await sendExcel(res, wb, `zaptill_pnl_${dateLabel}.xlsx`);
 });
 
 // ── GET /api/reports/export/shifts ────────────────────────────────────────────
@@ -448,7 +448,7 @@ router.get('/shifts', async (req, res) => {
         fmtMoney(sh.closing_float ?? 0),
         fmtMoney(sh.cash_variance ?? 0),
       ]),
-      `swiftpos_shifts_${dateLabel}.csv`,
+      `zaptill_shifts_${dateLabel}.csv`,
     );
     return;
   }
@@ -482,7 +482,7 @@ router.get('/shifts', async (req, res) => {
   });
 
   autoWidth(ws);
-  await sendExcel(res, wb, `swiftpos_shifts_${dateLabel}.xlsx`);
+  await sendExcel(res, wb, `zaptill_shifts_${dateLabel}.xlsx`);
 });
 
 // ── GET /api/reports/export/expenses ──────────────────────────────────────────
@@ -523,7 +523,7 @@ router.get('/expenses', async (req, res) => {
         ]),
         ['', '', '', 'Total', fmtMoney(total)],
       ],
-      `swiftpos_expenses_${dateLabel}.csv`,
+      `zaptill_expenses_${dateLabel}.csv`,
     );
     return;
   }
@@ -555,7 +555,7 @@ router.get('/expenses', async (req, res) => {
   totalRow.getCell(5).numFmt = '#,##0.00';
 
   autoWidth(ws);
-  await sendExcel(res, wb, `swiftpos_expenses_${dateLabel}.xlsx`);
+  await sendExcel(res, wb, `zaptill_expenses_${dateLabel}.xlsx`);
 });
 
 export default router;

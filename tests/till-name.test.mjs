@@ -86,7 +86,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
     });
     await ok('a new till with no name still gets the generic label (unchanged behaviour)', async () => {
       const w = await run({}, null);
-      assert.equal(w.find((x) => x.op === 'insert')?.payload.device_label, 'SwiftPOS till');
+      assert.equal(w.find((x) => x.op === 'insert')?.payload.device_label, 'ZapTill till');   // 0.6.37: the product's name
     });
   }
 
