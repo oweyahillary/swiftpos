@@ -1084,6 +1084,8 @@ interface Props {
   // cashier could end the owner session and leave the floor unable to sign
   // back in without the owner's password.
   onSwitchAccount?: () => void;
+  /** 0.6.35 (A384): open "What to do when". */
+  onHelp?: () => void;
 }
 
 // ── Prices Tab — branch price management (manager = branch authority) ─────────
@@ -1213,7 +1215,7 @@ function PricesTab({ currency }: { currency: string }) {
     </div>
   );
 }
-export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSwitchAccount }: Props) {
+export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSwitchAccount, onHelp }: Props) {
   const currency     = business.currency ?? 'KES';
   const businessName = business.name;
   const flags        = modeFlags(business.type);
@@ -1450,6 +1452,14 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
             <Icon d={I.pos} size={18} cls="flex-shrink-0" />
             {sidebarOpen && <span>Open POS</span>}
           </button>
+          {onHelp && (
+            <button onClick={onHelp} data-testid="manager-help"
+              title={!sidebarOpen ? 'Help' : undefined}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+              <span className="w-[18px] text-center flex-shrink-0 font-bold">?</span>
+              {sidebarOpen && <span>Help</span>}
+            </button>
+          )}
           {/* This ends the STAFF shift and returns to the PIN pad — it was
               labelled "Sign out", which reads like it signs the business out.
               The owner sign-out below is the one that actually does that. */}

@@ -95,10 +95,13 @@ export function validateEnv(): ServerEnv {
     ['SENDGRID_API_KEY',   'no SendGrid backup: if Resend refuses an email, only SMTP (blocked on Render) is left'],
     ['APP_ENCRYPTION_KEY', 'stored M-Pesa credentials cannot be decrypted'],
     ['CORS_ORIGINS',       'the dashboard origin allowlist falls back to its built-in default'],
-    // A378: the root the clients' own sign-in addresses sit under (africanfries.<root>), e.g. swiftpos.co.ke.
+    // A378: the root the clients' own sign-in addresses sit under (africanfries.<root>), e.g. zaptill.co.ke.
     ['TENANT_ROOT_DOMAIN', 'clients\' own sign-in addresses (subdomains) are off — everyone signs in on the main address'],
     // A348: the tills' update feed reads the releases with it; not needed while the repository is public.
     ['GITHUB_RELEASES_TOKEN', 'desktop updates work only while the repository is public'],
+    // A383: the watchdog tells the admin — Telegram and email together. Either alone works.
+    ['TELEGRAM_BOT_TOKEN', 'the watchdog sends no Telegram alerts (set TELEGRAM_CHAT_ID too)'],
+    ['ADMIN_ALERT_EMAIL',  'the watchdog sends no alert emails'],
   ];
   const absent = optional.filter(([k]) => !process.env[k]);
   if (absent.length) {

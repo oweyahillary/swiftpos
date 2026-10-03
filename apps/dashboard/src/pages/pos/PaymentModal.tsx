@@ -86,6 +86,10 @@ interface Props {
   /** 0.6.27: a delivery's rider, and the fee the customer pays on top of the bill (0 = none). */
   rider?: string | null;
   deliveryFee?: number;
+  /** 0.6.33: a FREE delivery — `deliveryFee` is then 0 (the customer pays none); `riderFee` is what the rider is paid
+   *  from this shift's drawer, sent as delivery_fee with delivery_free. */
+  deliveryFree?: boolean;
+  riderFee?: number;
 }
 
 function fmt(n: number) {
@@ -103,7 +107,13 @@ export default function PaymentModal({
   orderNote = null,
   rider = null,
   deliveryFee = 0,
+  deliveryFree = false,
+  riderFee = 0,
 }: Props) {
+  // 0.6.33: what the order records as the delivery fee — the rider's; on a free delivery the customer pays none of it.
+  const free = deliveryFree && riderFee > 0;
+  const recordedFee = free ? riderFee : deliveryFee;
+  const feeFields = recordedFee > 0 ? { delivery_fee: recordedFee, ...(free ? { delivery_free: true } : {}) } : {};
 
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [splitMode, setSplitMode]   = useState(false);
@@ -285,7 +295,7 @@ export default function PaymentModal({
       table_number:    tableNumber ?? null,
       // 0.6.27: the rider, and the fee on top (the cloud pays the rider it from this shift's drawer).
       delivery_person: orderType === 'delivery' ? rider : null,
-      ...(orderType === 'delivery' && deliveryFee > 0 ? { delivery_fee: deliveryFee } : {}),
+      ...(orderType === 'delivery' ? feeFields : {}),   // 0.6.33: + delivery_free
       subtotal,
       vat_amount:      chargedVat,
       ctl_amount:      chargedCtl,
@@ -327,7 +337,7 @@ export default function PaymentModal({
       discount_amount: cappedDiscount,
       discount_id:     discountState?.discount.id ?? null,
       tip_amount:      tipAmount,
-      ...(deliveryFee > 0 ? { delivery_fee: deliveryFee } : {}),
+      ...feeFields,   // 0.6.33: + delivery_free (the cloud then leaves the fee out of the amount due)
     };
   }
 
@@ -482,7 +492,7 @@ export default function PaymentModal({
         orderType, cashierName: session?.staffName ?? 'Cashier',
         // A349: the BILL (after discount, before tip) with the discount and tip beside it — grandTotal (bill + tip)
         // could never reconcile with the lines, so the thermal receipt threw and fell back to the browser dialog.
-        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, deliveryFee, change: completedOrder.change,
+        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, deliveryFee, deliveryFree: free, change: completedOrder.change,
         payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
         tableNumber,
         orderNote,   // A367
@@ -563,6 +573,7 @@ export default function PaymentModal({
               etims={completedOrder.etims}
               tip={tipAmount}
               deliveryFee={deliveryFee}
+              deliveryFree={free}
               cart={cart}
               total={chargedTotal}
               subtotal={subtotal}

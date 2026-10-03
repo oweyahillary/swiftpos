@@ -150,12 +150,13 @@ var allowedOrigins = map[string]bool{
 	"https://swiftpos-three.vercel.app":     true, // test
 }
 
-// ownedDomains: once SwiftPOS runs on a domain we OWN, an Origin whose host is
-// that domain or any subdomain of it (e.g. client1.swiftpos.example) is allowed.
-// EMPTY until such a domain exists. Only ever add a domain every subdomain of
-// which we control — never a shared suffix like vercel.app.
+// ownedDomains: a domain we OWN — an Origin whose host is that domain or any
+// subdomain of it (app.zaptill.co.ke, africanfries.zaptill.co.ke) is allowed.
+// Only ever add a domain every subdomain of which we control — never a shared
+// suffix like vercel.app. 2026-10-03: zaptill.co.ke (the product's own domain;
+// the dashboard and the clients' sign-in addresses live under it).
 var ownedDomains = []string{
-	// "swiftpos.example",
+	"zaptill.co.ke",
 }
 
 // originOK reports whether the request's browser Origin is one we trust. The

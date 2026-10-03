@@ -42,6 +42,8 @@ export interface HeldOrder {
   orderNote?: string;
   /** 0.6.27: a held delivery's fee (with its rider). */
   deliveryFee?: number;
+  /** 0.6.33: a held delivery marked free (the shop pays the rider). */
+  deliveryFree?: boolean;
   cart: CartItem[];           // per-line kotSent flags travel with the items
   heldAt: string;             // ISO
   /**

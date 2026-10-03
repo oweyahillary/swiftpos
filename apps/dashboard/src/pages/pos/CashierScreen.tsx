@@ -28,7 +28,7 @@ import POSDrawer from './POSDrawer';
 import NoteModal from './NoteModal';
 import { noteLines } from '../../lib/orderNotes';
 import MinimartPOS from './MinimartPOS';
-import { deliveryProblem, cleanDeliveryFee } from '../../lib/delivery';
+import { deliveryProblem, cleanDeliveryFee, autoFreeDelivery } from '../../lib/delivery';
 import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
@@ -101,6 +101,7 @@ interface OpenOrder {
   // 0.6.27: a delivery's rider and fee (the fee is required with the client's 'delivery_fee' switch)
   rider?: string;
   deliveryFee?: string;
+  deliveryFree?: boolean;   // 0.6.33: the shop pays the rider; the customer pays no fee
   // parking
   parkingSessionId?: string;
   vehiclePlate?: string;
@@ -193,6 +194,8 @@ export default function CashierScreen() {
     kitchenExclusions,
     notePicks,
     posFeatures,   // 0.6.27
+    freeDeliveryAllowed,   // 0.6.33: the owner allows free delivery (the shop pays the rider)
+    freeDeliveryOver,      // 0.6.33: …and automatically from this bill amount (null = off)
     receiptLogo,
     receiptHeader,
     receiptFooter,
@@ -717,20 +720,22 @@ export default function CashierScreen() {
     if (!activeKey) return;
     setOpenOrders(prev => prev[activeKey]
       ? { ...prev, [activeKey]: { ...prev[activeKey], orderType: val,
-          ...(val !== 'delivery' ? { rider: undefined, deliveryFee: undefined } : {}) } }
+          ...(val !== 'delivery' ? { rider: undefined, deliveryFee: undefined, deliveryFree: undefined } : {}) } }
       : prev);
     setDeliveryMsg('');
   }
 
   // 0.6.27: the active delivery's rider / fee, and the check before Charge ('delivery_fee' switch).
   const [deliveryMsg, setDeliveryMsg] = useState('');
-  function setActiveDelivery(patch: { rider?: string; deliveryFee?: string }) {
+  function setActiveDelivery(patch: { rider?: string; deliveryFee?: string; deliveryFree?: boolean }) {
     if (!activeKey) return;
     setOpenOrders(prev => prev[activeKey] ? { ...prev, [activeKey]: { ...prev[activeKey], ...patch } } : prev);
     setDeliveryMsg('');
   }
   const activeRider = activeKey ? openOrders[activeKey]?.rider ?? '' : '';
   const activeFeeText = activeKey ? openOrders[activeKey]?.deliveryFee ?? '' : '';
+  // 0.6.33: free delivery — offered when the owner allows it; the fee is still entered (the rider is paid it).
+  const activeRiderFee = posFeatures.delivery_fee && getOrderType() === 'delivery' ? cleanDeliveryFee(activeFeeText) : 0;
   /** Open the payment screen — unless a delivery still needs its rider or fee. */
   function openPayment(evenSplit: boolean) {
     const problem = deliveryProblem(posFeatures.delivery_fee, getOrderType(), activeRider, activeFeeText);
@@ -995,6 +1000,10 @@ export default function CashierScreen() {
   const promoDiscount = (discountState?.discount_amount ?? 0) + autoPromoDiscount;
   const totalDiscount = loyaltyDiscount + promoDiscount;
   const orderTotal = Math.max(0, subtotal - totalDiscount);
+  // 0.6.33: free delivery — ticked by the cashier (the owner allows it), or automatic from the owner's amount (the bill).
+  const activeAutoFree = activeRiderFee > 0 && autoFreeDelivery(orderTotal, freeDeliveryOver);
+  const activeFree = activeRiderFee > 0
+    && ((freeDeliveryAllowed && (activeKey ? openOrders[activeKey]?.deliveryFree === true : false)) || activeAutoFree);
   // A349: VAT and CTL at the business's own rates, on the bill AFTER the discount — as the till and the cloud charge it.
   // (Was a fixed 16 % on the undiscounted subtotal, with no levy: wrong on screen for a CTL business or any discount.)
   const vatRate = Number(business?.vat_rate ?? VAT_RATE);
@@ -1202,6 +1211,8 @@ export default function CashierScreen() {
               >🔒 End Shift</button>
             </>
           )}
+          {/* 0.6.35 (A384): "What to do when" — a new tab, so the cart in progress is never lost. */}
+          <button style={s.lockBtn} data-testid="webpos-help" onClick={() => window.open('/help', '_blank', 'noopener')}>? Help</button>
           <button style={s.lockBtn} onClick={() => setShowLockConfirm(true)}>🔒 Lock</button>
         </div>
       </header>
@@ -1601,6 +1612,16 @@ export default function CashierScreen() {
                   onChange={e => setActiveDelivery({ deliveryFee: e.target.value })} onWheel={e => (e.target as HTMLInputElement).blur()}
                   placeholder="Delivery fee"
                   style={{ width: 110, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '7px 10px', color: '#f1f5f9', fontSize: 12 }} />
+              )}
+              {/* 0.6.33: free delivery — the shop pays the rider the fee; the customer pays none of it. */}
+              {posFeatures.delivery_fee && (freeDeliveryAllowed || activeAutoFree) && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#cbd5e1', fontSize: 12, whiteSpace: 'nowrap' }}
+                  title="The shop pays the rider; the customer pays no delivery fee">
+                  <input type="checkbox" data-testid="delivery-free" disabled={activeAutoFree}
+                    checked={activeAutoFree || (activeKey ? openOrders[activeKey]?.deliveryFree === true : false)}
+                    onChange={e => setActiveDelivery({ deliveryFree: e.target.checked })} />
+                  {activeAutoFree && freeDeliveryOver ? `Free delivery (over ${freeDeliveryOver.toLocaleString()})` : 'Free delivery'}
+                </label>
               )}
             </div>
           )}
@@ -2272,7 +2293,9 @@ export default function CashierScreen() {
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
           orderNote={orderNote}
           rider={getOrderType() === 'delivery' ? (activeRider.trim() || null) : null}
-          deliveryFee={posFeatures.delivery_fee && getOrderType() === 'delivery' ? cleanDeliveryFee(activeFeeText) : 0}
+          deliveryFee={activeFree ? 0 : activeRiderFee}
+          deliveryFree={activeFree}   // 0.6.33
+          riderFee={activeRiderFee}
           initialEvenSplit={paymentEvenSplit}
           onClose={() => { setShowPayment(false); setPaymentEvenSplit(false); }}
           onPaid={() => {

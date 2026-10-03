@@ -60,6 +60,10 @@ export interface ShiftReportData {
   tips?: Cents | null;
   /** 0.6.27: delivery fees the customers paid on top of their bills (pass-through, in the payments, not sales). */
   deliveryFees?: Cents | null;
+  /** 0.6.33: the riders' fees on FREE deliveries — the shop paid them (in "Paid to riders"), the customers did not. */
+  freeDeliveries?: Cents | null;
+  /** 0.6.33: one line per rider this shift — deliveries, the fees customers paid, and the free ones the shop paid. */
+  riders?: { rider: string; deliveries: number; feesPaid: Cents; freeCount: number; freeFees: Cents }[] | null;
   voidCount: number;
 
   openingFloat: Cents;
@@ -155,6 +159,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   if (r.ctl != null) d.line(pair(cols, 'incl. CTL', money(r.ctl)));
   if (r.tips != null && r.tips > 0) d.line(pair(cols, 'Tips (in payments)', money(r.tips)));
   if (r.deliveryFees != null && r.deliveryFees > 0) d.line(pair(cols, 'Delivery fees (in payments)', money(r.deliveryFees)));
+  if (r.freeDeliveries != null && r.freeDeliveries > 0) d.line(pair(cols, 'Free deliveries (shop paid)', money(r.freeDeliveries)));
   d.line(pair(cols, 'Voids', String(r.voidCount)));
   d.line(rule(cols));
 
@@ -182,6 +187,16 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
         : r.variance > 0 ? 'Variance (over)'
         : 'Variance (short)';
       d.line(pair(cols, label, money(r.variance)), { size: 'tall', bold: true });
+    }
+  }
+
+  // 0.6.33: the riders — who delivered how many, what the customers paid them in fees, what the shop paid (free ones).
+  if (r.riders && r.riders.length) {
+    d.line(rule(cols));
+    d.line('RIDERS', { bold: true });
+    for (const x of r.riders) {
+      d.line(pair(cols, `${x.rider} (${x.deliveries})`, money(x.feesPaid + x.freeFees)));
+      if (x.freeCount > 0) d.line(pair(cols, `  incl. ${x.freeCount} free (shop paid)`, money(x.freeFees)));
     }
   }
 

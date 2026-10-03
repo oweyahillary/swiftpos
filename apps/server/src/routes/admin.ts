@@ -68,6 +68,8 @@ import { resolveOwnerUserId } from '../lib/ownerBusiness';
 import { isVersion, listDesktopReleasesOrStale } from '../lib/desktopReleases';
 import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378: a client's own sign-in address
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
+import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
+import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
 
 const router = safeRouter();
 
@@ -572,6 +574,13 @@ router.get('/clients/:id', requireAdmin, async (req, res) => {
     // A378: the full sign-in address, or null (none set, or TENANT_ROOT_DOMAIN not configured on the cloud).
     sign_in_address:    signInAddress((biz as any).subdomain),
     tenant_root_domain: tenantRootDomain() || null,
+    // 0.6.35 (A384): the tech allocated to the client (their number is on the shop's Help), or null.
+    support_tech: await (async () => {
+      const techId = (biz as any).support_admin_id;
+      if (!techId) return null;
+      const { data: t } = await supabase.from('admin_users').select('id, name, phone, is_active').eq('id', techId).maybeSingle();
+      return t ?? null;
+    })(),
   });
 });
 
@@ -697,6 +706,15 @@ router.patch('/clients/:id', requireAdmin, async (req, res) => {
       return;
     }
     updates.subdomain = sub;
+  }
+  // 0.6.35 (A384): allocate a tech (an active team member) to the client — or null for SwiftPOS support.
+  if (req.body.support_admin_id !== undefined) {
+    const techId = req.body.support_admin_id || null;
+    if (techId) {
+      const { data: t } = await supabase.from('admin_users').select('id, is_active').eq('id', techId).maybeSingle();
+      if (!t || (t as any).is_active === false) { res.status(400).json({ error: 'That tech is not an active team member' }); return; }
+    }
+    updates.support_admin_id = techId;
   }
 
   const { data, error } = await supabase
@@ -1171,12 +1189,22 @@ router.get('/plans', requireAdmin, async (req, res) => {
   res.json(data ?? []);
 });
 
+// ─── TECHS (0.6.35, A384) — who may be allocated to a client ──────────────────
+// Every active team member, with their number (a tech with no number can be allocated, but the shop's Help then shows
+// SwiftPOS support until a number is added). Any admin: the client page's "Support tech" picker reads it.
+router.get('/techs', requireAdmin, async (_req, res) => {
+  const { data, error } = await supabase
+    .from('admin_users').select('id, name, phone').eq('is_active', true).order('name');
+  if (error) { sendError(res, error); return; }
+  res.json(data ?? []);
+});
+
 // ─── TEAM (admin users — super_admin only) ────────────────────────────────────
 
 router.get('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { data, error } = await supabase
     .from('admin_users')
-    .select('id, email, name, role, is_active, last_login_at, created_at')
+    .select('id, email, name, role, is_active, phone, last_login_at, created_at')
     .order('created_at');
   if (error) { sendError(res, error); return; }
   res.json(data ?? []);
@@ -1184,6 +1212,9 @@ router.get('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
 
 router.post('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { email, name, password, role = 'agent' } = req.body;
+  // 0.6.35 (A384): the tech's number, shown on the Help of the clients they look after.
+  const phone = cleanPhone(req.body.phone);
+  if (phone === undefined) { res.status(400).json({ error: 'Phone: use a Kenyan mobile number, e.g. 0712345678' }); return; }
   if (!email || !name || !password) {
     res.status(400).json({ error: 'email, name, and password are required' });
     return;
@@ -1196,8 +1227,8 @@ router.post('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
   const hash = await bcrypt.hash(password, 12);
   const { data, error } = await supabase
     .from('admin_users')
-    .insert({ email: email.toLowerCase().trim(), name, password_hash: hash, role })
-    .select('id, email, name, role, is_active, created_at')
+    .insert({ email: email.toLowerCase().trim(), name, password_hash: hash, role, phone })
+    .select('id, email, name, role, is_active, phone, created_at')
     .single();
 
   if (error) { sendError(res, error); return; }
@@ -1221,10 +1252,15 @@ router.patch('/team/:id', requireAdmin, requireSuperAdmin, async (req, res) => {
   if (name      !== undefined) updates.name      = name;
   if (role      !== undefined) updates.role      = role;
   if (is_active !== undefined) updates.is_active = is_active;
+  if (req.body.phone !== undefined) {                  // 0.6.35 (A384)
+    const phone = cleanPhone(req.body.phone);
+    if (phone === undefined) { res.status(400).json({ error: 'Phone: use a Kenyan mobile number, e.g. 0712345678' }); return; }
+    updates.phone = phone;
+  }
 
   const { data, error } = await supabase
     .from('admin_users').update(updates).eq('id', req.params.id)
-    .select('id, email, name, role, is_active').single();
+    .select('id, email, name, role, is_active, phone').single();
   if (error) { sendError(res, error); return; }
   res.json(data);
 });
@@ -1874,4 +1910,25 @@ router.post('/mode-switch/:id/cancel', requireAdmin, async (req, res) => {
     .eq('id', req.params.id)
     .eq('status', 'pending');
   res.json({ success: true });
+});
+
+// ── Watchdog (A383) ──────────────────────────────────────────────────────────
+// What the cloud's watchdog has found and not yet seen clear, and which channels are set (Telegram / email). The test
+// sends one message through both, so the admin knows an alert would reach them before a real one is needed.
+router.get('/watchdog', requireAdmin, async (_req, res) => {
+  const { data, error } = await supabase
+    .from('watchdog_alerts')
+    .select('id, alert_key, severity, business_id, title, detail, first_seen_at, last_seen_at, last_notified_at, notify_count')
+    .is('resolved_at', null)
+    .order('first_seen_at', { ascending: false })
+    .limit(200);
+  if (error) { res.status(500).json({ error: 'Could not read the watchdog alerts' }); return; }
+  res.json({ channels: alertChannels(), alerts: data ?? [] });
+});
+
+router.post('/watchdog/test', requireSuperAdmin, async (req: any, res) => {
+  const who = req.adminEmail ?? 'an admin';
+  const sent = await notifyAdmin('SwiftPOS test alert',
+    `🧪 SwiftPOS test alert\nSent by ${who} from the admin portal. If you can read this, the watchdog can reach you.`);
+  res.json({ channels: alertChannels(), sent });
 });

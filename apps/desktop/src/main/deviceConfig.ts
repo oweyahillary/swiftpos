@@ -19,6 +19,8 @@ import { getLocalDb } from './localDb';
 import { v4 as uuid } from 'uuid';
 import { parsePosFeatures, type PosFeatures } from './posFeatures';
 import { rulesFromWire, type ReversalRules } from './reversalRules';
+import { cleanCutoff } from './businessDay';   // 0.6.34
+import { supportContact, supportWire, type SupportContact } from './support';   // 0.6.35 (A384)
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -77,6 +79,9 @@ export interface DeviceConfig {
   receipt_footer: string | null;
   /** 24-hour / continuous operation (A104). Per business, cached from init. */
   continuous_operation: boolean;
+  /** 0.6.34: minutes after midnight the business day ends (0 = midnight), pulled with the catalogue. Written only by
+   *  setBusinessDayCutoff() from the pull (shared/businessDay.ts). */
+  business_day_cutoff: number;
   /** JSON array of names that must never reach a kitchen ticket — the CLOUD
    *  baseline, refreshed on every catalogue pull. */
   kitchen_exclusions: string | null;
@@ -96,6 +101,9 @@ export interface DeviceConfig {
   /** 0.6.30: the owner's void window and offline void/refund rules (a JSON object), pulled with the catalogue. NULL =
    *  not told yet → the defaults (shared/reversalRules.ts). Written only by setReversalRules() from the pull. */
   reversal_rules: string | null;
+  /** 0.6.35 (A384): the shop's own tech (JSON {name, phone} or 'null' = none → SwiftPOS support), pulled with the
+   *  catalogue. NULL = not told yet. Written only by setSupportContact() from the pull. */
+  support_contact: string | null;
   configured: boolean;
 }
 
@@ -124,6 +132,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     max_discount_pct: row.max_discount_pct ?? null,
     receipt_header: row.receipt_header ?? null,
     continuous_operation: row.continuous_operation === 1,
+    business_day_cutoff: cleanCutoff(row.business_day_cutoff) ?? 0,
     receipt_footer: row.receipt_footer ?? null,
     kitchen_exclusions: row.kitchen_exclusions ?? null,
     kitchen_exclusions_override: row.kitchen_exclusions_override ?? null,
@@ -131,6 +140,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     order_note_picks: row.order_note_picks ?? null,
     pos_features: row.pos_features ?? null,
     reversal_rules: row.reversal_rules ?? null,
+    support_contact: row.support_contact ?? null,
     configured: row.configured === 1,
   };
 }
@@ -177,6 +187,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     receipt_header: patch.receipt_header !== undefined ? patch.receipt_header : (current?.receipt_header ?? null),
     receipt_footer: patch.receipt_footer !== undefined ? patch.receipt_footer : (current?.receipt_footer ?? null),
     continuous_operation: patch.continuous_operation !== undefined ? patch.continuous_operation : (current?.continuous_operation ?? false),
+    // 0.6.34: never from the patch — only setBusinessDayCutoff() (the pull) writes it; the INSERT below leaves it alone.
+    business_day_cutoff: current?.business_day_cutoff ?? 0,
     kitchen_exclusions: patch.kitchen_exclusions !== undefined ? patch.kitchen_exclusions : (current?.kitchen_exclusions ?? null),
     kitchen_exclusions_override: patch.kitchen_exclusions_override !== undefined ? patch.kitchen_exclusions_override : (current?.kitchen_exclusions_override ?? null),
     // A346: never from the patch — only setWebPosEnabled() (the cloud pull) writes it; the INSERT below leaves it alone.
@@ -187,6 +199,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     pos_features: current?.pos_features ?? null,
     // 0.6.30: never from the patch — only setReversalRules() (the pull) writes it; the INSERT below leaves it alone.
     reversal_rules: current?.reversal_rules ?? null,
+    // 0.6.35: never from the patch — only setSupportContact() (the pull) writes it; the INSERT below leaves it alone.
+    support_contact: current?.support_contact ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -309,6 +323,38 @@ export function getPosFeatures(): PosFeatures {
 export function setReversalRules(rules: unknown): void {
   if (!rules || typeof rules !== 'object') return;
   getLocalDb().prepare(`UPDATE device_config SET reversal_rules = ? WHERE id = 1`).run(JSON.stringify(rulesFromWire(rules)));
+}
+
+/**
+ * 0.6.34: cache when the business day ends (minutes after midnight). undefined/null = not said (older cloud or node) →
+ * keep. The ONLY writer, so a renderer's config:save can never move it.
+ */
+export function setBusinessDayCutoff(minutes: unknown): void {
+  if (minutes === undefined || minutes === null) return;
+  const m = cleanCutoff(minutes);
+  if (m === undefined) return;
+  getLocalDb().prepare(`UPDATE device_config SET business_day_cutoff = ? WHERE id = 1`).run(m);
+}
+
+/**
+ * 0.6.35 (A384): cache the shop's own tech (name + number) from the pull. undefined = not said (older cloud or node) →
+ * keep; null = no tech (→ SwiftPOS support). The ONLY writer.
+ */
+export function setSupportContact(raw: unknown): void {
+  if (raw === undefined) return;
+  getLocalDb().prepare(`UPDATE device_config SET support_contact = ? WHERE id = 1`).run(JSON.stringify(supportWire(raw)));
+}
+
+/** 0.6.35 (A384): who this shop calls — its tech, or SwiftPOS support until told. Works offline. */
+export function getSupportContact(): SupportContact {
+  const raw = getDeviceConfig()?.support_contact;
+  if (typeof raw !== 'string' || !raw) return supportContact(null);
+  try { return supportContact(JSON.parse(raw)); } catch { return supportContact(null); }
+}
+
+/** 0.6.34: when the business day ends on this till (0 = midnight until told). */
+export function getBusinessDayCutoff(): number {
+  return getDeviceConfig()?.business_day_cutoff ?? 0;
 }
 
 /** 0.6.30: the rules as the till last heard them (the defaults until told). */

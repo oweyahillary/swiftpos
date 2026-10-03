@@ -5,6 +5,7 @@ import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
 import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
 import { cleanSubdomain, subdomainProblem } from "./lib/tenantHost";   // A378: a client's own sign-in address
+import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -255,7 +256,7 @@ function HealthBar({ score }) {
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
-  const [email, setEmail]     = useState("admin@swiftpos.co.ke");
+  const [email, setEmail]     = useState("admin@zaptill.co.ke");
   const [password, setPass]   = useState("");
   const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
@@ -505,6 +506,8 @@ function DashboardPage({ req }) {
         </div>
       </div>
 
+      <WatchdogCard req={req} />
+
       {/* Health table */}
       <div style={S.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -535,6 +538,113 @@ function DashboardPage({ req }) {
         </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── SUPPORT TECH (0.6.35, A384) ──────────────────────────────────────────────
+// Allocate a team member to a client: their name and number appear on the shop's Help (the till, offline too, after its
+// next sync; and the web). None → SwiftPOS support's numbers.
+function SupportTechPicker({ req, clientId, current, onSaved }) {
+  const [techs, setTechs]   = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState("");
+
+  useEffect(() => {
+    req("GET", "/techs").then(setTechs).catch(e => { setTechs([]); setError(e?.message || "Couldn't load the team."); });
+  }, [req]);
+
+  const choose = async (id) => {
+    setSaving(true); setError("");
+    try {
+      await req("PATCH", `/clients/${clientId}`, { support_admin_id: id || null });
+      onSaved(id ? (techs || []).find(t => t.id === id) ?? null : null);
+    } catch (e) { setError(e?.message || "Could not save the tech."); }
+    finally { setSaving(false); }
+  };
+
+  const shown = current?.phone
+    ? `${current.name} · ${displayPhone(current.phone)}`
+    : current ? `${current.name} — no number yet (the shop sees SwiftPOS support)` : `None — SwiftPOS support (${DEFAULT_SUPPORT_PHONES.map(displayPhone).join(" / ")})`;
+
+  return (
+    <div data-testid="support-tech" style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Support tech</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <select style={{ ...S.input, width: 220 }} disabled={saving || techs === null}
+          value={current?.id ?? ""} onChange={e => choose(e.target.value)}>
+          <option value="">None (SwiftPOS support)</option>
+          {(techs || []).map(t => (
+            <option key={t.id} value={t.id}>{t.name}{t.phone ? ` · ${displayPhone(t.phone)}` : " (no number)"}</option>
+          ))}
+        </select>
+        {saving && <span style={{ fontSize: 11, color: C.muted }}>Saving…</span>}
+      </div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Shown on the shop's Help: {shown}. Tills pick it up at their next sync.</div>
+      {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ─── WATCHDOG (A383) ──────────────────────────────────────────────────────────
+// What the cloud's watchdog found and has not seen clear, and whether its alerts can reach the admin (Telegram / email).
+// Its own load: a failure here never hides the fleet dashboard.
+function WatchdogCard({ req }) {
+  const [data, setData]       = useState(null);
+  const [error, setError]     = useState("");
+  const [testing, setTesting] = useState(false);
+  const [result, setResult]   = useState("");
+
+  const load = useCallback(() => {
+    req("GET", "/watchdog").then(setData).catch(e => setError(e?.message || "Couldn't load the watchdog."));
+  }, [req]);
+  useEffect(() => { load(); }, [load]);
+
+  const test = async () => {
+    setTesting(true); setResult("");
+    try {
+      const r = await req("POST", "/watchdog/test");
+      const parts = [
+        r.channels?.telegram ? (r.sent?.telegram ? "Telegram ✓" : "Telegram ✗ (see the server log)") : "Telegram not set",
+        r.channels?.email ? (r.sent?.email ? "Email ✓" : "Email ✗ (see the server log)") : "Email not set",
+      ];
+      setResult(parts.join(" · "));
+    } catch (e) { setResult(e?.message || "Test failed."); }
+    finally { setTesting(false); }
+  };
+
+  const alerts = data?.alerts || [];
+  const crit = alerts.filter(a => a.severity === "critical");
+  const warn = alerts.filter(a => a.severity !== "critical");
+  const ch = data?.channels;
+
+  return (
+    <div style={{ ...S.card, marginBottom: 16 }} data-testid="watchdog-card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Watchdog</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+            Checks every 10 minutes · critical problems sent at once, the rest in the 07:45 digest ·{" "}
+            Telegram {ch?.telegram ? "on" : "off"} · Email {ch?.email ? "on" : "off"}
+          </div>
+        </div>
+        <button onClick={test} disabled={testing} style={{ ...S.btn, ...S.btnPrimary }} data-testid="watchdog-test">
+          {testing ? "Sending…" : "Send test alert"}
+        </button>
+      </div>
+      {result && <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>{result}</div>}
+      {error && <div style={{ fontSize: 12, color: C.danger }}>{error}</div>}
+      {data && !alerts.length && <div style={{ fontSize: 13, color: "#22c55e" }}>No open problems.</div>}
+      {[...crit, ...warn].map(a => (
+        <div key={a.id} style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
+          <span style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flexShrink: 0, background: a.severity === "critical" ? C.danger : "#f59e0b" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{a.title}</div>
+            {a.detail && <div style={{ fontSize: 12, color: C.muted }}>{a.detail}</div>}
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>since {timeAgo(a.first_seen_at)}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1253,6 +1363,9 @@ function ClientDetailPage({ client, req, onBack }) {
                 Leave empty and save to remove. Only this client's owner and staff can sign in on it.
               </div>
             </div>
+            {/* 0.6.35 (A384): the tech allocated to this client — their number is on the shop's Help (till + web). */}
+            <SupportTechPicker req={req} clientId={client.id} current={d.support_tech}
+              onSaved={(tech) => setDetail(prev => ({ ...prev, support_admin_id: tech?.id ?? null, support_tech: tech }))} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", gap: 12 }}>
@@ -1804,7 +1917,7 @@ function AuditPage({ req }) {
 function TeamPage({ req, admin }) {
   const [team, setTeam]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm]   = useState({ email: "", name: "", password: "", role: "agent" });
+  const [form, setForm]   = useState({ email: "", name: "", password: "", role: "agent", phone: "" });
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
 
@@ -1818,9 +1931,21 @@ function TeamPage({ req, admin }) {
     try {
       const m = await req("POST", "/team", form);
       setTeam(t => [...t, m]);
-      setForm({ email: "", name: "", password: "", role: "agent" });
+      setForm({ email: "", name: "", password: "", role: "agent", phone: "" });
     } catch(e) { setError(e.message); }
     finally { setAdding(false); }
+  }
+
+  // 0.6.35 (A384): a tech's number — shown on the Help of the clients they are allocated to.
+  async function editPhone(m) {
+    const raw = window.prompt(`Phone number for ${m.name} (e.g. 0712345678). Empty to remove.`, m.phone || "");
+    if (raw === null) return;
+    if (raw.trim() && !cleanPhone(raw)) { setError("Phone: use a Kenyan mobile number, e.g. 0712345678"); return; }
+    setError("");
+    try {
+      const u = await req("PATCH", `/team/${m.id}`, { phone: raw.trim() || null });
+      setTeam(t => t.map(x => x.id === m.id ? { ...x, phone: u.phone } : x));
+    } catch (e) { setError(e.message); }
   }
 
   async function toggleActive(id, is_active) {
@@ -1836,12 +1961,18 @@ function TeamPage({ req, admin }) {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Team Members</div>
           {loading ? <div style={{ color: C.muted }}>Loading…</div> : (
             <div className="sp-table-wrap"><table style={S.table}>
-              <thead><tr>{["Name","Email","Role","Last Login","Active"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Name","Email","Phone","Role","Last Login","Active"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {team.map(m => (
                   <tr key={m.id}>
                     <td style={{ ...S.td, fontWeight: 500 }}>{m.name}</td>
                     <td style={{ ...S.td, fontSize: 12, color: C.muted }}>{m.email}</td>
+                    <td style={{ ...S.td, fontSize: 12 }}>
+                      <button onClick={() => editPhone(m)} data-testid="team-phone"
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: m.phone ? C.text : C.muted, fontSize: 12 }}>
+                        {m.phone ? displayPhone(m.phone) : "Add number"}
+                      </button>
+                    </td>
                     <td style={S.td}><span style={{ ...S.badge, background: m.role === "super_admin" ? "rgba(251,191,36,0.12)" : "rgba(0,212,255,0.12)", color: m.role === "super_admin" ? "#fbbf24" : C.accent }}>{m.role}</span></td>
                     <td style={{ ...S.td, fontSize: 12, color: C.muted }}>{timeAgo(m.last_login_at)}</td>
                     <td style={S.td}>
@@ -1869,6 +2000,11 @@ function TeamPage({ req, admin }) {
                   onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
               </div>
             ))}
+            <div>
+              <label style={S.label}>Phone (shown to the shops they look after)</label>
+              <input style={S.input} type="tel" value={form.phone} placeholder="0712345678"
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+            </div>
             <div>
               <label style={S.label}>Role</label>
               <select style={{ ...S.input }} value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>

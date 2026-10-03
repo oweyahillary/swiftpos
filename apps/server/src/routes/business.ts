@@ -8,6 +8,9 @@ import { encryptSecret } from '../lib/crypto';
 import { supabase } from '../lib/supabase';
 import { themesEnabled, themeWriteError } from '../lib/themeAccess';
 import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules';
+import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
+import { invalidateDayCutoff } from '../lib/dayCutoff';
+import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 
 const router = safeRouter();
 
@@ -68,6 +71,8 @@ const READABLE_SETTING_KEYS = new Set([
   'receipt_header', 'receipt_footer',
   // 24-hour operation: a business that never closes overnight (A104).
   'continuous_operation',
+  // 0.6.34: when the business day ends ("HH:MM", 00:00–06:00) — a bar trading past midnight (lib/businessDay.ts).
+  'business_day_cutoff',
   // Names that must never reach a kitchen ticket — drinks, sauces, packaged
   // sides. A JSON array of strings, or one name per line. Owner-stated rather
   // than inferred from the item name: a keyword guess is wrong occasionally and
@@ -76,7 +81,7 @@ const READABLE_SETTING_KEYS = new Set([
   // A367: the owner's quick picks for order notes ("No salt", "Extra cheese") — a JSON array of strings.
   'order_note_picks',
   // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules (lib/reversalRules.ts).
-  'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales',
+  'void_window_minutes', 'offline_refund_methods', 'offline_reverse_web_sales', 'delivery_free_allowed',
 ]);
 // Dynamic-suffix key families with no secret ever under them — the suffix is
 // per-tenant data (a vehicle type, a delivery platform name), not something
@@ -157,6 +162,12 @@ router.patch('/', requireAuth, requireAnyPermission('settings.manage'), async (r
     .from('businesses').update(updates).eq('id', req.businessId).select().single();
   if (error) { sendError(res, error); return; }
   res.json(data);
+});
+
+// GET /api/business/support — 0.6.35 (A384): who this shop calls — its tech (admin portal), or null (SwiftPOS support).
+// Any signed-in member: the web's Help page shows it.
+router.get('/support', requireAuth, async (req, res) => {
+  res.json({ support: await getSupportContact(req.businessId) });
 });
 
 // GET /api/business/branding
@@ -363,6 +374,24 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
       ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingRule.id)
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (ruleErr) { sendError(res, ruleErr); return; }
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── 0.6.34: the business day's end — only a valid time is stored, as "HH:MM" ──
+  if (key === BUSINESS_DAY_CUTOFF_KEY) {
+    const clean = cutoffSettingValue(value);
+    if (clean === null) {
+      res.status(400).json({ error: 'The business day may end from 00:00 to 06:00 (HH:MM).', code: 'INVALID_VALUE' });
+      return;
+    }
+    const { data: existingCut } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: cutErr } = existingCut
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingCut.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (cutErr) { sendError(res, cutErr); return; }
+    invalidateDayCutoff(req.businessId);
     res.json({ key, value: clean });
     return;
   }

@@ -104,6 +104,9 @@ export interface Order {
   /** 0.6.27: delivery fee on top of the bill (pass-through to the rider). Not a sale, not taxed — printed after the
    *  total with the tip; the customer pays total + tip + fee. Omitted = none. */
   deliveryFee?: Cents;
+  /** 0.6.33: a FREE delivery — the shop pays the rider, the customer pays no fee. Prints "Delivery: FREE"; `deliveryFee`
+   *  (the rider's fee) is then not printed and not in PAY. Omitted = the customer pays the fee. */
+  deliveryFree?: boolean;
   /** How many kitchen tickets this order produced, for the Kots line. */
   kotCount: number;
   /** A367: the cashier's note on the whole order ("deliver to gate B"). Printed under the header. Omitted = none. */

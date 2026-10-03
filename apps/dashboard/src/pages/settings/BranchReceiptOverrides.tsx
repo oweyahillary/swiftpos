@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
 
 // A139: per-branch receipt text + hours that override the business default for a
 // franchise branch. A branch either INHERITS the business default (no row) or
@@ -53,6 +54,9 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
   const contOverridden = 'continuous_operation' in overrides;
   const contDefaultOn  = defaults.continuous_operation === 'true';
   const contValueOn    = contOverridden ? overrides.continuous_operation === 'true' : contDefaultOn;
+  // 0.6.34: the business-day end — the branch's own, or the business default.
+  const cutOverridden  = 'business_day_cutoff' in overrides;
+  const cutDefault     = cutoffLabel(cleanCutoff(defaults.business_day_cutoff) ?? 0);
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
@@ -116,6 +120,38 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
               <input
                 type="checkbox" checked={contOverridden}
                 onChange={e => e.target.checked ? save('continuous_operation', contDefaultOn ? 'true' : 'false') : save('continuous_operation', null)}
+              />
+              Override
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* 0.6.34: this branch's own business-day end (e.g. a branch with a late bar). */}
+      <div className="border-t border-gray-800 pt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Business day ends at</div>
+            <div className="text-xs text-gray-600 mt-0.5">
+              {cutOverridden ? 'Overridden for this branch' : `Using business default (${cutDefault})`}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {cutOverridden && (
+              <select
+                value={cutoffLabel(cleanCutoff(overrides.business_day_cutoff) ?? 0)}
+                onChange={e => save('business_day_cutoff', e.target.value)}
+                data-testid="branch-day-cutoff"
+                className="bg-gray-950 border border-gray-800 rounded-lg px-2 py-1 text-white text-xs"
+              >
+                {Array.from({ length: MAX_CUTOFF_MINUTES / 30 + 1 }, (_, i) => cutoffLabel(i * 30))
+                  .map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
+            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+              <input
+                type="checkbox" checked={cutOverridden}
+                onChange={e => e.target.checked ? save('business_day_cutoff', cutDefault) : save('business_day_cutoff', null)}
               />
               Override
             </label>

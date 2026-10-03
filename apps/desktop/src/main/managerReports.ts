@@ -38,8 +38,9 @@
 
 import { isNodeRole } from './deviceConfig';
 import { getLocalDb } from './localDb';
-import { getDeviceConfig } from './deviceConfig';
+import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
+import { businessDateLocal, businessDayEndLocal } from './businessDay';   // 0.6.34
 
 export type RangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
 
@@ -51,17 +52,20 @@ export interface ReportRange {
   label: string;
 }
 
-/** Local midnight-to-midnight for a YYYY-MM-DD date, in the terminal's own time. */
+/**
+ * A BUSINESS day for a YYYY-MM-DD date, in the terminal's own time. 0.6.34: from the owner's cut-off to the next day's
+ * (shared/businessDay.ts) — at 01:30 with a 04:00 cut-off "Today" is still the night's trading, as on the day gate.
+ * With the default (00:00) this is midnight-to-midnight, as before.
+ */
 function dayBounds(ymd: string): { start: Date; end: Date } {
   const [y, m, d] = ymd.split('-').map(Number);
-  return {
-    start: new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0),
-    end: new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59, 999),
-  };
+  const cut = getBusinessDayCutoff();
+  const start = new Date(new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0).getTime() + cut * 60_000);
+  return { start, end: new Date(businessDayEndLocal(ymd, cut).getTime() - 1) };
 }
 
-const ymd = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** The business date of a moment (0.6.34: before the cut-off it is still the previous day). */
+const ymd = (d: Date) => businessDateLocal(d, getBusinessDayCutoff());
 
 /**
  * Turn a preset or an explicit pair of dates into a range.
@@ -94,8 +98,9 @@ export function resolveRange(preset: RangePreset = 'today', from?: string, to?: 
       return mk(ymd(s), today, `Last 30 days (${ymd(s)} to ${today})`);
     }
     case 'month': {
-      const s = new Date(now.getFullYear(), now.getMonth(), 1);
-      return mk(ymd(s), today, `This month (${ymd(s)} to ${today})`);
+      // 0.6.34: from the 1st of the BUSINESS month (at 01:30 on the 1st with a 04:00 cut-off it is still last month).
+      const first = `${today.slice(0, 8)}01`;
+      return mk(first, today, `This month (${first} to ${today})`);
     }
     case 'custom': {
       // Swap rather than reject a reversed pair: a manager who picks the dates in
@@ -285,7 +290,7 @@ export function getRecentOrders(limit = 30, range?: ReportRange, cashierId?: str
   const orders = db.prepare(`
     SELECT id, order_number, order_type, status, total, vat_amount, ctl_amount,
            discount_amount, tip_amount, refunded_amount, created_at, cashier_id, shift_id, device_id,
-           delivery_person, delivery_fee,   -- 0.6.27: History's type reads "Delivery — Eugene"
+           delivery_person, delivery_fee, delivery_free,   -- 0.6.27 (0.6.33 free): History's type reads "Delivery — Eugene"
            origin   -- 'web' = rung on the web POS on this till's drawer (cross-sync stage 1)
     FROM orders
     ${where}

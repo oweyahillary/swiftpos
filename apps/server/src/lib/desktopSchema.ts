@@ -54,7 +54,10 @@
 /** 61 = 0.6.30: pending_reversals (offline voids/refunds, replayed to /api/orders/:id/void|refund) and
  *  device_config.reversal_rules (pulled). A till on 60 keeps syncing; it simply cannot void or refund offline. */
 /** 62 = 0.6.31: products.show_days (pulled; migration 113). A till on 61 keeps syncing; it shows every product every day. */
-export const REQUIRED_DESKTOP_SCHEMA = 62;
+/** 63 = 0.6.33: orders.delivery_free (free delivery; migration 115). A till on 62 keeps syncing; its deliveries are paid. */
+/** 64 = 0.6.34: device_config.business_day_cutoff (pulled). A till on 63 keeps syncing; its day ends at midnight. */
+/** 65 = 0.6.35: device_config.support_contact (pulled). A till on 64 keeps syncing; its Help shows SwiftPOS support. */
+export const REQUIRED_DESKTOP_SCHEMA = 65;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -354,7 +354,7 @@ function renderReceipt(ctx) {
     order.discount ?? 0
   );
   const tip = Math.max(0, order.tip ?? 0);
-  const deliveryFee = Math.max(0, order.deliveryFee ?? 0);
+  const deliveryFee = order.deliveryFree ? 0 : Math.max(0, order.deliveryFee ?? 0);
   let totalQty = 0;
   let lastHadSubLines = false;
   order.lines.forEach((line, i) => {
@@ -399,6 +399,7 @@ function renderReceipt(ctx) {
   d.line(pair(cols, "Total:", formatCents(tax.total)), { bold: true });
   if (tip > 0) d.line(pair(cols, "Tip:", formatCents(tip)));
   if (deliveryFee > 0) d.line(pair(cols, "Delivery fee:", formatCents(deliveryFee)));
+  else if (order.deliveryFree && order.orderType === "delivery") d.line(pair(cols, "Delivery:", "FREE"));
   d.line(rule(cols));
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: "tall", bold: true });
   d.line(rule(cols));
@@ -500,6 +501,7 @@ function renderShiftReport(r, paperWidthMm) {
   if (r.ctl != null) d.line(pair(cols, "incl. CTL", money(r.ctl)));
   if (r.tips != null && r.tips > 0) d.line(pair(cols, "Tips (in payments)", money(r.tips)));
   if (r.deliveryFees != null && r.deliveryFees > 0) d.line(pair(cols, "Delivery fees (in payments)", money(r.deliveryFees)));
+  if (r.freeDeliveries != null && r.freeDeliveries > 0) d.line(pair(cols, "Free deliveries (shop paid)", money(r.freeDeliveries)));
   d.line(pair(cols, "Voids", String(r.voidCount)));
   d.line(rule(cols));
   d.line("CASH RECONCILIATION", { bold: true });
@@ -516,6 +518,14 @@ function renderShiftReport(r, paperWidthMm) {
     if (r.variance != null) {
       const label = r.variance === 0 ? "Variance" : r.variance > 0 ? "Variance (over)" : "Variance (short)";
       d.line(pair(cols, label, money(r.variance)), { size: "tall", bold: true });
+    }
+  }
+  if (r.riders && r.riders.length) {
+    d.line(rule(cols));
+    d.line("RIDERS", { bold: true });
+    for (const x of r.riders) {
+      d.line(pair(cols, `${x.rider} (${x.deliveries})`, money(x.feesPaid + x.freeFees)));
+      if (x.freeCount > 0) d.line(pair(cols, `  incl. ${x.freeCount} free (shop paid)`, money(x.freeFees)));
     }
   }
   if (r.otherExpenses && r.otherExpenses.length) {

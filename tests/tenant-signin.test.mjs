@@ -23,26 +23,26 @@ let pass = 0, fail = 0;
 const ok = async (n, f) => { try { await f(); pass++; console.log(`PASS  ${n}`); } catch (e) { fail++; console.log(`FAIL  ${n}\n      ${e.message}`); } };
 
 const T = await import(pathToFileURL(path.join(ROOT, 'shared/tenantHost.ts')).href);
-const R = 'swiftpos.co.ke';
+const R = 'zaptill.co.ke';
 
 // ── The shared rule ───────────────────────────────────────────────────────────
 await ok('the address bar: a client\'s address gives its subdomain', () => {
-  assert.strictEqual(T.subdomainFromHost('africanfries.swiftpos.co.ke', R), 'africanfries');
-  assert.strictEqual(T.subdomainFromHost('AfricanFries.SwiftPOS.co.ke.', R), 'africanfries');
-  assert.strictEqual(T.subdomainFromHost('africanfries.swiftpos.co.ke:443', R), 'africanfries');
-  assert.strictEqual(T.subdomainFromHost('africanfries.swiftpos.co.ke', ' .Swiftpos.co.ke. '), 'africanfries');
+  assert.strictEqual(T.subdomainFromHost('africanfries.zaptill.co.ke', R), 'africanfries');
+  assert.strictEqual(T.subdomainFromHost('AfricanFries.ZapTill.co.ke.', R), 'africanfries');
+  assert.strictEqual(T.subdomainFromHost('africanfries.zaptill.co.ke:443', R), 'africanfries');
+  assert.strictEqual(T.subdomainFromHost('africanfries.zaptill.co.ke', ' .Zaptill.co.ke. '), 'africanfries');
 });
 await ok('one level only; not the root, not ours (app., www.), not another domain, not when the root is unset', () => {
-  assert.strictEqual(T.subdomainFromHost('a.africanfries.swiftpos.co.ke', R), null);
-  assert.strictEqual(T.subdomainFromHost('swiftpos.co.ke', R), null);
-  assert.strictEqual(T.subdomainFromHost('app.swiftpos.co.ke', R), null);
-  assert.strictEqual(T.subdomainFromHost('www.swiftpos.co.ke', R), null);
+  assert.strictEqual(T.subdomainFromHost('a.africanfries.zaptill.co.ke', R), null);
+  assert.strictEqual(T.subdomainFromHost('zaptill.co.ke', R), null);
+  assert.strictEqual(T.subdomainFromHost('app.zaptill.co.ke', R), null);
+  assert.strictEqual(T.subdomainFromHost('www.zaptill.co.ke', R), null);
   assert.strictEqual(T.subdomainFromHost('africanfries.evil.com', R), null);
-  assert.strictEqual(T.subdomainFromHost('africanfriesswiftpos.co.ke', R), null);
+  assert.strictEqual(T.subdomainFromHost('africanfrieszaptill.co.ke', R), null);
   assert.strictEqual(T.subdomainFromHost('swiftpos-dashboard.vercel.app', R), null);
   assert.strictEqual(T.subdomainFromHost('localhost', R), null);
-  assert.strictEqual(T.subdomainFromHost('africanfries.swiftpos.co.ke', ''), null);
-  assert.strictEqual(T.subdomainFromHost('africanfries.swiftpos.co.ke', undefined), null);
+  assert.strictEqual(T.subdomainFromHost('africanfries.zaptill.co.ke', ''), null);
+  assert.strictEqual(T.subdomainFromHost('africanfries.zaptill.co.ke', undefined), null);
 });
 await ok('what may be set: 3–32 lowercase letters, digits, single hyphens inside; ours are reserved; empty clears', () => {
   assert.strictEqual(T.cleanSubdomain(' AfricanFries '), 'africanfries');
@@ -56,19 +56,19 @@ await ok('what may be set: 3–32 lowercase letters, digits, single hyphens insi
   assert.match(T.subdomainProblem('ab'), /3 to 32/);
 });
 await ok('the cloud lets a browser on the root or one level under it call it — https only', () => {
-  assert.strictEqual(T.isTenantOrigin('https://africanfries.swiftpos.co.ke', R), true);
-  assert.strictEqual(T.isTenantOrigin('https://app.swiftpos.co.ke', R), true);
-  assert.strictEqual(T.isTenantOrigin('https://swiftpos.co.ke', R), true);
+  assert.strictEqual(T.isTenantOrigin('https://africanfries.zaptill.co.ke', R), true);
+  assert.strictEqual(T.isTenantOrigin('https://app.zaptill.co.ke', R), true);
+  assert.strictEqual(T.isTenantOrigin('https://zaptill.co.ke', R), true);
 });
 await ok('never http, a deeper name, a look-alike, junk, or when the root is unset', () => {
-  assert.strictEqual(T.isTenantOrigin('http://africanfries.swiftpos.co.ke', R), false);
-  assert.strictEqual(T.isTenantOrigin('https://a.b.swiftpos.co.ke', R), false);
-  assert.strictEqual(T.isTenantOrigin('https://evilswiftpos.co.ke', R), false);
-  assert.strictEqual(T.isTenantOrigin('https://swiftpos.co.ke.evil.com', R), false);
-  assert.strictEqual(T.isTenantOrigin('https://africanfries.swiftpos.co.ke/path', R), false);
-  assert.strictEqual(T.isTenantOrigin('https://user:pw@africanfries.swiftpos.co.ke', R), false);
+  assert.strictEqual(T.isTenantOrigin('http://africanfries.zaptill.co.ke', R), false);
+  assert.strictEqual(T.isTenantOrigin('https://a.b.zaptill.co.ke', R), false);
+  assert.strictEqual(T.isTenantOrigin('https://evilzaptill.co.ke', R), false);
+  assert.strictEqual(T.isTenantOrigin('https://zaptill.co.ke.evil.com', R), false);
+  assert.strictEqual(T.isTenantOrigin('https://africanfries.zaptill.co.ke/path', R), false);
+  assert.strictEqual(T.isTenantOrigin('https://user:pw@africanfries.zaptill.co.ke', R), false);
   assert.strictEqual(T.isTenantOrigin('null', R), false);
-  assert.strictEqual(T.isTenantOrigin('https://africanfries.swiftpos.co.ke', ''), false);
+  assert.strictEqual(T.isTenantOrigin('https://africanfries.zaptill.co.ke', ''), false);
 });
 
 // ── The cloud's /login decision (the built server) ────────────────────────────
@@ -92,8 +92,8 @@ if (fs.existsSync(DIST)) {
     const before = process.env.TENANT_ROOT_DOMAIN;
     delete process.env.TENANT_ROOT_DOMAIN;
     assert.strictEqual(L.signInAddress('africanfries'), null);
-    process.env.TENANT_ROOT_DOMAIN = 'SwiftPOS.co.ke';
-    assert.strictEqual(L.signInAddress('africanfries'), 'https://africanfries.swiftpos.co.ke');
+    process.env.TENANT_ROOT_DOMAIN = 'ZapTill.co.ke';
+    assert.strictEqual(L.signInAddress('africanfries'), 'https://africanfries.zaptill.co.ke');
     assert.strictEqual(L.signInAddress(null), null);
     if (before === undefined) delete process.env.TENANT_ROOT_DOMAIN; else process.env.TENANT_ROOT_DOMAIN = before;
   });

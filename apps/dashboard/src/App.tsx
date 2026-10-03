@@ -21,6 +21,7 @@ import FleetPage              from './pages/FleetPage';
 
 // ── Lazily-loaded pages (each becomes its own on-demand chunk) ───────────────
 const LoginPage               = lazy(() => import('./pages/LoginPage'));
+const HelpPage                = lazy(() => import('./pages/HelpPage'));   // 0.6.35 (A384)
 const OnboardingPage          = lazy(() => import('./pages/OnboardingPage'));
 const ForcePasswordChangePage = lazy(() => import('./pages/ForcePasswordChangePage'));
 const OverviewPage            = lazy(() => import('./pages/OverviewPage'));
@@ -95,6 +96,8 @@ export default function App() {
               {/* ── Public routes (no auth) ─────────────────────────── */}
               <Route path="/kds"         element={<KDSPage />} />
               <Route path="/menu/:slug"  element={<QRMenuPage />} />
+              {/* 0.6.35 (A384): "What to do when" — open to anyone (a locked-out cashier needs it most). */}
+              <Route path="/help"        element={<HelpPage />} />
 
               {/* ── POS surface — cashier PIN auth ──────────────────── */}
               <Route path="/pos/*" element={

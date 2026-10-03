@@ -7,6 +7,8 @@ import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { summariseKitchenVoids, kitchenVoidText } from '../lib/kitchenLines';
 import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
+import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';   // 0.6.34
+import { getDayCutoff } from '../lib/dayCutoff';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -15,6 +17,12 @@ router.use(requireWebSurface);   // reports are a web-portal surface — block d
 // requireWebSurface blocks desktop till tokens, not staff. A waiter login
 // could pull the Master DSR, staff performance, food cost, tax, etc.
 router.use(requirePermission('reports.view'));
+// 0.6.34: the business day's end, once per request, for getDateRange (a branch report uses the branch's own).
+router.use(async (req, _res, next) => {
+  const branch = typeof req.query?.branch_id === 'string' && req.query.branch_id ? String(req.query.branch_id) : null;
+  (req as any).dayCutoff = await getDayCutoff(req.businessId, branch);
+  next();
+});
 
 /**
  * chunkIn — safe replacement for Supabase .in() with large arrays.
@@ -51,21 +59,21 @@ function embedOne<T>(v: T | T[] | null | undefined): T | undefined {
 // TODO: make this per-business when multi-timezone support is added.
 const BIZ_TZ_OFFSET = '+03:00';
 
-function getDateRange(from?: string, to?: string) {
-  const todayLocal = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
-  const fromDay = from || todayLocal;
-  const toDay   = to   || todayLocal;
-  const start = new Date(`${fromDay}T00:00:00.000${BIZ_TZ_OFFSET}`);
-  const end   = new Date(`${toDay}T23:59:59.999${BIZ_TZ_OFFSET}`);
-  return { start: start.toISOString(), end: end.toISOString() };
+// 0.6.34: a report day is a BUSINESS day — from the owner's cut-off ("Business day ends at", 00:00–06:00) to the next
+// day's cut-off (lib/businessDay.ts), so a bar's 01:30 sale counts to the night it belongs to, as on the till. With
+// the default (00:00) this is exactly the calendar day it always was. The cut-off is read once per request (below).
+function getDateRange(from?: string, to?: string, cutoffMinutes = 0) {
+  const today = businessDateEAT(new Date(), cutoffMinutes);
+  return businessRangeEAT(from || today, to || today, cutoffMinutes);
 }
+void BIZ_TZ_OFFSET;
 
 // GET /api/reports/sales
 // Owner: all branches or filtered by ?branch_id=
 // Staff: locked to their branch via branchScope
 router.get('/sales', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -159,7 +167,7 @@ router.get('/sales', async (req, res) => {
 // GET /api/reports/products
 router.get('/products', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let ordersQuery = supabase
@@ -202,7 +210,7 @@ router.get('/products', async (req, res) => {
 // GET /api/reports/staff
 router.get('/staff', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -292,7 +300,7 @@ router.get('/staff', async (req, res) => {
 // Derives sold qty from order_items, restocked/adjustments from stock_adjustments
 router.get('/inventory', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   // ── 1. Units sold: from order_items in completed orders ──
@@ -368,7 +376,7 @@ router.get('/inventory', async (req, res) => {
 // Query: ?branch_id=&from=&to=&cashier_id= (all optional)
 router.get('/eod', async (req, res) => {
   const { from, to, cashier_id } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -571,7 +579,7 @@ router.get('/eod', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/shifts', async (req, res) => {
   const { from, to, status, cashier_id } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -679,7 +687,7 @@ router.get('/shifts', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/master', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   // Catering/Tourism Levy applies only where the business is actually registered
@@ -854,7 +862,7 @@ router.get('/master', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/hourly', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -935,7 +943,7 @@ router.get('/hourly', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/voids', async (req, res) => {
   const { from, to, cashier_id } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -1008,7 +1016,7 @@ router.get('/voids', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/refunds', async (req, res) => {
   const { from, to, cashier_id } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let query = supabase
@@ -1079,7 +1087,7 @@ router.get('/refunds', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   // CTL (Catering Levy) is hospitality-only; gate it on business type.
@@ -1187,7 +1195,7 @@ router.get('/tax', requirePermission('reports.financial'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/products-v2', async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   let ordersQ = supabase
@@ -1260,7 +1268,7 @@ router.get('/products-v2', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/food-cost', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   // ── 1. Sales in period (completed orders) ─────────────────────────────────
@@ -1433,7 +1441,7 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/splh', requirePermission('reports.financial'), async (req, res) => {
   const { from, to } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
   // 1. Fetch closed shifts in period
@@ -1563,7 +1571,7 @@ router.get('/splh', requirePermission('reports.financial'), async (req, res) => 
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/fuel-sales', async (req, res) => {
   const { from, to, branch_id } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
   let orderQuery = supabase
     .from('orders')
@@ -1683,8 +1691,9 @@ router.get('/fuel-sales', async (req, res) => {
 // Real-time pump + tank status for the cockpit. Returns every pump with its
 // linked tank's opening/sold/remaining for today, plus total revenue today.
 router.get('/pump-monitor', async (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const { start, end } = getDateRange(today, today);
+  // 0.6.34: today's BUSINESS date in East Africa Time (was the UTC date — off by a day from 21:00 to midnight EAT).
+  const today = businessDateEAT(new Date(), (req as any).dayCutoff ?? 0);
+  const { start, end } = getDateRange(today, today, (req as any).dayCutoff ?? 0);
   const { branch_id } = req.query;
 
   // All pumps for this business
@@ -1787,7 +1796,7 @@ router.get('/pump-monitor', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/wet-stock', async (req, res) => {
   const { from, to, branch_id } = req.query;
-  const { start, end } = getDateRange(from as string, to as string);
+  const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
 
   // Current tank levels — include null-branch (business-wide) tanks
   let tanksQuery = supabase

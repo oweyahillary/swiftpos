@@ -3,6 +3,7 @@ import { terminalWriteDenied } from '../lib/terminalWrites';
 import { supabase } from '../lib/supabase';
 import { resolveOwnerBusinesses, firstOrNull } from '../lib/ownerBusiness';
 import jwt from 'jsonwebtoken';
+import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
 
 declare global {
   namespace Express {
@@ -264,6 +265,7 @@ export { terminalWriteDenied };
 function terminalWriteBlocked(req: Request, res: Response): boolean {
   const path = req.originalUrl || req.url || '';
   if (!terminalWriteDenied(req.surface, req.method, path, req.pinSignIn === true)) return false;
+  recordWriteGuard();                                   // A383: counted for the watchdog's morning digest
   console.warn(
     `[terminal-write-guard]${TERMINAL_WRITE_ENFORCE ? '' : ' DRY-RUN'} ` +
     `desktop-surface ${req.method} ${path.split('?')[0]} (${req.pinSignIn ? 'staff PIN sign-in' : 'device token'}) — ` +

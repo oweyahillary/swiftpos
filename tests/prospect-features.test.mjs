@@ -96,12 +96,13 @@ await ok('a web sale\'s rider is paid from its shift\'s drawer — never twice f
   assert.match(orders, /if \(Number\(\(order as any\)\.delivery_fee \?\? 0\) > 0\) await returnRiderPayout\(orderId\);/);
 });
 await ok('a tab paid later (/pay) collects the fee too, and the web sends it', () => {
-  assert.match(orders, /const payFee = order\.order_type === 'delivery' \? cleanDeliveryFee\(deliveryFeeRaw\) : 0;\s*const amountDue = round2\(payTotal \+ payTip \+ payFee\);/);
+  // 0.6.33: …unless it is a free delivery (the shop pays the rider; customerDeliveryFee is then 0).
+  assert.match(orders, /const payFee = order\.order_type === 'delivery' \? cleanDeliveryFee\(deliveryFeeRaw\) : 0;\s*const payFree = [^\n]+\n\s*const amountDue = round2\(payTotal \+ payTip \+ customerDeliveryFee\(payFee, payFree\)\);/);
   const pm = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
   assert.match(pm, /const grandTotal    = Math\.round\(\(chargedTotal \+ tipAmount \+ deliveryFee\) \* 100\) \/ 100;/);
   // Merged with the owner's web /pay fix (buildPayPayload carries discount + tip): the fee rides the same body.
   assert.equal((pm.match(/existingOrderId \? buildPayPayload\(payments\) : buildOrderPayload\(payments\)/g) ?? []).length, 2);
-  assert.match(pm, /function buildPayPayload\(payments: object\[\]\) \{[\s\S]{0,300}\.\.\.\(deliveryFee > 0 \? \{ delivery_fee: deliveryFee \} : \{\}\),/);
+  assert.match(pm, /function buildPayPayload\(payments: object\[\]\) \{[\s\S]{0,300}\.\.\.feeFields,/);   // 0.6.33: + delivery_free
 });
 await ok('the web POS asks the rider and fee before Charge (switch on)', () => {
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');

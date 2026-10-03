@@ -3,7 +3,8 @@
  * requests 3, 5 and 9: "cash will be 300 less but mpesa will be 300 more" — the paper says why).
  *
  * MUTATION-CHECKED: PAY without the fee → "PAY includes it" fails; the riders' line dropped → "why cash is lower" fails;
- * the not-from-the-drawer section dropped → "an M-Pesa expense is listed apart" fails.
+ * the not-from-the-drawer section dropped → "an M-Pesa expense is listed apart" fails; 0.6.33: the free-delivery receipt
+ * still adding the fee → "a free delivery prints … FREE" fails.
  */
 import assert from 'node:assert';
 import { renderTicket, renderShiftReport, toPreview, receiptPreset, type PrintContext, type BusinessConfig, type Order } from '../src/index';
@@ -33,6 +34,13 @@ ok('no fee → no line, PAY = the bill (as before)', () => {
   assert.ok(!p.some((l) => /Delivery fee/.test(l)));
   assert.ok(p.some((l) => /PAY: KES 1,000\.00/.test(l)));
 });
+// 0.6.33: a free delivery — the shop pays the rider, the customer pays no fee.
+ok('a free delivery prints "Delivery: FREE"; the rider\'s fee is neither printed nor in PAY', () => {
+  const p = receipt({ deliveryFee: 30000, deliveryFree: true });
+  assert.ok(p.some((l) => /^Delivery:\s+FREE$/.test(l)), p.join('\n'));
+  assert.ok(!p.some((l) => /Delivery fee/.test(l)), p.join('\n'));
+  assert.ok(p.some((l) => /PAY: KES 1,000\.00/.test(l)), p.join('\n'));
+});
 
 const Z = {
   businessName: 'B Foods', currencyCode: 'KES', cashierName: 'Amy', shiftRef: 'abc', openedAt: new Date('2026-09-30T06:00:00Z'),
@@ -47,13 +55,27 @@ ok('why cash is lower and M-Pesa higher: delivery fees in the payments, paid to 
   assert.ok(p.some((l) => /^Delivery fees \(in payments\)\s+KES 300\.00$/.test(l)), p.join('\n'));
   assert.ok(p.some((l) => /^- Paid to riders\s+KES 300\.00$/.test(l)), p.join('\n'));
 });
+ok('free deliveries: what the shop paid the riders, apart from the fees customers paid', () => {
+  const p = z({ deliveryFees: 30000, freeDeliveries: 20000, riderPayouts: 50000 });
+  assert.ok(p.some((l) => /^Free deliveries \(shop paid\)\s+KES 200\.00$/.test(l)), p.join('\n'));
+  assert.ok(p.some((l) => /^- Paid to riders\s+KES 500\.00$/.test(l)), p.join('\n'));
+});
+ok('the riders: each one\'s deliveries and what they were paid; the free ones said apart', () => {
+  const p = z({ riders: [{ rider: 'Eugene', deliveries: 3, feesPaid: 60000, freeCount: 1, freeFees: 30000 },
+                         { rider: 'Joy', deliveries: 1, feesPaid: 20000, freeCount: 0, freeFees: 0 }] });
+  const i = p.findIndex((l) => l === 'RIDERS');
+  assert.ok(i >= 0, p.join('\n'));
+  assert.ok(/^Eugene \(3\)\s+KES 900\.00$/.test(p[i + 1]), p.join('\n'));
+  assert.ok(/^incl\. 1 free \(shop paid\)\s+KES 300\.00$/.test(p[i + 2]), p.join('\n'));
+  assert.ok(/^Joy \(1\)\s+KES 200\.00$/.test(p[i + 3]), p.join('\n'));
+});
 ok('an M-Pesa expense is listed apart — not from the drawer', () => {
   const p = z({ otherExpenses: [{ method: 'mpesa', amount: 120000 }] });
   const i = p.findIndex((l) => l === 'EXPENSES NOT FROM THE DRAWER');
   assert.ok(i >= 0 && /^- M-PESA\s+KES 1,200\.00$/.test(p[i + 1]), p.join('\n'));
 });
 ok('none of these → the report is exactly as before', () => {
-  assert.equal(z({ deliveryFees: null, riderPayouts: null, otherExpenses: [] }).join('\n'), z({}).join('\n'));
+  assert.equal(z({ deliveryFees: null, riderPayouts: null, otherExpenses: [], riders: [] }).join('\n'), z({}).join('\n'));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -268,7 +268,8 @@ function renderReceipt(ctx: PrintContext): Document {
     order.discount ?? 0,
   );
   const tip = Math.max(0, order.tip ?? 0);
-  const deliveryFee = Math.max(0, order.deliveryFee ?? 0);   // 0.6.27
+  // 0.6.27; 0.6.33: on a free delivery the customer pays no fee (the shop pays the rider) — not printed, not in PAY.
+  const deliveryFee = order.deliveryFree ? 0 : Math.max(0, order.deliveryFee ?? 0);
 
   let totalQty = 0;
 
@@ -333,6 +334,7 @@ function renderReceipt(ctx: PrintContext): Document {
   if (tip > 0) d.line(pair(cols, 'Tip:', formatCents(tip)));
   // 0.6.27: the delivery fee — like the tip, on top of the bill and outside its taxes.
   if (deliveryFee > 0) d.line(pair(cols, 'Delivery fee:', formatCents(deliveryFee)));
+  else if (order.deliveryFree && order.orderType === 'delivery') d.line(pair(cols, 'Delivery:', 'FREE'));
   d.line(rule(cols));
 
   d.line(`PAY: ${business.currencyCode} ${formatCents(tax.total + tip + deliveryFee)}`, { size: 'tall', bold: true });

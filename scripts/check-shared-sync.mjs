@@ -97,6 +97,37 @@ const SHARED = [
     ],
   },
   {
+    // 0.6.34: when the business day ends (the owner's cut-off, 00:00–06:00) — the till's day gate, the cloud's reports.
+    name: 'businessDay.ts',
+    copies: [
+      'shared/businessDay.ts',
+      'apps/server/src/lib/businessDay.ts',      // the cloud validates the setting and dates its reports and daily email
+      'apps/desktop/src/main/businessDay.ts',    // the till's day gate and its business date (rootDir is src/main)
+      'apps/dashboard/src/lib/businessDay.ts',   // the settings screen checks the time before saving
+    ],
+  },
+  {
+    // 0.6.35 (A384): who a shop calls — its own tech (allocated in the admin portal) or SwiftPOS support's numbers.
+    name: 'support.ts',
+    copies: [
+      'shared/support.ts',
+      'apps/server/src/lib/support.ts',          // the cloud checks a tech's number and sends the shop's tech
+      'apps/desktop/src/main/support.ts',        // the till stores the pulled tech (rootDir is src/main)
+      'apps/desktop/src/shared/support.ts',      // the till's Help screen
+      'apps/dashboard/src/lib/support.ts',       // the web's Help page and sign-in page
+      'apps/admin/src/lib/support.ts',           // the admin portal checks the number before saving
+    ],
+  },
+  {
+    // 0.6.35 (A384): "What to do when" — the owner-approved help text, the same on the till, the A4 card and the web.
+    name: 'helpTopics.ts',
+    copies: [
+      'shared/helpTopics.ts',
+      'apps/desktop/src/shared/helpTopics.ts',
+      'apps/dashboard/src/lib/helpTopics.ts',
+    ],
+  },
+  {
     // A378: a client's own sign-in address (africanfries.<root>) — the subdomain rule, the host reader, the CORS check.
     name: 'tenantHost.ts',
     copies: [

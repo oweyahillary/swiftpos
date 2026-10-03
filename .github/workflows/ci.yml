@@ -660,6 +660,23 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/prospect-features.test.mjs
 
+      # 0.6.33 — free delivery: the shop pays the rider (the drawer pay-out stays), the customer pays no fee; the Z-report
+      # keeps the two apart (the real compiled main on SQLite).
+      - name: Desktop free delivery (the shop pays the rider)
+        working-directory: apps/desktop
+        run: node --no-warnings test/free-delivery.test.mjs
+
+      # 0.6.34 — the business day ends at the owner's cut-off (a bar trading past midnight is not locked mid-service);
+      # the real compiled main on SQLite, with the clock set by the test.
+      - name: Desktop business day ends at the owner's cut-off
+        working-directory: apps/desktop
+        run: node --no-warnings test/business-day.test.mjs
+
+      # 0.6.35 (A384) — Help: who to call — the shop's own tech (pulled; relayed by a branch server), or SwiftPOS support.
+      - name: Desktop Help shows the shop's tech or SwiftPOS support
+        working-directory: apps/desktop
+        run: node --no-warnings test/support-help.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)

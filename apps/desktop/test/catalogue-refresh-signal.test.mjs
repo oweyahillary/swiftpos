@@ -89,7 +89,8 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      // A346: the pull stores the cloud's web POS answer through this.
                      setWebPosEnabled: () => {},
                      // A367: the pull caches the owner's quick picks for order notes through this.
-                     setOrderNotePicks: () => {}, setPosFeatures: () => {}, setReversalRules: () => {} };   // 0.6.30`);
+                     setOrderNotePicks: () => {}, setPosFeatures: () => {}, setReversalRules: () => {},   // 0.6.30
+                     setBusinessDayCutoff: () => {}, setSupportContact: () => {} };   // 0.6.34, 0.6.35`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

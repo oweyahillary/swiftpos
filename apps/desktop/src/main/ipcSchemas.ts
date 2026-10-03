@@ -147,6 +147,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:features':       NO_PAYLOAD,
   'pos:history':        NO_PAYLOAD,
   'pos:reversalRules':  NO_PAYLOAD,   // 0.6.30
+  'pos:help':           NO_PAYLOAD,   // 0.6.35 (A384)
 
   // ── escpos (kitchen exclusions + production + spool) ──────────────────────
   'escpos:kitchenExclusions':      NO_PAYLOAD,

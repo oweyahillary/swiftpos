@@ -10,6 +10,8 @@
 
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
+import { rulesFromWire } from '../../../lib/reversalRules';
+import { setWebDayCutoff } from '../../../lib/webDayCutoff';   // 0.6.34   // 0.6.33: the owner's free-delivery rule
 import { monoRasterFromString, type MonoRaster } from '../../../lib/escposRenderer';
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../../../lib/api';
@@ -39,6 +41,10 @@ export interface POSData {
   notePicks:         string[];
   /** 0.6.27: the per-client POS switches (admin portal); all off until pos/init says. */
   posFeatures:       PosFeatures;
+  /** 0.6.33: the owner allows free delivery — the shop pays the rider, the customer no fee (pos/init's reversalRules). */
+  freeDeliveryAllowed: boolean;
+  /** 0.6.33: a delivery whose bill reaches this amount is free automatically; null = off. */
+  freeDeliveryOver: number | null;
   receiptHeader:     string;
   /** A313: the receipt logo to print, already gated on the client's toggle; null = none. */
   receiptLogo:       MonoRaster | null;
@@ -69,6 +75,8 @@ export function usePOSData(): POSData {
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
   const [notePicks, setNotePicks] = useState<string[]>([]);
   const [posFeatures, setPosFeatures] = useState<PosFeatures>(noPosFeatures());
+  const [freeDeliveryAllowed, setFreeDeliveryAllowed] = useState(false);   // 0.6.33
+  const [freeDeliveryOver, setFreeDeliveryOver] = useState<number | null>(null);   // 0.6.33
   const [receiptHeader,     setReceiptHeader]     = useState('');
   const [receiptLogo,       setReceiptLogo]       = useState<MonoRaster | null>(null);
   const [receiptFooter,     setReceiptFooter]     = useState('');
@@ -103,6 +111,9 @@ export function usePOSData(): POSData {
       setKitchenExclusions(init.kitchenExclusions ?? []);
       setNotePicks(parseNotePicks(init.noteQuickPicks ?? null));   // A367 (an older cloud sends none → the defaults)
       setPosFeatures(parsePosFeatures(init.posFeatures ?? null));   // 0.6.27 (an older cloud sends none → all off)
+      setWebDayCutoff((init as any).businessDayCutoff);   // 0.6.34: History's "today" follows the business day
+      setFreeDeliveryAllowed(rulesFromWire(init.reversalRules ?? null).freeDeliveryAllowed);   // 0.6.33 (none → not offered)
+      setFreeDeliveryOver(rulesFromWire(init.reversalRules ?? null).freeDeliveryOver);         // 0.6.33 (none → off)
       setReceiptHeader(init.receiptHeader ?? '');
       // A313: resolve the receipt logo ONCE here, the same gate the till applies
       // (resolveReceiptLogo in ipcHandlers): toggle ON and a decodable raster.
@@ -174,7 +185,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, receiptHeader, receiptLogo, receiptFooter,
+    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
     loading, error,

@@ -14,8 +14,8 @@ import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
-import { cleanDeliveryFee, riderPayoutReason } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules } from './deviceConfig';
+import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -1005,6 +1005,8 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   if (typeof c.receiptHeader === 'string') saveDeviceConfig({ receipt_header: c.receiptHeader });
   if (typeof c.receiptFooter === 'string') saveDeviceConfig({ receipt_footer: c.receiptFooter });
   if (typeof c.continuousOperation === 'boolean') saveDeviceConfig({ continuous_operation: c.continuousOperation });
+  setBusinessDayCutoff(c.businessDayCutoff);   // 0.6.34: undefined (older cloud / node) keeps the till's value
+  setSupportContact(c.support);                // 0.6.35: undefined keeps; null = no tech (SwiftPOS support)
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
   // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
   // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
@@ -1114,6 +1116,8 @@ async function pullCatalogue(): Promise<boolean> {
       receiptFooter: typeof _j.receiptFooter === 'string' ? _j.receiptFooter : null,
       kitchenExclusions: Array.isArray(_j.kitchenExclusions) ? _j.kitchenExclusions : null,
       continuousOperation: typeof _j.continuousOperation === 'boolean' ? _j.continuousOperation : null,
+      businessDayCutoff: typeof _j.businessDayCutoff === 'number' ? _j.businessDayCutoff : undefined,   // 0.6.34
+      support: 'support' in _j ? (_j.support ?? null) : undefined,   // 0.6.35: an older cloud sends no key → keep
       // A304: null when the business has no branding row → applyReferenceConfig skips it,
       // keeping any local value. A row (even with null fields) is remote-wins.
       branding: (_j.branding && typeof _j.branding === 'object')
@@ -2433,11 +2437,14 @@ export function createLocalOrder(orderPayload: any): string {
   const deliveryFee = orderPayload.order_type === 'delivery' ? cleanDeliveryFee(orderPayload.delivery_fee) : 0;
   // What travels to the cloud is the same cleaned figure (its create_order_atomic reconciles the legs to total + tip + fee).
   if (deliveryFee > 0) orderPayload.delivery_fee = deliveryFee; else delete orderPayload.delivery_fee;
+  // 0.6.33: a FREE delivery — the fee is still the rider's (paid from the drawer below), the customer paid none of it.
+  const deliveryFree = isFreeDelivery(orderPayload.order_type, deliveryFee, orderPayload.delivery_free);
+  if (deliveryFree) orderPayload.delivery_free = true; else delete orderPayload.delivery_free;
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO orders (id, business_id, branch_id, order_number, order_type, delivery_person, status, subtotal, vat_amount, ctl_amount, discount_amount, tip_amount, total, covers, cashier_id, shift_id, customer_id, customer_name, customer_phone, created_at, device_id, pump_id, notes, delivery_fee, delivery_free, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       orderId, session.business_id, orderPayload.branch_id, orderPayload.order_number,
       orderPayload.order_type ?? 'retail',
@@ -2459,11 +2466,13 @@ export function createLocalOrder(orderPayload: any): string {
       // A367: the order's note, cleaned the same way the cloud cleans it (shared/orderNotes.ts).
       cleanNote(orderPayload.notes, ORDER_NOTE_MAX),
       deliveryFee,   // 0.6.27: on top of the bill, in the legs (like the tip); not in total
+      deliveryFree ? 1 : 0,   // 0.6.33: free — the shop pays the rider; not in the legs
     );
 
     // 0.6.27 (the prospect's request 3): the rider is paid the delivery fee in CASH from this drawer, now — recorded as
     // a pay-out tied to the sale, so expected cash is the fee lower while the method the customer paid with carries it.
-    // It syncs like any pay-out; voiding the sale puts it back (reverseRiderPayout).
+    // It syncs like any pay-out; voiding the sale puts it back (reverseRiderPayout). 0.6.33: a FREE delivery too — the
+    // shop still pays the rider; only the customer did not.
     if (deliveryFee > 0) {
       const sh = db.prepare(`SELECT branch_id, cashier_id FROM shifts WHERE id=?`).get(shiftId) as { branch_id: string; cashier_id: string } | undefined;
       db.prepare(`

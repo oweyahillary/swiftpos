@@ -9,7 +9,7 @@
 --
 -- USAGE  (choose a STRONG password, 10+ chars):
 --   psql -d "$DATABASE_URL" \
---        -v email="admin@swiftpos.co.ke" \
+--        -v email="admin@zaptill.co.ke" \
 --        -v pw="your-strong-password-here" \
 --        -f scripts/seed-admin.sql
 --

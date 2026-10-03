@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../lib/api';
 import { useTenant, tenantSignInFields } from '../lib/tenant';
 import { TenantBrand, UnknownTenantAddress } from '../components/TenantBrand';
+import { DEFAULT_SUPPORT_PHONES, whatsappNumber } from '../lib/support';   // 0.6.35 (A384)
 
 // Error codes returned by POST /api/auth/login for specific access issues
 const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: string }> = {
@@ -166,7 +167,7 @@ export default function LoginPage() {
                 ← Back to login
               </button>
               <a
-                href={`https://wa.me/${import.meta.env.VITE_SUPPORT_WHATSAPP || '254700000000'}?text=Hi, I'd like to upgrade my SwiftPOS account to include web hosting access.`}
+                href={`https://wa.me/${import.meta.env.VITE_SUPPORT_WHATSAPP || whatsappNumber(DEFAULT_SUPPORT_PHONES[0])}?text=Hi, I'd like to upgrade my SwiftPOS account to include web hosting access.`}
                 target="_blank"
                 rel="noreferrer"
                 className="flex-1 bg-swift-strong hover:bg-swift-deep text-white text-sm font-medium rounded-xl py-2.5 transition-colors text-center"
@@ -308,6 +309,10 @@ export default function LoginPage() {
 
         <p className="text-center text-[#1e293b] text-xs mt-6">
           No account? Contact your SwiftPOS agent to get set up.
+        </p>
+        {/* 0.6.35 (A384): forgot the password, locked out — what to do and who to call. */}
+        <p className="text-center text-xs mt-2">
+          <a href="/help" className="text-gray-400 hover:text-white underline" data-testid="login-help">Need help?</a>
         </p>
         {/* 0.6.28: the release (was the commit alone, in near-invisible ink) — "which one am I running?" */}
         <p className="text-center text-gray-500 text-xs mt-2" title={`${__WEB_BUILD_REF__} · built ${__WEB_BUILD_TIME__}`}

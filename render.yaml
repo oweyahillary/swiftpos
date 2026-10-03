@@ -81,6 +81,18 @@ services:
       # - key: MPESA_ALLOWED_IPS
       #   sync: false
 
+      # ── Watchdog alerts (A383) — optional; unset = problems are only logged ──
+      # jobs/watchdog.ts checks every 10 min and tells the admin at once about a till not syncing, M-Pesa with no
+      # answer, a burst of server errors, a day left open; a digest every morning at 07:45 EAT.
+      # TELEGRAM_BOT_TOKEN from @BotFather; TELEGRAM_CHAT_ID the chat/group id (comma-separated for several).
+      # ADMIN_ALERT_EMAIL the admin's address(es), sent through the mail below. WATCHDOG_ENABLED=false turns it off.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: ADMIN_ALERT_EMAIL
+        sync: false
+
       # ── Mail — optional, degrades gracefully ────────────────────────────────
       # lib/mailer.ts:16 guards on presence; unset simply disables outbound mail.
       # Needed for owner notifications (e.g. device_pending) and daily summaries.
