@@ -80,7 +80,7 @@ export default function BulkProductImport({
       <a
         className="inline-flex items-center gap-1.5 text-sm text-swift-text hover:text-swift-text-hover mb-4 no-underline"
         href="data:text/csv;charset=utf-8,name,base_price,cost_price,category_name,barcode,plu_code,sold_by,description"
-        download="swiftpos_products_template.csv"
+        download="zaptill_products_template.csv"
       >
         ⬇ Download CSV template
       </a>

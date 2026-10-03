@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'apps/dashboard/src/pages/products/MenuUpload.tsx'), 'utf8');
 // Just the template generator, so unrelated code can't satisfy a check by accident.
-const fn = src.slice(src.indexOf('function downloadTemplate'), src.indexOf("XLSX.writeFile(wb, 'swiftpos-restaurant-import-template.xlsx')") + 60);
+const fn = src.slice(src.indexOf('function downloadTemplate'), src.indexOf("XLSX.writeFile(wb, 'zaptill-restaurant-import-template.xlsx')") + 60);
 
 let pass = 0, fail = 0;
 const ok = (label, cond, detail = '') => { if (cond) { pass++; console.log(`PASS  ${label}`); } else { fail++; console.log(`FAIL  ${label}  ${detail}`); } };

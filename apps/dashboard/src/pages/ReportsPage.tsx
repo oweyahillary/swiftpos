@@ -244,7 +244,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
             if (branchId) p.set('branch_id', branchId);
-            void downloadFile(`/api/reports/export/sales?${p}`, `swiftpos-sales-${range.from}_${range.to}.xlsx`)
+            void downloadFile(`/api/reports/export/sales?${p}`, `zaptill-sales-${range.from}_${range.to}.xlsx`)
               .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
@@ -382,7 +382,7 @@ function HourlyTab({ range, branchId, currency }: { range: DateRange; branchId: 
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
             if (branchId) p.set('branch_id', branchId);
-            void downloadFile(`/api/reports/export/hourly?${p}`, `swiftpos-hourly-${range.from}_${range.to}.xlsx`)
+            void downloadFile(`/api/reports/export/hourly?${p}`, `zaptill-hourly-${range.from}_${range.to}.xlsx`)
               .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
@@ -500,7 +500,7 @@ function ItemMixTab({ range, branchId, currency }: { range: DateRange; branchId:
           onClick={() => {
             const p = new URLSearchParams({ from: range.from, to: range.to, format: 'xlsx' });
             if (branchId) p.set('branch_id', branchId);
-            void downloadFile(`/api/reports/export/products?${p}`, `swiftpos-products-${range.from}_${range.to}.xlsx`)
+            void downloadFile(`/api/reports/export/products?${p}`, `zaptill-products-${range.from}_${range.to}.xlsx`)
               .catch((e: any) => alert(e?.message ?? 'Download failed'));
           }}
           className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
@@ -836,7 +836,7 @@ function ExportsTab({ range, branchId }: { range: DateRange; branchId: string; c
     if (branchId) p.set('branch_id', branchId);
     try {
       // A143: authed fetch + blob save. window.open() sent no token → 401.
-      await downloadFile(`/api/reports/export/${key}?${p}`, `swiftpos-${key}-${range.from}_${range.to}.xlsx`);
+      await downloadFile(`/api/reports/export/${key}?${p}`, `zaptill-${key}-${range.from}_${range.to}.xlsx`);
     } catch (e: any) {
       setDlError(e?.message ?? 'Download failed');
     } finally {

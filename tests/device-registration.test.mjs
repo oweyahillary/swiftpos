@@ -236,14 +236,14 @@ ok('a bad value never reaches the CHECK constraint', () => {
 });
 
 const labelFor = (role, given) => given ? given
-  : role === 'office' ? 'SwiftPOS office server (view only)'
-  : role === 'node'   ? 'SwiftPOS till (branch server)'
-  : 'SwiftPOS till';
+  : role === 'office' ? 'ZapTill office server (view only)'   // 0.6.37: the product's name
+  : role === 'node'   ? 'ZapTill till (branch server)'
+  : 'ZapTill till';
 
 ok('an office machine is not labelled as a till in the fleet view', () => {
   assert.match(labelFor('office'), /office server/);
   assert.match(labelFor('office'), /view only/);
-  assert.equal(labelFor('till'), 'SwiftPOS till');
+  assert.equal(labelFor('till'), 'ZapTill till');
   assert.match(labelFor('node'), /branch server/);
 });
 

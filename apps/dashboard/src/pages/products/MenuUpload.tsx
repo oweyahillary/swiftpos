@@ -130,7 +130,7 @@ export default function MenuUpload({
       ['name', 'category', 'unit', 'unit_cost', 'reorder_level', 'is_packaging', 'notes'],
       ['Chicken Fillet', 'Meat', 'pc', 70, 40, 'no', ''],
     ]), 'Ingredients');
-    XLSX.writeFile(wb, 'swiftpos-restaurant-import-template.xlsx');
+    XLSX.writeFile(wb, 'zaptill-restaurant-import-template.xlsx');
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {

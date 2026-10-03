@@ -969,7 +969,7 @@ function ClientDetailPage({ client, req, onBack }) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `swiftpos-export-${client.id}.json`;
+      a.href = url; a.download = `zaptill-export-${client.id}.json`;
       a.click(); URL.revokeObjectURL(url);
     } catch (e) { setError(e?.message ?? "Export failed"); }
   }
