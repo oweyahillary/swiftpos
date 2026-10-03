@@ -96,7 +96,7 @@ export default function MenuUpload({
   function downloadTemplate() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['SwiftPOS — Restaurant menu upload template'],
+      ['ZapTill — Restaurant menu upload template'],
       [''],
       ['ONE upload for everything: products, upgrades & spices, recipes, ingredients. Fill any tabs.'],
       ['• Matched by NAME and UPDATED — never duplicated. Add plu_code for a stable key so you can rename freely.'],

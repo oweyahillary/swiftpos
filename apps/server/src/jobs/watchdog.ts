@@ -133,7 +133,7 @@ export async function runWatchdog(now = new Date()): Promise<{ opened: number; r
 
   for (const a of plan.opened) {
     const critical = a.severity === 'critical';
-    if (critical) await notifyAdmin(`SwiftPOS alert: ${a.title}`, alertText('new', a));
+    if (critical) await notifyAdmin(`ZapTill alert: ${a.title}`, alertText('new', a));
     const { error } = await supabase.from('watchdog_alerts').insert({
       alert_key: a.key, severity: a.severity, business_id: a.businessId, title: a.title, detail: a.detail,
       first_seen_at: iso, last_seen_at: iso,
@@ -148,7 +148,7 @@ export async function runWatchdog(now = new Date()): Promise<{ opened: number; r
     if (due.has(row.id)) {
       // A warning that became critical is news; a critical one still there is a reminder.
       const kind = row.severity === 'critical' ? 'reminder' : 'new';
-      await notifyAdmin(`SwiftPOS ${kind === 'new' ? 'alert' : 'still happening'}: ${alert.title}`, alertText(kind, alert, row.first_seen_at, now));
+      await notifyAdmin(`ZapTill ${kind === 'new' ? 'alert' : 'still happening'}: ${alert.title}`, alertText(kind, alert, row.first_seen_at, now));
       patch.last_notified_at = iso;
       patch.notify_count = (row.notify_count ?? 0) + 1;
     }
@@ -158,7 +158,7 @@ export async function runWatchdog(now = new Date()): Promise<{ opened: number; r
 
   for (const row of plan.resolved) {
     if (row.last_notified_at) {                             // told about it (as critical) → say it cleared
-      await notifyAdmin(`SwiftPOS resolved: ${row.title}`, alertText('resolved', row, row.first_seen_at, now));
+      await notifyAdmin(`ZapTill resolved: ${row.title}`, alertText('resolved', row, row.first_seen_at, now));
     }
     const { error } = await supabase.from('watchdog_alerts').update({ resolved_at: iso }).eq('id', row.id);
     if (error) console.error('[watchdog] could not resolve alert', row.alert_key, error.message);
@@ -172,7 +172,7 @@ export async function sendDigest(now = new Date()): Promise<void> {
   const open = await openAlerts();
   open.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
   const text = digestText(open, digestCounters(true), now);
-  await notifyAdmin(`SwiftPOS daily check — ${now.toISOString().slice(0, 10)}`, text);
+  await notifyAdmin(`ZapTill daily check — ${now.toISOString().slice(0, 10)}`, text);
 }
 
 export function startWatchdogJob(): void {

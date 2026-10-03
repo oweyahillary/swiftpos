@@ -255,7 +255,7 @@ export function alertText(kind: 'new' | 'reminder' | 'resolved', a: { title: str
     const dur = since && now ? ` (lasted ${durationLabel(ago(now, since))})` : '';
     return `✅ RESOLVED — ${a.title}${dur}`;
   }
-  const head = kind === 'new' ? '🔴 SwiftPOS ALERT' : '🔴 STILL HAPPENING';
+  const head = kind === 'new' ? '🔴 ZapTill ALERT' : '🔴 STILL HAPPENING';
   const dur = kind === 'reminder' && since && now ? ` — for ${durationLabel(ago(now, since))}` : '';
   return `${head}${dur}\n${a.title}\n${a.detail ?? ''}`.trim();
 }
@@ -265,7 +265,7 @@ export interface DigestCounters { writeGuard: number; failedSignIns: number; ser
 /** The morning digest: every open problem (critical first), then the counters since the last digest. */
 export function digestText(open: { severity: Severity; title: string; detail?: string | null; first_seen_at?: string }[],
   counters: DigestCounters, now: Date): string {
-  const lines: string[] = [`☀️ SwiftPOS daily check — ${now.toISOString().slice(0, 10)}`];
+  const lines: string[] = [`☀️ ZapTill daily check — ${now.toISOString().slice(0, 10)}`];
   const crit = open.filter((a) => a.severity === 'critical');
   const warn = open.filter((a) => a.severity === 'warning');
   if (!crit.length && !warn.length) lines.push('', 'All clients look healthy.');

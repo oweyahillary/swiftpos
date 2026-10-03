@@ -318,7 +318,7 @@ function buildLowIngredientEmail(opts: {
     <tr><td align="center">
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
         <tr><td style="padding-bottom:24px;">
-          <p style="margin:0;font-size:20px;font-weight:700;color:#22c55e;">SwiftPOS</p>
+          <p style="margin:0;font-size:20px;font-weight:700;color:#22c55e;">ZapTill</p>
           <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">${opts.businessName}</p>
         </td></tr>
         <tr><td style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:32px;">
@@ -343,7 +343,7 @@ function buildLowIngredientEmail(opts: {
           </a>
         </td></tr>
         <tr><td style="padding-top:24px;">
-          <p style="margin:0;font-size:11px;color:#374151;text-align:center;">Sent by SwiftPOS · ${opts.businessName}</p>
+          <p style="margin:0;font-size:11px;color:#374151;text-align:center;">Sent by ZapTill · ${opts.businessName}</p>
         </td></tr>
       </table>
     </td></tr>
@@ -383,7 +383,7 @@ function buildLowStockEmail(opts: {
           <!-- Header -->
           <tr>
             <td style="padding-bottom:24px;">
-              <p style="margin:0;font-size:20px;font-weight:700;color:#22c55e;">SwiftPOS</p>
+              <p style="margin:0;font-size:20px;font-weight:700;color:#22c55e;">ZapTill</p>
               <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">${opts.businessName}</p>
             </td>
           </tr>
@@ -419,7 +419,7 @@ function buildLowStockEmail(opts: {
           <tr>
             <td style="padding-top:24px;">
               <p style="margin:0;font-size:11px;color:#374151;text-align:center;">
-                Sent by SwiftPOS · You're receiving this because you own ${opts.businessName}
+                Sent by ZapTill · You're receiving this because you own ${opts.businessName}
                 <!-- TODO (Step 19/21): Replace sender with business domain email -->
               </p>
             </td>

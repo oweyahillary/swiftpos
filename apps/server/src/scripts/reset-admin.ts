@@ -32,7 +32,7 @@ async function run() {
     .upsert(
       {
         email:         EMAIL,
-        name:          'SwiftPOS Admin',
+        name:          'ZapTill Admin',
         password_hash: hash,
         role:          'super_admin',
         is_active:     true,

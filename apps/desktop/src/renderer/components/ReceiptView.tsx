@@ -257,7 +257,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
             payments rule (printed above)
             owner's footer box, VERBATIM line for line   ← paybill, delivery no.
             rule — only when the box has content (no orphan separator)
-            fixed closing block: thank-you · TAX RECEIPT · Powered by SwiftPOS
+            fixed closing block: thank-you · TAX RECEIPT · Powered by ZapTill
             final rule
           The box is the owner's; the closing block is not editable from it. */}
       {lines(footerText).length > 0 && (
@@ -271,7 +271,7 @@ const ReceiptView = forwardRef<HTMLDivElement, Props>((
       <div style={{ textAlign: 'center', marginTop: '6px' }}>
         <p>{footerMessage || 'Thank you for your business!'}</p>
         {vatRate > 0 && <p style={{ fontSize: '11px' }}>TAX RECEIPT UPON REQUEST</p>}
-        <p style={{ fontSize: '10px', marginTop: '4px' }}>Powered by SwiftPOS</p>
+        <p style={{ fontSize: '10px', marginTop: '4px' }}>Powered by ZapTill</p>
       </div>
       {rule()}
     </div>

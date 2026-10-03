@@ -367,7 +367,7 @@ export async function buildDailySalesWorkbook(
     const { vatRate, ctlRate } = taxRates();
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'SwiftPOS';
+    wb.creator = 'ZapTill';
     wb.created = new Date();
     const ws = wb.addWorksheet('Sheet1');
     ws.columns = [
@@ -399,7 +399,7 @@ export async function buildDailySalesWorkbook(
     const section = (title: string) => { put([title], { style: 'section' }); };
 
     // ── Header ───────────────────────────────────────────────────────────────
-    put([session?.business_name ?? 'SwiftPOS'], { style: 'title' });
+    put([session?.business_name ?? 'ZapTill'], { style: 'title' });
     put([cfg?.terminal_code ?? 'NA']);
     // WHICH TERMINALS. Distinct from scope.scopeLabel below, which describes
     // where the DATA came from (this till / synced from the cloud). Both matter
@@ -530,7 +530,7 @@ export async function buildDailySalesWorkbook(
 
     const safe = (s: string) => s.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-|-$/g, '');
     const suggested =
-      `Daily_Sales_Report_${safe(session?.business_name ?? 'SwiftPOS')}_${safe(range.label)}.xlsx`;
+      `Daily_Sales_Report_${safe(session?.business_name ?? 'ZapTill')}_${safe(range.label)}.xlsx`;
 
     return { wb, suggested };
   }

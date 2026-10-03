@@ -14,7 +14,7 @@ const router = safeRouter();
 router.get('/:subdomain', async (req, res) => {
   const found = await findTenant(req.params.subdomain);
   if (found.kind === 'error') { res.status(503).json({ error: 'Could not look up this address — please try again' }); return; }
-  if (found.kind !== 'found') { res.status(404).json({ error: 'No SwiftPOS business uses this address', code: 'UNKNOWN_SUBDOMAIN' }); return; }
+  if (found.kind !== 'found') { res.status(404).json({ error: 'No ZapTill business uses this address', code: 'UNKNOWN_SUBDOMAIN' }); return; }
 
   const [{ data: brand }, { data: biz }] = await Promise.all([
     supabase.from('business_branding').select('accent_hex, logo_png').eq('business_id', found.tenant.id).maybeSingle(),

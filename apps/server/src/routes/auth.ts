@@ -573,7 +573,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   const tenant = await findTenant(subdomain);
   if (tenant.kind === 'error') { res.status(503).json({ error: 'Could not sign you in right now — please try again' }); return; }
   if (tenant.kind === 'unknown') {
-    res.status(404).json({ error: 'No SwiftPOS business uses this address.', code: 'UNKNOWN_SUBDOMAIN' });
+    res.status(404).json({ error: 'No ZapTill business uses this address.', code: 'UNKNOWN_SUBDOMAIN' });
     return;
   }
 
@@ -622,7 +622,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
 
   if (business.status === 'suspended') {
     res.status(403).json({
-      error: 'Your account has been suspended. Please contact SwiftPOS support.',
+      error: 'Your account has been suspended. Please contact ZapTill support.',
       code:  'ACCOUNT_SUSPENDED',
     });
     return;
@@ -637,7 +637,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     res.status(403).json({
       error: webAccess.state === 'locked'
         ? 'Your web portal subscription has expired. Please renew to continue.'
-        : 'Web portal access is not enabled for your account. Please contact SwiftPOS to upgrade.',
+        : 'Web portal access is not enabled for your account. Please contact ZapTill to upgrade.',
       code:  webAccess.state === 'locked' ? 'WEB_ACCESS_EXPIRED' : 'WEB_HOSTING_REQUIRED',
     });
     return;
@@ -790,7 +790,7 @@ router.post('/enrol/redeem', async (req, res) => {
     .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
   if (!biz) { res.status(500).json({ error: 'Business not found for a valid code', code: 'ENROL_STATE' }); return; }
   if ((biz as any).status === 'suspended') {
-    res.status(403).json({ error: 'Your account has been suspended. Please contact SwiftPOS support.', code: 'ACCOUNT_SUSPENDED' });
+    res.status(403).json({ error: 'Your account has been suspended. Please contact ZapTill support.', code: 'ACCOUNT_SUSPENDED' });
     return;
   }
 
@@ -904,7 +904,7 @@ router.post('/device-token', async (req, res) => {
     .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
   if (!biz) { res.status(500).json({ error: 'Business not found for a valid device', code: 'DEVICE_GRANT_STATE' }); return; }
   if ((biz as any).status === 'suspended') {
-    res.status(403).json({ error: 'Your account has been suspended. Please contact SwiftPOS support.', code: 'ACCOUNT_SUSPENDED' });
+    res.status(403).json({ error: 'Your account has been suspended. Please contact ZapTill support.', code: 'ACCOUNT_SUSPENDED' });
     return;
   }
 
@@ -1063,7 +1063,7 @@ router.post('/pos-login', async (req, res) => {
   const tenant = await findTenant(subdomain);
   if (tenant.kind === 'error') { res.status(503).json({ error: 'Could not sign you in right now — please try again' }); return; }
   if (tenant.kind === 'unknown') {
-    res.status(404).json({ error: 'No SwiftPOS business uses this address.', code: 'UNKNOWN_SUBDOMAIN' });
+    res.status(404).json({ error: 'No ZapTill business uses this address.', code: 'UNKNOWN_SUBDOMAIN' });
     return;
   }
 
@@ -1160,7 +1160,7 @@ router.post('/pos-login', async (req, res) => {
     // five-minute fix into a day of support calls about a working PIN.
     res.status(409).json({
       error: 'This email is registered with more than one business. '
-           + 'Select a branch on this device, or contact SwiftPOS support.',
+           + 'Select a branch on this device, or contact ZapTill support.',
       code:  'AMBIGUOUS_ACCOUNT',
     });
     return;
@@ -1217,7 +1217,7 @@ router.post('/pos-login', async (req, res) => {
     // claiming 'web' without web entitlement lands here and is licence-checked.
     if (effectiveSurface !== 'web' && !allowed.desktop_licensed) {
       res.status(403).json({
-        error: `${allowed.name} does not have a desktop licence. Contact SwiftPOS to activate.`,
+        error: `${allowed.name} does not have a desktop licence. Contact ZapTill to activate.`,
         code:  'BRANCH_NOT_LICENSED',
       });
       return;
@@ -1353,7 +1353,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // access is already granted by web access at owner login.
   if (req.surface === 'desktop' && !(branch as any).desktop_licensed) {
     res.status(403).json({
-      error: `This branch (${(branch as any).name}) does not have a desktop licence. Please contact SwiftPOS to activate.`,
+      error: `This branch (${(branch as any).name}) does not have a desktop licence. Please contact ZapTill to activate.`,
       code:  'BRANCH_NOT_LICENSED',
     });
     return;

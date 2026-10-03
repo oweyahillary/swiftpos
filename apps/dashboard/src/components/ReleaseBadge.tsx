@@ -27,7 +27,7 @@ export default function ReleaseBadge({ getCloud, tone = 'dark' }: {
   return (
     <div data-testid="release-badge" title={`Website built ${__WEB_BUILD_TIME__} from ${__WEB_BUILD_REF__}`}
          style={{ fontSize: 10, lineHeight: 1.5, color: muted, userSelect: 'text' }}>
-      <div>SwiftPOS {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}</div>
+      <div>ZapTill {releaseLabel(RELEASE, __WEB_BUILD_SHA__)}</div>
       {cloud && (
         <div style={differ ? { color: '#f59e0b' } : undefined} data-testid="release-cloud">
           cloud {releaseLabel(cloud.release, cloud.commit)}{differ ? ' — not the same release as this website' : ''}

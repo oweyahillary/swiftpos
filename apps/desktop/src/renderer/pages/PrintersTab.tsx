@@ -213,7 +213,7 @@ export default function PrintersTab({ currency = 'KES' }: { currency?: string })
     setStat('receipt', { kind: 'busy' });
     const html = receiptSampleHtml();
     try {
-      await printReceipt(html, settings, 'SwiftPOS — test receipt');
+      await printReceipt(html, settings, 'ZapTill — test receipt');
       setStat('receipt', {
         kind: settings.receiptPrinterName ? 'ok' : 'warn',
         msg: settings.receiptPrinterName

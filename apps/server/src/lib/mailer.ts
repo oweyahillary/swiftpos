@@ -13,7 +13,7 @@ import dns from 'node:dns/promises';
 //   under key 'notify_from_email' and pass into sendEmail() as fromOverride.
 //   Resend supports custom domains via their Domain API.
 // ─────────────────────────────────────────────────────────────────────────────
-const DEFAULT_FROM = process.env.NOTIFY_FROM_EMAIL ?? 'SwiftPOS <noreply@zaptill.co.ke>';
+const DEFAULT_FROM = process.env.NOTIFY_FROM_EMAIL ?? 'ZapTill <noreply@zaptill.co.ke>';
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)

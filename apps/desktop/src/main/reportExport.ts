@@ -47,7 +47,7 @@ const BOM = '\uFEFF';
 function scopeHeader(rangeLabel: string): string[] {
   const scope = getReportScope();
   return [
-    row(['SwiftPOS report']),
+    row(['ZapTill report']),
     row(['Range', rangeLabel]),
     row(['Terminal', scope.terminalCode ?? 'unknown']),
     row(['Covers', scope.scopeLabel]),

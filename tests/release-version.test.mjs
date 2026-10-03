@@ -89,7 +89,7 @@ try {
   await ok('the dashboard, the web POS, the login page and the admin portal show it', () => {
     assert.match(read('apps/dashboard/src/components/DashboardLayout.tsx'), /<ReleaseBadge getCloud=\{\(\) => api\.get\('\/api\/version'\)\} \/>/);
     assert.match(read('apps/dashboard/src/pages/pos/POSDrawer.tsx'), /<ReleaseBadge getCloud=\{\(\) => posApi\.get\('\/api\/version'\)\} \/>/);
-    assert.match(read('apps/dashboard/src/pages/LoginPage.tsx'), /SwiftPOS \{releaseLabel\(RELEASE, __WEB_BUILD_SHA__\)\}/);
+    assert.match(read('apps/dashboard/src/pages/LoginPage.tsx'), /ZapTill \{releaseLabel\(RELEASE, __WEB_BUILD_SHA__\)\}/);
     assert.match(read('apps/admin/src/AdminPortal.tsx'), /req\("GET", "\/version", undefined\)/);
     assert.match(read('apps/admin/vite.config.ts'), /__WEB_BUILD_SHA__: JSON\.stringify\(\(process\.env\.VERCEL_GIT_COMMIT_SHA/);
   });

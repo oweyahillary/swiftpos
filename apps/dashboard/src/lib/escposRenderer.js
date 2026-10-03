@@ -584,7 +584,7 @@ function renderShiftReport(r, paperWidthMm) {
     }
   }
   d.line(rule(cols));
-  d.line(center(cols, r.footerCredit ?? "Powered by SwiftPOS"));
+  d.line(center(cols, r.footerCredit ?? "Powered by ZapTill"));
   return d.build();
 }
 

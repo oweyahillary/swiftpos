@@ -261,7 +261,7 @@ router.get('/init', async (req, res) => {
   const opBranch = boundBranch ?? mainBranch;
   if (req.surface === 'desktop' && !opBranch?.desktop_licensed) {
     res.status(403).json({
-      error: 'This branch does not have a desktop licence. Please contact SwiftPOS to activate.',
+      error: 'This branch does not have a desktop licence. Please contact ZapTill to activate.',
       code:  'BRANCH_NOT_LICENSED',
     });
     return;

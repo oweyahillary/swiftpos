@@ -49,7 +49,7 @@ export default function StockTransfersPage() {
       number: t.transfer_number,
       date: new Date(t.created_at).toLocaleDateString('en-KE'),
       from: t.from_branch_name, to: t.to_branch_name, status: t.status, received: t.status === 'received',
-      business: business ?? { name: 'SwiftPOS' },
+      business: business ?? { name: 'ZapTill' },
       lines: t.stock_transfer_items.map(it => ({
         name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: it.quantity_received,
       })),

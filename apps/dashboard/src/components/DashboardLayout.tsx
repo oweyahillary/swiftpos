@@ -506,7 +506,7 @@ export default function DashboardLayout() {
             className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">
             Sign out
           </button>
-          <p className="px-3 pt-1 text-[10px] text-gray-600 select-none">Powered by SwiftPOS</p>
+          <p className="px-3 pt-1 text-[10px] text-gray-600 select-none">Powered by ZapTill</p>
           {/* 0.6.28: which release this website and the cloud run */}
           <div className="px-3"><ReleaseBadge getCloud={() => api.get('/api/version')} /></div>
         </div>

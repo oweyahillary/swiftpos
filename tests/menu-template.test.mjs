@@ -25,7 +25,7 @@ const fn = src.slice(src.indexOf('function downloadTemplate'), src.indexOf("XLSX
 let pass = 0, fail = 0;
 const ok = (label, cond, detail = '') => { if (cond) { pass++; console.log(`PASS  ${label}`); } else { fail++; console.log(`FAIL  ${label}  ${detail}`); } };
 
-ok('canonical SwiftPOS title (not a client name)', /SwiftPOS — Restaurant menu upload template/.test(fn) && !/Kudo Kudo/.test(fn));
+ok('canonical ZapTill title (not a client name)', /ZapTill — Restaurant menu upload template/.test(fn) && !/Kudo Kudo/.test(fn));
 ok('all five tabs built', ["'Read me'","'Products'","'Upgrades & Spices'","'Recipe'","'Ingredients'"].every(t => fn.includes(t)));
 ok('Products header carries is_kitchen + plu_code', /'is_kitchen'/.test(fn) && /'plu_code'/.test(fn));
 ok('drink-size upgrade example present', /'Drink size'.*'upgrade'/.test(fn) && /'1\.25L'/.test(fn));

@@ -50,7 +50,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       date: t.created_at ? new Date(t.created_at).toLocaleDateString() : undefined,
       from: t.from_branch_name ?? session?.branchName ?? '—', to: t.to_branch_name ?? '—',
       status: t.status, received: false,
-      business: business ?? { name: 'SwiftPOS' },
+      business: business ?? { name: 'ZapTill' },
       lines: t.stock_transfer_items.map(it => ({ name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0 })),
     }));
   };
@@ -202,7 +202,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       number: t.transfer_number, date: new Date().toLocaleDateString(),
       from: t.from_branch_name ?? '—', to: t.to_branch_name ?? session?.branchName ?? '—',
       status: t.status, received: true,
-      business: business ?? { name: 'SwiftPOS' },
+      business: business ?? { name: 'ZapTill' },
       lines: t.stock_transfer_items.map(it => ({
         name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: receivedById[it.product_id] ?? 0,
       })),
@@ -254,7 +254,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
     printDocument(grnDocSpec({
       grnNumber, date: new Date().toLocaleDateString('en-KE'),
       poNumber: po.po_number, supplier: po.suppliers?.name ?? null,
-      business: business ?? { name: 'SwiftPOS' }, currency,
+      business: business ?? { name: 'ZapTill' }, currency,
       lines: filled.map(i => ({ name: i.name, unit: i.unit, received: i.quantity_received, unitCost: i.unit_cost })),
       note,
     }));

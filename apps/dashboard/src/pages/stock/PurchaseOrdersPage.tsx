@@ -179,7 +179,7 @@ export default function PurchaseOrdersPage() {
       poNumber: po.po_number, orderDate: fmtDate(po.order_date),
       expectedDate: po.expected_date ? fmtDate(po.expected_date) : null,
       status: po.status, supplier: po.suppliers?.name ?? null,
-      business: business ?? { name: 'SwiftPOS' }, currency,
+      business: business ?? { name: 'ZapTill' }, currency,
       lines: (po.purchase_order_items ?? []).map(it => ({
         name: it.ingredients?.name ?? it.ingredient_name ?? 'Item',
         unit: it.ingredients?.unit ?? it.ingredient_unit ?? '',
@@ -194,7 +194,7 @@ export default function PurchaseOrdersPage() {
       grnNumber: grn.grn_number, date: fmtDate(grn.created_at),
       poNumber: grn.purchase_orders?.po_number ?? selected?.po_number ?? null,
       supplier: selected?.suppliers?.name ?? null,
-      business: business ?? { name: 'SwiftPOS' }, currency,
+      business: business ?? { name: 'ZapTill' }, currency,
       lines: (grn.grn_items ?? []).map(i => ({
         name: i.ingredients?.name ?? 'Item', unit: i.ingredients?.unit ?? '',
         received: Number(i.quantity_received) || 0, unitCost: Number(i.unit_cost) || 0,
@@ -207,7 +207,7 @@ export default function PurchaseOrdersPage() {
     printDocument(grnDocSpec({
       grnNumber, date: fmtDate(new Date().toISOString()),
       poNumber: po.po_number, supplier: po.suppliers?.name ?? null,
-      business: business ?? { name: 'SwiftPOS' }, currency,
+      business: business ?? { name: 'ZapTill' }, currency,
       lines: filled.map(i => ({
         name: i.ingredient_name, unit: i.ingredient_unit,
         received: Number(i.quantity_receiving) || 0, unitCost: Number(i.unit_cost) || 0,

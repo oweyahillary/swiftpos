@@ -261,7 +261,7 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
   }
 
   d.line(rule(cols));
-  d.line(center(cols, r.footerCredit ?? 'Powered by SwiftPOS'));
+  d.line(center(cols, r.footerCredit ?? 'Powered by ZapTill'));
 
   return d.build();
 }

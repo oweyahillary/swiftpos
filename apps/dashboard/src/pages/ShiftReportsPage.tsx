@@ -134,7 +134,7 @@ export default function ShiftReportsPage() {
   };
 
   // Owner: the printout "should not be the page screenshot but a report" — an A4 document built from the data.
-  const biz = business ?? { name: 'SwiftPOS' };
+  const biz = business ?? { name: 'ZapTill' };
   const filterLabel = ({ all: 'All shifts', running: 'Running', awaiting: 'Awaiting a manager', confirmed: 'Confirmed', problems: 'Need a look' } as const)[filter];
   const printList = () => printDocument(shiftListDocSpec({
     business: biz, from, to, filterLabel,

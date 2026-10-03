@@ -357,11 +357,11 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
                           {/*
                             Never guess. This used to say "the printer is off or
                             unreachable" for ANY failure, including a crash in
-                            SwiftPOS itself — which sent an installer to check a
+                            ZapTill itself — which sent an installer to check a
                             power cable on a printer that was working fine.
                           */}
                           {result.internal
-                            ? 'This is a fault in SwiftPOS, not your printer or the address. Report it with this message.'
+                            ? 'This is a fault in ZapTill, not your printer or the address. Report it with this message.'
                             : result.retryable
                               ? 'Looks like the printer is off or unreachable. Check power and cable.'
                               : 'The address itself looks wrong. Check the spelling.'}

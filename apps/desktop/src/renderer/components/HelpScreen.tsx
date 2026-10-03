@@ -31,7 +31,7 @@ export default function HelpScreen({ businessName, onClose }: Props) {
   const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
-    posApi.pos.help().then((h) => h && setInfo(h)).catch(() => { /* SwiftPOS support's numbers stay */ });
+    posApi.pos.help().then((h) => h && setInfo(h)).catch(() => { /* ZapTill support's numbers stay */ });
   }, []);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function HelpScreen({ businessName, onClose }: Props) {
         <div>
           <h1 className="text-lg font-semibold">Help — what to do when…</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {businessName}{info.till ? ` · Till ${info.till}` : ''} · SwiftPOS v{info.version} · works without internet
+            {businessName}{info.till ? ` · Till ${info.till}` : ''} · ZapTill v{info.version} · works without internet
           </p>
         </div>
         <div className="flex items-center gap-2">

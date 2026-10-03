@@ -100,7 +100,7 @@ CUSTOMER RECEIPT   (1879 bytes)
 |         For delivery call 0700 000 000         |
 |------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
-|              Powered by SwiftPOS               |
+|              Powered by ZapTill               |
 +------------------------------------------------+
 
 ============================================================
@@ -151,7 +151,7 @@ CUSTOMER RECEIPT — duplicate, optional fields off   (1785 bytes)
 |          Thank you for your business!          |
 |------------------------------------------------|
 |            TAX RECEIPT UPON REQUEST            |
-|              Powered by SwiftPOS               |
+|              Powered by ZapTill               |
 +------------------------------------------------+
 
 ============================================================
@@ -230,7 +230,7 @@ CUSTOMER RECEIPT — 58mm   (1383 bytes)
 | For delivery call 0700 000 000 |
 |--------------------------------|
 |    TAX RECEIPT UPON REQUEST    |
-|      Powered by SwiftPOS       |
+|      Powered by ZapTill       |
 +--------------------------------+
 
 ============================================================

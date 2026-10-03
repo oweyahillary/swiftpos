@@ -451,7 +451,7 @@ function buildSummaryEmail(opts: {
 
   <!-- Header -->
   <tr><td style="padding-bottom:32px;">
-    <p style="margin:0;font-size:22px;font-weight:700;color:#22c55e;">SwiftPOS</p>
+    <p style="margin:0;font-size:22px;font-weight:700;color:#22c55e;">ZapTill</p>
     <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">${opts.businessName} · Daily Report</p>
   </td></tr>
 
@@ -524,7 +524,7 @@ function buildSummaryEmail(opts: {
   <!-- Footer -->
   <tr><td style="padding-top:32px;text-align:center;">
     <p style="margin:0;font-size:11px;color:#374151;">
-      Sent by SwiftPOS · ${opts.businessName}
+      Sent by ZapTill · ${opts.businessName}
       <!-- TODO (Step 19/21): Replace with per-business domain sender -->
     </p>
   </td></tr>

@@ -25,11 +25,11 @@ import { api } from '../../lib/api';
 
 // SCOPE §8.A — the vetted accent palette (WCAG-checked on the lock surface + white button text).
 const PALETTE: Array<{ name: string; hex: string }> = [
-  { name: 'SwiftPOS Teal', hex: '#0d9488' },
+  { name: 'ZapTill Teal', hex: '#0d9488' },
   { name: 'Indigo',        hex: '#6366f1' },
   { name: 'Violet',        hex: '#7c3aed' },
   { name: 'Emerald',       hex: '#059669' },
-  { name: 'Blue',          hex: '#3b82f6' },   // A329: was 'SwiftPOS Blue' (slot 1); SwiftPOS is teal now
+  { name: 'Blue',          hex: '#3b82f6' },   // A329: was 'ZapTill Blue' (slot 1); ZapTill is teal now
   { name: 'Rose',          hex: '#e11d48' },
   { name: 'Pink',          hex: '#db2777' },
   { name: 'Amber',         hex: '#b45309' },
@@ -170,7 +170,7 @@ export default function BrandingTab() {
       await api.put('/api/business/branding', { accent_hex: null, logo_png: null, logo_receipt: null, receipt_logo_enabled: false, ...(themesEnabled ? { theme_id: null } : {}) });
       setAccentHex(''); setLogoPng(null); setLogoReceipt(null); setReceiptLogoEnabled(false); setWarn(''); setThemeId(null);
       window.dispatchEvent(new Event(BRANDING_SAVED_EVENT));
-      setMsg('Reset to the SwiftPOS default.');
+      setMsg('Reset to the ZapTill default.');
     } catch (err: any) { setMsg(err?.message ?? 'Could not reset branding.'); }
     finally { setBusy(false); }
   };
@@ -192,7 +192,7 @@ export default function BrandingTab() {
                 className={`h-8 w-8 rounded-full border-2 ${accentHex.trim().toLowerCase() === p.hex.toLowerCase() ? 'border-gray-900' : 'border-transparent'}`}
                 style={{ background: p.hex }} aria-label={p.name} />
             ))}
-            <button title="SwiftPOS default" onClick={() => setAccentHex('')}
+            <button title="ZapTill default" onClick={() => setAccentHex('')}
               className={`h-8 px-3 rounded-full border text-xs ${accentHex.trim() === '' ? 'border-gray-900' : 'border-gray-300'} text-gray-700`}>
               Default
             </button>
@@ -312,7 +312,7 @@ function LockPreview({ accent, logo }: { accent: string; logo: string | null }) 
           <button className="w-full rounded-md py-1.5 text-sm font-semibold" style={{ background: accent, color: btnText }}>Enter</button>
         </div>
       </div>
-      <div className="text-[10px] text-gray-500 px-3 pb-2">powered by SwiftPOS</div>
+      <div className="text-[10px] text-gray-500 px-3 pb-2">powered by ZapTill</div>
     </div>
   );
 }

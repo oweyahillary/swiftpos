@@ -113,7 +113,7 @@ await ok('a problem no longer found is resolved', () => {
   assert.deepStrictEqual(p.resolved.map((r) => r.alert_key), ['k1']);
 });
 await ok('the messages: new, reminder with how long, resolved; the digest lists critical then warnings and the counters', () => {
-  assert.match(R.alertText('new', crit), /^🔴 SwiftPOS ALERT\nT\nD$/);
+  assert.match(R.alertText('new', crit), /^🔴 ZapTill ALERT\nT\nD$/);
   assert.match(R.alertText('reminder', crit, minAgo(200), NOW), /STILL HAPPENING — for 3 h 20 min/);
   assert.match(R.alertText('resolved', crit, minAgo(45), NOW), /RESOLVED — T \(lasted 45 min\)/);
   const d = R.digestText([{ severity: 'warning', title: 'W1', detail: 'x' }, { severity: 'critical', title: 'C1' }],

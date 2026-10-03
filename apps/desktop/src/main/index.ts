@@ -112,7 +112,7 @@ function installMenu() {
           click: (_i, win) => (win as BrowserWindow)?.webContents.toggleDevTools(),
         },
         { type: 'separator' },
-        { label: `SwiftPOS ${app.getVersion()}`, enabled: false },
+        { label: `ZapTill ${app.getVersion()}`, enabled: false },
       ],
     },
   ];
@@ -196,7 +196,7 @@ app.whenReady().then(() => {
   installConsoleCapture();
   // A298: stamp the log with the build this till is actually running, so "is the
   // fix on this machine?" is answerable from the log, not just the Tech screen.
-  { const b = getBuildInfo(); logLine('startup', `SwiftPOS ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
+  { const b = getBuildInfo(); logLine('startup', `ZapTill ${app.getVersion()} build ${b.sha} @ ${b.time}`); }
   // Session re-hydration and startup sync must never prevent the window from
   // opening — isolate them so a DB or network hiccup can't leave a blank screen.
   try {

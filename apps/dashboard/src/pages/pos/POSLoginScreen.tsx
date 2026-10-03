@@ -208,7 +208,7 @@ export default function POSLoginScreen() {
     return (
       <div style={st.root}>
         <div style={st.header}>
-          <div style={st.logo}><span>⚡</span><span style={st.logoText}>SwiftPOS</span></div>
+          <div style={st.logo}><span>⚡</span><span style={st.logoText}>ZapTill</span></div>
         </div>
         <div style={st.main}>
           <div style={{ ...st.card, maxWidth: 420 }}>
@@ -289,7 +289,7 @@ export default function POSLoginScreen() {
       <div style={st.header}>
         {tenant.status === 'found'
           ? <TenantBrand tenant={tenant.tenant} />
-          : <div style={st.logo}><span>⚡</span><span style={st.logoText}>SwiftPOS</span></div>}
+          : <div style={st.logo}><span>⚡</span><span style={st.logoText}>ZapTill</span></div>}
       </div>
       <div style={st.main}>
         <div style={st.card}>

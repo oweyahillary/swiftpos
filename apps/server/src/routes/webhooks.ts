@@ -148,7 +148,7 @@ router.post('/:id/test', async (req, res) => {
   const body = JSON.stringify({
     event:      'ping',
     created_at: new Date().toISOString(),
-    data:       { message: 'SwiftPOS webhook test ping', business_id: req.businessId },
+    data:       { message: 'ZapTill webhook test ping', business_id: req.businessId },
   });
 
   const headers: Record<string, string> = {

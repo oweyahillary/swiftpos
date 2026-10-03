@@ -26,7 +26,7 @@
 :root:not(.dark) { --swift-text: 15 118 110; --swift-text-hover: 17 94 89; }   /* teal 700 · 800 on white */
 
 /* A328 part 2: the web POS's INLINE colours use these aliases as rgb(var(--act-*, <that use's own original r g b>)).
-   A329 (2026-09-25): they now DEFAULT to SwiftPOS teal, so with themes OFF the web POS's green and blue primaries are
+   A329 (2026-09-25): they now DEFAULT to ZapTill teal, so with themes OFF the web POS's green and blue primaries are
    teal (before A329 each fell back to its own original green or blue). With themes ON: fill = theme 500 (dark labels,
    borders, dots, tints), strong = theme 700 (white labels), text = 400 on dark / 700 on light. The web POS has its own
    light/dark toggle (data-pos-theme), which wins inside the POS for both the aliases and the part-1 link token. */

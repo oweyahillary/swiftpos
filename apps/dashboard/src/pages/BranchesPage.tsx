@@ -84,7 +84,7 @@ export default function BranchesPage() {
           <p className="text-gray-500 text-sm mt-0.5">{branches.length} location{branches.length !== 1 ? "s" : ""}</p>
         </div>
         <span className="text-xs text-gray-500 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
-          Contact SwiftPOS to add a branch
+          Contact ZapTill to add a branch
         </span>
       </div>
 

@@ -17,7 +17,7 @@ export const RESERVED_SUBDOMAINS: readonly string[] = [
   'www', 'app', 'api', 'admin', 'portal', 'dashboard', 'pos', 'menu', 'login', 'auth', 'account', 'accounts',
   'mail', 'email', 'smtp', 'imap', 'pop', 'send', 'bounce', 'em', 'mx', 'ns', 'ns1', 'ns2', 'dns',
   'cdn', 'static', 'assets', 'img', 'images', 'files', 'docs', 'help', 'support', 'status', 'blog',
-  'dev', 'staging', 'test', 'demo', 'swiftpos', 'billing', 'pay', 'payments', 'mpesa', 'webhook', 'webhooks',
+  'dev', 'staging', 'test', 'demo', 'swiftpos', 'zaptill', 'billing', 'pay', 'payments', 'mpesa', 'webhook', 'webhooks',
 ];
 
 /** 3–32 characters: lowercase letters, digits and hyphens; starts and ends with a letter or digit. */
@@ -28,8 +28,18 @@ export function subdomainProblem(sub: string): string | null {
   if (sub.length < 3 || sub.length > 32) return 'Use 3 to 32 characters.';
   if (!SUBDOMAIN_RE.test(sub)) return 'Use lowercase letters, numbers and hyphens only (not at the start or end).';
   if (sub.includes('--')) return 'Do not use two hyphens in a row.';
-  if (RESERVED_SUBDOMAINS.includes(sub)) return `"${sub}" is reserved for SwiftPOS.`;
+  if (RESERVED_SUBDOMAINS.includes(sub)) return `"${sub}" is reserved for ZapTill.`;
   return null;
+}
+
+/**
+ * 2026-10-03 (A386): an address suggested from the business name — "African Fries" → "africanfries" (letters and digits
+ * only, at most 32). '' when nothing usable comes out (too short, reserved). The admin still confirms it.
+ */
+export function suggestSubdomain(businessName: unknown): string {
+  const s = String(businessName ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '').slice(0, 32);
+  return subdomainProblem(s) ? '' : s;
 }
 
 /**

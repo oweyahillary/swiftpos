@@ -1050,7 +1050,7 @@ export function registerIpcHandlers() {
           vatRate:         Number((cfg as any)?.vat_rate ?? 16),
           ctlRate:         Number((cfg as any)?.ctl_rate ?? 0),
           thankYouMessage: (cfg as any)?.receipt_footer || undefined,
-          footerCredit:    'Powered by SwiftPOS',
+          footerCredit:    'Powered by ZapTill',
           // A312: the client logo on customer receipts — ONLY when the client's toggle is on
           // and a raster exists. Decoded by shared/printing; a malformed stored value decodes
           // to null and prints no logo. The renderer prints it on receipts only (A310).

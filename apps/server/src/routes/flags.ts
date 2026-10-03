@@ -29,7 +29,7 @@ router.put('/:key', requireAuth, requirePermission('settings.manage'), async (re
 
   // 0.6.27: the POS switches are set per client in the admin portal only (owner's decision) — never by the client.
   if ((POS_FEATURE_KEYS as readonly string[]).includes(req.params.key)) {
-    res.status(403).json({ error: 'This setting is managed by SwiftPOS support.', code: 'ADMIN_ONLY_FEATURE' });
+    res.status(403).json({ error: 'This setting is managed by ZapTill support.', code: 'ADMIN_ONLY_FEATURE' });
     return;
   }
 

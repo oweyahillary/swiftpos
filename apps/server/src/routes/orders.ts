@@ -2368,7 +2368,7 @@ router.post('/:id/whatsapp-receipt', async (req, res) => {
 
   await sendReceiptWhatsApp(supabase, {
     businessId: req.businessId, orderId: id, toPhone: phone,
-    businessName: biz?.name ?? 'SwiftPOS', total: totalStr, receiptText,
+    businessName: biz?.name ?? 'ZapTill', total: totalStr, receiptText,
   });
 
   // Return the latest delivery row's status.

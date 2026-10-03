@@ -19,7 +19,7 @@ const IDENTITY_FIELDS: Array<{ key: keyof BusinessRecord; label: string; type?: 
   { key: 'name',     label: 'Business name' },
   { key: 'address',  label: 'Address' },
   { key: 'phone',    label: 'Phone' },
-  { key: 'email',    label: 'Contact email', type: 'email', help: 'Business contact address. Your sign-in email is changed by your SwiftPOS admin.' },
+  { key: 'email',    label: 'Contact email', type: 'email', help: 'Business contact address. Your sign-in email is changed by your ZapTill admin.' },
   { key: 'tax_pin',  label: 'Tax PIN (KRA)' },
   { key: 'vat_rate', label: 'VAT rate (%)', type: 'number' },
   { key: 'ctl_rate', label: 'Catering/Tourism Levy (%)', type: 'number', help: 'Charged on the same net as VAT. 0 = not applicable. Shows on receipts and tax reports when above 0.' },

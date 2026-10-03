@@ -562,7 +562,7 @@ function ShiftsTab({ posApi, session, currency }: { posApi: PosApi; session: any
       number: `Z · ${new Date(r.opened_at).toLocaleDateString('en-KE')}`,
       dateLabel: r.closed_at ? new Date(r.closed_at).toLocaleString('en-KE') : 'open shift',
       accent: '#7c3aed', statusLabel: r.status,
-      business: business ?? { name: 'SwiftPOS' },
+      business: business ?? { name: 'ZapTill' },
       meta: [
         { label: 'Cashier', value: r.cashier_name ?? 'Unknown' },
         { label: 'Branch', value: session?.branchName ?? '—' },

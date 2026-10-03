@@ -43,7 +43,7 @@ export interface ReceiptBusinessConfig {
   name: string;
   branchName?: string;    // A255: printed under the business name
   header?: string;        // A255: owner receipt_header (address/tagline), one line per line
-  footerCredit?: string;  // A255: "Powered by SwiftPOS"
+  footerCredit?: string;  // A255: "Powered by ZapTill"
   logoRaster?: import('./escposRenderer').MonoRaster;  // A313: client logo, receipts only (A310)
   currencyCode: string;   // shared/printing renders the PAY line as `<currencyCode> <total>`
   kraPin?: string;
@@ -142,7 +142,7 @@ export function buildReceiptBusinessConfig(
     name:            b.name,
     branchName:      extra.branchName || undefined,
     header:          extra.header || undefined,          // A255: owner address/tagline block
-    footerCredit:    'Powered by SwiftPOS',              // A255: closing credit line
+    footerCredit:    'Powered by ZapTill',              // A255: closing credit line
     currencyCode:    b.currency || 'KES',
     kraPin:          b.tax_pin ?? undefined,
     telephone:       b.phone ?? undefined,

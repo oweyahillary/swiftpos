@@ -219,8 +219,8 @@ export default function OnboardingPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">S</div>
-            <span className="text-xl font-bold text-white tracking-tight">SwiftPOS</span>
+            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
+            <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
           </div>
           <p className="text-[#334155] text-sm">New business setup — agent onboarding</p>
         </div>
@@ -647,7 +647,7 @@ export default function OnboardingPage() {
 
         {/* Footer */}
         <p className="text-center text-[#1e293b] text-xs mt-6">
-          SwiftPOS · Credentials will be shared with the business owner after setup
+          ZapTill · Credentials will be shared with the business owner after setup
         </p>
 
       </div>

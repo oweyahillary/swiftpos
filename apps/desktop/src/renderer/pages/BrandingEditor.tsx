@@ -22,7 +22,7 @@ const LOCK_SURFACE = '#0d1424';
 
 export default function BrandingEditor() {
   const [businessId, setBusinessId] = useState<string | null>(null);
-  const [accentHex, setAccentHex] = useState('');       // '' = unset (SwiftPOS default)
+  const [accentHex, setAccentHex] = useState('');       // '' = unset (ZapTill default)
   const [logoPng, setLogoPng] = useState<string | null>(null);
   // A312: pixels of a newly picked logo (sent once with the save); the stored mono raster
   // (for the preview); and the client's opt-in toggle.
@@ -106,7 +106,7 @@ export default function BrandingEditor() {
       await posApi.tech.logAction('tech.branding.clear');
       setAccentHex(''); setLogoPng(null); setWarnings([]);
       setMsg(cleared.cloud?.state === 'saved'
-        ? 'Cleared on this till and the cloud — back to the SwiftPOS default.'
+        ? 'Cleared on this till and the cloud — back to the ZapTill default.'
         : `Cleared on this till. ${cleared.cloud?.message ?? 'The cloud will be updated at the next sync.'}`);
     } catch (err: any) {
       setMsg(String(err?.message ?? err));
@@ -141,7 +141,7 @@ export default function BrandingEditor() {
       </div>
       <p className="text-xs mb-4" style={{ color: brand.usedFallback ? '#f59e0b' : '#9ca3af' }}>
         {accentHex.trim() === ''
-          ? 'Empty = SwiftPOS default (teal).'
+          ? 'Empty = ZapTill default (teal).'
           : brand.usedFallback
             ? 'Not legible on the lock screen — this will fall back to the default.'
             : 'Legible on the lock screen.'}

@@ -62,7 +62,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
       grnNumber: grn.grn_number, date: date(grn.created_at),
       poNumber: grn.purchase_orders?.po_number ?? null,
       secondMeta: { label: 'Branch', value: session?.branchName ?? '—' },
-      business: business ?? { name: 'SwiftPOS' }, currency,
+      business: business ?? { name: 'ZapTill' }, currency,
       lines: (grn.grn_items ?? []).map(i => ({
         name: i.ingredients?.name ?? 'Item', unit: i.ingredients?.unit ?? '',
         received: Number(i.quantity_received) || 0, unitCost: Number(i.unit_cost) || 0,
@@ -75,7 +75,7 @@ export default function ManagerHistoryTab({ currency }: { currency: string }) {
     printDocument(transferDocSpec({
       number: t.transfer_number, date: date(t.created_at),
       from: t.from_branch_name, to: t.to_branch_name, status: t.status, received: t.status === 'received',
-      business: business ?? { name: 'SwiftPOS' },
+      business: business ?? { name: 'ZapTill' },
       lines: t.stock_transfer_items.map(it => ({
         name: it.products?.name ?? 'Item', sent: Number(it.quantity) || 0, received: it.quantity_received,
       })),

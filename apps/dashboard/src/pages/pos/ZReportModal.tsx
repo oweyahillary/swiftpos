@@ -310,7 +310,7 @@ export default function ZReportModal({ onClose }: Props) {
               {/* Business header */}
               <div className="center">
                 <p className="bold" style={{ fontSize: 15 }}>
-                  {(business as any)?.name ?? "SwiftPOS"}
+                  {(business as any)?.name ?? "ZapTill"}
                 </p>
                 {data.branchName && <p>{data.branchName}</p>}
                 <p style={{ margin: "4px 0" }}>Z-REPORT / END OF DAY</p>
@@ -492,7 +492,7 @@ export default function ZReportModal({ onClose }: Props) {
               <div className="center">
                 <p>*** END OF Z-REPORT ***</p>
                 <p style={{ marginTop: 4, fontSize: 10, color: "#888" }}>
-                  Powered by SwiftPOS
+                  Powered by ZapTill
                 </p>
               </div>
             </div>
