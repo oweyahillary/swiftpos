@@ -1109,7 +1109,7 @@
     "reference_id": "\"uuid\""
   },
   "stock_take_lines": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "stock_take_id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "item_kind": "\"text\" NOT NULL",
@@ -1136,7 +1136,7 @@
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "stock_takes": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",
     "ref": "\"text\" NOT NULL",
@@ -1196,7 +1196,7 @@
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
   "supplier_bills": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "supplier_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\"",
@@ -1216,7 +1216,7 @@
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "supplier_payments": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "supplier_id": "\"uuid\" NOT NULL",
     "bill_id": "\"uuid\"",
@@ -1233,7 +1233,7 @@
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "supplier_return_items": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "return_id": "\"uuid\" NOT NULL",
     "item_kind": "\"text\" NOT NULL",
     "product_id": "\"uuid\"",
@@ -1243,7 +1243,7 @@
     "unit_cost": "\"numeric\""
   },
   "supplier_returns": {
-    "id": "\"uuid\"",
+    "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
     "supplier_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\" NOT NULL",
@@ -1329,6 +1329,18 @@
     "detail": "\"jsonb\"",
     "token_hash": "\"text\"",
     "occurred_at": "\"timestamp with time zone\" NOT NULL",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "test_data_purges": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "from_at": "\"timestamp with time zone\" NOT NULL",
+    "to_at": "\"timestamp with time zone\" NOT NULL",
+    "stock_mode": "\"text\" NOT NULL",
+    "delete_customers": "\"boolean\" NOT NULL",
+    "counts": "\"jsonb\" NOT NULL",
+    "done_by": "\"text\"",
+    "reason": "\"text\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "usage_snapshots": {

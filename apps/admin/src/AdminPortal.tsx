@@ -9,6 +9,7 @@ import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support"
 import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
 import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
 import SignInCodeCard from "./SignInCodeCard";   // A391
+import TestDataCard from "./TestDataCard";   // A396
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -725,7 +726,7 @@ function ClientsPage({ req, onSelectClient }) {
 }
 
 // ─── CLIENT DETAIL ────────────────────────────────────────────────────────────
-function ClientDetailPage({ client, req, onBack }) {
+function ClientDetailPage({ client, req, onBack, isSuper = false }) {
   const [tab, setTab]     = useState("overview");
   const [detail, setDetail] = useState(null);
   const [features, setFeatures] = useState([]);
@@ -1685,6 +1686,8 @@ function ClientDetailPage({ client, req, onBack }) {
             {settingRow("Export data", "Download the client's data as JSON (before a purge, or on request).",
               <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export</button>)}
           </div>
+          {/* A396: clear test data between two times, before the client starts trading */}
+          <TestDataCard clientId={client.id} req={req} isSuper={isSuper} />
         </>
       )}
 
@@ -2577,7 +2580,7 @@ export default function AdminPortal() {
 
   const pageEl = (() => {
     if (page === "client_detail" && selectedClient)
-      return <ClientDetailPage client={selectedClient} req={req} onBack={() => setPage("clients")} />;
+      return <ClientDetailPage client={selectedClient} req={req} onBack={() => setPage("clients")} isSuper={admin?.role === "super_admin"} />;
     if (page === "new_client") return <NewClientPage req={req} onCreated={(biz) => { setSelectedClient(biz); setPage("client_detail"); }} />;
     if (page === "clients")   return <ClientsPage req={req} onSelectClient={handleSelectClient} />;
     if (page === "billing")   return <BillingPage req={req} />;
