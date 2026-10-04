@@ -19,7 +19,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase }  from '../lib/supabase';
-import { buildProductPatch, rowMatchKeys } from '../lib/productImport';
+import { buildProductPatch, rowMatchKeys, importKey } from '../lib/productImport';
 import { applyPriceOp, parsePriceOp } from '../lib/priceOps';
 import { cleanShowDays } from '../lib/productDays';
 
@@ -488,26 +488,40 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
     .select('id, name')
     .eq('business_id', req.businessId);
 
+  // 2026-10-04: compared on importKey — "Soft  Drinks" or one with a hidden space is the same category, not a new one.
   const catMap: Record<string, string> = {};
-  (categories ?? []).forEach(c => { catMap[c.name.toLowerCase()] = c.id; });
+  (categories ?? []).forEach(c => { const k = importKey(c.name); if (k && !(k in catMap)) catMap[k] = c.id; });
 
   // Existing products for THIS business, with the keys we can match on: barcode,
   // a stable plu_code, and name. A re-import UPDATES the matched row rather than
   // duplicating — deletion isn't offered, so a dupe was unrecoverable by hand.
-  const { data: existingProducts } = await supabase
-    .from('products')
-    .select('id, name, plu_code, barcode')
-    .eq('business_id', req.businessId);
+  //
+  // 2026-10-04 (owner: "if i upload the same product it reuploads the same product"): every product, in pages (a
+  // business past 1,000 products was matched against only the first 1,000); names compared on importKey (case, hidden
+  // and double spaces); and an ACTIVE product wins over an archived one of the same name — the one the owner sees.
+  const existingProducts: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: pErr } = await supabase
+      .from('products')
+      .select('id, name, plu_code, barcode, status, created_at')
+      .eq('business_id', req.businessId)
+      .order('created_at', { ascending: true })
+      .range(from, from + 999);
+    if (pErr) { sendError(res, pErr); return; }
+    existingProducts.push(...(page ?? []));
+    if (!page || page.length < 1000) break;
+  }
+  existingProducts.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active'));   // stable: oldest first within each
 
   const byName: Record<string, string> = {};
   const byPlu: Record<string, string> = {};
   const byBarcode: Record<string, string> = {};
-  for (const pr of (existingProducts ?? []) as any[]) {
+  for (const pr of existingProducts) {
     // First wins: if the catalogue already holds two rows with the same key,
     // an import must not pick a different one on each run.
-    const n = String(pr.name ?? '').trim().toLowerCase();
-    const p = String(pr.plu_code ?? '').trim().toLowerCase();
-    const b = String(pr.barcode ?? '').trim().toLowerCase();
+    const n = importKey(pr.name);
+    const p = importKey(pr.plu_code);
+    const b = importKey(pr.barcode);
     if (n && !(n in byName)) byName[n] = pr.id;
     if (p && !(p in byPlu)) byPlu[p] = pr.id;
     if (b && !(b in byBarcode)) byBarcode[b] = pr.id;
@@ -518,15 +532,16 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   const wantedCats = new Set<string>();
   for (const row of rows) {
     const c = (row.category_name ?? row.category ?? '').toString().trim();
-    if (c && !(c.toLowerCase() in catMap)) wantedCats.add(c);
+    if (c && !(importKey(c) in catMap)) wantedCats.add(c);
   }
   for (const name of wantedCats) {
+    if (importKey(name) in catMap) continue;   // the same category spelled twice in one file
     const { data: created } = await supabase
       .from('categories').insert({ business_id: req.businessId, name }).select('id').single();
-    if (created?.id) catMap[name.toLowerCase()] = created.id;
+    if (created?.id) catMap[importKey(name)] = created.id;
   }
 
-  const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[] };
+  const results = { created: 0, updated: 0, errors: [] as { row: number; error: string }[], createdNames: [] as string[] };
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -534,16 +549,16 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
 
     // Match an existing product: barcode, then a stable plu_code, then name.
     const existingId =
-      (keys.barcode && byBarcode[keys.barcode.toLowerCase()]) ||
-      (keys.plu     && byPlu[keys.plu.toLowerCase()]) ||
-      (keys.name    && byName[keys.name.toLowerCase()]) ||
+      (keys.barcode && byBarcode[importKey(keys.barcode)]) ||
+      (keys.plu     && byPlu[importKey(keys.plu)]) ||
+      (keys.name    && byName[importKey(keys.name)]) ||
       null;
     const isCreate = !existingId;
 
     // Category is only touched when the row actually carries one.
     const catRaw = (row.category_name ?? row.category ?? '').toString().trim();
     const categoryProvided = catRaw !== '';
-    const categoryId = categoryProvided ? (catMap[catRaw.toLowerCase()] ?? null) : null;
+    const categoryId = categoryProvided ? (catMap[importKey(catRaw)] ?? null) : null;
 
     const built = buildProductPatch(row, { isCreate, categoryProvided, categoryId });
     if ('error' in built) { results.errors.push({ row: i + 1, error: built.error }); continue; }
@@ -557,13 +572,14 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
         .single();
       if (error) { results.errors.push({ row: i + 1, error: error.message }); continue; }
       results.created++;
+      if (keys.name) results.createdNames.push(keys.name);
       // Register so a file that repeats a key WITHIN ITSELF updates the row it
       // just created rather than inserting a second one.
       const id = inserted?.id;
       if (id) {
-        if (keys.name)    byName[keys.name.toLowerCase()] = id;
-        if (keys.plu)     byPlu[keys.plu.toLowerCase()] = id;
-        if (keys.barcode) byBarcode[keys.barcode.toLowerCase()] = id;
+        if (keys.name)    byName[importKey(keys.name)] = id;
+        if (keys.plu)     byPlu[importKey(keys.plu)] = id;
+        if (keys.barcode) byBarcode[importKey(keys.barcode)] = id;
       }
     } else {
       const { error } = await supabase
@@ -583,6 +599,8 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
     created: results.created,
     updated: results.updated,
     errors:  results.errors,
+    // 2026-10-04: which rows became NEW products — the screen lists them, so a surprise duplicate is seen at once.
+    created_names: results.createdNames,
     summary: {
       total:   rows.length,
       created: results.created,

@@ -32,7 +32,9 @@ const MATCH: Record<Tab, (n: string) => boolean> = {
 
 type Parsed = Record<Tab, Record<string, any>[]>;
 type TabPreview = { rows: number; errors: { row: number; error: string }[] };
-type TabResult = { created?: number; updated?: number; skipped?: number; cleared?: number; deleted?: number; errors?: any[] };
+type TabResult = { created?: number; updated?: number; skipped?: number; cleared?: number; deleted?: number; errors?: any[];
+  /** 2026-10-04: the rows that became NEW products, and copies of a choice group an earlier upload left (removed). */
+  created_names?: string[]; merged?: number };
 
 const empty = (): Parsed => ({ ingredients: [], products: [], upgrades: [], recipe: [] });
 const val = (r: Record<string, any>, ...keys: string[]) => {
@@ -240,11 +242,20 @@ export default function MenuUpload({
                 <tbody>
                   {ORDER.filter(t => results[t]).map(t => {
                     const r = results[t]; const errs = r.errors?.length ?? 0;
-                    const done = (r.created ?? 0) + (r.updated ?? 0);
+                    // 2026-10-04: added and updated told apart (a re-upload should say "updated"), the new products named.
+                    const added = r.created ?? 0, updated = r.updated ?? 0;
                     return (
                       <tr key={t} className="border-b border-gray-800/60">
-                        <td className="px-3 py-2 text-gray-200">{LABEL[t]}</td>
-                        <td className="px-3 py-2 text-right text-green-400">{done} saved</td>
+                        <td className="px-3 py-2 text-gray-200">
+                          {LABEL[t]}
+                          {!!r.created_names?.length && (
+                            <span className="block text-[11px] text-amber-300" data-testid="upload-new-names">
+                              New: {r.created_names.slice(0, 12).join(', ')}{r.created_names.length > 12 ? ` … +${r.created_names.length - 12}` : ''}
+                            </span>
+                          )}
+                          {!!r.merged && <span className="block text-[11px] text-gray-400">{r.merged} duplicate group{r.merged === 1 ? '' : 's'} from an earlier upload removed</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-green-400" data-testid="upload-counts">{added} added · {updated} updated</td>
                         <td className="px-3 py-2 text-right">{errs ? <span className="text-red-400">{errs} skipped</span> : <span className="text-gray-600">—</span>}</td>
                       </tr>
                     );

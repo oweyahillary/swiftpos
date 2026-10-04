@@ -45,6 +45,12 @@ function Banner({ kind, text }: { kind: 'ok' | 'err'; text: string }) {
 
 /* ── Menu: products + categories ──────────────────────────────────────────── */
 
+
+/** 2026-10-04: how the menu import compares names (the cloud's importKey): case, non-breaking / zero-width and double
+ *  spaces never make "Drink size" a different group from "drink  size". */
+function importNameKey(raw: unknown): string {
+  return String(raw ?? '').normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
 export function MenuTab({ currency }: { currency: string }) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -1310,14 +1316,14 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
         const all = await posApi.manage.listProducts();
         const byName = new Map<string, string>();
         for (const p of (Array.isArray(all) ? all : [])) {
-          const k = String(p.name ?? '').trim().toLowerCase();
+          const k = importNameKey(p.name);
           if (k && !byName.has(k)) byName.set(k, p.id);
         }
 
         let n = 0;
         for (const { product, specs, addons, itemKitchen } of wantVariants) {
           n++; setVariantProgress({ done: n, total: wantVariants.length });
-          const pid = byName.get(product.toLowerCase());
+          const pid = byName.get(importNameKey(product));
           if (!pid) { totals.errors.push({ row: 0, error: `${product}: product not found, options skipped` }); continue; }
 
           if (itemKitchen !== undefined) {
@@ -1336,9 +1342,11 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
 
           for (const spec of specs) {
             try {
-              const clash = current.find((g: any) =>
-                String(g.name ?? '').trim().toLowerCase() === spec.name.toLowerCase());
-              if (clash) await posApi.manage.deleteVariantGroup(clash.id);
+              // 2026-10-04: EVERY group of that name goes (an earlier import may have left two), compared like the
+              // cloud's import (importNameKey: case, hidden and double spaces).
+              const clashes = current.filter((g: any) =>
+                !g.shared && !g.combo_item_id && importNameKey(g.name) === importNameKey(spec.name));
+              for (const clash of clashes) await posApi.manage.deleteVariantGroup(clash.id);
               await posApi.manage.createVariantGroup({
                 product_id: pid,
                 name: spec.name,
@@ -1357,9 +1365,8 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
           }
           for (const spec of addons) {
             try {
-              const clash = currentAddons.find((g: any) =>
-                String(g.name ?? '').trim().toLowerCase() === spec.name.toLowerCase());
-              if (clash) await posApi.manage.deleteModifierGroup(clash.id);
+              const clashes = currentAddons.filter((g: any) => importNameKey(g.name) === importNameKey(spec.name));
+              for (const clash of clashes) await posApi.manage.deleteModifierGroup(clash.id);
               await posApi.manage.createModifierGroup({
                 product_id: pid,
                 name: spec.name,

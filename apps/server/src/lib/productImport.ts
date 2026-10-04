@@ -164,6 +164,21 @@ export function buildProductPatch(row: Record<string, any>, opts: PatchOpts): Pa
   return { patch };
 }
 
+/**
+ * The key two names are compared on when an upload looks for what is already there (2026-10-04, owner: "if i upload
+ * the same product it reuploads the same product … the variants were added on the same product which were there").
+ * Case, accents' composed/decomposed forms, non-breaking and zero-width spaces (Excel / WhatsApp / web copies carry
+ * them) and runs of spaces never make "Chicken Burger" a different item from "chicken  burger".
+ */
+export function importKey(raw: unknown): string {
+  return String(raw ?? '')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 /** Which non-blank key a row offers, in priority order, for matching an existing
  *  product: barcode, then a stable plu_code, then the name. Lets an operator
  *  rename an item without creating a duplicate, as long as it has a code. */
@@ -215,7 +230,7 @@ export function buildChoiceImport(rows: Record<string, any>[]): ChoiceImport {
     if (!product) { errors.push({ row: rn, error: 'product is required' }); return; }
     if (!group)   { errors.push({ row: rn, error: 'group is required' }); return; }
 
-    const key = `${product.toLowerCase()}\u0000${group.toLowerCase()}`;
+    const key = `${importKey(product)}\u0000${importKey(group)}`;   // 2026-10-04: "Drink size" / "drink  size" rows are one group
     if (!map.has(key)) { map.set(key, { product, group, del: false, opts: [], firstRow: rn }); order.push(key); }
     const g = map.get(key)!;
 
@@ -284,7 +299,7 @@ export function buildRecipeImport(rows: Record<string, any>[]): RecipeImport {
     const notes      = val(row, 'notes');
 
     if (!product) { errors.push({ row: rn, error: 'product is required' }); return; }
-    const key = product.toLowerCase();
+    const key = importKey(product);
     if (!map.has(key)) { map.set(key, { product, lines: [] }); order.push(key); }
     const p = map.get(key)!;
 

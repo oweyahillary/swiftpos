@@ -4,7 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
-import { buildChoiceImport } from '../lib/productImport';
+import { buildChoiceImport, importKey } from '../lib/productImport';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -42,36 +42,53 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
   if (rows.length > 2000) { res.status(400).json({ error: 'Maximum 2000 rows per import' }); return; }
 
   const { groups, errors } = buildChoiceImport(rows);
-  const results = { created: 0, updated: 0, deleted: 0, errors: [...errors] as { row: number; error: string }[] };
+  const results = { created: 0, updated: 0, deleted: 0, merged: 0, errors: [...errors] as { row: number; error: string }[] };
 
   // Resolve products (name or plu) within this business only — variant_groups
   // have no business_id, so scoping is via the owning product.
-  const { data: prods } = await supabase
-    .from('products').select('id, name, plu_code').eq('business_id', req.businessId);
+  // 2026-10-04: names compared on importKey; an ACTIVE product wins over an archived one of the same name (the same
+  // rule as the Products tab), so the choices land on the product the owner sees.
+  const prods: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: pErr } = await supabase
+      .from('products').select('id, name, plu_code, status, created_at').eq('business_id', req.businessId)
+      .order('created_at', { ascending: true }).range(from, from + 999);
+    if (pErr) { sendError(res, pErr); return; }
+    prods.push(...(page ?? []));
+    if (!page || page.length < 1000) break;
+  }
+  prods.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active'));
   const byName: Record<string, string> = {};
   const byPlu: Record<string, string> = {};
-  for (const p of (prods ?? []) as any[]) {
-    const n = String(p.name ?? '').trim().toLowerCase();
-    const pl = String(p.plu_code ?? '').trim().toLowerCase();
+  for (const p of prods) {
+    const n = importKey(p.name);
+    const pl = importKey(p.plu_code);
     if (n && !(n in byName)) byName[n] = p.id;
     if (pl && !(pl in byPlu)) byPlu[pl] = p.id;
   }
 
   for (const g of groups) {
-    const productId = byPlu[g.product.toLowerCase()] || byName[g.product.toLowerCase()];
+    const productId = byPlu[importKey(g.product)] || byName[importKey(g.product)];
     if (!productId) { results.errors.push({ row: 0, error: `unknown product: ${g.product}` }); continue; }
 
-    const { data: existing } = await supabase
-      .from('variant_groups').select('id').eq('product_id', productId).eq('name', g.group).maybeSingle();
-
-    if (g.del) {
-      if (existing) {
-        await supabase.from('variant_options').delete().eq('variant_group_id', existing.id);
-        await supabase.from('variant_groups').delete().eq('id', existing.id);
-        results.deleted++;
-      }
-      continue;
+    // 2026-10-04 (owner: "the variants were added on the same product which were there"): the group was looked up by
+    // its EXACT name with maybeSingle — "Drink size" ≠ "Drink Size", and once a product held two groups of one name
+    // maybeSingle errored, read as "none", and every upload added ANOTHER. Now: this product's own groups (not a
+    // shared or combo-component one), matched on importKey; the oldest is kept and any copies an earlier upload left
+    // are removed (their options go with them) — a re-upload heals the duplicates instead of adding to them.
+    const { data: own, error: gErr } = await supabase
+      .from('variant_groups').select('id, name, shared, combo_item_id, created_at')
+      .eq('product_id', productId).order('created_at', { ascending: true });
+    if (gErr) { results.errors.push({ row: 0, error: `${g.product}/${g.group}: ${gErr.message}` }); continue; }
+    const same = ((own ?? []) as any[]).filter((x) => !x.shared && !x.combo_item_id && importKey(x.name) === importKey(g.group));
+    const existing = same[0] ?? null;
+    for (const dup of same.slice(g.del ? 0 : 1)) {
+      await supabase.from('variant_options').delete().eq('variant_group_id', dup.id);
+      await supabase.from('variant_groups').delete().eq('id', dup.id);
+      if (g.del) results.deleted++; else results.merged++;
     }
+
+    if (g.del) continue;
 
     let groupId: string;
     if (existing) {
