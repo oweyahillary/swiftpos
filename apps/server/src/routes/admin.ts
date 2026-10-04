@@ -70,6 +70,9 @@ import { cleanSubdomain, subdomainProblem } from '../lib/tenantHost';   // A378:
 import { signInAddress, tenantRootDomain } from '../lib/tenant';
 import { cleanPhone } from '../lib/support';   // 0.6.35 (A384): a tech's number
 import { alertChannels, notifyAdmin } from '../lib/alertNotify';   // A383: the watchdog's channels
+import { digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';   // A392
+import { syncRefusalHint } from '../lib/watchdogRules';   // A392
+import { otpGate, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes } from '../lib/loginOtp';   // A391
 
 const router = safeRouter();
 
@@ -138,11 +141,21 @@ router.post('/auth/login', async (req, res) => {
     return;
   }
 
-  const { data: admin } = await supabase
+  const adminEmail = email.toLowerCase().trim();
+  let { data: admin, error: adminErr } = await supabase
     .from('admin_users')
-    .select('id, email, name, password_hash, role, is_active')
-    .eq('email', email.toLowerCase().trim())
+    .select('id, email, name, password_hash, role, is_active, otp_method, otp_totp_secret, otp_version')
+    .eq('email', adminEmail)
     .single();
+  // A391: a cloud deployed before migration 119 ran must still let the admin in (the code is then by email, version 1).
+  if (adminErr && /otp_/.test(adminErr.message ?? '')) {
+    console.error('[admin] sign-in without the OTP columns — apply migration 119:', adminErr.message);
+    ({ data: admin } = await supabase
+      .from('admin_users')
+      .select('id, email, name, password_hash, role, is_active')
+      .eq('email', adminEmail)
+      .single() as any);
+  }
 
   if (!admin || !admin.is_active) {
     res.status(401).json({ error: 'Invalid credentials' });
@@ -168,6 +181,13 @@ router.post('/auth/login', async (req, res) => {
     return;
   }
 
+  // A391: every admin enters a one-time code (emailed, or from their authenticator app) — mandatory.
+  const gate = await otpGate({
+    kind: 'admin', id: admin.id, email: admin.email, name: admin.name,
+    method: (admin as any).otp_method, secret: (admin as any).otp_totp_secret, version: (admin as any).otp_version,
+  }, req.body);
+  if (gate.ok === false) { res.status(gate.status).json(gate.body); return; }
+
   await supabase
     .from('admin_users')
     .update({ last_login_at: new Date().toISOString() })
@@ -183,7 +203,33 @@ router.post('/auth/login', async (req, res) => {
   res.json({
     token,
     admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+    ...(gate.trust ? { otp_trust: gate.trust } : {}),
   });
+});
+
+// ── A391: my sign-in code — email (default) or an authenticator app ─────────────────────────────────────────────────
+router.get('/auth/otp', requireAdmin, async (req, res) => {
+  const s = await readOtpSettings('admin', req.adminId);
+  if (!s) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(s);
+});
+
+router.post('/auth/otp/totp/start', requireAdmin, async (req, res) => {
+  res.json(startTotpSetup('admin', req.adminId, req.adminEmail));
+});
+
+router.post('/auth/otp/totp/confirm', requireAdmin, async (req, res) => {
+  const r = await confirmTotpSetup('admin', req.adminId, req.body?.setup_token, req.body?.code);
+  if (r.ok === false) { res.status(r.status).json({ error: r.error }); return; }
+  await writeAdminAudit({ adminId: req.adminId, adminEmail: req.adminEmail, action: 'admin.otp_authenticator_on', resource: 'auth', ip: req.ip });
+  res.json({ method: 'totp' });
+});
+
+router.post('/auth/otp/email', requireAdmin, async (req, res) => {
+  const err = await useEmailCodes('admin', req.adminId);
+  if (err) { res.status(500).json({ error: 'Could not save — is migration 119 applied?' }); return; }
+  await writeAdminAudit({ adminId: req.adminId, adminEmail: req.adminEmail, action: 'admin.otp_email', resource: 'auth', ip: req.ip });
+  res.json({ method: 'email' });
 });
 
 router.get('/auth/me', requireAdmin, async (req, res) => {
@@ -809,6 +855,22 @@ router.post('/clients/:id/reset-owner-password', requireAdmin, async (req, res) 
   res.json({ success: true, email: biz.email });
 });
 
+// POST /clients/:id/reset-owner-otp — A391: the owner lost the phone with their authenticator app → back to emailed
+// codes. Every browser they asked to be remembered must enter a code again.
+router.post('/clients/:id/reset-owner-otp', requireAdmin, async (req, res) => {
+  const { data: biz } = await supabase.from('businesses').select('name').eq('id', req.params.id).maybeSingle();
+  if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
+  const ownerId = await resolveOwnerUserId(req.params.id);
+  if (!ownerId) { res.status(400).json({ error: 'This client has no owner account to reset' }); return; }
+  const err = await useEmailCodes('user', ownerId);
+  if (err) { res.status(500).json({ error: 'Could not reset — is migration 119 applied?' }); return; }
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail, action: 'business.reset_owner_otp', resource: 'business',
+    businessId: req.params.id, businessName: (biz as any).name, ip: req.ip,
+  });
+  res.json({ method: 'email' });
+});
+
 // POST /clients/:id/change-owner-email — admin changes the owner's LOGIN email (G6).
 // Only reset-owner-password existed; a wrong owner email was unfixable. Updates the
 // auth email (auto-confirmed so it's usable immediately) and the business contact
@@ -1204,10 +1266,19 @@ router.get('/techs', requireAdmin, async (_req, res) => {
 router.get('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
   const { data, error } = await supabase
     .from('admin_users')
-    .select('id, email, name, role, is_active, phone, last_login_at, created_at')
+    .select('id, email, name, role, is_active, phone, last_login_at, created_at, otp_method, otp_totp_secret')
     .order('created_at');
   if (error) { sendError(res, error); return; }
-  res.json(data ?? []);
+  // A391: which sign-in code each uses — never the secret itself.
+  res.json((data ?? []).map(({ otp_totp_secret, ...a }: any) => ({ ...a, otp_method: a.otp_method === 'totp' && otp_totp_secret ? 'totp' : 'email' })));
+});
+
+// A391: a team member lost the phone with their authenticator app → back to emailed codes (super admin only).
+router.post('/team/:id/reset-otp', requireAdmin, requireSuperAdmin, async (req, res) => {
+  const err = await useEmailCodes('admin', req.params.id);
+  if (err) { res.status(500).json({ error: 'Could not reset — is migration 119 applied?' }); return; }
+  await writeAdminAudit({ adminId: req.adminId, adminEmail: req.adminEmail, action: 'team.reset_otp', resource: 'admin_user', after: { id: req.params.id }, ip: req.ip });
+  res.json({ method: 'email' });
 });
 
 router.post('/team', requireAdmin, requireSuperAdmin, async (req, res) => {
@@ -1915,15 +1986,45 @@ router.post('/mode-switch/:id/cancel', requireAdmin, async (req, res) => {
 // ── Watchdog (A383) ──────────────────────────────────────────────────────────
 // What the cloud's watchdog has found and not yet seen clear, and which channels are set (Telegram / email). The test
 // sends one message through both, so the admin knows an alert would reach them before a real one is needed.
-router.get('/watchdog', requireAdmin, async (_req, res) => {
-  const { data, error } = await supabase
-    .from('watchdog_alerts')
-    .select('id, alert_key, severity, business_id, title, detail, first_seen_at, last_seen_at, last_notified_at, notify_count')
-    .is('resolved_at', null)
-    .order('first_seen_at', { ascending: false })
-    .limit(200);
+// A392: the Alerts page — open problems (or the last 14 days' resolved ones: ?status=resolved), the counters since the
+// last digest, and what the cloud saw recently that is not (yet) an alert: refused sign-ins and refused till syncs.
+router.get('/watchdog', requireAdmin, async (req, res) => {
+  const resolved = req.query.status === 'resolved';
+  const cols = 'id, alert_key, severity, business_id, title, detail, first_seen_at, last_seen_at, last_notified_at, notify_count, resolved_at';
+  const query = (c: string) => {
+    let q = supabase.from('watchdog_alerts').select(c);
+    q = resolved
+      ? q.not('resolved_at', 'is', null).gte('resolved_at', new Date(Date.now() - 14 * 86_400_000).toISOString()).order('resolved_at', { ascending: false })
+      : q.is('resolved_at', null).order('first_seen_at', { ascending: false });
+    return q.limit(200);
+  };
+  let { data, error } = await query(`${cols}, acknowledged_at, acknowledged_by`);
+  if (error && /acknowledged_/.test(error.message ?? '')) ({ data, error } = await query(cols) as any);   // before migration 119
   if (error) { res.status(500).json({ error: 'Could not read the watchdog alerts' }); return; }
-  res.json({ channels: alertChannels(), alerts: data ?? [] });
+
+  const now = Date.now();
+  const signins = recentSignInFailures().filter((f) => f.at >= now - 30 * 60_000).slice(-50).reverse()
+    .map((f) => ({ at: new Date(f.at).toISOString(), account: f.account, ip: f.ip, where: f.where }));
+  const sync = recentSyncAttempts().map((list) => {
+    const fails = list.filter((a) => !a.ok || (a.rejected ?? 0) > 0);
+    if (!fails.length) return null;
+    const last = fails[fails.length - 1];
+    return { device_id: last.deviceId, business_id: last.businessId, refused: fails.length, last_at: new Date(last.at).toISOString(),
+             status: last.status, code: last.code ?? null, error: last.error ?? null, hint: syncRefusalHint(last.status, last.code) };
+  }).filter(Boolean);
+
+  res.json({ channels: alertChannels(), alerts: data ?? [], counters: digestCounters(false), recent: { signins, sync } });
+});
+
+// A392: mute (or unmute) an alert's reminders — it stays listed until it clears.
+router.post('/watchdog/:id/ack', requireAdmin, async (req: any, res) => {
+  const mute = req.body?.mute !== false;
+  const { error } = await supabase.from('watchdog_alerts')
+    .update(mute ? { acknowledged_at: new Date().toISOString(), acknowledged_by: req.adminEmail ?? null }
+                 : { acknowledged_at: null, acknowledged_by: null })
+    .eq('id', req.params.id);
+  if (error) { res.status(500).json({ error: 'Could not save — is migration 119 applied?' }); return; }
+  res.json({ muted: mute });
 });
 
 router.post('/watchdog/test', requireSuperAdmin, async (req: any, res) => {

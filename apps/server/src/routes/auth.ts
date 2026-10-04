@@ -47,6 +47,7 @@ import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a cl
 import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshGraceDecision } from '../lib/refreshGrace';
+import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
@@ -558,6 +559,20 @@ async function checkDeviceRegistration(
   return { result: 'pending', deviceId: device.id };
 }
 
+/**
+ * A391: a users row as a code subject — its method, secret and version, read on their own so a cloud running before
+ * migration 119 still signs people in (by email code, version 1).
+ */
+async function otpSubjectFor(userId: string, email: string, name?: string | null): Promise<OtpSubject> {
+  const { data, error } = await supabase
+    .from('users').select('otp_method, otp_totp_secret, otp_version').eq('id', userId).maybeSingle();
+  if (error) console.error('[otp] could not read the sign-in code settings — is migration 119 applied?', error.message);
+  return {
+    kind: 'user', id: userId, email, name: name ?? null,
+    method: (data as any)?.otp_method ?? 'email', secret: (data as any)?.otp_totp_secret ?? null, version: (data as any)?.otp_version ?? 1,
+  };
+}
+
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
 router.post('/login', validateLoose(LoginSchema), async (req, res) => {
@@ -663,6 +678,12 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     }
   }
 
+  // A391: an owner always enters a one-time code (emailed, or from their authenticator app) — mandatory.
+  const ownerGate = await otpGate(
+    await otpSubjectFor(ownerUser ? (ownerUser as any).id : data.user.id, data.user.email ?? email, (ownerUser as any)?.name),
+    req.body);
+  if (ownerGate.ok === false) { res.status(ownerGate.status).json(ownerGate.body); return; }
+
   // Fetch permissions_version for owner
   const pv = ownerUser ? await getPermissionsVersion((ownerUser as any).id) : 1;
 
@@ -710,6 +731,7 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     user: { id: data.user.id, email: data.user.email },
     business,
     mustChangePassword,
+    ...(ownerGate.trust ? { otp_trust: ownerGate.trust } : {}),
   });
 });
 
@@ -1267,6 +1289,16 @@ router.post('/pos-login', async (req, res) => {
     return;
   }
 
+  // A391: on the web, owners and managers enter a one-time code too (mandatory); cashiers do not. A till never does —
+  // it signs in by enrolment and PIN, offline as well.
+  let posGate: { trust?: string; pass?: string } = {};
+  // Same people the web sends to the manager screens (posRouting.ts): a manager-tier role, or settings.manage.
+  if (effectiveSurface === 'web' && (roleNeedsOtp(role?.name, isOwner) || effectivePerms['settings.manage'] === true)) {
+    const g = await otpGate(await otpSubjectFor((user as any).id, (user as any).email, (user as any).name), req.body);
+    if (g.ok === false) { res.status(g.status).json(g.body); return; }
+    posGate = g;
+  }
+
   // Revoke any prior active session for this user ON THIS DEVICE before issuing
   // a new one, so stale sessions do not accumulate when someone signs in
   // repeatedly on one machine.
@@ -1318,6 +1350,8 @@ router.post('/pos-login', async (req, res) => {
     branchId:    resolvedBranchId,
     branches:    accessibleBranches.map((b: any) => ({ id: b.id, name: b.name, licensed: b.desktop_licensed })),
     needsBranchSelection: !resolvedBranchId && accessibleBranches.length > 1,
+    ...(posGate.trust ? { otp_trust: posGate.trust } : {}),
+    ...(posGate.pass ? { otp_pass: posGate.pass } : {}),
   });
 });
 
@@ -1602,6 +1636,41 @@ router.post('/set-pin', requireAuth, async (req, res) => {
   }
 
   res.json({ success: true, message: 'PIN updated successfully' });
+});
+
+// ── A391: my sign-in code — email (default) or an authenticator app ─────────────────────────────────────────────
+// For owners and the manager tier (who must enter a code on the web). Cashiers have none, so nothing to set.
+async function otpSelf(req: any, res: any): Promise<{ id: string; email: string } | null> {
+  const { data: u } = await supabase
+    .from('users').select('id, email, roles ( name )').eq('id', req.userId).eq('business_id', req.businessId).maybeSingle();
+  if (!u) { res.status(404).json({ error: 'Account not found' }); return null; }
+  if (!roleNeedsOtp((u as any).roles?.name, req.isOwner) && !(req.permissionKeys ?? []).includes('settings.manage')) {
+    res.status(403).json({ error: 'Sign-in codes are for owners and managers.' }); return null;
+  }
+  return { id: (u as any).id, email: (u as any).email };
+}
+
+router.get('/otp', requireAuth, async (req, res) => {
+  const me = await otpSelf(req, res); if (!me) return;
+  res.json(await readOtpSettings('user', me.id) ?? { method: 'email', email: me.email });
+});
+
+router.post('/otp/totp/start', requireAuth, async (req, res) => {
+  const me = await otpSelf(req, res); if (!me) return;
+  res.json(startTotpSetup('user', me.id, me.email));
+});
+
+router.post('/otp/totp/confirm', requireAuth, async (req, res) => {
+  const me = await otpSelf(req, res); if (!me) return;
+  const r = await confirmTotpSetup('user', me.id, req.body?.setup_token, req.body?.code);
+  if (r.ok === false) { res.status(r.status).json({ error: r.error }); return; }
+  res.json({ method: 'totp' });
+});
+
+router.post('/otp/email', requireAuth, async (req, res) => {
+  const me = await otpSelf(req, res); if (!me) return;
+  if (await useEmailCodes('user', me.id)) { res.status(500).json({ error: 'Could not save — is migration 119 applied?' }); return; }
+  res.json({ method: 'email' });
 });
 
 // ── PATCH /api/auth/me ────────────────────────────────────────────────────────

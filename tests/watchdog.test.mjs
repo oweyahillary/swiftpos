@@ -143,7 +143,7 @@ await ok('wiring: the job starts with the server; 5xx and sign-in failures are c
   const idx = read('apps/server/src/index.ts');
   assert.match(idx, /startWatchdogJob\(\);/);
   assert.match(idx, /res\.statusCode >= 500\) recordServerError/);
-  assert.match(idx, /isSignInFailure\(req\.method, path, res\.statusCode\)\) recordFailedSignIn/);
+  assert.match(idx, /else if \(isSignInFailure\(req\.method, path, res\.statusCode\)\) \{\s*recordFailedSignIn\(/);   // A392: with who and where
   const auth = read('apps/server/src/middleware/auth.ts');
   assert.match(auth, /terminalWriteDenied\(req\.surface[^\n]*return false;\n\s*recordWriteGuard\(\);/);
 });
@@ -172,8 +172,9 @@ await ok('the admin portal: the watchdog card and a test alert (super admin only
   assert.match(a, /router\.get\('\/watchdog', requireAdmin/);
   assert.match(a, /router\.post\('\/watchdog\/test', requireSuperAdmin/);
   const p = read('apps/admin/src/AdminPortal.tsx');
-  assert.match(p, /<WatchdogCard req=\{req\} \/>/);
-  assert.match(p, /req\("POST", "\/watchdog\/test"\)/);
+  // A392: the card became the Alerts page (and a summary on the dashboard).
+  assert.match(p, /<AlertsSummary req=\{req\} onOpen=\{onOpenAlerts\} \/>/);
+  assert.match(read('apps/admin/src/AlertsPage.tsx'), /req\("POST", "\/watchdog\/test"\)/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

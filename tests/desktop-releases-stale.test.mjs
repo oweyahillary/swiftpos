@@ -98,7 +98,7 @@ await ok('portal: asks for ?meta=1, reads both answer shapes, shows the warning 
   const p = read('apps/admin/src/AdminPortal.tsx');
   assert.match(p, /req\("GET", "\/desktop-releases\?meta=1"\)/);
   assert.match(p, /setDesktopReleases\(Array\.isArray\(r\) \? r : Array\.isArray\(r\?\.releases\) \? r\.releases : \[\]\);/);
-  assert.match(p, /\{desktopWarning && \(/);
+  assert.match(p, /\{desktopWarning && <div/);   // A393: on the client's Desktop updates tab
   assert.match(p, /visibleVersions\(desktopReleases, detail\?\.desktop_approved_version, showAllVersions\)\.map/);
 });
 

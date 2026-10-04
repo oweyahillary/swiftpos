@@ -145,6 +145,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'pos:getModifiers':   { kind: 'string' },
   'pos:notePicks':      NO_PAYLOAD,
   'pos:features':       NO_PAYLOAD,
+  'pos:stockCountFreeze': NO_PAYLOAD,   // A394
   'pos:history':        NO_PAYLOAD,
   'pos:reversalRules':  NO_PAYLOAD,   // 0.6.30
   'pos:help':           NO_PAYLOAD,   // 0.6.35 (A384)

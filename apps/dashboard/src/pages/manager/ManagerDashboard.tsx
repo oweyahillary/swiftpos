@@ -24,6 +24,8 @@ import ManagerReceivingTab from './ManagerReceivingTab';
 import ManagerHistoryTab   from './ManagerHistoryTab';
 import ManagerShiftTab from './ManagerShiftTab';
 import ManagerMenuTab from './ManagerMenuTab';
+import SignInSecurity from '../../components/SignInSecurity';   // A391
+import StockCounts from '../../components/StockCounts';   // A394
 import { localDateStr } from '../../lib/localDate';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
@@ -74,6 +76,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'menu',      label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Menu</span></>,      title: 'Menu', permission: 'products.view', group: null },
   { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
   { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
+  // A394: stock take — the manager counts (blind); the owner reviews and posts.
+  { key: 'counts',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Stock count</span></>, title: 'Stock count', permission: 'inventory.count', group: 'Inventory' },
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: 'orders.view_all', group: 'Finance' },
@@ -84,6 +88,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'credit',    label: <><Icon d={I.credit}    className="flex-shrink-0" /><span className="truncate">Credit</span></>,    title: 'Credit', permission: 'customers.view', group: 'Customers' },
   { key: 'staff',     label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">Staff</span></>,     title: 'Staff', permission: 'staff.manage', group: 'Settings' },
   { key: 'printers',  label: <><Icon d={I.printers}  className="flex-shrink-0" /><span className="truncate">Printers</span></>,  title: 'Printers', permission: 'stations.manage', group: 'Settings' },
+  // A391: the manager's own sign-in code (email or authenticator app).
+  { key: 'security',  label: <><Icon d={I.staff}     className="flex-shrink-0" /><span className="truncate">My sign-in</span></>, title: 'My sign-in', permission: null, group: 'Settings' },
 ];
 
 // Sidebar section order. null = the ungrouped top items.
@@ -1228,7 +1234,7 @@ function ManagerTurnoverTab() {
 
 export default function ManagerDashboard() {
   const navigate  = useNavigate();
-  const { session, clearCashierSession, hasPermission } = usePOSAuth();
+  const { session, clearCashierSession, hasPermission, posApi } = usePOSAuth();
   const { business }                = useBusiness();
   const { branches, setActiveBranch } = useBranch();
   const [active, setActive]           = useState('overview');
@@ -1307,6 +1313,11 @@ export default function ManagerDashboard() {
             <PrintersPage branchId={session.branchId} branchName={session.branchName} />
           </div>
         );
+      case 'security':
+        return <SignInSecurity />;
+      case 'counts':
+        return <StockCounts client={posApi} branchId={session.branchId} currency={currency} business={business}
+          branches={managerBranch} />;
       default: return <OverviewTab />;
     }
   }

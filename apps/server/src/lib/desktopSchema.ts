@@ -59,7 +59,9 @@
 /** 65 = 0.6.35: device_config.support_contact (pulled). A till on 64 keeps syncing; its Help shows SwiftPOS support. */
 /** 66 = 0.6.37: device_config.cashier_history_methods (pulled) and expenses/float_transactions.approved_by (pushed;
  *  migration 118). A till on 65 keeps syncing; its cashiers see every method and its pay-outs carry no approver. */
-export const REQUIRED_DESKTOP_SCHEMA = 66;
+/** 67 = A394: device_config.stock_count_freeze (pulled). A till on 66 keeps syncing; it simply does not stop selling an
+ *  item a frozen stock count is counting (the count still takes its sales into account). */
+export const REQUIRED_DESKTOP_SCHEMA = 67;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

@@ -31,6 +31,7 @@ import { noteLines } from '../../shared/orderNotes';
 import { historyView, historyChoices, orderMethod, type HistorySort } from '../../shared/historyView';
 import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '../../shared/delivery';
 import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
+import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '../../shared/stockCountFreeze';   // A394
 import type { ZReport } from '../lib/posApi';
 import type { KitchenLinePayload, OpenKitchenOrder } from '../lib/posApi';
 import KitchenVoidModal from '../components/KitchenVoidModal';
@@ -142,6 +143,24 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     load();
     return posApi.pos.onCatalogueChanged(load);
   }, []);
+  // A394: items a stock count freezes (the owner's choice) — refused here until counted; re-read after every pull.
+  const [countFreeze, setCountFreeze] = useState<StockCountFreeze>(NO_FREEZE);
+  const [frozenNote, setFrozenNote] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => posApi.pos.stockCountFreeze().then(setCountFreeze).catch(() => {});
+    load();
+    return posApi.pos.onCatalogueChanged(load);
+  }, []);
+  useEffect(() => {
+    if (!frozenNote) return;
+    const t = setTimeout(() => setFrozenNote(null), 5000);
+    return () => clearTimeout(t);
+  }, [frozenNote]);
+  const refuseFrozen = (product: any): boolean => {
+    if (!isFrozen(countFreeze, product?.id)) return false;
+    setFrozenNote(frozenMessage(countFreeze.ref, product?.name ?? 'This item'));
+    return true;
+  };
   // 0.6.27: the delivery fee the customer pays on top (with the 'delivery_fee' switch), and why Pay is held back.
   const [deliveryFee, setDeliveryFee] = useState('');
   // 0.6.33: FREE DELIVERY — offered when the owner allows it (Manager → Settings / the web's owner rules). The cashier
@@ -416,6 +435,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   }, [products, flags.isRestaurant, flags.isPetrol]);
 
   const addSimple = (product: any) => {
+    if (refuseFrozen(product)) return;
     setCart(prev => {
       // A367: never into a line that carries a note — "2 spicy" plus a tap is not 3 spicy; the tap is a new line.
       const existing = prev.find(i => i.product.id === product.id && i.selectedVariants.length === 0 && !i.notes);
@@ -461,6 +481,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   };
 
   const handleTap = (product: any) => {
+    if (refuseFrozen(product)) return;
     if (product.has_variants || product.has_modifiers) {
       setVariantProduct(product);
     } else {
@@ -1071,6 +1092,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // ── Main POS screen ────────────────────────────────────
   return (
     <div className="app-screen flex flex-col bg-gray-950">
+
+      {/* A394: an item a stock count freezes was tapped — say why it did not go on the bill. */}
+      {frozenNote && (
+        <div data-testid="frozen-note" role="alert"
+          className="fixed left-1/2 top-4 z-50 -translate-x-1/2 max-w-md rounded-xl border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-200 shadow-xl">
+          {frozenNote}
+        </div>
+      )}
 
       {/* A363: the manager's notice — only when something waits; red when the cloud refused a record or sales failed. */}
       {notice && (

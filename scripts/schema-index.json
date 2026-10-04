@@ -32,7 +32,10 @@
     "last_login_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL",
-    "phone": "\"text\""
+    "phone": "\"text\"",
+    "otp_method": "\"text\" NOT NULL",
+    "otp_totp_secret": "\"text\"",
+    "otp_version": "\"integer\" NOT NULL"
   },
   "api_keys": {
     "id": "\"uuid\" NOT NULL",
@@ -456,7 +459,9 @@
     "notes": "\"text\"",
     "created_by": "\"uuid\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "branch_id": "\"uuid\""
+    "branch_id": "\"uuid\"",
+    "reference_type": "\"text\"",
+    "reference_id": "\"uuid\""
   },
   "ingredients": {
     "id": "\"uuid\" NOT NULL",
@@ -519,6 +524,16 @@
     "approved_by": "\"uuid\"",
     "approved_by_name": "\"text\"",
     "device_id": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "login_otp_codes": {
+    "id": "\"uuid\" NOT NULL",
+    "subject_kind": "\"text\" NOT NULL",
+    "subject_id": "\"uuid\" NOT NULL",
+    "code_hash": "\"text\" NOT NULL",
+    "expires_at": "\"timestamp with time zone\" NOT NULL",
+    "attempts": "\"integer\" NOT NULL",
+    "consumed_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "loyalty_transactions": {
@@ -1093,6 +1108,55 @@
     "reference_type": "\"text\"",
     "reference_id": "\"uuid\""
   },
+  "stock_take_lines": {
+    "id": "\"uuid\"",
+    "stock_take_id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "item_kind": "\"text\" NOT NULL",
+    "product_id": "\"uuid\"",
+    "ingredient_id": "\"uuid\"",
+    "name": "\"text\" NOT NULL",
+    "unit": "\"text\"",
+    "category": "\"text\"",
+    "by_piece": "\"boolean\" NOT NULL",
+    "unit_cost": "\"numeric\"",
+    "counted_qty": "\"numeric\"",
+    "expected_qty": "\"numeric\"",
+    "counted_at": "\"timestamp with time zone\"",
+    "counted_by": "\"uuid\"",
+    "counted_by_name": "\"text\"",
+    "previous_count": "\"numeric\"",
+    "recount": "\"boolean\" NOT NULL",
+    "late_sales": "\"numeric\"",
+    "expected_final": "\"numeric\"",
+    "variance": "\"numeric\"",
+    "variance_value": "\"numeric\"",
+    "posted_delta": "\"numeric\"",
+    "posted_at": "\"timestamp with time zone\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "stock_takes": {
+    "id": "\"uuid\"",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "ref": "\"text\" NOT NULL",
+    "status": "\"text\" NOT NULL",
+    "scope": "\"jsonb\" NOT NULL",
+    "freeze_sales": "\"boolean\" NOT NULL",
+    "note": "\"text\"",
+    "started_by": "\"uuid\"",
+    "started_by_name": "\"text\"",
+    "started_at": "\"timestamp with time zone\" NOT NULL",
+    "submitted_at": "\"timestamp with time zone\"",
+    "submitted_by_name": "\"text\"",
+    "posted_at": "\"timestamp with time zone\"",
+    "posted_by": "\"uuid\"",
+    "posted_by_name": "\"text\"",
+    "cancelled_at": "\"timestamp with time zone\"",
+    "cancelled_by_name": "\"text\"",
+    "summary": "\"jsonb\"",
+    "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "stock_transfer_items": {
     "id": "\"uuid\" NOT NULL",
     "transfer_id": "\"uuid\" NOT NULL",
@@ -1130,6 +1194,67 @@
     "expires_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "supplier_bills": {
+    "id": "\"uuid\"",
+    "business_id": "\"uuid\" NOT NULL",
+    "supplier_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\"",
+    "ref": "\"text\" NOT NULL",
+    "invoice_number": "\"text\"",
+    "bill_date": "\"date\" NOT NULL",
+    "due_date": "\"date\"",
+    "amount": "\"numeric\" NOT NULL",
+    "grn_id": "\"uuid\"",
+    "note": "\"text\"",
+    "status": "\"text\" NOT NULL",
+    "voided_at": "\"timestamp with time zone\"",
+    "voided_by_name": "\"text\"",
+    "void_reason": "\"text\"",
+    "created_by": "\"uuid\"",
+    "created_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "supplier_payments": {
+    "id": "\"uuid\"",
+    "business_id": "\"uuid\" NOT NULL",
+    "supplier_id": "\"uuid\" NOT NULL",
+    "bill_id": "\"uuid\"",
+    "amount": "\"numeric\" NOT NULL",
+    "method": "\"text\" NOT NULL",
+    "reference": "\"text\"",
+    "paid_on": "\"date\" NOT NULL",
+    "note": "\"text\"",
+    "voided_at": "\"timestamp with time zone\"",
+    "voided_by_name": "\"text\"",
+    "void_reason": "\"text\"",
+    "created_by": "\"uuid\"",
+    "created_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
+  "supplier_return_items": {
+    "id": "\"uuid\"",
+    "return_id": "\"uuid\" NOT NULL",
+    "item_kind": "\"text\" NOT NULL",
+    "product_id": "\"uuid\"",
+    "ingredient_id": "\"uuid\"",
+    "name": "\"text\" NOT NULL",
+    "quantity": "\"numeric\" NOT NULL",
+    "unit_cost": "\"numeric\""
+  },
+  "supplier_returns": {
+    "id": "\"uuid\"",
+    "business_id": "\"uuid\" NOT NULL",
+    "supplier_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "ref": "\"text\" NOT NULL",
+    "grn_id": "\"uuid\"",
+    "return_date": "\"date\" NOT NULL",
+    "reason": "\"text\"",
+    "credit_amount": "\"numeric\" NOT NULL",
+    "created_by": "\"uuid\"",
+    "created_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
   },
   "suppliers": {
     "id": "\"uuid\" NOT NULL",
@@ -1285,7 +1410,10 @@
     "pin_upgraded": "\"boolean\" NOT NULL",
     "hourly_rate": "\"numeric\"",
     "permissions_version": "\"integer\" NOT NULL",
-    "override_pin_hash": "\"text\""
+    "override_pin_hash": "\"text\"",
+    "otp_method": "\"text\" NOT NULL",
+    "otp_totp_secret": "\"text\"",
+    "otp_version": "\"integer\" NOT NULL"
   },
   "variant_group_products": {
     "variant_group_id": "\"uuid\" NOT NULL",
@@ -1342,7 +1470,9 @@
     "last_seen_at": "\"timestamp with time zone\" NOT NULL",
     "last_notified_at": "\"timestamp with time zone\"",
     "notify_count": "\"integer\" NOT NULL",
-    "resolved_at": "\"timestamp with time zone\""
+    "resolved_at": "\"timestamp with time zone\"",
+    "acknowledged_at": "\"timestamp with time zone\"",
+    "acknowledged_by": "\"text\""
   },
   "webhook_deliveries": {
     "id": "\"uuid\" NOT NULL",

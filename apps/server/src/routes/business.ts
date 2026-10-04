@@ -13,6 +13,7 @@ import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
+import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
 
 const router = safeRouter();
 
@@ -77,6 +78,8 @@ const READABLE_SETTING_KEYS = new Set([
   'business_day_cutoff',
   // 0.6.37 (A387): the payment methods a cashier's History shows (a JSON list; [] = every method).
   'cashier_history_methods',
+  // A394: is an item being counted frozen (not sold until counted)? The owner's choice — "true" / "false".
+  'stock_count_freeze',
   // Names that must never reach a kitchen ticket — drinks, sauces, packaged
   // sides. A JSON array of strings, or one name per line. Owner-stated rather
   // than inferred from the item name: a keyword guess is wrong occasionally and
@@ -362,6 +365,23 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
   // ── 0.6.30 (A336 stage 3): the void/refund rules are the OWNER's ───────────
   // "for offline we will let the owner decide" — a manager holding settings.manage may not widen their own void
   // window or the methods they may refund offline. Only a value lib/reversalRules.ts accepts is stored.
+  // ── A394: freezing items during a stock count — "we leave that as a feature which the owner will decide" ──
+  if (key === STOCK_COUNT_FREEZE_KEY) {
+    if (!req.isOwner) {
+      res.status(403).json({ error: 'Only the owner decides whether a stock count freezes sales.', code: 'OWNER_ONLY' });
+      return;
+    }
+    const clean = freezeSetting(value) ? 'true' : 'false';
+    const { data: existingFz } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: fzErr } = existingFz
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingFz.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (fzErr) { sendError(res, fzErr); return; }
+    res.json({ key, value: clean });
+    return;
+  }
+
   if (isReversalSettingKey(key)) {
     if (!req.isOwner) {
       res.status(403).json({ error: 'Only the owner can change the void and refund rules.', code: 'OWNER_ONLY' });

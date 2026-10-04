@@ -33,6 +33,9 @@ import KitchenVoidModal, { type KitchenVoidLine } from './KitchenVoidModal';
 import { maySendBeforePay, voidReasonLabel } from '../../lib/kitchenLines';
 import { maySignedInConfirm } from '../../lib/shiftConfirm';
 import { onGrid } from '../../lib/productDays';
+import { useStockCountFreeze, frozenMessage } from '../../lib/useStockCountFreeze';   // A394
+import { useToast } from '../../hooks/useToast';
+import Toast from '../../components/Toast';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -269,10 +272,23 @@ export default function CashierScreen() {
     fuelLitresStr, setFuelLitresStr,
   } = useCart();
 
+  // A394: an item frozen by a stock count is refused at the counter (the cloud refuses it at payment too).
+  const countFreeze = useStockCountFreeze(posApi.get, session?.branchId);
+  const { toast: freezeToast, showToast: showFreezeToast, hideToast: hideFreezeToast } = useToast(5000);
+  const isFrozen = useCallback((product: Product): boolean => {
+    if (!countFreeze.frozen.has(product.id)) return false;
+    showFreezeToast(frozenMessage(countFreeze.ref, product.name), 'warning');
+    return true;
+  }, [countFreeze, showFreezeToast]);
+
   // Adapter: addToCart needs variantsByProduct from usePOSData
   const addToCart = useCallback(
-    (product: Product) => _addToCart(product, variantsByProduct),
-    [_addToCart, variantsByProduct],
+    (product: Product) => { if (!isFrozen(product)) _addToCart(product, variantsByProduct); },
+    [_addToCart, variantsByProduct, isFrozen],
+  );
+  const minimartAddToCartChecked = useCallback(
+    (product: Product, qty?: number) => { if (!isFrozen(product)) minimartAddToCart(product, qty); },
+    [minimartAddToCart, isFrozen],
   );
 
   // Adapter: confirmVariants in the original file reads variantsByProduct directly.
@@ -1073,6 +1089,7 @@ export default function CashierScreen() {
 
   return (
     <div style={s.root} data-pos-theme={posTheme}>
+      <Toast toast={freezeToast} onDismiss={hideFreezeToast} />
       <style>{posTheme === 'light' ? `
         [data-pos-theme="light"] {
           --pos-bg: #eef2f7; --pos-panel: #ffffff; --pos-surface: #f4f7fb;
@@ -1227,7 +1244,7 @@ export default function CashierScreen() {
             categories={categories}
             cart={cart}
             currency={currency}
-            onAddToCart={minimartAddToCart}
+            onAddToCart={minimartAddToCartChecked}
             onUpdateQty={minimartUpdateQty}
             onRemoveItem={minimartRemoveItem}
             onClearCart={() => setCart([])}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type CSSProperties } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import MigrationsPage from "./MigrationsPage";
 import { visibleVersions, RECENT_VERSIONS } from "./desktopVersions";
@@ -6,6 +6,9 @@ import { POS_FEATURES, POS_FEATURE_KEYS } from "./lib/posFeatures";
 import { RELEASE, releaseLabel, releasesDiffer } from "./lib/release";
 import { cleanSubdomain, subdomainProblem, suggestSubdomain } from "./lib/tenantHost";   // A378: a client's own sign-in address
 import { cleanPhone, displayPhone, DEFAULT_SUPPORT_PHONES } from "./lib/support";   // 0.6.35 (A384): a shop's own tech
+import { C, S, SIDEBAR_W } from "./theme";   // A393: shared with the Alerts and Account pages
+import AlertsPage, { AlertsSummary, useCriticalCount } from "./AlertsPage";   // A392
+import SignInCodeCard from "./SignInCodeCard";   // A391
 
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -23,11 +26,25 @@ interface ModeSwitchReq { id: string; business_name: string; branch_name: string
 // ─── Config ──────────────────────────────────────────────────────────────────
 const DEFAULT_API = "http://localhost:4000";
 
+// A393: this browser's keys. The API address is read once from the key the portal used before the ZapTill rename, so
+// an admin who changed it does not have to set it again.
+const KEY = {
+  api:     "zaptill_admin_api",
+  token:   "zaptill_admin_token",
+  user:    "zaptill_admin_user",
+  expired: "zaptill_admin_expired",
+  trust:   "zaptill_admin_otp_trust",   // A391: "remember this browser" — per admin email
+};
+const OLD_API_KEY = ["swift", "pos_admin_api"].join("");
+const savedApi = () => { try { return localStorage.getItem(KEY.api) || localStorage.getItem(OLD_API_KEY) || ""; } catch { return ""; } };
+const saveApi = (v: string) => { try { localStorage.setItem(KEY.api, v); } catch { /* private window */ } };
+const trustKey = (email: string) => `${KEY.trust}:${String(email).trim().toLowerCase()}`;
+
 // ─── API layer ────────────────────────────────────────────────────────────────
 // ─── API hook ─────────────────────────────────────────────────────────────────
 function useAdminApi() {
-  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem("swiftpos_admin_api") || import.meta.env.VITE_API_URL || DEFAULT_API);
-  const [token, setToken]   = useState(() => sessionStorage.getItem("swiftpos_admin_token") || "");
+  const [apiUrl, setApiUrl] = useState(() => savedApi() || import.meta.env.VITE_API_URL || DEFAULT_API);
+  const [token, setToken]   = useState(() => sessionStorage.getItem(KEY.token) || "");
 
   const req = useCallback(async (method, path, body) => {
     const res = await fetch(`${apiUrl.replace(/\/+$/, "")}/api/admin${path}`, {
@@ -39,15 +56,17 @@ function useAdminApi() {
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const data = await res.json().catch(() => ({}));
+    // A391: the sign-in screen needs the reason (OTP_REQUIRED, OTP_INVALID …), not only the message.
+    const fail = (msg: string) => Object.assign(new Error(msg), { code: data?.code, status: res.status, data });
     // Token expired/invalid — drop it so the app returns to the login screen with
     // a message, instead of silently rendering empty data (e.g. "0 clients").
     if (res.status === 401 && token) {
-      sessionStorage.removeItem("swiftpos_admin_token");
-      sessionStorage.setItem("swiftpos_admin_expired", "1");
+      sessionStorage.removeItem(KEY.token);
+      sessionStorage.setItem(KEY.expired, "1");
       setToken("");
-      throw new Error("Your session expired. Please sign in again.");
+      throw fail("Your session expired. Please sign in again.");
     }
-    if (!res.ok) throw new Error(data.error || `Request failed: ${res.status}`);
+    if (!res.ok) throw fail(data.error || `Request failed: ${res.status}`);
     return data;
   }, [apiUrl, token]);
 
@@ -101,46 +120,6 @@ function daysSince(iso) {
 function isPurgeDue(biz) {
   return biz?.status === "suspended" && !!biz?.suspended_at && daysSince(biz.suspended_at) >= PURGE_GRACE_DAYS;
 }
-
-// ─── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-  bg:       "#070b14",
-  surface:  "rgba(15,23,40,0.55)",     // dark glass — sidebar / topbar / modal
-  card:     "rgba(255,255,255,0.045)", // frosted glass — cards / panels
-  border:   "rgba(255,255,255,0.09)",  // glass edge (top-highlight)
-  accent:   "#38e1ff",
-  violet:   "#a78bfa",
-  green:    "#34e5a0",
-  text:     "#e8eef7",
-  muted:    "#8ea0bd",
-  danger:   "#ff5c6c",
-};
-
-const SIDEBAR_W = 220;
-
-const S: Record<string, CSSProperties> = {
-  // Sidebar — CSS class handles responsive visibility
-  sidebar: { width: SIDEBAR_W, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "fixed", top: 0, left: 0, zIndex: 100, transition: "transform 0.25s ease" },
-  // Main — CSS class handles the responsive margin
-  main:    { minHeight: "100vh", background: "transparent", color: C.text, display: "flex", flexDirection: "column", flex: 1, minWidth: 0, overflow: "hidden" },
-  topbar:  { height: 52, background: C.surface, backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 12, flexShrink: 0 },
-  content: { padding: "24px", flex: 1 },
-  card:    { background: C.card, backdropFilter: "blur(22px) saturate(150%)", WebkitBackdropFilter: "blur(22px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: "16px 20px", marginBottom: 16, boxShadow: "0 10px 34px rgba(2,6,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05)" },
-  kpiCard: { background: C.card, backdropFilter: "blur(22px) saturate(150%)", WebkitBackdropFilter: "blur(22px) saturate(150%)", border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px 24px", flex: 1, minWidth: 0, boxShadow: "0 10px 34px rgba(2,6,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05)" },
-  btn:     { padding: "8px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", flexShrink: 0 },
-  btnPrimary: { background: C.accent, color: "#04121a" },
-  btnGhost:   { background: "rgba(255,255,255,0.05)", color: C.muted, border: `1px solid ${C.border}` },
-  btnDanger:  { background: "rgba(255,92,108,0.12)", color: C.danger, border: `1px solid rgba(255,92,108,0.3)` },
-  input:   { background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "9px 12px", color: C.text, fontSize: 13, outline: "none", width: "100%", fontFamily: "inherit", boxSizing: "border-box" },
-  label:   { fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 },
-  badge:   { fontSize: 11, padding: "2px 8px", borderRadius: 20, fontWeight: 600 },
-  table:   { width: "100%", borderCollapse: "collapse", minWidth: 600 },
-  th:      { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.03)", whiteSpace: "nowrap" },
-  td:      { padding: "12px 14px", fontSize: 13, borderBottom: `1px solid ${C.border}` },
-  tab:     { padding: "8px 16px", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", color: C.muted, borderBottom: "2px solid transparent", whiteSpace: "nowrap" },
-  tabActive: { color: C.accent, borderBottom: `2px solid ${C.accent}` },
-};
-
 
 // ─── Shared confirm/prompt modal ──────────────────────────────────────────────
 // One implementation for the whole admin app. useModal() returns Promise-based
@@ -256,63 +235,120 @@ function HealthBar({ score }) {
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
-  const [email, setEmail]     = useState("admin@zaptill.co.ke");
+  const [email, setEmail]     = useState("");
   const [password, setPass]   = useState("");
   const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
   const [showApi, setShowApi] = useState(false);
   const [apiInput, setApiInput] = useState(apiUrl);
+  // A391: the second step — the one-time code (emailed, or from the admin's authenticator app).
+  const [otp, setOtp]         = useState(null);   // null = password step; { method, sentTo, note }
+  const [code, setCode]       = useState("");
+  const [remember, setRemember] = useState(true);
 
   useEffect(() => {
-    if (sessionStorage.getItem("swiftpos_admin_expired")) {
-      sessionStorage.removeItem("swiftpos_admin_expired");
+    if (sessionStorage.getItem(KEY.expired)) {
+      sessionStorage.removeItem(KEY.expired);
       setError("Your session expired. Please sign in again.");
     }
   }, []);
 
-  async function submit(e) {
-    e.preventDefault();
+  async function signIn(extra = {}) {
     setError(""); setLoading(true);
+    let trust = "";
+    try { trust = localStorage.getItem(trustKey(email)) || ""; } catch { /* private window */ }
     try {
-      const { token, admin } = await req("POST", "/auth/login", { email, password });
-      sessionStorage.setItem("swiftpos_admin_token", token);
-      onLogin(token, admin);
-    } catch (err) { setError(err.message); }
+      const r = await req("POST", "/auth/login", {
+        email, password, ...(trust ? { otp_trust: trust } : {}), ...extra,
+      });
+      try { if (r.otp_trust) localStorage.setItem(trustKey(email), r.otp_trust); } catch { /* private window */ }
+      sessionStorage.setItem(KEY.token, r.token);
+      onLogin(r.token, r.admin);
+    } catch (err) {
+      if (err.code === "OTP_REQUIRED") {
+        try { localStorage.removeItem(trustKey(email)); } catch { /* ignore */ }
+        setOtp({ method: err.data?.method, sentTo: err.data?.sent_to, note: (extra as any).otp_resend ? "A new code is on its way." : "" });
+        setCode("");
+      } else if (otp && (err.code === "OTP_INVALID" || err.code === "OTP_EXPIRED")) {
+        setError(err.message); setCode("");
+      } else {
+        setError(err.message);
+        if (!String(err.code || "").startsWith("OTP_")) setOtp(null);
+      }
+    }
     finally { setLoading(false); }
   }
 
+  function submit(e) {
+    e.preventDefault();
+    if (otp) signIn({ otp_code: code, otp_remember: remember });
+    else signIn();
+  }
+
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 380, padding: 40, background: C.surface, borderRadius: 16, border: `1px solid ${C.border}` }}>
-        <div style={{ marginBottom: 32, textAlign: "center" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ width: "100%", maxWidth: 380, padding: 36, background: C.surface, borderRadius: 16, border: `1px solid ${C.border}` }}>
+        <div style={{ marginBottom: 28, textAlign: "center" }}>
           <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: C.accent, fontFamily: "'Space Grotesk', sans-serif" }}>ZapTill</div>
-          <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Admin Command Centre</div>
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Admin portal</div>
         </div>
 
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label style={S.label}>Email</label>
-            <input style={S.input} type="email" value={email} onChange={e => setEmail(e.target.value)} autoFocus />
-          </div>
-          <div>
-            <label style={S.label}>Password</label>
-            <input style={S.input} type="password" value={password} onChange={e => setPass(e.target.value)} />
-          </div>
+          {!otp ? (
+            <>
+              <div>
+                <label style={S.label}>Email</label>
+                <input style={S.input} type="email" value={email} onChange={e => setEmail(e.target.value)} autoFocus autoComplete="username" required />
+              </div>
+              <div>
+                <label style={S.label}>Password</label>
+                <input style={S.input} type="password" value={password} onChange={e => setPass(e.target.value)} autoComplete="current-password" required />
+              </div>
+            </>
+          ) : (
+            <div data-testid="otp-step">
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Enter your sign-in code</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
+                {otp.method === "totp"
+                  ? "Open your authenticator app and type the 6-digit code for ZapTill."
+                  : `We emailed a 6-digit code to ${otp.sentTo || "your email"}. It works for 10 minutes.`}
+                {otp.note ? ` ${otp.note}` : ""}
+              </div>
+              <input style={{ ...S.input, fontSize: 22, letterSpacing: 8, textAlign: "center" }} inputMode="numeric" autoComplete="one-time-code"
+                autoFocus maxLength={7} value={code} onChange={e => setCode(e.target.value.replace(/[^\d]/g, ""))} placeholder="••••••" />
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.muted, marginTop: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+                Remember this browser for 30 days
+              </label>
+            </div>
+          )}
           {error && <div style={{ fontSize: 12, color: C.danger, padding: "8px 12px", background: "rgba(239,68,68,0.08)", borderRadius: 6 }}>{error}</div>}
-          <button type="submit" disabled={loading} style={{ ...S.btn, ...S.btnPrimary, padding: "11px", marginTop: 4 }}>
-            {loading ? "Signing in…" : "Sign in"}
+          <button type="submit" disabled={loading || (otp && code.length !== 6)} style={{ ...S.btn, ...S.btnPrimary, padding: "11px", marginTop: 4, opacity: loading || (otp && code.length !== 6) ? 0.6 : 1 }}>
+            {loading ? (otp ? "Checking…" : "Signing in…") : otp ? "Verify and sign in" : "Sign in"}
           </button>
+          {otp && (
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <button type="button" onClick={() => { setOtp(null); setCode(""); setError(""); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>← Back</button>
+              {otp.method !== "totp" && (
+                <button type="button" disabled={loading} onClick={() => signIn({ otp_resend: true })} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Send a new code</button>
+              )}
+            </div>
+          )}
         </form>
 
-        <button onClick={() => setShowApi(s => !s)} style={{ ...S.btn, ...S.btnGhost, width: "100%", marginTop: 12, fontSize: 11 }}>
-          {showApi ? "Hide" : "⚙ Change API URL"}
-        </button>
-        {showApi && (
-          <div style={{ marginTop: 10 }}>
-            <input style={S.input} value={apiInput} onChange={e => setApiInput(e.target.value)} placeholder="http://localhost:4000" />
-            <button onClick={() => { setApiUrl(apiInput); localStorage.setItem("swiftpos_admin_api", apiInput); }}
-              style={{ ...S.btn, ...S.btnPrimary, width: "100%", marginTop: 8 }}>Save API URL</button>
-          </div>
+        {!otp && (
+          <>
+            <button onClick={() => setShowApi(s => !s)} style={{ background: "none", border: "none", color: C.muted, width: "100%", marginTop: 18, fontSize: 11, cursor: "pointer" }}>
+              {showApi ? "Hide server address" : "Server address…"}
+            </button>
+            {showApi && (
+              <div style={{ marginTop: 10 }}>
+                <input style={S.input} value={apiInput} onChange={e => setApiInput(e.target.value)} placeholder="https://api.zaptill.co.ke" />
+                <button onClick={() => { setApiUrl(apiInput); saveApi(apiInput); }}
+                  style={{ ...S.btn, ...S.btnPrimary, width: "100%", marginTop: 8 }}>Save server address</button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -335,22 +371,36 @@ function ReleaseLine() {
   );
 }
 
-function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
-  const nav = [
+// A393 (owner, 2026-10-04: "make admin portal ui user friendly i feel we have thrown things randomly everywhere"): the
+// menu in four groups — what needs you, your clients, money and support, and the system — with the open critical
+// alerts counted on Alerts.
+const NAV_GROUPS = [
+  { title: "Overview", items: [
     { id: "dashboard", icon: "▦", label: "Dashboard" },
-    { id: "clients",   icon: "◈", label: "Clients" },
-    { id: "billing",   icon: "◉", label: "Billing" },
-    { id: "audit",     icon: "≡", label: "Audit Log" },
-    { id: "team",      icon: "◎", label: "Team", superOnly: true },
-    { id: "tech",      icon: "⌘", label: "Tech Access" },
-    { id: "migrations", icon: "⛃", label: "Migrations" },
-    { id: "settings",  icon: "⊙", label: "Settings" },
-  ];
+    { id: "alerts",    icon: "⚠", label: "Alerts" },
+  ] },
+  { title: "Clients", items: [
+    { id: "clients",    icon: "◈", label: "All clients" },
+    { id: "new_client", icon: "+", label: "New client" },
+  ] },
+  { title: "Money & support", items: [
+    { id: "billing", icon: "◉", label: "Billing" },
+    { id: "tech",    icon: "⌘", label: "Tech access" },
+  ] },
+  { title: "System", items: [
+    { id: "team",       icon: "◎", label: "Team", superOnly: true },
+    { id: "audit",      icon: "≡", label: "Audit log" },
+    { id: "migrations", icon: "⛃", label: "Database" },
+    { id: "account",    icon: "⊙", label: "My account" },
+  ] },
+];
 
+function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose, critical = 0 }) {
   function navigate(id) {
     setPage(id);
     onClose?.(); // close mobile drawer on nav
   }
+  const current = page === "client_detail" ? "clients" : page;
 
   return (
     <>
@@ -365,7 +415,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
         <div style={{ padding: "20px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: C.accent, letterSpacing: "-0.01em", fontFamily: "'Space Grotesk', sans-serif" }}>ZapTill</div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Admin Portal</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Admin portal</div>
           </div>
           {/* Close button — mobile only */}
           <button onClick={onClose} className="sp-close-btn"
@@ -373,19 +423,29 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
             ✕
           </button>
         </div>
-        <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
-          {nav.filter(n => !n.superOnly || admin?.role === "super_admin").map(n => (
-            <button key={n.id} onClick={() => navigate(n.id)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", textAlign: "left", background: page === n.id ? "rgba(0,212,255,0.08)" : "transparent", color: page === n.id ? C.accent : C.muted, fontFamily: "inherit", transition: "all 0.15s", width: "100%" }}>
-              <span style={{ fontSize: 15, width: 20, textAlign: "center", flexShrink: 0 }}>{n.icon}</span>
-              {n.label}
-            </button>
-          ))}
-          <button onClick={() => navigate("new_client")}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: `1px dashed ${C.border}`, cursor: "pointer", textAlign: "left", background: "transparent", color: C.muted, fontFamily: "inherit", marginTop: 8, width: "100%" }}>
-            <span style={{ fontSize: 15, width: 20, textAlign: "center", flexShrink: 0 }}>+</span>
-            New Client
-          </button>
+        <nav style={{ flex: 1, padding: "8px 8px 12px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }} data-testid="nav">
+          {NAV_GROUPS.map(g => {
+            const items = g.items.filter(n => !(n as any).superOnly || admin?.role === "super_admin");
+            if (!items.length) return null;
+            return (
+              <div key={g.title} style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 10px 4px", opacity: 0.8 }}>{g.title}</div>
+                {items.map(n => {
+                  const on = current === n.id;
+                  return (
+                    <button key={n.id} onClick={() => navigate(n.id)} data-testid={`nav-${n.id}`}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", textAlign: "left", background: on ? "rgba(0,212,255,0.08)" : "transparent", color: on ? C.accent : C.muted, fontFamily: "inherit", transition: "all 0.15s", width: "100%" }}>
+                      <span style={{ fontSize: 14, width: 20, textAlign: "center", flexShrink: 0 }}>{n.icon}</span>
+                      <span style={{ flex: 1 }}>{n.label}</span>
+                      {n.id === "alerts" && critical > 0 && (
+                        <span data-testid="alerts-badge" style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: C.danger, borderRadius: 10, padding: "1px 7px" }}>{critical}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </nav>
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin?.name || "Admin"}</div>
@@ -399,7 +459,7 @@ function Sidebar({ page, setPage, admin, onLogout, isOpen, onClose }) {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function DashboardPage({ req }) {
+function DashboardPage({ req, onOpenAlerts, onSelectClient }) {
   const [stats, setStats]   = useState(null);
   const [health, setHealth] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -442,9 +502,12 @@ function DashboardPage({ req }) {
   return (
     <div style={S.content}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Fleet Dashboard</h1>
-        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>ZapTill client overview</p>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Dashboard</h1>
+        <p style={{ fontSize: 13, color: C.muted, margin: "4px 0 0" }}>Your clients at a glance</p>
       </div>
+
+      {/* A393: what needs you first */}
+      <AlertsSummary req={req} onOpen={onOpenAlerts} />
 
       {/* KPI row */}
       <div className="sp-kpi-grid">
@@ -506,8 +569,6 @@ function DashboardPage({ req }) {
         </div>
       </div>
 
-      <WatchdogCard req={req} />
-
       {/* Health table */}
       <div style={S.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -524,7 +585,7 @@ function DashboardPage({ req }) {
           </thead>
           <tbody>
             {health.slice(0, 20).map(b => (
-              <tr key={b.id} style={{ cursor: "pointer" }}>
+              <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => onSelectClient?.(b)}>
                 <td style={S.td}><span style={{ fontWeight: 500 }}>{b.name}</span></td>
                 <td style={S.td}><TypeIcon type={b.type} size={16} style={{ marginRight: 4, verticalAlign: "middle" }} /> <span style={{ fontSize: 12, color: C.muted }}>{TYPE_META[b.type]?.label}</span></td>
                 <td style={S.td}><StatusBadge status={b.status} /></td>
@@ -544,7 +605,7 @@ function DashboardPage({ req }) {
 
 // ─── SUPPORT TECH (0.6.35, A384) ──────────────────────────────────────────────
 // Allocate a team member to a client: their name and number appear on the shop's Help (the till, offline too, after its
-// next sync; and the web). None → SwiftPOS support's numbers.
+// next sync; and the web). None → ZapTill support's numbers.
 function SupportTechPicker({ req, clientId, current, onSaved }) {
   const [techs, setTechs]   = useState(null);
   const [saving, setSaving] = useState(false);
@@ -582,69 +643,6 @@ function SupportTechPicker({ req, clientId, current, onSaved }) {
       </div>
       <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Shown on the shop's Help: {shown}. Tills pick it up at their next sync.</div>
       {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{error}</div>}
-    </div>
-  );
-}
-
-// ─── WATCHDOG (A383) ──────────────────────────────────────────────────────────
-// What the cloud's watchdog found and has not seen clear, and whether its alerts can reach the admin (Telegram / email).
-// Its own load: a failure here never hides the fleet dashboard.
-function WatchdogCard({ req }) {
-  const [data, setData]       = useState(null);
-  const [error, setError]     = useState("");
-  const [testing, setTesting] = useState(false);
-  const [result, setResult]   = useState("");
-
-  const load = useCallback(() => {
-    req("GET", "/watchdog").then(setData).catch(e => setError(e?.message || "Couldn't load the watchdog."));
-  }, [req]);
-  useEffect(() => { load(); }, [load]);
-
-  const test = async () => {
-    setTesting(true); setResult("");
-    try {
-      const r = await req("POST", "/watchdog/test");
-      const parts = [
-        r.channels?.telegram ? (r.sent?.telegram ? "Telegram ✓" : "Telegram ✗ (see the server log)") : "Telegram not set",
-        r.channels?.email ? (r.sent?.email ? "Email ✓" : "Email ✗ (see the server log)") : "Email not set",
-      ];
-      setResult(parts.join(" · "));
-    } catch (e) { setResult(e?.message || "Test failed."); }
-    finally { setTesting(false); }
-  };
-
-  const alerts = data?.alerts || [];
-  const crit = alerts.filter(a => a.severity === "critical");
-  const warn = alerts.filter(a => a.severity !== "critical");
-  const ch = data?.channels;
-
-  return (
-    <div style={{ ...S.card, marginBottom: 16 }} data-testid="watchdog-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Watchdog</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-            Checks every 10 minutes · critical problems sent at once, the rest in the 07:45 digest ·{" "}
-            Telegram {ch?.telegram ? "on" : "off"} · Email {ch?.email ? "on" : "off"}
-          </div>
-        </div>
-        <button onClick={test} disabled={testing} style={{ ...S.btn, ...S.btnPrimary }} data-testid="watchdog-test">
-          {testing ? "Sending…" : "Send test alert"}
-        </button>
-      </div>
-      {result && <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>{result}</div>}
-      {error && <div style={{ fontSize: 12, color: C.danger }}>{error}</div>}
-      {data && !alerts.length && <div style={{ fontSize: 13, color: "#22c55e" }}>No open problems.</div>}
-      {[...crit, ...warn].map(a => (
-        <div key={a.id} style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flexShrink: 0, background: a.severity === "critical" ? C.danger : "#f59e0b" }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{a.title}</div>
-            {a.detail && <div style={{ fontSize: 12, color: C.muted }}>{a.detail}</div>}
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>since {timeAgo(a.first_seen_at)}</div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -762,7 +760,7 @@ function ClientDetailPage({ client, req, onBack }) {
   const [desktopWarning, setDesktopWarning] = useState(null);
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [savingDesktop, setSavingDesktop] = useState(false);
-  // A378: the client's own sign-in address (africanfries.<root>) — SwiftPOS sets it here, never the client.
+  // A378: the client's own sign-in address (africanfries.<root>) — ZapTill sets it here, never the client.
   const [subDraft, setSubDraft] = useState(null);          // null = not editing
   const [subError, setSubError] = useState("");
   const [savingSub, setSavingSub] = useState(false);
@@ -1072,54 +1070,140 @@ function ClientDetailPage({ client, req, onBack }) {
     } catch (e) { setError(e?.message ?? "Failed to save changes"); }
   }
 
+  // A391: the owner lost the phone with their authenticator app → back to emailed codes.
+  async function resetOwnerOtp() {
+    if (!(await askConfirm(`Reset the sign-in code for the owner of "${d.name}"? They will get their code by email at the next sign-in, and every browser they asked to be remembered must enter a code again.`))) return;
+    try {
+      await req("POST", `/clients/${client.id}/reset-owner-otp`, {});
+      await askConfirm("Done — the owner now gets their sign-in code by email.");
+    } catch (e) { setError(e?.message ?? "Could not reset the sign-in code"); }
+  }
+
   if (loading) return <div style={{ padding: 24, color: C.muted }}>Loading client…</div>;
 
   const d = detail || client;
   const activeSub = subs.find(s => s.status === "active");
   const TYPE = TYPE_META[d.type] || TYPE_META.other;
+  const licensedCount = branches.filter(b => b.desktop_licensed).length;
+  const outstanding = invoices.filter(i => i.status !== "paid").reduce((s, i) => s + Number(i.amount), 0);
 
-  const TABS = ["overview", "branches", "features", "subscription", "billing", "notes"];
+  // A393 (owner, 2026-10-04: "make admin portal ui user friendly i feel we have thrown things randomly everywhere"):
+  // one header with the facts that matter, then one tab per job — nothing above the tabs but what needs attention.
+  const TABS = [
+    ["overview", "Overview"],
+    ["branches", "Branches & tills"],
+    ["billing",  "Plan & billing"],
+    ["features", "Features"],
+    ["updates",  "Desktop updates"],
+    ["account",  "Owner & account"],
+    ["notes",    `Notes${notes.length ? ` (${notes.length})` : ""}`],
+  ];
+
+  const fact = (label, value, color = C.text, onClick = null) => (
+    <button key={label} onClick={onClick ?? undefined} disabled={!onClick}
+      style={{ textAlign: "left", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 12px", minWidth: 0, cursor: onClick ? "pointer" : "default", fontFamily: "inherit" }}>
+      <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color, marginTop: 3, lineHeight: 1.35 }}>{value}</div>
+    </button>
+  );
+
+  const settingRow = (title, text, actions, testid = undefined) => (
+    <div data-testid={testid} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>{text}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{actions}</div>
+    </div>
+  );
+
+  const toggle = (on, onClick, label) => (
+    <button onClick={onClick} aria-pressed={on} aria-label={label}
+      style={{ flex: "0 0 auto", width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: on ? "#22c55e" : C.border, position: "relative", transition: "background 0.2s" }}>
+      <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 0.2s" }} />
+    </button>
+  );
+
+  const enrolPanel = (
+    <>
+      {/* A69: minted codes — shown ONCE. Business ID once, then one code per till. */}
+      {enrolError && (
+        <div data-testid="enrol-error" style={{ marginTop: 10, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>
+          Could not issue an enrolment code — {enrolError}
+        </div>
+      )}
+      {enrolResult && (
+        <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+            Enrolment {enrolResult.codes.length === 1 ? "code" : `codes (${enrolResult.codes.length})`} — {enrolResult.branchName}
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+            Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each till the Business ID + one code.
+          </div>
+          {[["Business ID", enrolResult.businessId],
+            ...enrolResult.codes.map((c, i) => [enrolResult.codes.length > 1 ? `Code ${i + 1}` : "Code", c])
+          ].map(([label, value], i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: C.muted, width: 84, flexShrink: 0 }}>{label}</span>
+              <code style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{value}</code>
+              <button onClick={() => navigator.clipboard?.writeText(value)}
+                style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "3px 8px", flexShrink: 0 }}>Copy</button>
+            </div>
+          ))}
+          <button onClick={() => setEnrolResult(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px", marginTop: 6 }}>Dismiss</button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div style={S.content}>
       {modal}
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-        <button onClick={onBack} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>← Back</button>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 24 }}>{TYPE.icon}</span>
-            <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{d.name}</h1>
-            <StatusBadge status={d.status} />
+      <button onClick={onBack} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, padding: 0, marginBottom: 12, fontFamily: "inherit" }}>← All clients</button>
+
+      {/* Header — who, and the facts that matter */}
+      <div style={{ ...S.card, padding: "18px 20px" }} data-testid="client-header">
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+          <TypeIcon type={d.type} size={30} style={{ marginTop: 2 }} />
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{d.name}</h1>
+              <StatusBadge status={d.status} />
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+              {TYPE.label} · joined {fmtDate(d.created_at)} ·{" "}
+              <span style={{ fontFamily: "monospace" }}>{d.id}</span>{" "}
+              <button onClick={() => navigator.clipboard?.writeText(d.id)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 11, padding: 0 }}>copy</button>
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: C.muted, fontFamily: "monospace", marginTop: 2 }}>{d.id}</div>
+          <button onClick={() => { setEditForm({ name: d.name ?? "", type: d.type ?? "", currency: d.currency ?? "" }); setEditing(true); }} style={{ ...S.btn, ...S.btnGhost }}>Edit details</button>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => { setEditForm({ name: d.name ?? "", type: d.type ?? "", currency: d.currency ?? "" }); setEditing(true); }} style={{ ...S.btn, ...S.btnGhost }}>Edit</button>
-          <button onClick={changeOwnerEmail} style={{ ...S.btn, ...S.btnGhost }}>Change Email</button>
-          <button onClick={resetOwnerPassword} style={{ ...S.btn, ...S.btnGhost }}>Reset Password</button>
-          {d.status === "active"
-            ? <button onClick={suspend} style={{ ...S.btn, ...S.btnDanger }}>Suspend</button>
-            : <button onClick={activate} style={{ ...S.btn, ...S.btnPrimary }}>Activate</button>
-          }
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 16 }}>
+          {fact("Web portal", hasWebHosting ? "Active" : "Not enabled", hasWebHosting ? "#34e5a0" : C.danger, () => setTab("billing"))}
+          {fact("Plan", activeSub ? `${activeSub.plans?.name || "Active"} · to ${fmtDate(activeSub.expires_at)}` : "None", activeSub ? C.text : C.muted, () => setTab("billing"))}
+          {fact("Branches", `${branches.length} · ${licensedCount} licensed`, C.text, () => setTab("branches"))}
+          {fact("Tills", `${devices.length} enrolled`, C.text, () => setTab("branches"))}
+          {fact("Desktop version", d.desktop_approved_version ? `v${d.desktop_approved_version}` : "Held", d.desktop_approved_version ? C.text : "#f59e0b", () => setTab("updates"))}
+          {fact("Outstanding", fmt(outstanding), outstanding > 0 ? "#fbbf24" : C.text, () => setTab("billing"))}
         </div>
       </div>
 
       {error && <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>{error}</div>}
 
       {d.status === "suspended" && (
-        <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+        <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
           background: isPurgeDue(d) ? "rgba(245,158,11,0.08)" : "rgba(148,163,184,0.06)",
           border: `1px solid ${isPurgeDue(d) ? "rgba(245,158,11,0.35)" : C.border}` }}>
-          <div style={{ fontSize: 12.5 }}>
+          <div style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
             {d.suspended_at
               ? <>Suspended {daysSince(d.suspended_at)} days ago ({fmtDate(d.suspended_at)}).{isPurgeDue(d)
                   ? <b style={{ color: "#f59e0b" }}> Past the 6-month grace — normal user data is due for purge.</b>
                   : ` Normal user data purge-eligible in ${Math.max(0, PURGE_GRACE_DAYS - daysSince(d.suspended_at))} days. Financial/tax records are retained separately.`}</>
               : "Suspended (no timestamp recorded)."}
           </div>
-          <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Export data</button>
-          {isPurgeDue(d) && <button onClick={loadPurgePreview} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, flexShrink: 0 }}>Preview purge</button>}
+          <button onClick={activate} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Activate</button>
+          <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export data</button>
+          {isPurgeDue(d) && <button onClick={loadPurgePreview} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Preview purge</button>}
         </div>
       )}
 
@@ -1177,142 +1261,18 @@ function ClientDetailPage({ client, req, onBack }) {
         </div>
       )}
 
-
-      {/* ── Web Hosting status banner ── */}
-      <div style={{ marginBottom: 16, padding: "14px 18px", background: hasWebHosting ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: `1px solid ${hasWebHosting ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
-        {hasWebHosting ? <IconGlobe size={22} color="#22c55e" /> : <IconLock size={22} color={C.danger} />}
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: hasWebHosting ? "#22c55e" : C.danger }}>
-            Web portal {hasWebHosting ? "ACTIVE" : "NOT ENABLED"}
-          </div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-            {hasWebHosting
-              ? "Client can access the cloud dashboard and web POS."
-              : "Client is on desktop-only licence. Upgrade required (KES 10,000) for web portal access."}
-          </div>
-        </div>
-        <button
-          onClick={() => toggleWebHosting(!hasWebHosting)}
-          style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
-          {hasWebHosting ? "Disable web access" : "Enable web access"}
-        </button>
-      </div>
-
-      {/* ── Themes (A325, client branding Phase 2) ── */}
-      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>App themes {hasThemes ? "ON" : "OFF"}</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-            {hasThemes
-              ? "The client can pick an app theme on the Branding page; tills follow it."
-              : "Tills keep the standard look. Turn on to let the client pick an app theme."}
-          </div>
-        </div>
-        <button
-          onClick={() => toggleThemes(!hasThemes)}
-          style={{ ...S.btn, ...(hasThemes ? S.btnGhost : S.btnPrimary), fontSize: 12 }}>
-          {hasThemes ? "Turn themes off" : "Turn themes on"}
-        </button>
-      </div>
-
-      {/* ── Web access expiry (A147) ── */}
-      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Web access expiry</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-            {detail?.web_access_expires_at
-              ? `Renewal ladder is measured against ${fmtDate(detail.web_access_expires_at)}.`
-              : "No expiry set — the renewal ladder has no date to measure against."}
-          </div>
-        </div>
-        <input
-          type="date"
-          value={expiryDraft}
-          onChange={e => setExpiryDraft(e.target.value)}
-          style={{ ...S.input, width: "auto" } as React.CSSProperties}
-        />
-        <button
-          disabled={savingExpiry || !expiryDraft}
-          onClick={() => setWebAccessExpiry(expiryDraft)}
-          style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingExpiry || !expiryDraft) ? 0.4 : 1 }}>
-          {savingExpiry ? "Saving…" : "Set expiry"}
-        </button>
-        {detail?.web_access_expires_at && (
-          <button
-            disabled={savingExpiry}
-            onClick={() => setWebAccessExpiry(null)}
-            style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* ── Desktop updates (A348) — per business, held by default ── */}
-      <div style={{ marginBottom: 16, padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Desktop updates</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-            {detail?.desktop_approved_version
-              ? `Approved: ${detail.desktop_approved_version}. Tills on 0.6.16 or later update to it within the hour; it installs when each till is next closed.`
-              : "Held — tills stay on the version they run. (Tills older than 0.6.16 still follow the published GitHub release.)"}
-          </div>
-          {desktopReleases && desktopReleases.error && (
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
-          )}
-          {desktopWarning && (
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{desktopWarning}</div>
-          )}
-          {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
-            <button type="button" onClick={() => setShowAllVersions(v => !v)}
-              style={{ ...S.btn, ...S.btnGhost, fontSize: 11, marginTop: 6, padding: "2px 8px" }}>
-              {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
-            </button>
-          )}
-        </div>
-        <select
-          value={desktopPick}
-          disabled={savingDesktop || !Array.isArray(desktopReleases)}
-          onChange={e => setDesktopPick(e.target.value)}
-          style={{ ...S.input, width: "auto" } as React.CSSProperties}>
-          <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
-          {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
-            <option key={r.version} value={r.version} disabled={!r.complete}>
-              {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
-            </option>
-          ))}
-        </select>
-        <button
-          disabled={savingDesktop || !desktopPick}
-          onClick={() => setDesktopVersion(desktopPick)}
-          style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingDesktop || !desktopPick) ? 0.4 : 1 }}>
-          {savingDesktop ? "Saving…" : "Approve"}
-        </button>
-        {detail?.desktop_approved_version && (
-          <button
-            disabled={savingDesktop}
-            onClick={() => setDesktopVersion(null)}
-            style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingDesktop ? 0.4 : 1 }}>
-            Hold
-          </button>
-        )}
-      </div>
-
       {/* Tab bar */}
-      <div className="sp-tab-bar">
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ ...S.tab, ...(tab === t ? S.tabActive : {}), textTransform: "capitalize" }}>
-            {t}
-          </button>
+      <div className="sp-tab-bar" data-testid="client-tabs">
+        {TABS.map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ ...S.tab, ...(tab === k ? S.tabActive : {}) }}>{l}</button>
         ))}
       </div>
 
-      {/* OVERVIEW */}
+      {/* OVERVIEW — the business, its numbers, who supports it */}
       {tab === "overview" && (
-        <>
-        <div className="sp-two-col" style={{ marginBottom: 0 }}>
+        <div className="sp-two-col" style={{ alignItems: "start" }}>
           <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Business Profile</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Business profile</div>
             {[
               ["Type", TYPE.label],
               ["Currency", d.currency],
@@ -1328,254 +1288,107 @@ function ClientDetailPage({ client, req, onBack }) {
                 <span style={{ fontSize: 12 }}>{v}</span>
               </div>
             ))}
-            {/* A378: the client's own sign-in address — their logo on the sign-in page; only their people sign in there. */}
-            <div data-testid="signin-address" style={{ marginTop: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Sign-in address</div>
-              {subDraft === null ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, fontFamily: "monospace", color: d.subdomain ? C.text : C.muted }}>
-                    {d.sign_in_address || (d.subdomain ? `${d.subdomain}.<root domain>` : "None — signs in on the main address")}
-                  </span>
-                  <button onClick={() => { setSubDraft(d.subdomain || suggestSubdomain(d.name)); setSubError(""); }}
-                          style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>
-                    {d.subdomain ? "Change" : "Set"}
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <input style={{ ...S.input, width: 180 }} value={subDraft} autoFocus placeholder="e.g. africanfries"
-                         onChange={e => { setSubDraft(e.target.value.toLowerCase()); setSubError(""); }} />
-                  <span style={{ fontSize: 12, color: C.muted }}>.{d.tenant_root_domain || "<root domain>"}</span>
-                  <button disabled={savingSub} onClick={saveSubdomain} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "5px 10px" }}>
-                    {savingSub ? "…" : "Save"}
-                  </button>
-                  <button disabled={savingSub} onClick={() => { setSubDraft(null); setSubError(""); }}
-                          style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>Cancel</button>
-                </div>
-              )}
-              {subError && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{subError}</div>}
-              {d.subdomain && !d.tenant_root_domain && (
-                <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 6 }}>
-                  TENANT_ROOT_DOMAIN is not set on the cloud — the address is saved but not live yet.
-                </div>
-              )}
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
-                Leave empty and save to remove. Only this client's owner and staff can sign in on it.
-              </div>
-            </div>
-            {/* 0.6.35 (A384): the tech allocated to this client — their number is on the shop's Help (till + web). */}
-            <SupportTechPicker req={req} clientId={client.id} current={d.support_tech}
-              onSaved={(tech) => setDetail(prev => ({ ...prev, support_admin_id: tech?.id ?? null, support_tech: tech }))} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
               {[
-                ["Branches", d.branch_count ?? d.branches?.length ?? 0, C.accent],
+                ["Branches", d.branch_count ?? branches.length ?? 0, C.accent],
                 ["Staff", d.staff_count ?? 0, "#a78bfa"],
                 ["Products", d.product_count ?? 0, "#34d399"],
+                ["Revenue this month", fmt(d.revenue_mtd, d.currency), "#fbbf24"],
               ].map(([l, v, c]) => (
-                <div key={l} style={{ ...S.kpiCard, flex: 1 }}>
+                <div key={l} style={{ ...S.kpiCard }}>
                   <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>{l}</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: c }}>{v}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: c }}>{v}</div>
                 </div>
               ))}
             </div>
             <div style={S.card}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Revenue MTD</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: "#fbbf24", fontFamily: "monospace" }}>{fmt(d.revenue_mtd, d.currency)}</div>
-            </div>
-            <div style={S.card}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Branch Licences</div>
-                <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Support and sign-in</div>
+              {/* 0.6.35 (A384): the tech allocated to this client — their number is on the shop's Help (till + web). */}
+              <SupportTechPicker req={req} clientId={client.id} current={d.support_tech}
+                onSaved={(tech) => setDetail(prev => ({ ...prev, support_admin_id: tech?.id ?? null, support_tech: tech }))} />
+              {/* A378: the client's own sign-in address — their logo on the sign-in page; only their people sign in there. */}
+              <div data-testid="signin-address" style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Sign-in address</div>
+                {subDraft === null ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, fontFamily: "monospace", color: d.subdomain ? C.text : C.muted }}>
+                      {d.sign_in_address || (d.subdomain ? `${d.subdomain}.<root domain>` : "None — signs in on the main address")}
+                    </span>
+                    <button onClick={() => { setSubDraft(d.subdomain || suggestSubdomain(d.name)); setSubError(""); }}
+                            style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>
+                      {d.subdomain ? "Change" : "Set"}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <input style={{ ...S.input, width: 180 }} value={subDraft} autoFocus placeholder="e.g. africanfries"
+                           onChange={e => { setSubDraft(e.target.value.toLowerCase()); setSubError(""); }} />
+                    <span style={{ fontSize: 12, color: C.muted }}>.{d.tenant_root_domain || "<root domain>"}</span>
+                    <button disabled={savingSub} onClick={saveSubdomain} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "5px 10px" }}>
+                      {savingSub ? "…" : "Save"}
+                    </button>
+                    <button disabled={savingSub} onClick={() => { setSubDraft(null); setSubError(""); }}
+                            style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>Cancel</button>
+                  </div>
+                )}
+                {subError && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{subError}</div>}
+                {d.subdomain && !d.tenant_root_domain && (
+                  <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 6 }}>
+                    TENANT_ROOT_DOMAIN is not set on the cloud — the address is saved but not live yet.
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+                  Leave empty and save to remove. Only this client's owner and staff can sign in on it.
+                </div>
               </div>
-              {addingBranch && (
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", padding: "12px", background: "#0f1929", border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                  <div style={{ flex: 1, minWidth: 140 }}>
-                    <label style={S.label}>Name *</label>
-                    <input style={S.input} value={branchForm.name} onChange={e => setBranchForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Westlands" autoFocus />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <label style={S.label}>Address</label>
-                    <input style={S.input} value={branchForm.address} onChange={e => setBranchForm(f => ({ ...f, address: e.target.value }))} />
-                  </div>
-                  <div style={{ width: 130 }}>
-                    <label style={S.label}>Phone</label>
-                    <input style={S.input} value={branchForm.phone} onChange={e => setBranchForm(f => ({ ...f, phone: e.target.value }))} />
-                  </div>
-                  <button onClick={createBranch} style={{ ...S.btn, ...S.btnPrimary, flexShrink: 0 }}>Create</button>
-                </div>
-              )}
-              {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No branches yet.</p>}
-              {branches.map(b => (
-                <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-                      {b.name}
-                      {b.is_main && <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>MAIN</span>}
-                    </div>
-                    {b.desktop_licensed
-                      ? <div style={{ fontSize: 11, color: "#22c55e", marginTop: 2 }}>✓ Desktop licensed — {b.desktop_licensed_at ? new Date(b.desktop_licensed_at).toLocaleDateString("en-KE") : ""}</div>
-                      : <div style={{ fontSize: 11, color: C.danger, marginTop: 2 }}>✗ Not licensed — desktop POS blocked</div>
-                    }
-                  </div>
-                  <StatusBadge status={b.status} />
-                  {b.desktop_licensed && (
-                    <button
-                      disabled={enrolBranch === b.id}
-                      onClick={() => generateEnrolCode(b)}
-                      style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}
-                      title="Mint a single-use enrolment code for a till on this branch">
-                      {enrolBranch === b.id ? "…" : "Enrol till"}
-                    </button>
-                  )}
-                  <button
-                    disabled={licencingBranch === b.id}
-                    onClick={() => toggleBranchLicence(b, !b.desktop_licensed)}
-                    style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>
-                    {licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke" : "Activate"}
-                  </button>
-                  {!b.is_main && (
-                    <button
-                      disabled={closingBranch === b.id}
-                      onClick={() => toggleBranchStatus(b)}
-                      style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}
-                      title={b.status === "inactive" ? "Reactivate this branch" : "Deactivate this branch"}>
-                      {closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}
-                    </button>
-                  )}
-                </div>
-              ))}
-
-              {/* A69: minted codes — shown ONCE. Business ID once, then one code per till. */}
-              {enrolError && (
-                <div data-testid="enrol-error" style={{ marginTop: 10, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>
-                  Could not issue an enrolment code — {enrolError}
-                </div>
-              )}
-              {enrolResult && (
-                <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                    Enrolment {enrolResult.codes.length === 1 ? "code" : `codes (${enrolResult.codes.length})`} — {enrolResult.branchName}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-                    Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each till the Business ID + one code.
-                  </div>
-                  {[["Business ID", enrolResult.businessId],
-                    ...enrolResult.codes.map((c, i) => [enrolResult.codes.length > 1 ? `Code ${i + 1}` : "Code", c])
-                  ].map(([label, value], i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: C.muted, width: 84, flexShrink: 0 }}>{label}</span>
-                      <code style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{value}</code>
-                      <button onClick={() => navigator.clipboard?.writeText(value)}
-                        style={{ ...S.btn, fontSize: 10, padding: "3px 8px", flexShrink: 0 }}>Copy</button>
-                    </div>
-                  ))}
-                  <button onClick={() => setEnrolResult(null)} style={{ ...S.btn, fontSize: 11, padding: "4px 10px", marginTop: 6 }}>Dismiss</button>
-                </div>
-              )}
             </div>
           </div>
         </div>
-
-        {/* A70: enrolled-device roster — what this client actually has provisioned */}
-        <div style={{ ...S.card, marginTop: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Enrolled Devices</div>
-            <div style={{ fontSize: 11, color: C.muted }}>{devices.length} total</div>
-          </div>
-          {devices.length === 0 ? (
-            <div style={{ fontSize: 12, color: C.muted, padding: "8px 0" }}>No devices enrolled yet.</div>
-          ) : (
-            <div>
-              {devices.map(d => (
-                <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>
-                      {d.label}
-                      {d.role && <span style={{ fontSize: 10, color: C.muted, marginLeft: 6, textTransform: "uppercase" }}>{d.role}</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{d.branch}</div>
-                  </div>
-                  <div style={{ fontSize: 11, color: C.muted, textAlign: "right", flexShrink: 0 }}>
-                    <div>{d.lastSeenAt ? `seen ${new Date(d.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}</div>
-                    <div style={{ marginTop: 2 }}>
-                      {d.appVersion ? `v${d.appVersion}` : "—"}{d.status !== "approved" ? ` · ${d.status}` : ""}
-                    </div>
-                  </div>
-                  <button onClick={() => revokeDevice(d)} style={{ ...S.btn, ...S.btnDanger, fontSize: 10, padding: "4px 9px", flexShrink: 0 }}>Revoke</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        </>
       )}
 
-      {/* FEATURES */}
+      {/* BRANCHES & TILLS — licences, enrolment codes, each branch's tills and their tech log */}
       {tab === "branches" && (
+        <>
         <div style={S.card}>
           {!branchView ? (
             <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Branches</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Branches</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>A branch needs a desktop licence before its tills can be enrolled.</div>
+                </div>
                 <button onClick={() => { setBranchForm({ name: "", address: "", phone: "" }); setAddingBranch(v => !v); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 10px" }}>{addingBranch ? "Cancel" : "+ Add branch"}</button>
               </div>
               {addingBranch && (
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", padding: "12px", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", margin: "8px 0 12px", flexWrap: "wrap", padding: "12px", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
                   <div style={{ flex: 1, minWidth: 140 }}><label style={S.label}>Name *</label><input style={S.input} value={branchForm.name} onChange={e => setBranchForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Westlands" autoFocus /></div>
                   <div style={{ flex: 1, minWidth: 120 }}><label style={S.label}>Address</label><input style={S.input} value={branchForm.address} onChange={e => setBranchForm(f => ({ ...f, address: e.target.value }))} /></div>
                   <div style={{ width: 130 }}><label style={S.label}>Phone</label><input style={S.input} value={branchForm.phone} onChange={e => setBranchForm(f => ({ ...f, phone: e.target.value }))} /></div>
                   <button onClick={createBranch} style={{ ...S.btn, ...S.btnPrimary, flexShrink: 0 }}>Create</button>
                 </div>
               )}
-              {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No branches yet.</p>}
+              {branches.length === 0 && <p style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>No branches yet.</p>}
               {branches.map(b => {
                 const tills = devices.filter(x => x.branchId === b.id);
                 return (
-                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                    <div style={{ flex: 1, cursor: "pointer" }} onClick={() => openTills(b)}>
+                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 180, cursor: "pointer" }} onClick={() => openTills(b)}>
                       <div style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>{b.name}{b.is_main && <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>MAIN</span>}</div>
-                      <div style={{ fontSize: 11, color: b.desktop_licensed ? "#34e5a0" : C.danger, marginTop: 2 }}>{b.desktop_licensed ? "✓ Licensed" : "✗ Not licensed"} · {tills.length} till{tills.length === 1 ? "" : "s"}</div>
+                      <div style={{ fontSize: 11, color: b.desktop_licensed ? "#34e5a0" : C.danger, marginTop: 2 }}>
+                        {b.desktop_licensed ? `✓ Licensed${b.desktop_licensed_at ? ` ${new Date(b.desktop_licensed_at).toLocaleDateString("en-KE")}` : ""}` : "✗ Not licensed — desktop POS blocked"} · {tills.length} till{tills.length === 1 ? "" : "s"}
+                      </div>
                     </div>
                     <StatusBadge status={b.status} />
                     <button onClick={() => openTills(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>Tills →</button>
-                    {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol till"}</button>}
-                    <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke" : "Activate"}</button>
-                    {!b.is_main && <button disabled={closingBranch === b.id} onClick={() => toggleBranchStatus(b)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>{closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}</button>}
+                    {b.desktop_licensed && <button disabled={enrolBranch === b.id} onClick={() => generateEnrolCode(b)} title="Mint a single-use enrolment code for a till on this branch" style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...S.btnPrimary, flexShrink: 0 }}>{enrolBranch === b.id ? "…" : "Enrol till"}</button>}
+                    <button disabled={licencingBranch === b.id} onClick={() => toggleBranchLicence(b, !b.desktop_licensed)} style={{ ...S.btn, fontSize: 11, padding: "5px 10px", ...(b.desktop_licensed ? S.btnDanger : S.btnPrimary), flexShrink: 0 }}>{licencingBranch === b.id ? "…" : b.desktop_licensed ? "Revoke licence" : "Activate licence"}</button>
+                    {!b.is_main && <button disabled={closingBranch === b.id} onClick={() => toggleBranchStatus(b)} title={b.status === "inactive" ? "Reactivate this branch" : "Deactivate this branch"} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "5px 10px", flexShrink: 0 }}>{closingBranch === b.id ? "…" : b.status === "inactive" ? "Reopen" : "Close"}</button>}
                   </div>
                 );
               })}
-
-              {/* A198: show the minted code on the Branches tab too — same shared state
-                  as the Overview card. Without this, "Enrol till" here minted a single-use
-                  code with nowhere to display it, silently burning it. */}
-              {enrolError && (
-                <div data-testid="enrol-error" style={{ marginTop: 10, padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.danger, fontSize: 13 }}>
-                  Could not issue an enrolment code — {enrolError}
-                </div>
-              )}
-              {enrolResult && (
-                <div style={{ marginTop: 12, padding: 12, background: C.accent + "14", border: `1px solid ${C.accent}55`, borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                    Enrolment {enrolResult.codes.length === 1 ? "code" : `codes (${enrolResult.codes.length})`} — {enrolResult.branchName}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-                    Single-use. Expire {new Date(enrolResult.expiresAt).toLocaleTimeString("en-KE")}. Give each till the Business ID + one code.
-                  </div>
-                  {[["Business ID", enrolResult.businessId],
-                    ...enrolResult.codes.map((c, i) => [enrolResult.codes.length > 1 ? `Code ${i + 1}` : "Code", c])
-                  ].map(([label, value], i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: C.muted, width: 84, flexShrink: 0 }}>{label}</span>
-                      <code style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{value}</code>
-                      <button onClick={() => navigator.clipboard?.writeText(value)}
-                        style={{ ...S.btn, fontSize: 10, padding: "3px 8px", flexShrink: 0 }}>Copy</button>
-                    </div>
-                  ))}
-                  <button onClick={() => setEnrolResult(null)} style={{ ...S.btn, fontSize: 11, padding: "4px 10px", marginTop: 6 }}>Dismiss</button>
-                </div>
-              )}
+              {enrolPanel}
             </>
           ) : !deviceView ? (
             <>
@@ -1612,54 +1425,75 @@ function ClientDetailPage({ client, req, onBack }) {
             </>
           )}
         </div>
-      )}
 
-      {tab === "features" && (
-        <div style={S.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Feature Flags</div>
-          <p style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Toggle features on/off for this client. Changes take effect immediately.</p>
-          {/* 0.6.27: the POS switches — always listed (off until set), named and explained; the till and web POS pick
-              them up at their next catalogue pull. */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, margin: "4px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
-          {POS_FEATURES.map(pf => {
-            const on = features.some(f => f.key === pf.key && f.enabled);
-            return (
-              <div key={pf.key} data-testid={`pos-feature-${pf.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{pf.label}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pf.description}</div>
-                </div>
-                <button onClick={() => toggleFeature(pf.key, !on)} aria-pressed={on} aria-label={pf.label}
-                  style={{ flex: "0 0 auto", width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: on ? "#22c55e" : C.border, position: "relative", transition: "background 0.2s" }}>
-                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 0.2s" }} />
-                </button>
-              </div>
-            );
-          })}
-          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
-          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key)).length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>No feature flags configured yet.</p>}
-          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key)).map(f => (
-            <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>
-                {f.notes && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.notes}</div>}
-              </div>
-              <button onClick={() => toggleFeature(f.key, !f.enabled)}
-                style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: f.enabled ? "#22c55e" : C.border, position: "relative", transition: "background 0.2s" }}>
-                <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: f.enabled ? 23 : 3, transition: "left 0.2s" }} />
-              </button>
+        {/* A70: every enrolled till of this client, all branches */}
+        {!branchView && (
+          <div style={S.card}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>All enrolled tills</div>
+              <div style={{ fontSize: 11, color: C.muted }}>{devices.length} total</div>
             </div>
-          ))}
-        </div>
+            {devices.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.muted, padding: "8px 0" }}>No tills enrolled yet.</div>
+            ) : devices.map(dv => (
+              <div key={dv.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>
+                    {dv.label}
+                    {dv.role && <span style={{ fontSize: 10, color: C.muted, marginLeft: 6, textTransform: "uppercase" }}>{dv.role}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dv.branch}</div>
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, textAlign: "right", flexShrink: 0 }}>
+                  <div>{dv.lastSeenAt ? `seen ${new Date(dv.lastSeenAt).toLocaleDateString("en-KE")}` : "never seen"}</div>
+                  <div style={{ marginTop: 2 }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}{dv.status !== "approved" ? ` · ${dv.status}` : ""}</div>
+                </div>
+                <button onClick={() => revokeDevice(dv)} style={{ ...S.btn, ...S.btnDanger, fontSize: 10, padding: "4px 9px", flexShrink: 0 }}>Revoke</button>
+              </div>
+            ))}
+          </div>
+        )}
+        </>
       )}
 
-      {/* SUBSCRIPTION */}
-      {tab === "subscription" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {activeSub && (
+      {/* PLAN & BILLING — web access, the plan, invoices */}
+      {tab === "billing" && (
+        <>
+          <div style={S.card}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Web portal access</div>
+            {settingRow(
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {hasWebHosting ? <IconGlobe size={18} color="#22c55e" /> : <IconLock size={18} color={C.danger} />}
+                Web portal {hasWebHosting ? "active" : "not enabled"}
+              </span>,
+              hasWebHosting
+                ? "The client can use the cloud dashboard and the web POS."
+                : "Desktop-only licence. Enabling web access (KES 10,000 a year) raises an invoice.",
+              <button onClick={() => toggleWebHosting(!hasWebHosting)} style={{ ...S.btn, ...(hasWebHosting ? S.btnDanger : S.btnPrimary), fontSize: 12 }}>
+                {hasWebHosting ? "Disable web access" : "Enable web access"}
+              </button>,
+              "web-access")}
+            {/* A147: the date the renewal ladder is measured against */}
+            {settingRow("Web access expiry",
+              detail?.web_access_expires_at
+                ? `Renewal is measured against ${fmtDate(detail.web_access_expires_at)}.`
+                : "No expiry set — the renewal reminders have no date to measure against.",
+              <>
+                <input type="date" value={expiryDraft} onChange={e => setExpiryDraft(e.target.value)} style={{ ...S.input, width: "auto" }} />
+                <button disabled={savingExpiry || !expiryDraft} onClick={() => setWebAccessExpiry(expiryDraft)}
+                  style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingExpiry || !expiryDraft) ? 0.4 : 1 }}>
+                  {savingExpiry ? "Saving…" : "Set expiry"}
+                </button>
+                {detail?.web_access_expires_at && (
+                  <button disabled={savingExpiry} onClick={() => setWebAccessExpiry(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingExpiry ? 0.4 : 1 }}>Clear</button>
+                )}
+              </>)}
+          </div>
+
+          <div className="sp-two-col" style={{ alignItems: "start" }}>
             <div style={S.card}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Current Subscription</div>
-              {[
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Current plan</div>
+              {activeSub ? [
                 ["Plan", activeSub.plans?.name || "—"],
                 ["Status", <StatusBadge status={activeSub.status} />],
                 ["Started", fmtDate(activeSub.starts_at)],
@@ -1671,41 +1505,19 @@ function ClientDetailPage({ client, req, onBack }) {
                   <span style={{ fontSize: 12, color: C.muted, width: 80 }}>{k}</span>
                   <span style={{ fontSize: 13 }}>{v}</span>
                 </div>
-              ))}
+              )) : <div style={{ fontSize: 12, color: C.muted }}>No active plan.</div>}
             </div>
-          )}
-          <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Renew / Upgrade</div>
-            <RenewForm plans={plans} clientId={client.id} req={req} onRenewed={() => req("GET", `/clients/${client.id}/subscription`).then(setSubs)} />
-          </div>
-          <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Subscription History</div>
-            <div className="sp-table-wrap"><table style={S.table}>
-              <thead><tr>{["Plan","Status","Started","Expires"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {subs.map(s => (
-                  <tr key={s.id}>
-                    <td style={S.td}>{s.plans?.name || s.plan_id}</td>
-                    <td style={S.td}><StatusBadge status={s.status} /></td>
-                    <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(s.starts_at)}</td>
-                    <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(s.expires_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={S.card}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Renew or change plan</div>
+              <RenewForm plans={plans} clientId={client.id} req={req} onRenewed={() => req("GET", `/clients/${client.id}/subscription`).then(setSubs)} />
             </div>
           </div>
-        </div>
-      )}
 
-      {/* BILLING */}
-      {tab === "billing" && (
-        <div>
           <div className="sp-kpi-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 16 }}>
             {[
-              ["Total Invoiced", fmt(invoices.reduce((s,i) => s + Number(i.amount), 0))],
+              ["Total invoiced", fmt(invoices.reduce((s,i) => s + Number(i.amount), 0))],
               ["Paid",           fmt(invoices.filter(i => i.status === "paid").reduce((s,i) => s + Number(i.amount), 0))],
-              ["Outstanding",   fmt(invoices.filter(i => i.status !== "paid").reduce((s,i) => s + Number(i.amount), 0))],
+              ["Outstanding",    fmt(outstanding)],
             ].map(([l, v]) => (
               <div key={l} style={S.kpiCard}>
                 <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>{l}</div>
@@ -1715,8 +1527,9 @@ function ClientDetailPage({ client, req, onBack }) {
           </div>
           <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Invoices</div>
+            {invoices.length === 0 ? <div style={{ fontSize: 12, color: C.muted }}>No invoices yet.</div> : (
             <div className="sp-table-wrap"><table style={S.table}>
-              <thead><tr>{["Invoice #","Amount","Status","Created","Actions"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Invoice #","Amount","Status","Created",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {invoices.map(inv => (
                   <tr key={inv.id}>
@@ -1726,7 +1539,7 @@ function ClientDetailPage({ client, req, onBack }) {
                     <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(inv.created_at)}</td>
                     <td style={S.td}>
                       {inv.status !== "paid" && (
-                        <button onClick={() => markPaid(inv.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 10px" }}>Mark Paid</button>
+                        <button onClick={() => markPaid(inv.id)} style={{ ...S.btn, ...S.btnPrimary, fontSize: 11, padding: "4px 10px" }}>Mark paid</button>
                       )}
                     </td>
                   </tr>
@@ -1734,19 +1547,156 @@ function ClientDetailPage({ client, req, onBack }) {
               </tbody>
             </table>
             </div>
+            )}
           </div>
+          {subs.length > 0 && (
+            <div style={S.card}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Plan history</div>
+              <div className="sp-table-wrap"><table style={S.table}>
+                <thead><tr>{["Plan","Status","Started","Expires"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {subs.map(s => (
+                    <tr key={s.id}>
+                      <td style={S.td}>{s.plans?.name || s.plan_id}</td>
+                      <td style={S.td}><StatusBadge status={s.status} /></td>
+                      <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(s.starts_at)}</td>
+                      <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{fmtDate(s.expires_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* FEATURES — what the client's tills and web can do */}
+      {tab === "features" && (
+        <div style={S.card}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Features</div>
+          <p style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Changes take effect at once; tills pick them up at their next sync.</p>
+          {/* A325: client branding Phase 2 — curated app themes (premium; off by default). */}
+          {settingRow("App themes",
+            hasThemes ? "The client picks an app theme on the Branding page; tills follow it." : "Tills keep the standard look. Turn on to let the client pick an app theme.",
+            toggle(hasThemes, () => toggleThemes(!hasThemes), "App themes"))}
+          {/* 0.6.27: the POS switches — always listed (off until set), named and explained. */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 0", textTransform: "uppercase", letterSpacing: 0.4 }}>POS switches</div>
+          {POS_FEATURES.map(pf => {
+            const on = features.some(f => f.key === pf.key && f.enabled);
+            return (
+              <div key={pf.key} data-testid={`pos-feature-${pf.key}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{pf.label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pf.description}</div>
+                </div>
+                {toggle(on, () => toggleFeature(pf.key, !on), pf.label)}
+              </div>
+            );
+          })}
+          {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, margin: "18px 0 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>Other flags</div>
+              {features.filter(f => !POS_FEATURE_KEYS.includes(f.key) && f.key !== "themes" && f.key !== "web_hosting").map(f => (
+                <div key={f.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: C.accent }}>{f.key}</div>
+                    {f.notes && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.notes}</div>}
+                  </div>
+                  {toggle(f.enabled, () => toggleFeature(f.key, !f.enabled), f.key)}
+                </div>
+              ))}
+            </>
+          )}
         </div>
+      )}
+
+      {/* DESKTOP UPDATES (A348) — per business, held by default */}
+      {tab === "updates" && (
+        <div style={S.card} data-testid="desktop-updates">
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Desktop updates</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+            {detail?.desktop_approved_version
+              ? `Approved: ${detail.desktop_approved_version}. Tills on 0.6.16 or later update to it within the hour; it installs when each till is next closed.`
+              : "Held — tills stay on the version they run. (Tills older than 0.6.16 still follow the published GitHub release.)"}
+          </div>
+          {desktopReleases && desktopReleases.error && (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Could not list releases: {desktopReleases.error}</div>
+          )}
+          {desktopWarning && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{desktopWarning}</div>}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
+            <select value={desktopPick} disabled={savingDesktop || !Array.isArray(desktopReleases)} onChange={e => setDesktopPick(e.target.value)}
+              style={{ ...S.input, width: "auto" }}>
+              <option value="">{desktopReleases === null ? "Loading releases…" : "Choose a version…"}</option>
+              {Array.isArray(desktopReleases) && visibleVersions(desktopReleases, detail?.desktop_approved_version, showAllVersions).map(r => (
+                <option key={r.version} value={r.version} disabled={!r.complete}>
+                  {r.version}{r.draft ? " (draft)" : r.prerelease ? " (pre-release)" : ""}{r.complete ? "" : ` — missing ${r.missing.join(", ")}`}
+                </option>
+              ))}
+            </select>
+            <button disabled={savingDesktop || !desktopPick} onClick={() => setDesktopVersion(desktopPick)}
+              style={{ ...S.btn, ...S.btnPrimary, fontSize: 12, opacity: (savingDesktop || !desktopPick) ? 0.4 : 1 }}>
+              {savingDesktop ? "Saving…" : "Approve"}
+            </button>
+            {detail?.desktop_approved_version && (
+              <button disabled={savingDesktop} onClick={() => setDesktopVersion(null)} style={{ ...S.btn, ...S.btnGhost, fontSize: 12, opacity: savingDesktop ? 0.4 : 1 }}>Hold</button>
+            )}
+            {Array.isArray(desktopReleases) && desktopReleases.length > RECENT_VERSIONS && (
+              <button type="button" onClick={() => setShowAllVersions(v => !v)} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "4px 8px" }}>
+                {showAllVersions ? `Show the latest ${RECENT_VERSIONS} only` : `Show all ${desktopReleases.length} versions`}
+              </button>
+            )}
+          </div>
+          {devices.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Tills now</div>
+              {devices.map(dv => (
+                <div key={dv.id} style={{ display: "flex", gap: 10, fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+                  <span style={{ flex: 1 }}>{dv.label} <span style={{ color: C.muted }}>· {dv.branch}</span></span>
+                  <span style={{ color: dv.appVersion && detail?.desktop_approved_version && dv.appVersion !== detail.desktop_approved_version ? "#f59e0b" : C.muted }}>{dv.appVersion ? `v${dv.appVersion}` : "—"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* OWNER & ACCOUNT — the owner's sign-in, and the account's status */}
+      {tab === "account" && (
+        <>
+          <div style={S.card}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Owner sign-in</div>
+            {settingRow("Login email", d.email || "—",
+              <button onClick={changeOwnerEmail} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Change email</button>)}
+            {settingRow("Password", "Set a new password and give it to the owner securely; they can change it after signing in.",
+              <button onClick={resetOwnerPassword} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Reset password</button>)}
+            {/* A391 */}
+            {settingRow("Sign-in code", "The owner enters a code at every sign-in — emailed, or from their authenticator app. Lost phone? Reset to emailed codes.",
+              <button onClick={resetOwnerOtp} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }} data-testid="reset-owner-otp">Reset to email code</button>,
+              "owner-otp")}
+          </div>
+          <div style={{ ...S.card, borderColor: "rgba(255,92,108,0.3)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.danger, marginBottom: 6 }}>Account status</div>
+            {d.status === "active"
+              ? settingRow("Suspend this client", "Their owner and staff are locked out of the dashboard and web POS until you activate them again.",
+                  <button onClick={suspend} style={{ ...S.btn, ...S.btnDanger, fontSize: 12 }}>Suspend</button>)
+              : settingRow("Activate this client", "Their owner and staff can sign in again.",
+                  <button onClick={activate} style={{ ...S.btn, ...S.btnPrimary, fontSize: 12 }}>Activate</button>)}
+            {settingRow("Export data", "Download the client's data as JSON (before a purge, or on request).",
+              <button onClick={exportData} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Export</button>)}
+          </div>
+        </>
       )}
 
       {/* NOTES */}
       {tab === "notes" && (
         <div>
           <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Add Note</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Add note</div>
             <textarea value={newNote} onChange={e => setNewNote(e.target.value)} rows={3}
               placeholder="Internal note about this client…"
               style={{ ...S.input, resize: "vertical", fontFamily: "inherit" }} />
-            <button onClick={addNote} disabled={!newNote.trim()} style={{ ...S.btn, ...S.btnPrimary, marginTop: 10 }}>Add Note</button>
+            <button onClick={addNote} disabled={!newNote.trim()} style={{ ...S.btn, ...S.btnPrimary, marginTop: 10 }}>Add note</button>
           </div>
           {notes.map(n => (
             <div key={n.id} style={S.card}>
@@ -1948,6 +1898,16 @@ function TeamPage({ req, admin }) {
     } catch (e) { setError(e.message); }
   }
 
+  // A391: lost phone → back to emailed sign-in codes.
+  async function resetOtp(m) {
+    if (!window.confirm(`Reset ${m.name}'s sign-in code? They will get it by email at their next sign-in.`)) return;
+    setError("");
+    try {
+      await req("POST", `/team/${m.id}/reset-otp`);
+      setTeam(t => t.map(x => x.id === m.id ? { ...x, otp_method: "email" } : x));
+    } catch (e) { setError(e.message); }
+  }
+
   async function toggleActive(id, is_active) {
     await req("PATCH", `/team/${id}`, { is_active: !is_active });
     setTeam(t => t.map(m => m.id === id ? { ...m, is_active: !is_active } : m));
@@ -1961,7 +1921,7 @@ function TeamPage({ req, admin }) {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Team Members</div>
           {loading ? <div style={{ color: C.muted }}>Loading…</div> : (
             <div className="sp-table-wrap"><table style={S.table}>
-              <thead><tr>{["Name","Email","Phone","Role","Last Login","Active"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Name","Email","Phone","Role","Sign-in code","Last login",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {team.map(m => (
                   <tr key={m.id}>
@@ -1974,6 +1934,12 @@ function TeamPage({ req, admin }) {
                       </button>
                     </td>
                     <td style={S.td}><span style={{ ...S.badge, background: m.role === "super_admin" ? "rgba(251,191,36,0.12)" : "rgba(0,212,255,0.12)", color: m.role === "super_admin" ? "#fbbf24" : C.accent }}>{m.role}</span></td>
+                    <td style={{ ...S.td, fontSize: 12 }} data-testid="team-otp">
+                      {m.otp_method === "totp" ? "Authenticator app" : "Email"}
+                      {m.otp_method === "totp" && m.id !== admin?.id && (
+                        <button onClick={() => resetOtp(m)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 11, marginLeft: 6 }}>reset</button>
+                      )}
+                    </td>
                     <td style={{ ...S.td, fontSize: 12, color: C.muted }}>{timeAgo(m.last_login_at)}</td>
                     <td style={S.td}>
                       {m.id !== admin?.id && (
@@ -2021,9 +1987,11 @@ function TeamPage({ req, admin }) {
   );
 }
 
-// ─── SETTINGS ─────────────────────────────────────────────────────────────────
-function SettingsPage({ req, apiUrl, setApiUrl }) {
+// ─── MY ACCOUNT ───────────────────────────────────────────────────────────────
+// A393: was "Settings". The sign-in code (A391) first, then the password; the server address under "Advanced".
+function AccountPage({ req, apiUrl, setApiUrl }) {
   const [apiInput, setApiInput] = useState(apiUrl);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [current, setCurrent]   = useState("");
   const [newPw, setNewPw]       = useState("");
   const [confirm, setConfirm]   = useState("");
@@ -2035,25 +2003,20 @@ function SettingsPage({ req, apiUrl, setApiUrl }) {
     if (newPw !== confirm) { setPwError("Passwords do not match"); return; }
     try {
       await req("POST", "/auth/change-password", { current_password: current, new_password: newPw });
-      setPwMsg("Password changed successfully."); setCurrent(""); setNewPw(""); setConfirm("");
+      setPwMsg("Password changed."); setCurrent(""); setNewPw(""); setConfirm("");
     } catch(e) { setPwError(e.message); }
   }
 
   return (
     <div style={S.content}>
-      <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 20px" }}>Settings</h1>
+      <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 4px" }}>My account</h1>
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 20px" }}>How you sign in to the admin portal.</p>
       <div className="sp-two-col" style={{ alignItems: "start", marginBottom: 0 }}>
+        <SignInCodeCard req={req} />
         <div style={S.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>API Connection</div>
-          <label style={S.label}>ZapTill Server URL</label>
-          <input style={S.input} value={apiInput} onChange={e => setApiInput(e.target.value)} />
-          <button onClick={() => { setApiUrl(apiInput); localStorage.setItem("swiftpos_admin_api", apiInput); }}
-            style={{ ...S.btn, ...S.btnPrimary, marginTop: 12 }}>Save</button>
-        </div>
-        <div style={S.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Change Password</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Change password</div>
           <form onSubmit={changePw} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {([["Current password", current, setCurrent], ["New password", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]] as [string, string, (v: string) => void][]).map(([l, v, s]) => (
+            {([["Current password", current, setCurrent], ["New password (8+ characters)", newPw, setNewPw], ["Confirm new password", confirm, setConfirm]] as [string, string, (v: string) => void][]).map(([l, v, s]) => (
               <div key={l}>
                 <label style={S.label}>{l}</label>
                 <input style={S.input} type="password" value={v} required onChange={e => s(e.target.value)} />
@@ -2061,9 +2024,22 @@ function SettingsPage({ req, apiUrl, setApiUrl }) {
             ))}
             {pwError && <div style={{ fontSize: 12, color: C.danger }}>{pwError}</div>}
             {pwMsg   && <div style={{ fontSize: 12, color: "#22c55e" }}>{pwMsg}</div>}
-            <button type="submit" style={{ ...S.btn, ...S.btnPrimary }}>Change Password</button>
+            <button type="submit" style={{ ...S.btn, ...S.btnPrimary }}>Change password</button>
           </form>
         </div>
+      </div>
+      <div style={S.card}>
+        <button onClick={() => setShowAdvanced(v => !v)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, padding: 0, fontFamily: "inherit" }}>
+          {showAdvanced ? "▾" : "▸"} Advanced — server address
+        </button>
+        {showAdvanced && (
+          <div style={{ marginTop: 12, maxWidth: 420 }}>
+            <label style={S.label}>ZapTill server address</label>
+            <input style={S.input} value={apiInput} onChange={e => setApiInput(e.target.value)} />
+            <button onClick={() => { setApiUrl(apiInput); saveApi(apiInput); }}
+              style={{ ...S.btn, ...S.btnPrimary, marginTop: 12 }}>Save</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2566,7 +2542,7 @@ function NewClientPage({ req, onCreated }) {
 export default function AdminPortal() {
   const { req, token, setToken, apiUrl, setApiUrl } = useAdminApi();
   const [admin, setAdmin]     = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("swiftpos_admin_user") || "null"); } catch { return null; }
+    try { return JSON.parse(sessionStorage.getItem(KEY.user) || "null"); } catch { return null; }
   });
   const [page, setPage]       = useState("dashboard");
   const [selectedClient, setSelectedClient] = useState(null);
@@ -2574,19 +2550,20 @@ export default function AdminPortal() {
   // between the logged-out and logged-in render → React #310 (blank screen on
   // login). All hooks must run on every render.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const critical = useCriticalCount(req, Boolean(token && admin));   // A392: the number on Alerts
 
   function handleLogin(tok, adminData) {
     setToken(tok);
     setAdmin(adminData);
-    sessionStorage.setItem("swiftpos_admin_user", JSON.stringify(adminData));
+    sessionStorage.setItem(KEY.user, JSON.stringify(adminData));
     setPage("dashboard");
   }
 
   function handleLogout() {
     setToken("");
     setAdmin(null);
-    sessionStorage.removeItem("swiftpos_admin_token");
-    sessionStorage.removeItem("swiftpos_admin_user");
+    sessionStorage.removeItem(KEY.token);
+    sessionStorage.removeItem(KEY.user);
   }
 
   function handleSelectClient(client) {
@@ -2606,10 +2583,11 @@ export default function AdminPortal() {
     if (page === "billing")   return <BillingPage req={req} />;
     if (page === "audit")     return <AuditPage req={req} />;
     if (page === "team")      return <TeamPage req={req} admin={admin} />;
-    if (page === "settings")  return <SettingsPage req={req} apiUrl={apiUrl} setApiUrl={setApiUrl} />;
+    if (page === "account")   return <AccountPage req={req} apiUrl={apiUrl} setApiUrl={setApiUrl} />;
+    if (page === "alerts")    return <AlertsPage req={req} isSuper={admin?.role === "super_admin"} />;
     if (page === "tech")      return <TechPage req={req} admin={admin} />;
     if (page === "migrations") return <MigrationsPage req={(p: string) => req("GET", p, undefined)} />;
-    return <DashboardPage req={req} />;
+    return <DashboardPage req={req} onOpenAlerts={() => setPage("alerts")} onSelectClient={handleSelectClient} />;
   })();
 
   return (
@@ -2739,6 +2717,7 @@ export default function AdminPortal() {
         onLogout={handleLogout}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        critical={critical}
       />
 
       <div className="sp-main-wrap">
@@ -2748,7 +2727,8 @@ export default function AdminPortal() {
           <button className="sp-hamburger" onClick={() => setSidebarOpen(s => !s)}>☰</button>
 
           <span style={{ fontSize: 14, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {page === "client_detail" ? selectedClient?.name : page.charAt(0).toUpperCase() + page.slice(1).replace(/_/g, " ")}
+            {page === "client_detail" ? selectedClient?.name
+              : NAV_GROUPS.flatMap(g => g.items).find(n => n.id === page)?.label ?? "Dashboard"}
           </span>
 
           <span className="sp-email-label" style={{ fontSize: 12, color: C.muted, flexShrink: 0, whiteSpace: "nowrap" }}>

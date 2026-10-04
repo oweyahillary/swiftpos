@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import ConfirmModal, { useConfirm } from '../../components/ConfirmModal';
+import SupplierAccount from '../../components/SupplierAccount';   // A395
+import { usePermissions } from '../../context/PermissionsContext';
+import { useBusiness } from '../../context/BusinessContext';
+import { useBranch } from '../../context/BranchContext';
+
+// A395: what is owed to each supplier (only for someone holding payables.manage — the owner by default).
+interface Position { id: string; balance: number; overdue: number; dueSoon: number; openBills: number }
+interface Summary { owed: number; overdue: number; dueSoon: number; suppliers: Position[] }
 
 interface Supplier {
   id: string;
@@ -27,18 +35,28 @@ export default function SuppliersPage() {
   const [form, setForm]           = useState<typeof EMPTY>(EMPTY);
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState('');
+  const { can } = usePermissions();
+  const canPay = can('payables.manage');
+  const { business } = useBusiness();
+  const { branches } = useBranch();
+  const currency = (business as { currency?: string } | null)?.currency || 'KES';
+  const [summary, setSummary]     = useState<Summary | null>(null);
+  const [account, setAccount]     = useState<string | null>(null);
+  const owedOf = (id: string) => summary?.suppliers.find(p => p.id === id);
+  const money = (n: number) => `${currency} ${n.toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
 
   const load = async () => {
     setLoading(true);
     try {
       const data = await api.get<Supplier[]>('/api/stock/suppliers');
       setSuppliers(data);
+      if (canPay) setSummary(await api.get<Summary>('/api/payables/summary').catch(() => null));
     } catch { /* silent */ } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [canPay]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const openAdd = () => { setForm(EMPTY); setError(''); setModal('add'); };
   const openEdit = (s: Supplier) => {
@@ -86,6 +104,15 @@ export default function SuppliersPage() {
     (s.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
+  if (account) {
+    return (
+      <div className="flex-1 overflow-auto p-4 sm:p-6">
+        <SupplierAccount supplierId={account} currency={currency} business={business}
+          branches={branches.map(b => ({ id: b.id, name: b.name }))} onClose={() => { setAccount(null); load(); }} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-auto p-6">
       {/* Header */}
@@ -101,6 +128,22 @@ export default function SuppliersPage() {
           + Add Supplier
         </button>
       </div>
+
+      {/* A395: what is owed, at a glance */}
+      {canPay && summary && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5" data-testid="payables-summary">
+          {[
+            { label: 'You owe suppliers', value: money(summary.owed), cls: 'text-white' },
+            { label: 'Overdue', value: money(summary.overdue), cls: summary.overdue > 0 ? 'text-red-400' : 'text-gray-400' },
+            { label: 'Due in the next 7 days', value: money(summary.dueSoon), cls: summary.dueSoon > 0 ? 'text-amber-400' : 'text-gray-400' },
+          ].map(c => (
+            <div key={c.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p className="text-gray-500 text-xs">{c.label}</p>
+              <p className={`text-xl font-semibold mt-1 ${c.cls}`}>{c.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Search */}
       <div className="mb-4">
@@ -132,6 +175,7 @@ export default function SuppliersPage() {
                 <th className="text-left px-5 py-3">Email</th>
                 <th className="text-left px-5 py-3">Phone</th>
                 <th className="text-left px-5 py-3">Status</th>
+                {canPay && <th className="text-right px-5 py-3">Owed</th>}
                 <th className="px-5 py-3"></th>
               </tr>
             </thead>
@@ -152,8 +196,25 @@ export default function SuppliersPage() {
                       {s.status}
                     </span>
                   </td>
+                  {canPay && (() => {
+                    const o = owedOf(s.id);
+                    return (
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <span className={o && o.balance > 0 ? 'text-white' : 'text-gray-500'}>{o ? money(o.balance) : '—'}</span>
+                        {o && o.overdue > 0 && <p className="text-red-400 text-xs mt-0.5">{money(o.overdue)} overdue</p>}
+                      </td>
+                    );
+                  })()}
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2 justify-end">
+                      {canPay && (
+                        <button
+                          onClick={() => setAccount(s.id)}
+                          className="text-swift-text hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"
+                        >
+                          Account
+                        </button>
+                      )}
                       <button
                         onClick={() => openEdit(s)}
                         className="text-gray-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800 transition-colors"

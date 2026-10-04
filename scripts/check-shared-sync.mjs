@@ -118,6 +118,15 @@ const SHARED = [
     ],
   },
   {
+    // A394: the items a stock count freezes — the till caches the cloud's list and its sale screen refuses them.
+    name: 'stockCountFreeze.ts',
+    copies: [
+      'shared/stockCountFreeze.ts',
+      'apps/desktop/src/main/stockCountFreeze.ts',   // the till caches it (rootDir is src/main)
+      'apps/desktop/src/shared/stockCountFreeze.ts', // the till's sale screen
+    ],
+  },
+  {
     // 0.6.35 (A384): who a shop calls — its own tech (allocated in the admin portal) or SwiftPOS support's numbers.
     name: 'support.ts',
     copies: [

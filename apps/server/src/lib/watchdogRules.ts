@@ -13,7 +13,12 @@
  *     • an M-Pesa payment that did not match (payment_exceptions, unresolved);
  *     • a burst of server errors (10 or more 5xx in 5 minutes);
  *     • a trading day still open 3 hours after its business day ended (the owner's cut-off, 0.6.34).
- *   WARNING — in the morning digest only:
+ *     • A392: repeated failed sign-ins — one account 8+ times in 15 min (an admin account: 5+), or one address 20+;
+ *     • A392: a till the cloud keeps refusing — 3+ pushes refused in 30 min and none taken (licence, branch, a revoked
+ *       till, an old build), or rows refused on their merits in the last hour (they will not be retried).
+ *   Only CRITICAL problems are emailed (owner, 2026-10-04: "all alerts emails should only get critical failures … others
+ *   put in the admin"): new and still-happening. "Resolved" and the digest go to Telegram and the admin portal's Alerts.
+ *   WARNING — in the morning digest and the admin portal only:
  *     • tills on an older version or local schema; one M-Pesa request unanswered; eTIMS invoices that failed;
  *     • the counters: write-guard blocks (A159) and failed sign-ins since the last digest.
  */
@@ -30,6 +35,13 @@ export interface Alert {
 }
 
 export const WATCHDOG = {
+  SIGNIN_WINDOW_MIN: 15,
+  SIGNIN_ACCOUNT: 8,
+  SIGNIN_ADMIN_ACCOUNT: 5,
+  SIGNIN_IP: 20,
+  SYNC_WINDOW_MIN: 30,
+  SYNC_FAILS: 3,
+  SYNC_ROWS_WINDOW_MIN: 60,
   SEEN_RECENT_MIN: 30,
   SYNC_STALE_MIN: 120,
   MPESA_STUCK_MIN: 10,
@@ -213,8 +225,114 @@ export function etimsFailures(rows: EtimsRow[], names: Record<string, string> = 
   }));
 }
 
+export interface SignInFailureRow { at: number; account: string; ip: string; where: 'admin' | 'dashboard' | 'web_pos' | 'till' }
+
+const WHERE_LABEL: Record<SignInFailureRow['where'], string> = {
+  admin: 'the admin portal', dashboard: 'the dashboard', web_pos: 'the web POS', till: 'a till',
+};
+
+/** CRITICAL (A392): someone keeps failing to sign in — one account, or many accounts from one address. */
+export function repeatedSignInFailures(rows: SignInFailureRow[], now: Date): Alert[] {
+  const since = now.getTime() - WATCHDOG.SIGNIN_WINDOW_MIN * MIN;
+  const recent = rows.filter((r) => r.at >= since && r.at <= now.getTime());
+  const out: Alert[] = [];
+  const byAccount = new Map<string, SignInFailureRow[]>();
+  for (const r of recent) {
+    if (!r.account) continue;
+    const k = `${r.where === 'admin' ? 'admin' : 'app'}:${r.account}`;   // an admin account has its own, lower bar
+    byAccount.set(k, [...(byAccount.get(k) ?? []), r]);
+  }
+  for (const [key, list] of byAccount) {
+    const admin = key.startsWith('admin:');
+    if (list.length < (admin ? WATCHDOG.SIGNIN_ADMIN_ACCOUNT : WATCHDOG.SIGNIN_ACCOUNT)) continue;
+    const ips = [...new Set(list.map((r) => r.ip).filter(Boolean))];
+    out.push({
+      key: `signin_failures:${key}`,
+      severity: 'critical',
+      businessId: null,
+      title: `${list.length} failed sign-ins for ${list[0].account} on ${WHERE_LABEL[list[list.length - 1].where]}`,
+      detail: `In the last ${WATCHDOG.SIGNIN_WINDOW_MIN} min, from ${ips.length ? ips.slice(0, 3).join(', ') + (ips.length > 3 ? ' …' : '') : 'an unknown address'}. `
+        + (admin ? 'Someone may be guessing an admin password — check the Team page.' : 'A forgotten password, or someone guessing it.'),
+    });
+  }
+  const byIp = new Map<string, SignInFailureRow[]>();
+  for (const r of recent) if (r.ip) byIp.set(r.ip, [...(byIp.get(r.ip) ?? []), r]);
+  for (const [ip, list] of byIp) {
+    if (list.length < WATCHDOG.SIGNIN_IP) continue;
+    const accounts = new Set(list.map((r) => r.account).filter(Boolean)).size;
+    out.push({
+      key: `signin_failures_ip:${ip}`,
+      severity: 'critical',
+      businessId: null,
+      title: `${list.length} failed sign-ins from ${ip}`,
+      detail: `In the last ${WATCHDOG.SIGNIN_WINDOW_MIN} min, on ${accounts} account${accounts === 1 ? '' : 's'}. Possibly someone trying passwords.`,
+    });
+  }
+  return out;
+}
+
+export interface SyncAttemptRow { at: number; deviceId: string; businessId: string | null; ok: boolean; status: number;
+  code?: string | null; error?: string | null; rejected?: number }
+
+/** What a refusal means, in words an admin can act on. */
+export function syncRefusalHint(status: number, code?: string | null): string {
+  const c = String(code ?? '');
+  if (status === 426 || c === 'desktop_upgrade_required') return 'The till runs a build this cloud no longer accepts — install the current ZapTill.';
+  if (/LICEN[CS]E/i.test(c)) return 'The branch has no desktop licence — activate it on the client page.';
+  if (/REVOKED|RETIRED|DEVICE/i.test(c)) return 'The till was revoked or retired — re-enrol it with a new code.';
+  if (status === 401) return 'The till\'s sign-in is no longer accepted — sign in on the till again.';
+  if (status === 403) return 'The cloud refuses this till — check its branch, licence and the client\'s status.';
+  if (status === 409) return 'Its records clash with the cloud\'s (another till or business) — check the till\'s set-up.';
+  if (status >= 500) return 'The cloud fails on this till\'s data — check the Render logs.';
+  return 'Check the till\'s set-up.';
+}
+
+/**
+ * CRITICAL (A392): a till the cloud keeps refusing — its sales are not arriving and retrying will not fix it.
+ *   • 3+ pushes refused in the last 30 min, none taken, and the newest refused;
+ *   • or rows refused on their merits (a 200 with `rejected`) in the last hour — the till will not send them again.
+ */
+export function tillSyncRefused(attempts: SyncAttemptRow[][], now: Date, names: Record<string, string> = {},
+  tills: Record<string, string> = {}): Alert[] {
+  const out: Alert[] = [];
+  const t = now.getTime();
+  for (const list of attempts) {
+    if (!list.length) continue;
+    const dev = list[list.length - 1].deviceId;
+    const biz = [...list].reverse().find((a) => a.businessId)?.businessId ?? null;
+    const who = `${biz ? names[biz] ?? 'A client' : 'A till'}: ${tills[dev] ?? `till ${dev.slice(0, 8)}`}`;
+    const recent = list.filter((a) => a.at >= t - WATCHDOG.SYNC_WINDOW_MIN * MIN && a.at <= t);
+    const fails = recent.filter((a) => !a.ok);
+    const last = recent[recent.length - 1];
+    if (last && !last.ok && fails.length >= WATCHDOG.SYNC_FAILS && !recent.some((a) => a.ok)) {
+      out.push({
+        key: `sync_refused:${dev}`,
+        severity: 'critical',
+        businessId: biz,
+        title: `${who} — the cloud refuses its sync`,
+        detail: `${fails.length} pushes refused in ${WATCHDOG.SYNC_WINDOW_MIN} min (HTTP ${last.status}${last.code ? ` ${last.code}` : ''}`
+          + `${last.error ? `: ${last.error}` : ''}). ${syncRefusalHint(last.status, last.code)}`,
+      });
+      continue;
+    }
+    const rows = list.filter((a) => a.at >= t - WATCHDOG.SYNC_ROWS_WINDOW_MIN * MIN && a.at <= t && (a.rejected ?? 0) > 0);
+    if (rows.length) {
+      const n = rows.reduce((sum, a) => sum + (a.rejected ?? 0), 0);
+      const r = rows[rows.length - 1];
+      out.push({
+        key: `sync_rows_refused:${dev}`,
+        severity: 'critical',
+        businessId: biz,
+        title: `${who} — ${n} record${n === 1 ? '' : 's'} refused by the cloud`,
+        detail: `${r.code ? `${r.code}: ` : ''}${r.error ?? 'refused'}. The till will not send ${n === 1 ? 'it' : 'them'} again — they need a person.`,
+      });
+    }
+  }
+  return out;
+}
+
 export interface OpenAlertRow { id: string; alert_key: string; severity: Severity; title: string; detail?: string | null;
-  first_seen_at: string; last_notified_at?: string | null; notify_count?: number | null }
+  first_seen_at: string; last_notified_at?: string | null; notify_count?: number | null; acknowledged_at?: string | null }
 
 export interface RunPlan {
   /** New problems: store them; the critical ones are sent now. */
@@ -242,6 +360,7 @@ export function planRun(current: Alert[], open: OpenAlertRow[], now: Date): RunP
     if (!row) { plan.opened.push(a); continue; }
     plan.stillOpen.push({ row, alert: a });
     if (a.severity !== 'critical') continue;
+    if (row.acknowledged_at && row.severity === 'critical') continue;   // A392: an admin muted it in the portal
     const last = row.severity === 'critical' ? row.last_notified_at : null;   // warning → critical: tell now
     if (!last || ago(now, last) >= WATCHDOG.REMIND_MIN) plan.remind.push({ row, alert: a });
   }

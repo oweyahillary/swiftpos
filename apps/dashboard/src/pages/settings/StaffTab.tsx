@@ -21,14 +21,18 @@ interface Props {
   branches: Branch[];
   /** Role names to hide from the role selector — used by manager dashboard to prevent assigning manager/owner roles */
   excludeRoles?: string[];
+  /** A391: the owner may reset a manager's sign-in code (lost phone → emailed codes). */
+  canResetSignIn?: boolean;
 }
+
+const OTP_ROLES = ['owner', 'admin', 'manager', 'supervisor', 'branch_manager'];
 
 const STATUS_COLORS: Record<string, string> = {
   active:   'bg-green-500/15 text-green-400',
   inactive: 'bg-gray-700 text-gray-500',
 };
 
-export default function StaffTab({ branches, excludeRoles }: Props) {
+export default function StaffTab({ branches, excludeRoles, canResetSignIn }: Props) {
   const { activeBranchId } = useBranch();
   const [confirmState, showConfirm, closeConfirm] = useConfirm();
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -71,6 +75,16 @@ export default function StaffTab({ branches, excludeRoles }: Props) {
         await api.delete(`/api/staff/${id}`);
         fetchAll();
       },
+    });
+  };
+
+  const resetSignIn = (s: StaffMember) => {
+    showConfirm({
+      title: `Reset ${s.name}'s sign-in code?`,
+      message: 'They will get their sign-in code by email next time, instead of from an authenticator app (use this for a lost phone).',
+      intent: 'warning',
+      confirmLabel: 'Reset',
+      onConfirm: async () => { await api.post(`/api/staff/${s.id}/reset-otp`, {}); },
     });
   };
 
@@ -130,6 +144,12 @@ export default function StaffTab({ branches, excludeRoles }: Props) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {canResetSignIn && s.status === 'active' && OTP_ROLES.includes((s.roles?.name ?? '').toLowerCase().replace(/ /g, '_')) && (
+                    <button onClick={() => resetSignIn(s)} data-testid="reset-signin"
+                      className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
+                      Reset sign-in code
+                    </button>
+                  )}
                   <button onClick={() => { setEditing(s); setShowModal(true); }}
                     className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
                     Edit

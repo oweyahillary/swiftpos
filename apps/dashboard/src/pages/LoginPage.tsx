@@ -5,6 +5,8 @@ import { api, storeSwiftPOSToken, storeRefreshToken, clearAllTokens } from '../l
 import { useTenant, tenantSignInFields } from '../lib/tenant';
 import { TenantBrand, UnknownTenantAddress } from '../components/TenantBrand';
 import { DEFAULT_SUPPORT_PHONES, whatsappNumber } from '../lib/support';   // 0.6.35 (A384)
+import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../lib/otpTrust';   // A391
+import OtpCodeStep, { type OtpPrompt } from '../components/OtpCodeStep';
 
 // Error codes returned by POST /api/auth/login for specific access issues
 const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: string }> = {
@@ -45,17 +47,25 @@ export default function LoginPage() {
    */
   const [businessChoices, setBusinessChoices] =
     useState<{ id: string; name?: string }[] | null>(null);
+  // A391: an owner always enters a one-time code after the password (emailed, or from an authenticator app).
+  const [otp, setOtp]           = useState<OtpPrompt | null>(null);
+  const [otpCode, setOtpCode]   = useState('');
+  const [remember, setRemember] = useState(true);
+  const [pickedBusiness, setPickedBusiness] = useState<string | undefined>(undefined);
 
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
     'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
 
-  const handleLogin = async (e: React.FormEvent | null, chosenBusinessId?: string) => {
+  const handleLogin = async (e: React.FormEvent | null, chosenBusinessId?: string,
+    otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean }) => {
     e?.preventDefault();
     setError('');
     setErrorCode('');
     setBusinessChoices(null);
     setLoading(true);
+    if (chosenBusinessId !== undefined) setPickedBusiness(chosenBusinessId);
+    const businessId = chosenBusinessId ?? pickedBusiness;
 
     // ── Clear any stale SwiftPOS / POS / cashier tokens BEFORE authenticating ──
     // The access token is a single shared localStorage key, written by both the
@@ -77,17 +87,32 @@ export default function LoginPage() {
       //   isn't in localStorage yet, every fetch 401s and the contexts stay empty
       //   until a manual page reload. Storing first means the very first
       //   session-triggered fetch already carries a valid token.
-      let loginResponse: { mustChangePassword?: boolean; accessToken?: string; refreshToken?: string } = {};
+      let loginResponse: { mustChangePassword?: boolean; accessToken?: string; refreshToken?: string; otp_trust?: string } = {};
       try {
+        const trust = readOtpTrust(email);
         loginResponse = await api.post<{ mustChangePassword?: boolean }>(
           '/api/auth/login',
           // business_id is only present on the second attempt, after the owner
           // has picked one from the 409 below.
-          { email, password, ...(chosenBusinessId ? { business_id: chosenBusinessId } : {}), ...tenantSignInFields() },
+          { email, password, ...(businessId ? { business_id: businessId } : {}), ...tenantSignInFields(),
+            ...(trust ? { otp_trust: trust } : {}), ...(otpExtra ?? {}) },
         );
+        saveOtpTrust(email, loginResponse.otp_trust);
       } catch (serverErr: any) {
         // api.ts preserves the `code` field from the server JSON response
         const code = serverErr?.code;
+        // A391: the password was right — now the code.
+        if (code === 'OTP_REQUIRED') {
+          dropOtpTrust(email);
+          setOtp({ method: serverErr?.method, sentTo: serverErr?.sent_to, note: otpExtra?.otp_resend ? 'A new code is on its way.' : '' });
+          setOtpCode('');
+          setLoading(false);
+          return;
+        }
+        if (otp && (code === 'OTP_INVALID' || code === 'OTP_EXPIRED' || code === 'OTP_EMAIL_FAILED')) {
+          setError(serverErr.message); setOtpCode(''); setLoading(false);
+          return;
+        }
         if (code === 'MULTIPLE_BUSINESSES') {
           // Not an error the owner can do anything about by retrying — it is a
           // question. Show the list and re-submit with their answer.
@@ -212,7 +237,15 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-8 shadow-2xl">
-          {businessChoices ? (
+          {otp ? (
+            <OtpCodeStep
+              prompt={otp} code={otpCode} setCode={setOtpCode} remember={remember} setRemember={setRemember}
+              loading={loading} error={error}
+              onSubmit={() => { void handleLogin(null, undefined, { otp_code: otpCode, otp_remember: remember }); }}
+              onResend={() => { void handleLogin(null, undefined, { otp_resend: true }); }}
+              onBack={() => { setOtp(null); setOtpCode(''); setError(''); }}
+            />
+          ) : businessChoices ? (
             /* Owner of more than one business (audit BUG-18). Credentials are
                already verified at this point — the server refused only because
                it did not know WHICH business to open, and guessing would drop

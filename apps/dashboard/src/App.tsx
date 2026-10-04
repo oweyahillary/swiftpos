@@ -37,6 +37,7 @@ const InventoryPage           = lazy(() => import('./pages/inventory/InventoryPa
 const UsersAccessPage     = lazy(() => import('./pages/settings/UsersAccessPage'));
 const StaffMembersRoute   = lazy(() => import('./pages/settings/UsersAccessPage').then(m => ({ default: m.StaffMembersRoute })));
 const RolesRoute          = lazy(() => import('./pages/settings/UsersAccessPage').then(m => ({ default: m.RolesRoute })));
+const SignInSecurityRoute = lazy(() => import('./pages/settings/UsersAccessPage').then(m => ({ default: m.SignInSecurityRoute })));   // A391
 const DevicesPrintersPage = lazy(() => import('./pages/settings/DevicesPrintersPage'));
 const DevicesRoute        = lazy(() => import('./pages/settings/DevicesPrintersPage').then(m => ({ default: m.DevicesRoute })));
 const KitchenDisplayRoute = lazy(() => import('./pages/settings/KitchenDisplayTab'));
@@ -64,6 +65,7 @@ const BranchDetailPage        = lazy(() => import('./pages/BranchDetailPage'));
 const SuppliersPage           = lazy(() => import('./pages/stock/SuppliersPage'));
 const PurchaseOrdersPage      = lazy(() => import('./pages/stock/PurchaseOrdersPage'));
 const StockTransfersPage      = lazy(() => import('./pages/stock/StockTransfersPage'));
+const StockCountsPage         = lazy(() => import('./pages/stock/StockCountsPage'));   // A394
 const IngredientsPage         = lazy(() => import('./pages/stock/IngredientsPage'));
 const PrintersPage            = lazy(() => import('./pages/settings/PrintersPage'));
 const StationsPage            = lazy(() => import('./pages/settings/StationsPage'));
@@ -155,6 +157,7 @@ export default function App() {
                         <Route index          element={<Navigate to="staff" replace />} />
                         <Route path="staff"   element={<StaffMembersRoute />} />
                         <Route path="roles"   element={<RolesRoute />} />
+                        <Route path="security" element={<SignInSecurityRoute />} />
                       </Route>
 
                       <Route path="settings/devices" element={<DevicesPrintersPage />}>
@@ -189,6 +192,7 @@ export default function App() {
                       <Route path="stock/ingredients"         element={<IngredientsPage />} />
                       <Route path="stock/purchase-orders"     element={<PurchaseOrdersPage />} />
                       <Route path="stock/transfers"           element={<StockTransfersPage />} />
+                      <Route path="stock/counts"              element={<StockCountsPage />} />
                       <Route path="stock/suppliers"           element={<SuppliersPage />} />
                     </Route>
 

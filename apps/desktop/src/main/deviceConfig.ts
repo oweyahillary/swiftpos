@@ -22,6 +22,7 @@ import { rulesFromWire, type ReversalRules } from './reversalRules';
 import { cleanCutoff } from './businessDay';   // 0.6.34
 import { supportContact, supportWire, type SupportContact } from './support';   // 0.6.35 (A384)
 import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
+import { parseStockCountFreeze, type StockCountFreeze } from './stockCountFreeze';   // A394
 
 export type DeployMode = 'cloud' | 'local';
 
@@ -109,6 +110,9 @@ export interface DeviceConfig {
    *  catalogue. NULL = not told yet (every method). Written only by setCashierHistoryMethods() from the pull or a
    *  manager's change on this till. */
   cashier_history_methods: string | null;
+  /** A394: the items a stock count freezes at this branch (JSON {ref, productIds}), pulled with the catalogue. NULL =
+   *  not told yet (nothing frozen). Written only by setStockCountFreeze() from the pull. */
+  stock_count_freeze: string | null;
   configured: boolean;
 }
 
@@ -147,6 +151,7 @@ export function getDeviceConfig(): DeviceConfig | null {
     reversal_rules: row.reversal_rules ?? null,
     support_contact: row.support_contact ?? null,
     cashier_history_methods: row.cashier_history_methods ?? null,
+    stock_count_freeze: row.stock_count_freeze ?? null,
     configured: row.configured === 1,
   };
 }
@@ -209,6 +214,8 @@ export function saveDeviceConfig(patch: Partial<DeviceConfig>): DeviceConfig {
     support_contact: current?.support_contact ?? null,
     // 0.6.37: never from the patch — only setCashierHistoryMethods() writes it; the INSERT below leaves it alone.
     cashier_history_methods: current?.cashier_history_methods ?? null,
+    // A394: never from the patch — only setStockCountFreeze() (the pull) writes it; the INSERT below leaves it alone.
+    stock_count_freeze: current?.stock_count_freeze ?? null,
     // Once configured, stays configured unless a factory reset clears the row.
     configured: patch.configured ?? current?.configured ?? false,
   };
@@ -392,4 +399,19 @@ export function getReversalRules(): ReversalRules {
 export function setOrderNotePicks(picks: string[] | null | undefined): void {
   if (!Array.isArray(picks)) return;
   getLocalDb().prepare(`UPDATE device_config SET order_note_picks = ? WHERE id = 1`).run(JSON.stringify(picks.map(String)));
+}
+
+/**
+ * A394: cache the items a stock count freezes (the cloud's `stockCount`). undefined = not said (older cloud / node) →
+ * keep; null = nothing frozen. The ONLY writer.
+ */
+export function setStockCountFreeze(raw: unknown): void {
+  if (raw === undefined) return;
+  const f = parseStockCountFreeze(raw);
+  getLocalDb().prepare(`UPDATE device_config SET stock_count_freeze = ? WHERE id = 1`).run(JSON.stringify(f));
+}
+
+/** A394: what this till must not sell right now (the last list heard — it stays in force offline). */
+export function getStockCountFreeze(): StockCountFreeze {
+  return parseStockCountFreeze(getDeviceConfig()?.stock_count_freeze ?? null);
 }

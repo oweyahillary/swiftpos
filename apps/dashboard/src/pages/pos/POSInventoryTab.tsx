@@ -13,9 +13,11 @@ import { usePOSAuth } from '../../context/POSAuthContext';
 interface StockRow {
   id: string | null;
   product_id: string;
-  quantity: number;
+  /** null while a stock count at this branch counts the item (A394 — blind count). */
+  quantity: number | null;
   low_stock_threshold: number;
   _unstocked?: boolean;
+  counting?: boolean;
   products: {
     id: string;
     name: string;
@@ -71,13 +73,14 @@ export default function POSInventoryTab() {
   const filtered = tracked.filter(r => {
     const matchSearch = r.products.name.toLowerCase().includes(search.toLowerCase());
     if (!matchSearch) return false;
+    if (r.quantity === null) return filter === 'all';
     if (filter === 'out') return r.quantity <= 0;
     if (filter === 'low') return r.quantity > 0 && r.quantity <= r.low_stock_threshold;
     return true;
   });
 
-  const outCount = tracked.filter(r => r.quantity <= 0).length;
-  const lowCount = tracked.filter(r => r.quantity > 0 && r.quantity <= r.low_stock_threshold).length;
+  const outCount = tracked.filter(r => r.quantity !== null && r.quantity <= 0).length;
+  const lowCount = tracked.filter(r => r.quantity !== null && r.quantity > 0 && r.quantity <= r.low_stock_threshold).length;
 
   return (
     <div style={s.root}>
@@ -115,7 +118,10 @@ export default function POSInventoryTab() {
       {/* Stock list */}
       <div style={s.list}>
         {filtered.map(row => {
-          const { color, label } = stockStatus(row.quantity, row.low_stock_threshold);
+          // A394: blind count — an item being counted shows no figure.
+          const { color, label } = row.quantity === null
+            ? { color: '#7dd3fc', label: 'Being counted' }
+            : stockStatus(row.quantity, row.low_stock_threshold);
           const catColor = row.products.categories?.color ?? '#475569';
           return (
             <div key={row.product_id} style={s.item}>
@@ -127,7 +133,7 @@ export default function POSInventoryTab() {
                 )}
               </div>
               <div style={s.itemRight}>
-                <span style={{ ...s.qty, color }}>{row.quantity}</span>
+                <span style={{ ...s.qty, color }}>{row.quantity === null ? '—' : row.quantity}</span>
                 <span style={{ ...s.badge, background: `${color}22`, color }}>{label}</span>
                 <span style={{ fontSize: 10, color: '#6b7280' }}>min</span>
                 <input

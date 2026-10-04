@@ -4,6 +4,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -67,7 +68,11 @@ router.get('/', async (req, res) => {
       _unstocked: true,
     }));
 
-  res.json([...(data ?? []), ...unstocked]);
+  // A394: blind count — while this branch counts, someone who may not change stock does not see the counted items' figures.
+  const hide = await hiddenWhileCounting(req, scopedBranch);
+  const rows = [...(data ?? []), ...unstocked].map((r: any) =>
+    hide.has(`p:${r.product_id}`) ? { ...r, quantity: null, qty_pieces: null, counting: true } : r);
+  res.json(rows);
 });
 
 // POST /api/inventory/adjust

@@ -91,7 +91,8 @@ const deviceConfigShim = w('deviceConfig.cjs', `
                      // A367: the pull caches the owner's quick picks for order notes through this.
                      setOrderNotePicks: () => {}, setPosFeatures: () => {}, setReversalRules: () => {},   // 0.6.30
                      setBusinessDayCutoff: () => {}, setSupportContact: () => {},   // 0.6.34, 0.6.35
-                     setCashierHistoryMethods: () => {} };   // 0.6.37`);
+                     setCashierHistoryMethods: () => {},   // 0.6.37
+                     setStockCountFreeze: () => {} };   // A394`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

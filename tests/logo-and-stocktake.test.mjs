@@ -1,7 +1,8 @@
 /**
  * logo-and-stocktake.test.mjs — A232 + A233 source guards (rule 24), mutation-checkable.
  * A232: documents render a business logo (logo_url) — engine + type + settings + PATCH whitelist.
- * A233: the owner Inventory page prints a stock-take count sheet with blank Counted/Variance columns.
+ * A233: the owner Inventory page prints a stock-take count sheet with a blank Counted column.
+ * A394 (2026-10-04): the sheet is BLIND — no system figure (owner: "Yes the count should be blind").
  */
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -43,9 +44,11 @@ ok('A233: Inventory prints a stock-take count sheet', () => {
   assert.match(inv, /docType: 'STOCK-TAKE COUNT SHEET'/);
   assert.match(inv, /Print count sheet/);
 });
-ok('A233: the sheet has blank Counted + Variance columns to write in', () => {
-  assert.match(inv, /\{ label: 'Counted', align: 'right' \}, \{ label: 'Variance', align: 'right' \}/);
-  assert.match(inv, /r\.products\.name, String\(r\.quantity\), '', ''/);
+ok('A233 / A394: the sheet has a blank Counted column and never the system figure (blind)', () => {
+  assert.match(inv, /\{ label: 'Product' \}, \{ label: 'Category' \}, \{ label: 'Counted', align: 'right' \}/);
+  assert.match(inv, /rows: items\.map\(r => \[r\.products\.name, r\.products\.categories\?\.name \?\? '', ''\]\)/);
+  assert.doesNotMatch(inv, /System qty/);
+  assert.doesNotMatch(inv, /String\(r\.quantity\), '', ''/);
 });
 
 console.log(`\n${fail ? '== ' + fail + ' FAILED ==' : 'all green'}  (${pass} passed)`);
