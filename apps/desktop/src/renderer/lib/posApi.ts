@@ -1,4 +1,5 @@
 import type { PosFeatures } from '../../shared/posFeatures';
+import type { StockCountFreeze } from '../../shared/stockCountFreeze';
 // Renderer-side API — calls window.swiftpos.* (IPC via preload.ts)
 // Shape mirrors the web dashboard's api.ts so shared logic stays consistent.
 
@@ -310,6 +311,7 @@ declare global {
         notePicks: () => Promise<string[]>;
         /** 0.6.27: the per-client POS switches (set in the admin portal; all off until the till is told). */
         features: () => Promise<PosFeatures>;
+        stockCountFreeze: () => Promise<StockCountFreeze>;   // A394
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
         history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; methods: string[] }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */

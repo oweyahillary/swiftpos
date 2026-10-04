@@ -3,7 +3,7 @@
  *
  * Owner, 2026-10-02: "is there a way we can customize each client to use their subdomain eg africanfries … to log in we
  * can even add their logo on the sign in page". Decisions (owner, 2026-10-02): a field of its own (`businesses.subdomain`,
- * not the QR menu's `menu_slug`); on a client's address only that client's people can sign in; SwiftPOS sets it in the
+ * not the QR menu's `menu_slug`); on a client's address only that client's people can sign in; ZapTill sets it in the
  * admin portal, not the client.
  *
  * The root domain is configuration, never written here: TENANT_ROOT_DOMAIN on the cloud, VITE_TENANT_ROOT_DOMAIN on the

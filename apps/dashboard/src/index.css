@@ -181,6 +181,7 @@
 :root:not(.dark) .hover\:bg-gray-800\/20:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.2) !important; }
 :root:not(.dark) .hover\:bg-gray-800\/30:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.3) !important; }
 :root:not(.dark) .hover\:bg-gray-900\/50:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.5) !important; }
+:root:not(.dark) .hover\:bg-gray-900\/60:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { background-color: rgba(241,245,249,0.6) !important; }
 :root:not(.dark) .hover\:text-amber-400:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #78350f !important; }
 :root:not(.dark) .hover\:text-gray-200:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #334155 !important; }
 :root:not(.dark) .hover\:text-gray-300:hover:not([data-pos-theme="dark"] *):not([data-theme-lock="dark"] *) { color: #475569 !important; }

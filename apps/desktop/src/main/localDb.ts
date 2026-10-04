@@ -1144,6 +1144,9 @@ function initSchema(db: Database.Database) {
     // 0.6.37 (66): the payment methods a cashier's History shows, a JSON list ([] = every method). Pulled
     // (cashierHistoryMethods) or set by a manager on this till; never pushed. NULL = not told yet = every method.
     ['cashier_history_methods', 'TEXT'],
+    // A394 (67): the items a stock count freezes at this branch, JSON {ref, productIds} (shared/stockCountFreeze.ts).
+    // Pulled (stockCount), never pushed. NULL = not told yet = nothing frozen.
+    ['stock_count_freeze', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1245,7 +1248,8 @@ function initSchema(db: Database.Database) {
 // 65 adds 0.6.35: device_config.support_contact (pulled) — the shop's own tech on the Help screen. REQUIRED moves with it.
 // 66 adds 0.6.37: device_config.cashier_history_methods (pulled) and expenses/float_transactions.approved_by (pushed:
 // the manager who approved a cash-out or an expense). REQUIRED moves with it.
-export const LOCAL_SCHEMA_VERSION = 66;
+// 67 adds A394: device_config.stock_count_freeze (pulled) — the items a stock count freezes. REQUIRED moves with it.
+export const LOCAL_SCHEMA_VERSION = 67;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

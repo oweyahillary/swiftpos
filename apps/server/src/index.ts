@@ -14,7 +14,7 @@ import { startDailySummaryJob } from './jobs/dailySummary';
 import { reportMailReadiness }  from './lib/mailer';
 import { startEtimsRetryJob }   from './jobs/etimsRetry';
 import { startWatchdogJob }     from './jobs/watchdog';          // A383
-import { recordServerError, recordFailedSignIn, isSignInFailure } from './lib/watchdogCounters';
+import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, recordSyncAttempt } from './lib/watchdogCounters';
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
@@ -133,11 +133,32 @@ const apiLimiter = rateLimit({
 
 // A383: the watchdog counts what the database cannot tell it — server errors (a burst alerts the admin) and
 // refused sign-ins (the morning digest). After the response is sent; never changes it.
+// A392: and per account (repeated failed sign-ins alert at once), and what each till's push was answered (a till the
+// cloud keeps refusing — licence, branch, device revoked, rows refused — alerts at once).
 app.use((req, res, next) => {
+  const path0 = req.originalUrl || req.url || '';
+  const tillSync = isTillSync(req.method, path0) && !!req.header('X-Device-Id');
+  let answer: any = null;
+  if (tillSync) {
+    const json = res.json.bind(res);
+    res.json = ((body: any) => { answer = body; return json(body); }) as typeof res.json;
+  }
   res.on('finish', () => {
-    const path = req.originalUrl || req.url || '';
+    const path = path0;
     if (res.statusCode >= 500) recordServerError(path);
-    else if (isSignInFailure(req.method, path, res.statusCode)) recordFailedSignIn();
+    else if (isSignInFailure(req.method, path, res.statusCode)) {
+      recordFailedSignIn({ path, account: typeof req.body?.email === 'string' ? req.body.email : '', ip: req.ip ?? '' });
+    }
+    if (tillSync) {
+      const rejected = Array.isArray(answer?.rejected) ? answer.rejected : [];
+      recordSyncAttempt({
+        deviceId: String(req.header('X-Device-Id')), businessId: (req as any).businessId ?? null,
+        ok: res.statusCode < 400, status: res.statusCode,
+        code: typeof answer?.code === 'string' ? answer.code : (rejected[0]?.code ?? null),
+        error: typeof answer?.error === 'string' ? answer.error : (rejected[0]?.error ?? null),
+        rejected: rejected.length,
+      });
+    }
   });
   next();
 });

@@ -16,6 +16,8 @@ import { API_URL } from '../../lib/config';
 import { getDeviceHint } from '../../lib/deviceFingerprint';
 import { useTenant, tenantSignInFields } from '../../lib/tenant';
 import { TenantBrand, UnknownTenantAddress } from '../../components/TenantBrand';
+import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../../lib/otpTrust';   // A391
+import OtpCodeStep, { type OtpPrompt } from '../../components/OtpCodeStep';
 const BASE_URL = API_URL;
 const PIN_MIN = 4;
 const PIN_MAX = 6;
@@ -41,6 +43,11 @@ export default function POSLoginScreen() {
   const [deviceRejected, setDeviceRejected] = useState(false);
   const [devicePending,  setDevicePending]  = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+  // A391: owners and managers enter a one-time code after the PIN (cashiers do not).
+  const [otp, setOtp]           = useState<OtpPrompt | null>(null);
+  const [otpCode, setOtpCode]   = useState('');
+  const [remember, setRemember] = useState(true);
+  const [otpPass, setOtpPass]   = useState('');   // lets the branch choice that follows sign in without a second code
 
   // If the terminal was kicked back here by a token expiry, tell the cashier why
   // (set by POSAuthContext on the 'swiftpos:session-expired' signal).
@@ -71,9 +78,11 @@ export default function POSLoginScreen() {
   // matching PinPage and the lock screen.
 
   // ── Core login ────────────────────────────────────────────────────────────
-  async function handleLogin(emailVal: string, pinVal: string) {
+  async function handleLogin(emailVal: string, pinVal: string,
+    otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean }) {
     if (!emailVal.trim() || !pinVal) return;
     setLoading(true); setError('');
+    const trust = readOtpTrust(emailVal);
 
     try {
       const res = await fetch(`${BASE_URL}/api/auth/pos-login`, {
@@ -85,17 +94,34 @@ export default function POSLoginScreen() {
           surface:     'web',
           device_hint: await getDeviceHint(),
           ...tenantSignInFields(),
+          ...(trust ? { otp_trust: trust } : {}),
+          ...(otpExtra ?? {}),
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
+        // A391: the PIN was right — now the code. The PIN is kept for the next try.
+        if (data.code === 'OTP_REQUIRED') {
+          dropOtpTrust(emailVal);
+          setOtp({ method: data.method, sentTo: data.sent_to, note: otpExtra?.otp_resend ? 'A new code is on its way.' : '' });
+          setOtpCode('');
+          return;
+        }
+        if (otp && ['OTP_INVALID', 'OTP_EXPIRED', 'OTP_EMAIL_FAILED'].includes(data.code)) {
+          setError(data.error ?? 'That code is not right.'); setOtpCode('');
+          return;
+        }
         // Server signals device gating via `code` (not `device_status`).
         if (data.code === 'DEVICE_REJECTED')       { setDeviceRejected(true); return; }
         if (data.code === 'DEVICE_NOT_REGISTERED')  { setDevicePending(true);  return; }
         triggerError(data.error ?? 'Login failed');
         return;
       }
+
+      saveOtpTrust(emailVal, data.otp_trust);
+      setOtpPass(data.otp_trust ?? data.otp_pass ?? '');
+      setOtp(null);
 
       // Store tokens for api.ts (business data fetch etc.)
       localStorage.setItem('swiftpos_pos_token', data.accessToken ?? data.token);
@@ -166,6 +192,7 @@ export default function POSLoginScreen() {
           branch_id: branch.id,
           surface:   'web',
           ...tenantSignInFields(),
+          ...(otpPass || readOtpTrust(email) ? { otp_trust: otpPass || readOtpTrust(email) } : {}),   // A391
         }),
       });
       const data = await res.json();
@@ -279,6 +306,28 @@ export default function POSLoginScreen() {
           >
             Try again
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // A391: the code step (owners and managers).
+  if (otp) {
+    return (
+      <div style={st.root}>
+        <div style={st.header}>
+          <div style={st.logo}><span>⚡</span><span style={st.logoText}>ZapTill</span></div>
+        </div>
+        <div style={st.main}>
+          <div style={{ ...st.card, alignItems: 'stretch' }}>
+            <OtpCodeStep
+              prompt={otp} code={otpCode} setCode={setOtpCode} remember={remember} setRemember={setRemember}
+              loading={loading} error={error}
+              onSubmit={() => { void handleLogin(email, pin, { otp_code: otpCode, otp_remember: remember }); }}
+              onResend={() => { void handleLogin(email, pin, { otp_resend: true }); }}
+              onBack={() => { setOtp(null); setOtpCode(''); setPin(''); setError(''); }}
+            />
+          </div>
         </div>
       </div>
     );

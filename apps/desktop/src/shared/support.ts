@@ -1,16 +1,16 @@
 /**
- * support.ts — 0.6.35 (A384): who a shop calls for help — its own tech, or SwiftPOS support.
+ * support.ts — 0.6.35 (A384): who a shop calls for help — its own tech, or ZapTill support.
  *
  * Owner, 2026-10-03: "add the number 0717675635 or 0782972023. Also add the feature in admin where i can allocate a tech
- * to a shop and the number appears instead of a fixed number". A tech is a SwiftPOS team member (admin portal › Team,
+ * to a shop and the number appears instead of a fixed number". A tech is a ZapTill team member (admin portal › Team,
  * with a phone); the admin allocates one to a client (admin portal › client). The till's and the web's Help show that
- * tech's name and number; a client with no tech (or a tech with no number) shows SwiftPOS support's two numbers.
+ * tech's name and number; a client with no tech (or a tech with no number) shows ZapTill support's two numbers.
  *
  * ONE file: shared/support.ts, copied to the cloud, the till (main + renderer), the web and the admin portal
  * (scripts/check-shared-sync.mjs).
  */
 
-/** SwiftPOS support — shown when a client has no tech allocated. */
+/** ZapTill support — shown when a client has no tech allocated. */
 export const DEFAULT_SUPPORT_NAME = 'ZapTill support';
 export const DEFAULT_SUPPORT_PHONES = ['0717675635', '0782972023'] as const;
 
@@ -43,10 +43,10 @@ export function whatsappNumber(phone: string): string | null {
 /** What the cloud sends (pos/init, /business/support): the client's tech, or null when none (or none with a number). */
 export interface SupportWire { name: string | null; phone: string | null }
 
-/** Who to call, ready to show. assigned = the client's own tech; otherwise SwiftPOS support's numbers. */
+/** Who to call, ready to show. assigned = the client's own tech; otherwise ZapTill support's numbers. */
 export interface SupportContact { name: string; phones: string[]; assigned: boolean }
 
-/** The wire value (or anything stored) → who to call. Never throws; anything unusable → SwiftPOS support. */
+/** The wire value (or anything stored) → who to call. Never throws; anything unusable → ZapTill support. */
 export function supportContact(raw: unknown): SupportContact {
   const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null;
   const phone = r ? cleanPhone(r.phone) : null;
@@ -57,7 +57,7 @@ export function supportContact(raw: unknown): SupportContact {
   return { name: DEFAULT_SUPPORT_NAME, phones: [...DEFAULT_SUPPORT_PHONES], assigned: false };
 }
 
-/** The wire value cleaned for storing on the till: a tech with a number, or null (= SwiftPOS support). */
+/** The wire value cleaned for storing on the till: a tech with a number, or null (= ZapTill support). */
 export function supportWire(raw: unknown): SupportWire | null {
   const c = supportContact(raw);
   return c.assigned ? { name: c.name, phone: c.phones[0] } : null;

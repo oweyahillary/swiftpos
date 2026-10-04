@@ -40,6 +40,8 @@ const MANAGER_DENY = new Set([
   'inventory.adjust',
   'ingredients.manage',
   'reports.financial',
+  // A395: what the business owes its suppliers, and paying it — the owner's.
+  'payables.manage',
 ]);
 
 /**

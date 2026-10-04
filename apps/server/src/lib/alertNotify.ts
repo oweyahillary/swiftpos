@@ -1,5 +1,8 @@
 /**
- * alertNotify.ts — A383: tell the SwiftPOS admin — Telegram and email together ("telegram and email combo").
+ * alertNotify.ts — A383: tell the ZapTill admin — Telegram and email together ("telegram and email combo").
+ *
+ * A392 (owner, 2026-10-04): "all alerts emails should only get critical failures" — the watchdog passes email: false for
+ * everything else (the digest, "resolved"); those reach Telegram and the admin portal's Alerts page.
  *
  *   TELEGRAM_BOT_TOKEN   the bot's token from @BotFather
  *   TELEGRAM_CHAT_ID     who gets it: a chat, a group or a channel id (several: comma-separated)
@@ -60,15 +63,16 @@ export async function sendAlertEmail(subject: string, text: string): Promise<str
   }
 }
 
-/** Both channels. Resolves which ones worked; logs the ones that did not. */
-export async function notifyAdmin(subject: string, text: string): Promise<{ telegram: boolean; email: boolean }> {
-  const ch = alertChannels();
+/** Both channels (or Telegram only: email false). Resolves which ones worked; logs the ones that did not. */
+export async function notifyAdmin(subject: string, text: string, opts: { email?: boolean } = {}): Promise<{ telegram: boolean; email: boolean }> {
+  const all = alertChannels();
+  const ch = { telegram: all.telegram, email: all.email && opts.email !== false };
   const [tg, em] = await Promise.all([
     ch.telegram ? sendTelegram(text) : Promise.resolve('off'),
     ch.email ? sendAlertEmail(subject, text) : Promise.resolve('off'),
   ]);
   if (ch.telegram && tg) console.warn('[watchdog] Telegram not sent:', tg);
   if (ch.email && em) console.warn('[watchdog] alert email not sent:', em);
-  if (!ch.telegram && !ch.email) console.warn(`[watchdog] no alert channel set — ${subject}\n${text}`);
+  if (!all.telegram && !all.email) console.warn(`[watchdog] no alert channel set — ${subject}\n${text}`);
   return { telegram: ch.telegram && !tg, email: ch.email && !em };
 }

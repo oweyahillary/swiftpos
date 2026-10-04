@@ -32,6 +32,7 @@ import { cleanVoidReason, cleanVoidNote, voidReasonLabel } from '../lib/kitchenL
 import { confirmerByPin, confirmerRows } from '../lib/confirmerLookup';
 import { businessReversalRules } from '../lib/reversalSettings';
 import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
+import { frozenAtBranch } from '../lib/stockTakeAccess';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -458,6 +459,25 @@ router.post('/', async (req, res) => {
     if (!binding.ok) {
       res.status(409).json({ error: binding.error, code: binding.code });
       return;
+    }
+  }
+
+  // ── A394: an item frozen by a stock count is not sold on the web POS until it has been counted ──
+  // Only a live web sale: a till's sale (X-Device-Id, or made offline with its own time) already happened and is never
+  // refused — the count takes it into account instead (lib/stockTakeRules.lateSales).
+  if (!deviceIdFromRequest(req) && !(req.body?.created_at || req.body?.client_created_at)) {
+    const frozen = await frozenAtBranch(req.businessId, branch_id);
+    if (frozen?.productIds.length) {
+      const held = new Set(frozen.productIds);
+      const names = (items as OrderItemInput[]).filter((i) => held.has(String(i.product?.id ?? i.productId ?? '')))
+        .map((i) => i.product?.name || 'an item');
+      if (names.length) {
+        res.status(409).json({
+          error: `Being counted (${frozen.ref}): ${[...new Set(names)].slice(0, 5).join(', ')}. It can be sold again once it has been counted.`,
+          code: 'STOCK_COUNT_FROZEN',
+        });
+        return;
+      }
     }
   }
 

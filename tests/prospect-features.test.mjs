@@ -62,7 +62,7 @@ await ok('the client cannot set a POS switch — only the admin portal (owner\'s
   assert.match(read('apps/server/src/routes/flags.ts'), /if \(\(POS_FEATURE_KEYS as readonly string\[\]\)\.includes\(req\.params\.key\)\) \{\s*res\.status\(403\)/);
   const ap = read('apps/admin/src/AdminPortal.tsx');
   assert.match(ap, /\{POS_FEATURES\.map\(pf => \{/);
-  assert.match(ap, /onClick=\{\(\) => toggleFeature\(pf\.key, !on\)\}/);
+  assert.match(ap, /\{toggle\(on, \(\) => toggleFeature\(pf\.key, !on\), pf\.label\)\}/);   // A393: one switch component
 });
 
 // ── 2 + 3 + 4: the delivery fee ──────────────────────────────────────────────

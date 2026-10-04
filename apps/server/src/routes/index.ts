@@ -32,6 +32,8 @@ import tablesRoutes        from './tables';
 import shiftsRoutes        from './shifts';
 import dayCloseRoutes      from './day-close';
 import stockRoutes         from './stock';
+import stockTakeRoutes     from './stockTakes';   // A394
+import payablesRoutes      from './payables';     // A395
 import expensesRoutes      from './expenses';
 import recipesRoutes       from './recipes';
 import printersRoutes      from './printers';
@@ -68,6 +70,8 @@ router.use('/tables',         tablesRoutes);
 router.use('/shifts',         shiftsRoutes);
 router.use('/day-close',      dayCloseRoutes);
 router.use('/stock',          stockRoutes);
+router.use('/stock-takes',    stockTakeRoutes);
+router.use('/payables',       payablesRoutes);
 router.use('/expenses',       expensesRoutes);
 router.use('/recipes',        recipesRoutes);
 router.use('/printers',       printersRoutes);

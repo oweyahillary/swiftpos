@@ -138,6 +138,8 @@ export default function InventoryPage() {
           onClick={() => {
             const items = rows.filter(r => r.products.track_stock);
             printDocument({
+              // A394: blind — no system figure on the sheet (the person counting must not see it). For a full count
+              // with differences and review, use Stock › Stock counts.
               docType: 'STOCK-TAKE COUNT SHEET',
               number: new Date().toLocaleDateString('en-KE'),
               dateLabel: new Date().toLocaleString('en-KE'),
@@ -145,12 +147,9 @@ export default function InventoryPage() {
               business: business ?? { name: 'ZapTill' },
               meta: [{ label: 'Prepared', value: new Date().toLocaleString('en-KE') }],
               columns: [
-                { label: 'Product' }, { label: 'System qty', align: 'right' },
-                { label: 'Counted', align: 'right' }, { label: 'Variance', align: 'right' },
+                { label: 'Product' }, { label: 'Category' }, { label: 'Counted', align: 'right' },
               ],
-              // System qty is shown so the counter can reconcile; Counted/Variance
-              // are left blank to be written in by hand during the physical count.
-              rows: items.map(r => [r.products.name, String(r.quantity), '', '']),
+              rows: items.map(r => [r.products.name, r.products.categories?.name ?? '', '']),
               signatures: ['Counted by', 'Verified by'],
             });
           }}

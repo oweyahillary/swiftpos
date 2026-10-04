@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getModifiers: (productId: string) => ipcRenderer.invoke('pos:getModifiers', productId),
     notePicks: () => ipcRenderer.invoke('pos:notePicks'),   // A367
     features: () => ipcRenderer.invoke('pos:features'),     // 0.6.27
+    stockCountFreeze: () => ipcRenderer.invoke('pos:stockCountFreeze'),   // A394
     history: () => ipcRenderer.invoke('pos:history'),       // 0.6.27
     reversalRules: () => ipcRenderer.invoke('pos:reversalRules'),   // 0.6.30
     help: () => ipcRenderer.invoke('pos:help'),                     // 0.6.35 (A384)

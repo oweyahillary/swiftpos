@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { resolveOwnerBusinesses, firstOrNull } from '../lib/ownerBusiness';
 import jwt from 'jsonwebtoken';
 import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
+import { otpDisabled } from '../lib/loginOtp';   // A391
 
 declare global {
   namespace Express {
@@ -168,6 +169,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   // ── 2. Try Supabase JWT (local verify — no network call) ─────────────────
+  // A391: refused while sign-in codes are on. A Supabase session needs only the owner's password (anyone holding it
+  // could ask Supabase directly), so accepting it would walk round the one-time code. The dashboard always holds a
+  // ZapTill token from /api/auth/login; a browser left with only a Supabase session is sent back to sign in.
+  if (!otpDisabled()) {
+    res.status(401).json({ error: 'Please sign in again.', code: 'SIGN_IN_AGAIN' });
+    return;
+  }
   if (!SUPABASE_JWT_SECRET) {
     res.status(401).json({ error: 'Invalid or expired token' });
     return;

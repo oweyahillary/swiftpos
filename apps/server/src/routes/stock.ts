@@ -20,6 +20,7 @@ import { supabase } from '../lib/supabase';
 import { importKey } from '../lib/productImport';   // 2026-10-04
 import { chunkIn } from '../lib/pgQuery';
 import { resolveStockNotifications } from '../jobs/lowStockChecker';
+import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -178,7 +179,9 @@ router.get('/ingredients', async (req, res) => {
     const { ingredient_stock_levels, ...rest } = ing;
     return { ...rest, current_stock, reorder_level, branch_stock: levels };
   });
-  res.json(shaped);
+  // A394: blind count — the counted ingredients' figures are hidden from someone who may not change stock.
+  const hide = await hiddenWhileCounting(req, scopedBranch);
+  res.json(hide.size ? shaped.map((i: any) => hide.has(`i:${i.id}`) ? { ...i, current_stock: null, branch_stock: [], counting: true } : i) : shaped);
 });
 
 router.post('/ingredients', requirePermission('ingredients.manage'), async (req, res) => {

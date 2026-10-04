@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import SettingsSection from './SettingsSection';
 import StaffTab from './StaffTab';
 import RolesTab from './RolesTab';
+import SignInSecurity from '../../components/SignInSecurity';
 
 // Settings › Users and access (register A133).
 // Consolidates the staff/roles half of the old Staff Management page.
@@ -13,6 +14,7 @@ interface Branch { id: string; name: string; is_main: boolean; }
 const TABS = [
   { to: 'staff', label: 'Staff members' },
   { to: 'roles', label: 'Roles and permissions' },
+  { to: 'security', label: 'My sign-in' },   // A391: the owner's sign-in code
 ];
 
 export default function UsersAccessPage() {
@@ -32,7 +34,7 @@ export function StaffMembersRoute() {
   const { branches } = useOutletContext<{ branches: Branch[] }>();
   return (
     <div className="p-6">
-      <StaffTab branches={branches} />
+      <StaffTab branches={branches} canResetSignIn />
     </div>
   );
 }
@@ -41,6 +43,15 @@ export function RolesRoute() {
   return (
     <div className="p-6">
       <RolesTab />
+    </div>
+  );
+}
+
+// A391: the owner's own sign-in code — email or an authenticator app.
+export function SignInSecurityRoute() {
+  return (
+    <div className="p-6">
+      <SignInSecurity />
     </div>
   );
 }

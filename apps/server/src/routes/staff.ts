@@ -10,6 +10,7 @@ import bcrypt from 'bcrypt';
 import { validate } from '../middleware/validate';
 import { CreateStaffSchema, UpdateStaffSchema } from '../lib/schemas';
 import { isElevatedRoleName, canAssignRole, overridesBeyondCaller } from '../lib/roleCeiling';
+import { useEmailCodes } from '../lib/loginOtp';   // A391
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -419,6 +420,16 @@ router.patch('/:id', requirePermission('staff.manage'), validate(UpdateStaffSche
 });
 
 // DELETE /api/staff/:id — soft deactivate
+// A391: a manager lost the phone with their authenticator app → back to emailed sign-in codes. The owner only.
+router.post('/:id/reset-otp', requirePermission('staff.manage'), async (req, res) => {
+  if (!req.isOwner) { res.status(403).json({ error: 'Only the owner can reset a sign-in code.' }); return; }
+  const { data: target } = await supabase
+    .from('users').select('id').eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (!target) { res.status(404).json({ error: 'Staff member not found' }); return; }
+  if (await useEmailCodes('user', req.params.id)) { res.status(500).json({ error: 'Could not reset — please try again.' }); return; }
+  res.json({ method: 'email' });
+});
+
 router.delete('/:id', requirePermission('staff.manage'), async (req, res) => {
   // Non-owners: verify target is in their branch
   if (!req.isOwner) {

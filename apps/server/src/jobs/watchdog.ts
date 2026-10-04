@@ -4,10 +4,11 @@ import { getDayCutoff } from '../lib/dayCutoff';
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';
 import { REQUIRED_DESKTOP_SCHEMA } from '../lib/desktopSchema';
 import { notifyAdmin, alertChannels } from '../lib/alertNotify';
-import { recentErrors, digestCounters } from '../lib/watchdogCounters';
+import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts } from '../lib/watchdogCounters';
 import {
   Alert, OpenAlertRow, WATCHDOG, planRun, alertText, digestText,
   tillsNotSyncing, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
+  repeatedSignInFailures, tillSyncRefused,
 } from '../lib/watchdogRules';
 
 /**
@@ -18,6 +19,8 @@ import {
  * (public.watchdog_alerts, migration 116), send the NEW critical problems at once, remind every 3 hours while one lasts,
  * and say "resolved" when it clears. Every morning (07:45 East Africa Time): one digest of everything open, the
  * warnings included, and the counters (server errors, failed sign-ins, A159 write-guard flags).
+ * A392: only critical problems are emailed (new and still happening); "resolved" and the digest go to Telegram, and
+ * everything shows on the admin portal's Alerts page.
  *
  * A total cloud outage cannot be reported from inside the cloud: UptimeRobot watches /health for that.
  * WATCHDOG_ENABLED=false turns it off. Never throws: a failed check is logged and the next run tries again.
@@ -48,6 +51,17 @@ export async function collectAlerts(now = new Date()): Promise<Alert[]> {
   };
 
   await step('errors', async () => { const e = recentErrors(); return errorBurst(e.times, now, e.paths); });
+  await step('sign-ins', async () => repeatedSignInFailures(recentSignInFailures(), now));   // A392
+  await step('sync refused', async () => {                                                 // A392
+    const attempts = recentSyncAttempts();
+    const ids = [...new Set(attempts.map((l) => l[l.length - 1]?.deviceId).filter(Boolean))] as string[];
+    const tills: Record<string, string> = {};
+    if (ids.length) {
+      const { data } = await supabase.from('user_devices').select('device_id, terminal_code, device_label').in('device_id', ids.slice(0, 500));
+      for (const d of (data ?? []) as any[]) tills[d.device_id] = d.terminal_code || d.device_label || tills[d.device_id];
+    }
+    return tillSyncRefused(attempts, now, nm, tills);
+  });
   if (!active.length) return alerts;
 
   await step('tills', async () => {
@@ -116,11 +130,14 @@ export async function collectAlerts(now = new Date()): Promise<Alert[]> {
   return alerts;
 }
 
+const OPEN_COLS = 'id, alert_key, severity, title, detail, first_seen_at, last_notified_at, notify_count';
+
 async function openAlerts(): Promise<OpenAlertRow[]> {
-  const { data, error } = await supabase
-    .from('watchdog_alerts')
-    .select('id, alert_key, severity, title, detail, first_seen_at, last_notified_at, notify_count')
-    .is('resolved_at', null);
+  let { data, error } = await supabase
+    .from('watchdog_alerts').select(`${OPEN_COLS}, acknowledged_at`).is('resolved_at', null);
+  if (error && /acknowledged_at/.test(error.message ?? '')) {      // before migration 119: no mute, the rest works
+    ({ data, error } = await supabase.from('watchdog_alerts').select(OPEN_COLS).is('resolved_at', null) as any);
+  }
   if (error) throw error;
   return (data ?? []) as OpenAlertRow[];
 }
@@ -158,7 +175,8 @@ export async function runWatchdog(now = new Date()): Promise<{ opened: number; r
 
   for (const row of plan.resolved) {
     if (row.last_notified_at) {                             // told about it (as critical) → say it cleared
-      await notifyAdmin(`ZapTill resolved: ${row.title}`, alertText('resolved', row, row.first_seen_at, now));
+      // A392: not emailed — a recovery is not a critical failure (Telegram and the portal only).
+      await notifyAdmin(`ZapTill resolved: ${row.title}`, alertText('resolved', row, row.first_seen_at, now), { email: false });
     }
     const { error } = await supabase.from('watchdog_alerts').update({ resolved_at: iso }).eq('id', row.id);
     if (error) console.error('[watchdog] could not resolve alert', row.alert_key, error.message);
@@ -172,7 +190,8 @@ export async function sendDigest(now = new Date()): Promise<void> {
   const open = await openAlerts();
   open.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
   const text = digestText(open, digestCounters(true), now);
-  await notifyAdmin(`ZapTill daily check — ${now.toISOString().slice(0, 10)}`, text);
+  // A392: the digest is not emailed (critical failures only) — Telegram, and the admin portal's Alerts page.
+  await notifyAdmin(`ZapTill daily check — ${now.toISOString().slice(0, 10)}`, text, { email: false });
 }
 
 export function startWatchdogJob(): void {

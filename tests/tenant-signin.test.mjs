@@ -135,7 +135,7 @@ await ok('only the admin sets it: validated, a taken address refused; the owner\
 });
 await ok('the sign-in pages send the address and show the client (or "not set up")', () => {
   const lp = read('apps/dashboard/src/pages/LoginPage.tsx');
-  assert.match(lp, /\.\.\.\(chosenBusinessId \? \{ business_id: chosenBusinessId \} : \{\}\), \.\.\.tenantSignInFields\(\) \},/);
+  assert.match(lp, /\{ email, password, \.\.\.\(businessId \? \{ business_id: businessId \} : \{\}\), \.\.\.tenantSignInFields\(\),/);   // A391: + the code
   assert.match(lp, /if \(tenant\.status === 'unknown'\) return <UnknownTenantAddress subdomain=\{tenant\.subdomain\} \/>;/);
   assert.match(lp, /<TenantBrand tenant=\{tenant\.tenant\} \/>/);
   const ps = read('apps/dashboard/src/pages/pos/POSLoginScreen.tsx');

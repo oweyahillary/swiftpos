@@ -66,7 +66,9 @@ ok('the enrol-code route still refuses when nobody resolves (never a code with n
 ok('the admin portal shows the enrolment error beside the branches', () => {
   const ui = fs.readFileSync(path.join(ROOT, 'apps/admin/src/AdminPortal.tsx'), 'utf8');
   assert.match(ui, /catch\(e\) \{ setEnrolError\(`\$\{branch\.name\}: \$\{e\.message\}`\); \}/);
-  assert.equal((ui.match(/data-testid="enrol-error"/g) || []).length, 2);
+  // A393: one Branches & tills tab now (the overview's copy of the branch list is gone) — shown once, beside it.
+  assert.equal((ui.match(/data-testid="enrol-error"/g) || []).length, 1);
+  assert.match(ui, /\{enrolPanel\}/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

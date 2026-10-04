@@ -40,7 +40,7 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
-import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
@@ -918,6 +918,8 @@ export function registerIpcHandlers() {
 
   // 0.6.27: the per-client POS switches (admin portal), as the till last heard them — all off until told.
   handle('pos:features', async () => getPosFeatures());
+  // A394: the items a stock count freezes at this branch (the sale screen refuses them).
+  handle('pos:stockCountFreeze', async () => getStockCountFreeze());
 
   handle('pos:getModifiers', async (_event, productId: string) => {
     const db = getLocalDb();

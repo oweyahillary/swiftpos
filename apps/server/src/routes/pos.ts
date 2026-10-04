@@ -13,6 +13,7 @@ import { getWebAccess } from '../lib/webAccess';
 import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
 import { cleanHistoryMethods } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
+import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
 
 const router = safeRouter();
 
@@ -61,6 +62,8 @@ router.get('/catalogue-version', async (req, res) => {
       latest('branches',         'business_id', biz),
       latest('branch_printers',  'branch_id',   branchId),
       latest('branch_prices',    'branch_id',   branchId),
+      // A394: a stock count started, an item counted (released from a freeze), a count closed.
+      latest('stock_takes',      'business_id', biz),
     ]);
     // ISO-8601 UTC strings sort chronologically; newest is the version.
     const version = picks.filter(Boolean).sort().pop() ?? null;
@@ -420,6 +423,9 @@ router.get('/init', async (req, res) => {
     // 0.6.30 (A336 stage 3): the owner's void window and offline void/refund rules — always every rule, defaults where
     // unset. Older tills ignore it.
     reversalRules: parseReversalRules((receiptTextRows ?? []) as Array<{ key: string; value: unknown }>),
+    // A394: a stock count at this branch that freezes items — the products not to sell until they have been counted.
+    // Always sent: null = nothing frozen. Older tills ignore it.
+    stockCount: await frozenAtBranch(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they

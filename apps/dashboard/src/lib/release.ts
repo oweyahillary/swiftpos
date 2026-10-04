@@ -1,5 +1,5 @@
 /**
- * release.ts — the SwiftPOS release number, the same on the till, the cloud, the dashboard / web POS and the admin portal.
+ * release.ts — the ZapTill release number, the same on the till, the cloud, the dashboard / web POS and the admin portal.
  *
  * Owner, 2026-10-01: "can we add versioning on the website also so that i can tell which one i am running?" Every surface
  * shows "v<RELEASE> · <commit>" — the release says WHICH update, the commit says which build of it was deployed. The

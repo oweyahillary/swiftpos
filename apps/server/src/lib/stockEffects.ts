@@ -52,6 +52,19 @@ export interface StockEffectsParams {
   lines:       StockLine[];
 }
 
+/**
+ * A394: an ingredient's sale movement, with the order it came from (reference_*, migration 120) so a stock count can
+ * tell a till's late sale from a sale after the count. Before migration 120 the columns do not exist: the row is then
+ * written without them rather than lost.
+ */
+async function insertIngredientSale(orderId: string, row: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.from('ingredient_stock_movements')
+    .insert({ ...row, reference_type: 'order', reference_id: orderId });
+  if (error && /reference_(type|id)/.test(error.message ?? '')) {
+    await supabase.from('ingredient_stock_movements').insert(row);
+  }
+}
+
 export async function applyStockEffects(params: StockEffectsParams): Promise<void> {
   const { businessId, userId, lines, pumpId, orderType } = params;
   // Aliased rather than renamed throughout: the moved code refers to branch_id
@@ -272,9 +285,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
             p_delta:         -qty,
           });
           if (iErr) { console.error('Linked-ingredient deduction error (non-fatal):', iErr.message); continue; }
-          await supabase
-            .from('ingredient_stock_movements')
-            .insert({
+          await insertIngredientSale(order_id, {
               business_id:     businessId,
               ingredient_id:   ingredientId,
               branch_id,
@@ -460,9 +471,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
               });
               if (decErr) { console.error('Ingredient deduction error (non-fatal):', decErr.message); continue; }
 
-              await supabase
-                .from('ingredient_stock_movements')
-                .insert({
+              await insertIngredientSale(order_id, {
                   business_id:     businessId,
                   ingredient_id:   ingredientId,
                   branch_id,
@@ -519,9 +528,7 @@ export async function applyStockEffects(params: StockEffectsParams): Promise<voi
               });
               if (pErr) { console.error('Packaging deduction error (non-fatal):', pErr.message); continue; }
 
-              await supabase
-                .from('ingredient_stock_movements')
-                .insert({
+              await insertIngredientSale(order_id, {
                   business_id:     businessId,
                   ingredient_id:   ingredientId,
                   branch_id,
