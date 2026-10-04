@@ -225,7 +225,17 @@ for (const f of files) {
 // disagree — and re-running the loser fails with
 //     ERROR: cannot change name of input parameter
 // which is silent unless somebody is reading migration output.
-const norm0 = s => s.replace(/\bint\b/g, 'integer').replace(/\s+/g, ' ').trim().toLowerCase();
+// One spelling for an argument list, so only a REAL difference (a renamed parameter, a changed type or default) counts.
+// 2026-10-04 (A396): Postgres prints what a migration writes as `timestamptz` / `default 'undo'` back as
+// `timestamp with time zone` / `DEFAULT 'undo'::text` — the same signature, which this used to call drift.
+const normArgs = s => s.toLowerCase()
+  .replace(/\bint\b/g, 'integer')
+  .replace(/\btimestamptz\b/g, 'timestamp with time zone')
+  .replace(/\btimetz\b/g, 'time with time zone')
+  .replace(/\bbool\b/g, 'boolean')
+  .replace(/('(?:[^']|'')*'|\bnull\b|\btrue\b|\bfalse\b|-?\d+(?:\.\d+)?)::[a-z_ ]+?(?=\s*(?:,|$))/g, '$1')   // DEFAULT 'x'::text → 'x'
+  .replace(/\s+/g, ' ').trim();
+const norm0 = normArgs;
 for (const [name, decls] of allDecls) {
   const shapes = new Map();
   for (const d of decls) {
@@ -294,7 +304,7 @@ if (functionsIndex) {
         'If it is simply not run yet, declare it in scripts/schema-pending.json.');
       continue;
     }
-    const norm = s => s.replace(/\bint\b/g, 'integer').replace(/\s+/g, ' ').trim().toLowerCase();
+    const norm = normArgs;
     if (norm(live) !== norm(fn.args)) {
       add('error', fn.file, `function ${name} SIGNATURE DRIFT`,
         `migration: ${name}(${fn.args})\n     database:  ${name}(${live})\n` +

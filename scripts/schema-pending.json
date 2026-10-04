@@ -16,7 +16,5 @@
     "the live database, then delete the entry here. The gate will tell you if you",
     "forget."
   ],
-  "pending": {
-    "122_test_data_purge.sql": "Register A396. Adds purge_test_data (clear a client's test data between two times). Written 2026-10-04; runs with the DB migrate workflow on main. Remove this entry once run and schema-index.json is refreshed from the live database."
-  }
+  "pending": {}
 }

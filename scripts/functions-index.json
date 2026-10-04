@@ -13,6 +13,7 @@
  "increment_customer_spend": "p_customer_id uuid, p_amount numeric",
  "increment_discount_usage": "discount_uuid uuid",
  "increment_loyalty_points": "p_customer_id uuid, p_points integer",
+ "purge_test_data": "p_business uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_stock_mode text DEFAULT 'undo'::text, p_delete_customers boolean DEFAULT false, p_dry_run boolean DEFAULT true, p_done_by text DEFAULT NULL::text, p_reason text DEFAULT NULL::text",
  "rls_auto_enable": "",
  "schema_snapshot": "",
  "set_updated_at": "",
