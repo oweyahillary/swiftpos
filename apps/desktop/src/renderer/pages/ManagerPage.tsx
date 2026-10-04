@@ -15,7 +15,7 @@
  * catalogue pull — AND something tracks stock.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
@@ -1248,7 +1248,10 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
    * both fall back to FALLBACK_STATIONS so printing never stops.
    */
   const [escposStations, setEscposStations] = useState<typeof FALLBACK_STATIONS>([]);
-  useEffect(() => {
+  // 2026-10-04 (owner: "i created the drink printer under stations and it does not appear under printers"): this was
+  // read ONCE, when the manager screen opened, so a station added on the Stations tab never reached the Printers tab
+  // until the till was locked or restarted. Now a reload the Printers tab calls each time it is opened.
+  const reloadStations = useCallback(() => {
     void (async () => {
       try {
         // The REAL station source is GET /api/stations (print_stations), the same
@@ -1291,7 +1294,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         setEscposStations(live);
       } catch { /* fallback list stands */ }
     })();
-  }, []);
+  }, [flags.isRestaurant]);
+  useEffect(() => { reloadStations(); }, [reloadStations]);
 
   // Server enforces these too — hiding a tab is a courtesy, not the control.
   const perms = (staff as any)?.permissions ?? {};
@@ -1395,6 +1399,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         stations={escposStations.length ? escposStations : FALLBACK_STATIONS}
         canManageStations={has('stations.manage')}
         canManageReceipt={canManageReceipt}
+        reloadStations={reloadStations}
       />;
       case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
       default:        return <RetailOverview currency={currency} />;
