@@ -696,6 +696,76 @@ async function countFor(table: string, businessId: string): Promise<number | nul
   } catch { return null; }
 }
 
+// ─── A396: clear a client's test data, between two times ─────────────────────
+// Owner, 2026-10-04: "the purge i should be able to select the date it starts and time (which the system should give
+// by default) and the date and time testing stopped so that i should not purge a real sale". The work is one database
+// function (migration 122, purge_test_data) — one transaction, a preview first, refusals instead of cutting a real shift
+// or day in two. Menu, staff, branches, tills and settings are never touched.
+
+/** The window the admin sees first: from when the client was set up to now (to the minute). */
+function testWindowDefaults(createdAt: string | null | undefined): { from: string; to: string } {
+  const now = new Date(); now.setSeconds(0, 0);
+  const from = createdAt ? new Date(createdAt) : new Date(now.getTime() - 7 * 86_400_000);
+  from.setSeconds(0, 0);
+  return { from: from.toISOString(), to: now.toISOString() };
+}
+
+const isTime = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v));
+const STOCK_MODES = new Set(['undo', 'zero', 'keep']);
+
+router.get('/clients/:id/test-data', requireAdmin, async (req: any, res) => {
+  const { data: biz } = await supabase.from('businesses').select('id, name, created_at').eq('id', req.params.id).maybeSingle();
+  if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
+  const defaults = testWindowDefaults((biz as { created_at?: string }).created_at);
+  const from = isTime(req.query.from) ? new Date(req.query.from).toISOString() : defaults.from;
+  const to = isTime(req.query.to) ? new Date(req.query.to).toISOString() : defaults.to;
+  const stock = STOCK_MODES.has(String(req.query.stock)) ? String(req.query.stock) : 'undo';
+  const { data: preview, error } = await supabase.rpc('purge_test_data', {
+    p_business: biz.id, p_from: from, p_to: to, p_stock_mode: stock, p_delete_customers: req.query.customers === 'true', p_dry_run: true,
+  });
+  if (error) {
+    // Before migration 122 the function does not exist — say so rather than a raw database error.
+    res.status(503).json({ error: /purge_test_data/.test(error.message) ? 'Run migration 122 first (clear test data).' : error.message, code: 'NOT_READY' });
+    return;
+  }
+  // A till that has not synced since the window ended may still hold test sales it has not sent.
+  const { data: tills } = await supabase.from('user_devices').select('device_label, terminal_code, last_sync_at, retired_at')
+    .eq('business_id', biz.id).is('retired_at', null);
+  const behind = ((tills ?? []) as Array<{ device_label: string | null; terminal_code: string | null; last_sync_at: string | null }>)
+    .filter((t) => !t.last_sync_at || t.last_sync_at < to)
+    .map((t) => ({ name: t.terminal_code || t.device_label || 'A till', last_sync_at: t.last_sync_at }));
+  const { data: history } = await supabase.from('test_data_purges').select('from_at, to_at, stock_mode, counts, done_by, created_at')
+    .eq('business_id', biz.id).order('created_at', { ascending: false }).limit(10);
+  res.json({ business: { id: biz.id, name: biz.name }, defaults, window: { from, to }, stock, preview, tills_behind: behind, history: history ?? [] });
+});
+
+router.post('/clients/:id/test-data/clear', requireAdmin, requireSuperAdmin, async (req: any, res) => {
+  const { data: biz } = await supabase.from('businesses').select('id, name').eq('id', req.params.id).maybeSingle();
+  if (!biz) { res.status(404).json({ error: 'Not found' }); return; }
+  const b = req.body ?? {};
+  if (!isTime(b.from) || !isTime(b.to)) { res.status(400).json({ error: 'Give when testing started and when it stopped.' }); return; }
+  const stock = STOCK_MODES.has(String(b.stock_mode)) ? String(b.stock_mode) : null;
+  if (!stock) { res.status(400).json({ error: 'Choose what happens to stock.' }); return; }
+  if (String(b.confirm_name ?? '').trim().toLowerCase() !== String(biz.name).trim().toLowerCase()) {
+    res.status(400).json({ error: 'Type the client\'s name exactly to confirm.', code: 'CONFIRM_NAME' });
+    return;
+  }
+  const reason = String(b.reason ?? '').trim().slice(0, 300) || 'Test data cleared before go-live';
+  const { data: result, error } = await supabase.rpc('purge_test_data', {
+    p_business: biz.id, p_from: new Date(b.from).toISOString(), p_to: new Date(b.to).toISOString(), p_stock_mode: stock,
+    p_delete_customers: b.delete_customers === true, p_dry_run: false, p_done_by: req.adminEmail ?? null, p_reason: reason,
+  });
+  if (error) { sendError(res, error); return; }
+  const r = result as { ok: boolean; problems: string[]; counts: Record<string, unknown> };
+  if (!r.ok) { res.status(409).json({ error: r.problems.join(' '), code: 'NOT_CLEARED', problems: r.problems, counts: r.counts }); return; }
+  await writeAdminAudit({
+    adminId: req.adminId, adminEmail: req.adminEmail, action: 'test_data_cleared', resource: 'business',
+    businessId: biz.id, businessName: biz.name, reason,
+    after: { from: b.from, to: b.to, stock_mode: stock, delete_customers: b.delete_customers === true, counts: r.counts },
+  });
+  res.json(r);
+});
+
 /**
  * GET /api/admin/clients/:id/purge-preview — non-destructive dry-run (Stage 2).
  * Counts what a 6-month purge WOULD delete, grouped RETAIN / REVIEW / PURGE.

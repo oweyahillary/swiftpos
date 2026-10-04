@@ -130,7 +130,9 @@ function parseColumnDef(line) {
   if (!m) return null;
   const rest = m[2];
   const type = rest.split(/\s+(?:NOT\s+NULL|NULL|DEFAULT|REFERENCES|GENERATED|PRIMARY|UNIQUE|CHECK|COLLATE)\b/i)[0];
-  return { name: m[1], type, notNull: /\bNOT\s+NULL\b/i.test(rest) };
+  // 2026-10-04: a PRIMARY KEY column is NOT NULL in the database even when the migration does not say so — leaving it
+  // out made the index disagree with production (the A394/A395 tables' "id"), and the migrate job's verify step failed.
+  return { name: m[1], type, notNull: /\bNOT\s+NULL\b|\bPRIMARY\s+KEY\b/i.test(rest) };
 }
 
 function parseMigrations() {
@@ -169,7 +171,7 @@ function parseMigrations() {
         if (add) {
           const rest = add[2];
           const type = rest.split(/\s+(?:NOT\s+NULL|NULL|DEFAULT|REFERENCES|GENERATED|PRIMARY|UNIQUE|CHECK|COLLATE)\b/i)[0];
-          cols.set(add[1], { name: add[1], type, notNull: /\bNOT\s+NULL\b/i.test(rest) });
+          cols.set(add[1], { name: add[1], type, notNull: /\bNOT\s+NULL\b|\bPRIMARY\s+KEY\b/i.test(rest) });
           continue;
         }
         const drop = clause.match(/^DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?"?(\w+)"?/i);
