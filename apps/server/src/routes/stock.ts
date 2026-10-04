@@ -17,6 +17,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { requirePermission, assertBranchAccess, branchScope } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
+import { importKey } from '../lib/productImport';   // 2026-10-04
 import { chunkIn } from '../lib/pgQuery';
 import { resolveStockNotifications } from '../jobs/lowStockChecker';
 
@@ -226,7 +227,7 @@ router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async 
     .from('ingredients').select('id, name').eq('business_id', req.businessId);
   const byName: Record<string, string> = {};
   for (const ing of (existing ?? []) as { id: string; name: string }[]) {
-    const key = String(ing.name ?? '').trim().toLowerCase();
+    const key = importKey(ing.name);   // 2026-10-04: hidden / double spaces and case never make a second ingredient
     if (key && !(key in byName)) byName[key] = ing.id;   // first wins
   }
 
@@ -246,7 +247,7 @@ router.post('/ingredients/bulk', requirePermission('ingredients.manage'), async 
       const reorder = row.reorder_level != null && row.reorder_level !== '' ? Number(row.reorder_level) : null;
       if (reorder != null && (isNaN(reorder) || reorder < 0)) { results.errors.push({ row: i + 1, error: `Invalid reorder_level: ${row.reorder_level}` }); continue; }
 
-      const key = row.name.trim().toLowerCase();
+      const key = importKey(row.name);
       const fields = {
         business_id:  req.businessId,
         name:         row.name.trim(),

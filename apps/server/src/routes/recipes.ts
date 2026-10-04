@@ -14,7 +14,7 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { branchScope } from '../middleware/rbac';
 import { requirePermission } from '../middleware/rbac';
-import { buildRecipeImport } from '../lib/productImport';
+import { buildRecipeImport, importKey } from '../lib/productImport';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -97,17 +97,17 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
     .from('ingredients').select('id, name').eq('business_id', req.businessId);
   const pByName: Record<string, string> = {}, pByPlu: Record<string, string> = {}, iByName: Record<string, string> = {};
   for (const p of (prods ?? []) as any[]) {
-    const n = String(p.name ?? '').trim().toLowerCase(); const pl = String(p.plu_code ?? '').trim().toLowerCase();
+    const n = importKey(p.name); const pl = importKey(p.plu_code);   // 2026-10-04
     if (n && !(n in pByName)) pByName[n] = p.id;
     if (pl && !(pl in pByPlu)) pByPlu[pl] = p.id;
   }
   for (const ing of (ings ?? []) as any[]) {
-    const n = String(ing.name ?? '').trim().toLowerCase();
+    const n = importKey(ing.name);
     if (n && !(n in iByName)) iByName[n] = ing.id;
   }
 
   for (const rp of recipeProducts) {
-    const productId = pByPlu[rp.product.toLowerCase()] || pByName[rp.product.toLowerCase()];
+    const productId = pByPlu[importKey(rp.product)] || pByName[importKey(rp.product)];
     if (!productId) { results.errors.push({ row: 0, error: `unknown product: ${rp.product}` }); continue; }
 
     // Resolve ingredient names; a single unknown fails the whole product so its
@@ -115,7 +115,7 @@ router.post('/bulk', requirePermission('products.manage'), async (req, res) => {
     const lines: { ingredient_id: string; quantity_per_serving: number; unit: string | null }[] = [];
     let bad = '';
     for (const l of rp.lines) {
-      const id = iByName[l.ingredient.toLowerCase()];
+      const id = iByName[importKey(l.ingredient)];
       if (!id) { bad = l.ingredient; break; }
       lines.push({ ingredient_id: id, quantity_per_serving: l.quantity_per_serving, unit: l.unit });
     }

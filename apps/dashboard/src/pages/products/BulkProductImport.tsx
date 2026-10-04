@@ -142,6 +142,10 @@ export default function BulkProductImport({
           <div className="font-bold text-green-300 mb-2">Import complete</div>
           <div className="text-sm text-green-400">✓ {importResult.summary.created} products created</div>
           <div className="text-sm text-green-400">✓ {importResult.summary.updated} products updated</div>
+          {/* 2026-10-04: which rows became NEW products — a surprise here is a name that did not match. */}
+          {!!importResult.created_names?.length && (
+            <div className="text-xs text-amber-300 mt-1">New: {importResult.created_names.slice(0, 12).join(', ')}{importResult.created_names.length > 12 ? ` … +${importResult.created_names.length - 12}` : ''}</div>
+          )}
           {importResult.summary.failed > 0 && (
             <div className="text-sm text-red-300">✗ {importResult.summary.failed} failed</div>
           )}

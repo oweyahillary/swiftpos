@@ -34,8 +34,12 @@ export default function PrintersScreen({
   canManageStations = true,
   canManageReceipt = false,
   canEdit = true,
+  reloadStations,
 }: {
   stations: Station[];
+  /** 2026-10-04: re-read the stations — called each time the Printers tab opens, so one just added on the Stations tab
+   *  is there to give a printer. */
+  reloadStations?: () => void;
   canManageStations?: boolean;
   canManageReceipt?: boolean;
   canEdit?: boolean;
@@ -67,7 +71,7 @@ export default function PrintersScreen({
         {tabs.map(t => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => { setTab(t.key); if (t.key === 'printers') reloadStations?.(); }}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === t.key
                 ? 'border-action-500 text-white'
