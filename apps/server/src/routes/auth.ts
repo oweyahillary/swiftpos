@@ -48,6 +48,7 @@ import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshGraceDecision } from '../lib/refreshGrace';
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
+import { sessionKind, revokeBrowserSessions, markTillSessionLost, clearTillSessionLost } from '../lib/tillSessions';   // A407
 import { cleanEmail, passwordProblem, ownerAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402
 import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
@@ -174,7 +175,7 @@ async function storeRefreshToken(
   const jtiPayload = jwt.decode(refreshToken) as { jti: string };
   const jti = hashToken(jtiPayload.jti);
 
-  const { data } = await supabase.from('refresh_tokens').insert({
+  const row = {
     jti,
     user_id:     payload.userId,
     business_id: payload.businessId,
@@ -182,7 +183,12 @@ async function storeRefreshToken(
     device_hint: deviceHint?.slice(0, 200) ?? null,
     ip_address:  ip ?? null,
     expires_at:  new Date(Date.now() + REFRESH_EXPIRES_MS).toISOString(),
-  }).select('id').single();
+  };
+  // A407: what the session is (device = the till itself, pin, web) — owner actions never revoke a device session.
+  let { data, error } = await supabase.from('refresh_tokens')
+    .insert({ ...row, session_kind: sessionKind(payload as { surface?: string; pinSignIn?: boolean }) }).select('id').single();
+  // Before migration 125 the column is not there: store the session without it rather than lose the sign-in.
+  if (error && /session_kind/.test(error.message ?? '')) ({ data } = await supabase.from('refresh_tokens').insert(row).select('id').single());
   return (data as { id?: string } | null)?.id ?? null;
 }
 
@@ -845,6 +851,7 @@ router.post('/enrol/redeem', async (req, res) => {
   };
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
+  await clearTillSessionLost(businessId, deviceId);   // A407: enrolled again — the alert clears
 
   // A164 (Phase 1): mint a per-device grant secret so this till can later recover
   // its own session without an owner re-login. Best-effort and additive — the
@@ -904,8 +911,15 @@ router.post('/device-token', async (req, res) => {
   const businessId = String(req.body?.business_id ?? '').trim();
   const deviceId   = String(req.body?.device_id ?? '').trim();
   const secret     = String(req.body?.device_secret ?? '').trim();
-  if (!businessId || !deviceId || !secret) {
-    res.status(400).json({ error: 'business_id, device_id and device_secret are required' });
+  if (!businessId || !deviceId) {
+    res.status(400).json({ error: 'business_id and device_id are required' });
+    return;
+  }
+  // A407: a till asks here only when its session was refused. With no secret (enrolled before it kept one) it cannot
+  // sign back in — record it so ZapTill is emailed (watchdog, critical), and say so.
+  if (!secret) {
+    await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and it holds no device secret');
+    res.status(401).json({ error: 'This till needs a new enrolment code.', code: 'DEVICE_NO_SECRET' });
     return;
   }
 
@@ -920,9 +934,12 @@ router.post('/device-token', async (req, res) => {
   // Uniform failure — never reveal which check failed (unknown device, wrong
   // secret, or a revoked/pending status all look identical to a caller).
   if (!dev || !isDeviceGrantable((dev as any).status) || !verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
+    // A407: a till ZapTill blocked or retired is not "lost" — no alert for a deliberate block.
+    if (dev && isDeviceGrantable((dev as any).status)) await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and its device secret was not accepted');
     res.status(401).json({ error: 'Device grant refused', code: 'DEVICE_GRANT_INVALID' });
     return;
   }
+  await clearTillSessionLost(businessId, deviceId);   // A407: back
 
   // A suspended business must not bring a session online, same as the other paths.
   const { data: biz } = await supabase
@@ -1044,7 +1061,27 @@ router.post('/refresh', async (req, res) => {
       .eq('id', dbRow.id);
   }
 
-  res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken });
+  // A407: a till that never kept a device secret (enrolled before 1.0.0, or the secret was never stored) gets one on
+  // an ordinary renewal — so it can sign itself back in if this session is ever refused. Only for the till's own
+  // session, and only to the device the session was issued to.
+  let deviceSecret: string | null = null;
+  const devId = String(req.header('x-device-id') ?? '').split(',')[0].trim();
+  if (sessionKind(cleanPayload) === 'device' && devId && dbRow.device_hint === devId) {
+    try {
+      const { data: dev } = await supabase.from('user_devices').select('device_secret_hash')
+        .eq('business_id', cleanPayload.businessId).eq('device_id', devId).maybeSingle();
+      if (dev && !(dev as { device_secret_hash?: string | null }).device_secret_hash) {
+        const raw = generateDeviceSecret();
+        const { error: secErr } = await supabase.from('user_devices')
+          .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: new Date().toISOString() })
+          .eq('business_id', cleanPayload.businessId).eq('device_id', devId).is('device_secret_hash', null);
+        if (!secErr) deviceSecret = raw;
+      }
+      await clearTillSessionLost(cleanPayload.businessId, devId);
+    } catch { /* additive — the renewal stands without it */ }
+  }
+
+  res.json({ accessToken, refreshToken: newRefreshToken, token: accessToken, ...(deviceSecret ? { deviceSecret } : {}) });
 });
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
@@ -1058,14 +1095,9 @@ router.post('/logout', async (req, res) => {
     // Revoke all sessions for this user — used for "log out everywhere"
     try {
       const token = req.headers.authorization.slice(7);
-      const payload = jwt.decode(token) as { userId?: string } | null;
-      if (payload?.userId) {
-        await supabase
-          .from('refresh_tokens')
-          .update({ revoked_at: new Date().toISOString() })
-          .eq('user_id', payload.userId)
-          .is('revoked_at', null);
-      }
+      const payload = jwt.decode(token) as { userId?: string; businessId?: string } | null;
+      // A407: every browser of this user — never a till (a till signs in as the owner).
+      if (payload?.userId) await revokeBrowserSessions([payload.userId], payload.businessId ? [payload.businessId] : []);
     } catch { /* best effort */ }
   } else if (refreshToken) {
     await revokeRefreshToken(refreshToken);
@@ -1313,6 +1345,7 @@ router.post('/pos-login', async (req, res) => {
   // because they are all the same build on the same OS.
   const userAgent = req.headers['user-agent']?.slice(0, 200) ?? null;
   const devKey = deviceKey(req);
+  // till-safe: this person's own sessions on this browser (a browser's key is never a till's device_id)
   if (devKey) {
     await supabase
       .from('refresh_tokens')
@@ -1504,7 +1537,11 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // Same as above: this device only, not every till sharing a User-Agent.
   const userAgent = req.headers['user-agent']?.slice(0, 200) ?? null;
   const devKeyV = deviceKey(req);
-  if (devKeyV) {
+  // A407: the person signing in IS the till's own principal (the owner whose enrolment code set it up) — revoking
+  // "their sessions on this device" would revoke the till's own session, and 15 minutes later the till could not renew
+  // ("Please sign in again."). Their earlier PIN sessions on this till simply expire.
+  // till-safe: skipped when the PIN user is the till's principal; otherwise only that person's sessions here
+  if (devKeyV && matchedUser.id !== req.userId) {
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })

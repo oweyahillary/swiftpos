@@ -34,7 +34,8 @@ import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine } from './logFile';
-import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret, clearDeviceSecret } from './tokenStore';
+import { isSessionRefusal } from './sessionRecovery';   // A407
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
@@ -161,6 +162,8 @@ export function registerIpcHandlers() {
 
     // D5: wrap the credentials at rest, same as the login path.
     writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
+    // A407: the device secret — the till's own way back in if its session is ever refused.
+    if (typeof data.deviceSecret === 'string' && data.deviceSecret) writeDeviceSecret(data.deviceSecret);
 
     if (data.business?.type) saveDeviceConfig({ business_type: String(data.business.type) });
 
@@ -191,6 +194,7 @@ export function registerIpcHandlers() {
     // Signing the terminal out must also remove the offline way in, or a
     // decommissioned till keeps working credentials for another fortnight.
     clearPinCache();
+    clearDeviceSecret();   // A407: and its way back in
     clearOfflinePin();
     configureStaffSession('', '');
     configureSyncEngine(getCloudUrl(), '');
@@ -672,6 +676,13 @@ export function registerIpcHandlers() {
 
     // Guard the body: a non-JSON error page must not throw here (A152).
     const data = await res.json().catch(() => ({} as any));
+    // A407: the cloud refused the TILL's session (not the PIN — a wrong PIN is a 401 "Invalid PIN" with no code) and the
+    // renewal and the device secret could not fix it. The person's PIN is still checked — on the till, as offline — so
+    // the cashier keeps selling; the till keeps trying to sign itself back in, and ZapTill is emailed if it cannot.
+    if (res.status === 401 && isSessionRefusal(data)) {
+      logLine('pin', `the cloud refused this till's session (${data.code ?? data.error ?? '401'}) - signing in on the till's own PIN check`);
+      return fallbackToLocalAuthority();
+    }
     if (!res.ok) throw new Error(data.error ?? 'Invalid PIN');
 
     // Online sign-in succeeded: an offline PIN held from an earlier sign-in is no longer needed (A345).

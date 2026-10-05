@@ -154,3 +154,32 @@ export function migratePlaintextTokens(): void {
     } catch { /* leave it as it is; the till must still start */ }
   }
 }
+
+// ── A407: the till's device secret (A164) ─────────────────────────────────────────────────────────────────────────
+// Given at enrolment (and, for a till enrolled before 1.0.0, on an ordinary renewal). With it the till signs itself
+// back in (/api/auth/device-token) when its session is refused — a revoked session, or one that expired while the
+// till was off for over 30 days — instead of waiting for a person with a new enrolment code. Wrapped like the tokens;
+// kept in maintenance_state.
+const SECRET_KEY = 'device_secret';
+
+export function readDeviceSecret(): string {
+  try {
+    const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(SECRET_KEY) as { value?: string } | undefined;
+    const v = row?.value ?? '';
+    if (v.startsWith('enc:')) return unwrap(v.slice(4));
+    return v.startsWith('raw:') ? v.slice(4) : '';
+  } catch { return ''; }
+}
+
+export function writeDeviceSecret(secret: string): void {
+  if (!secret) return;
+  const sealed = canWrap() ? wrap(secret) : null;
+  const value = sealed ? `enc:${sealed}` : `raw:${secret}`;
+  getLocalDb().prepare(`INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(SECRET_KEY, value, new Date().toISOString());
+}
+
+/** Signing the till out (decommission) removes its way back in too. */
+export function clearDeviceSecret(): void {
+  try { getLocalDb().prepare(`DELETE FROM maintenance_state WHERE key = ?`).run(SECRET_KEY); } catch { /* nothing to clear */ }
+}

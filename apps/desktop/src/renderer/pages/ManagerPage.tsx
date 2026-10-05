@@ -1086,6 +1086,8 @@ interface Props {
   onSwitchAccount?: () => void;
   /** 0.6.35 (A384): open "What to do when". */
   onHelp?: () => void;
+  /** A405: open on this tab (the day-lock banner's "Close day now" → Close Day), when this manager may see it. */
+  initialTab?: TabKey;
 }
 
 // ── Prices Tab — branch price management (manager = branch authority) ─────────
@@ -1215,7 +1217,7 @@ function PricesTab({ currency }: { currency: string }) {
     </div>
   );
 }
-export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSwitchAccount, onHelp }: Props) {
+export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSwitchAccount, onHelp, initialTab }: Props) {
   const currency     = business.currency ?? 'KES';
   const businessName = business.name;
   const flags        = modeFlags(business.type);
@@ -1361,7 +1363,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     menu: I.menu, settings: I.receipt, stock: I.stock,
   };
 
-  const [active, setActive] = useState<TabKey>('overview');
+  const [active, setActive] = useState<TabKey>(() => (initialTab && groupOf(nav, initialTab) ? initialTab : 'overview'));
   // The tab last used in each group, so Settings reopens on Printing if that is where the manager was.
   const [lastTab, setLastTab] = useState<Partial<Record<GroupKey, TabKey>>>({});
   const activeGroup = groupOf(nav, active);

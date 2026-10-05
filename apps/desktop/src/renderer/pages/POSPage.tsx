@@ -45,7 +45,7 @@ interface Props {
   // screen was previously a one-way trip: an owner who opened it to check a
   // change had to sign out and re-enter a PIN to get back to the Menu tab,
   // which on a setup day is that loop every few minutes.
-  onOpenManager?: () => void;
+  onOpenManager?: (tab?: 'dayclose') => void;   // A405: 'dayclose' opens Manager on Close Day
   /** 0.6.35 (A384): open "What to do when". */
   onHelp?: () => void;
   /**
@@ -1258,7 +1258,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
               plain grey links it was easy to miss entirely. */}
           {onOpenManager && (
             <button
-              onClick={onOpenManager}
+              onClick={() => onOpenManager()}
               className="text-xs text-action-400 hover:text-action-300 border border-action-900 hover:border-action-700 rounded-md px-2 py-1 transition-colors"
               title="Back to manager tools"
             >
@@ -1293,9 +1293,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           must not sell, because those sales would post against yesterday's
           drawer — the precise harm the day close exists to prevent. Only a
           manager can clear it, from Manager → Close Day. */}
-      {/* Yesterday was never closed. Manager only — so no button here would help
-          the person standing at the till, and pretending otherwise wastes their
-          time. Red, because trading really is stopped. */}
+      {/* Yesterday was never closed. Manager only — A405: a manager signed in gets
+          "Close day now" (Manager › Close Day); a cashier is told who can clear it.
+          Red, because trading really is stopped. */}
       {needsManager && (
         <div className="bg-red-500/15 border-b border-red-500/40 px-4 py-3 flex items-center gap-3">
           <span className="text-red-400 text-base">⛔</span>
@@ -1303,9 +1303,17 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
             <p className="text-sm text-red-200 font-medium">This till cannot sell yet</p>
             <p className="text-xs text-red-300/80 mt-0.5">{dayGate?.reason}</p>
           </div>
-          <span className="text-xs text-red-300/70 whitespace-nowrap">
-            Manager → Close Day
-          </span>
+          {/* A405: a manager signed in closes the day from here; anyone else is told who can. */}
+          {onOpenManager ? (
+            <button onClick={() => onOpenManager('dayclose')} data-testid="close-day-now"
+              className="shrink-0 px-3 py-2 rounded-lg text-sm font-semibold bg-red-700 hover:bg-red-600 text-white">
+              Close day now
+            </button>
+          ) : (
+            <span className="text-xs text-red-300/80 max-w-[18rem] text-right">
+              A manager signs in with their PIN and closes it here — or closes it from the web (Manager › Close day).
+            </span>
+          )}
         </div>
       )}
 
@@ -1317,7 +1325,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-3">
           <span className="text-amber-400 text-base">⏳</span>
           <p className="flex-1 text-xs text-amber-200/90">{staleGrace}</p>
-          <span className="text-xs text-amber-300/70 whitespace-nowrap">Manager → Close Day</span>
+          {onOpenManager
+            ? <button onClick={() => onOpenManager('dayclose')} className="shrink-0 px-2 py-1 rounded text-xs font-medium bg-amber-700 hover:bg-amber-600 text-white">Close day now</button>
+            : <span className="text-xs text-amber-300/70 whitespace-nowrap">A manager closes it (Manager → Close Day)</span>}
         </div>
       )}
 

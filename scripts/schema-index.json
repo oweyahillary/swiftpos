@@ -982,7 +982,8 @@
     "expires_at": "\"timestamp with time zone\" NOT NULL",
     "revoked_at": "\"timestamp with time zone\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
-    "replaced_by": "\"uuid\""
+    "replaced_by": "\"uuid\"",
+    "session_kind": "\"text\""
   },
   "reservations": {
     "id": "\"uuid\" NOT NULL",
@@ -1406,7 +1407,9 @@
     "device_secret_set_at": "\"timestamp with time zone\"",
     "mac_address": "\"text\"",
     "retired_at": "\"timestamp with time zone\"",
-    "retired_by": "\"uuid\""
+    "retired_by": "\"uuid\"",
+    "session_lost_at": "\"timestamp with time zone\"",
+    "session_lost_reason": "\"text\""
   },
   "user_permissions": {
     "id": "\"uuid\" NOT NULL",

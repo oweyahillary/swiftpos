@@ -6,7 +6,7 @@
  *
  * MUTATIONS TO CONFIRM BITE: forgot answering differently for an unknown email → "the same answer" fails; checkResetCode
  * accepting a used code → "a code works once" fails; setOwnerPassword not revoking sessions → "signed out everywhere"
- * fails; a staff member's email accepted → "only an owner's sign-in" fails; resetHash = hashCode (shared with sign-in
+ * fails; the tills' sessions revoked too (A406) → "the business's tills stay signed in" fails; a staff member's email accepted → "only an owner's sign-in" fails; resetHash = hashCode (shared with sign-in
  * codes) → "a sign-in code cannot reset a password" fails.
  */
 import assert from 'node:assert';
@@ -42,7 +42,12 @@ const db = {
   users: [{ id: 'u-owner', business_id: 'b1', email: 'Owner@AfricanFries.co.ke', name: 'Wanjiku', must_change_password: true },
           { id: 'u-mgr', business_id: STAFFBIZ, email: 'manager@x.co.ke', name: 'Otieno', must_change_password: false }],
   refresh_tokens: [{ id: 'r1', user_id: 'u-owner', session_id: 's1', revoked_at: null }, { id: 'r2', user_id: OWNER, session_id: 's2', revoked_at: null },
-                   { id: 'r3', user_id: 'u-mgr', session_id: 's3', revoked_at: null }],
+                   { id: 'r3', user_id: 'u-mgr', session_id: 's3', revoked_at: null },
+                   // A406: a till signs in AS the owner — its session names its device
+                   { id: 'r4', user_id: 'u-owner', session_id: 's4', device_hint: 'dev-T1', revoked_at: null },
+                   // A407: marked as the till's own session (migration 125)
+                   { id: 'r5', user_id: 'u-owner', session_id: 's5', device_hint: 'dev-unlisted', session_kind: 'device', revoked_at: null }],
+  user_devices: [{ id: 'd1', business_id: 'b1', device_id: 'dev-T1' }],
   password_reset_codes: [],
 };
 const auth = { [OWNER]: { email: 'owner@africanfries.co.ke', password: 'old-password' }, '99999999-9999-4999-8999-999999999999': { email: 'boss@x.co.ke', password: 'x' } };
@@ -87,6 +92,8 @@ const lastCode = () => (mail[mail.length - 1]?.subject.match(/(\d{6})$/) ?? [])[
 const express = require('express');
 const app = express(); app.use(express.json());
 app.use('/api/auth', require(path.join(DIST, 'routes/auth.js')).default);
+const { requireAuth } = require(path.join(DIST, 'middleware/auth.js'));
+app.get('/api/probe', requireAuth, (_req, res) => res.json({ ok: true }));
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
 const post = async (p, body) => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/auth${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -125,6 +132,8 @@ try {
     assert.equal(auth[OWNER].password, 'new-password-1');
     assert.ok(db.refresh_tokens.find((t) => t.id === 'r1').revoked_at && db.refresh_tokens.find((t) => t.id === 'r2').revoked_at);
     assert.equal(db.refresh_tokens.find((t) => t.id === 'r3').revoked_at, null, 'nobody else is signed out');
+    assert.equal(db.refresh_tokens.find((t) => t.id === 'r4').revoked_at, null, 'A406: the business\'s tills stay signed in');
+    assert.equal(db.refresh_tokens.find((t) => t.id === 'r5').revoked_at, null, 'A407: a session marked as a till\'s own stays');
     assert.equal(db.users.find((u) => u.id === 'u-owner').must_change_password, false);
   });
   await ok('a code works once', async () => {
@@ -137,6 +146,15 @@ try {
     const code = lastCode(); const wrong = code === '000000' ? '111111' : '000000';
     for (let i = 0; i < 5; i++) await post('/password/reset', { email: 'owner@africanfries.co.ke', code: wrong, new_password: 'another-pass-2' });
     assert.equal((await post('/password/reset', { email: 'owner@africanfries.co.ke', code, new_password: 'another-pass-2' })).body.code, 'RESET_EXPIRED');
+  });
+  await ok('A406: an expired ZapTill token is called expired (renewed), not "Please sign in again."', async () => {
+    const jwt = require('jsonwebtoken');
+    const expired = jwt.sign({ userId: 'u-owner', businessId: 'b1', isOwner: true, exp: Math.floor(Date.now() / 1000) - 60 }, process.env.JWT_SECRET);
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/probe`, { headers: { Authorization: `Bearer ${expired}` } });
+    const body = await res.json();
+    assert.equal(res.status, 401); assert.equal(body.code, 'TOKEN_EXPIRED'); assert.equal(body.error, 'Invalid or expired token');
+    const foreign = jwt.sign({ sub: 'x' }, 'some-other-secret');
+    assert.equal((await (await fetch(`http://127.0.0.1:${server.address().port}/api/probe`, { headers: { Authorization: `Bearer ${foreign}` } })).json()).code, 'SIGN_IN_AGAIN', 'a non-ZapTill token still meets the A391 rule');
   });
   await ok('signed in: the change needs the current password; other browsers signed out, this one kept (source)', () => {
     const a = read('apps/server/src/routes/auth.ts');

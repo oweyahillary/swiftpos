@@ -12,7 +12,8 @@ import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
-import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
+import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
 import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze } from './deviceConfig';
@@ -30,6 +31,7 @@ import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
 import { closesToAdopt, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401
+import { applyTestDataClear, type ClearPeriod } from './testDataClear';   // A404
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth, emitEvent,
@@ -197,10 +199,40 @@ async function doRefreshAccessToken(): Promise<boolean> {
   const attempt = async (token: string) => {
     const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // A407: the device id lets the cloud hand this till a device secret if it has none yet.
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '' },
       body: JSON.stringify({ refreshToken: token }),
     });
     return res;
+  };
+
+  // A407: the cloud refused the session (revoked, or expired after 30+ days off) — sign back in with the device secret.
+  // With no secret the cloud is still told (it records the till as signed out, and ZapTill is emailed).
+  const tryDeviceGrant = async (): Promise<boolean> => {
+    let businessId: string | null = null;
+    try { businessId = (getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id ?? null; }
+    catch { businessId = null; }
+    const body = deviceGrantBody(businessId, getDeviceConfig()?.device_id, readDeviceSecret());
+    if (!body) return false;
+    try {
+      const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/device-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        noteInboundFailure('auth', `the till could not sign itself back in: ${await describeResponse(res)}`);
+        return false;
+      }
+      const pair = await res.json() as { accessToken: string; refreshToken: string };
+      _accessToken  = pair.accessToken;
+      _refreshToken = pair.refreshToken;
+      writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
+      clearInboundFailure('auth');
+      logLine('auth', 'session refused - the till signed itself back in with its device secret');
+      return true;
+    } catch (e: any) {
+      logLine('auth', `device sign-in error: ${e?.message ?? e}`);
+      return false;
+    }
   };
 
   try {
@@ -223,6 +255,8 @@ async function doRefreshAccessToken(): Promise<boolean> {
       // A160: a 5xx means the cloud answered but can't serve — treat it like
       // unreachable and let the node broker the refresh before giving up.
       if (res.status >= 500 && await tryNodeRefresh()) return true;
+      // A407: refused (401) — the till signs itself back in with its device secret before giving up.
+      if (res.status === 401 && await tryDeviceGrant()) return true;
       // Rotation means a revoked token can never be recovered: the owner must
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
@@ -230,7 +264,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
       noteInboundFailure('auth', `owner token refresh failed: ${await describeResponse(res)}`);
       return false;
     }
-    const { accessToken, refreshToken } = await res.json();
+    const { accessToken, refreshToken, deviceSecret } = await res.json();
     _accessToken  = accessToken;
     _refreshToken = refreshToken;
     // Persist immediately. The server has ALREADY revoked the old token by the
@@ -239,6 +273,9 @@ async function doRefreshAccessToken(): Promise<boolean> {
     // Client code cannot close that window — only a server-side grace period
     // can (register D13, part 3). Keep this write first and unconditional.
     writeSessionTokens({ token: accessToken, refreshToken });
+    // A407: a till enrolled before it kept a device secret is given one on an ordinary renewal — keep it (after the
+    // tokens: their write stays first).
+    if (typeof deviceSecret === 'string' && deviceSecret) { writeDeviceSecret(deviceSecret); logLine('auth', 'device secret received and kept'); }
     clearInboundFailure('auth');
     return true;
   } catch (err: any) {
@@ -528,6 +565,8 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     try { await runDayCloseInstructions(errors); } catch { /* non-fatal */ }
     // Cross-sync stage 1: the web's sales on this till's drawers. Best-effort, like the above.
     try { await pullWebSales(); } catch { /* non-fatal */ }
+    // A404: test data ZapTill cleared on the cloud is cleared here too. Best-effort, like the above.
+    try { await runTestDataClears(); } catch { /* non-fatal */ }
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -689,6 +728,28 @@ export async function pullShiftCloses(): Promise<number> {
   } finally {
     _pullingShiftCloses = false;
   }
+}
+
+// A404 — the cloud's test-data clears (admin portal), applied here in order; each one once (the last applied is kept
+// in maintenance_state). The day gate is re-read by the screens on their next check.
+const TEST_CLEAR_KEY = 'test_data_clear_seen';
+export async function runTestDataClears(): Promise<number> {
+  if (!_serverUrl || !_accessToken || !isOnline()) return 0;
+  const db = getLocalDb();
+  const seen = (db.prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(TEST_CLEAR_KEY) as { value?: string } | undefined)?.value ?? '';
+  const res = await syncFetch(`${_serverUrl}/api/pos/test-data-clears${seen ? `?after=${encodeURIComponent(seen)}` : ''}`, { headers: authHeaders() });
+  if (!res.ok) return 0;
+  const clears = await res.json() as Array<ClearPeriod & { created_at: string }>;
+  let n = 0;
+  for (const c of clears ?? []) {
+    const r = applyTestDataClear(db, c);
+    db.prepare(`INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(TEST_CLEAR_KEY, c.created_at, new Date().toISOString());
+    logLine('sync', `test data cleared by ZapTill (${c.from_at} → ${c.to_at}): ${r.sales} sales, ${r.shifts} shifts, ${r.days} trading days removed here too${r.kept_shifts ? ` (${r.kept_shifts} shift(s) kept — sold on after the period)` : ''}`);
+    n++;
+  }
+  if (n) notifyCataloguePulled();   // the screens re-read (History, shift, day gate)
+  return n;
 }
 
 // A291: cheap catalogue-freshness poll. Ask the server for the newest updated_at
