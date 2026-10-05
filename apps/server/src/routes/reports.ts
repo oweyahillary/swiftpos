@@ -1,3 +1,4 @@
+import { usageWithCombos, servingCost, type ComboItem } from '../lib/comboStock';   // A400
 import { Router } from 'express';
 import { safeRouter } from '../middleware/asyncHandler';
 import type { ReportOrderRow, DbShift, DbFloatTransaction } from '../lib/dbTypes';
@@ -1304,7 +1305,14 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
   const totalRevenue = Object.values(productSales).reduce((s, p) => s + p.revenue, 0);
 
   // ── 3. Recipes with ingredient costs ─────────────────────────────────────
-  const productIds = Object.keys(productSales).filter(k => k.length === 36);
+  // A400: a combo sold uses up its items — their recipes count too (usage = sold alone + inside combos).
+  const soldIds = Object.keys(productSales).filter(k => k.length === 36);
+  const { data: comboRows } = soldIds.length
+    ? await supabase.from('combo_items').select('combo_id, product_id, quantity').in('combo_id', soldIds)
+    : { data: [] as ComboItem[] };
+  const comboItems = (comboRows ?? []) as ComboItem[];
+  const usage = usageWithCombos(Object.fromEntries(soldIds.map((id) => [id, productSales[id].qtySold])), comboItems);
+  const productIds = Object.keys(usage);
   const { data: recipes } = await supabase
     .from('recipes')
     .select('product_id, ingredient_id, quantity_per_serving, ingredients(id, name, unit, unit_cost)')
@@ -1316,10 +1324,10 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
 
   for (const recipe of recipes ?? []) {
     const ing  = embedOne<{ name: string; unit: string; unit_cost: string | number | null }>((recipe as any).ingredients);
-    const sale = productSales[recipe.product_id];
-    if (!sale || !ing) continue;
+    const used = usage[recipe.product_id];
+    if (!used || !ing) continue;
 
-    const qty  = Number(recipe.quantity_per_serving) * sale.qtySold;
+    const qty  = Number(recipe.quantity_per_serving) * used;
     const cost = ing.unit_cost ? qty * Number(ing.unit_cost) : null;
 
     if (!idealMap[recipe.ingredient_id]) {
@@ -1373,24 +1381,19 @@ router.get('/food-cost', requirePermission('reports.financial'), async (req, res
   }).sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance));
 
   // ── 7. Per-product cost breakdown ─────────────────────────────────────────
-  const productCostMap: Record<string, { name: string; qtySold: number; revenue: number; idealCost: number; hasCost: boolean }> = {};
-
+  // A400: the cost of one serving — its own recipe, and for a combo also its items' — times what was sold on its own.
+  const ownCost: Record<string, number> = {};
   for (const recipe of recipes ?? []) {
-    const ing  = embedOne<{ name: string; unit: string; unit_cost: string | number | null }>((recipe as any).ingredients);
-    const sale = productSales[recipe.product_id];
-    if (!sale || !ing) continue;
-
-    if (!productCostMap[recipe.product_id]) {
-      productCostMap[recipe.product_id] = {
-        name: sale.name, qtySold: sale.qtySold,
-        revenue: sale.revenue, idealCost: 0, hasCost: false,
-      };
-    }
-    if (ing.unit_cost) {
-      const lineCost = Number(recipe.quantity_per_serving) * sale.qtySold * Number(ing.unit_cost);
-      productCostMap[recipe.product_id].idealCost += lineCost;
-      productCostMap[recipe.product_id].hasCost    = true;
-    }
+    const ing = embedOne<{ name: string; unit: string; unit_cost: string | number | null }>((recipe as any).ingredients);
+    if (!ing?.unit_cost) continue;
+    ownCost[recipe.product_id] = (ownCost[recipe.product_id] ?? 0) + Number(recipe.quantity_per_serving) * Number(ing.unit_cost);
+  }
+  const productCostMap: Record<string, { name: string; qtySold: number; revenue: number; idealCost: number; hasCost: boolean }> = {};
+  for (const id of soldIds) {
+    const per = servingCost(id, ownCost, comboItems);
+    if (per === null) continue;
+    const sale = productSales[id];
+    productCostMap[id] = { name: sale.name, qtySold: sale.qtySold, revenue: sale.revenue, idealCost: per * sale.qtySold, hasCost: true };
   }
 
   const products = Object.entries(productCostMap)

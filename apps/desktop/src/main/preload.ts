@@ -170,6 +170,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
     open:    (opening_float: number, drawer_label?: string)              => ipcRenderer.invoke('shift:open', { opening_float, drawer_label }),
     stale: () => ipcRenderer.invoke('shift:stale'),
     forceClose: (reason: string) => ipcRenderer.invoke('shift:forceClose', { reason }),
+    // A401: the cloud closed this till's open shift (a force-close or close on the web) and the till closed it too.
+    onClosedElsewhere: (cb: (e: { id: string; message: string }) => void) => {
+      const h = (_e: unknown, e: { id: string; message: string }) => cb(e);
+      ipcRenderer.on('shift:closedElsewhere', h);
+      return () => { ipcRenderer.removeListener('shift:closedElsewhere', h); };
+    },
     float:   (type: 'float_in' | 'float_out', amount: number, reason?: string, pin?: string) => ipcRenderer.invoke('shift:float', { type, amount, reason, pin }),   // 0.6.37: pin
     close:   (closing_float: number, notes?: string, declared?: Record<string, number>) => ipcRenderer.invoke('shift:close', { closing_float, notes, declared }),
     // A365: shifts awaiting a manager, and a manager's blind recount (PIN + every method).

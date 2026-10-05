@@ -242,14 +242,18 @@ export async function checkEmailCode(s: OtpSubject, code: string): Promise<'ok' 
 }
 
 /**
- * The gate. Called once the password / PIN is right. body: otp_code?, otp_trust?, otp_remember?, otp_resend?.
+ * The gate. Called once the password / PIN is right. body: otp_code?, otp_trust?, otp_remember?, otp_resend?,
+ * otp_use_email? (A403: an authenticator user asks for an emailed code instead — sent, and checked, as for email).
  */
 export async function otpGate(s: OtpSubject, body: any): Promise<GateResult> {
   if (otpDisabled()) return { ok: true };
   const version = Number(s.version ?? 1);
   if (trustValid(body?.otp_trust, s.kind, s.id, version)) return { ok: true };
 
-  const method = effectiveMethod(s);
+  // A403 (owner, 2026-10-05: "can someone have both authenticator and email?"): someone on an authenticator app may ask
+  // for an emailed code instead (otp_use_email) — phone lost, flat or left at home. The code goes only to the email
+  // already on the account, so it is no weaker than email codes; the authenticator stays their method.
+  const method: OtpMethod = body?.otp_use_email ? 'email' : effectiveMethod(s);
   const remember = () => ({
     pass: signTrust(s.kind, s.id, version, '10m'),
     ...(body?.otp_remember ? { trust: signTrust(s.kind, s.id, version) } : {}),
@@ -258,7 +262,7 @@ export async function otpGate(s: OtpSubject, body: any): Promise<GateResult> {
 
   if (!code || body?.otp_resend) {
     if (method === 'totp') {
-      return { ok: false, status: 403, body: { code: 'OTP_REQUIRED', method, error: 'Enter the 6-digit code from your authenticator app.' } };
+      return { ok: false, status: 403, body: { code: 'OTP_REQUIRED', method, can_email: true, error: 'Enter the 6-digit code from your authenticator app.' } };
     }
     const sent = await sendEmailCode(s);
     if (sent.ok === false && sent.missing) {

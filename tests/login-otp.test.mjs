@@ -200,6 +200,28 @@ try {
     const r = await login({ otp_code: O.totpAt(secret, Math.floor(Date.now() / 30000)) });
     assert.equal(r.status, 200);
   });
+  // A403 (owner, 2026-10-05: "can someone have both authenticator and email?")
+  await ok('an authenticator user may ask for an emailed code instead; it signs in only when asked for that way', async () => {
+    assert.equal(db.admin_users[0].otp_method, 'totp');
+    const ask = await login();
+    assert.equal(ask.body.can_email, true, 'the screen is told it may offer email');
+    db.login_otp_codes.forEach((c) => { c.consumed_at ??= new Date().toISOString(); });   // earlier tests' codes: used up
+    const n = mail.length;
+    const sent = await login({ otp_resend: true, otp_use_email: true });
+    assert.equal(sent.status, 403); assert.equal(sent.body.method, 'email'); assert.equal(mail.length, n + 1, 'emailed');
+    assert.equal(mail[mail.length - 1].to, 'hillary@zaptill.co.ke', 'only to the email on the account');
+    const code = lastCode();
+    assert.equal((await login({ otp_code: code })).status, 401, 'without otp_use_email the code is checked as an authenticator code');
+    assert.equal((await login({ otp_code: code, otp_use_email: true })).status, 200);
+    assert.equal(db.admin_users[0].otp_method, 'totp', 'the authenticator stays their method');
+    const screens = [read('apps/dashboard/src/components/OtpCodeStep.tsx'), read('apps/admin/src/AdminPortal.tsx')];
+    assert.match(screens[0], /\{prompt\.method === 'totp' \? 'Email me a code instead' : 'Send a new code'\}/);
+    assert.match(screens[1], /\{otp\.method === "totp" \? "Email me a code instead" : "Send a new code"\}/);
+    for (const f of ['apps/dashboard/src/pages/LoginPage.tsx', 'apps/dashboard/src/pages/pos/POSLoginScreen.tsx']) {
+      assert.match(read(f), /\{ otp_resend: true, otp_use_email: true \}/, f);
+      assert.match(read(f), /otp_use_email: otp\?\.method === 'email' \}/, f);
+    }
+  });
   await ok('a reset (lost phone) voids every remembered browser — and goes back to email codes', async () => {
     db.admin_users[0].otp_version = 1;
     assert.equal(await O.useEmailCodes('admin', ADMIN), null);
@@ -245,7 +267,7 @@ try {
   await ok('the three sign-in screens ask for the code and can remember the browser', () => {
     const ad = read('apps/admin/src/AdminPortal.tsx');
     assert.match(ad, /if \(err\.code === "OTP_REQUIRED"\) \{/);
-    assert.match(ad, /signIn\(\{ otp_code: code, otp_remember: remember \}\)/);
+    assert.match(ad, /signIn\(\{ otp_code: code, otp_remember: remember(, otp_use_email: otp\.method === "email")? \}\)/);
     const lp = read('apps/dashboard/src/pages/LoginPage.tsx');
     assert.match(lp, /if \(code === 'OTP_REQUIRED'\) \{/);
     assert.match(lp, /<OtpCodeStep/);

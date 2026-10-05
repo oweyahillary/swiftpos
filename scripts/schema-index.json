@@ -744,6 +744,16 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "updated_at": "\"timestamp with time zone\" NOT NULL"
   },
+  "password_reset_codes": {
+    "id": "\"uuid\" NOT NULL",
+    "subject_id": "\"uuid\" NOT NULL",
+    "email": "\"text\" NOT NULL",
+    "code_hash": "\"text\" NOT NULL",
+    "expires_at": "\"timestamp with time zone\" NOT NULL",
+    "attempts": "\"integer\" NOT NULL",
+    "consumed_at": "\"timestamp with time zone\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL"
+  },
   "payment_exceptions": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",

@@ -152,6 +152,33 @@ router.get('/web-till', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/state?ids=a,b — A401: where the cloud says these shifts stand.
+//
+// Owner, 2026-10-05: "force close drawer on the web does not close desktop till it remains open". A till never asked:
+// its drawer stayed open after a manager force-closed (or closed) it on the web, and the till kept selling against a
+// shift the cloud had ended. The till now sends the ids of its open shifts on its ~20 s beat; each one the cloud has
+// closed comes back with how (and by whom), and the till closes it locally the same way (syncEngine.adoptCloudCloses).
+// Read-only. Only this business's shifts; unknown ids are left out (a shift not yet pushed is not "closed").
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/state', async (req, res) => {
+  const ids = String(req.query.ids ?? '').split(',').map((x) => x.trim())
+    .filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
+  if (!ids.length) { res.json([]); return; }
+  const { data, error } = await supabase.from('shifts')
+    .select('id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes')
+    .eq('business_id', req.businessId).in('id', ids);
+  if (error) { sendError(res, error); return; }
+  const rows = (data ?? []) as Array<{ id: string; status: string; closed_by: string | null; [k: string]: unknown }>;
+  const closerIds = [...new Set(rows.map((r) => r.closed_by).filter((x): x is string => !!x))];
+  const names = new Map<string, string>();
+  if (closerIds.length) {
+    const { data: us } = await supabase.from('users').select('id, name').in('id', closerIds);
+    for (const u of (us ?? []) as Array<{ id: string; name: string | null }>) names.set(u.id, u.name ?? '');
+  }
+  res.json(rows.map((r) => ({ ...r, closed_by_name: r.closed_by ? names.get(r.closed_by) || null : null })));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/shifts/open
 // Opens a new shift. Rejects if the cashier already has an open shift.
 // Body: { branch_id, opening_float }

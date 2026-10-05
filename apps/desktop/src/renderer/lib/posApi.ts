@@ -462,6 +462,8 @@ declare global {
         // Ends it WITHOUT a cash count. Records closed_unreconciled with a null
         // variance — never zero, which would claim a check that never happened.
         forceClose: (reason: string) => Promise<ZReport>;
+        /** A401: the shift was closed on the web and the till closed it too. Returns an unsubscribe. */
+        onClosedElsewhere: (cb: (e: { id: string; message: string }) => void) => () => void;
         current: (opts?: { includeForeign?: boolean }) => Promise<ZReport | null>;
         open: (opening_float: number, drawer_label?: string) => Promise<ZReport | null>;
         /** 0.6.37 (A388): a pay out needs a manager — signed in, or `pin` (a manager's). */

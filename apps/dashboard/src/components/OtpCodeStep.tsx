@@ -51,9 +51,10 @@ export default function OtpCodeStep({ prompt, code, setCode, remember, setRememb
       </button>
       <div className="flex justify-between">
         <button type="button" onClick={onBack} className="text-[#64748b] text-sm hover:text-white transition-colors">← Back</button>
-        {prompt.method !== 'totp' && (
-          <button type="button" disabled={loading} onClick={onResend} className="text-[#64748b] text-sm hover:text-white transition-colors">Send a new code</button>
-        )}
+        {/* A403: an authenticator user may have the code emailed instead (phone lost or flat). */}
+        <button type="button" disabled={loading} onClick={onResend} data-testid="otp-resend" className="text-[#64748b] text-sm hover:text-white transition-colors">
+          {prompt.method === 'totp' ? 'Email me a code instead' : 'Send a new code'}
+        </button>
       </div>
     </form>
   );

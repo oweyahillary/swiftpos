@@ -695,6 +695,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/payout-approval.test.mjs
 
+      # 0.6.39 (A401) — a drawer force-closed (or closed) on the web closes on the till too: the till asks the cloud
+      # about its open shifts on the 20-s beat and closes each one the cloud closed. Real syncEngine on real SQLite.
+      - name: Desktop shift closed on the web
+        working-directory: apps/desktop
+        run: node --no-warnings test/shift-closed-elsewhere.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)
