@@ -56,6 +56,9 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<StationKind>('kitchen');
   const [expanded, setExpanded] = useState<string | null>(null);
+  // A408: a refused category tap is reported next to the chips, where the manager is looking — the panel's error box
+  // sits at the top of a long screen, out of view.
+  const [chipError, setChipError] = useState<{ stationId: string; message: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,12 +110,24 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
     // for a round trip per tick makes the screen feel broken.
     setStations(prev => prev.map(s => s.id === station.id ? { ...s, category_ids: next } : s));
     setBusy(station.id);
+    setChipError(null);
     try {
-      await posApi.manage.setStationCategories(station.id, next);
+      const out = await posApi.manage.setStationCategories(station.id, next);
+      // The cloud's set is the truth: a category it would not accept must not stay ticked here.
+      if (out?.category_ids) {
+        setStations(prev => prev.map(s => s.id === station.id ? { ...s, category_ids: out.category_ids } : s));
+      }
+      if (out?.rejected?.length) {
+        setChipError({ stationId: station.id, message: 'The cloud did not accept one of these categories. Leave this screen and open it again.' });
+      }
       setUnassigned(await posApi.manage.unassignedCategories().catch(() => unassigned));
     } catch (e: any) {
-      setError(e?.message ?? 'Could not save routing');
-      await load();   // put the truth back on screen rather than leave the optimistic guess
+      const msg = e?.message ?? 'Could not save routing';
+      // A408: put the truth back on screen rather than leave the optimistic guess — and show WHY after the reload.
+      // load() clears the error, so setting it first made a refused tap look like the chip simply did not respond
+      // (owner, 2026-10-05: "category on desktop app is not selectable").
+      await load();
+      setChipError({ stationId: station.id, message: `Not saved: ${msg}` });
     } finally { setBusy(''); }
   };
 
@@ -241,6 +256,9 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                           );
                         })}
                       </div>
+                      {chipError?.stationId === st.id && (
+                        <p className="text-xs text-red-300 mt-1.5">{chipError.message}</p>
+                      )}
                     </div>
 
                     <div>
