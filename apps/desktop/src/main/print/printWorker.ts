@@ -409,6 +409,8 @@ function registerIpc(): void {
         error: e?.message ?? String(err),
         retryable: isOurs ? undefined : (e.retryable ?? true),
         internal: isOurs || undefined,
+        // 0.6.38 (A397): Windows did not take the job in time — said as that, not "printer off".
+        timedOut: (!isOurs && e.timedOut) || undefined,
       };
     }
   });

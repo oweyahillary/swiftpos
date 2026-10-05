@@ -3,12 +3,13 @@ import { api } from '../lib/api';
 
 /**
  * SignInSecurity — A391: my sign-in code, for owners (Settings › Users and access › My sign-in) and managers (Manager
- * dashboard › My sign-in). Both enter a 6-digit code at every web sign-in (mandatory).
+ * dashboard › My sign-in). Both enter a 6-digit code at every web sign-in — A398: when the admin portal has turned
+ * 'Sign-in codes' on for the client (off by default).
  *
  * Owner, 2026-10-04: "OTP enabling both admin portal and dashboard" — by email or an authenticator app, "Both, user
  * picks". Email is the default (nothing to set up); an authenticator app is set up here from a QR code.
  */
-interface Info { method: 'email' | 'totp'; email: string }
+interface Info { method: 'email' | 'totp'; email: string; enabled?: boolean }
 interface Setup { qr_svg: string; secret: string; setup_token: string }
 
 export default function SignInSecurity() {
@@ -63,7 +64,10 @@ export default function SignInSecurity() {
     <div className="max-w-2xl space-y-4" data-testid="signin-security">
       <div>
         <h2 className="text-lg font-semibold text-white">My sign-in</h2>
-        <p className="text-sm text-gray-400">Every web sign-in asks for a 6-digit code as well as your password or PIN.</p>
+        {/* A398: the admin portal turns sign-in codes on or off per client. */}
+        <p className="text-sm text-gray-400">{info && info.enabled === false
+          ? 'Sign-in codes are off for this business — you sign in with your password or PIN only. ZapTill support can turn them on; choose how you would get your code below.'
+          : 'Every web sign-in asks for a 6-digit code as well as your password or PIN.'}</p>
       </div>
       {info && (
         <div className="grid gap-2">

@@ -66,7 +66,7 @@ ok('never told → every switch off; the two standard ones on', (() => { const f
 C.setPosFeatures({ delivery_fee: 'yes', blind_shift_close: 1, cashier_no_reprint: true, made_up: true });
 ok('only a real true turns one on; unknown keys are dropped',
   JSON.stringify(C.getPosFeatures()) === JSON.stringify({ delivery_fee: false, cashier_own_history: false, cashier_no_reprint: true,
-                                                kitchen_void_approval: false, pay_before_kitchen: false,
+                                                kitchen_void_approval: false, pay_before_kitchen: false, login_codes: false,   // A398
                                                 blind_shift_close: true, confirm_shows_cashier_figures: true }),   // 0.6.29: standard ones last, always on
   JSON.stringify(C.getPosFeatures()));
 C.setPosFeatures(undefined);

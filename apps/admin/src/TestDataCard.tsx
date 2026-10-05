@@ -31,7 +31,7 @@ const LABELS: Array<[string, string]> = [
   ["sales", "Sales"], ["payments", "Payments"], ["shifts", "Shifts"], ["trading_days", "Trading days"], ["cash_in_out", "Cash in / out"],
   ["expenses", "Expenses"], ["stock_movements", "Stock movements"], ["stock_counts", "Stock counts"], ["transfers", "Transfers"],
   ["purchase_orders", "Purchase orders"], ["deliveries", "Deliveries"], ["supplier_bills", "Supplier bills"],
-  ["supplier_payments", "Supplier payments"], ["supplier_returns", "Supplier returns"], ["reservations", "Reservations"],
+  ["supplier_payments", "Supplier payments"], ["supplier_returns", "Supplier returns"], ["wastage", "Wastage"], ["reservations", "Reservations"],
   ["customers_created", "Customers added"],
 ];
 
