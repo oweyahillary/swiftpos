@@ -47,6 +47,7 @@ import { findTenant, ownedTenantBusiness } from '../lib/tenant';   // A378: a cl
 import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshGraceDecision } from '../lib/refreshGrace';
+import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
 import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
@@ -678,8 +679,9 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
     }
   }
 
-  // A391: an owner always enters a one-time code (emailed, or from their authenticator app) — mandatory.
-  const ownerGate = await otpGate(
+  // A391: an owner enters a one-time code (emailed, or from their authenticator app). A398: only when the admin portal
+  // has turned 'Sign-in codes' on for this client.
+  const ownerGate = !(await businessPosFeatures(business.id)).login_codes ? { ok: true as const } : await otpGate(
     await otpSubjectFor(ownerUser ? (ownerUser as any).id : data.user.id, data.user.email ?? email, (ownerUser as any)?.name),
     req.body);
   if (ownerGate.ok === false) { res.status(ownerGate.status).json(ownerGate.body); return; }
@@ -1293,7 +1295,9 @@ router.post('/pos-login', async (req, res) => {
   // it signs in by enrolment and PIN, offline as well.
   let posGate: { trust?: string; pass?: string } = {};
   // Same people the web sends to the manager screens (posRouting.ts): a manager-tier role, or settings.manage.
-  if (effectiveSurface === 'web' && (roleNeedsOtp(role?.name, isOwner) || effectivePerms['settings.manage'] === true)) {
+  // A398: only when the admin portal has turned 'Sign-in codes' on for this client.
+  if (effectiveSurface === 'web' && (roleNeedsOtp(role?.name, isOwner) || effectivePerms['settings.manage'] === true)
+      && (await businessPosFeatures((user as any).business_id)).login_codes) {
     const g = await otpGate(await otpSubjectFor((user as any).id, (user as any).email, (user as any).name), req.body);
     if (g.ok === false) { res.status(g.status).json(g.body); return; }
     posGate = g;
@@ -1652,7 +1656,9 @@ async function otpSelf(req: any, res: any): Promise<{ id: string; email: string 
 
 router.get('/otp', requireAuth, async (req, res) => {
   const me = await otpSelf(req, res); if (!me) return;
-  res.json(await readOtpSettings('user', me.id) ?? { method: 'email', email: me.email });
+  // A398: enabled — whether this client's sign-in asks for the code at all (the admin portal's 'Sign-in codes' switch).
+  const enabled = (await businessPosFeatures(req.businessId)).login_codes;
+  res.json({ ...(await readOtpSettings('user', me.id) ?? { method: 'email', email: me.email }), enabled });
 });
 
 router.post('/otp/totp/start', requireAuth, async (req, res) => {

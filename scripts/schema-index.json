@@ -1471,6 +1471,28 @@
     "status": "\"text\" NOT NULL",
     "notes": "\"text\""
   },
+  "wastage_entries": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "ref": "\"text\" NOT NULL",
+    "item_kind": "\"text\" NOT NULL",
+    "product_id": "\"uuid\"",
+    "ingredient_id": "\"uuid\"",
+    "name": "\"text\" NOT NULL",
+    "quantity": "\"numeric\" NOT NULL",
+    "unit_cost": "\"numeric\"",
+    "value": "\"numeric\" NOT NULL",
+    "stock_moved": "\"boolean\" NOT NULL",
+    "reason": "\"text\" NOT NULL",
+    "note": "\"text\"",
+    "recorded_by": "\"uuid\"",
+    "recorded_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "voided_at": "\"timestamp with time zone\"",
+    "voided_by_name": "\"text\"",
+    "void_reason": "\"text\""
+  },
   "watchdog_alerts": {
     "id": "\"uuid\" NOT NULL",
     "alert_key": "\"text\" NOT NULL",

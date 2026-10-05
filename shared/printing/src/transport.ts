@@ -52,11 +52,24 @@ export class PrinterError extends Error {
      * to the wrong place, and it happened three times before this existed.
      */
     readonly internal = false,
+    /**
+     * 0.6.38 (A397): Windows did not take the job within the time limit. Not the printer's fault and not ours —
+     * the screen says so plainly, and the spool tries again (it used to drop the ticket as "our bug").
+     */
+    readonly timedOut = false,
   ) {
     super(message);
     this.name = 'PrinterError';
   }
 }
+
+/**
+ * 0.6.38 (A397): a `printer:` target gets 20 seconds, not 8. On a slow PC — the first print after start-up, antivirus
+ * scanning PowerShell — starting PowerShell and building the helper took longer than 8 s, so EVERY `printer:` station
+ * failed at once with a bare "Command failed: powershell.exe …". The helper is now built once and reused (see
+ * sendSpooler), so after the first ticket a print is quick; the 20 s is for that first one.
+ */
+export const SPOOLER_TIMEOUT_MS = 20_000;
 
 /**
  * `retryable` distinguishes "the printer is off, try again in a minute" from
@@ -69,7 +82,7 @@ export async function sendToPrinter(
   bytes: Buffer,
   opts: SendOptions = {},
 ): Promise<void> {
-  const timeoutMs = opts.timeoutMs ?? 8000;
+  const timeoutMs = opts.timeoutMs ?? (target.kind === 'spooler' ? SPOOLER_TIMEOUT_MS : 8000);
   switch (target.kind) {
     case 'network': return sendNetwork(target.host, target.port ?? 9100, bytes, timeoutMs);
     case 'share':
@@ -122,7 +135,11 @@ export async function sendToPrinter(
  */
 export function classifySpoolerFailure(name: string, raw: string): PrinterError {
   const msg = raw.trim();
-  const first = msg.split('\n')[0].trim();
+  // 0.6.38 (A397): Node's "Command failed: powershell.exe -NoProfile …" is the command line, not an error — it is what
+  // is left when PowerShell died without a word. Never shown to anyone.
+  const first = /^Command failed:\s*powershell/i.test(msg)
+    ? 'the Windows print helper stopped without giving a reason'
+    : msg.split('\n')[0].trim();
 
   // Win32 codes come out of our own C# as "(1801)". They are the only part of
   // this string that is a fact rather than prose.
@@ -191,16 +208,39 @@ async function sendSpooler(name: string, bytes: Buffer, timeoutMs: number): Prom
   // string. -File with a temp .ps1 would also work, but that is another file to
   // write, secure and clean up on a machine where the last one might still be
   // there from a crash.
-  const env = { ...process.env, SWIFTPOS_PRINTER: name, SWIFTPOS_DATA: tmp };
+  //
+  // 0.6.38 (A397): SWIFTPOS_HELPER — where the helper DLL is kept, built once per machine (per version of the C#) and
+  // reused; see spoolerScript.
+  const crypto = await import('node:crypto');
+  const helper = pathMod.join(os.tmpdir(),
+    `zaptill-raw-${crypto.createHash('sha1').update(SPOOLER_HELPER_CS).digest('hex').slice(0, 12)}.dll`);
+  const env = { ...process.env, SWIFTPOS_PRINTER: name, SWIFTPOS_DATA: tmp, SWIFTPOS_HELPER: helper };
 
-  const ps = `
-    $ErrorActionPreference = 'Stop'
-    $printer = $env:SWIFTPOS_PRINTER
-    $dataPath = $env:SWIFTPOS_DATA
-    if ([string]::IsNullOrWhiteSpace($printer))  { throw 'SWIFTPOS_PRINTER was not set' }
-    if ([string]::IsNullOrWhiteSpace($dataPath)) { throw 'SWIFTPOS_DATA was not set' }
-    $sig = @'
-using System;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', spoolerScript()],
+        { timeout: timeoutMs, windowsHide: true, env },
+        (err, stdout, stderr) => {
+          const failure = spoolerOutcome(name, err, String(stdout ?? ''), String(stderr ?? ''), timeoutMs);
+          if (failure) reject(failure); else resolve();
+        },
+      );
+    });
+  } finally {
+    await fsp.unlink(tmp).catch(() => { /* temp file, best effort */ });
+  }
+}
+
+/** Printed by the script once the spooler has the bytes. After it, the job is Windows' — never sent twice. */
+export const SPOOLER_SENT_MARK = 'ZAPTILL-SENT';
+
+/**
+ * The winspool calls, in C#. A constant so its hash names the built DLL: change the C# and the next print builds a
+ * new one instead of loading a stale one.
+ */
+export const SPOOLER_HELPER_CS = `using System;
 using System.Runtime.InteropServices;
 public static class SwiftRaw {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -252,27 +292,70 @@ public static class SwiftRaw {
     } finally { ClosePrinter(h); }
   }
 }
-'@
-    Add-Type -TypeDefinition $sig -Language CSharp
+`;
+
+/**
+ * The PowerShell that prints. 0.6.38 (A397): building the C# (Add-Type → csc.exe) was the slow step, on every ticket.
+ * Now:
+ *   1. the DLL built earlier exists → load it (fast);
+ *   2. otherwise build it to a file of our own, move it into place for next time, load it;
+ *   3. if ANY of that fails (antivirus, a locked or broken file, no rights in %TEMP%) → build in memory, exactly as
+ *      before 0.6.38. The cache can make printing faster; it can never stop it.
+ */
+export function spoolerScript(): string {
+  return `
+    $ErrorActionPreference = 'Stop'
+    $printer = $env:SWIFTPOS_PRINTER
+    $dataPath = $env:SWIFTPOS_DATA
+    $helper = $env:SWIFTPOS_HELPER
+    if ([string]::IsNullOrWhiteSpace($printer))  { throw 'SWIFTPOS_PRINTER was not set' }
+    if ([string]::IsNullOrWhiteSpace($dataPath)) { throw 'SWIFTPOS_DATA was not set' }
+    $sig = @'
+${SPOOLER_HELPER_CS}'@
+    if ($helper -and (Test-Path -LiteralPath $helper)) {
+      try { Add-Type -LiteralPath $helper } catch { try { Remove-Item -LiteralPath $helper -Force } catch { } }
+    }
+    if ($helper -and -not ('SwiftRaw' -as [type])) {
+      $part = "$helper.$PID.dll"
+      try {
+        Add-Type -TypeDefinition $sig -Language CSharp -OutputAssembly $part -OutputType Library
+        try { Move-Item -LiteralPath $part -Destination $helper -ErrorAction Stop; $part = $helper } catch { }
+        if (-not ('SwiftRaw' -as [type])) { Add-Type -LiteralPath $part }
+      } catch { }
+    }
+    if (-not ('SwiftRaw' -as [type])) { Add-Type -TypeDefinition $sig -Language CSharp }
     $bytes = [System.IO.File]::ReadAllBytes($dataPath)
     [SwiftRaw]::Send($printer, $bytes)
+    [Console]::Out.WriteLine('${SPOOLER_SENT_MARK}')
   `;
+}
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', ps],
-        { timeout: timeoutMs, windowsHide: true, env },
-        (err, _stdout, stderr) => {
-          if (!err) { resolve(); return; }
-          reject(classifySpoolerFailure(name, String(stderr || err.message)));
-        },
-      );
-    });
-  } finally {
-    await fsp.unlink(tmp).catch(() => { /* temp file, best effort */ });
+/**
+ * What a finished PowerShell run means. null = printed. Pure, so it is tested without Windows.
+ *
+ *   - the script said it handed the job over → printed, whatever happened after (killed on the way out, a non-zero
+ *     exit): sending it again would print the ticket twice;
+ *   - killed by the time limit → timedOut, retryable, not ours and not the printer's;
+ *   - anything else → classifySpoolerFailure, as before.
+ */
+export function spoolerOutcome(
+  name: string,
+  err: (Error & { killed?: boolean; signal?: string | null; code?: unknown }) | null,
+  stdout: string,
+  stderr: string,
+  timeoutMs: number,
+): PrinterError | null {
+  if (!err) return null;
+  if (stdout.includes(SPOOLER_SENT_MARK)) return null;
+  if (err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
+    return new PrinterError(
+      `${name} — Windows took longer than ${Math.round(timeoutMs / 1000)} seconds to accept the ticket`,
+      true,    // the spool tries again — the next attempt uses the helper built this time
+      false,
+      true,    // timedOut
+    );
   }
+  return classifySpoolerFailure(name, stderr.trim() || err.message);
 }
 
 function sendNetwork(host: string, port: number, bytes: Buffer, timeoutMs: number): Promise<void> {

@@ -37,6 +37,14 @@ export const POS_FEATURES = [
     label: 'Pay before kitchen',
     description: 'Takeaway, delivery and counter orders go to the kitchen only when paid (Send to kitchen is not offered). Dine-in tables still send first and pay at the end.',
   },
+  // A398 (owner, 2026-10-05: "on the otp right now it locks everyone some are not using real email can we add as a
+  // feature i can turn on and off in the admin panel"). Off unless the admin portal turns it on, like every switch here.
+  // The admin portal's own admins always enter a code; a till never does (enrolment and PIN).
+  {
+    key: 'login_codes',
+    label: 'Sign-in codes (OTP)',
+    description: 'The owner (dashboard) and managers (web POS) enter a 6-digit code after their password — emailed, or from an authenticator app. Turn on only when everyone it applies to has a real email address or an authenticator app.',
+  },
 ] as const;
 
 /**

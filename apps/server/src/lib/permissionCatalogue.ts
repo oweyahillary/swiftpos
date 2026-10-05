@@ -52,6 +52,7 @@ export const PERMISSION_CATALOGUE: PermissionDef[] = [
   { key: 'inventory.receive',  label: 'Receive stock',                  module: 'inventory', description: 'Receive deliveries and incoming transfers' },
   { key: 'inventory.transfer', label: 'Transfer stock between branches', module: 'inventory', description: 'Create and receive branch stock transfers' },
   { key: 'inventory.count',    label: 'Count stock',                    module: 'inventory', description: 'Take part in a stock count (blind: never sees the expected figure)' },
+  { key: 'inventory.waste',    label: 'Record wastage',                 module: 'inventory', description: 'Write off spoiled, expired or damaged stock, with a reason' },
   { key: 'inventory.adjust',   label: 'Adjust stock levels',            module: 'inventory', description: 'Manually change a stock quantity (owner-only by default)' },
   { key: 'payables.manage',    label: 'Supplier bills & payments',      module: 'inventory', description: 'Record supplier bills and payments; see what is owed (owner-only by default)' },
   { key: 'ingredients.manage', label: 'Manage ingredient catalogue',    module: 'inventory', description: 'Create and edit the ingredient catalogue' },

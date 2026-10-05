@@ -46,7 +46,7 @@ console.log('0.6.27 — the prospect\'s requests (cloud + web)\n');
 // ── The switches ─────────────────────────────────────────────────────────────
 await ok('the switches, all off unless set; the two standard ones always on (0.6.29); rows, objects and JSON read the same', () => {
   // 0.6.28 added the last two; 0.6.29 made blind_shift_close and confirm_shows_cashier_figures standard (not switches).
-  assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'kitchen_void_approval', 'pay_before_kitchen']);
+  assert.deepEqual(F.POS_FEATURE_KEYS, ['delivery_fee', 'cashier_own_history', 'cashier_no_reprint', 'kitchen_void_approval', 'pay_before_kitchen', 'login_codes']);   // A398: login_codes
   assert.deepEqual([...F.STANDARD_POS_FEATURES], ['blind_shift_close', 'confirm_shows_cashier_figures']);
   const none = F.parsePosFeatures(null);
   assert.ok(F.POS_FEATURE_KEYS.every((k) => none[k] === false) && none.blind_shift_close === true && none.confirm_shows_cashier_figures === true);

@@ -26,6 +26,7 @@ import ManagerShiftTab from './ManagerShiftTab';
 import ManagerMenuTab from './ManagerMenuTab';
 import SignInSecurity from '../../components/SignInSecurity';   // A391
 import StockCounts from '../../components/StockCounts';   // A394
+import Wastage from '../../components/Wastage';           // A399
 import { localDateStr } from '../../lib/localDate';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
@@ -78,6 +79,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
   // A394: stock take — the manager counts (blind); the owner reviews and posts.
   { key: 'counts',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Stock count</span></>, title: 'Stock count', permission: 'inventory.count', group: 'Inventory' },
+  // A399: wastage — what spoiled on the shift, with the reason.
+  { key: 'wastage',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Wastage</span></>, title: 'Wastage', permission: 'inventory.waste', group: 'Inventory' },
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: 'orders.view_all', group: 'Finance' },
@@ -1318,6 +1321,8 @@ export default function ManagerDashboard() {
       case 'counts':
         return <StockCounts client={posApi} branchId={session.branchId} currency={currency} business={business}
           branches={managerBranch} />;
+      case 'wastage':
+        return <Wastage client={posApi} branchId={session.branchId} currency={currency} branches={managerBranch} />;
       default: return <OverviewTab />;
     }
   }

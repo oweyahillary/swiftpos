@@ -218,11 +218,17 @@ try {
   });
 
   console.log('\nThe owner and the web POS, the session check, the screens (source)\n');
-  await ok('the owner\'s /login always asks; the web POS asks owners and managers only, and a till never', () => {
+  // A398: only for a client whose 'Sign-in codes' switch the admin portal has turned on (off unless set).
+  await ok('the owner\'s /login asks (switch on); the web POS asks owners and managers only (switch on), and a till never', () => {
     const a = read('apps/server/src/routes/auth.ts');
-    assert.match(a, /const ownerGate = await otpGate\(\s*await otpSubjectFor\(/);
+    assert.match(a, /const ownerGate = !\(await businessPosFeatures\(business\.id\)\)\.login_codes \? \{ ok: true as const \} : await otpGate\(\s*await otpSubjectFor\(/);
     assert.match(a, /if \(ownerGate\.ok === false\) \{ res\.status\(ownerGate\.status\)\.json\(ownerGate\.body\); return; \}/);
-    assert.match(a, /if \(effectiveSurface === 'web' && \(roleNeedsOtp\(role\?\.name, isOwner\) \|\| effectivePerms\['settings\.manage'\] === true\)\) \{/);
+    assert.match(a, /if \(effectiveSurface === 'web' && \(roleNeedsOtp\(role\?\.name, isOwner\) \|\| effectivePerms\['settings\.manage'\] === true\)\n\s+&& \(await businessPosFeatures\(\(user as any\)\.business_id\)\)\.login_codes\) \{/);
+    assert.match(a, /const enabled = \(await businessPosFeatures\(req\.businessId\)\)\.login_codes;/);
+    const F = read('shared/posFeatures.ts');
+    assert.match(F, /key: 'login_codes',\n\s+label: 'Sign-in codes \(OTP\)',/);
+    // the admin portal's own sign-in is not behind the switch
+    assert.doesNotMatch(read('apps/server/src/routes/admin.ts'), /login_codes|businessPosFeatures/);
     assert.ok(a.indexOf("roleNeedsOtp(role?.name, isOwner)") < a.indexOf('issueTokenPair(tokenPayload)'), 'asked before any token is issued');
   });
   await ok('a bare Supabase session (password only) is refused while codes are on', () => {

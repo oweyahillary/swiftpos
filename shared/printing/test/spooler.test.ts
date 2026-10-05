@@ -18,7 +18,10 @@
  * This file does both, on any OS, in milliseconds.
  */
 import assert from 'node:assert';
-import { classifySpoolerFailure, parseTarget } from '../src/transport';
+import {
+  classifySpoolerFailure, parseTarget, spoolerOutcome, spoolerScript,
+  SPOOLER_HELPER_CS, SPOOLER_SENT_MARK, SPOOLER_TIMEOUT_MS,
+} from '../src/transport';
 
 let passed = 0, failed = 0;
 const ok = (name: string, fn: () => void) => {
@@ -162,6 +165,67 @@ ok('the script refuses to run on an empty printer name', () => {
   assert.throws(() => guard('   '));
   assert.throws(() => guard(undefined));
   assert.equal(guard('XP-80'), 'XP-80');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n4. 0.6.38 (A397): a slow Windows is said as that, and the ticket is not dropped');
+
+// What Node hands back when execFile's time limit kills PowerShell: no stderr, the command line as the "message".
+const killed = () => Object.assign(
+  new Error('Command failed: powershell.exe -NoProfile -NonInteractive -Command \n    $ErrorActionPreference = ...'),
+  { killed: true, signal: 'SIGTERM', code: null },
+);
+
+ok('a printer: target gets 20 seconds (it was 8 — too short for the first print on a slow PC)', () => {
+  assert.equal(SPOOLER_TIMEOUT_MS, 20_000);
+});
+
+ok('killed by the time limit → timedOut, retryable (the spool tries again), not "our bug"', () => {
+  const e = spoolerOutcome('Kitchen', killed(), '', '', SPOOLER_TIMEOUT_MS)!;
+  assert.equal(e.timedOut, true);
+  assert.equal(e.retryable, true, 'before 0.6.38 this was retryable:false — the spool dropped the kitchen ticket');
+  assert.equal(e.internal, false);
+  assert.match(e.message, /^Kitchen — Windows took longer than 20 seconds to accept the ticket$/);
+});
+
+ok('the raw command line is never the message', () => {
+  const e = spoolerOutcome('Kitchen', Object.assign(new Error('Command failed: powershell.exe -NoProfile -NonInteractive -Command x'), { code: 1 }), '', '', SPOOLER_TIMEOUT_MS)!;
+  assert.doesNotMatch(e.message, /powershell|NoProfile|Command failed/i);
+  assert.match(e.message, /the Windows print helper stopped without giving a reason/);
+  assert.equal(e.internal, true);
+  assert.doesNotMatch(classifySpoolerFailure('Kitchen', 'Command failed: powershell.exe -NoProfile').message, /NoProfile/);
+});
+
+ok('once the spooler has the bytes, it printed — whatever happens after (never printed twice)', () => {
+  assert.equal(spoolerOutcome('Kitchen', killed(), `${SPOOLER_SENT_MARK}\r\n`, '', SPOOLER_TIMEOUT_MS), null);
+  assert.equal(spoolerOutcome('Kitchen', null, '', '', SPOOLER_TIMEOUT_MS), null);
+});
+
+ok('a spooler fault is still a printer fault; our script failing is still ours', () => {
+  const e = spoolerOutcome('Kitchen', Object.assign(new Error('Command failed'), { code: 1 }), '', "OpenPrinter failed for 'Kitchen' (1801)", 20000)!;
+  assert.equal(e.timedOut, false); assert.equal(e.internal, false); assert.equal(e.retryable, false);
+  assert.match(e.message, /does not recognise that printer name/);
+  assert.equal(spoolerOutcome('Kitchen', Object.assign(new Error('x'), { code: 1 }), '', 'Empty path name is not legal', 20000)!.internal, true);
+});
+
+ok('the helper is built once and reused; any trouble with that falls back to building it in memory, as before', () => {
+  const ps = spoolerScript();
+  const at = (re: RegExp) => { const m = re.exec(ps); assert.ok(m, String(re)); return m!.index; };
+  const loadCached = at(/if \(\$helper -and \(Test-Path -LiteralPath \$helper\)\) \{\n\s+try \{ Add-Type -LiteralPath \$helper \} catch \{/);
+  const build = at(/try \{\n\s+Add-Type -TypeDefinition \$sig -Language CSharp -OutputAssembly \$part -OutputType Library/);
+  const fallback = at(/if \(-not \('SwiftRaw' -as \[type\]\)\) \{ Add-Type -TypeDefinition \$sig -Language CSharp \}/);
+  const send = at(/\[SwiftRaw\]::Send\(\$printer, \$bytes\)/);
+  const mark = at(new RegExp(`\\[Console\\]::Out\\.WriteLine\\('${SPOOLER_SENT_MARK}'\\)`));
+  assert.ok(loadCached < build && build < fallback && fallback < send && send < mark, 'load → build → in-memory fallback → send → mark');
+  // the build to a file is inside a try that swallows — so it can never stop a print
+  assert.match(ps, /\} catch \{ \}\n\s+\}\n\s+if \(-not \('SwiftRaw' -as \[type\]\)\) \{ Add-Type -TypeDefinition/);
+  // the C# is in the script, unchanged, inside a single-quoted here-string (nothing in it is expanded)
+  assert.ok(ps.includes(`$sig = @'\n${SPOOLER_HELPER_CS}'@`));
+  assert.match(SPOOLER_HELPER_CS, /public static class SwiftRaw/);
+  assert.match(SPOOLER_HELPER_CS, /di\.pDatatype = "RAW";/);
+  // values still travel only in the environment
+  assert.match(ps, /\$helper = \$env:SWIFTPOS_HELPER/);
+  assert.doesNotMatch(ps, /\$args/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

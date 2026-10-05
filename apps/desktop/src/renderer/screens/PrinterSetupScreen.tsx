@@ -50,6 +50,8 @@ interface TestResult {
   retryable?: boolean;
   /** True when the fault was in SwiftPOS, not in the printer or the address. */
   internal?: boolean;
+  /** 0.6.38 (A397): Windows did not accept the job within the time limit (a `printer:` target). */
+  timedOut?: boolean;
 }
 
 // The escpos bridge is declared on Window in renderer/lib/posApi.ts alongside
@@ -362,6 +364,8 @@ export default function PrinterSetupScreen({ stations }: { stations: Station[] }
                           */}
                           {result.internal
                             ? 'This is a fault in ZapTill, not your printer or the address. Report it with this message.'
+                            : result.timedOut
+                              ? 'Windows took too long to accept the job. Press Test print again (the first print after starting is the slowest); if it keeps happening, open the printer\'s queue in Windows (Settings → Printers & scanners → the printer → Open print queue), cancel stuck jobs and make sure it is not paused or offline.'
                             : result.retryable
                               ? 'Looks like the printer is off or unreachable. Check power and cable.'
                               : 'The address itself looks wrong. Check the spelling.'}
