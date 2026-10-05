@@ -35,7 +35,8 @@
 
 import { app, BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import { getCloudUrl } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig } from './deviceConfig';
+import { cloudFetch, cloudBaseFor } from './cloudGateway';
 import { readSessionTokens } from './tokenStore';
 import { refreshAccessToken } from './syncEngine';
 
@@ -103,6 +104,8 @@ export interface UpdateCheckDeps {
   };
   fetch: typeof fetch;
   cloudUrl: () => string | null;
+  /** A410: where the update download goes — the branch server's gateway on a till with one (plus its access code). */
+  route?: (cloudUrl: string) => { base: string; headers: Record<string, string> };
   token: () => string | null;
   refresh: () => Promise<boolean>;
   running: string;
@@ -134,8 +137,9 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
   }
   const decision = decideUpdate(approved, d.running);
   if (decision !== 'update' || !approved || !token) return { decision, approved };
-  d.updater.setFeedURL({ provider: 'generic', url: feedUrlFor(cloud, approved) });
-  d.updater.requestHeaders = { Authorization: `Bearer ${token}` };
+  const via = d.route?.(cloud) ?? { base: cloud, headers: {} };
+  d.updater.setFeedURL({ provider: 'generic', url: feedUrlFor(via.base, approved) });
+  d.updater.requestHeaders = { Authorization: `Bearer ${token}`, ...via.headers };
   try {
     const result = await d.updater.checkForUpdates() as { downloadPromise?: Promise<unknown> } | null | undefined;
     // A363: with autoDownload the check hands back a download promise that REJECTS when the network drops mid-download
@@ -188,7 +192,8 @@ export function initAutoUpdate(): void {
     try {
       const r = await runUpdateCheck({
         updater: autoUpdater as any,
-        fetch,
+        fetch: ((u: any, i: any) => cloudFetch(String(u), i)) as typeof fetch,   // A410: through the branch server on a peer
+        route: (c) => cloudBaseFor(c, getDeviceConfig()),
         cloudUrl: () => { try { return getCloudUrl(); } catch { return null; } },
         token: () => readSessionTokens().token || null,
         refresh: () => refreshAccessToken(),

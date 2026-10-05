@@ -8,6 +8,9 @@
 // a single point of failure for every peer's sales and forced 'node_ack', a
 // third sync state in a column that can only hold one destination's opinion.
 //
+// A410 (2026-10-05): the till's CLOUD calls also go through the node now (cloudGateway.ts → /node/cloud), so a peer
+// never talks to the cloud itself; the two destinations (the node's replica, the cloud) keep their own state as above.
+//
 // Everything here is best-effort and non-blocking: if the node is unreachable a
 // till keeps selling and its orders stay queued locally until the node returns.
 

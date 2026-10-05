@@ -233,6 +233,17 @@ export interface PrintStation {
   sort_order: number;
   active: boolean;
   category_ids: string[];
+  /** A411: routing saved on this till, not yet on the cloud. */
+  pending_sync?: boolean;
+}
+
+/** A411: saved on the cloud, saved on this till and waiting for the cloud, or refused by the cloud. */
+export interface StationRoutingResult {
+  station_id: string;
+  state: 'saved' | 'pending' | 'refused';
+  category_ids: string[] | null;
+  rejected: string[];
+  message?: string;
 }
 
 export interface PrinterInfo {
@@ -499,8 +510,7 @@ declare global {
         createStation: (payload: { name: string; kind?: StationKind; sort_order?: number }) => Promise<PrintStation>;
         updateStation: (id: string, patch: Partial<{ name: string; kind: StationKind; sort_order: number; active: boolean }>) => Promise<PrintStation>;
         deleteStation: (id: string) => Promise<any>;
-        setStationCategories: (id: string, categoryIds: string[]) =>
-          Promise<{ station_id: string; category_ids: string[]; rejected: string[] }>;
+        setStationCategories: (id: string, categoryIds: string[]) => Promise<StationRoutingResult>;
         updateCategory: (id: string, patch: any) => Promise<any>;
         bulkProducts:       (rows: any[]) => Promise<{ created: number; updated: number; errors: Array<{ row: number; error: string }> }>;
         listCombos:         () => Promise<any[]>;

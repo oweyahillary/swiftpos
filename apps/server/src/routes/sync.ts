@@ -262,6 +262,7 @@ router.post('/push', async (req, res) => {
       for (const group of closesFirst<(typeof rows)[number]>(rows)) {
         results.push(...await Promise.all(
           group.map(async row => {
+            // business_id: forced from the token where `rows` is built above
             const { error } = await supabase.from('business_days').upsert(row, { onConflict: 'id' });
             return { id: row.id, error };
           }),
@@ -394,6 +395,7 @@ router.post('/push', async (req, res) => {
         // one round trip's worth of latency, not one per shift.
         const results = await Promise.all(
           rows.map(async row => {
+            // business_id: forced from the token where `rows` is built above
             const { error } = await supabase.from('shifts').upsert(row, { onConflict: 'id' });
             return { id: row.id, error };
           }),

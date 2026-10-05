@@ -286,7 +286,8 @@ console.log('\n6. The cloud is an improvement, never a requirement');
   ok('a cold/rate-limited server falls back to the local answer, not an error',
      /catch \{ \/\* cold server, rate limit, no link/.test(IH));
   ok('station reads fall back to the local mirrors',
-     /manage:listStations[\s\S]{0,200}catch \{ return localStations\(\)/.test(IH));
+     // A411: the local copy also answers while routing saved on this till waits for the cloud
+     /manage:listStations[\s\S]{0,500}catch \{ return withPendingFlags\(localStations\(\)\)/.test(IH));
   ok('category reads fall back to the local table',
      /manage:listCategories[\s\S]{0,300}SELECT \* FROM categories WHERE status/.test(IH));
   ok('rate limiter keys per DEVICE, not the branch NAT IP',

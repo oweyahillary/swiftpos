@@ -42,7 +42,8 @@ ok('A360: adding, renaming and deleting a type stay expenses.manage', () => {
 ok('A360: the till asks this route with the signed-in staff\'s own token', () => {
   const h = read('apps/desktop/src/main/ipcHandlers.ts');
   assert.match(h, /const token = staffRow\?\.token \?\? ownerRow\?\.token;/);
-  assert.match(h, /fetch\(`\$\{cfg\.server_url\}\/api\/expenses\/categories`, \{\s+headers: \{ Authorization: `Bearer \$\{token\}` \},/);
+  // A410: through cloudFetch (the branch server on a till that has one).
+  assert.match(h, /cloudFetch\(`\$\{cfg\.server_url\}\/api\/expenses\/categories`, \{\s+headers: \{ Authorization: `Bearer \$\{token\}` \},/);
 });
 
 // ── A361 ──────────────────────────────────────────────────────────────────────────────────────────────────────────

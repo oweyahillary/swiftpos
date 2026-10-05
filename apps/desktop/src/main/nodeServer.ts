@@ -33,6 +33,13 @@
 // A node is also a normal till; its own sales use the usual local path. Received
 // peer orders are upserted into the same local tables so reports aggregate.
 //
+// ── A410 (2026-10-05): THE NODE IS NOW THE BRANCH'S ONLY LINK TO THE CLOUD ──────
+// Owner: "the server should be the only till communicating with the cloud not other tills". Every cloud request a
+// peer makes (sales, menu, sign-in renewals, manager edits, update downloads) now comes HERE, to /node/cloud/api/…,
+// and this server forwards it (nodeGateway.ts; the peer side is cloudGateway.ts). What is said above still holds for
+// the two outboxes — a peer offers its rows to this node's replica AND queues them for the cloud — but the cloud leg
+// now also travels through this machine. Peers no longer need internet of their own.
+//
 // Transport: Node's built-in http (no extra dependency). LAN-local; scoped by
 // branch_id so a stray device from another branch can't inject orders.
 
@@ -47,6 +54,8 @@ import { verifyPinAtNode, readBranchStaffForServe } from './branchStaff';
 import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
+import { forwardToCloud } from './nodeGateway';
+import { GATEWAY_PREFIX } from './cloudGateway';
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -133,6 +142,13 @@ export function startNodeServer(): void {
       // tech-session pair without any route being able to opt out by omission.
       if (!authorised(req)) {
         return json(res, 401, { error: 'unauthorised — bad or missing X-Node-Secret' });
+      }
+
+      // A410: the branch's tills reach the cloud ONLY through this server. Raw pass-through of the till's own request
+      // (its token, device and idempotency headers) to the cloud, and the answer straight back. See nodeGateway.ts.
+      if (url.startsWith(`${GATEWAY_PREFIX}/`)) {
+        const serverUrl = getDeviceConfig()?.server_url ?? '';
+        return await forwardToCloud(req, res, serverUrl);
       }
 
       // Health — tills probe this to decide reachability.

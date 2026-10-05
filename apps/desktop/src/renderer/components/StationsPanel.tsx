@@ -112,11 +112,15 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
     setBusy(station.id);
     setChipError(null);
     try {
+      // A411: saved on this till first — it prints this way at once — then sent to the cloud (now, or at the next sync).
       const out = await posApi.manage.setStationCategories(station.id, next);
-      // The cloud's set is the truth: a category it would not accept must not stay ticked here.
-      if (out?.category_ids) {
-        setStations(prev => prev.map(s => s.id === station.id ? { ...s, category_ids: out.category_ids } : s));
+      if (out?.state === 'refused') {
+        await load();
+        setChipError({ stationId: station.id, message: `Not saved: ${out.message ?? 'the cloud refused it'}` });
+        return;
       }
+      const ids = out?.category_ids ?? next;
+      setStations(prev => prev.map(s => s.id === station.id ? { ...s, category_ids: ids, pending_sync: out?.state === 'pending' } : s));
       if (out?.rejected?.length) {
         setChipError({ stationId: station.id, message: 'The cloud did not accept one of these categories. Leave this screen and open it again.' });
       }
@@ -224,6 +228,9 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                     {!boundPrinter && (
                       <span className="ml-2 text-xs text-amber-400">· no printer on this till</span>
                     )}
+                    {st.pending_sync && (
+                      <span className="ml-2 text-xs text-amber-300">· waiting to sync</span>
+                    )}
                   </button>
                   <span className="text-gray-500 text-xs">{open ? '▾' : '▸'}</span>
                 </div>
@@ -258,6 +265,11 @@ export default function StationsPanel({ printers, settings, save, canEdit }: Pro
                       </div>
                       {chipError?.stationId === st.id && (
                         <p className="text-xs text-red-300 mt-1.5">{chipError.message}</p>
+                      )}
+                      {st.pending_sync && chipError?.stationId !== st.id && (
+                        <p className="text-xs text-amber-300 mt-1.5">
+                          Saved on this till — it prints this way now, and goes to the cloud and the other tills when the connection is back.
+                        </p>
                       )}
                     </div>
 
