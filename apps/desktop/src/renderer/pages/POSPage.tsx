@@ -258,6 +258,12 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // Shift state
   const [showShift, setShowShift] = useState(false);
   const [shift, setShift] = useState<ZReport | null>(null);
+  // A401: the shift was force-closed (or closed) on the web — the till closed it too; say so until dismissed.
+  const [closedElsewhere, setClosedElsewhere] = useState<string | null>(null);
+  useEffect(() => posApi.shift.onClosedElsewhere((e) => {
+    setClosedElsewhere(e.message);
+    posApi.shift.current().then(setShift).catch(() => setShift(null));
+  }), []);
 
   // Order history + void
   const [showHistory, setShowHistory] = useState(false);
@@ -1098,6 +1104,15 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
         <div data-testid="frozen-note" role="alert"
           className="fixed left-1/2 top-4 z-50 -translate-x-1/2 max-w-md rounded-xl border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-200 shadow-xl">
           {frozenNote}
+        </div>
+      )}
+
+      {/* A401: the shift was closed on the web — the till closed it too. */}
+      {closedElsewhere && (
+        <div data-testid="shift-closed-elsewhere"
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm max-w-[90vw] border bg-red-950 border-red-700 text-red-100">
+          <span>{closedElsewhere}</span>
+          <button onClick={() => setClosedElsewhere(null)} className="shrink-0 px-2 py-1 rounded font-medium bg-red-700 hover:bg-red-600 text-white">OK</button>
         </div>
       )}
 

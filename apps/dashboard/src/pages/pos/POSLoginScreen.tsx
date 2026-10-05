@@ -79,7 +79,7 @@ export default function POSLoginScreen() {
 
   // ── Core login ────────────────────────────────────────────────────────────
   async function handleLogin(emailVal: string, pinVal: string,
-    otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean }) {
+    otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean; otp_use_email?: boolean }) {
     if (!emailVal.trim() || !pinVal) return;
     setLoading(true); setError('');
     const trust = readOtpTrust(emailVal);
@@ -323,8 +323,8 @@ export default function POSLoginScreen() {
             <OtpCodeStep
               prompt={otp} code={otpCode} setCode={setOtpCode} remember={remember} setRemember={setRemember}
               loading={loading} error={error}
-              onSubmit={() => { void handleLogin(email, pin, { otp_code: otpCode, otp_remember: remember }); }}
-              onResend={() => { void handleLogin(email, pin, { otp_resend: true }); }}
+              onSubmit={() => { void handleLogin(email, pin, { otp_code: otpCode, otp_remember: remember, otp_use_email: otp?.method === 'email' }); }}
+              onResend={() => { void handleLogin(email, pin, { otp_resend: true, otp_use_email: true }); }}   /* A403: for an authenticator user, the code by email */
               onBack={() => { setOtp(null); setOtpCode(''); setPin(''); setError(''); }}
             />
           </div>

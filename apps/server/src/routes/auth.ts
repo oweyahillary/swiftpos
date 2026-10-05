@@ -48,6 +48,7 @@ import { getWebAccess } from '../lib/webAccess';
 import { resolveOwnerBusinesses } from '../lib/ownerBusiness';
 import { refreshGraceDecision } from '../lib/refreshGrace';
 import { businessPosFeatures } from '../lib/posFeatureFlags';   // A398
+import { cleanEmail, passwordProblem, ownerAccountForEmail, sendResetCode, checkResetCode, setOwnerPassword } from '../lib/passwordReset';   // A402
 import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetup, useEmailCodes, OtpSubject } from '../lib/loginOtp';   // A391
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
@@ -1640,6 +1641,58 @@ router.post('/set-pin', requireAuth, async (req, res) => {
   }
 
   res.json({ success: true, message: 'PIN updated successfully' });
+});
+
+// ── A402: an owner resets (forgot) or changes their own password ─────────────────────────────────────────────────
+// On /api/auth, so authLimiter (brute force) covers all three. lib/passwordReset.ts has the rules.
+
+// The same answer whoever asks — the page never says which emails belong to a ZapTill owner.
+const FORGOT_REPLY = 'If that email is an owner\'s ZapTill sign-in, a 6-digit code is on its way to it. It works for 15 minutes.';
+
+router.post('/password/forgot', async (req, res) => {
+  const email = cleanEmail(req.body?.email);
+  if (!email.includes('@')) { res.status(400).json({ error: 'Enter the email you sign in with.' }); return; }
+  const acct = await ownerAccountForEmail(email);
+  if (acct) {
+    const r = await sendResetCode(acct);
+    if (r === 'failed') { res.status(503).json({ error: 'Could not send the code just now. Try again in a minute, or call ZapTill support.' }); return; }
+  }
+  res.json({ ok: true, message: FORGOT_REPLY });
+});
+
+router.post('/password/reset', async (req, res) => {
+  const email = cleanEmail(req.body?.email);
+  const code = String(req.body?.code ?? '').replace(/[\s-]/g, '');
+  const problem = passwordProblem(req.body?.new_password);
+  if (!email.includes('@') || !/^\d{6}$/.test(code)) { res.status(400).json({ error: 'Enter your email and the 6-digit code.' }); return; }
+  if (problem) { res.status(400).json({ error: problem, code: 'WEAK_PASSWORD' }); return; }
+  const acct = await ownerAccountForEmail(email);
+  const check = acct ? await checkResetCode(acct.authId, code) : 'expired';
+  if (check === 'expired') { res.status(400).json({ error: 'That code has expired or was tried too often. Ask for a new code.', code: 'RESET_EXPIRED' }); return; }
+  if (check === 'wrong') { res.status(400).json({ error: 'That code is not right. Check the email and try again.', code: 'RESET_INVALID' }); return; }
+  const err = await setOwnerPassword(acct!.authId, String(req.body.new_password));
+  if (err) { res.status(500).json({ error: 'Could not set the new password. Try again, or call ZapTill support.' }); return; }
+  console.log(`[password-reset] owner password reset by emailed code (${acct!.authId})`);
+  res.json({ ok: true, message: 'Your password is changed. Sign in with the new one.' });
+});
+
+router.post('/password/change', requireAuth, async (req, res) => {
+  if (!req.isOwner) { res.status(403).json({ error: 'Only the owner signs in with a password. Managers use their PIN — the owner can change it in Staff.' }); return; }
+  const problem = passwordProblem(req.body?.new_password);
+  if (problem) { res.status(400).json({ error: problem, code: 'WEAK_PASSWORD' }); return; }
+  const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', req.businessId).maybeSingle();
+  const authId = (biz as { owner_id?: string | null } | null)?.owner_id;
+  if (!authId) { res.status(400).json({ error: 'This business has no owner sign-in account.' }); return; }
+  const { data: acct } = await supabase.auth.admin.getUserById(authId);
+  const email = acct?.user?.email;
+  if (!email) { res.status(400).json({ error: 'This business has no owner sign-in account.' }); return; }
+  const { error: wrong } = await authClient.auth.signInWithPassword({ email, password: String(req.body?.current_password ?? '') });
+  if (wrong) { res.status(400).json({ error: 'Your current password is not right.', code: 'WRONG_PASSWORD' }); return; }
+  if (String(req.body.new_password) === String(req.body.current_password)) { res.status(400).json({ error: 'The new password is the same as the old one.' }); return; }
+  // Every other signed-in browser is signed out; this one stays.
+  const err = await setOwnerPassword(authId, String(req.body.new_password), req.sessionId ?? null);
+  if (err) { res.status(500).json({ error: 'Could not change the password. Try again.' }); return; }
+  res.json({ ok: true, message: 'Password changed. Other browsers signed in to this account were signed out.' });
 });
 
 // ── A391: my sign-in code — email (default) or an authenticator app ─────────────────────────────────────────────

@@ -25,6 +25,7 @@
  */
 import { supabase } from './supabase';
 import { checkLowStock, checkLowIngredients } from '../jobs/lowStockChecker';
+import { expandComboLines, type ComboItem } from './comboStock';   // A400
 
 /**
  * One sold line, normalised. POST /orders builds these from the client cart;
@@ -66,7 +67,17 @@ async function insertIngredientSale(orderId: string, row: Record<string, unknown
 }
 
 export async function applyStockEffects(params: StockEffectsParams): Promise<void> {
-  const { businessId, userId, lines, pumpId, orderType } = params;
+  const { businessId, userId, pumpId, orderType } = params;
+  // A400: a combo sold uses up what is in it — its items become lines of their own (stock, recipes, variants of none),
+  // the combo line stays (its own stock or recipe, e.g. the box it comes in). A failed read leaves the lines as sold.
+  let lines: StockLine[] = params.lines;
+  try {
+    const ids = [...new Set(params.lines.map((l) => l.productId).filter((id): id is string => !!id))];
+    if (ids.length) {
+      const { data: items } = await supabase.from('combo_items').select('combo_id, product_id, quantity').in('combo_id', ids);
+      if (items?.length) lines = expandComboLines(params.lines, items as ComboItem[]) as StockLine[];
+    }
+  } catch (e) { console.error('[stock] combo items could not be read (the combo\'s items not deducted):', e); }
   // Aliased rather than renamed throughout: the moved code refers to branch_id
   // and order_number in dozens of places, including inside PostgREST filter
   // STRINGS like `branch_id.eq.${branch_id}`. A rename would have silently

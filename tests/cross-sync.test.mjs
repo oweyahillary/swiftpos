@@ -124,7 +124,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.CROSS_SYNC_TS) {
   });
   await ok('…every ~20 s, after every full sync, and at sign-in', () => {
     const idx = read('apps/desktop/src/main/index.ts');
-    assert.match(idx, /pullIfCatalogueChanged\(\)\.catch\(console\.error\);[\s\S]{0,200}pullWebSales\(\)\.catch\(console\.error\);\s*\}, 20_000\);/);
+    assert.match(idx, /pullIfCatalogueChanged\(\)\.catch\(console\.error\);[\s\S]{0,200}pullWebSales\(\)\.catch\(console\.error\);[\s\S]{0,200}\}, 20_000\);/);   // A401: pullShiftCloses runs on the same beat
     assert.match(se, /try \{ await pullWebSales\(\); \} catch/);
     assert.match(ipc, /const joinedDrawer = await joinCloudDrawer\(data\.staff\?\.id\);[\s\S]{0,300}pullWebSales\(\)\.catch/);
   });

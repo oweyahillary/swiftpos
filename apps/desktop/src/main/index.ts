@@ -6,7 +6,7 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, onShiftClosedElsewhere } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
@@ -264,7 +264,15 @@ app.whenReady().then(() => {
     pullIfCatalogueChanged().catch(console.error);
     // Cross-sync stage 1 (2026-09-27): a sale rung on the web as this till reaches it on the same ~20 s beat.
     pullWebSales().catch(console.error);
+    // A401: a drawer force-closed (or closed) on the web closes here on the same beat.
+    pullShiftCloses().catch(console.error);
   }, 20_000);
+  // A401: tell every window, so the cashier sees why selling stopped (POSPage shows the notice and re-reads the shift).
+  onShiftClosedElsewhere((c) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('shift:closedElsewhere', { id: c.id, message: c.message });
+    }
+  });
   // A321: ANY successful pull (this check, the 10-min floor, startup, manual sync, post-edit sync…)
   // tells every open window to reload from the local DB. This used to be sent only by the check
   // above, and only to getAllWindows()[0] — changes from every other path waited for a sign-in/out.

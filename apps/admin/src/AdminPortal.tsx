@@ -282,7 +282,7 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
 
   function submit(e) {
     e.preventDefault();
-    if (otp) signIn({ otp_code: code, otp_remember: remember });
+    if (otp) signIn({ otp_code: code, otp_remember: remember, otp_use_email: otp.method === "email" });   // A403
     else signIn();
   }
 
@@ -330,9 +330,10 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
           {otp && (
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <button type="button" onClick={() => { setOtp(null); setCode(""); setError(""); }} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>← Back</button>
-              {otp.method !== "totp" && (
-                <button type="button" disabled={loading} onClick={() => signIn({ otp_resend: true })} style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>Send a new code</button>
-              )}
+              {/* A403: an authenticator user may have the code emailed instead. */}
+              <button type="button" disabled={loading} onClick={() => signIn({ otp_resend: true, otp_use_email: true })} data-testid="otp-resend" style={{ ...S.btn, ...S.btnGhost, fontSize: 12 }}>
+                {otp.method === "totp" ? "Email me a code instead" : "Send a new code"}
+              </button>
             </div>
           )}
         </form>

@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import SettingsSection from './SettingsSection';
 import StaffTab from './StaffTab';
 import RolesTab from './RolesTab';
+import ChangePassword from '../../components/ChangePassword';   // A402
 import SignInSecurity from '../../components/SignInSecurity';
 
 // Settings › Users and access (register A133).
@@ -50,8 +51,10 @@ export function RolesRoute() {
 // A391: the owner's own sign-in code — email or an authenticator app.
 export function SignInSecurityRoute() {
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-8">
       <SignInSecurity />
+      {/* A402: the owner's password */}
+      <ChangePassword />
     </div>
   );
 }

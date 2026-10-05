@@ -29,6 +29,7 @@ import { unpackNodeBundle, numOrNull, type AcquiredReference } from './reference
 import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
+import { closesToAdopt, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth, emitEvent,
@@ -634,6 +635,60 @@ export async function pullWebSales(): Promise<number> {
     _pullingWebSales = false;
   }
   return changed;
+}
+
+// A401 — a drawer closed on the web (force-close, or a close with a count) closes on this till too. On the ~20 s beat
+// (index.ts): the ids of this till's open shifts go to GET /api/shifts/state; each one the cloud has closed is closed
+// here the same way and marked synced (the cloud already holds the close — the till never pushes a second one), then
+// the screens are told so the cashier sees why selling stopped. Fail-soft: offline or an error → the next beat.
+const _shiftClosedListeners = new Set<(c: LocalClose) => void>();
+export function onShiftClosedElsewhere(cb: (c: LocalClose) => void): () => void {
+  _shiftClosedListeners.add(cb);
+  return () => { _shiftClosedListeners.delete(cb); };
+}
+let _pullingShiftCloses = false;
+export async function pullShiftCloses(): Promise<number> {
+  if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingShiftCloses) return 0;
+  _pullingShiftCloses = true;
+  try {
+    const db = getLocalDb();
+    const open = db.prepare(
+      `SELECT id FROM shifts WHERE status = 'open' AND COALESCE(device_id,'') = COALESCE(?,'')`,
+    ).all(getDeviceConfig()?.device_id ?? null) as Array<{ id: string }>;
+    if (!open.length) return 0;
+    const url = `${_serverUrl}/api/shifts/state?ids=${encodeURIComponent(open.map((r) => r.id).join(','))}`;
+    let res = await syncFetch(url, { headers: pushAuthHeaders() });
+    if (res.status === 401 && await refreshStaffToken()) res = await syncFetch(url, { headers: pushAuthHeaders() });
+    if (res.status === 404) return 0;   // an older cloud without the route — nothing to learn
+    if (!res.ok) { noteInboundFailure('shift-state', `shift state check failed: HTTP ${res.status}`); return 0; }
+    const closes = closesToAdopt(open.map((r) => r.id), await res.json() as CloudShiftState[]);
+    clearInboundFailure('shift-state');
+    const apply = db.prepare(`
+      UPDATE shifts SET status = @status, closed_at = @closed_at, close_method = @close_method, closed_by = @closed_by,
+        closing_float = @closing_float, cash_variance = @cash_variance,
+        expected_cash = COALESCE(@expected_cash, expected_cash),
+        notes = TRIM(COALESCE(notes, '') || char(10) || @note), sync_status = 'synced'
+      WHERE id = @id AND status = 'open' AND COALESCE(device_id,'') = COALESCE(@dev,'')`);
+    let n = 0;
+    const dev = getDeviceConfig()?.device_id ?? null;
+    for (const c of closes) {
+      if (apply.run({ ...c, dev }).changes !== 1) continue;
+      n++;
+      logLine('sync', `shift ${c.id} closed on the cloud — closed here too (${c.status})`);
+      // Branch LAN: the replicas learn the close as they do any other.
+      emitEvent('shift_closed', c.id, {
+        status: c.status, closed_at: c.closed_at, closing_float: c.closing_float, cash_variance: c.cash_variance,
+        expected_cash: c.expected_cash, close_method: c.close_method, closed_by: c.closed_by,
+      });
+      for (const cb of _shiftClosedListeners) { try { cb(c); } catch { /* a screen listener never stops the close */ } }
+    }
+    return n;
+  } catch (err: any) {
+    noteInboundFailure('shift-state', `shift state check error: ${err?.message ?? err}`);
+    return 0;
+  } finally {
+    _pullingShiftCloses = false;
+  }
 }
 
 // A291: cheap catalogue-freshness poll. Ask the server for the newest updated_at

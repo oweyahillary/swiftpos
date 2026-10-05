@@ -6,6 +6,7 @@ import { useTenant, tenantSignInFields } from '../lib/tenant';
 import { TenantBrand, UnknownTenantAddress } from '../components/TenantBrand';
 import { DEFAULT_SUPPORT_PHONES, whatsappNumber } from '../lib/support';   // 0.6.35 (A384)
 import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../lib/otpTrust';   // A391
+import ForgotPassword from '../components/ForgotPassword';   // A402
 import OtpCodeStep, { type OtpPrompt } from '../components/OtpCodeStep';
 
 // Error codes returned by POST /api/auth/login for specific access issues
@@ -52,13 +53,16 @@ export default function LoginPage() {
   const [otpCode, setOtpCode]   = useState('');
   const [remember, setRemember] = useState(true);
   const [pickedBusiness, setPickedBusiness] = useState<string | undefined>(undefined);
+  // A402: "Forgot password?" — the reset steps replace the sign-in form; `info` is what it says when done.
+  const [forgot, setForgot] = useState(false);
+  const [info, setInfo] = useState('');
 
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
     'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
 
   const handleLogin = async (e: React.FormEvent | null, chosenBusinessId?: string,
-    otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean }) => {
+    otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean; otp_use_email?: boolean }) => {
     e?.preventDefault();
     setError('');
     setErrorCode('');
@@ -237,12 +241,16 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-8 shadow-2xl">
-          {otp ? (
+          {forgot ? (
+            <ForgotPassword initialEmail={email} inputCls={inputCls}
+              onDone={(m) => { setForgot(false); setPassword(''); setError(''); setInfo(m); }}
+              onBack={() => { setForgot(false); setError(''); }} />
+          ) : otp ? (
             <OtpCodeStep
               prompt={otp} code={otpCode} setCode={setOtpCode} remember={remember} setRemember={setRemember}
               loading={loading} error={error}
-              onSubmit={() => { void handleLogin(null, undefined, { otp_code: otpCode, otp_remember: remember }); }}
-              onResend={() => { void handleLogin(null, undefined, { otp_resend: true }); }}
+              onSubmit={() => { void handleLogin(null, undefined, { otp_code: otpCode, otp_remember: remember, otp_use_email: otp?.method === 'email' }); }}
+              onResend={() => { void handleLogin(null, undefined, { otp_resend: true, otp_use_email: true }); }}   /* A403: for an authenticator user, the code by email */
               onBack={() => { setOtp(null); setOtpCode(''); setError(''); }}
             />
           ) : businessChoices ? (
@@ -315,6 +323,13 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
               />
             </div>
+
+            {/* A402 */}
+            <div className="-mt-2 text-right">
+              <button type="button" onClick={() => { setForgot(true); setError(''); setInfo(''); }} data-testid="forgot-link"
+                className="text-xs text-[#64748b] hover:text-white transition-colors">Forgot password?</button>
+            </div>
+            {info && <p className="text-sm text-[#94a3b8]" data-testid="login-info">{info}</p>}
 
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
