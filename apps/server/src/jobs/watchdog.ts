@@ -8,7 +8,7 @@ import { recentErrors, digestCounters, recentSignInFailures, recentSyncAttempts 
 import {
   Alert, OpenAlertRow, WATCHDOG, planRun, alertText, digestText,
   tillsNotSyncing, mpesaUnanswered, paymentExceptions, errorBurst, daysNotClosed, oldTills, etimsFailures,
-  repeatedSignInFailures, tillSyncRefused,
+  repeatedSignInFailures, tillSyncRefused, tillsSignedOut,
 } from '../lib/watchdogRules';
 
 /**
@@ -73,6 +73,19 @@ export async function collectAlerts(now = new Date()): Promise<Alert[]> {
     if (error) throw error;
     const devices = ((data ?? []) as any[]).filter(inActive);
     return [...tillsNotSyncing(devices, now, nm), ...oldTills(devices, approved, REQUIRED_DESKTOP_SCHEMA, nm)];
+  });
+
+  // A407: tills signed out that could not sign back in — read on their own so a cloud before migration 125 still runs
+  // every other check.
+  await step('tills signed out', async () => {
+    const { data, error } = await supabase
+      .from('user_devices')
+      .select('id, business_id, device_label, terminal_code, status, retired_at, session_lost_at, session_lost_reason')
+      .in('business_id', active)
+      .is('retired_at', null)
+      .not('session_lost_at', 'is', null);
+    if (error) throw error;
+    return tillsSignedOut(((data ?? []) as any[]).filter(inActive), now, nm);
   });
 
   await step('mpesa', async () => {

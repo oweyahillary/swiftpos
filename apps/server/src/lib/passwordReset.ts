@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import { supabase } from './supabase';
 import { sendEmailChecked } from './mailer';
 import { hashCode, newEmailCode, maskEmail } from './loginOtp';
+import { revokeBrowserSessions } from './tillSessions';   // A407
 
 export const RESET = { CODE_TTL_MIN: 15, MAX_TRIES: 5, RESEND_SEC: 60, MIN_LENGTH: 8 } as const;
 
@@ -102,9 +103,9 @@ export async function checkResetCode(authId: string, code: string): Promise<'ok'
 }
 
 /**
- * Set the new password on the sign-in account; sign the owner out everywhere (their refresh tokens — the users rows
- * of the businesses they own, and the account id itself — revoked) unless `keepSession` names the one to keep; clear
- * "must change password".
+ * Set the new password on the sign-in account; sign the owner out of every browser (their refresh tokens — the users
+ * rows of the businesses they own, and the account id itself — revoked) unless `keepSession` names the one to keep;
+ * never a till's session (A406); clear "must change password".
  */
 export async function setOwnerPassword(authId: string, password: string, keepSession?: string | null): Promise<string | null> {
   const { error } = await supabase.auth.admin.updateUserById(authId, { password });
@@ -119,8 +120,7 @@ export async function setOwnerPassword(authId: string, password: string, keepSes
     userIds = [...userIds, ...((rows ?? []) as Array<{ id: string }>).map((r) => r.id)];
     await supabase.from('users').update({ must_change_password: false }).in('id', userIds.slice(1));
   }
-  let q = supabase.from('refresh_tokens').update({ revoked_at: new Date().toISOString() }).in('user_id', userIds).is('revoked_at', null);
-  if (keepSession) q = q.neq('session_id', keepSession);
-  await q;
+  // A406/A407: the owner's browsers only — never a till (a till signs in as the owner); this browser stays.
+  await revokeBrowserSessions(userIds, bizIds, keepSession);
   return null;
 }

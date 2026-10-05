@@ -12,7 +12,8 @@ import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
 import { getMacAddressCached } from './machineFingerprint';
-import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens } from './tokenStore';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, readDeviceSecret, writeDeviceSecret } from './tokenStore';
+import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
 import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze } from './deviceConfig';
@@ -198,10 +199,40 @@ async function doRefreshAccessToken(): Promise<boolean> {
   const attempt = async (token: string) => {
     const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // A407: the device id lets the cloud hand this till a device secret if it has none yet.
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceConfig()?.device_id ?? '' },
       body: JSON.stringify({ refreshToken: token }),
     });
     return res;
+  };
+
+  // A407: the cloud refused the session (revoked, or expired after 30+ days off) — sign back in with the device secret.
+  // With no secret the cloud is still told (it records the till as signed out, and ZapTill is emailed).
+  const tryDeviceGrant = async (): Promise<boolean> => {
+    let businessId: string | null = null;
+    try { businessId = (getLocalDb().prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined)?.business_id ?? null; }
+    catch { businessId = null; }
+    const body = deviceGrantBody(businessId, getDeviceConfig()?.device_id, readDeviceSecret());
+    if (!body) return false;
+    try {
+      const res = await syncFetch(`${_serverUrl || getCloudUrl()}/api/auth/device-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        noteInboundFailure('auth', `the till could not sign itself back in: ${await describeResponse(res)}`);
+        return false;
+      }
+      const pair = await res.json() as { accessToken: string; refreshToken: string };
+      _accessToken  = pair.accessToken;
+      _refreshToken = pair.refreshToken;
+      writeSessionTokens({ token: pair.accessToken, refreshToken: pair.refreshToken });
+      clearInboundFailure('auth');
+      logLine('auth', 'session refused - the till signed itself back in with its device secret');
+      return true;
+    } catch (e: any) {
+      logLine('auth', `device sign-in error: ${e?.message ?? e}`);
+      return false;
+    }
   };
 
   try {
@@ -224,6 +255,8 @@ async function doRefreshAccessToken(): Promise<boolean> {
       // A160: a 5xx means the cloud answered but can't serve — treat it like
       // unreachable and let the node broker the refresh before giving up.
       if (res.status >= 500 && await tryNodeRefresh()) return true;
+      // A407: refused (401) — the till signs itself back in with its device secret before giving up.
+      if (res.status === 401 && await tryDeviceGrant()) return true;
       // Rotation means a revoked token can never be recovered: the owner must
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
@@ -231,7 +264,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
       noteInboundFailure('auth', `owner token refresh failed: ${await describeResponse(res)}`);
       return false;
     }
-    const { accessToken, refreshToken } = await res.json();
+    const { accessToken, refreshToken, deviceSecret } = await res.json();
     _accessToken  = accessToken;
     _refreshToken = refreshToken;
     // Persist immediately. The server has ALREADY revoked the old token by the
@@ -240,6 +273,9 @@ async function doRefreshAccessToken(): Promise<boolean> {
     // Client code cannot close that window — only a server-side grace period
     // can (register D13, part 3). Keep this write first and unconditional.
     writeSessionTokens({ token: accessToken, refreshToken });
+    // A407: a till enrolled before it kept a device secret is given one on an ordinary renewal — keep it (after the
+    // tokens: their write stays first).
+    if (typeof deviceSecret === 'string' && deviceSecret) { writeDeviceSecret(deviceSecret); logLine('auth', 'device secret received and kept'); }
     clearInboundFailure('auth');
     return true;
   } catch (err: any) {

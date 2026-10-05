@@ -87,10 +87,35 @@ export interface DeviceRow {
   last_sync_at?: string | null;
   app_version?: string | null;
   schema_version?: number | null;
+  /** A407 (migration 125): its session was refused and it could not sign itself back in. */
+  session_lost_at?: string | null;
+  session_lost_reason?: string | null;
 }
 
 const tillName = (d: DeviceRow) => d.terminal_code || d.device_label || `till ${String(d.id).slice(0, 8)}`;
 const live = (d: DeviceRow) => !d.retired_at && (d.status ?? 'approved') === 'approved';
+
+/**
+ * CRITICAL (A407): a till whose sign-in the cloud refused and that could not sign itself back in with its device
+ * secret. Owner, 2026-10-05: "if a till is rejected when it comes online after a long offline period i should get an
+ * email". It keeps selling on its own PIN check, but its sales wait on it until someone brings a new enrolment code.
+ */
+export function tillsSignedOut(devices: DeviceRow[], now: Date, names: Record<string, string> = {}): Alert[] {
+  const out: Alert[] = [];
+  for (const d of devices) {
+    if (!live(d) || !d.session_lost_at) continue;
+    out.push({
+      key: `till_signed_out:${d.id}`,
+      severity: 'critical',
+      businessId: d.business_id,
+      title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} is signed out and could not sign back in`,
+      detail: `Since ${durationLabel(ago(now, d.session_lost_at))} ago${d.session_lost_reason ? ` — ${d.session_lost_reason}` : ''}. `
+        + `It keeps selling on its own, but its sales wait on the till. Issue an enrolment code (client › Branches & tills) `
+        + `and enter it on the till (Sign out / switch account).`,
+    });
+  }
+  return out;
+}
 
 /** CRITICAL: the till is switched on and talking to the cloud, but its sales have not synced for 2 hours. */
 export function tillsNotSyncing(devices: DeviceRow[], now: Date, names: Record<string, string> = {}): Alert[] {

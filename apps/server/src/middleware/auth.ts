@@ -89,7 +89,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   try {
     swiftPayload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as typeof swiftPayload;
-  } catch {
+  } catch (e) {
+    // A406: OUR token, merely expired (15-minute access tokens are renewed all day) — say so. It used to fall through
+    // to the Supabase branch, where A391 answers "Please sign in again." — the words a till shows when it really is
+    // signed out, so an ordinary renewal looked like a lost sign-in. Clients renew on any 401, as before.
+    if ((e as { name?: string })?.name === 'TokenExpiredError') {
+      res.status(401).json({ error: 'Invalid or expired token', code: 'TOKEN_EXPIRED' });
+      return;
+    }
     // Not a SwiftPOS JWT — fall through to the Supabase check below. This is
     // the ONLY condition that may fall through.
     swiftPayload = null;
