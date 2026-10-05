@@ -701,6 +701,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/shift-closed-elsewhere.test.mjs
 
+      # 1.0.0 (A404) — test data ZapTill clears on the cloud is cleared on the till too (sales, shifts, trading days of
+      # the period; a drawer sold on after it stays), and a test day left open no longer locks the till.
+      - name: Desktop test data cleared on the till
+        working-directory: apps/desktop
+        run: node --no-warnings test/test-data-clear.test.mjs
+
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.
       - name: Desktop kitchen voids (sent items, manager approval, End Shift, Z-report, push)

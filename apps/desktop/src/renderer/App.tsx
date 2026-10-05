@@ -20,6 +20,8 @@ const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
 export default function App() {
   const [state, setState] = useState<AppState>('loading');
+  // A405: the Manager tab to open on ("Close day now" on the day-lock banner opens Close Day); null = Overview.
+  const [managerTab, setManagerTab] = useState<'dayclose' | null>(null);
   const [session, setSession] = useState<{ user: any; business: any } | null>(null);
   const [staff, setStaff] = useState<StaffSession | null>(null);
   // A52 — the idle lock. A CURTAIN over whatever is mounted, never a reset: the
@@ -208,7 +210,8 @@ export default function App() {
       <ManagerPage
         business={session!.business}
         staff={staff}
-        onOpenPOS={() => setState('pos')}
+        initialTab={managerTab ?? undefined}
+        onOpenPOS={() => { setManagerTab(null); setState('pos'); }}
         onLogout={handleEndShift}
         onSwitchAccount={handleSignOut}
         onHelp={openHelp}
@@ -228,7 +231,7 @@ export default function App() {
       onLogout={handleEndShift}
       // Cashiers get no button at all — the tools they can't use shouldn't be
       // visible, and ManagerPage gates each tab on its own permission anyway.
-      onOpenManager={hasManagerRights(staff) ? () => setState('manager') : undefined}
+      onOpenManager={hasManagerRights(staff) ? (tab?: 'dayclose') => { setManagerTab(tab ?? null); setState('manager'); } : undefined}
       canManagePrinters={hasManagerRights(staff)}
       canVoidRefund={mayVoidRefund(staff)}
       canSeeSync={maySeeSync(staff as any)}

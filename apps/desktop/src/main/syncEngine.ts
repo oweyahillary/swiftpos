@@ -30,6 +30,7 @@ import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
 import { closesToAdopt, type CloudShiftState, type LocalClose } from './remoteShiftClose';   // A401
+import { applyTestDataClear, type ClearPeriod } from './testDataClear';   // A404
 import {
   fillNodeOutbox, takeNodeQueueBatch, markNodeQueueDelivered, markNodeQueueFailed,
   nodeQueueDepth, emitEvent,
@@ -528,6 +529,8 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
     try { await runDayCloseInstructions(errors); } catch { /* non-fatal */ }
     // Cross-sync stage 1: the web's sales on this till's drawers. Best-effort, like the above.
     try { await pullWebSales(); } catch { /* non-fatal */ }
+    // A404: test data ZapTill cleared on the cloud is cleared here too. Best-effort, like the above.
+    try { await runTestDataClears(); } catch { /* non-fatal */ }
   } catch (err: any) {
     errors.push(err.message ?? 'Unknown sync error');
   } finally {
@@ -689,6 +692,28 @@ export async function pullShiftCloses(): Promise<number> {
   } finally {
     _pullingShiftCloses = false;
   }
+}
+
+// A404 — the cloud's test-data clears (admin portal), applied here in order; each one once (the last applied is kept
+// in maintenance_state). The day gate is re-read by the screens on their next check.
+const TEST_CLEAR_KEY = 'test_data_clear_seen';
+export async function runTestDataClears(): Promise<number> {
+  if (!_serverUrl || !_accessToken || !isOnline()) return 0;
+  const db = getLocalDb();
+  const seen = (db.prepare(`SELECT value FROM maintenance_state WHERE key = ?`).get(TEST_CLEAR_KEY) as { value?: string } | undefined)?.value ?? '';
+  const res = await syncFetch(`${_serverUrl}/api/pos/test-data-clears${seen ? `?after=${encodeURIComponent(seen)}` : ''}`, { headers: authHeaders() });
+  if (!res.ok) return 0;
+  const clears = await res.json() as Array<ClearPeriod & { created_at: string }>;
+  let n = 0;
+  for (const c of clears ?? []) {
+    const r = applyTestDataClear(db, c);
+    db.prepare(`INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(TEST_CLEAR_KEY, c.created_at, new Date().toISOString());
+    logLine('sync', `test data cleared by ZapTill (${c.from_at} → ${c.to_at}): ${r.sales} sales, ${r.shifts} shifts, ${r.days} trading days removed here too${r.kept_shifts ? ` (${r.kept_shifts} shift(s) kept — sold on after the period)` : ''}`);
+    n++;
+  }
+  if (n) notifyCataloguePulled();   // the screens re-read (History, shift, day gate)
+  return n;
 }
 
 // A291: cheap catalogue-freshness poll. Ask the server for the newest updated_at

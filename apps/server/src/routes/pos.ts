@@ -466,4 +466,16 @@ router.get('/init', async (req, res) => {
   });
 });
 
+// A404 — the test-data clears ZapTill made for this business (admin portal, A396) after `after`, oldest first; the
+// till removes the same periods from its own database (main/testDataClear.ts). Last 60 days only.
+router.get('/test-data-clears', async (req, res) => {
+  const floor = new Date(Date.now() - 60 * 86_400_000).toISOString();
+  const after = typeof req.query.after === 'string' && !Number.isNaN(Date.parse(req.query.after)) && req.query.after > floor ? req.query.after : floor;
+  const { data, error } = await supabase.from('test_data_purges').select('id, from_at, to_at, created_at')
+    .eq('business_id', req.businessId).gt('created_at', after).order('created_at', { ascending: true }).limit(20);
+  if (error) { res.json([]); return; }   // before migration 122: nothing to clear
+  res.set('Cache-Control', 'no-store');
+  res.json(data ?? []);
+});
+
 export default router;
