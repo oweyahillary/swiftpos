@@ -1222,16 +1222,65 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
   // on a big menu. Silence would look like a hang.
   const [variantProgress, setVariantProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // A412 (owner, 2026-10-06: "you removed templet menu from here"): an EMPTY template — the column headings only, so a
-  // client fills in their own menu in the right shape. Still no sample menu on the till (0.6.37): no example rows.
-  const downloadTemplate = () => {
-    const csv = [
+  // A412 (owner, 2026-10-06: "you removed templet menu from here" — "add fake menu items based in the clients menu"): the
+  // template is filled with THIS client's own menu (items, prices, categories, kitchen, choices, add-ons), so it shows
+  // the shape with their food, not someone else's. Edit and upload it back: re-importing updates items by name, never
+  // duplicates (A389). With no menu yet (or no connection) it is the column headings only — still no sample menu (0.6.37).
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const downloadTemplate = async () => {
+    setTemplateBusy(true);
+    const cell = (v: unknown) => {
+      const t = v === null || v === undefined ? '' : String(v);
+      return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const opts = (list: any[], price: (o: any) => number) => (list ?? [])
+      .slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map(o => { const n = Number(price(o)) || 0; return n ? `${o.name} ${n > 0 ? '+' : ''}${n}` : String(o.name); })
+      .join(' | ');
+    const header = [
       'name', 'price', 'category', 'description', 'kitchen', 'item_kitchen',
       'variant1', 'variant1_options', 'variant2', 'variant2_options', 'variant3', 'variant3_options',
       'addon1', 'addon1_options', 'addon2', 'addon2_options',
-    ].join(',') + '\r\n';
+    ];
+    const lines = [header.join(',')];
+    try {
+      const [products, cats] = await Promise.all([
+        posApi.manage.listProducts().catch(() => []),
+        posApi.manage.listCategories().catch(() => []),
+      ]);
+      const catKitchen = new Map<string, boolean>((Array.isArray(cats) ? cats : []).map((c: any) => [c.id, !!c.is_kitchen]));
+      const items = (Array.isArray(products) ? products : [])
+        .filter((p: any) => (p.status ?? 'active') === 'active' && !p.is_combo && !p.is_fuel)
+        .sort((a: any, b: any) => String(a.categories?.name ?? '').localeCompare(String(b.categories?.name ?? ''))
+          || String(a.name).localeCompare(String(b.name)));
+      // Choices and add-ons are asked for per item — only for the items that have them, a few at a time.
+      const groups = new Map<string, { v: any[]; m: any[] }>();
+      for (let i = 0; i < items.length; i += 5) {
+        await Promise.all(items.slice(i, i + 5).map(async (p: any) => {
+          const v = p.has_variants ? await posApi.manage.listVariantGroups(p.id).catch(() => []) : [];
+          const m = p.has_modifiers ? await posApi.manage.listModifierGroups(p.id).catch(() => []) : [];
+          groups.set(p.id, { v: Array.isArray(v) ? v : [], m: Array.isArray(m) ? m : [] });
+        }));
+      }
+      for (const p of items) {
+        const g = groups.get(p.id) ?? { v: [], m: [] };
+        const v = g.v.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).slice(0, 3);
+        const m = g.m.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).slice(0, 2);
+        const row = [
+          p.name, p.base_price, p.categories?.name ?? '', p.description ?? '',
+          p.category_id ? (catKitchen.get(p.category_id) ? 'yes' : 'no') : '',
+          p.is_kitchen === true ? 'yes' : p.is_kitchen === false ? 'no' : '',
+          v[0]?.name ?? '', v[0] ? opts(v[0].variant_options, o => o.price_adjustment) : '',
+          v[1]?.name ?? '', v[1] ? opts(v[1].variant_options, o => o.price_adjustment) : '',
+          v[2]?.name ?? '', v[2] ? opts(v[2].variant_options, o => o.price_adjustment) : '',
+          m[0]?.name ?? '', m[0] ? opts(m[0].modifier_options, o => o.price) : '',
+          m[1]?.name ?? '', m[1] ? opts(m[1].modifier_options, o => o.price) : '',
+        ];
+        lines.push(row.map(cell).join(','));
+      }
+    } finally { setTemplateBusy(false); }
     // BOM so Excel opens it as UTF-8 and keeps accented names.
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1438,11 +1487,14 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
           onChange={e => { const f = e.target.files?.[0]; if (f) readFile(f); }}
           className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-800 file:text-gray-200 hover:file:bg-gray-700" />
 
-        {/* 0.6.37 (owner): no sample menu on the till — no sample rows. A412: an empty template (headings only). */}
-        <button onClick={downloadTemplate}
-          className="mt-3 text-xs text-action-400 hover:text-action-300 transition-colors">
-          ↓ Download an empty template (column headings only)
+        {/* A412: a template filled with this client's own menu (headings only when there is none yet). */}
+        <button onClick={() => { void downloadTemplate(); }} disabled={templateBusy}
+          className="mt-3 text-xs text-action-400 hover:text-action-300 disabled:opacity-50 transition-colors">
+          {templateBusy ? 'Preparing your menu…' : '↓ Download a template with your menu'}
         </button>
+        <p className="mt-1 text-[11px] text-gray-500">
+          Your current items, ready to edit and upload back — changed items are updated, new rows are added.
+        </p>
 
         <div className="mt-4 text-xs text-gray-300">
           <p className="text-gray-400 mb-1">Columns</p>
