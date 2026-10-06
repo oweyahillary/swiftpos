@@ -1222,6 +1222,25 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
   // on a big menu. Silence would look like a hang.
   const [variantProgress, setVariantProgress] = useState<{ done: number; total: number } | null>(null);
 
+  // A412 (owner, 2026-10-06: "you removed templet menu from here"): an EMPTY template — the column headings only, so a
+  // client fills in their own menu in the right shape. Still no sample menu on the till (0.6.37): no example rows.
+  const downloadTemplate = () => {
+    const csv = [
+      'name', 'price', 'category', 'description', 'kitchen', 'item_kitchen',
+      'variant1', 'variant1_options', 'variant2', 'variant2_options', 'variant3', 'variant3_options',
+      'addon1', 'addon1_options', 'addon2', 'addon2_options',
+    ].join(',') + '\r\n';
+    // BOM so Excel opens it as UTF-8 and keeps accented names.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'zaptill-menu-template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
   const [fileName, setFileName] = useState('');
   const [existing, setExisting] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
@@ -1419,7 +1438,11 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
           onChange={e => { const f = e.target.files?.[0]; if (f) readFile(f); }}
           className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-800 file:text-gray-200 hover:file:bg-gray-700" />
 
-        {/* 0.6.37 (owner): no sample menu on the till — no sample file, no sample rows. */}
+        {/* 0.6.37 (owner): no sample menu on the till — no sample rows. A412: an empty template (headings only). */}
+        <button onClick={downloadTemplate}
+          className="mt-3 text-xs text-action-400 hover:text-action-300 transition-colors">
+          ↓ Download an empty template (column headings only)
+        </button>
 
         <div className="mt-4 text-xs text-gray-300">
           <p className="text-gray-400 mb-1">Columns</p>
