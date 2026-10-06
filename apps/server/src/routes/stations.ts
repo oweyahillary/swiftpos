@@ -142,9 +142,11 @@ router.post('/seed-defaults', requireAnyPermission('stations.manage', 'products.
   const all = (cats ?? []).map(c => c.id);
   const cooked = (cats ?? []).filter(c => (c as { is_kitchen?: boolean }).is_kitchen).map(c => c.id);
 
-  const routing: Array<{ category_id: string; station_id: string }> = [];
-  if (packing) for (const category_id of all)    routing.push({ category_id, station_id: packing.id });
-  if (kitchen) for (const category_id of cooked) routing.push({ category_id, station_id: kitchen.id });
+  // A409: business_id is NOT NULL on category_stations (migration 103) — a row without it is refused by the database.
+  const business_id = req.businessId;
+  const routing: Array<{ business_id: string; category_id: string; station_id: string }> = [];
+  if (packing) for (const category_id of all)    routing.push({ business_id, category_id, station_id: packing.id });
+  if (kitchen) for (const category_id of cooked) routing.push({ business_id, category_id, station_id: kitchen.id });
   if (routing.length) {
     const { error: rErr } = await supabase.from('category_stations').insert(routing);
     if (rErr) { sendError(res, rErr); return; }
@@ -263,7 +265,9 @@ router.put('/:id/categories', requireAnyPermission('stations.manage', 'products.
   if (valid.length > 0) {
     const { error: insErr } = await supabase
       .from('category_stations')
-      .insert(valid.map(category_id => ({ category_id, station_id: stationId })));
+      // A409: business_id is NOT NULL (migration 103). Without it every save was refused and answered "Something went
+      // wrong" — on the till and the web alike (owner, 2026-10-05).
+      .insert(valid.map(category_id => ({ business_id: req.businessId, category_id, station_id: stationId })));
     if (insErr) { sendError(res, insErr); return; }
   }
 

@@ -21,6 +21,8 @@ import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
+import { cloudFetch } from './cloudGateway';   // A410
+import { readPending as readPendingRouting, overlayPending as overlayPendingRouting, pushPendingRouting, type PushOutcome } from './stationRouting';   // A411
 // A275: reuse the SAME local close the branch-LAN central close uses, so remote
 // and on-prem closes run identical cash arithmetic. Called only at runtime (during
 // sync), so the branchClose ↔ syncEngine import cycle resolves safely.
@@ -104,7 +106,8 @@ function syncFetch(url: string, opts: any = {}): Promise<Response> {
   const timer = setTimeout(
     () => ctrl.abort(new Error(`sync fetch timed out after ${SYNC_FETCH_TIMEOUT_MS}ms`)),
     SYNC_FETCH_TIMEOUT_MS);
-  return globalThis.fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+  // A410: on a till with a branch server, through the server — the only machine on the branch that talks to the cloud.
+  return cloudFetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 // A20: last roster version this peer applied, in-memory. Skips re-wrapping an
 // unchanged roster every pull; on restart it re-applies once, which is harmless.
@@ -433,6 +436,8 @@ async function runPushStages(errors: string[]): Promise<number> {
   await stage('requeue', async () => { requeueAfterDayClash(); return requeueAfterDrawerClash(); });
   await stage('shift push', () => pushLocalRecords(errors));
   await stage('price push', () => pushBranchPriceEdits(errors));
+  // A411: station routing saved on this till while the cloud could not be reached.
+  await stage('station routing', async () => { await pushStationRoutingNow(); return 0; });
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
   await stage('reconcile', () => reconcileClosedShifts(errors));
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
@@ -462,6 +467,39 @@ export async function testConnection(): Promise<{ ok: boolean; status: number | 
     logLine('sync', `connection test FAILED in ${ms}ms: ${err?.message ?? err}`);
     return { ok: false, status: null, ms, error: err?.message ?? String(err) };
   }
+}
+
+// ── A411: station routing saved on the till first, sent to the cloud after (stationRouting.ts) ─────────────────────
+export function stationRoutingPending(): boolean {
+  try { return Object.keys(readPendingRouting(getLocalDb())).length > 0; } catch { return false; }
+}
+let _routingPushInFlight: Promise<Record<string, PushOutcome>> | null = null;
+/** Send what is waiting (single-flight: a tap and the sync timer must not send one set twice). Never throws. */
+export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
+  if (_routingPushInFlight) return _routingPushInFlight;
+  _routingPushInFlight = (async () => {
+    const db = getLocalDb();
+    if (!Object.keys(readPendingRouting(db)).length) return {};
+    if (!_accessToken || !_serverUrl || !isOnline()) {
+      const out: Record<string, PushOutcome> = {};
+      for (const id of Object.keys(readPendingRouting(db))) out[id] = { state: 'pending', message: 'Saved on this till — it goes to the cloud when the connection is back.' };
+      return out;
+    }
+    const outcomes = await pushPendingRouting(db, async (stationId, categoryIds) => {
+      const put = () => syncFetch(`${_serverUrl}/api/stations/${encodeURIComponent(stationId)}/categories`, {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify({ category_ids: categoryIds }),
+      });
+      let res = await put();
+      if (res.status === 401 && await refreshAccessToken()) res = await put();
+      const body = await res.json().catch(() => ({}));
+      return { status: res.status, body };
+    }, describeServerError);
+    for (const [id, o] of Object.entries(outcomes)) {
+      if (o.state !== 'pending') logLine('sync', `station routing ${id}: ${o.state}${o.state === 'refused' ? ` — ${o.message}` : ''}`);
+    }
+    return outcomes;
+  })().finally(() => { _routingPushInFlight = null; });
+  return _routingPushInFlight;
 }
 
 // ── 0.6.25: a logo uploaded on this till is saved to the cloud too ─────────────────────────────────────────────
@@ -542,6 +580,8 @@ export async function syncAll(): Promise<{ pulled: boolean; pushed: number; erro
 
     // 0.6.25: this till's own logo upload goes up BEFORE the pull, so the pull brings back the same logo.
     if (brandingPushPending()) { try { await pushBrandingNow(); } catch { /* stays pending */ } }
+    // A411: routing saved on this till goes up before the pull, so the pull brings it back rather than the old one.
+    if (stationRoutingPending()) { try { await pushStationRoutingNow(); } catch { /* stays pending */ } }
     pulled = await pullCatalogue();
     // If pull returns false it may be a 401 — try refreshing once
     if (!pulled && _refreshToken) {
@@ -1407,6 +1447,8 @@ async function pullCatalogue(): Promise<boolean> {
         });
         for (const catId of (st.category_ids ?? [])) linkStation.run(catId, st.id);
       }
+      // A411: routing saved on this till and not yet on the cloud stays as the till has it.
+      overlayPendingRouting(db);
     }
 
     // Combo components. Replaced wholesale rather than upserted — a component

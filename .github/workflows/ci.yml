@@ -237,6 +237,11 @@ jobs:
       - name: No revoke can sign out a till
         run: node scripts/check-till-sessions.mjs
 
+      # A409 — a row the database refuses is a 500 the user reads as "Something went wrong". Every insert into a table
+      # whose business_id is NOT NULL (scripts/schema-index.json) must say business_id.
+      - name: Inserts carry business_id
+        run: node scripts/check-insert-business-id.mjs
+
       # The Electron till and the web POS post to the same routes from two
       # separate codebases, and nothing compared their payloads. pump_id was
       # wired end-to-end on the till and never added to the web builder, so
@@ -717,6 +722,18 @@ jobs:
       - name: Desktop till signs itself back in
         working-directory: apps/desktop
         run: node --no-warnings test/till-session-recovery.test.mjs
+
+      # A410 — at a branch with a server, only the server talks to the cloud: a peer's every cloud call goes through
+      # the real branch server's /node/cloud gateway; no internet there = no connection, never round it.
+      - name: Desktop peers reach the cloud only through the branch server
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-gateway.test.mjs
+
+      # A411 — station routing is saved on the till first (prints that way at once, online or not), sent to the cloud
+      # after; a pull does not undo it while it waits. Real localDb + syncEngine on real SQLite.
+      - name: Desktop station routing saves on the till first
+        working-directory: apps/desktop
+        run: node --no-warnings test/station-routing-local.test.mjs
 
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.

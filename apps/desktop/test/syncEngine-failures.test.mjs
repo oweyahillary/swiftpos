@@ -71,7 +71,9 @@ const localDbShim = w('localDb.cjs', `
 const deviceConfigShim = w('deviceConfig.cjs', `
   module.exports = { getDeviceConfig: () => ({ device_id: 'test-device', branch_id: null }),
                      saveDeviceConfig: () => {}, getServerUrl: () => 'http://127.0.0.1:1',
-                     canSell: () => true };`);
+                     canSell: () => true,
+                     // A410: the cloud gateway asks whether this device is the branch server (it is not; no node_url).
+                     isNodeRole: (r) => r === 'node' || r === 'office' };`);
 
 const nodeClientShim = w('nodeClient.cjs', `
   module.exports = { hasNode: () => false, pushRowsToNode: async () => ({}), measureNodeDrift: async () => ({}),

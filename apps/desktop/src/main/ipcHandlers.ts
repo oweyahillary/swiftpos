@@ -36,11 +36,13 @@ import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret, clearDeviceSecret } from './tokenStore';
 import { isSessionRefusal } from './sessionRecovery';   // A407
+import { cloudFetch } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
+import { saveRoutingLocally, overlayPending, readPending as readPendingRouting, mayRoute } from './stationRouting';   // A411
 import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
@@ -118,7 +120,7 @@ export function registerIpcHandlers() {
     // D7: both credentials must be present and non-empty before we call the server.
     const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
       { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
-    const res = await fetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
+    const res = await cloudFetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -392,7 +394,7 @@ export function registerIpcHandlers() {
     let token = readToken();
     if (!token) throw new Error('Not signed in');
 
-    const call = (t: string) => fetch(`${getCloudUrl()}${path}`, {
+    const call = (t: string) => cloudFetch(`${getCloudUrl()}${path}`, {
       ...init,
       headers: {
         ...(init.headers ?? {}),
@@ -1983,7 +1985,7 @@ export function registerIpcHandlers() {
       if (!token) { lastManageFailure = 'offline_session'; throw new Error(OFFLINE_SESSION_MESSAGE); }
     }
 
-    const call = (t: string) => fetch(`${getCloudUrl()}${path}`, {
+    const call = (t: string) => cloudFetch(`${getCloudUrl()}${path}`, {
       method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -2068,6 +2070,7 @@ export function registerIpcHandlers() {
         insSt.run(st.id, st.name, st.kind, st.sort_order ?? 0, st.active ? 1 : 0, now);
         for (const cid of st.category_ids ?? []) insLk.run(cid, st.id);
       }
+      overlayPending(db);   // A411: routing saved here and not yet on the cloud stays
     })();
     return stations;
   };
@@ -2085,9 +2088,17 @@ export function registerIpcHandlers() {
       category_ids: links.filter(l => l.station_id === st.id).map(l => l.category_id) }));
   };
   handle('manage:listStations', async () => {
-    try { return await manageFetch('/api/stations', 'GET'); }
-    catch { return localStations(); }
+    // A411: while routing saved on this till waits for the cloud, this till's own copy is the truth for it.
+    if (Object.keys(readPendingRouting(getLocalDb())).length) return withPendingFlags(localStations());
+    try { return withPendingFlags(await manageFetch('/api/stations', 'GET')); }
+    catch { return withPendingFlags(localStations()); }
   });
+  /** A411: mark the stations whose routing is saved here but not yet on the cloud. */
+  function withPendingFlags(list: any[]) {
+    const pending = readPendingRouting(getLocalDb());
+    return (list ?? []).map((st: any) => pending[st.id]
+      ? { ...st, category_ids: pending[st.id].category_ids, pending_sync: true } : st);
+  }
 
   // ── Custom payment methods (A97) ──────────────────────────────────────────
   // Manage from the till too, not just the dashboard. Writes go to the server;
@@ -2120,7 +2131,10 @@ export function registerIpcHandlers() {
     return out;
   });
   handle('manage:unassignedCategories', async () => {
-    try { return await manageFetch('/api/stations/unassigned', 'GET'); }
+    try {
+      if (Object.keys(readPendingRouting(getLocalDb())).length) throw new Error('A411: answer from this till while routing waits');
+      return await manageFetch('/api/stations/unassigned', 'GET');
+    }
     catch {
       const db = getLocalDb();
       return (db.prepare(`
@@ -2153,10 +2167,27 @@ export function registerIpcHandlers() {
     await refreshStationsLocal();
     return out;
   });
+  // A411: saved on this till first (tickets print the new way at once, online or not), then sent to the cloud — now if
+  // it can be reached (through the branch server on a peer, A410), else at the next sync. See stationRouting.ts.
   handle('manage:setStationCategories', async (_e, { id, categoryIds }: { id: string; categoryIds: string[] }) => {
-    const out = await manageFetch(`/api/stations/${id}/categories`, 'PUT', { category_ids: categoryIds });
-    await refreshStationsLocal();
-    return out;
+    const db = getLocalDb();
+    const staff = db.prepare(`SELECT staff_name, role_name, permissions FROM staff_session WHERE id = 1`).get() as
+      { staff_name: string; role_name: string | null; permissions: string } | undefined;
+    if (!staff) throw new Error('Not signed in');
+    if (!mayRoute(staff.role_name, staff.permissions)) throw new Error('Your role does not allow this change.');
+    if (!db.prepare(`SELECT 1 FROM print_stations WHERE id = ?`).get(id)) throw new Error('That station is not on this till — leave this screen and open it again.');
+    const saved = saveRoutingLocally(db, id, categoryIds, staff.staff_name);
+    const outcome = (await pushStationRoutingNow())[id];
+    if (outcome?.state === 'saved') {
+      return { station_id: id, state: 'saved', category_ids: outcome.category_ids, rejected: outcome.rejected };
+    }
+    if (outcome?.state === 'refused') {
+      // The cloud said no: show its routing again rather than the till's.
+      try { await refreshStationsLocal(); } catch { /* the next pull does it */ }
+      return { station_id: id, state: 'refused', message: outcome.message, category_ids: null, rejected: [] };
+    }
+    return { station_id: id, state: 'pending', message: outcome?.message ?? 'Saved on this till — it goes to the cloud at the next sync.',
+             category_ids: saved, rejected: [] };
   });
 
   handle('manage:createCategory', async (_e, payload: any) => {
@@ -2344,7 +2375,7 @@ export function registerIpcHandlers() {
     const range = resolveRange(r?.preset ?? 'today', r?.from, r?.to);
     const q = new URLSearchParams({ date_from: range.from, date_to: range.to, limit: '500', status: 'completed' });
     if (cfg?.branch_id) q.set('branch_id', cfg.branch_id);
-    const res = await withinMs(fetch(`${getCloudUrl()}/api/orders?${q}`, {
+    const res = await withinMs(cloudFetch(`${getCloudUrl()}/api/orders?${q}`, {
       headers: { Authorization: `Bearer ${token}`, 'x-device-id': cfg?.device_id ?? '' },
     }), 8_000);
     if (!res.ok) throw new Error(`The cloud did not answer (HTTP ${res.status})`);
@@ -2380,7 +2411,7 @@ export function registerIpcHandlers() {
     const token = staffRow?.token ?? ownerRow?.token;
     if (!token) return [];
     try {
-      const res = await fetch(`${cfg.server_url}/api/expenses/categories`, {
+      const res = await cloudFetch(`${cfg.server_url}/api/expenses/categories`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return [];
@@ -2555,7 +2586,7 @@ export function registerIpcHandlers() {
 
     let res: Response;
     try {
-      res = await fetch(`${cfg.server_url}/api/orders/${orderId}/void`, {
+      res = await cloudFetch(`${cfg.server_url}/api/orders/${orderId}/void`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         // The server accepts an authorizer_id + that person's override PIN, which
@@ -2619,7 +2650,7 @@ export function registerIpcHandlers() {
 
     let res: Response;
     try {
-      res = await fetch(`${cfg.server_url}/api/orders/${orderId}/refund`, {
+      res = await cloudFetch(`${cfg.server_url}/api/orders/${orderId}/refund`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({

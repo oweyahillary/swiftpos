@@ -59,9 +59,11 @@ export interface StockEffectsParams {
  * written without them rather than lost.
  */
 async function insertIngredientSale(orderId: string, row: Record<string, unknown>): Promise<void> {
+  // business_id: every caller's row carries business_id (the three sale paths below)
   const { error } = await supabase.from('ingredient_stock_movements')
     .insert({ ...row, reference_type: 'order', reference_id: orderId });
   if (error && /reference_(type|id)/.test(error.message ?? '')) {
+    // business_id: the same row, without the reference columns
     await supabase.from('ingredient_stock_movements').insert(row);
   }
 }

@@ -29,6 +29,11 @@ export const TILL_WRITES: RegExp[] = [
   /^\/api\/shifts\/confirmer$/,           // A365: whose PIN this is (read-only; the till confirms locally)
   /^\/api\/day-close\/ack$/,              // the till acknowledges a day close the web asked for
   /^\/api\/business\/branding$/,          // 0.6.25 (owner's decision): a logo uploaded on the till is saved to the cloud
+  // A411 (owner, 2026-10-05: "cant it save local then push later"): station routing saved on the till while it was
+  // offline is sent later with the till's own sign-in — the person who changed it may have signed out. ONLY a station's
+  // category set (the till checked the person's stations.manage / products.manage before saving); creating, renaming
+  // or deleting a station stays a PIN sign-in's.
+  /^\/api\/stations\/[^/]+\/categories$/,
   /^\/api\/auth\//,                       // enrol, verify-pin, set-pin, refresh, logout, device-token
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];
