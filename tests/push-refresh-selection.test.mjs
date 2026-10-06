@@ -2,11 +2,11 @@
  * push-refresh-selection.test.mjs — A168.
  *
  * On an order-push 401, the till must refresh the token pushAuthHeaders() is
- * actually sending — the staff token on an online shift, the owner token on an
+ * actually sending — the staff token on an online shift, the till's own token on an
  * offline shift (no staff token). The server sets `cashier_id = req.userId` (the
  * token subject, apps/server/src/routes/orders.ts), so refreshing — and thus
  * re-pushing under — the WRONG token would reattribute the sale: an online staff
- * order re-pushed on the owner token would be credited to the owner.
+ * order re-pushed on the till's own token would be credited to whoever the till names, not the person's own token.
  *
  * Before A168 the 401 path called refreshStaffToken() unconditionally, so an
  * offline order's owner-token 401 found nothing to refresh and the order sat
@@ -24,7 +24,7 @@ const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok  ${name}`); }
 ok('staff token present → refresh staff', selectPushRefresh('staff.jwt.here') === 'staff');
 
 // Offline shift: signInLocal set the staff token to '' (configureStaffSession('',''))
-// so the push goes under the owner token → refresh the OWNER token.
+// so the push goes under the till's own token → refresh the till's own token.
 ok('empty staff token → refresh owner', selectPushRefresh('') === 'owner');
 
 // The header builder uses the same falsy check (`_staffToken || _accessToken`);

@@ -83,8 +83,10 @@ ok('no secret: the cloud is still told (it records the till, ZapTill is emailed)
 console.log('\nThe wiring (source)\n');
 const src = (p) => fs.readFileSync(path.join(here, '..', 'src', p), 'utf8');
 const ipc = src('main/ipcHandlers.ts');
-ok('enrolment keeps the secret; signing the till out removes it', /if \(typeof data\.deviceSecret === 'string' && data\.deviceSecret\) writeDeviceSecret\(data\.deviceSecret\);/.test(ipc)
-  && /clearPinCache\(\);\s*clearDeviceSecret\(\);/.test(ipc));
+// A415: there is no "sign the till out" any more — a technician rejoins it instead, keeping everything on it.
+ok('enrolment (and a technician\'s rejoin) keeps the secret; nothing on the till signs it out of the business',
+  /if \(typeof data\.deviceSecret === 'string' && data\.deviceSecret\) writeDeviceSecret\(data\.deviceSecret\);/.test(ipc)
+  && !/handle\('auth:logout'/.test(ipc) && !/clearDeviceSecret\(\)/.test(ipc));
 ok('a refused session: the PIN is checked on the till and the cashier sells (a wrong PIN stays wrong)',
   /if \(res\.status === 401 && isSessionRefusal\(data\)\) \{[\s\S]{0,200}return fallbackToLocalAuthority\(\);\s*\}\s*if \(!res\.ok\) throw new Error\(data\.error \?\? 'Invalid PIN'\);/.test(ipc));
 

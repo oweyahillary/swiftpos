@@ -90,6 +90,9 @@ export default function IngredientsPage() {
   const [adjustTarget, setAdjustTarget] = useState<Ingredient | null>(null);
   const [adjustType, setAdjustType]     = useState<'add' | 'remove' | 'set'>('add');
   const [adjustQty, setAdjustQty]       = useState('');
+  // A413: stock added with its expiry date / batch number becomes a batch on Stock › Expiry.
+  const [adjustExpiry, setAdjustExpiry] = useState('');
+  const [adjustBatch, setAdjustBatch]   = useState('');
   const [adjustNote, setAdjustNote]     = useState('');
   const [adjustReorder, setAdjustReorder] = useState('');
   const [adjusting, setAdjusting]       = useState(false);
@@ -170,7 +173,7 @@ export default function IngredientsPage() {
 
   // ── Stock Adjustment ───────────────────────────────────────────────────────
   const openAdjust = (i: Ingredient) => {
-    setAdjustTarget(i); setAdjustType('add'); setAdjustQty(''); setAdjustNote('');
+    setAdjustTarget(i); setAdjustType('add'); setAdjustQty(''); setAdjustNote(''); setAdjustExpiry(''); setAdjustBatch('');
     setAdjustReorder(String(i.reorder_level ?? 0));
   };
 
@@ -192,10 +195,12 @@ export default function IngredientsPage() {
     setAdjusting(true);
     try {
       if (hasQty) {
-        await api.post(`/api/stock/ingredients/${adjustTarget.id}/adjust`, {
+        const out = await api.post<{ batch_warning?: string }>(`/api/stock/ingredients/${adjustTarget.id}/adjust`, {
           branch_id: activeBranchId,
           type: adjustType, quantity: qty, notes: adjustNote.trim() || undefined,
+          ...(adjustType === 'add' ? { expiry_date: adjustExpiry || undefined, batch_no: adjustBatch.trim() || undefined } : {}),
         });
+        if (out?.batch_warning) showToast(out.batch_warning, 'warning');
       }
       if (reorderChanged) {
         await api.patch(`/api/stock/ingredients/${adjustTarget.id}/reorder`, {
@@ -499,6 +504,20 @@ export default function IngredientsPage() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
                 />
               </div>
+              {adjustType === 'add' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1.5">Expiry date (optional)</label>
+                    <input type="date" value={adjustExpiry} onChange={e => setAdjustExpiry(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1.5">Batch no. (optional)</label>
+                    <input value={adjustBatch} onChange={e => setAdjustBatch(e.target.value)} maxLength={60}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-gray-400 text-xs mb-1.5">Reason (optional)</label>
                 <input type="text" placeholder="e.g. Spoilage, Stock count correction…"

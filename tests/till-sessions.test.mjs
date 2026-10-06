@@ -57,16 +57,18 @@ await ok('a till that could not sign back in is CRITICAL (emailed) — a blocked
 await ok('the cloud: sessions say what they are; a renewal hands a till its device secret; the device grant records a lost till', () => {
   const a = read('apps/server/src/routes/auth.ts');
   assert.match(a, /\.insert\(\{ \.\.\.row, session_kind: sessionKind\(payload as \{ surface\?: string; pinSignIn\?: boolean \}\) \}\)/);
-  assert.match(a, /if \(sessionKind\(cleanPayload\) === 'device' && devId && dbRow\.device_hint === devId\) \{/);
+  // A415: the till renewing is identified by its own session (tillDevice), not a header.
+  assert.match(a, /if \(tillDevice\) \{\s*try \{\s*if \(!tillDevice\.device_secret_hash\) \{/);
   assert.match(a, /res\.json\(\{ accessToken, refreshToken: newRefreshToken, token: accessToken, \.\.\.\(deviceSecret \? \{ deviceSecret \} : \{\}\) \}\);/);
   assert.match(a, /if \(!secret\) \{\s*await markTillSessionLost\(businessId, deviceId, 'Its sign-in was refused and it holds no device secret'\);/);
-  assert.match(a, /if \(dev && isDeviceGrantable\(\(dev as any\)\.status\)\) await markTillSessionLost\(/);
+  assert.match(a, /if \(dev && !blocked\) await markTillSessionLost\(/);
   assert.match(a, /await clearTillSessionLost\(businessId, deviceId\);   \/\/ A407: back/);
-  assert.match(a, /await clearTillSessionLost\(businessId, deviceId\);   \/\/ A407: enrolled again/);
+  assert.match(a, /await clearTillSessionLost\(businessId, deviceId\);   \/\/ A407: joined again/);
 });
 await ok('the owner\'s own PIN on a till no longer signs the till out; "log out everywhere" and password changes skip tills', () => {
   const a = read('apps/server/src/routes/auth.ts');
-  assert.match(a, /if \(devKeyV && matchedUser\.id !== req\.userId\) \{/);
+  // A415: the till's own session names no person, so a PIN sign-in's revoke (by that person's id) never reaches it.
+  assert.match(a, /\/\/ till-safe: by this person's id only — a till's own session has no person \(A415\)\s*if \(devKeyV\) \{\s*await supabase\s*\.from\('refresh_tokens'\)\s*\.update\(\{ revoked_at: new Date\(\)\.toISOString\(\) \}\)\s*\.eq\('user_id', matchedUser\.id\)/);
   assert.match(a, /if \(payload\?\.userId\) await revokeBrowserSessions\(\[payload\.userId\]/);
   assert.match(read('apps/server/src/lib/passwordReset.ts'), /await revokeBrowserSessions\(userIds, bizIds, keepSession\);/);
 });

@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { posApi } from '../lib/posApi';
 
-// EnrolPage — A158. A terminal is provisioned ONLY by a one-time enrolment code,
-// never the owner's email/password (which would expose reusable dashboard
-// credentials on a shared till). This is the screen a CONFIGURED-but-session-less
-// terminal shows: first-run install is handled by InstallPage; this is the
-// re-provision path (session lost, wiped, or a fresh amber build). Same visual
-// identity as the retired LoginPage. The owner mints a single-use code in the
-// portal; there is no password to type or store here.
+// EnrolPage — A158/A415. A till joins its business ONLY with a one-time enrolment code
+// ZapTill issues in the admin portal — never anyone's email/password — and the
+// session it gets is the till's own (its device, the business, the branch; no
+// person). This is the screen a CONFIGURED-but-session-less terminal shows:
+// first-run install is handled by InstallPage. A till that already has its data
+// is rejoined from the technician console instead (Rejoin this till), which keeps it.
 
 interface Props {
   onComplete: () => void;
@@ -65,8 +64,8 @@ export default function EnrolPage({ onComplete }: Props) {
           <form onSubmit={handleEnrol} className="space-y-5">
 
             <p className="text-[#64748b] text-xs leading-relaxed">
-              Enter the business ID and the one-time enrolment code from the owner portal.
-              No owner password is used on a terminal.
+              Enter the business ID and the one-time enrolment code from ZapTill.
+              The till signs in as itself — no one's password is used here.
             </p>
 
             <div>

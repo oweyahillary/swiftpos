@@ -25,7 +25,9 @@ export function mayConfirm(row: ApproverRow, ownerId: string | null | undefined)
 }
 
 /** The same rule for the signed-in caller (the token's flags), so a manager on the dashboard confirms without a PIN. */
-export function callerMayConfirm(req: { isOwner?: boolean; permissionKeys?: string[] }): boolean {
+export function callerMayConfirm(req: { isOwner?: boolean; permissionKeys?: string[]; isTill?: boolean }): boolean {
+  // A415: the till's own session is not a person — a manager confirms or approves with their own PIN.
+  if (req.isTill) return false;
   const k = req.permissionKeys ?? [];
   return !!req.isOwner || k.includes('*') || k.includes('orders.void') || k.includes('shifts.manage') || k.includes('settings.manage');
 }

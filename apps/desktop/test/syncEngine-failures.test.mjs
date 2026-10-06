@@ -242,15 +242,15 @@ check('a revoked refresh token still returns false', () => {
 
 check('the D13 re-login case is now recorded, not silent', () => {
   const s = engine.getSyncStatus();
-  assert.match(s.pullError, /owner token refresh failed/);
+  assert.match(s.pullError, /till token refresh failed/);
   assert.match(s.pullError, /HTTP 401/);
-  assert.match(log(), /\[auth\] owner token refresh failed/);
+  assert.match(log(), /\[auth\] till token refresh failed/);
 });
 
 globalThis.fetch = async () => { throw new Error('socket hang up'); };
 await engine.refreshAccessToken();
 check('a thrown refresh is recorded rather than swallowed', () => {
-  assert.match(engine.getSyncStatus().pullError, /owner token refresh error: socket hang up/);
+  assert.match(engine.getSyncStatus().pullError, /till token refresh error: socket hang up/);
 });
 
 console.log('\nsyncEngine - refresh single-flight (D13)\n');

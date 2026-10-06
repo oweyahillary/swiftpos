@@ -5,7 +5,7 @@
  * ── THE BUG THIS EXISTS FOR (register A47) ──────────────────────────────────
  * `manageFetch` in apps/desktop/src/main/ipcHandlers.ts attaches a bearer token
  * to 35 manager-screen handlers — Menu, Staff, Prices, Combos, Receipt,
- * Printers — and had NO 401 branch at all. `ownerFetch`, forty lines earlier in
+ * Printers — and had NO 401 branch at all. `tillFetch`, forty lines earlier in
  * the same file, has had one since it was written.
  *
  * The staff ACCESS token lives 15 minutes; its refresh token lives 30 days. So
@@ -78,7 +78,7 @@ const EXEMPT = new Map([
    + 'login. Adding a refresh loop here would be machinery for a case that cannot '
    + 'arise (rule 12). VERIFY BY: grep -rn "refreshTechConfig" apps/desktop/src — '
    + 'if a second call site ever appears, or one that passes a stored token, this '
-   + 'exemption is void and the function needs the ownerFetch treatment.'],
+   + 'exemption is void and the function needs the tillFetch treatment.'],
 ]);
 
 function walk(dir) {
@@ -103,7 +103,7 @@ function stripComments(src) {
 /**
  * Every named function in the file, with its brace-balanced body.
  *
- * The parameter list is walked FIRST. `ownerFetch(path: string, init:
+ * The parameter list is walked FIRST. `tillFetch(path: string, init:
  * RequestInit = {})` contains a `{}` default, and taking the next `{` after the
  * name latches onto that empty object — the balancer closes one character later
  * and returns "{}" as the whole body. The first version of the companion test
@@ -175,7 +175,7 @@ if (offenders.length) {
     + '30-day refresh token sits unused. That is register A47, and it reached a\n'
     + 'client.\n\n'
     + 'Fix: on 401 refresh, re-read the token from the store, retry ONCE. Copy\n'
-    + 'ownerFetch in apps/desktop/src/main/ipcHandlers.ts. If the function is a\n'
+    + 'tillFetch in apps/desktop/src/main/ipcHandlers.ts. If the function is a\n'
     + 'refresh call itself, add it to EXEMPT in this file WITH a reason.\n');
   process.exit(1);
 }

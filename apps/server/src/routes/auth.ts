@@ -24,12 +24,12 @@
  *
  * Routes:
  *   POST /api/auth/login           — email + password → token pair (web dashboard)
- *   POST /api/auth/desktop-login   — RETIRED (A158): owner login on a till removed; returns 410
- *   POST /api/auth/enrol/redeem    — business_id + one-time code → session, surface='desktop' (the desktop entry)
+ *   POST /api/auth/enrol/redeem    — business_id + one-time code → the till's own session, surface='desktop' (A415: no person in it)
+ *   POST /api/auth/device-token    — a till signs itself back in with its device secret
  *   POST /api/auth/refresh         — refresh token → new token pair (rotation)
  *   POST /api/auth/logout          — revoke refresh token (server-side)
  *   POST /api/auth/pos-login       — email + PIN → branch-scoped token pair
- *   POST /api/auth/verify-pin      — owner session required, branch licence check
+ *   POST /api/auth/verify-pin      — a person's PIN on a till (the till's session) or the web POS; branch licence check
  *   POST /api/auth/set-pin         — bcrypt PIN update
  *   PATCH /api/auth/me             — clears must_change_password
  */
@@ -38,7 +38,7 @@ import { LoginSchema } from '../lib/schemas';
 
 import { Router }   from 'express';
 import { registerDesktopTerminal, findPriorTerminalByMac } from '../lib/deviceRegistry';
-import { generateDeviceSecret, hashDeviceSecret, verifyDeviceSecret, isDeviceGrantable, buildDeviceTokenPayload } from '../lib/deviceGrant';
+import { generateDeviceSecret, hashDeviceSecret, verifyDeviceSecret, buildDeviceTokenPayload, isTillPayload, isOwnerEraTillPayload, tillBlockReason, tillBranch } from '../lib/deviceGrant';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
 import { supabase, authClient } from '../lib/supabase';
@@ -78,7 +78,11 @@ function newSessionId(): string {
 }
 
 interface TokenPayload {
-  userId:             string;
+  /** The person. null for a till's own session (A415) — a till is not a person. */
+  userId:             string | null;
+  /** A415: the till's own session — which till. */
+  deviceId?:          string;
+  till?:              true;
   businessId:         string;
   branchId:           string | null;
   roleId?:            string | null;
@@ -302,7 +306,7 @@ async function revokeRefreshToken(refreshToken: string): Promise<void> {
  *
  * WHY THIS EXISTS
  * ---------------
- * Two sites (/login and /desktop-login) did `.eq('email', data.user.email)` —
+ * Two sites (/login and the retired owner login on a till) did `.eq('email', data.user.email)` —
  * a CASE-SENSITIVE match against a column that stores whatever was typed at
  * signup, while Supabase Auth lowercases. A miss is not harmless: both callers
  * fall back to `data.user.id`, which is an **auth.users** id, and mint a token
@@ -744,50 +748,41 @@ router.post('/login', validateLoose(LoginSchema), async (req, res) => {
   });
 });
 
-// ── POST /api/auth/desktop-login ──────────────────────────────────────────────
-
-/*
- * POST /api/auth/desktop-login — RETIRED (A158, 2026-08-24).
- *
- * Owner email/password login on a till exposed the owner's reusable dashboard
- * credentials on shared hardware. A terminal is now provisioned ONLY by a
- * one-time enrolment code (POST /api/auth/enrol/redeem), which mints the same
- * owner-scoped desktop session without a password ever touching the till.
- * Tombstoned rather than deleted so an un-updated old build gets a clear 410,
- * not a confusing 404. Web dashboard login (POST /api/auth/login) is unaffected.
- *
- * ROLLOUT: update every client till to the enrolment-only build BEFORE this
- * reaches their server, or old tills lose their only sign-in path.
- */
-router.post('/desktop-login', (_req, res) => {
-  res.status(410).json({
-    error: 'Owner login on a terminal has been retired. Activate this till with a one-time enrolment code from the owner portal.',
-    code:  'DESKTOP_LOGIN_RETIRED',
-  });
-});
-
 // ── POST /api/auth/enrol/redeem ───────────────────────────────────────────────
-// Device enrolment (register D4, closes D1). A till provisions itself with a
-// single-use CODE the owner issued in the portal (POST /api/enrol/code), not by
-// an owner typing their password on the terminal. The business is identified by
-// its id — so a two-business owner is no longer the dead end D1 describes.
+// A till joins the business with a single-use CODE ZapTill issues in the admin portal (POST
+// /api/admin/clients/:id/branches/:branchId/enrol-code) — never a password. The business is identified by its id.
 //
-// No requireAuth: the caller has no session yet; the code IS the credential.
-// This route sits on /api/auth so it inherits authLimiter — a code must be
-// brute-force-protected. It mints exactly the owner-scoped desktop token that
-// /desktop-login mints: the code replaces the password check, not the token's
-// identity (orders.cashier_id references public.users(id), and the till's
-// catalogue-pull token has always been owner-scoped).
+// A415 (owner, 2026-10-06: "never the owners session at all"): the session minted here is the TILL's own — its token
+// names the till (device_id), the business and the branch, and no person. A technician joins the same till again with a
+// fresh code (`rejoin: true`, from the till's technician console) without clearing its data: the till keeps its device
+// id, and this route approves it again, clears a retirement, sets the code's branch and issues a new device secret.
+//
+// No requireAuth: the caller has no session yet; the code IS the credential. This route sits on /api/auth so it
+// inherits authLimiter — a code must be brute-force-protected.
 router.post('/enrol/redeem', async (req, res) => {
   const businessId = String(req.body?.business_id ?? '').trim();
   const rawCode    = String(req.body?.code ?? '').trim().toUpperCase();
-  const deviceId   = String(req.body?.device_id ?? '').trim();
+  const deviceId   = String(req.body?.device_id ?? '').trim().slice(0, 64);
+  const rejoin     = req.body?.rejoin === true;
   if (!businessId || !rawCode || !deviceId) {
     res.status(400).json({ error: 'business_id, code and device_id are required' });
     return;
   }
   const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
   const nowIso   = new Date().toISOString();
+
+  // A415: a rejoin keeps the till's data, which is its own branch's — a code for another branch is refused BEFORE it
+  // is spent, so the technician can still use it on the right till.
+  const ownBranch = String(req.body?.branch_id ?? '').trim();
+  if (rejoin && ownBranch) {
+    const { data: pending } = await supabase.from('device_enrolment_codes').select('branch_id')
+      .eq('code_hash', codeHash).eq('business_id', businessId).eq('status', 'active').gt('expires_at', nowIso).maybeSingle();
+    const codeBranch = (pending as { branch_id?: string | null } | null)?.branch_id;
+    if (codeBranch && codeBranch !== ownBranch) {
+      res.status(409).json({ error: 'That code is for a different branch. Rejoin needs a code for this till\'s own branch.', code: 'REJOIN_OTHER_BRANCH' });
+      return;
+    }
+  }
 
   // THE BURN — one atomic UPDATE ... WHERE ... RETURNING (proven in
   // test-migration-81.mjs). Redeemable iff active AND unexpired AND this
@@ -796,12 +791,12 @@ router.post('/enrol/redeem', async (req, res) => {
   // be spent against another tenant.
   const { data: burned, error: burnErr } = await supabase
     .from('device_enrolment_codes')
-    .update({ status: 'redeemed', redeemed_at: nowIso, redeemed_device_id: deviceId.slice(0, 64) })
+    .update({ status: 'redeemed', redeemed_at: nowIso, redeemed_device_id: deviceId })
     .eq('code_hash', codeHash)
     .eq('business_id', businessId)
     .eq('status', 'active')
     .gt('expires_at', nowIso)
-    .select('id, business_id, branch_id, created_by')
+    .select('id, business_id, branch_id')
     .maybeSingle();
 
   if (burnErr) { sendError(res, burnErr); return; }
@@ -812,11 +807,7 @@ router.post('/enrol/redeem', async (req, res) => {
     return;
   }
 
-  const ownerId = (burned as any).created_by as string;   // public.users id — the token principal
-
-  // A suspended business must not bring a new till online, same as /desktop-login.
-  // Also the fields the till needs to provision its session row (name, currency,
-  // type) — so the desktop can store enrolment exactly as it stores a login.
+  // A suspended business must not bring a till online. Also the fields the till needs for its session row.
   const { data: biz } = await supabase
     .from('businesses').select('id, name, currency, type, status').eq('id', businessId).maybeSingle();
   if (!biz) { res.status(500).json({ error: 'Business not found for a valid code', code: 'ENROL_STATE' }); return; }
@@ -825,9 +816,8 @@ router.post('/enrol/redeem', async (req, res) => {
     return;
   }
 
-  // Record the terminal (D14). Returns null rather than throwing — enrolment must
-  // not fail over a telemetry row.
-  await registerDesktopTerminal(businessId, ownerId, {
+  // Record the terminal (D14) — the till itself, no person on the row.
+  await registerDesktopTerminal(businessId, {
     deviceId,
     appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
     terminalCode: req.body?.terminal_code ?? null,
@@ -836,39 +826,38 @@ router.post('/enrol/redeem', async (req, res) => {
     role:         req.body?.device_role ?? req.headers['x-device-role'] ?? null,
     macAddress:   (req.headers['x-device-mac'] ?? req.body?.mac_address ?? null) as string | null,   // A182
   });
+  const { data: dev, error: devErr } = await supabase
+    .from('user_devices').select('id, branch_id').eq('business_id', businessId).eq('device_id', deviceId).maybeSingle();
+  if (devErr || !dev) {
+    res.status(500).json({ error: 'This till could not be recorded on the business — try again with a new code.', code: 'ENROL_STATE' });
+    return;
+  }
 
-  const pv = await getPermissionsVersion(ownerId);
-  const sessionId = newSessionId();
-  const payload: TokenPayload = {
-    userId:             ownerId,
-    businessId,
-    branchId:           null,          // unbound-till fallback, like /desktop-login
-    isOwner:            true,
-    permissionKeys:     ['*'],
-    permissionsVersion: pv,
-    sessionId,
-    surface:            'desktop',
-  };
+  // The branch: the code's (admin codes are always for one branch), else the one the till is bound to, else the one it
+  // reports — checked to be this business's.
+  let reported: string | null = null;
+  const reportedRaw = String(req.body?.branch_id ?? '').trim();
+  if (reportedRaw && !(burned as any).branch_id && !(dev as any).branch_id) {
+    const { data: br } = await supabase.from('branches').select('id').eq('id', reportedRaw).eq('business_id', businessId).maybeSingle();
+    reported = (br as { id?: string } | null)?.id ?? null;
+  }
+  const branchId = tillBranch((burned as any).branch_id, (dev as any).branch_id, reported);
+
+  // A fresh code from ZapTill joins the till (again): approved, not retired, its branch, a new device secret — the
+  // secret is what the till renews with when its session is refused (/device-token).
+  const deviceSecret = generateDeviceSecret();
+  const { error: joinErr } = await supabase.from('user_devices').update({
+    status: 'approved', retired_at: null, reviewed_at: nowIso,
+    device_secret_hash: hashDeviceSecret(deviceSecret), device_secret_set_at: nowIso,
+    ...(branchId && branchId !== (dev as any).branch_id ? { branch_id: branchId, bound_at: nowIso } : {}),
+  }).eq('id', (dev as any).id);
+  if (joinErr) { sendError(res, joinErr); return; }
+
+  const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId() });
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
-  await clearTillSessionLost(businessId, deviceId);   // A407: enrolled again — the alert clears
-
-  // A164 (Phase 1): mint a per-device grant secret so this till can later recover
-  // its own session without an owner re-login. Best-effort and additive — the
-  // enrolment must not fail over it, and a device that doesn't get one simply
-  // keeps using the refresh/enrol paths. Store only the hash; hand the raw secret
-  // back once, here. (Nothing consumes it yet — the desktop stores + uses it in a
-  // later, hardware-verified slice.)
-  let deviceSecret: string | null = null;
-  try {
-    const raw = generateDeviceSecret();
-    const { error: secErr } = await supabase
-      .from('user_devices')
-      .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: nowIso })
-      .eq('business_id', businessId)
-      .eq('device_id', deviceId);
-    if (!secErr) deviceSecret = raw;
-  } catch { /* additive; enrolment succeeds without a grant secret */ }
+  await clearTillSessionLost(businessId, deviceId);   // A407: joined again — the alert clears
+  console.log(`[enrol] till ${deviceId} ${rejoin ? 'rejoined' : 'joined'} business ${businessId}${branchId ? ` (branch ${branchId})` : ''}`);
 
   // A182: if this machine's MAC was seen before at this business (a reinstall),
   // hand back the previous terminal code/name so the till can restore its identity
@@ -876,7 +865,7 @@ router.post('/enrol/redeem', async (req, res) => {
   let restore: { terminal_code: string | null; device_label: string | null } | null = null;
   try {
     const mac = String(req.headers['x-device-mac'] ?? req.body?.mac_address ?? '');
-    const prior = mac ? await findPriorTerminalByMac(businessId, mac, deviceId) : null;
+    const prior = mac && !rejoin ? await findPriorTerminalByMac(businessId, mac, deviceId) : null;
     if (prior) restore = { terminal_code: prior.terminal_code, device_label: prior.device_label };
   } catch { /* additive — enrolment must not fail over the hint */ }
 
@@ -884,29 +873,18 @@ router.post('/enrol/redeem', async (req, res) => {
     accessToken,
     refreshToken,
     token: accessToken,
-    user:     { id: ownerId },
+    till:     { device_id: deviceId, branch_id: branchId },
     business: biz,                       // id, name, currency, type, status
     businessId,
-    branchId: (burned as any).branch_id ?? null,
-    deviceSecret,                        // A164 — store this on the device; null if not issued
+    branchId,
+    deviceSecret,                        // A164 — the till keeps this to sign itself back in
     restore,                             // A182 — { terminal_code, device_label } to reuse, or null
   });
 });
 
-// A164 — SCOPE-node-authority Phase 1: cloud device-grant.
-//
-// A till whose refresh has lapsed presents its device_id + per-device secret and
-// gets a fresh session, instead of dropping to an owner re-login. The token is
-// minted isOwner:false (device-scoped) ON PURPOSE — that is the mode the A159
-// write-guard actually bounds (an owner token bypasses it), so this is a security
-// reduction over the enrolment owner-token, not just a convenience. branchId is
-// bound to the device's registered branch (an isOwner:false token is branch-
-// locked by rbac).
-//
-// INERT for now: the desktop does not call this yet. The cutover — the till
-// storing its secret and preferring this over re-login — ships in a later slice,
-// AFTER TERMINAL_WRITE_ENFORCE is on (so the reduced token is actually bounded)
-// and is verified on real hardware (the till must still sell/read as a non-owner).
+// ── POST /api/auth/device-token ───────────────────────────────────────────────
+// A164/A407: a till whose session was refused (revoked, or lapsed after a long time offline) signs itself back in with
+// its device_id + per-device secret. A415: the session is the till's own (buildDeviceTokenPayload) — no person.
 router.post('/device-token', async (req, res) => {
   const businessId = String(req.body?.business_id ?? '').trim();
   const deviceId   = String(req.body?.device_id ?? '').trim();
@@ -919,23 +897,24 @@ router.post('/device-token', async (req, res) => {
   // sign back in — record it so ZapTill is emailed (watchdog, critical), and say so.
   if (!secret) {
     await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and it holds no device secret');
-    res.status(401).json({ error: 'This till needs a new enrolment code.', code: 'DEVICE_NO_SECRET' });
+    res.status(401).json({ error: 'This till needs a technician to rejoin it to the business.', code: 'DEVICE_NO_SECRET' });
     return;
   }
 
   const { data: dev, error: devErr } = await supabase
     .from('user_devices')
-    .select('id, user_id, business_id, branch_id, status, device_secret_hash')
+    .select('id, device_id, business_id, branch_id, status, retired_at, device_secret_hash')
     .eq('business_id', businessId)
     .eq('device_id', deviceId)
     .maybeSingle();
   if (devErr) { sendError(res, devErr); return; }
 
   // Uniform failure — never reveal which check failed (unknown device, wrong
-  // secret, or a revoked/pending status all look identical to a caller).
-  if (!dev || !isDeviceGrantable((dev as any).status) || !verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
+  // secret, or a revoked/retired/pending till all look identical to a caller).
+  const blocked = tillBlockReason(dev as { status?: string; retired_at?: string } | null);
+  if (blocked || !verifyDeviceSecret(secret, (dev as any).device_secret_hash)) {
     // A407: a till ZapTill blocked or retired is not "lost" — no alert for a deliberate block.
-    if (dev && isDeviceGrantable((dev as any).status)) await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and its device secret was not accepted');
+    if (dev && !blocked) await markTillSessionLost(businessId, deviceId, 'Its sign-in was refused and its device secret was not accepted');
     res.status(401).json({ error: 'Device grant refused', code: 'DEVICE_GRANT_INVALID' });
     return;
   }
@@ -950,16 +929,8 @@ router.post('/device-token', async (req, res) => {
     return;
   }
 
-  const ownerId = (dev as any).user_id as string;   // the principal the till acts as, exactly as enrolment
-  const pv = await getPermissionsVersion(ownerId);
-  const sessionId = newSessionId();
-  const payload: TokenPayload = buildDeviceTokenPayload({
-    userId:             ownerId,
-    businessId,
-    branchId:           (dev as any).branch_id ?? null,
-    permissionsVersion: pv,
-    sessionId,
-  });
+  const branchId = (dev as any).branch_id ?? null;
+  const payload: TokenPayload = buildDeviceTokenPayload({ deviceId, businessId, branchId, sessionId: newSessionId() });
   const { accessToken, refreshToken } = issueTokenPair(payload);
   await storeRefreshToken(refreshToken, payload, req.ip ?? undefined, deviceId);
 
@@ -968,7 +939,7 @@ router.post('/device-token', async (req, res) => {
     refreshToken,
     token: accessToken,
     businessId,
-    branchId: (dev as any).branch_id ?? null,
+    branchId,
     business: biz,
   });
 });
@@ -1001,6 +972,50 @@ router.post('/refresh', async (req, res) => {
     return;
   }
 
+  const { tokenType, iat, exp, jti, ...cleanPayload } = payload;
+
+  // A415: a till's session renews as the till's own — and a till session from before A415 (the owner's identity on the
+  // till) is replaced by one here. Worked out BEFORE the consumed token is spent, so a till that may not renew keeps
+  // nothing half-done.
+  const tillSession = isTillPayload(cleanPayload) || isOwnerEraTillPayload(cleanPayload);
+  let newPayload: TokenPayload;
+  let tillDevice: { device_id: string; device_secret_hash: string | null } | null = null;
+  if (tillSession) {
+    const header = String(req.header('x-device-id') ?? '').split(',')[0].trim();
+    // Which till: the token's own id; a pre-A415 session is matched by the device it was issued to (or the id the till
+    // sends, for one issued before the device id was kept).
+    const candidates = [...new Set([isTillPayload(cleanPayload) ? String(cleanPayload.deviceId) : '', dbRow.device_hint ?? '', header]
+      .map((x) => String(x).trim()).filter((x) => x && x.length <= 64))];
+    const { data: rows, error: devErr } = candidates.length
+      ? await supabase.from('user_devices').select('device_id, branch_id, status, retired_at, device_secret_hash')
+          .eq('business_id', cleanPayload.businessId).in('device_id', candidates)
+      : { data: [], error: null };
+    if (devErr) { sendError(res, devErr); return; }
+    const row = candidates.map((c) => (rows ?? []).find((r: any) => r.device_id === c)).find(Boolean) as any;
+    if (!row) {
+      res.status(401).json({ error: 'This till is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_UNKNOWN' });
+      return;
+    }
+    if (tillBlockReason(row)) {
+      res.status(401).json({ error: 'This till is no longer joined to the business. A technician can rejoin it.', code: 'DEVICE_BLOCKED' });
+      return;
+    }
+    tillDevice = { device_id: row.device_id, device_secret_hash: row.device_secret_hash ?? null };
+    newPayload = buildDeviceTokenPayload({
+      deviceId: row.device_id, businessId: cleanPayload.businessId,
+      branchId: tillBranch(null, row.branch_id, cleanPayload.branchId), sessionId: cleanPayload.sessionId,
+    });
+    if (!isTillPayload(cleanPayload)) console.log(`[refresh] till ${row.device_id}: owner-era session replaced by the till's own`);
+  } else {
+    // A person: re-fetch permissions — catches role changes since last login.
+    if (cleanPayload.roleId && !cleanPayload.isOwner) {
+      cleanPayload.permissionKeys = await buildPermissionKeys(cleanPayload.roleId, cleanPayload.userId);
+    }
+    // Re-fetch permissions_version — embed fresh value. Keep the existing sessionId so device-level logout still works.
+    cleanPayload.permissionsVersion = await getPermissionsVersion(cleanPayload.userId);
+    newPayload = { ...cleanPayload };
+  }
+
   if (graceReissue) {
     // Lost rotation response (A88 / D13): the consumed token is already revoked
     // and the successor it points to was never received by the client. Revoke
@@ -1022,32 +1037,17 @@ router.post('/refresh', async (req, res) => {
       .eq('id', dbRow.id);
   }
 
-  const { tokenType, iat, exp, jti, ...cleanPayload } = payload;
-
-  // Re-fetch permissions — catches role changes since last login
-  if (cleanPayload.roleId && !cleanPayload.isOwner) {
-    cleanPayload.permissionKeys = await buildPermissionKeys(
-      cleanPayload.roleId,
-      cleanPayload.userId,
-    );
-  }
-
-  // Re-fetch permissions_version — embed fresh value
-  cleanPayload.permissionsVersion = await getPermissionsVersion(cleanPayload.userId);
-
-  // Keep the existing sessionId so device-level logout still works
-  const newPayload: TokenPayload = { ...cleanPayload };
   const { accessToken, refreshToken: newRefreshToken } = issueTokenPair(newPayload);
 
   const newId = await storeRefreshToken(newRefreshToken, newPayload,
     req.ip ?? undefined,
-    // Carry the ORIGINAL device key forward rather than re-deriving it.
+    // Carry the ORIGINAL device key forward rather than re-deriving it (a till: its own id).
     //
     // A refresh does not carry a request body, so deviceKey() would fall back to
     // the User-Agent and the row would silently revert to the shared value on the
     // first rotation — undoing the fix an hour after sign-in, which is worse than
     // not having made it, because the failure would look intermittent.
-    dbRow.device_hint ?? req.headers['user-agent'] ?? undefined,
+    tillDevice?.device_id ?? dbRow.device_hint ?? req.headers['user-agent'] ?? undefined,
   );
 
   // Link the consumed (or superseded, on the grace path) token to its
@@ -1062,22 +1062,18 @@ router.post('/refresh', async (req, res) => {
   }
 
   // A407: a till that never kept a device secret (enrolled before 1.0.0, or the secret was never stored) gets one on
-  // an ordinary renewal — so it can sign itself back in if this session is ever refused. Only for the till's own
-  // session, and only to the device the session was issued to.
+  // an ordinary renewal — so it can sign itself back in if this session is ever refused.
   let deviceSecret: string | null = null;
-  const devId = String(req.header('x-device-id') ?? '').split(',')[0].trim();
-  if (sessionKind(cleanPayload) === 'device' && devId && dbRow.device_hint === devId) {
+  if (tillDevice) {
     try {
-      const { data: dev } = await supabase.from('user_devices').select('device_secret_hash')
-        .eq('business_id', cleanPayload.businessId).eq('device_id', devId).maybeSingle();
-      if (dev && !(dev as { device_secret_hash?: string | null }).device_secret_hash) {
+      if (!tillDevice.device_secret_hash) {
         const raw = generateDeviceSecret();
         const { error: secErr } = await supabase.from('user_devices')
           .update({ device_secret_hash: hashDeviceSecret(raw), device_secret_set_at: new Date().toISOString() })
-          .eq('business_id', cleanPayload.businessId).eq('device_id', devId).is('device_secret_hash', null);
+          .eq('business_id', newPayload.businessId).eq('device_id', tillDevice.device_id).is('device_secret_hash', null);
         if (!secErr) deviceSecret = raw;
       }
-      await clearTillSessionLost(cleanPayload.businessId, devId);
+      await clearTillSessionLost(newPayload.businessId, tillDevice.device_id);
     } catch { /* additive — the renewal stands without it */ }
   }
 
@@ -1096,7 +1092,7 @@ router.post('/logout', async (req, res) => {
     try {
       const token = req.headers.authorization.slice(7);
       const payload = jwt.decode(token) as { userId?: string; businessId?: string } | null;
-      // A407: every browser of this user — never a till (a till signs in as the owner).
+      // A407: every browser of this user. A till's own session names no person, so it is never among them (A415).
       if (payload?.userId) await revokeBrowserSessions([payload.userId], payload.businessId ? [payload.businessId] : []);
     } catch { /* best effort */ }
   } else if (refreshToken) {
@@ -1537,11 +1533,10 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // Same as above: this device only, not every till sharing a User-Agent.
   const userAgent = req.headers['user-agent']?.slice(0, 200) ?? null;
   const devKeyV = deviceKey(req);
-  // A407: the person signing in IS the till's own principal (the owner whose enrolment code set it up) — revoking
-  // "their sessions on this device" would revoke the till's own session, and 15 minutes later the till could not renew
-  // ("Please sign in again."). Their earlier PIN sessions on this till simply expire.
-  // till-safe: skipped when the PIN user is the till's principal; otherwise only that person's sessions here
-  if (devKeyV && matchedUser.id !== req.userId) {
+  // This person's earlier sessions on this device end. A415: the till's own session names no person (user_id is
+  // null on its rows), so a PIN sign-in — the owner's included — can never end the till's session.
+  // till-safe: by this person's id only — a till's own session has no person (A415)
+  if (devKeyV) {
     await supabase
       .from('refresh_tokens')
       .update({ revoked_at: new Date().toISOString() })
@@ -1555,10 +1550,10 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
   // D14 — a cashier signing in on a till is the other moment a terminal
   // announces itself. checkDeviceRegistration above still owns BROWSER approval
   // and is untouched; this records the terminal regardless, and only for
-  // desktop. Between this and /desktop-login every till gets a row on its first
+  // desktop. Between this and enrolment every till gets a row on its first
   // sign-in without anybody enabling anything.
   if (req.surface === 'desktop') {
-    await registerDesktopTerminal(req.businessId as string, matchedUser.id, {
+    await registerDesktopTerminal(req.businessId as string, {
       deviceId:     String(req.body?.device_id ?? ''),
       appVersion:   String(req.body?.app_version ?? req.headers['x-app-version'] ?? '') || null,
       terminalCode: req.body?.terminal_code ?? null,

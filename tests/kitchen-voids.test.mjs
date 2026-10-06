@@ -58,6 +58,7 @@ let db;
 const reset = (switchOn = true) => {
   db = {
     businesses: [{ id: BZ, owner_id: OWNER, vat_rate: 16, ctl_rate: 0 }],
+    user_devices: [{ business_id: BZ, device_id: T1, status: 'approved', retired_at: null }],   // A415: the till, on the business
     feature_flags: switchOn ? [{ business_id: BZ, key: 'kitchen_void_approval', enabled: true }] : [],
     users: [
       { id: CASHIER, business_id: BZ, status: 'active', name: 'Amy', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
@@ -118,8 +119,10 @@ app.use('/api/orders', require(path.join(DIST, 'routes/orders.js')).default);
 app.use('/api/sync', require(path.join(DIST, 'routes/sync.js')).default);
 app.use('/api/shifts', require(path.join(DIST, 'routes/shifts.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
-const tok = (userId, surface, keys) => jwt.sign({ userId, businessId: BZ, branchId: BR, isOwner: userId === OWNER, permissionKeys: keys,
-  permissionsVersion: 0, sessionId: 's', surface }, process.env.JWT_SECRET);
+// A415: a desktop request is the till's own session — the till, the business, the branch; no person.
+const tok = (userId, surface, keys) => jwt.sign(surface === 'desktop'
+  ? { userId: null, deviceId: T1, till: true, businessId: BZ, branchId: BR, isOwner: false, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface }
+  : { userId, businessId: BZ, branchId: BR, isOwner: userId === OWNER, permissionKeys: keys, permissionsVersion: 0, sessionId: 's', surface }, process.env.JWT_SECRET);
 const call = async (p, body, { user = CASHIER, surface = 'web', keys = ['orders.create'], headers = {} } = {}) => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}${p}`, {
     method: 'POST', headers: { Authorization: `Bearer ${tok(user, surface, keys)}`, 'content-type': 'application/json', 'x-device-id': T1, ...headers },

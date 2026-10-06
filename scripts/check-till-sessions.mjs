@@ -3,8 +3,9 @@
  * check-till-sessions.mjs — A407: nothing may sign a till out by accident.
  *
  * Owner, 2026-10-05 (a till on the PIN screen with "Please sign in again."): "how do we prevent this from ever
- * happening". A till signs in AS the owner, so a revoke written as "this user's sessions" signs out the business's
- * tills too — it happened twice (verify-pin on the owner's own PIN; A402's password reset).
+ * happening". A till used to sign in AS the owner, so a revoke written as "this user's sessions" signed out the business's
+ * tills too — it happened twice (verify-pin on the owner's own PIN; A402's password reset). A415: a till's own session
+ * names no person now; this check stays so a broad revoke is never written again without saying why it is safe.
  *
  * Every place in apps/server/src that revokes refresh tokens (`.from('refresh_tokens')` … `revoked_at`) must either
  *   - name ONE token or ONE session (.eq('id' / .in('id' / .eq('jti' / .eq('session_id'), or
@@ -45,7 +46,7 @@ for (const f of files) {
 
 console.log(`check-till-sessions: ${checked} session revokes in apps/server/src.`);
 if (bad.length) {
-  console.log(`\nFAIL — ${bad.length} revoke(s) could sign out a till (a till signs in as the owner):\n`);
+  console.log(`\nFAIL — ${bad.length} revoke(s) could sign out a till:\n`);
   for (const b of bad) console.log(`  ${b}\n`);
   console.log('Revoke one token or session by id, use revokeBrowserSessions (lib/tillSessions.ts), or say why it is safe');
   console.log('with a `// till-safe: <why>` comment just above.');

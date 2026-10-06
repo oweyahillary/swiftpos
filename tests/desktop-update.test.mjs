@@ -54,6 +54,9 @@ const db = {
     { id: B, name: 'Other Client', status: 'active', desktop_approved_version: null },
   ],
   admin_audit_log: [],
+  // A415: each business's till, on the business (the cloud checks the till itself, never a person)
+  user_devices: [{ business_id: A, device_id: 'dev-A', status: 'approved', retired_at: null },
+                 { business_id: B, device_id: 'dev-B', status: 'approved', retired_at: null }],
 };
 supabase.from = (table) => {
   const f = []; let patch = null; let inserting = null;
@@ -96,7 +99,8 @@ app.use('/api/desktop-update', require(path.join(DIST, 'routes/desktopUpdate.js'
 app.use('/api/admin', require(path.join(DIST, 'routes/admin.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
 const base = `http://127.0.0.1:${server.address().port}`;
-const tillToken = (biz) => jwt.sign({ userId: 'u-owner', businessId: biz, branchId: null, isOwner: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'desktop' }, process.env.JWT_SECRET);
+// A415: the till's own session — the till, the business; no person.
+const tillToken = (biz) => jwt.sign({ userId: null, deviceId: biz === A ? 'dev-A' : 'dev-B', till: true, businessId: biz, branchId: null, isOwner: false, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'desktop' }, process.env.JWT_SECRET);
 const adminToken = jwt.sign({ adminId: 'adm-1', email: 'ops@swiftpos.test', role: 'super_admin' }, process.env.ADMIN_JWT_SECRET, { algorithm: 'HS256' });
 const till = async (biz, p) => { const r = await realFetch(`${base}/api/desktop-update${p}`, { headers: { Authorization: `Bearer ${tillToken(biz)}` }, redirect: 'manual' });
   return { status: r.status, location: r.headers.get('location'), body: r.status === 302 ? null : await r.json().catch(() => null) }; };

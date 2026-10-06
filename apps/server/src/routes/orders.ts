@@ -667,14 +667,13 @@ router.post('/', async (req, res) => {
         : 'completed',
     }));
 
-    // A169 — credit the sale to the real cashier, not the owner. Offline sales
-    // push under the owner token (isOwner), so req.userId is the owner; the till
-    // sends the actual cashier as `cashier_id`. Trust that claim only when it
-    // validates like verify-pin (active user in this business with access to
-    // this branch). A staff-PIN token (isOwner:false) stays authoritative.
+    // A169/A415 — credit the sale to the real cashier. Sales pushed under the till's own session (no person) name the
+    // cashier as `cashier_id`; trust that claim only when it validates like verify-pin (active user in this business
+    // with access to this branch). A person's PIN token stays authoritative.
     const claimedCashier = req.body?.cashier_id ? String(req.body.cashier_id) : null;
+    const mayClaim = !!req.isTill || !!req.isOwner;
     let claimValid = false;
-    if (claimNeedsValidation({ isOwner: !!req.isOwner, subject: req.userId ?? null, claimed: claimedCashier })) {
+    if (claimNeedsValidation({ mayClaim, subject: req.userId ?? null, claimed: claimedCashier })) {
       const { data: claimRow, error: claimErr } = await supabase
         .from('users')
         .select('id, user_branches ( branch_id )')
@@ -688,11 +687,11 @@ router.post('/', async (req, res) => {
         claimValid = access.length === 0 || access.some(b => b.branch_id === branch_id);
       }
       if (!claimValid) {
-        console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting token subject ${req.userId}`);
+        console.warn(`[orders] rejected cashier claim ${claimedCashier} on branch ${branch_id} — not an active branch cashier; crediting ${req.userId ?? 'no one (the till\'s own session)'}`);
       }
     }
     const resolvedCashierId = pickCashier({
-      isOwner: !!req.isOwner, subject: req.userId ?? null, claimed: claimedCashier, claimValid,
+      mayClaim, subject: req.userId ?? null, claimed: claimedCashier, claimValid,
     });
 
     const orderPayload = {

@@ -14,7 +14,7 @@
  *     "This till was signed out. Ask a manager to sign in again."
  *
  * The till was not signed out. Reported from the field on 0.5.27, Menu screen,
- * after idling. `ownerFetch` in the same file has always had the 401 branch;
+ * after idling. `tillFetch` in the same file has always had the 401 branch;
  * the two builders disagreed and nothing compared them.
  *
  * WHY THIS IS A SOURCE TEST
@@ -54,11 +54,11 @@ const syncSrc = readFileSync(SYNC, 'utf8');
 /**
  * The body of a named function declared inside the file, brace-balanced.
  *
- * The parameter list must be walked FIRST. `ownerFetch(path: string,
+ * The parameter list must be walked FIRST. `tillFetch(path: string,
  * init: RequestInit = {})` contains a `{}` default, and taking the next `{`
  * after the signature latches onto that empty object — the balancer then closes
  * one character later and returns "{}" as the whole function body. Every
- * assertion about ownerFetch passed vacuously against it on the first run of
+ * assertion about tillFetch passed vacuously against it on the first run of
  * this file, which is rule 23's failure exactly: a check that cannot see the
  * thing it is checking still prints a result.
  */
@@ -86,7 +86,7 @@ function bodyOf(src, signature) {
 }
 
 const manage = bodyOf(ipcSrc, 'async function manageFetch(');
-const owner  = bodyOf(ipcSrc, 'async function ownerFetch(');
+const owner  = bodyOf(ipcSrc, 'async function tillFetch(');
 
 console.log('\nmanageFetch — 401 refresh and retry\n');
 
@@ -166,8 +166,8 @@ ok('refreshStaffToken is single-flight',
    + 'which is the "signed out" this change exists to stop.');
 
 // ── 5. The two builders now agree ──────────────────────────────────────────
-console.log('\n5. ownerFetch and manageFetch agree about expiry');
-ok('ownerFetch still has its 401 branch', /res\.status\s*!==\s*401|res\.status\s*===\s*401/.test(owner ?? ''));
+console.log('\n5. tillFetch and manageFetch agree about expiry');
+ok('tillFetch still has its 401 branch', /res\.status\s*!==\s*401|res\.status\s*===\s*401/.test(owner ?? ''));
 ok('both builders refresh on 401',
    /401/.test(owner ?? '') && /401/.test(manage ?? ''),
    'Two fetch builders in one file disagreeing about token expiry is the seam '

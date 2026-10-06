@@ -65,6 +65,8 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
 
   const [target, setTarget]     = useState<PO | null>(null);
   const [lines, setLines]       = useState<Record<string, string>>({});
+  // A413: per line, the delivery's expiry date (optional) — a batch on Expiry.
+  const [expiries, setExpiries] = useState<Record<string, string>>({});
   const [grnBusy, setGrnBusy]   = useState(false);
   const [grnError, setGrnError] = useState('');
   const [grnNote, setGrnNote]   = useState('');
@@ -247,7 +249,7 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
       const remaining = Number(i.quantity_ordered) - Number(i.quantity_received);
       seed[i.ingredient_id] = remaining > 0 ? String(remaining) : '';
     });
-    setLines(seed); setGrnNote(''); setGrnError(''); setTarget(po);
+    setLines(seed); setExpiries({}); setGrnNote(''); setGrnError(''); setTarget(po);
   };
 
   const printReceivedGRN = (grnNumber: string, po: PO, filled: { ingredient_id: string; name: string; unit: string; quantity_received: number; unit_cost: number }[], note: string) => {
@@ -272,7 +274,8 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
     try {
       const grn = await posApi.post<{ grn_number: string }>('/api/stock/grn', {
         branch_id: branchId, purchase_order_id: po.id, notes: note || undefined,
-        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: i.quantity_received, unit_cost: i.unit_cost })),
+        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: i.quantity_received, unit_cost: i.unit_cost,
+          expiry_date: expiries[i.ingredient_id] || undefined })),
       });
       if (alsoPrint && grn?.grn_number) printReceivedGRN(grn.grn_number, po, filled, note);
       setTarget(null);
@@ -575,9 +578,14 @@ export default function ManagerReceivingTab({ currency }: { currency: string }) 
                       <p className="text-gray-200 text-sm truncate">{i.ingredients?.name ?? 'Item'}</p>
                       <p className="text-gray-500 text-xs">ordered {i.quantity_ordered}{i.ingredients?.unit ? ` ${i.ingredients.unit}` : ''} · received {i.quantity_received} · remaining {remaining > 0 ? remaining : 0}</p>
                     </div>
-                    <input inputMode="decimal" value={lines[i.ingredient_id] ?? ''}
-                      onChange={e => setLines(prev => ({ ...prev, [i.ingredient_id]: e.target.value }))}
-                      className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-swift" />
+                    <div className="flex items-center gap-2">
+                      <input type="date" value={expiries[i.ingredient_id] ?? ''} title="Expiry date (optional)" aria-label="Expiry date"
+                        onChange={e => setExpiries(prev => ({ ...prev, [i.ingredient_id]: e.target.value }))}
+                        className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-swift" />
+                      <input inputMode="decimal" value={lines[i.ingredient_id] ?? ''}
+                        onChange={e => setLines(prev => ({ ...prev, [i.ingredient_id]: e.target.value }))}
+                        className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-swift" />
+                    </div>
                   </div>
                 );
               })}

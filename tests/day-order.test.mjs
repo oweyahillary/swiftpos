@@ -48,6 +48,7 @@ const reset = () => {
   db = {
     business_days: [{ id: DAY_Y, business_id: BZ, branch_id: BR, device_id: DEV, status: 'open' }],   // yesterday, still open on the cloud
     shifts: [],
+    user_devices: [{ business_id: BZ, device_id: DEV, status: 'approved', retired_at: null }],   // A415: the till is on the business
   };
 };
 // In-memory stand-in. upsert enforces business_days_one_open_per_till the moment the row is written.
@@ -84,7 +85,8 @@ const express = require('express'); const jwt = require('jsonwebtoken');
 const app = express(); app.use(express.json({ limit: '5mb' }));
 app.use('/api/sync', require(path.join(DIST, 'routes/sync.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
-const token = jwt.sign({ userId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', businessId: BZ, branchId: BR, isOwner: true, permissionKeys: ['*'],
+// A415: the till's own session — the till, the business, the branch; no person.
+const token = jwt.sign({ userId: null, deviceId: DEV, till: true, businessId: BZ, branchId: BR, isOwner: false, permissionKeys: ['*'],
   permissionsVersion: 0, sessionId: 's', surface: 'desktop' }, process.env.JWT_SECRET);
 const push = async (body) => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/sync/push`, {

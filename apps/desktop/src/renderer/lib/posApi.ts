@@ -246,6 +246,18 @@ export interface StationRoutingResult {
   message?: string;
 }
 
+/** A414: an item that can be written off at this branch. */
+export interface WasteItem { kind: 'product' | 'ingredient'; id: string; name: string; unit: string | null; by_piece: boolean; stocked: boolean; held: number | null; cost: number | null }
+export interface WasteRecordingView {
+  client_id: string; reason: string; note: string; recorded_by_name: string; recorded_at: string;
+  items: Array<{ kind: string; id: string; name: string; quantity: number }>;
+}
+/** A413: a batch on the expiry list. */
+export interface ExpiringBatch {
+  id: string; name: string; unit: string | null; batch_no: string | null; expiry_date: string | null; remaining: number;
+  status: 'expired' | 'soon' | 'ok' | 'none'; days_left: number | null; kind: 'product' | 'ingredient'; item_id: string;
+}
+
 export interface PrinterInfo {
   name: string;
   displayName: string;
@@ -289,9 +301,10 @@ declare global {
       version: string;
       platform: string;
       auth: {
-        redeemEnrolment: (business_id: string, code: string) => Promise<{ user: any; business: any; branchId: string | null }>;
-        logout: () => Promise<boolean>;
-        getSession: () => Promise<{ user: any; business: any } | null>;
+        redeemEnrolment: (business_id: string, code: string) => Promise<{ business: any; branchId: string | null }>;
+        /** A415: the technician rejoins this till to its business (tech console only); everything on the till is kept. */
+        rejoin: (business_id: string, code: string) => Promise<{ business: any; branchId: string | null }>;
+        getSession: () => Promise<{ till: { device_id: string | null }; business: any } | null>;
         listBranches: () => Promise<{ id: string; name: string; desktop_licensed: boolean }[]>;
         verifyPin: (pin: string, branch_id: string) => Promise<StaffSession>;
         getStaffSession: () => Promise<StaffSession | null>;
@@ -511,6 +524,13 @@ declare global {
         updateStation: (id: string, patch: Partial<{ name: string; kind: StationKind; sort_order: number; active: boolean }>) => Promise<PrintStation>;
         deleteStation: (id: string) => Promise<any>;
         setStationCategories: (id: string, categoryIds: string[]) => Promise<StationRoutingResult>;
+        // A414: wastage on the till (saved here first, sent later); A413: the expiry list.
+        wastageItems: () => Promise<{ source: 'cloud' | 'saved' | 'till'; saved_at?: string; items: WasteItem[] }>;
+        recordWastage: (payload: { reason: string; note?: string; items: Array<{ kind: 'product' | 'ingredient'; id: string; name: string; quantity: number }> }) =>
+          Promise<{ client_id: string; state: 'saved' | 'pending' | 'refused'; ref?: string; value?: number; message?: string }>;
+        wastageState: () => Promise<{ pending: WasteRecordingView[]; refused: Array<WasteRecordingView & { refused_at: string; message: string }> }>;
+        dismissWastage: (clientId: string) => Promise<{ ok: true }>;
+        expiringBatches: () => Promise<{ online: false; message: string } | { online: true; batches: ExpiringBatch[]; summary: { expired: number; soon: number } }>;
         updateCategory: (id: string, patch: any) => Promise<any>;
         bulkProducts:       (rows: any[]) => Promise<{ created: number; updated: number; errors: Array<{ row: number; error: string }> }>;
         listCombos:         () => Promise<any[]>;

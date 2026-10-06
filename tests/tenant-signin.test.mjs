@@ -103,7 +103,7 @@ if (fs.existsSync(DIST)) {
 
 // ── The wiring (source) ───────────────────────────────────────────────────────
 const auth = read('apps/server/src/routes/auth.ts');
-const loginSrc = auth.slice(auth.indexOf("router.post('/login'"), auth.indexOf("router.post('/desktop-login'"));
+const loginSrc = auth.slice(auth.indexOf("router.post('/login'"), auth.indexOf("router.post('/enrol/redeem'"));
 const posSrc = auth.slice(auth.indexOf("router.post('/pos-login'"), auth.indexOf("router.post('/verify-pin'"));
 await ok('/login: an unknown address is refused before the password is checked; the account must own the business', () => {
   assert.ok(loginSrc.indexOf('const tenant = await findTenant(subdomain);') > 0);

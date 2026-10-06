@@ -64,7 +64,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
       };
       return chain;
     };
-    const run = async (identity, row) => { existing = row; writes.length = 0; await registerDesktopTerminal('biz-1', 'user-1', { deviceId: 'dev-1', ...identity }); return writes.filter((w) => w.table === 'user_devices'); };
+    const run = async (identity, row) => { existing = row; writes.length = 0; await registerDesktopTerminal('biz-1', { deviceId: 'dev-1', ...identity }); return writes.filter((w) => w.table === 'user_devices'); };
 
     await ok('a sign-in writes the setup name and code onto the EXISTING till row (the setup name always wins)', async () => {
       const w = await run({ terminalCode: 'T1', label: '  Front   Counter ' }, { id: 'row-1', status: 'approved' });
@@ -131,7 +131,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.TILL_NAME_TS) {
     const at = s.indexOf('}/api/auth/enrol/redeem`');   // the fetch, not the file-header comment
     const enrol = s.slice(at, at + 1500);
     // A345 (0.6.15): the sign-in's body is built by verifyPinBody(), shared with the offline session's background upgrade.
-    const at2 = s.indexOf("res = await ownerFetch('/api/auth/verify-pin'");   // the sign-in (the upgrade has its own call)
+    const at2 = s.indexOf("res = await tillFetch('/api/auth/verify-pin'");   // the sign-in (the upgrade has its own call)
     const call = s.slice(at2, at2 + 300);
     assert.match(call, /body: verifyPinBody\(String\(pin\), branch_id\)/, 'the sign-in sends verifyPinBody');
     const pin = s.slice(s.indexOf('function verifyPinBody('), s.indexOf('function verifyPinBody(') + 1200);

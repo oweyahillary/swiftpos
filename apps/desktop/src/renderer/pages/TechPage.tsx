@@ -39,6 +39,25 @@ export default function TechPage({ onExit }: Props) {
 
   const exit = async () => { await posApi.tech.closeSession(); onExit(); };
 
+  // A415: rejoin this till to its business with a fresh enrolment code from ZapTill — instead of resetting it. Sales
+  // waiting to sync, shifts, the menu and settings all stay on the till.
+  const [rejoinBiz, setRejoinBiz] = useState('');
+  const [rejoinCode, setRejoinCode] = useState('');
+  const [rejoinMsg, setRejoinMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const rejoin = async () => {
+    setRejoinMsg(null);
+    if (!rejoinBiz.trim() || !rejoinCode.trim()) { setRejoinMsg({ ok: false, text: 'Enter the business ID and the code.' }); return; }
+    setBusy('rejoin');
+    try {
+      const out = await posApi.auth.rejoin(rejoinBiz.trim(), rejoinCode.trim());
+      setRejoinCode('');
+      setRejoinMsg({ ok: true, text: `Rejoined ${out.business?.name ?? 'the business'}. Everything on this till was kept; it is syncing now.` });
+      await load();
+    } catch (e: any) {
+      setRejoinMsg({ ok: false, text: String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') });
+    } finally { setBusy(''); }
+  };
+
   // Device reset. Two stages on purpose: nothing is offered until we know what
   // would be destroyed, and the destructive button is only reachable after the
   // technician has been shown the number.
@@ -227,6 +246,27 @@ export default function TechPage({ onExit }: Props) {
           <div className="flex gap-2">
             <button onClick={forceSync} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Force sync</button>
             <button onClick={retryFailed} disabled={!!busy} className="flex-1 bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">Retry failed</button>
+          </div>
+        </section>
+
+        {/* A415: Rejoin this till */}
+        <section className="bg-[#0d1424] border border-[#1e293b] rounded-xl p-4" data-testid="tech-rejoin">
+          <h2 className="text-sm font-semibold text-gray-300 mb-1">Rejoin this till</h2>
+          <p className="text-[11px] text-gray-400 mb-3">
+            When this till has lost its link to the business, enter the business ID and a new enrolment code from ZapTill
+            (admin portal › client › Branches &amp; tills) for this till&apos;s branch. Nothing on the till is cleared: sales
+            waiting to sync, shifts, the menu and settings stay.
+          </p>
+          <div className="space-y-2">
+            <input value={rejoinBiz} onChange={(e) => setRejoinBiz(e.target.value)} placeholder="Business ID"
+              className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono" />
+            <input value={rejoinCode} onChange={(e) => setRejoinCode(e.target.value.toUpperCase())} placeholder="Enrolment code"
+              className="w-full bg-[#0a0f1a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest" />
+            <button onClick={rejoin} disabled={!!busy}
+              className="w-full bg-[#1e293b] hover:bg-[#26344b] disabled:opacity-40 text-gray-200 rounded-lg py-2 text-sm">
+              {busy === 'rejoin' ? 'Rejoining…' : 'Rejoin this till'}
+            </button>
+            {rejoinMsg && <p className={`text-[11px] ${rejoinMsg.ok ? 'text-action-300' : 'text-red-400'}`}>{rejoinMsg.text}</p>}
           </div>
         </section>
 

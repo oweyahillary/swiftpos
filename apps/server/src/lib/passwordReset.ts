@@ -120,7 +120,8 @@ export async function setOwnerPassword(authId: string, password: string, keepSes
     userIds = [...userIds, ...((rows ?? []) as Array<{ id: string }>).map((r) => r.id)];
     await supabase.from('users').update({ must_change_password: false }).in('id', userIds.slice(1));
   }
-  // A406/A407: the owner's browsers only — never a till (a till signs in as the owner); this browser stays.
+  // A406/A407: the owner's browsers only — a till's own session names no person (A415), so it is never among them;
+  // this browser stays.
   await revokeBrowserSessions(userIds, bizIds, keepSession);
   return null;
 }

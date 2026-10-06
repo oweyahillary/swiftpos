@@ -1596,10 +1596,9 @@ router.post('/clients/:id/branches/:branchId/licence', requireAdmin, async (req,
  * lives here, not in the owner dashboard, so a client cannot self-provision — the
  * code is the billable act, gated behind the admin.
  *
- * The code's `created_by` is the business OWNER's public.users id (not the admin):
- * redeem mints the same owner-scoped desktop token /desktop-login does, and
- * orders.cashier_id REFERENCES public.users(id). The admin is recorded in the
- * audit log instead. The branch must already hold a desktop licence — an enrolled
+ * A415: redeeming it gives the till its OWN session — the till, the business, this
+ * branch, no person (lib/deviceGrant.ts). No owner is named on the code; the admin
+ * who issued it is in the audit log. The branch must already hold a desktop licence — an enrolled
  * till on an unlicensed branch is refused by the D11 gate at /api/pos/init anyway,
  * so we fail early and clearly here.
  */
@@ -1619,14 +1618,6 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
     return;
   }
 
-  // The token principal must be the owner, resolved the same way desktop-login
-  // resolves it. No owner → no valid principal → refuse (never mint a bad token).
-  const ownerId = await resolveOwnerUserId(businessId);
-  if (!ownerId) {
-    res.status(409).json({ error: 'Could not resolve the business owner for this code.', code: 'NO_OWNER' });
-    return;
-  }
-
   // Batch: mint `count` single-use codes in one call (default 1, capped). Each is
   // its own single-use, branch-bound code — batching is a convenience, NOT a
   // reusable code. One leaked code still enrols exactly one till.
@@ -1639,7 +1630,6 @@ router.post('/clients/:id/branches/:branchId/enrol-code', requireAdmin, async (r
     business_id: businessId,
     branch_id:   branchId,            // REQUIRED here — admin codes are always branch-bound
     code_hash:   hashCode(raw),
-    created_by:  ownerId,             // owner public.users id — the redeemed token's principal
     expires_at:  expiresAt,
   }));
   const { error } = await supabase.from('device_enrolment_codes').insert(rows);

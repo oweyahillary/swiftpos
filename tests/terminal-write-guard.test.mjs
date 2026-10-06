@@ -39,7 +39,7 @@ for (const [m, p] of [['POST','/api/orders'],['POST','/api/orders/abc/void'],['P
                       ['POST','/api/tech/audit'],['POST','/api/shifts/abc/close'],['POST','/api/shifts/abc/force-close'],
                       ['POST','/api/shifts/abc/foreign-cash'],['POST','/api/shifts/abc/foreign-orders'],
                       ['POST','/api/shifts/abc/confirm'],['POST','/api/shifts/confirmer'],['POST','/api/day-close/ack'],
-                      ['PUT','/api/business/branding'],['PUT','/api/stations/st-1/categories']]) {
+                      ['PUT','/api/business/branding'],['PUT','/api/stations/st-1/categories'],['POST','/api/wastage']]) {
   ok(`device token: ${m} ${p} is allowed (the till's own)`, () => assert.equal(denied('desktop', m, p), false));
 }
 ok('the till allowance is tight: shift delete/create, a wider /api/business, day-close other than ack — DENIED', () => {
@@ -53,6 +53,8 @@ ok('the till allowance is tight: shift delete/create, a wider /api/business, day
   assert.equal(denied('desktop','PATCH','/api/stations/st-1'), true);
   assert.equal(denied('desktop','DELETE','/api/stations/st-1'), true);
   assert.equal(denied('desktop','POST','/api/stations/seed-defaults'), true);
+  // A414: recording wastage only — voiding (stock back) stays a person's.
+  assert.equal(denied('desktop','POST','/api/wastage/w1/void'), true);
 });
 
 // ── A person's PIN sign-in: + the manager screens' writes ─────────────────────

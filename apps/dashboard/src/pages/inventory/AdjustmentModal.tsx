@@ -25,6 +25,9 @@ export default function AdjustmentModal({ product, branchId, currency: _currency
   const [type, setType] = useState<AdjustType>('restock');
   const [quantity, setQuantity] = useState('');
   const [notes, setNotes] = useState('');
+  // A413: a delivery's expiry date and the supplier's batch / lot number (both optional) — the item's batch on Stock › Expiry.
+  const [expiry, setExpiry] = useState('');
+  const [batchNo, setBatchNo] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -44,13 +47,15 @@ export default function AdjustmentModal({ product, branchId, currency: _currency
     setError('');
 
     try {
-      await api.post('/api/inventory/adjust', {
+      const out = await api.post<{ batch_warning?: string }>('/api/inventory/adjust', {
         product_id: product.id,
         branch_id: branchId,
         type,
         quantity: qty,
         notes: notes.trim() || null,
+        ...(type === 'restock' ? { expiry_date: expiry || null, batch_no: batchNo.trim() || null } : {}),
       });
+      if (out?.batch_warning) window.alert(out.batch_warning);
       onSaved();
     } catch (err: any) {
       setError(err.message);
@@ -127,6 +132,22 @@ export default function AdjustmentModal({ product, branchId, currency: _currency
             <div className="flex items-center gap-2">
               <span className="text-gray-500 text-sm line-through">{product.currentQty}</span>
               <span className="text-white font-bold text-lg">→ {newQty}</span>
+            </div>
+          </div>
+        )}
+
+        {/* A413: expiry date and batch number of a delivery */}
+        {type === 'restock' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">Expiry date <span className="text-gray-600">(optional)</span></label>
+              <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-swift transition-colors" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">Batch no. <span className="text-gray-600">(optional)</span></label>
+              <input value={batchNo} onChange={e => setBatchNo(e.target.value)} maxLength={60} placeholder="e.g. LOT 2410"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-swift transition-colors" />
             </div>
           </div>
         )}

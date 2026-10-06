@@ -157,7 +157,7 @@ function initSchema(db: Database.Database) {
       theme_id      TEXT
     );
 
-    -- ── Active staff (PIN login) — singleton, layered on top of owner session ─
+    -- ── Active staff (PIN login) — singleton, layered on top of till session ─
     CREATE TABLE IF NOT EXISTS staff_session (
       id            INTEGER PRIMARY KEY CHECK (id = 1),
       staff_id      TEXT NOT NULL,
@@ -1376,7 +1376,7 @@ export function setBranding(
  * A304: write branding pulled from the cloud into the local mirror (remote-wins). Called by
  * the catalogue pull ONLY when the cloud returned a branding object; a null from the cloud
  * means "no branding row" and the caller skips this, leaving any local (tech-set, A302) value
- * intact. Keyed by the owner session's business_id — the same PK A301/A302 use — and no-ops
+ * intact. Keyed by the till session's business_id — the same PK A301/A302 use — and no-ops
  * if the till has no session yet. The cloud already validated on write (A303), so this trusts
  * the payload but still only touches the two columns.
  */

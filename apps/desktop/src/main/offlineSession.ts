@@ -8,7 +8,7 @@
  *   (3) when the network returns, the offline sign-in becomes a cloud sign-in in the background — no second PIN entry.
  *
  * An offline sign-in (ipcHandlers `signInLocal` — saved credential, branch node, node roster) has no cloud token: the
- * staff_session row carries token ''. Selling never needs one (sales push under the owner token with the cashier's id). The
+ * staff_session row carries token ''. Selling never needs one (sales push under the till's own token with the cashier's id). The
  * menu, staff, payment-method, station and receipt-text editors do: they call the cloud under the SIGNED-IN person's own token
  * so the cloud applies the role rules (A340). This module holds what (3) needs and the words (1) shows.
  *

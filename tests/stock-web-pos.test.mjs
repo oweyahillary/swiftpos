@@ -47,6 +47,7 @@ const db = {
   businesses: [{ id: BZ, name: 'B Foods', type: 'restaurant', currency: 'KES', vat_rate: 16, ctl_rate: 0, status: 'active', web_access_expires_at: null }],
   branches: [{ id: BR, business_id: BZ, name: 'Main', is_main: true, desktop_licensed: true }],
   feature_flags: [],
+  user_devices: [{ business_id: BZ, device_id: 'dev-T1', status: 'approved', retired_at: null }],   // A415: the till, on the business
 };
 // A permissive in-memory stand-in: every builder method chains; filters apply to the rows the tables above hold, and any
 // other table reads as empty.
@@ -72,7 +73,8 @@ const app = express(); app.use(express.json());
 app.use('/api/pos', require(path.join(DIST, 'routes/pos.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
 const init = async () => {
-  const t = jwt.sign({ userId: 'u-owner', businessId: BZ, branchId: BR, isOwner: true, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'desktop' }, process.env.JWT_SECRET);
+  // A415: the till's own session — no person.
+  const t = jwt.sign({ userId: null, deviceId: 'dev-T1', till: true, businessId: BZ, branchId: BR, isOwner: false, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface: 'desktop' }, process.env.JWT_SECRET);
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/pos/init?branch_id=${BR}`, { headers: { Authorization: `Bearer ${t}`, 'x-device-id': 'dev-T1' } });
   return { status: res.status, body: await res.json().catch(() => null) };
 };

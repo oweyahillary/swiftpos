@@ -54,7 +54,7 @@ check('logLine writes a line with timestamp and scope', () => {
 });
 
 check('logLine appends rather than truncating', () => {
-  logLine('auth', 'owner token refresh failed: HTTP 401');
+  logLine('auth', 'till token refresh failed: HTTP 401');
   const lines = fs.readFileSync(logPath, 'utf8').trim().split('\n');
   assert.strictEqual(lines.length, 2, `expected 2 lines, got ${lines.length}`);
   assert.match(lines[1], /\[auth\]/);

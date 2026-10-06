@@ -27,6 +27,7 @@ import ManagerMenuTab from './ManagerMenuTab';
 import SignInSecurity from '../../components/SignInSecurity';   // A391
 import StockCounts from '../../components/StockCounts';   // A394
 import Wastage from '../../components/Wastage';           // A399
+import Expiry from '../../components/Expiry';             // A413
 import { localDateStr } from '../../lib/localDate';
 
 // ── SVG icons (no external dependency) ───────────────────────────────────────
@@ -81,6 +82,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'counts',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Stock count</span></>, title: 'Stock count', permission: 'inventory.count', group: 'Inventory' },
   // A399: wastage — what spoiled on the shift, with the reason.
   { key: 'wastage',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Wastage</span></>, title: 'Wastage', permission: 'inventory.waste', group: 'Inventory' },
+  // A413: batches and expiry dates.
+  { key: 'expiry',    label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Expiry</span></>, title: 'Expiry', permission: 'inventory.waste', group: 'Inventory' },
   { key: 'history',   label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">History</span></>,   title: 'Stock history', permission: 'inventory.receive', group: 'Inventory' },
   { key: 'orders',    label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Orders</span></>,    title: 'Orders', permission: 'orders.view_all', group: 'Finance' },
   { key: 'shift',     label: <><Icon d={I.orders}    className="flex-shrink-0" /><span className="truncate">Shifts</span></>,    title: 'Shifts', permission: 'orders.view_all', group: 'Finance' },
@@ -1323,6 +1326,8 @@ export default function ManagerDashboard() {
           branches={managerBranch} />;
       case 'wastage':
         return <Wastage client={posApi} branchId={session.branchId} currency={currency} branches={managerBranch} />;
+      case 'expiry':
+        return <Expiry client={posApi} branchId={session.branchId} currency={currency} />;
       default: return <OverviewTab />;
     }
   }

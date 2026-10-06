@@ -12,7 +12,7 @@ interface Supplier   { id: string; name: string; }
 interface Branch     { id: string; name: string; }
 interface POItem     { id?: string; ingredient_id: string; ingredients?: { id: string; name: string; unit: string }; ingredient_name?: string; ingredient_unit?: string; quantity_ordered: number; unit_cost: number; quantity_received: number; }
 interface PO         { id: string; po_number: string; status: 'draft'|'ordered'|'partial'|'received'|'cancelled'; order_date: string; expected_date: string|null; total_amount: number; notes: string|null; branch_id: string; supplier_id: string|null; suppliers: { id: string; name: string }|null; purchase_order_items: POItem[]; }
-interface GRNEntry   { ingredient_id: string; ingredient_name: string; ingredient_unit: string; quantity_ordered: number; quantity_received_so_far: number; quantity_receiving: string; unit_cost: string; }
+interface GRNEntry   { ingredient_id: string; ingredient_name: string; ingredient_unit: string; quantity_ordered: number; quantity_received_so_far: number; quantity_receiving: string; unit_cost: string; expiry_date?: string; batch_no?: string; }
 interface StoredGRN  { id: string; grn_number: string; created_at: string; notes: string | null; purchase_orders: { po_number: string } | null; grn_items: { ingredient_id: string; quantity_received: number; unit_cost: number | null; ingredients: { name: string; unit: string } | null }[]; }
 interface NewItem    { ingredient_id: string; quantity_ordered: string; unit_cost: string; }
 
@@ -226,7 +226,9 @@ export default function PurchaseOrdersPage() {
         branch_id: receiveTarget.branch_id,
         purchase_order_id: receiveTarget.id,
         notes: grnNotes || undefined,
-        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: Number(i.quantity_receiving), unit_cost: i.unit_cost ? Number(i.unit_cost) : undefined })),
+        // A413: each line's expiry date / batch number becomes a batch on Stock › Expiry.
+        items: filled.map(i => ({ ingredient_id: i.ingredient_id, quantity_received: Number(i.quantity_receiving), unit_cost: i.unit_cost ? Number(i.unit_cost) : undefined,
+          expiry_date: i.expiry_date || undefined, batch_no: i.batch_no?.trim() || undefined })),
       });
       if (alsoPrint && grn?.grn_number) printGRN(grn.grn_number, receiveTarget, filled, grnNotes);
       setReceiveTarget(null); await load();
@@ -596,6 +598,20 @@ export default function PurchaseOrdersPage() {
                           value={item.unit_cost}
                           onChange={e => setGrnItems(p => p.map((gi, i) => i === idx ? { ...gi, unit_cost: e.target.value } : gi))}
                           className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-swift"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 text-xs mb-1">Expiry date (optional)</label>
+                        <input type="date" value={item.expiry_date ?? ''}
+                          onChange={e => setGrnItems(p => p.map((gi, i) => i === idx ? { ...gi, expiry_date: e.target.value } : gi))}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 text-xs mb-1">Batch no. (optional)</label>
+                        <input value={item.batch_no ?? ''} maxLength={60}
+                          onChange={e => setGrnItems(p => p.map((gi, i) => i === idx ? { ...gi, batch_no: e.target.value } : gi))}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift"
                         />
                       </div>
                     </div>

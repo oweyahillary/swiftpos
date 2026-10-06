@@ -19,8 +19,8 @@
  * ── WHY NO ROW EXISTED ──────────────────────────────────────────────────────
  * `checkDeviceRegistration` (auth.ts) returns early unless the business has
  * opted into `require_device_registration`, and again for owners and elevated
- * roles. Beryl never opted in, and a desktop till signs in as the owner, so it
- * fell through both gates. Nothing was broken; registration was simply never
+ * roles. Beryl never opted in, and a desktop till did not sign in as a cashier,
+ * so it fell through both gates. Nothing was broken; registration was simply never
  * reached.
  *
  * ── APPROVAL AND REGISTRATION ARE DIFFERENT THINGS ──────────────────────────
@@ -38,9 +38,9 @@
  * clicked — unacceptable at the remote, thin-internet sites this product is
  * being aimed at, and it would turn a diagnostic improvement into an outage.
  *
- * The trade is defensible: reaching this code already required a valid owner
- * token or a verified PIN against the business, which proves more than a
- * browser fingerprint does. Approval keeps its meaning where it was designed to
+ * The trade is defensible: reaching this code already required a one-time
+ * enrolment code from ZapTill or a verified PIN against the business, which
+ * proves more than a browser fingerprint does. Approval keeps its meaning where it was designed to
  * have it — browsers, via the untouched opt-in flag.
  *
  * Registration is NOT authorisation. This records that a terminal exists so it
@@ -160,11 +160,10 @@ export function desktopFingerprint(deviceId: string): string {
  */
 export async function registerDesktopTerminal(
   businessId: string,
-  userId:     string,
   identity:   TerminalIdentity,
 ): Promise<string | null> {
   const deviceId = String(identity.deviceId ?? '').trim().slice(0, 64);
-  if (!businessId || !userId || !deviceId) return null;
+  if (!businessId || !deviceId) return null;
 
   const now = new Date().toISOString();
 
@@ -229,8 +228,9 @@ export async function registerDesktopTerminal(
       return (existing as any).id;
     }
 
+    // A415: the till itself — no person on the row (user_id stays null). Several people sign in on it all day, and its
+    // session is its own (lib/deviceGrant.ts).
     const baseRow = {
-      user_id:      userId,
       business_id:  businessId,
       fingerprint:  desktopFingerprint(deviceId),
       device_id:    deviceId,

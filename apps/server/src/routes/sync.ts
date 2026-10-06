@@ -105,7 +105,7 @@ router.post('/push', async (req, res) => {
         //
         // Registration is now unconditional for desktop (lib/deviceRegistry.ts),
         // so this should not fire. If it does, the till is syncing without ever
-        // having signed in through /desktop-login or /verify-pin, which is worth
+        // having joined through /enrol/redeem or signed in with /verify-pin, which is worth
         // knowing on its own.
         if (!data || data.length === 0) {
           console.warn(

@@ -174,7 +174,7 @@ export function startNodeServer(): void {
       // + branch scope as every /node/* route (checked centrally above). Scans
       // all candidates and refuses on two, exactly as the server does. No JWT is
       // minted — the peer gets the identity + permissions and pushes orders under
-      // its own owner token with this cashier_id, unchanged from the online path.
+      // its own till token with this cashier_id, unchanged from the online path.
       if (req.method === 'POST' && url === '/node/verify-pin') {
         const body = await readBody(req);
         const c = getDeviceConfig();

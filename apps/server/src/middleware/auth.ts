@@ -5,11 +5,13 @@ import { resolveOwnerBusinesses, firstOrNull } from '../lib/ownerBusiness';
 import jwt from 'jsonwebtoken';
 import { recordWriteGuard } from '../lib/watchdogCounters';   // A383
 import { otpDisabled } from '../lib/loginOtp';   // A391
+import { isTillPayload, isOwnerEraTillPayload, tillBlockReason } from '../lib/deviceGrant';   // A415
 
 declare global {
   namespace Express {
     interface Request {
-      userId:             string;
+      /** The person signed in. null for a till's own session (A415) — a till is not a person. */
+      userId:             string | null;
       businessId:         string;
       branchId:           string | null;
       roleId:             string | null;
@@ -20,6 +22,9 @@ declare global {
       pinSignIn:          boolean;
       sessionId:          string | null;
       permissionsVersion: number;
+      /** A415: the till's own session (no person) — and which till. */
+      isTill:             boolean;
+      deviceId:           string | null;
     }
   }
 }
@@ -115,12 +120,51 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.pinSignIn          = (payload as { pinSignIn?: unknown }).pinSignIn === true;
     req.sessionId          = payload.sessionId ?? null;
     req.permissionsVersion = payload.permissionsVersion ?? 0;
+    req.isTill             = isTillPayload(payload as { till?: unknown; deviceId?: unknown });
+    req.deviceId           = req.isTill ? String((payload as { deviceId?: unknown }).deviceId) : null;
 
     // A KDS display token (surface:'kds') is a long-lived, branch-scoped capability
     // that the kitchen router accepts BEFORE this middleware. Reject it everywhere
     // else so a leaked kitchen-screen token can read nothing but its branch's tickets.
     if (req.surface === 'kds') {
       res.status(403).json({ error: 'This token is limited to kitchen display endpoints' });
+      return;
+    }
+
+    // ── A415: a till signs in as itself ───────────────────────────────────
+    // Its token names the till, the business and the branch — no person. Each request checks the till is still on the
+    // business (one indexed read, as the users check below is for a person): retired, revoked or blocked → refused.
+    if (req.isTill) {
+      req.userId = null;
+      const { data: tillRow, error: tErr } = await supabase
+        .from('user_devices')
+        .select('status, retired_at')
+        .eq('business_id', req.businessId)
+        .eq('device_id', req.deviceId)
+        .maybeSingle();
+      if (tErr) {
+        res.status(503).json({
+          error: 'Could not verify your session right now — please try again',
+          code:  'AUTH_BACKEND_UNAVAILABLE',
+        });
+        return;
+      }
+      if (tillBlockReason(tillRow as { status?: string; retired_at?: string } | null)) {
+        res.status(401).json({
+          error: 'This till is no longer joined to the business. A technician can rejoin it.',
+          code:  'DEVICE_BLOCKED',
+        });
+        return;
+      }
+      if (terminalWriteBlocked(req, res)) return;
+      next();
+      return;
+    }
+
+    // A415: a till session from before the till signed in as itself carried the owner's identity. Never accepted —
+    // the till renews (/refresh), which replaces it with the till's own session.
+    if (isOwnerEraTillPayload(payload as { surface?: unknown; pinSignIn?: unknown; till?: unknown })) {
+      res.status(401).json({ error: 'This till\'s sign-in is being replaced — renewing.', code: 'TOKEN_REPLACED' });
       return;
     }
 
@@ -225,6 +269,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.surface            = 'web';
   req.sessionId          = null;
   req.permissionsVersion = 0; // Supabase tokens don't carry pv
+  req.isTill             = false;
+  req.deviceId           = null;
 
   if (supabaseEmail) {
     const { data: userRow } = await supabase
@@ -260,9 +306,9 @@ export function requireWebSurface(req: Request, res: Response, next: NextFunctio
 
 // ── terminal write guard (A159) ───────────────────────────────────────────────
 // A stolen till token (surface='desktop') must not be able to WRITE dashboard
-// data — products, prices, users, settings. The till token is owner-scoped, so
-// requireWebSurface's `isOwner` bypass lets it through; this closes that gap by
-// gating on the surface claim directly, independent of owner-scope. The till's
+// data — products, prices, users, settings. This gates on the surface claim
+// directly, whatever else the token says (a person's own PIN sign-in on the till
+// included). The till's
 // OWN writes are a short, known allowlist; every other write from a desktop
 // surface is denied.
 //

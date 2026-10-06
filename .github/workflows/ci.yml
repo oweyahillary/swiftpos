@@ -233,7 +233,7 @@ jobs:
         run: node scripts/check-table-usage.mjs
 
       # A407 — nothing may sign a till out by accident: every revoke of refresh tokens names one token or session, goes
-      # through lib/tillSessions.ts (never a till), or says why it is till-safe. A till signs in as the owner.
+      # through lib/tillSessions.ts (never a till), or says why it is till-safe. (A415: a till's own session names no person.)
       - name: No revoke can sign out a till
         run: node scripts/check-till-sessions.mjs
 
@@ -723,6 +723,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/till-session-recovery.test.mjs
 
+      # A415 — the till signs in as itself: nothing on the till signs it out of the business; a technician rejoins it
+      # from the tech console (keeping everything on it); a branch server with no roster checks PINs on the till itself.
+      - name: Desktop till rejoin (no owner on the till)
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-rejoin.test.mjs
+
       # A410 — at a branch with a server, only the server talks to the cloud: a peer's every cloud call goes through
       # the real branch server's /node/cloud gateway; no internet there = no connection, never round it.
       - name: Desktop peers reach the cloud only through the branch server
@@ -734,6 +740,12 @@ jobs:
       - name: Desktop station routing saves on the till first
         working-directory: apps/desktop
         run: node --no-warnings test/station-routing-local.test.mjs
+
+      # A414 — wastage recorded on the till: kept on the till first, sent later with its own id (never twice); a refusal
+      # ends the wait with the reason. Real localDb + syncEngine on real SQLite.
+      - name: Desktop wastage on the till
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-wastage.test.mjs
 
       # 0.6.28 — kitchen voids: a sent order ends paid or as a recorded void (reason, manager with the switch, VOID
       # ticket, Z-report); End Shift refused while one is unpaid; the push never loses a void to an older cloud.

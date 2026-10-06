@@ -18,6 +18,7 @@ import { recordServerError, recordFailedSignIn, isSignInFailure, isTillSync, rec
 import { reportSeededAdmins }   from './lib/adminSeedGuard';
 import { ensurePermissionsRegistered } from './lib/permissionCatalogue';
 import { isTenantOrigin }       from './lib/tenantHost';   // A378: clients' own sign-in addresses
+import { isRenewalPath, renewalKey, RENEWALS_PER_WINDOW } from './lib/authLimits';   // A415
 
 const app  = express();
 const PORT = process.env.PORT ?? 4000;
@@ -111,6 +112,8 @@ const authLimiterKey = (req: import('express').Request): string => {
   return ipKeyGenerator(req.ip ?? '');
 };
 
+// A415 (lib/authLimits.ts): only FAILED attempts count, and a till's renewals are not counted here at all — a till
+// retrying a refused renewal used to use up the shop's 30 and lock the owner out of the web sign-in on the first try.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -118,6 +121,19 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: authLimiterKey,
+  skipSuccessfulRequests: true,
+  skip: (req) => isRenewalPath(req.path),
+});
+
+// A415: the renewals' own counter, per till.
+const renewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: RENEWALS_PER_WINDOW,
+  message: { error: 'Too many renewals from this till — it tries again in 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => renewalKey(req.header('x-device-id') ?? (typeof req.body?.device_id === 'string' ? req.body.device_id : ''), ipKeyGenerator(req.ip ?? '')),
+  skip: (req) => !isRenewalPath(req.path),
 });
 
 // General API: generous — safety net against runaway clients / scrapers.
@@ -164,6 +180,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/auth',       authLimiter);
+app.use('/api/auth',       renewLimiter);   // A415
 app.use('/api/admin/auth', authLimiter); // brute-force on admin login
 app.use('/api',            apiLimiter);
 

@@ -65,11 +65,12 @@ ok('redeem burns only ACTIVE codes', /\.eq\('status',\s*'active'\)/.test(redeem)
 ok('redeem rejects EXPIRED codes', /\.gt\('expires_at',/.test(redeem));
 ok('redeem is scoped to the business (no cross-tenant redeem)', /\.eq\('business_id',\s*businessId\)/.test(redeem));
 ok('redeem flips the code to redeemed (single-use)', /status:\s*'redeemed'/.test(redeem));
-ok('redeem mints a DESKTOP-surface token', /surface:\s*'desktop'/.test(redeem));
+// A415: the session is the till's own (buildDeviceTokenPayload: surface 'desktop', the till, no person).
+ok('redeem mints the TILL\'s own session (desktop surface, no person)', /buildDeviceTokenPayload\(\{ deviceId, businessId, branchId, sessionId: newSessionId\(\) \}\)/.test(redeem));
 ok('redeem returns a single 401 ENROL_INVALID for any failure (no oracle)',
    /status\(401\)[\s\S]{0,120}ENROL_INVALID/.test(redeem) &&
    (redeem.match(/ENROL_INVALID/g) || []).length === 1);
-ok('redeem takes the token principal from the code (created_by)', /created_by/.test(redeem));
+ok('A415: redeem takes NO person from the code (no created_by, no owner)', !/created_by/.test(redeem) && !/ownerId/.test(redeem));
 
 // ── 3. Source guard — issuance moved to admin (register A69) ─────────────────
 // The owner-side issue is RETIRED (410); the admin endpoint is the real issuer.
@@ -85,7 +86,7 @@ ok('admin issue is admin-authed', /router\.post\('\/clients\/:id\/branches\/:bra
 ok('admin issue is BRANCH-BOUND (branch_id required, from the URL)', /branch_id:\s*branchId/.test(issue));
 ok('admin issue is licence-gated',
    /if\s*\(\s*!branch\.desktop_licensed\s*\)/.test(issue) && /status\(409\)/.test(issue) && /BRANCH_NOT_LICENSED\b/.test(issue));
-ok('admin issue resolves the OWNER as the token principal', /resolveOwnerUserId/.test(issue) && /created_by:\s*ownerId/.test(issue));
+ok('A415: admin issue names no owner on the code', !/resolveOwnerUserId/.test(issue) && !/created_by/.test(issue));
 ok('admin issue stores the hash + an expiry, never the raw', /hashCode\(/.test(issue) && /expires_at:\s*expiresAt/.test(issue));
 ok('admin issue writes an audit row', /writeAdminAudit/.test(issue) && /enrol_code\.issue/.test(issue));
 ok('admin issue BATCHES (count → codes[])', /req\.body\?\.count/.test(issue) && /codes:\s*raws/.test(issue) && /Math\.min\(20/.test(issue));

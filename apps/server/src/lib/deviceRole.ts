@@ -7,7 +7,7 @@
  * `device_role` arrives in a header the till sets about itself. PHASE5 §4b wants
  * to hand the branch's PIN hashes to the machine that serves the branch, so
  * tills can authenticate staff with no internet. Gating that on an unverified
- * header would let any till — or anyone who lifted an owner token off one — ask
+ * header would let any till — or anyone who lifted a till's token off one — ask
  * for the roster by claiming to be the node.
  *
  * ── SAME SHAPE AS MIGRATION 52, ON PURPOSE ──────────────────────────────────

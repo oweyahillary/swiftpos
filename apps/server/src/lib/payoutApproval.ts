@@ -19,7 +19,7 @@ export const APPROVAL_REQUIRED = 'A manager must approve this — enter a manage
 export const PIN_NOT_RECOGNISED = 'That PIN was not recognised. Enter the PIN of a manager (or the owner) on duty.';
 
 export async function payoutApprover(
-  req: { businessId?: string; userId?: string; isOwner?: boolean; permissionKeys?: string[]; body?: any },
+  req: { businessId?: string; userId?: string | null; isOwner?: boolean; permissionKeys?: string[]; isTill?: boolean; body?: any },
 ): Promise<ApprovalResult> {
   const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
   if (pin) {

@@ -862,7 +862,7 @@ export function emitEvent(
   if (!spec) throw new Error(`unknown event kind: ${kind}`);
   const db = getLocalDb();
   const cfg = getDeviceConfig();
-  // business_id lives on the owner session, not device config — same source
+  // business_id lives on the till session, not device config — same source
   // the order-create path uses.
   const sess = db.prepare(`SELECT business_id FROM session WHERE id = 1`).get() as { business_id?: string } | undefined;
   const clean: Record<string, unknown> = {};

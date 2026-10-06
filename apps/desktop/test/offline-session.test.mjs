@@ -146,7 +146,7 @@ const r3 = await attempt(() => call('manage:listStaff'));
 ok('(3) the network is back: the Staff list comes from the cloud, no second PIN entry', Array.isArray(r3.value)
   && r3.value.map((s) => s.name).join(',') === 'Mary,Ann', r3.error?.message ?? JSON.stringify(r3.value));
 const vp = calls.find((c) => c.url.endsWith('/api/auth/verify-pin'));
-ok('(3) …by the same request an online sign-in makes (PIN, branch, device), under the till\'s owner token', vp
+ok('(3) …by the same request an online sign-in makes (PIN, branch, device), under the till\'s own token', vp
   && vp.body.pin === '4321' && vp.body.branch_id === 'br-1' && vp.body.device_id === 'dev-T1' && vp.body.app_version === '0.6.15'
   && vp.auth === 'Bearer owner-tok', JSON.stringify(vp));
 const st = calls.find((c) => c.url.endsWith('/api/staff'));

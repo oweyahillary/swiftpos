@@ -56,7 +56,7 @@ ok('the upgrade keeps the brand colour, logo and receipt toggle', (() => { const
   return b && b.accentHex === '#F5B800' && b.logoPng === 'data:image/png;base64,AAAA' && b.receiptLogoEnabled === true && b.themeId === null; })(),
   JSON.stringify(L.getBranding()));
 
-// No owner session yet (not enrolled) → nothing to key the row to → no-op.
+// No till session yet (not enrolled) → nothing to key the row to → no-op.
 L.applyPulledTheme('violet');
 ok('before enrolment (no session) the theme is not written', L.getBranding().themeId === null);
 

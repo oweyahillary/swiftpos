@@ -67,6 +67,7 @@ const PurchaseOrdersPage      = lazy(() => import('./pages/stock/PurchaseOrdersP
 const StockTransfersPage      = lazy(() => import('./pages/stock/StockTransfersPage'));
 const StockCountsPage         = lazy(() => import('./pages/stock/StockCountsPage'));   // A394
 const WastagePage             = lazy(() => import('./pages/stock/WastagePage'));       // A399
+const ExpiryPage              = lazy(() => import('./pages/stock/ExpiryPage'));        // A413
 const IngredientsPage         = lazy(() => import('./pages/stock/IngredientsPage'));
 const PrintersPage            = lazy(() => import('./pages/settings/PrintersPage'));
 const StationsPage            = lazy(() => import('./pages/settings/StationsPage'));
@@ -195,6 +196,7 @@ export default function App() {
                       <Route path="stock/transfers"           element={<StockTransfersPage />} />
                       <Route path="stock/counts"              element={<StockCountsPage />} />
                       <Route path="stock/wastage"             element={<WastagePage />} />
+                      <Route path="stock/expiry"              element={<ExpiryPage />} />
                       <Route path="stock/suppliers"           element={<SuppliersPage />} />
                     </Route>
 

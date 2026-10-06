@@ -30,7 +30,7 @@ export function isUnreachableStatus(status: number): boolean {
  * _accessToken`), because the server attributes `cashier_id = req.userId` — the
  * token subject (apps/server/src/routes/orders.ts). Refreshing, and therefore
  * re-pushing under, the OTHER token would reattribute the sale: an online staff
- * order re-pushed on the owner token would be credited to the owner.
+ * order re-pushed on the till's own token would be credited to whoever the till names, not the person's own token.
  *
  * So: a real staff token → refresh 'staff' (stay on the cashier's identity); no
  * staff token (an offline shift, where signInLocal sets it to '') → refresh

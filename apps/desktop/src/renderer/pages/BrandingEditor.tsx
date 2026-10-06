@@ -10,7 +10,7 @@ import { resolveBranding } from '../../shared/contrast';
  * branding UI exists. Lives inside the technician gate (rendered by TechPage) — branch/brand
  * changes belong behind the tech gate (HANDOFF-2026-09-20 §6).
  *
- * businessId comes from the owner session (the branding row's PK). Accent legibility is
+ * businessId comes from the till session (the branding row's PK). Accent legibility is
  * previewed with the same resolveBranding guard the lock screen uses, judged against the same
  * lock-card surface. The logo is shrunk client-side by prepareRasterLogo (raster only; SVG is
  * rejected until the sanitiser slice). Every write re-validates in main (brandingGuard) and is

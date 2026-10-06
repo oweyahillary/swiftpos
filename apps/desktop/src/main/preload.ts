@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
 
   auth: {
     redeemEnrolment: (business_id: string, code: string) => ipcRenderer.invoke('auth:enrolDevice', { business_id, code }),
-    logout:     ()                                 => ipcRenderer.invoke('auth:logout'),
+    rejoin:     (business_id: string, code: string) => ipcRenderer.invoke('auth:rejoin', { business_id, code }),   // A415
     getSession: ()                                 => ipcRenderer.invoke('auth:getSession'),
     listBranches:      ()                                 => ipcRenderer.invoke('auth:listBranches'),
     verifyPin:         (pin: string, branch_id: string)   => ipcRenderer.invoke('auth:verifyPin', { pin, branch_id }),
@@ -229,6 +229,12 @@ contextBridge.exposeInMainWorld('swiftpos', {
     createStation:        (payload: any)                 => ipcRenderer.invoke('manage:createStation', payload),
     updateStation:        (id: string, patch: any)       => ipcRenderer.invoke('manage:updateStation', { id, patch }),
     setStationCategories: (id: string, categoryIds: string[]) => ipcRenderer.invoke('manage:setStationCategories', { id, categoryIds }),
+    // A414 / A413
+    wastageItems:   ()                                   => ipcRenderer.invoke('wastage:items'),
+    recordWastage:  (payload: { reason: string; note?: string; items: any[] }) => ipcRenderer.invoke('wastage:record', payload),
+    wastageState:   ()                                   => ipcRenderer.invoke('wastage:state'),
+    dismissWastage: (clientId: string)                   => ipcRenderer.invoke('wastage:dismiss', clientId),
+    expiringBatches: ()                                  => ipcRenderer.invoke('batches:expiring'),
     deleteStation:        (id: string)                   => ipcRenderer.invoke('manage:deleteStation', id),
     listStaff:      ()                                   => ipcRenderer.invoke('manage:listStaff'),
     listRoles:      ()                                   => ipcRenderer.invoke('manage:listRoles'),

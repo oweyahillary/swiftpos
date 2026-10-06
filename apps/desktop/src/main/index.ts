@@ -6,7 +6,7 @@ import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
 import { getLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer } from './nodeServer';
@@ -268,6 +268,8 @@ app.whenReady().then(() => {
     pullShiftCloses().catch(console.error);
     // A411: station routing saved on this till while the cloud was out of reach goes up on the same beat.
     if (stationRoutingPending()) pushStationRoutingNow().catch(console.error);
+    // A414: wastage recorded on this till while offline goes up on the same beat.
+    if (wastagePending()) pushWastageNow().catch(console.error);
   }, 20_000);
   // A401: tell every window, so the cashier sees why selling stopped (POSPage shows the notice and re-reads the shift).
   onShiftClosedElsewhere((c) => {

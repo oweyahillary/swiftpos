@@ -161,7 +161,7 @@ await ok('the cloud narrows a cashier to their own sales and says whether Reprin
 await ok('a blind close: the cloud hands a cashier no figures and asks no variance note', () => {
   const sh = read('apps/server/src/routes/shifts.ts');
   assert.match(sh, /if \(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);
-  assert.match(sh, /if \(!isManager && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{ \.\.\.closed, expected_cash: null, cash_variance: null, blind: true,/);
+  assert.match(sh, /if \(!isManager && !req\.isTill && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{ \.\.\.closed, expected_cash: null, cash_variance: null, blind: true,/);
   assert.match(sh, /&& !\(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\)\) \{/);
 });
 await ok('a differing count needs a reason; only the differing ones are kept', () => {
