@@ -292,7 +292,7 @@
     "business_id": "\"uuid\" NOT NULL",
     "branch_id": "\"uuid\"",
     "code_hash": "\"text\" NOT NULL",
-    "created_by": "\"uuid\" NOT NULL",
+    "created_by": "\"uuid\"",
     "expires_at": "\"timestamp with time zone\" NOT NULL",
     "redeemed_at": "\"timestamp with time zone\"",
     "redeemed_device_id": "\"text\"",
@@ -974,7 +974,7 @@
   "refresh_tokens": {
     "id": "\"uuid\" NOT NULL",
     "jti": "\"text\" NOT NULL",
-    "user_id": "\"uuid\" NOT NULL",
+    "user_id": "\"uuid\"",
     "business_id": "\"uuid\" NOT NULL",
     "session_id": "\"text\" NOT NULL",
     "device_hint": "\"text\"",
@@ -1096,6 +1096,25 @@
     "done_by": "\"uuid\"",
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "sync_status": "\"character varying\" NOT NULL"
+  },
+  "stock_batches": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "branch_id": "\"uuid\" NOT NULL",
+    "item_kind": "\"text\" NOT NULL",
+    "product_id": "\"uuid\"",
+    "ingredient_id": "\"uuid\"",
+    "batch_no": "\"text\"",
+    "expiry_date": "\"date\"",
+    "quantity_received": "\"numeric\" NOT NULL",
+    "received_at": "\"timestamp with time zone\" NOT NULL",
+    "source": "\"text\" NOT NULL",
+    "source_ref": "\"text\"",
+    "created_by": "\"uuid\"",
+    "created_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "closed_at": "\"timestamp with time zone\"",
+    "closed_by_name": "\"text\""
   },
   "stock_levels": {
     "id": "\"uuid\" NOT NULL",
@@ -1372,7 +1391,7 @@
   },
   "user_devices": {
     "id": "\"uuid\" NOT NULL",
-    "user_id": "\"uuid\" NOT NULL",
+    "user_id": "\"uuid\"",
     "business_id": "\"uuid\" NOT NULL",
     "fingerprint": "\"text\" NOT NULL",
     "device_label": "\"text\"",
@@ -1504,7 +1523,9 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "voided_at": "\"timestamp with time zone\"",
     "voided_by_name": "\"text\"",
-    "void_reason": "\"text\""
+    "void_reason": "\"text\"",
+    "client_id": "\"uuid\"",
+    "batch_id": "\"uuid\""
   },
   "watchdog_alerts": {
     "id": "\"uuid\" NOT NULL",

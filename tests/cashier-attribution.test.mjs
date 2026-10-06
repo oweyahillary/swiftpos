@@ -1,12 +1,19 @@
 /**
- * cashier-attribution.test.mjs — A169.
+ * cashier-attribution.test.mjs — A169, A415.
  *
  * Who a sale is credited to. Runs the REAL exported decision the order route uses
  * (apps/server/src/lib/cashier.ts), not a model of it (rule 24). The DB
  * validation that produces `claimValid` lives in the route and mirrors verify-pin
  * (active user in this business with access to this branch) — that part is
  * integration/target-verified; here we prove the decision around it.
+ *
+ * A415: the till's own session names no person (subject null). A sale it pushes is credited to the cashier it names
+ * when the roster validates the claim — and to NOBODY otherwise: never the owner.
+ *
+ * MUTATIONS TO CONFIRM BITE: the route passing mayClaim from isOwner alone → "the till's own session may name the
+ * cashier" pin fails; pickCashier crediting an invalid claim → the load-bearing guard fails.
  */
+import fs from 'node:fs';
 import { pickCashier, claimNeedsValidation } from '../apps/server/src/lib/cashier.ts';
 
 let pass = 0, fail = 0;
@@ -16,45 +23,41 @@ const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok  ${name}`); }
 const OWNER = 'user-owner';
 const CASHIER = 'user-cashier';
 
-// ── pickCashier ─────────────────────────────────────────────────────────────
-// Staff-PIN token (online): the subject IS the cashier, authoritative, never overridden.
-ok('staff token → subject, even if a claim is present',
-  pickCashier({ isOwner: false, subject: CASHIER, claimed: 'user-someone-else', claimValid: true }) === CASHIER);
+// ── A person's PIN token (online): the subject IS the cashier, authoritative, never overridden ──
+ok('a person\'s PIN token ignores any claim',
+  pickCashier({ mayClaim: false, subject: CASHIER, claimed: 'user-someone-else', claimValid: true }) === CASHIER);
 
-// Owner token + valid claim (offline): credit the real cashier.
-ok('owner token + valid claim → cashier',
-  pickCashier({ isOwner: true, subject: OWNER, claimed: CASHIER, claimValid: true }) === CASHIER);
+// ── The till's own session (A415): no person; the till names the cashier ──
+ok('till session + valid claim → that cashier',
+  pickCashier({ mayClaim: true, subject: null, claimed: CASHIER, claimValid: true }) === CASHIER);
+ok('till session + invalid claim → nobody (never the owner)',
+  pickCashier({ mayClaim: true, subject: null, claimed: CASHIER, claimValid: false }) === null);
+ok('till session + no claim → nobody',
+  pickCashier({ mayClaim: true, subject: null, claimed: null, claimValid: false }) === null);
 
-// Owner token + INVALID claim: fall back to the owner (never credit an unvalidated id).
-ok('owner token + invalid claim → owner (fallback)',
-  pickCashier({ isOwner: true, subject: OWNER, claimed: CASHIER, claimValid: false }) === OWNER);
+// ── An owner's own web session may name a cashier the same way ──
+ok('owner session + valid claim → that cashier',
+  pickCashier({ mayClaim: true, subject: OWNER, claimed: CASHIER, claimValid: true }) === CASHIER);
+ok('owner session + claim == subject → the owner (they rang it)',
+  pickCashier({ mayClaim: true, subject: OWNER, claimed: OWNER, claimValid: false }) === OWNER);
 
-// Owner token, no claim (owner rang it directly): owner.
-ok('owner token + no claim → owner',
-  pickCashier({ isOwner: true, subject: OWNER, claimed: null, claimValid: false }) === OWNER);
+// ── claimNeedsValidation (avoids needless DB reads) ──
+ok('till session with a claim → validate',
+  claimNeedsValidation({ mayClaim: true, subject: null, claimed: CASHIER }) === true);
+ok('a person\'s PIN token → never validate',
+  claimNeedsValidation({ mayClaim: false, subject: CASHIER, claimed: 'x' }) === false);
+ok('no claim → no read', claimNeedsValidation({ mayClaim: true, subject: null, claimed: null }) === false);
 
-// Owner token, claim echoes the subject: owner (no spurious override).
-ok('owner token + claim == subject → subject',
-  pickCashier({ isOwner: true, subject: OWNER, claimed: OWNER, claimValid: false }) === OWNER);
+// The load-bearing guard: an INVALID claim must NEVER be credited.
+ok('GUARD: an invalid claim is never credited',
+  pickCashier({ mayClaim: true, subject: null, claimed: CASHIER, claimValid: false }) !== CASHIER);
 
-// ── claimNeedsValidation (avoids needless DB reads) ─────────────────────────
-ok('validate only when owner + real, differing claim',
-  claimNeedsValidation({ isOwner: true, subject: OWNER, claimed: CASHIER }) === true);
-ok('no DB read for a staff token',
-  claimNeedsValidation({ isOwner: false, subject: CASHIER, claimed: 'x' }) === false);
-ok('no DB read when claim echoes subject',
-  claimNeedsValidation({ isOwner: true, subject: OWNER, claimed: OWNER }) === false);
-ok('no DB read when no claim',
-  claimNeedsValidation({ isOwner: true, subject: OWNER, claimed: null }) === false);
-
-// ── MUTATION (rules 10, 23) ─────────────────────────────────────────────────
-// The load-bearing guard: an INVALID claim must NEVER be credited. If pickCashier
-// ever returned `claimed` regardless of claimValid, this flips.
-ok('mutation guard: invalid claim is never credited',
-  pickCashier({ isOwner: true, subject: OWNER, claimed: CASHIER, claimValid: false }) !== CASHIER);
-// And a staff order must never be reattributable by a payload claim.
-ok('mutation guard: staff subject is never overridden',
-  pickCashier({ isOwner: false, subject: CASHIER, claimed: OWNER, claimValid: true }) !== OWNER);
+// ── The route ──
+const R = fs.readFileSync(new URL('../apps/server/src/routes/orders.ts', import.meta.url), 'utf8');
+ok('the till\'s own session (or an owner\'s) may name the cashier; a person\'s token may not',
+  /const mayClaim = !!req\.isTill \|\| !!req\.isOwner;/.test(R)
+  && /claimNeedsValidation\(\{ mayClaim, subject: req\.userId \?\? null, claimed: claimedCashier \}\)/.test(R)
+  && /mayClaim, subject: req\.userId \?\? null, claimed: claimedCashier, claimValid,/.test(R));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

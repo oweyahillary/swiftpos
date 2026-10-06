@@ -117,7 +117,7 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.FOREIGN_CASH_TS) {
   ok('an online PIN sign-in checks the cloud for this till\'s open drawer and returns what it joined', () => {
     assert.match(ipc, /const joinedDrawer = await joinCloudDrawer\(data\.staff\?\.id\);/);
     assert.match(ipc, /const adopted = adoptCloudShift\(cloud\);/);
-    assert.match(ipc, /ownerFetch\('\/api\/shifts\/current'\), 4_000\)/);
+    assert.match(ipc, /tillFetch\('\/api\/shifts\/current'\), 4_000\)/);
   });
   ok('the close and the Z-report include the web\'s part; the till sends what it holds', () => {
     assert.match(ipc, /closeShift\(Number\(closing_float\), notes, await fetchForeignCash\(/);

@@ -8,6 +8,7 @@ import type { Request } from 'express';
 import { supabase } from './supabase';
 
 export async function actor(req: Request): Promise<{ id: string | null; name: string }> {
+  if (req.isTill) return { id: null, name: 'Till' };   // A415: the till's own session names no person
   if (!req.userId) return { id: null, name: 'Owner' };
   const { data } = await supabase.from('users').select('id, name')
     .eq('id', req.userId).eq('business_id', req.businessId).maybeSingle();

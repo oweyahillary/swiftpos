@@ -116,7 +116,7 @@ export type NodeVerdict =
 /**
  * Verify a PIN against the node's roster. Scans every entry and refuses on two,
  * exactly as the server and pinCache do. No JWT is minted — the caller (a peer)
- * gets the identity and permissions and pushes orders under its own owner token
+ * gets the identity and permissions and pushes orders under its own till token
  * with this cashier_id, unchanged from the online path.
  */
 export function verifyPinAtNode(pin: string, branchId: string): NodeVerdict {

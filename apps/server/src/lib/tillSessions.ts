@@ -2,8 +2,8 @@
  * tillSessions.ts — A407: a till's sign-in is never lost by accident.
  *
  * Owner, 2026-10-05 (Pollo Fried Chicken: a till on the PIN screen with "Please sign in again."): "how do we prevent
- * this from ever happening". A till signs in AS the owner — its refresh token carries the owner's user id (the
- * enrolment code's creator) — so anything that revoked "the owner's sessions" also revoked the till's:
+ * this from ever happening". Until A415 a till signed in as the owner — its refresh token carried the owner's user id —
+ * so anything that revoked "the owner's sessions" also revoked the till's:
  *   - the owner signing in on that till with their PIN (verify-pin revoked "this user on this device"),
  *   - a password change or reset (A402), "log out everywhere".
  * The till could not sign itself back in, so a person had to bring a new enrolment code.
@@ -19,7 +19,8 @@ import { supabase } from './supabase';
 
 export type SessionKind = 'device' | 'pin' | 'web';
 
-/** What a token is, from its payload. A PIN sign-in on a till carries pinSignIn; the till itself is surface 'desktop'. */
+/** What a token is, from its payload. A PIN sign-in on a till carries pinSignIn; the till itself is surface 'desktop'.
+ *  A415: the till's own session names no person (refresh_tokens.user_id is null), so a revoke by person never finds it. */
 export function sessionKind(p: { surface?: string | null; pinSignIn?: boolean | null } | null | undefined): SessionKind {
   if (p?.pinSignIn) return 'pin';
   if (p?.surface === 'desktop') return 'device';

@@ -21,6 +21,8 @@ import { importKey } from '../lib/productImport';   // 2026-10-04
 import { chunkIn } from '../lib/pgQuery';
 import { resolveStockNotifications } from '../jobs/lowStockChecker';
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
+import { recordReceivedBatch, wantsBatch } from '../lib/batchStore';   // A413
+import { actor } from '../lib/actor';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -338,8 +340,8 @@ router.patch('/ingredients/:id', requirePermission('ingredients.manage'), async 
 });
 
 router.post('/ingredients/:id/adjust', requirePermission('inventory.adjust'), async (req, res) => {
-  const { branch_id, type, quantity, notes } = req.body as
-    { branch_id: string; type: 'add' | 'remove' | 'set'; quantity: number; notes?: string };
+  const { branch_id, type, quantity, notes, expiry_date, batch_no } = req.body as
+    { branch_id: string; type: 'add' | 'remove' | 'set'; quantity: number; notes?: string; expiry_date?: string; batch_no?: string };
 
   if (!branch_id) { res.status(400).json({ error: 'branch_id is required' }); return; }
   if (!assertBranchAccess(req, branch_id)) { res.status(403).json({ error: 'No access to that branch' }); return; }
@@ -369,7 +371,15 @@ router.post('/ingredients/:id/adjust', requirePermission('inventory.adjust'), as
     notes: notes?.trim() || `Manual ${type}`, created_by: req.userId,
   });
 
-  res.json({ ingredient_id: req.params.id, branch_id, current_stock: newQty });
+  // A413: stock added with an expiry date or a batch number records the batch (never fails the add).
+  let batchWarning: string | undefined;
+  if (type === 'add' && delta > 0 && wantsBatch(expiry_date, batch_no)) {
+    const out = await recordReceivedBatch({ businessId: req.businessId, branchId: branch_id, kind: 'ingredient', itemId: req.params.id,
+      quantity: delta, expiry: expiry_date, batchNo: batch_no, source: 'restock', sourceRef: notes?.trim()?.slice(0, 120) || null, by: await actor(req) });
+    if (out.ok === false) batchWarning = out.error;
+  }
+
+  res.json({ ingredient_id: req.params.id, branch_id, current_stock: newQty, ...(batchWarning ? { batch_warning: batchWarning } : {}) });
 });
 
 // Set the per-branch reorder level for an ingredient (owner-only). Upserts the
@@ -606,6 +616,16 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
     req.businessId, branch_id, req.userId, 'restock', `GRN ${grn_number}`,
   );
 
+  // A413: each line received with an expiry date or a batch number is a batch (never fails the GRN).
+  const batchWarnings: string[] = [];
+  const batchBy = await actor(req);
+  for (const i of items as any[]) {
+    if (!wantsBatch(i.expiry_date, i.batch_no) || !(Number(i.quantity_received) > 0)) continue;
+    const out = await recordReceivedBatch({ businessId: req.businessId, branchId: branch_id, kind: 'ingredient', itemId: i.ingredient_id,
+      quantity: Number(i.quantity_received), expiry: i.expiry_date, batchNo: i.batch_no, source: 'grn', sourceRef: grn_number, by: batchBy });
+    if (out.ok === false) batchWarnings.push(out.error);
+  }
+
   if (purchase_order_id) {
     const { data: poItems } = await supabase.from('purchase_order_items')
       .select('id, ingredient_id, quantity_ordered, quantity_received')
@@ -631,7 +651,7 @@ router.post('/grn', requirePermission('inventory.receive'), async (req, res) => 
     }
   }
 
-  res.status(201).json({ ...grn, grn_items: lineItems });
+  res.status(201).json({ ...grn, grn_items: lineItems, ...(batchWarnings.length ? { batch_warning: batchWarnings[0] } : {}) });
 });
 
 // =============================================================================

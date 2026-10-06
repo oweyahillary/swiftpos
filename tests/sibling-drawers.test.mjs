@@ -102,7 +102,9 @@ const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); }
 const base = `http://127.0.0.1:${server.address().port}/api/shifts`;
 // A till's staff token is surface 'desktop'; the web POS's is 'web' (routes/auth.ts). Both are T1 by x-device-id.
 const call = (surface, userId) => async (method, p, body) => {
-  const t = jwt.sign({ userId, businessId: B, branchId: BR, isOwner: false, permissionKeys: ['shifts.manage'], permissionsVersion: 0, sessionId: 's', surface }, process.env.JWT_SECRET, { expiresIn: '5m' });
+  // A till's staff token carries pinSignIn (routes/auth.ts verify-pin) — a person, not the till's own session (A415).
+  const t = jwt.sign({ userId, businessId: B, branchId: BR, isOwner: false, permissionKeys: ['shifts.manage'], permissionsVersion: 0, sessionId: 's', surface,
+    ...(surface === 'desktop' ? { pinSignIn: true } : {}) }, process.env.JWT_SECRET, { expiresIn: '5m' });
   const res = await fetch(`${base}${p}`, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}`, 'x-device-id': 'dev-T1' }, body: body ? JSON.stringify(body) : undefined });
   return { status: res.status, body: await res.json().catch(() => null) };
 };

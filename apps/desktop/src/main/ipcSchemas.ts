@@ -99,7 +99,7 @@ const orderCreate: Schema = {
 export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── auth / session ────────────────────────────────────────────────────────
   'auth:enrolDevice':       { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } },
-  'auth:logout':            NO_PAYLOAD,
+  'auth:rejoin':            { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } },   // A415: tech console only
   'auth:getSession':        NO_PAYLOAD,
   'auth:listBranches':      NO_PAYLOAD,
   'branding:get':           NO_PAYLOAD,
@@ -241,6 +241,12 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:updateStation':       idPatch,
   'manage:deleteStation':       { kind: 'string' },
   'manage:setStationCategories':{ id: { t: 'string' }, categoryIds: { t: 'stringArray' } },
+  // A414: wastage on the till (saved here first, sent later) and the expiry list (A413).
+  'wastage:items':               NO_PAYLOAD,
+  'wastage:record':              { reason: { t: 'string' }, note: { t: 'string', optional: true }, items: { t: 'objectArray', item: {} } },
+  'wastage:state':               NO_PAYLOAD,
+  'wastage:dismiss':             { kind: 'string' },
+  'batches:expiring':            NO_PAYLOAD,
   'manage:createCategory':      { name: { t: 'string' } },
   'manage:updateCategory':      idPatch,
   'manage:bulkProducts':        { kind: 'objectArray' },   // rows: object[]

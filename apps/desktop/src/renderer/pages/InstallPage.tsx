@@ -4,7 +4,7 @@ import type { DeployMode, DeviceRole } from '../lib/posApi';
 
 interface Props {
   // Called once the device config has been written. App.tsx then re-runs its
-  // normal boot path (owner session check -> login).
+  // normal boot path (till session check -> login).
   onComplete: () => void;
 }
 

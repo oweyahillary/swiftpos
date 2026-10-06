@@ -12,7 +12,7 @@
 //   none          — never subscribed / explicitly disabled. Login blocked.
 //
 // Offline desktop POS is NOT affected by any of this — desktop tills keep selling
-// regardless of web-access state (see /api/auth/desktop-login, which does not gate).
+// regardless of web-access state (a till's own session, /api/auth/enrol/redeem, does not gate).
 //
 // Transition safety: if web_access_expires_at is NULL, we fall back to the legacy
 // feature_flags.web_hosting boolean, so existing accounts behave exactly as before

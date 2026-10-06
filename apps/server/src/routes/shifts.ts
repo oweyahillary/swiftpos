@@ -295,7 +295,7 @@ router.post('/:id/foreign-cash', async (req, res) => {
 
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
-  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const openedByRequester = !!req.userId && (shift.opened_by === req.userId || shift.cashier_id === req.userId);
   const keys = req.permissionKeys ?? [];
   const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
   if (!openedByRequester && !sameTerminal && !isManager) {
@@ -347,7 +347,7 @@ router.post('/:id/foreign-orders', async (req, res) => {
 
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '') === terminalKeyFromRequest(req);
-  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const openedByRequester = !!req.userId && (shift.opened_by === req.userId || shift.cashier_id === req.userId);
   const keys = req.permissionKeys ?? [];
   const isManager = req.isOwner || keys.includes('*') || keys.includes('shifts.manage');
   if (!openedByRequester && !sameTerminal && !isManager) {
@@ -430,7 +430,7 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   const sameTerminal =
     terminalKey(shift.device_id ?? '', shift.terminal_code ?? '', shift.branch_id ?? '')
       === terminalKeyFromRequest(req);
-  const openedByRequester = shift.opened_by === req.userId || shift.cashier_id === req.userId;
+  const openedByRequester = !!req.userId && (shift.opened_by === req.userId || shift.cashier_id === req.userId);
   const isManager = callerMayConfirm(req);
 
   // A366 (owner, 2026-09-30): "only the shift owner can close the shift not any other cashier, maybe the manager should
@@ -571,7 +571,8 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
     if (sibErr) console.error('[shifts] A342 could not close sibling shift', sib.id, sibErr.message);
   }
   // 0.6.27 ('blind_shift_close'): a cashier's close hands back no expected cash or variance — a manager checks them.
-  if (!isManager && (await businessPosFeatures(req.businessId)).blind_shift_close) {
+  // A415: the till's own replay of a close is not a cashier looking — the till already holds its figures.
+  if (!isManager && !req.isTill && (await businessPosFeatures(req.businessId)).blind_shift_close) {
     res.json({ ...closed, expected_cash: null, cash_variance: null, blind: true, closed_with: siblings.map(x => x.id) });
     return;
   }

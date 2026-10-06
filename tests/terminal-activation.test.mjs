@@ -57,13 +57,9 @@ ok('no login binding in posApi', () => {
   assert.ok(/redeemEnrolment:/.test(POSAPI), 'posApi.ts lost redeemEnrolment');
 });
 
-// ── Server: /desktop-login is a retired tombstone; enrol is the desktop entry ──
-ok('/desktop-login accepts no credentials (tombstoned 410)', () => {
-  const body = AUTH.slice(AUTH.indexOf("router.post('/desktop-login'"));
-  const end  = body.indexOf('\nrouter.', 10);
-  const route = body.slice(0, end === -1 ? undefined : end);
-  assert.ok(/410/.test(route), '/desktop-login does not return 410');
-  assert.ok(!/signInWithPassword/.test(route), '/desktop-login still calls signInWithPassword — credentials still accepted on a till');
+// ── Server: no owner login on a till at all (A158; A415 removed even the tombstone); enrol is the desktop entry ──
+ok('there is no /desktop-login route — a till never takes anyone\'s email and password', () => {
+  assert.ok(!/router\.post\('\/desktop-login'/.test(AUTH), '/desktop-login is back');
 });
 ok('web dashboard /login is untouched', () => {
   const body = AUTH.slice(AUTH.indexOf("router.post('/login'"));

@@ -59,9 +59,10 @@ ok('never guess between two people: two users on one email, or two owners, resol
 ok('an inactive owner is not taken by the fallback', () => {
   assert.equal(pickOwnerUserId([{ id: 'u-old', email: 'a@b.c', status: 'inactive', role_name: 'owner' }], { authEmail: null, businessEmail: null }), null);
 });
-ok('the enrol-code route still refuses when nobody resolves (never a code with no principal)', () => {
+ok('A415: an enrolment code needs no owner — a till joins as itself, so a client whose owner cannot be resolved still gets codes', () => {
   const src = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/admin.ts'), 'utf8');
-  assert.match(src, /const ownerId = await resolveOwnerUserId\(businessId\);\s*if \(!ownerId\) \{/);
+  const issue = src.split("/branches/:branchId/enrol-code'")[1].split('router.get(')[0];
+  assert.ok(!/resolveOwnerUserId|NO_OWNER/.test(issue));
 });
 ok('the admin portal shows the enrolment error beside the branches', () => {
   const ui = fs.readFileSync(path.join(ROOT, 'apps/admin/src/AdminPortal.tsx'), 'utf8');

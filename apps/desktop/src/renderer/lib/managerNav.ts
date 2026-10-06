@@ -20,7 +20,7 @@
 
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
-  | 'menu' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock';
+  | 'menu' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -38,6 +38,8 @@ export interface NavAccess {
   canPrinting: boolean;
   /** Web POS on and something stock-tracked (A346). */
   showStock: boolean;
+  /** A414: inventory.waste or inventory.adjust — record wastage on the till. */
+  canWaste?: boolean;
 }
 
 /** Pages opened from inside a group's page, not tabs of their own. */
@@ -62,7 +64,10 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
       ...(a.canPrinting ? [{ key: 'printers' as TabKey, label: 'Printing' }] : []),
       ...(a.canManageStaff ? [{ key: 'staff' as TabKey, label: 'Staff' }] : []),
     ] },
-    { key: 'stock', label: 'Stock', tabs: a.showStock ? [{ key: 'stock', label: 'Stock' }] : [] },
+    { key: 'stock', label: 'Stock', tabs: [
+      ...(a.showStock ? [{ key: 'stock' as TabKey, label: 'Stock' }] : []),
+      ...(a.canWaste ? [{ key: 'wastage' as TabKey, label: 'Wastage' }] : []),   // A414
+    ] },
   ];
   return groups.filter((g) => g.tabs.length > 0);
 }

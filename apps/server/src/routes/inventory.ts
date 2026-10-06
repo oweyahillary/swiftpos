@@ -5,6 +5,9 @@ import { requireAuth } from '../middleware/auth';
 import { branchScope, assertBranchAccess, requirePermission, requireAnyPermission } from '../middleware/rbac';
 import { supabase } from '../lib/supabase';
 import { hiddenWhileCounting } from '../lib/stockTakeAccess';   // A394
+import { recordReceivedBatch, wantsBatch } from '../lib/batchStore';   // A413
+import { heldUnits } from '../lib/batches';
+import { actor } from '../lib/actor';
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -78,7 +81,7 @@ router.get('/', async (req, res) => {
 // POST /api/inventory/adjust
 // Body: { product_id, branch_id, type: 'restock'|'write_off'|'correction', quantity, notes }
 router.post('/adjust', requirePermission('inventory.adjust'), async (req, res) => {
-  const { product_id, branch_id, type, quantity, notes } = req.body;
+  const { product_id, branch_id, type, quantity, notes, expiry_date, batch_no } = req.body;
 
   if (!product_id || !branch_id || !type || quantity === undefined) {
     res.status(400).json({ error: 'product_id, branch_id, type, and quantity are required' });
@@ -94,7 +97,7 @@ router.post('/adjust', requirePermission('inventory.adjust'), async (req, res) =
   // Verify product belongs to this business
   const { data: product } = await supabase
     .from('products')
-    .select('id, track_stock')
+    .select('id, track_stock, sold_by, pieces_per_unit')
     .eq('id', product_id)
     .eq('business_id', req.businessId)
     .single();
@@ -162,7 +165,17 @@ router.post('/adjust', requirePermission('inventory.adjust'), async (req, res) =
 
   if (mvErr) { sendError(res, mvErr); return; }
 
-  res.json({ stockLevel, previousQty: currentQty, newQty, quantityChange });
+  // A413: a restock with an expiry date or a batch number records the batch (never fails the restock).
+  let batchWarning: string | undefined;
+  if (type === 'restock' && wantsBatch(expiry_date, batch_no)) {
+    const p = product as { sold_by?: string | null; pieces_per_unit?: number | null };
+    const out = await recordReceivedBatch({ businessId: req.businessId, branchId: branch_id, kind: 'product', itemId: product_id,
+      quantity: heldUnits(quantityChange, p.sold_by === 'piece', p.pieces_per_unit), expiry: expiry_date, batchNo: batch_no,
+      source: 'restock', sourceRef: typeof notes === 'string' ? notes.slice(0, 120) : null, by: await actor(req) });
+    if (out.ok === false) batchWarning = out.error;
+  }
+
+  res.json({ stockLevel, previousQty: currentQty, newQty, quantityChange, ...(batchWarning ? { batch_warning: batchWarning } : {}) });
 });
 
 // PATCH /api/inventory/:product_id/threshold

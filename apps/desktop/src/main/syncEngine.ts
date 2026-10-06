@@ -22,6 +22,7 @@ import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
 import { cloudFetch } from './cloudGateway';   // A410
+import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
 import { readPending as readPendingRouting, overlayPending as overlayPendingRouting, pushPendingRouting, type PushOutcome } from './stationRouting';   // A411
 // A275: reuse the SAME local close the branch-LAN central close uses, so remote
 // and on-prem closes run identical cash arithmetic. Called only at runtime (during
@@ -79,7 +80,7 @@ export const SYNC_DIRECTION: Record<string, 'pull' | 'push'> = {
 type RejectableTable = 'shifts' | 'business_days' | 'float_transactions' | 'expenses' | 'kitchen_voids';
 
 let _serverUrl   = '';
-let _accessToken  = '';   // owner/device token — used for catalogue pull
+let _accessToken  = '';   // till's own token — used for catalogue pull
 let _refreshToken = '';
 let _staffToken   = '';   // per-shift staff token — used for order push
 let _staffRefresh = '';
@@ -147,9 +148,9 @@ function authHeaders() {
 // usually expired overnight — the first launch of the day showed "Invalid or
 // expired token" and an empty branch list, and only worked on the SECOND launch
 // because the background sync had refreshed and persisted a new one in the
-// meantime. Anything holding the owner token must be able to refresh and retry.
+// meantime. Anything holding the till's own token must be able to refresh and retry.
 /**
- * SINGLE-FLIGHT. Three call sites reach this — ownerFetch (the PIN pad), the
+ * SINGLE-FLIGHT. Three call sites reach this — tillFetch (the PIN pad), the
  * sync loop, and the order push — and they overlap at boot.
  *
  * Refresh tokens ROTATE: auth.ts revokes the consumed one before issuing the
@@ -264,7 +265,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
       // sign in again, and with no internet they cannot. Recording it is the
       // difference between "it logged me out again" and knowing which refresh
       // was rejected and when.
-      noteInboundFailure('auth', `owner token refresh failed: ${await describeResponse(res)}`);
+      noteInboundFailure('auth', `till token refresh failed: ${await describeResponse(res)}`);
       return false;
     }
     const { accessToken, refreshToken, deviceSecret } = await res.json();
@@ -285,7 +286,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
     // A160: the cloud is unreachable (DNS/refused/timeout). Before giving up,
     // ask the node to broker the refresh — only the node needs internet.
     if (await tryNodeRefresh()) return true;
-    noteInboundFailure('auth', `owner token refresh error: ${err?.message ?? err}`);
+    noteInboundFailure('auth', `till token refresh error: ${err?.message ?? err}`);
     return false;
   }
 }
@@ -316,7 +317,7 @@ function isOnline(): boolean {
 }
 
 // Auth header for order push — uses the staff token if a shift is active,
-// otherwise falls back to the owner token (e.g. owner ringing a sale directly).
+// otherwise falls back to the till's own token (no one signed in online).
 function pushAuthHeaders() {
   const token = _staffToken || _accessToken;
   return {
@@ -438,6 +439,8 @@ async function runPushStages(errors: string[]): Promise<number> {
   await stage('price push', () => pushBranchPriceEdits(errors));
   // A411: station routing saved on this till while the cloud could not be reached.
   await stage('station routing', async () => { await pushStationRoutingNow(); return 0; });
+  // A414: wastage recorded on this till while the cloud could not be reached.
+  await stage('wastage', async () => { await pushWastageNow(); return 0; });
   orders = (await stage('order push', () => pushPendingOrders(errors))) || 0;
   await stage('reconcile', () => reconcileClosedShifts(errors));
   // A365: then a manager's confirmation of a shift whose close is on the cloud.
@@ -475,6 +478,43 @@ export function stationRoutingPending(): boolean {
 }
 let _routingPushInFlight: Promise<Record<string, PushOutcome>> | null = null;
 /** Send what is waiting (single-flight: a tap and the sync timer must not send one set twice). Never throws. */
+// ── A414: wastage recorded on the till, sent to the cloud after (tillWastage.ts) ─────────────────────────────────────
+export function wastagePending(): boolean {
+  try { return readPendingWaste(getLocalDb()).length > 0; } catch { return false; }
+}
+let _wastePushInFlight: Promise<Record<string, WasteOutcome>> | null = null;
+/** Send what is waiting (single-flight: a recording and the sync timer must not send one twice). Never throws. */
+export function pushWastageNow(): Promise<Record<string, WasteOutcome>> {
+  if (_wastePushInFlight) return _wastePushInFlight;
+  _wastePushInFlight = (async () => {
+    const db = getLocalDb();
+    const waiting = readPendingWaste(db);
+    if (!waiting.length) return {};
+    if (!_accessToken || !_serverUrl || !isOnline()) {
+      const out: Record<string, WasteOutcome> = {};
+      for (const w of waiting) out[w.client_id] = { state: 'pending', message: 'Saved on this till — it goes to the cloud when the connection is back.' };
+      return out;
+    }
+    const outcomes = await pushPendingWastage(db, async (rec) => {
+      const post = () => syncFetch(`${_serverUrl}/api/wastage`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ branch_id: rec.branch_id, reason: rec.reason, note: rec.note, items: rec.items,
+          client_id: rec.client_id, recorded_by_name: rec.recorded_by_name, recorded_at: rec.recorded_at }),
+      });
+      let res = await post();
+      if (res.status === 401 && await refreshAccessToken()) res = await post();
+      const body = await res.json().catch(() => ({}));
+      return { status: res.status, body };
+    }, describeServerError);
+    for (const [id, o] of Object.entries(outcomes)) {
+      if (o.state === 'saved') logLine('sync', `wastage ${id}: saved as ${o.ref}`);
+      else if (o.state === 'refused') logLine('sync', `wastage ${id}: refused — ${o.message}`);
+    }
+    return outcomes;
+  })().finally(() => { _wastePushInFlight = null; });
+  return _wastePushInFlight;
+}
+
 export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
   if (_routingPushInFlight) return _routingPushInFlight;
   _routingPushInFlight = (async () => {
@@ -505,7 +545,7 @@ export function pushStationRoutingNow(): Promise<Record<string, PushOutcome>> {
 // ── 0.6.25: a logo uploaded on this till is saved to the cloud too ─────────────────────────────────────────────
 // Owner, 2026-09-30: "when u upload the logo in the desktop app it removes it after a while … is it that the web config
 // overrides it?" — yes: branding is remote-wins, and the tech upload was local only, so the next catalogue pull put the
-// cloud's logo back. Decided: the till's upload ALSO saves to the cloud (PUT /api/business/branding, the owner session).
+// cloud's logo back. Decided: the till's upload ALSO saves to the cloud (PUT /api/business/branding, the till session).
 // Until it lands the till keeps its own (the pull skips branding while pending); offline → it goes with the next sync.
 const BRANDING_PENDING_KEY = 'branding_push_pending';
 export function brandingPushPending(): boolean {
@@ -1027,7 +1067,7 @@ export async function retryFailedOrders(): Promise<{ requeued: number; pushed: n
 // ONE SLOT PER SCOPE, not one slot overall. The first cut of this used a single
 // field and a test caught it immediately: syncAll() drives a catalogue pull AND
 // a token refresh, both fail together, and whichever finished last overwrote the
-// other. The status field reported "owner token refresh failed" while the actual
+// other. The status field reported "till token refresh failed" while the actual
 // cause was BRANCH_NOT_LICENSED on the pull — a confident wrong message, which
 // is the thing this whole change exists to stop.
 const _inbound = new Map<string, { message: string; since: string }>();
@@ -2052,11 +2092,11 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
       // A168: on a 401, refresh the token THIS push is actually sending, and
       // only that one. pushAuthHeaders() sends `_staffToken || _accessToken`, so
       // an online shift pushes under the staff token and an offline shift (no
-      // staff token) pushes under the owner token. The server sets
+      // staff token) pushes under the till's own token. The server sets
       // `cashier_id = req.userId` (the token subject, orders.ts), so re-pushing a
-      // STAFF order under the owner token would reattribute the sale to the owner
+      // STAFF order under the till's own token would lose the staff token's own attribution
       // — never fall through. Mirror the selection instead: refresh whichever
-      // token was sent. This closes the gap where an offline order's owner-token
+      // token was sent. This closes the gap where an offline order's till-token
       // 401 was met with refreshStaffToken() (nothing to refresh) and the order
       // sat pending; the price path recovers via refreshAccessToken() but that
       // path isn't cashier-attributed, so its `staff || owner` fallthrough is

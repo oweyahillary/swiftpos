@@ -48,6 +48,8 @@ const ROOT = path.resolve(HERE, '..');
 const AUTH = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/auth.ts'), 'utf8');
 const POS  = fs.readFileSync(path.join(ROOT, 'apps/server/src/routes/pos.ts'), 'utf8');
 const MW   = fs.readFileSync(path.join(ROOT, 'apps/server/src/middleware/auth.ts'), 'utf8');
+// A415: /enrol/redeem mints the till's own session through buildDeviceTokenPayload (lib/deviceGrant.ts).
+const GRANT = fs.readFileSync(path.join(ROOT, 'apps/server/src/lib/deviceGrant.ts'), 'utf8');
 
 let passed = 0, failed = 0;
 const ok = (name, fn) => {
@@ -63,9 +65,13 @@ function routeBody(src, name) {
   return src.slice(start, next === -1 ? src.length : next);
 }
 
-/** What `surface:` a route assigns in its token payload. */
+/** What `surface:` a route assigns in its token payload (the till's own session: the builder's). */
 function mintedSurface(src, name) {
   const body = routeBody(src, name);
+  if (/buildDeviceTokenPayload\(/.test(body)) {
+    const m = GRANT.slice(GRANT.indexOf('export function buildDeviceTokenPayload')).match(/^\s*surface:\s*(.+?),\s*$/m);
+    return m ? m[1].trim() : null;
+  }
   const m = body.match(/^\s*surface:\s*(.+?),\s*$/m);
   return m ? m[1].trim() : null;
 }
@@ -84,11 +90,8 @@ ok('it mints desktop', () => {
   assert.equal(mintedSurface(AUTH, '/enrol/redeem'), "'desktop'");
 });
 
-ok('owner login on a till is retired (A158): /desktop-login mints no surface', () => {
-  // The credential path was removed so the owner password never touches a till.
-  // The route is tombstoned (410), so it assigns no token surface at all.
-  assert.equal(mintedSurface(AUTH, '/desktop-login'), null,
-    '/desktop-login still mints a session surface — the owner-login path was not fully retired');
+ok('owner login on a till is gone (A158; A415 removed the route itself)', () => {
+  assert.ok(!AUTH.includes("router.post('/desktop-login'"), '/desktop-login is back');
 });
 
 ok('the file header and the code agree', () => {

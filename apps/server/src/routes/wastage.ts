@@ -2,7 +2,8 @@
  * wastage.ts — A399: the wastage log (migration 123).
  *
  *   GET  /api/wastage?from=YYYY-MM-DD&to=YYYY-MM-DD   entries in the period (newest first) and the summary  inventory.waste | inventory.adjust
- *   POST /api/wastage                                  record { branch_id, reason, note, items: [{ kind, id, quantity, unit_cost? }] }
+ *   POST /api/wastage                                  record { branch_id, reason, note, items: [{ kind, id, quantity, unit_cost?, batch_id? }],
+ *                                                      client_id?, recorded_by_name?, recorded_at? } — the last three from a till (A414)
  *                                                                                                          inventory.waste | inventory.adjust
  *   POST /api/wastage/:id/void                         { reason } — the stock goes back; the entry stays    inventory.adjust
  *   GET  /api/wastage/items?branch_id=                 what can be written off at the branch: active products (stocked
@@ -23,6 +24,13 @@ import { parseAmount, cleanDate, addDays, round2 } from '../lib/payables';
 import { WASTE_REASONS, cleanReason, noteProblem, wastageRef, entryValue, wastageSummary, type EntryLike } from '../lib/wastage';
 
 const router = safeRouter();
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A414: when a till recorded it — kept if it is a real time in the last 30 days and not ahead of now. */
+function tillTime(v: unknown): string | null {
+  const t = typeof v === 'string' ? Date.parse(v) : NaN;
+  if (!Number.isFinite(t) || t > Date.now() + 5 * 60_000 || t < Date.now() - 30 * 86_400_000) return null;
+  return new Date(t).toISOString();
+}
 router.use(requireAuth);
 
 type Entry = EntryLike & { id: string; branch_id: string; ref: string; unit_cost: number | string | null; stock_moved: boolean;
@@ -75,7 +83,8 @@ router.get('/items', requireAnyPermission('inventory.waste', 'inventory.adjust')
 
 router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), async (req, res) => {
   const b = (req.body ?? {}) as { branch_id?: string; reason?: string; note?: string;
-    items?: Array<{ kind?: string; id?: string; quantity?: unknown; unit_cost?: unknown }> };
+    items?: Array<{ kind?: string; id?: string; quantity?: unknown; unit_cost?: unknown; batch_id?: string }>;
+    client_id?: string; recorded_by_name?: string; recorded_at?: string };
   const branchId = b.branch_id || req.branchId;
   if (!branchId) { res.status(400).json({ error: 'Choose the branch.' }); return; }
   if (!assertBranchAccess(req, branchId)) { res.status(403).json({ error: 'You can only record wastage at your own branch.' }); return; }
@@ -88,6 +97,23 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
   if (np) { res.status(400).json({ error: np, code: 'NOTE_REQUIRED' }); return; }
   const raw = Array.isArray(b.items) ? b.items : [];
   if (!raw.length || raw.length > 100) { res.status(400).json({ error: 'Add the items wasted (1 to 100).' }); return; }
+
+  // A414: a till saves a write-off while offline and sends it later — with its own id, so a send repeated after a lost
+  // answer is recognised and never recorded twice.
+  const clientId = typeof b.client_id === 'string' && UUID.test(b.client_id) ? b.client_id : null;
+  if (clientId) {
+    const { data: seen } = await supabase.from('wastage_entries').select('ref, value').eq('business_id', req.businessId).eq('client_id', clientId);
+    if ((seen ?? []).length) {
+      const rows = seen as Array<{ ref: string; value: number | string }>;
+      res.status(200).json({ ref: rows[0].ref, entries: rows.length, value: round2(rows.reduce((t, x) => t + (Number(x.value) || 0), 0)), duplicate: true });
+      return;
+    }
+  }
+  // A413: the batch an expired item came from (optional) — must be this business's, this branch's, this item's.
+  const batchIds = [...new Set(raw.map((i) => i.batch_id).filter((x): x is string => typeof x === 'string' && UUID.test(x)))];
+  const batchRows = batchIds.length ? await chunkIn<{ id: string; branch_id: string; product_id: string | null; ingredient_id: string | null }>(
+    'stock_batches', 'id', batchIds, (q) => q.select('id, branch_id, product_id, ingredient_id').eq('business_id', req.businessId)) : [];
+  const BATCH = new Map(batchRows.map((x) => [x.id, x]));
 
   const pIds = raw.filter((i) => i.kind === 'product').map((i) => String(i.id ?? ''));
   const iIds = raw.filter((i) => i.kind === 'ingredient').map((i) => String(i.id ?? ''));
@@ -103,7 +129,13 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
   const pHeld = new Map(pLevels.map((l) => [l.product_id, l])), iHeld = new Map(iLevels.map((l) => [l.ingredient_id, Number(l.current_stock) || 0]));
 
   type Line = { item_kind: 'product' | 'ingredient'; product_id: string | null; ingredient_id: string | null; name: string;
-    quantity: number; unit_cost: number | null; byPiece: boolean; moves: boolean };
+    quantity: number; unit_cost: number | null; byPiece: boolean; moves: boolean; batch_id: string | null };
+  const batchFor = (it: { batch_id?: string }, kind: 'product' | 'ingredient', id: string): string | null | 'bad' => {
+    if (!it.batch_id) return null;
+    const bt = BATCH.get(it.batch_id);
+    if (!bt || bt.branch_id !== branchId || (kind === 'product' ? bt.product_id : bt.ingredient_id) !== id) return 'bad';
+    return bt.id;
+  };
   const lines: Line[] = [];
   const typedCost = (v: unknown): number | null => {
     if (v === undefined || v === null || v === '') return null;
@@ -123,7 +155,9 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
         const held = Number(byPiece ? lvl?.qty_pieces : lvl?.quantity) || 0;
         if (qty > held + 0.004) { res.status(409).json({ error: `${p.name}: only ${held} at this branch.`, code: 'MORE_THAN_HELD' }); return; }
       }
-      lines.push({ item_kind: 'product', product_id: p.id, ingredient_id: null, name: p.name, quantity: qty, byPiece, moves,
+      const pb = batchFor(it, 'product', p.id);
+      if (pb === 'bad') { res.status(400).json({ error: `${p.name}: that batch is not this item's at this branch.` }); return; }
+      lines.push({ item_kind: 'product', product_id: p.id, ingredient_id: null, name: p.name, quantity: qty, byPiece, moves, batch_id: pb,
         unit_cost: typedCost(it.unit_cost) ?? (p.cost_price === null ? null : Number(p.cost_price)) });
     } else if (it.kind === 'ingredient') {
       const g = I.get(String(it.id));
@@ -131,7 +165,9 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
       if (qty === null) { res.status(400).json({ error: `${g.name}: enter how much.` }); return; }
       const held = iHeld.get(g.id) ?? 0;
       if (qty > held + 0.004) { res.status(409).json({ error: `${g.name}: only ${held} at this branch.`, code: 'MORE_THAN_HELD' }); return; }
-      lines.push({ item_kind: 'ingredient', product_id: null, ingredient_id: g.id, name: g.name, quantity: qty, byPiece: false, moves: true,
+      const gb = batchFor(it, 'ingredient', g.id);
+      if (gb === 'bad') { res.status(400).json({ error: `${g.name}: that batch is not this item's at this branch.` }); return; }
+      lines.push({ item_kind: 'ingredient', product_id: null, ingredient_id: g.id, name: g.name, quantity: qty, byPiece: false, moves: true, batch_id: gb,
         unit_cost: typedCost(it.unit_cost) ?? (g.unit_cost === null ? null : Number(g.unit_cost)) });
     } else {
       res.status(400).json({ error: 'Each item is a product or an ingredient.' }); return;
@@ -139,13 +175,20 @@ router.post('/', requireAnyPermission('inventory.waste', 'inventory.adjust'), as
   }
 
   const who = await actor(req);
+  // A414: from a till, the person signed in there (the till's own sign-in is the business's) and when they recorded it.
+  const fromTill = req.surface === 'desktop';
+  const byName = fromTill && typeof b.recorded_by_name === 'string' && b.recorded_by_name.trim() ? b.recorded_by_name.trim().slice(0, 80) : who.name;
+  const at = fromTill ? tillTime(b.recorded_at) : null;
   const { data: last } = await supabase.from('wastage_entries').select('ref').eq('business_id', req.businessId)
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   const ref = wastageRef(Number(/(\d+)$/.exec((last as { ref?: string } | null)?.ref ?? '')?.[1] ?? 0));
   const { data: rows, error } = await supabase.from('wastage_entries').insert(lines.map((l) => ({
     business_id: req.businessId, branch_id: branchId, ref, item_kind: l.item_kind, product_id: l.product_id, ingredient_id: l.ingredient_id,
     name: l.name, quantity: l.quantity, unit_cost: l.unit_cost, value: entryValue(l.quantity, l.unit_cost), stock_moved: false,
-    reason, note: note || null, recorded_by: who.id, recorded_by_name: who.name,
+    reason, note: note || null, recorded_by: who.id, recorded_by_name: byName,
+    ...(at ? { created_at: at } : {}),
+    // Sent only when there is one, so the web's recording works on a cloud before migration 126.
+    ...(clientId ? { client_id: clientId } : {}), ...(l.batch_id ? { batch_id: l.batch_id } : {}),
   }))).select('id, product_id, ingredient_id');
   if (error) { sendError(res, error); return; }
   const ids = (rows ?? []) as Array<{ id: string; product_id: string | null; ingredient_id: string | null }>;

@@ -95,20 +95,10 @@ export function firstOrNull(r: OwnerBusinessResult): OwnedBusiness | null {
 }
 
 /**
- * Resolve a business's OWNER public.users.id — the token principal a redeemed
- * enrolment code mints under (A69). The admin issuing a code is an `admin_users`
- * row, not a `public.users` row, so `created_by` on the code cannot be the admin;
- * it must be the owner, exactly as the owner-issued path used `req.userId`.
+ * Resolve a business's OWNER public.users.id — for the admin portal's owner actions (resetting the owner's sign-in
+ * codes). Never for a till: a till's session is its own and names no person (A415, lib/deviceGrant.ts).
  *
- * The owner user row is created by `POST /clients` with `email = businesses.email`
- * and the seeded `owner` role (see admin.ts create-business). We resolve by that
- * same email — an exact, case-insensitive match, `%`/`_` neutralised — so this
- * agrees with `resolveOwnerUserRow` in auth.ts, which does the same match on the
- * desktop-login path. (Kept here so admin.ts need not import from a routes file;
- * if the two ever unify, this is the home.)
- *
- * Returns null rather than throwing — the caller decides how to fail, and issuing
- * a code with no valid principal must be refused, not papered over.
+ * Returns null rather than throwing — the caller decides how to fail.
  */
 /**
  * 2026-10-02 (owner, admin portal "Enrol till" on a newly registered client: "Could not resolve the business owner for

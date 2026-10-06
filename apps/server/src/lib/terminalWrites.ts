@@ -2,8 +2,8 @@
  * terminalWrites.ts — A159: which WRITES a till (surface 'desktop') may make to the cloud.
  *
  * A till holds two kinds of token:
- *   • the DEVICE token — the enrolment session (`/enrol/redeem`): the owner's scope ('*'), no person behind it, kept on
- *     the till's disk for sync. Stolen, it must not be able to edit the business — products, prices, staff, settings.
+ *   • the till's OWN token — its session from an enrolment code (`/enrol/redeem`), A415: the till, the business, the
+ *     branch and no person (lib/deviceGrant.ts), kept on the till's disk for sync. Stolen, it must not be able to edit the business — products, prices, staff, settings.
  *     It may make only the till's own writes (TILL_WRITES): sales, sync, shift close, the replays.
  *   • a PERSON's token — a staff PIN sign-in on the till (`/verify-pin`, `pinSignIn: true`). A manager signed in on the
  *     till uses the manager screens (Menu, Staff, Payment methods, Stations, Settings, Expense types), which write the
@@ -34,6 +34,10 @@ export const TILL_WRITES: RegExp[] = [
   // category set (the till checked the person's stations.manage / products.manage before saving); creating, renaming
   // or deleting a station stays a PIN sign-in's.
   /^\/api\/stations\/[^/]+\/categories$/,
+  // A414: wastage recorded on the till while offline is sent later with the till's own sign-in (the person may have
+  // signed out; the till checked their inventory.waste / inventory.adjust first). Recording only — voiding an entry
+  // (/api/wastage/:id/void, stock back) stays a person's.
+  /^\/api\/wastage$/,
   /^\/api\/auth\//,                       // enrol, verify-pin, set-pin, refresh, logout, device-token
   /^\/api\/tech\//,                       // tech audit / session (also tech-token gated)
 ];

@@ -7,7 +7,7 @@
  * plaintext in swiftpos.db. The refresh token is the durable one: it is valid
  * for 30 days and renews itself, so anyone who copied the file off a till —
  * a USB stick, a backup, a support ticket with the .db attached — held working
- * owner-scoped access long after the copy.
+ * business-wide access long after the copy.
  *
  * WHAT THIS DOES
  * --------------

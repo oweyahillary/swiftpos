@@ -22,7 +22,7 @@ export default function App() {
   const [state, setState] = useState<AppState>('loading');
   // A405: the Manager tab to open on ("Close day now" on the day-lock banner opens Close Day); null = Overview.
   const [managerTab, setManagerTab] = useState<'dayclose' | null>(null);
-  const [session, setSession] = useState<{ user: any; business: any } | null>(null);
+  const [session, setSession] = useState<{ till?: { device_id: string | null }; business: any } | null>(null);
   const [staff, setStaff] = useState<StaffSession | null>(null);
   // A52 — the idle lock. A CURTAIN over whatever is mounted, never a reset: the
   // cart and the part-entered payment stay exactly where they are behind it.
@@ -57,7 +57,7 @@ export default function App() {
   // No config -> install screen (open, because there's nothing to protect yet).
   // Config present -> the normal enrol/PIN flow against the configured server.
   //
-  // owner/device session persists; staff must always re-enter PIN. We
+  // The till's own session persists (A415: the till itself, never a person); staff must always re-enter PIN. We
   // deliberately do NOT auto-resume a staff session after a restart, so an
   // unattended reboot can't silently resume whoever was last logged in.
   const boot = async () => {
@@ -65,11 +65,11 @@ export default function App() {
       const configured = await posApi.config.isConfigured();
       if (!configured) { setState('install'); return; }
 
-      const owner = await posApi.auth.getSession();
-      // A158: a configured-but-session-less till re-provisions via a one-time
-      // enrolment code — never the owner's email/password.
-      if (!owner) { setState('enrol'); return; }
-      setSession(owner);
+      const tillSession = await posApi.auth.getSession();
+      // A158: a configured-but-session-less till joins with a one-time
+      // enrolment code from ZapTill — never anyone's email/password.
+      if (!tillSession) { setState('enrol'); return; }
+      setSession(tillSession);
 
       // Discard any persisted staff session from a previous run.
       await posApi.auth.clearStaffSession();
@@ -114,7 +114,7 @@ export default function App() {
   // Which surface is showing decides the threshold — 5 minutes on the manager
   // screens (Close Day, Close Branch, Staff, Receipt, and settings.manage also
   // gates till revocation, A46), 10 on the POS. null everywhere else, because
-  // locking the PIN pad, the owner login, the installer or the tech console is
+  // locking the PIN pad, the enrolment screen, the installer or the tech console is
   // meaningless.
   useEffect(() => {
     const surface = state === 'manager' ? 'manager' : state === 'pos' ? 'pos' : null;
@@ -129,22 +129,11 @@ export default function App() {
     setState(hasManagerRights(s) ? 'manager' : 'pos');
   };
 
-  // End the current staff shift -> back to PIN pad (owner stays signed in).
+  // End the current staff shift -> back to PIN pad (the till stays joined).
   const handleEndShift = async () => {
     await posApi.auth.clearStaffSession();
     setStaff(null);
     setLocked(false);          // never leave a curtain over the PIN pad
-    await posApi.idle.clear();
-    setState('pin');
-  };
-
-  // Sign out the cashier -> clears the STAFF session only and returns to the PIN
-  // pad. A158: the device stays enrolled — its session is the terminal identity,
-  // and de-enrolling a till is a deliberate act, not a routine sign-out button.
-  const handleSignOut = async () => {
-    await posApi.auth.clearStaffSession();
-    setStaff(null);
-    setLocked(false);
     await posApi.idle.clear();
     setState('pin');
   };
@@ -175,7 +164,6 @@ export default function App() {
       <PinPage
         businessName={session?.business?.name ?? 'ZapTill'}
         onStaffLogin={handleStaffLogin}
-        onBackToOwner={handleSignOut}
         onTechUnlock={() => setState('tech')}
         onHelp={openHelp}
       />
@@ -213,7 +201,6 @@ export default function App() {
         initialTab={managerTab ?? undefined}
         onOpenPOS={() => { setManagerTab(null); setState('pos'); }}
         onLogout={handleEndShift}
-        onSwitchAccount={handleSignOut}
         onHelp={openHelp}
       />
       {help}

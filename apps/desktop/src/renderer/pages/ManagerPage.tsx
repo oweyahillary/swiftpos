@@ -23,6 +23,7 @@ import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
 import { mayAddExpenseType } from '../lib/expenseTypes';
 import { buildManagerNav, groupOf, openGroup, type TabKey, type GroupKey } from '../lib/managerNav';
 import PrintersScreen from '../screens/PrintersScreen';
+import TillWastage from '../components/TillWastage';   // A414
 
 // A STATION is a job (Kitchen / Dispatch / Till) and belongs to the business.
 // A PRINTER is a machine and belongs to ONE terminal — which is why the
@@ -1080,10 +1081,6 @@ interface Props {
   staff:     { role: string | null; branchId: string; branchName: string | null; staff: { name: string } | null };
   onOpenPOS: () => void;   // switch back to till
   onLogout:  () => void;   // end shift → PIN screen
-  // Full owner sign-out → email login. Moved off the PIN pad, where any
-  // cashier could end the owner session and leave the floor unable to sign
-  // back in without the owner's password.
-  onSwitchAccount?: () => void;
   /** 0.6.35 (A384): open "What to do when". */
   onHelp?: () => void;
   /** A405: open on this tab (the day-lock banner's "Close day now" → Close Day), when this manager may see it. */
@@ -1217,7 +1214,7 @@ function PricesTab({ currency }: { currency: string }) {
     </div>
   );
 }
-export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSwitchAccount, onHelp, initialTab }: Props) {
+export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHelp, initialTab }: Props) {
   const currency     = business.currency ?? 'KES';
   const businessName = business.name;
   const flags        = modeFlags(business.type);
@@ -1357,6 +1354,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
     canManageSettings,
     canPrinting: has('stations.manage') || canManageReceipt,
     showStock,
+    canWaste: has('inventory.waste') || has('inventory.adjust') || ['owner', 'admin'].includes(String((staff as any)?.role ?? '').toLowerCase()),   // A414
   });
   const GROUP_ICON: Record<GroupKey, string> = {
     overview: I.overview, sales: I.orders, expenses: I.expenses, close: I.shift,
@@ -1404,6 +1402,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
         reloadStations={reloadStations}
       />;
       case 'stock':   return showStock ? <StockTab currency={currency} /> : <RetailOverview currency={currency} />;
+      case 'wastage': return <TillWastage />;   // A414
       default:        return <RetailOverview currency={currency} />;
     }
   }
@@ -1484,14 +1483,6 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onSw
             <p className="px-3 pt-1 pb-2 text-[11px] text-gray-400">
               ZapTill v{posApi.version} · {posApi.platform}
             </p>
-          )}
-          {onSwitchAccount && canManageSettings && (
-            <button onClick={onSwitchAccount}
-              title={!sidebarOpen ? 'Sign out business' : undefined}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-colors">
-              <Icon d={I.logout} size={18} cls="flex-shrink-0" />
-              {sidebarOpen && <span>Sign out business</span>}
-            </button>
           )}
         </div>
       </aside>

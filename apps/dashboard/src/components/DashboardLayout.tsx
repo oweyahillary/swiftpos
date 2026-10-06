@@ -137,6 +137,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/stock/counts',          label: 'Stock Counts',    icon: 'counts' },
       // A399: wastage — spoiled, expired or damaged, with the reason and what it cost.
       { to: '/dashboard/stock/wastage',         label: 'Wastage',         icon: 'counts' },
+      // A413: batches and expiry dates — what expires soon, what has expired, write it off.
+      { to: '/dashboard/stock/expiry',          label: 'Expiry',          icon: 'counts' },
     ],
   },
   {
@@ -269,6 +271,7 @@ export default function DashboardLayout() {
       case '/dashboard/stock/ingredients': return 'Raw materials that deplete automatically when a dish is sold';
       case '/dashboard/stock/counts':      return 'Count the shelf (blind); differences are reviewed before stock changes';
       case '/dashboard/stock/wastage':     return 'What spoiled, expired or was damaged — the reason and what it cost';
+      case '/dashboard/stock/expiry':      return 'Batches and expiry dates — what expires soon, what has expired';
       case '/dashboard/inventory':         return isFood
         ? 'Countable packaged goods sold as-is (bottled drinks, snacks)'
         : 'Stock on hand for each product';

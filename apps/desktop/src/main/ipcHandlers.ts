@@ -3,7 +3,6 @@
 // Channels:
 //   auth:enrolDevice   → POST /api/auth/enrol/redeem, store session in SQLite
 //                        (owner email/password login RETIRED — A158)
-//   auth:logout       → clear session + all catalogue from SQLite
 //   auth:getSession   → return current session row
 //   pos:init          → return products + categories + branchId from SQLite
 //   pos:getVariants   → return variant groups + options for a product
@@ -34,15 +33,16 @@ import { assignments } from './print/printWorker';
 import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from './localDb';
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine } from './logFile';
-import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret, clearDeviceSecret } from './tokenStore';
+import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
 import { isSessionRefusal } from './sessionRecovery';   // A407
 import { cloudFetch } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
 import { saveRoutingLocally, overlayPending, readPending as readPendingRouting, mayRoute } from './stationRouting';   // A411
-import { cacheStaffCredential, verifyPinOffline, clearPinCache } from './pinCache';
+import { mayWaste, recordingProblem, queueRecording, readPending as readPendingWaste, readRefused as readRefusedWaste, dismissRefused, ITEMS_KEY as WASTE_ITEMS_KEY, type WasteItem } from './tillWastage';   // A414
+import { cacheStaffCredential, verifyPinOffline } from './pinCache';
 import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
-import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
@@ -103,49 +103,45 @@ export function registerIpcHandlers() {
 
   // ── Auth ────────────────────────────────────────────────
 
-  // A158: owner email/password login on the till was RETIRED. A terminal is now
-  // provisioned ONLY by a one-time enrolment code (auth:enrolDevice below), so the
-  // owner's reusable dashboard credentials are never typed or stored on a shared
-  // till. The server /desktop-login route is tombstoned to match. Web dashboard
-  // login (/api/auth/login) is unaffected.
-
-  // D4 — provision this till with a single-use enrolment code instead of an owner
-  // login (closes D1: the business is chosen by id, so a two-business owner is no
-  // longer a dead end). This is now the ONLY way a till is provisioned (owner
-  // email/password login was retired — A158). The credential is a one-time
-  // business_id + code, redeemed against /enrol/redeem. The
-  // server returns the same { token, refreshToken, user, business } shape, so the
-  // session is stored identically.
-  handle('auth:enrolDevice', async (_event, payload) => {
-    // D7: both credentials must be present and non-empty before we call the server.
-    const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
-      { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
+  // A till joins the business with a one-time code ZapTill issues in the admin portal (business id + code, redeemed
+  // at /api/auth/enrol/redeem). A415 (owner, 2026-10-06: "never the owners session at all"): the session the cloud
+  // hands back is the TILL's own — its device id, the business, the branch, no person. Nothing of the owner is kept on
+  // the till: the session row names this till (user_id = its device id).
+  //
+  // `rejoin` (the technician console, "Rejoin this till"): the same till joins its business again with a fresh code —
+  // after its sign-in was lost or the till was removed — and KEEPS everything on it: sales waiting to sync, shifts,
+  // the menu, settings. Only a code for this till's own business and branch is accepted.
+  const joinBusiness = async (businessId: string, code: string, rejoin: boolean) => {
+    const cfg = getDeviceConfig();
+    const db = getLocalDb();
+    const current = db.prepare(`SELECT business_id FROM session WHERE id=1`).get() as { business_id?: string } | undefined;
+    if (rejoin && current?.business_id && current.business_id !== businessId) {
+      throw new Error('That business ID is not this till\'s business. Rejoin keeps this till\'s sales, so it only joins its own business.');
+    }
     const res = await cloudFetch(`${getCloudUrl()}/api/auth/enrol/redeem`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        business_id: String(business_id ?? '').trim(),
-        code:        String(code ?? '').trim(),
-        // Same stable per-install device_id the login path sends, so the server
-        // records THIS terminal and tells it apart from the rest of the fleet.
-        device_id:   getDeviceConfig()?.device_id ?? undefined,
+        business_id: businessId,
+        code,
+        rejoin,
+        // This till's stable device id: the cloud records THIS terminal (and, rejoining, recognises it).
+        device_id:   cfg?.device_id ?? undefined,
         // A182: the machine's stable MAC, so if this box was enrolled before (a
         // reinstall) the server can hand back its previous terminal code/name.
         mac_address: getMacAddressCached() ?? undefined,
         // A273 follow-up: the till's code and the name typed at setup, so the web
-        // POS's till picker shows THIS till's real name (the cloud used to label
-        // every till "SwiftPOS till"). Absent on a first enrolment before setup.
+        // POS's till picker shows THIS till's real name. Absent on a first enrolment before setup.
         terminal_code: getDeviceConfig()?.terminal_code ?? undefined,
         device_name:   getDeviceConfig()?.device_name ?? undefined,
+        branch_id:     cfg?.branch_id ?? undefined,
       }),
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Enrolment failed');
+    if (!res.ok) throw new Error(data.error ?? (rejoin ? 'Rejoin failed' : 'Enrolment failed'));
 
-    const db = getLocalDb();
-    clearCatalogue(db);
-
+    if (!rejoin) clearCatalogue(db);
     db.prepare(`
       INSERT INTO session (id, token, refresh_token, user_id, business_id, business_name, currency, logged_in_at)
       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
@@ -155,14 +151,14 @@ export function registerIpcHandlers() {
     `).run(
       data.token,
       data.refreshToken ?? null,
-      data.user.id,
+      String(data.till?.device_id ?? cfg?.device_id ?? ''),
       data.business.id,
       data.business.name,
       data.business.currency ?? 'KES',
       new Date().toISOString(),
     );
 
-    // D5: wrap the credentials at rest, same as the login path.
+    // D5: wrap the credentials at rest.
     writeSessionTokens({ token: data.token, refreshToken: data.refreshToken ?? '' });
     // A407: the device secret — the till's own way back in if its session is ever refused.
     if (typeof data.deviceSecret === 'string' && data.deviceSecret) writeDeviceSecret(data.deviceSecret);
@@ -174,33 +170,36 @@ export function registerIpcHandlers() {
     // as itself instead of a blank "new till" that gets re-named T1 and collides
     // (A181). Only fills gaps — never overwrites a code the operator has set here.
     if (data.restore && (data.restore.terminal_code || data.restore.device_label)) {
-      const cfg = getDeviceConfig();
+      const now = getDeviceConfig();
       const patch: Record<string, unknown> = {};
-      if (data.restore.terminal_code && !cfg?.terminal_code) patch.terminal_code = String(data.restore.terminal_code);
-      if (data.restore.device_label && !cfg?.device_name)   patch.device_name   = String(data.restore.device_label);
+      if (data.restore.terminal_code && !now?.terminal_code) patch.terminal_code = String(data.restore.terminal_code);
+      if (data.restore.device_label && !now?.device_name)   patch.device_name   = String(data.restore.device_label);
       if (Object.keys(patch).length) { saveDeviceConfig(patch); logLine('enrol', `restored identity from a prior install: ${JSON.stringify(patch)}`); }
     }
 
     configureSyncEngine(getCloudUrl(), data.token, data.refreshToken ?? '');
     refreshTechConfig(data.token).catch(() => {});
+    logLine('enrol', rejoin ? 'the technician rejoined this till to its business — everything on it kept' : 'joined the business');
     await syncAll().catch(console.error);
 
-    return { user: data.user, business: data.business, branchId: data.branchId ?? null };
+    return { business: data.business, branchId: data.branchId ?? null };
+  };
+
+  handle('auth:enrolDevice', async (_event, payload) => {
+    const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
+      { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
+    return joinBusiness(String(business_id).trim(), String(code).trim(), false);
   });
 
-  handle('auth:logout', async () => {
-    const db = getLocalDb();
-    clearCatalogue(db);
-    db.prepare(`DELETE FROM staff_session WHERE id=1`).run();
-    db.prepare(`DELETE FROM session WHERE id=1`).run();
-    // Signing the terminal out must also remove the offline way in, or a
-    // decommissioned till keeps working credentials for another fortnight.
-    clearPinCache();
-    clearDeviceSecret();   // A407: and its way back in
-    clearOfflinePin();
-    configureStaffSession('', '');
-    configureSyncEngine(getCloudUrl(), '');
-    return true;
+  // A415: the technician rejoins this till to its business — only inside an open technician session (the tech console),
+  // checked here in the main process, not just on the screen.
+  handle('auth:rejoin', async (_event, payload) => {
+    const { business_id, code } = assertPayload<{ business_id: string; code: string }>(
+      { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } }, payload);
+    if (!getActiveSession()) throw new Error('Open the technician console first.');
+    const out = await joinBusiness(String(business_id).trim(), String(code).trim(), true);
+    logTechAction('till.rejoin', { business_id: String(business_id).trim(), branch_id: out.branchId });
+    return out;
   });
 
   handle('auth:getSession', async () => {
@@ -213,8 +212,13 @@ export function registerIpcHandlers() {
     const sessTok = readSessionTokens();
     configureSyncEngine(getCloudUrl(), sessTok.token, sessTok.refreshToken);
 
+    // A415: the session row names this till, never a person. A till that joined before A415 still held the owner's id
+    // here — replaced by the till's own on its next start.
+    const deviceId = getDeviceConfig()?.device_id ?? '';
+    if (deviceId && session.user_id !== deviceId) db.prepare(`UPDATE session SET user_id=? WHERE id=1`).run(deviceId);
+
     return {
-      user: { id: session.user_id, email: null },
+      till: { device_id: deviceId || null },
       business: {
         id: session.business_id,
         name: session.business_name,
@@ -367,9 +371,9 @@ export function registerIpcHandlers() {
     return { imported };
   });
 
-  // ── Staff PIN login (layered on the owner session) ──────
+  // ── Staff PIN login (layered on the till session) ──────
   // verify-pin requires the owner bearer token (requireAuth) + a branch_id.
-  // The owner token lives in the session row; the renderer never sees it.
+  // The till token lives in the session row; the renderer never sees it.
 
   /**
    * Calls the server with the OWNER access token, refreshing and retrying once
@@ -386,7 +390,7 @@ export function registerIpcHandlers() {
    * Refreshing here makes the first launch work, which is the one that happens
    * in front of the customer at opening time.
    */
-  async function ownerFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  async function tillFetch(path: string, init: RequestInit = {}): Promise<Response> {
     const db = getLocalDb();
     const readToken = () =>
       readSessionTokens().token || undefined;
@@ -430,7 +434,7 @@ export function registerIpcHandlers() {
   async function fetchForeignCash(shiftId: string | null | undefined): Promise<ForeignCash | null> {
     if (!shiftId) return null;
     try {
-      const res = await withinMs(ownerFetch(`/api/shifts/${encodeURIComponent(shiftId)}/foreign-cash`, {
+      const res = await withinMs(tillFetch(`/api/shifts/${encodeURIComponent(shiftId)}/foreign-cash`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(localShiftIds(shiftId)),
       }), 4_000);
@@ -449,7 +453,7 @@ export function registerIpcHandlers() {
    */
   async function joinCloudDrawer(staffId: string | null | undefined): Promise<{ openedByName: string | null; openedAt: string; sameCashier: boolean } | null> {
     try {
-      const res = await withinMs(ownerFetch('/api/shifts/current'), 4_000);
+      const res = await withinMs(tillFetch('/api/shifts/current'), 4_000);
       if (!res.ok) return null;
       const cloud = await res.json().catch(() => null);
       const adopted = adoptCloudShift(cloud);
@@ -477,7 +481,7 @@ export function registerIpcHandlers() {
 
     try {
       const res  = await Promise.race([
-        ownerFetch('/api/branches'),
+        tillFetch('/api/branches'),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error('slow')), 4_000)),
       ]);
       const data = await (res as Response).json();
@@ -488,7 +492,7 @@ export function registerIpcHandlers() {
 
     if (local.length) return local;
     // Truly first run, nothing synced yet: only now is the server the answer.
-    const res  = await ownerFetch('/api/branches');
+    const res  = await tillFetch('/api/branches');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to load branches');
     return (Array.isArray(data) ? data : []).map((b: any) => ({
@@ -532,7 +536,7 @@ export function registerIpcHandlers() {
       new Date().toISOString(),
     );
 
-    // D5 - wrap at rest, same as the owner session.
+    // D5 - wrap at rest, same as the till session.
     writeStaffTokens({ token: data.accessToken ?? data.token ?? '', refreshToken: data.refreshToken ?? '' });
 
     // Make the staff token the active credential for order pushes.
@@ -566,7 +570,7 @@ export function registerIpcHandlers() {
     const session = db.prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
 
     // Same expiry problem as listBranches: the PIN pad is the first thing
-    // touched each morning, so this is exactly where a stale owner token bites.
+    // touched each morning, so this is exactly where a stale till token bites.
     //
     // OFFLINE FALLBACK — the rule that matters:
     //
@@ -582,7 +586,7 @@ export function registerIpcHandlers() {
     const hasNodeUrl = !!authCfg?.node_url && !amNode;
 
     // Local sign-in from a resolved staff identity — no server JWT. Orders push
-    // under the OWNER token (syncEngine authHeaders) and cashier_id comes from
+    // under the till's own token (syncEngine authHeaders) and cashier_id comes from
     // this staff_session row, so the sale queues, attributes correctly and syncs
     // when the line returns. Shared by the node, node-own-roster and cache paths.
     const signInLocal = (staff: { staffId: string; name: string; roleName: string | null; permissions: unknown }) => {
@@ -644,8 +648,11 @@ export function registerIpcHandlers() {
     const fallbackToLocalAuthority = () => {
       if (amNode) {
         const v = verifyPinAtNode(String(pin), branch_id);
-        if (!v.ok) throw new Error(v.message);
-        return signInLocal(v.staff);
+        if (v.ok) return signInLocal(v.staff);
+        // A415: a branch server whose roster has not arrived yet (or cannot be read) checks the PIN the way any till
+        // does offline — the person's own saved sign-in — instead of turning everyone away.
+        if (v.reason !== 'no_roster' && v.reason !== 'unavailable') throw new Error(v.message);
+        logLine('pin', `branch roster ${v.reason} - checking the PIN on this till's saved sign-ins`);
       }
       const verdict = verifyPinOffline(String(pin), branch_id);
       if (!verdict.ok) throw new Error(verdict.message);
@@ -653,9 +660,9 @@ export function registerIpcHandlers() {
     };
 
     // 2. The cloud, exactly as before.
-    let res: Awaited<ReturnType<typeof ownerFetch>>;
+    let res: Awaited<ReturnType<typeof tillFetch>>;
     try {
-      res = await ownerFetch('/api/auth/verify-pin', {
+      res = await tillFetch('/api/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // PIN, branch, the running build and this till's name (verifyPinBody).
@@ -908,10 +915,10 @@ export function registerIpcHandlers() {
 
     if (groups.length === 0) {
       // Not in SQLite — fetch directly from server as fallback. Goes through
-      // ownerFetch so an expired token refreshes rather than silently dropping
+      // tillFetch so an expired token refreshes rather than silently dropping
       // the option groups and letting the item be rung with no size chosen.
       try {
-        const res = await ownerFetch(`/api/variants/groups?product_id=${productId}`);
+        const res = await tillFetch(`/api/variants/groups?product_id=${productId}`);
         if (res.ok) return await res.json();
       } catch { /* offline or signed out — return empty */ }
       return [];
@@ -942,10 +949,10 @@ export function registerIpcHandlers() {
 
     if (groups.length === 0) {
       // Not in SQLite — fetch directly from server as fallback. Goes through
-      // ownerFetch so an expired token refreshes rather than silently dropping
+      // tillFetch so an expired token refreshes rather than silently dropping
       // the option groups and letting the item be rung with no size chosen.
       try {
-        const res = await ownerFetch(`/api/modifiers/groups?product_id=${productId}`);
+        const res = await tillFetch(`/api/modifiers/groups?product_id=${productId}`);
         if (res.ok) return await res.json();
       } catch { /* offline or signed out — return empty */ }
       return [];
@@ -1711,7 +1718,7 @@ export function registerIpcHandlers() {
     }
     let res: Response | null = null;
     try {
-      res = await ownerFetch('/api/shifts/confirmer', {
+      res = await tillFetch('/api/shifts/confirmer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
       });
     } catch { res = null; }
@@ -1723,9 +1730,10 @@ export function registerIpcHandlers() {
     }
     // No authority could be reached: the node's own roster, or this till's saved sign-ins.
     if (isNodeRole(cfg?.device_role)) {
-      const v = verifyPinAtNode(pin, branchId);
-      if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_A_CONFIRMER : v.message);
-      return local(v.staff);
+      const n = verifyPinAtNode(pin, branchId);
+      if (n.ok) return local(n.staff);
+      // A415: no roster yet → this till's saved sign-ins, as on any till.
+      if (n.reason !== 'no_roster' && n.reason !== 'unavailable') throw new Error(n.reason === 'no_match' ? NOT_A_CONFIRMER : n.message);
     }
     const v = verifyPinOffline(pin, branchId);
     if (!v.ok) throw new Error(v.reason === 'no_match' ? NOT_A_CONFIRMER : v.message);
@@ -1865,7 +1873,7 @@ export function registerIpcHandlers() {
         return r ? { staffId: r.staff_id, hasToken: !!readStaffTokens().token } : null;
       },
       verifyAtCloud: async (pin, branchId) => {
-        const res = await withinMs(ownerFetch('/api/auth/verify-pin', {
+        const res = await withinMs(tillFetch('/api/auth/verify-pin', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: verifyPinBody(pin, branchId),
         }), 8_000);
         return { status: res.status, body: await res.json().catch(() => ({})) };
@@ -1957,7 +1965,7 @@ export function registerIpcHandlers() {
    * screens were, and only because this one function never refreshed. Reported
    * from the field on 0.5.27 (Beryl), on the Menu screen, after idling.
    *
-   * ownerFetch has had exactly this branch since it was written. The two
+   * tillFetch has had exactly this branch since it was written. The two
    * builders disagreed about token expiry and nothing compared them — the same
    * seam as A38's two header spellings.
    *
@@ -2188,6 +2196,54 @@ export function registerIpcHandlers() {
     }
     return { station_id: id, state: 'pending', message: outcome?.message ?? 'Saved on this till — it goes to the cloud at the next sync.',
              category_ids: saved, rejected: [] };
+  });
+
+  // ── A414: wastage recorded on the till — saved here first, sent to the cloud now or at the next sync ──────────────
+  // Items: the cloud's list (with what the branch holds) when it can be reached, kept for offline use; else the last one
+  // kept; else this till's own products. Ingredients come only from the cloud's list.
+  handle('wastage:items', async () => {
+    const db = getLocalDb();
+    const branch = (db.prepare(`SELECT branch_id FROM staff_session WHERE id = 1`).get() as { branch_id?: string } | undefined)?.branch_id
+      ?? getDeviceConfig()?.branch_id ?? '';
+    try {
+      const items = await manageFetch(`/api/wastage/items?branch_id=${encodeURIComponent(branch)}`, 'GET') as any[];
+      db.prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES (?, ?, ?)`)
+        .run(WASTE_ITEMS_KEY, JSON.stringify(items ?? []), new Date().toISOString());
+      return { source: 'cloud', items: items ?? [] };
+    } catch {
+      const kept = db.prepare(`SELECT value, updated_at FROM maintenance_state WHERE key = ?`).get(WASTE_ITEMS_KEY) as { value: string; updated_at: string } | undefined;
+      if (kept?.value) { try { return { source: 'saved', saved_at: kept.updated_at, items: JSON.parse(kept.value) }; } catch { /* fall through */ } }
+      // branch-wide: this till's own product list (the catalogue is the business's)
+      const rows = db.prepare(`SELECT id, name, track_stock FROM products WHERE status = 'active' ORDER BY name`).all() as Array<{ id: string; name: string; track_stock: number }>;
+      return { source: 'till', items: rows.map((p) => ({ kind: 'product', id: p.id, name: p.name, unit: null, by_piece: false, stocked: p.track_stock === 1, held: null, cost: null })) };
+    }
+  });
+  handle('wastage:record', async (_e, payload: { reason: string; note?: string; items: any[] }) => {
+    const db = getLocalDb();
+    const staff = db.prepare(`SELECT staff_name, role_name, permissions, branch_id FROM staff_session WHERE id = 1`).get() as
+      { staff_name: string; role_name: string | null; permissions: string; branch_id: string } | undefined;
+    if (!staff) throw new Error('Not signed in');
+    if (!mayWaste(staff.role_name, staff.permissions)) throw new Error('Your role does not allow recording wastage.');
+    const items: WasteItem[] = (payload.items ?? []).map((i: any) => ({
+      kind: i?.kind === 'ingredient' ? 'ingredient' : 'product', id: String(i?.id ?? ''), name: String(i?.name ?? ''), quantity: Number(i?.quantity),
+    }));
+    const rec = { client_id: uuid(), branch_id: staff.branch_id, reason: String(payload.reason ?? ''), note: String(payload.note ?? '').trim().slice(0, 300),
+      items, recorded_by_name: staff.staff_name, recorded_at: new Date().toISOString() };
+    const problem = recordingProblem(rec);
+    if (problem) throw new Error(problem);
+    queueRecording(db, rec);
+    const outcome = (await pushWastageNow())[rec.client_id];
+    return { client_id: rec.client_id, ...(outcome ?? { state: 'pending', message: 'Saved on this till — it goes to the cloud at the next sync.' }) };
+  });
+  handle('wastage:state', async () => {
+    const db = getLocalDb();
+    return { pending: readPendingWaste(db), refused: readRefusedWaste(db) };
+  });
+  handle('wastage:dismiss', async (_e, clientId: string) => { dismissRefused(getLocalDb(), String(clientId)); return { ok: true }; });
+  // A413: expired / expiring batches at this branch — the cloud's list; offline it says so.
+  handle('batches:expiring', async () => {
+    try { return { online: true, ...(await manageFetch('/api/batches?soon_days=7', 'GET') as object) }; }
+    catch (e: any) { return { online: false, message: e?.message ?? 'Could not reach the cloud.' }; }
   });
 
   handle('manage:createCategory', async (_e, payload: any) => {

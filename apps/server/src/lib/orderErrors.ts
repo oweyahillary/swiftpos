@@ -66,7 +66,7 @@ export function classifyOrderCreateError(err: PgLikeError): OrderErrorVerdict {
   // shift_id → shifts, branch_id → branches, customer_id → customers,
   // discount_id → discounts, pump_id → pumps.
   //
-  // cashier_id is the one that bites: a desktop owner token can carry an
+  // cashier_id is the one that bites: an owner's web token can carry an
   // auth.users id instead of a public.users id when the owner's users row is
   // not resolved at login. That id is not in public.users, so EVERY push under
   // that session fails — and /refresh reuses userId, so it never self-heals.

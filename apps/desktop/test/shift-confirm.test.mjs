@@ -268,7 +268,7 @@ ok('Close lists the shifts awaiting a manager and holds the close button',
   /data-testid="awaiting-shifts"/.test(src('renderer/pages/DayCloseTab.tsx'))
   && /disabled=\{!isManager \|\| busy \|\| counted === '' \|\| awaiting\.length > 0\}/.test(src('renderer/pages/DayCloseTab.tsx')));
 ok('the till checks the PIN with an authority first; its saved sign-ins only when none answers',
-  /ownerFetch\('\/api\/shifts\/confirmer'/.test(src('main/ipcHandlers.ts')) && /verifyPinOffline\(pin, branchId\)/.test(src('main/ipcHandlers.ts')));
+  /tillFetch\('\/api\/shifts\/confirmer'/.test(src('main/ipcHandlers.ts')) && /verifyPinOffline\(pin, branchId\)/.test(src('main/ipcHandlers.ts')));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

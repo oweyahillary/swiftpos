@@ -111,7 +111,7 @@ export function tillsSignedOut(devices: DeviceRow[], now: Date, names: Record<st
       title: `${names[d.business_id] ?? 'A client'}: ${tillName(d)} is signed out and could not sign back in`,
       detail: `Since ${durationLabel(ago(now, d.session_lost_at))} ago${d.session_lost_reason ? ` — ${d.session_lost_reason}` : ''}. `
         + `It keeps selling on its own, but its sales wait on the till. Issue an enrolment code (client › Branches & tills) `
-        + `and enter it on the till (Sign out / switch account).`,
+        + `and rejoin the till from its technician console (Rejoin this till) — nothing on the till is cleared.`,
     });
   }
   return out;

@@ -7,7 +7,7 @@
  * human looking at the lock screen — that's target-only (rule 16). This guards every piece
  * that IS checkable in source, so the feed can't silently rot into a dead panel:
  *   - BrandingEditor calls posApi.branding.set (the A301 write path)
- *   - it takes the businessId from the owner session (the branding row's PK)
+ *   - it takes the businessId from the till session (the branding row's PK)
  *   - the logo goes through prepareRasterLogo (raster shrink; SVG rejected there)
  *   - every write is audited via posApi.tech.logAction
  *   - the logo <input> accepts PNG/JPEG only

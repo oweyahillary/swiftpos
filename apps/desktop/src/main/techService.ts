@@ -83,11 +83,11 @@ export function cacheTechConfig(publicKey: string | null, revealCode: string | n
 }
 
 /** Fetch + cache the branch's reveal code and verification key from the server. */
-export async function refreshTechConfig(ownerToken: string): Promise<void> {
+export async function refreshTechConfig(tillToken: string): Promise<void> {
   const cfg = getDeviceConfig();
   if (!cfg?.branch_id) return;
   const res = await cloudFetch(`${getCloudUrl()}/api/tech/branch-config/${cfg.branch_id}`, {
-    headers: { Authorization: `Bearer ${ownerToken}` },
+    headers: { Authorization: `Bearer ${tillToken}` },
   });
   if (!res.ok) return;
   const data = await res.json();

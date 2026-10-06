@@ -37,6 +37,7 @@ interface Device {
   app_version:   string | null;
   created_at:    string | null;
   last_sync_at:  string | null;   // A72: for the "not synced" staleness badge
+  device_id:     string | null;   // A415: a till's own id — a till names no person (users is null)
   users:        DeviceUser | null;
 }
 
@@ -289,7 +290,7 @@ export default function DevicesTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-white text-sm font-medium">
-                    {d.users?.name ?? 'Unknown'}
+                    {d.users?.name ?? (d.device_id ? 'Till' : 'Unknown')}
                   </span>
                   <span className="text-gray-600 text-xs">·</span>
                   {editingId === d.id ? (
@@ -328,7 +329,7 @@ export default function DevicesTab() {
                   )}
                 </div>
                 <p className="text-gray-600 text-xs mt-0.5">
-                  {d.users?.roles?.name ?? 'Staff'}
+                  {d.users?.roles?.name ?? (d.device_id ? 'Signs in as itself' : 'Staff')}
                   {d.ip_address && ` · ${d.ip_address}`}
                   {d.status === 'pending'  && ` · Requested ${timeAgo(d.requested_at)}`}
                   {d.status === 'approved' && ` · Last seen ${timeAgo(d.last_seen_at)}`}

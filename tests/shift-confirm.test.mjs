@@ -53,6 +53,8 @@ let db;
 const reset = () => {
   db = {
     businesses: [{ id: BZ, owner_id: OWNER }],
+    user_devices: [{ business_id: BZ, device_id: T1, status: 'approved', retired_at: null },   // A415: the tills, on the business
+                   { business_id: BZ, device_id: T2, status: 'approved', retired_at: null }],
     users: [
       { id: CASHIER, business_id: BZ, status: 'active', name: 'Test Cashier', pin_hash: pinHash('1111'), roles: role('Cashier', ['orders.create']), user_permissions: [] },
       { id: MANAGER, business_id: BZ, status: 'active', name: 'Mary Manager', pin_hash: pinHash('2222'), roles: role('Manager', ['orders.void', 'shifts.manage']), user_permissions: [] },
@@ -104,11 +106,13 @@ const express = require('express'); const jwt = require('jsonwebtoken');
 const app = express(); app.use(express.json());
 app.use('/api/shifts', require(path.join(DIST, 'routes/shifts.js')).default);
 const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
-const tok = (userId, surface, keys = []) => jwt.sign({ userId, businessId: BZ, branchId: BR, isOwner: userId === OWNER, permissionKeys: keys,
-  permissionsVersion: 0, sessionId: 's', surface }, process.env.JWT_SECRET);
+// A415: a desktop request is the till's own session — that till, the business, the branch; no person.
+const tok = (userId, surface, keys = [], device = T1) => jwt.sign(surface === 'desktop'
+  ? { userId: null, deviceId: device, till: true, businessId: BZ, branchId: BR, isOwner: false, permissionKeys: ['*'], permissionsVersion: 0, sessionId: 's', surface }
+  : { userId, businessId: BZ, branchId: BR, isOwner: userId === OWNER, permissionKeys: keys, permissionsVersion: 0, sessionId: 's', surface }, process.env.JWT_SECRET);
 const call = async (p, body, { user = CASHIER, surface = 'desktop', keys = ['orders.create'], device = T1 } = {}) => {
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/shifts${p}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${tok(user, surface, keys)}`, 'content-type': 'application/json', 'x-device-id': device },
+    method: 'POST', headers: { Authorization: `Bearer ${tok(user, surface, keys, device)}`, 'content-type': 'application/json', 'x-device-id': device },
     body: JSON.stringify(body) });
   return { status: res.status, body: await res.json().catch(() => null) };
 };

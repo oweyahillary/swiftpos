@@ -50,7 +50,8 @@ export function deviceIdFromRequest(req: Request): string {
 }
 
 export function terminalKeyFromRequest(req: Request): string {
-  const deviceId = deviceIdFromRequest(req);
+  // A415: the till's own session names the till — that is which terminal it is, whatever a header says.
+  const deviceId = (req as { deviceId?: string | null }).deviceId || deviceIdFromRequest(req);
   const terminalCode = (req.body?.terminal_code as string | undefined)?.trim() || '';
   const branchId = (req as any).branchId || (req.body?.branch_id as string | undefined) || '';
   return terminalKey(deviceId, terminalCode, branchId);
