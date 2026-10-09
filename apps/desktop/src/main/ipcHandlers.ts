@@ -72,6 +72,9 @@ import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession,
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
+import { listenForServers } from './serverBeacon';   // A427
+import { pendingJoins, answerJoin } from './serverJoin';   // A427
+import os from 'os';
 import { cleanShowDays } from './productDays';
 
 // Wipes all catalogue data — called on login (before pulling fresh data)
@@ -199,6 +202,75 @@ export function registerIpcHandlers() {
     if (!getActiveSession()) throw new Error('Open the technician console first.');
     const out = await joinBusiness(String(business_id).trim(), String(code).trim(), true);
     logTechAction('till.rejoin', { business_id: String(business_id).trim(), branch_id: out.branchId });
+    return out;
+  });
+
+  // ── A427: join a branch server found on the shop network (serverBeacon.ts / serverJoin.ts) ──────────────────────
+  // The new till: listen for servers, ask one to join, then — once someone at the server allows it — take the
+  // server's answer (cloud, business, branch, server address and access code, a one-time code) and enrol with it.
+  // Terminal code and the rest of setup stay on the setup screen as before.
+  handle('install:findServers', async () => listenForServers(6000));
+
+  let joinAsk: { url: string; id: string; token: string } | null = null;
+  handle('install:requestJoin', async (_event, payload) => {
+    const { url } = assertPayload<{ url: string }>({ url: { t: 'string', min: 1 } }, payload);
+    if (!/^http:\/\/(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/.test(url)) throw new Error('That is not a branch server address.');
+    const deviceId = getDeviceConfig()?.device_id ?? saveDeviceConfig({ configured: false } as any).device_id;
+    let res: Response;
+    try {
+      res = await fetch(`${url}/node/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId, name: os.hostname() }), signal: AbortSignal.timeout(5000) });
+    } catch { throw new Error('Could not reach that branch server. Check this till is on the same network.'); }
+    const body: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error ?? `The branch server refused (HTTP ${res.status}).`);
+    joinAsk = { url, id: String(body.id), token: String(body.token) };
+    logLine('join', `asked the branch server at ${url} to join`);
+    return { ok: true, name: os.hostname() };
+  });
+
+  handle('install:joinStatus', async () => {
+    if (!joinAsk) return { status: 'none' as const };
+    const ask = joinAsk;
+    let r: any;
+    try {
+      const res = await fetch(`${ask.url}/node/join/status?id=${encodeURIComponent(ask.id)}&token=${encodeURIComponent(ask.token)}`, { signal: AbortSignal.timeout(5000) });
+      r = await res.json();
+    } catch { return { status: 'pending' as const }; }   // a blip — keep waiting
+    if (r?.status === 'pending') return { status: 'pending' as const };
+    joinAsk = null;
+    if (r?.status !== 'approved' || !r.grant) {
+      return { status: r?.status === 'denied' ? 'denied' as const : 'expired' as const };
+    }
+    const g = r.grant;
+    const port = Number(new URL(ask.url).port);
+    // Where the server is and how to reach it — saved BEFORE enrolling, so the enrolment goes through the server
+    // (A410) and works even when this till has no internet of its own. Not marked configured: setup finishes on screen.
+    saveDeviceConfig({ deploy_mode: 'cloud', server_url: String(g.cloud_url), branch_id: String(g.branch_id),
+      device_role: 'till', node_url: ask.url, node_secret: String(g.node_secret), configured: false } as any);
+    const joined = await joinBusiness(String(g.business_id), String(g.code), false);
+    logLine('join', `joined ${joined.business?.name ?? 'the business'} through the branch server at ${ask.url}`);
+    return {
+      status: 'joined' as const, business: joined.business, branchId: String(g.branch_id), branchName: g.branch_name ?? null,
+      cloudUrl: String(g.cloud_url), nodeIp: new URL(ask.url).hostname, nodePort: port, nodeSecret: String(g.node_secret),
+    };
+  });
+
+  // The server: who is waiting, and the answer. Allow fetches a one-time code from the cloud for this branch.
+  handle('node:joinRequests', async () => (isNodeRole(getDeviceConfig()?.device_role) ? pendingJoins() : []));
+  handle('node:answerJoin', async (_event, payload) => {
+    const { id, allow } = assertPayload<{ id: string; allow: boolean }>({ id: { t: 'string', min: 1 }, allow: { t: 'boolean' } }, payload);
+    if (!isNodeRole(getDeviceConfig()?.device_role)) throw new Error('Only the branch server answers join requests.');
+    const out = await answerJoin(id, allow, async () => {
+      let res: Response;
+      try { res = await tillFetch('/api/pos/join-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); }
+      catch { throw new Error('The server needs the internet to add a till — check the connection and press Allow again.'); }
+      const d: any = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d?.error ?? `The cloud refused (HTTP ${res.status}).`);
+      const cfg = getDeviceConfig();
+      return { cloud_url: getCloudUrl(), business_id: String(d.businessId), branch_id: String(d.branchId),
+        branch_name: d.branchName ?? null, code: String(d.code), node_secret: cfg?.node_secret || ensureNodeSecret() };
+    });
+    logLine('join', `${allow ? 'allowed' : 'refused'} a till asking to join (${id})`);
     return out;
   });
 

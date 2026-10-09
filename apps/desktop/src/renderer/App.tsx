@@ -12,13 +12,19 @@ import { mayAddExpenseType } from './lib/expenseTypes';
 import TechPage from './pages/TechPage';
 import UpdateBanner from './pages/UpdateBanner';
 import HelpScreen from './components/HelpScreen';   // 0.6.35 (A384)
+import JoinPrompt from './components/JoinPrompt';   // A427
 import { computeThemeVars, applyThemeVars } from './lib/themeVars';
 
 type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
 
 const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
+// A427: on the branch server, "a till wants to join" shows over every screen — PIN pad, till, manager, tech.
 export default function App() {
+  return (<><AppScreens /><JoinPrompt /></>);
+}
+
+function AppScreens() {
   const [state, setState] = useState<AppState>('loading');
   // A405: the Manager tab to open on ("Close day now" on the day-lock banner opens Close Day); null = Overview.
   const [managerTab, setManagerTab] = useState<'dayclose' | null>(null);

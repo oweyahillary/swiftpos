@@ -41,6 +41,7 @@ import {
 } from './nodeIngest';
 import { v4 as uuid } from 'uuid';
 import { cleanShowDays } from './productDays';
+import { pruneChoices, VARIANT_TABLES, MODIFIER_TABLES } from './choicePrune';   // A425
 // ── Sync direction — the single authoritative source of truth ────────────────
 // Getting a table's direction wrong = data loss (e.g. pulling a local-origin
 // table would overwrite unsynced till data with stale/empty server rows). So
@@ -1246,6 +1247,8 @@ async function pullCatalogue(): Promise<boolean> {
   let stations: any[] | null = null;
   let variantGroups: any[] = [], variantOptions: any[] = [];
   let modifierGroups: any[] = [], modifierOptions: any[] = [];
+  // A425: the products whose choices this pull really received — only theirs are replaced (choicePrune.ts)
+  let variantScope: string[] = [], modifierScope: string[] = [];
   let stockLevels: any[] = [], users: any[] = [];
   let diningTables: any[] = [], pumps: any[] = [];
   let tablesFetched = false, pumpsFetched = false;
@@ -1265,6 +1268,9 @@ async function pullCatalogue(): Promise<boolean> {
     ({ products, categories, comboItems, paymentMethods, stations,
        variantGroups, variantOptions, modifierGroups, modifierOptions,
        stockLevels, users, diningTables, tablesFetched, pumps, pumpsFetched } = r);
+    // the branch server's snapshot is its whole catalogue — every product's choices are in it
+    variantScope = products.map((p: any) => String(p.id));
+    modifierScope = variantScope;
     branchId = r.config.branchId;
     effectiveBranchId = boundBranchId || branchId || null;
     applyReferenceConfig(r.config);
@@ -1339,10 +1345,14 @@ async function pullCatalogue(): Promise<boolean> {
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
+    // A425: a product with no variants has none to keep; one whose fetch failed is left out (keeps what it has).
+    variantScope = products.filter((p: any) => !p.has_variants).map((p: any) => String(p.id));
+    modifierScope = products.filter((p: any) => !p.has_modifiers).map((p: any) => String(p.id));
     for (const p of products.filter((p: any) => p.has_variants)) {
       const vRes = await syncFetch(`${_serverUrl}/api/variants/groups?product_id=${p.id}`, { headers: authHeaders() });
       if (vRes.ok) {
         const groups = await vRes.json();
+        variantScope.push(String(p.id));
         for (const g of groups) {
           variantGroups.push(g);
           variantOptions.push(...(g.variant_options ?? []));
@@ -1354,6 +1364,7 @@ async function pullCatalogue(): Promise<boolean> {
       const mRes = await syncFetch(`${_serverUrl}/api/modifiers/groups?product_id=${p.id}`, { headers: authHeaders() });
       if (mRes.ok) {
         const groups = await mRes.json();
+        modifierScope.push(String(p.id));
         for (const g of groups) {
           modifierGroups.push(g);
           modifierOptions.push(...(g.modifier_options ?? []));
@@ -1579,6 +1590,14 @@ async function pullCatalogue(): Promise<boolean> {
     `);
     for (const g of modifierGroups) upsertMG.run(g);
     for (const o of modifierOptions) upsertMO.run(o);
+
+    // A425: replaced, not only upserted — a group or option the cloud removed (every menu upload replaces a group's
+    // options) must leave the till, or each upload adds another "Size" that has to be picked before the item can be rung.
+    const vp = pruneChoices(db, VARIANT_TABLES, variantScope, variantGroups, variantOptions);
+    const mp = pruneChoices(db, MODIFIER_TABLES, modifierScope, modifierGroups, modifierOptions);
+    if (vp.groups + vp.options + mp.groups + mp.options > 0) {
+      logLine('sync', `menu choices removed upstream dropped — variants ${vp.groups} groups / ${vp.options} options, add-ons ${mp.groups} / ${mp.options}`);
+    }
 
     if (effectiveBranchId) {
       // The bound branch becomes the till's is_main row — the branch every

@@ -10,6 +10,10 @@ import { isNodeRole } from '../lib/deviceRegistry';
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
 import { getWebAccess } from '../lib/webAccess';
+import { worksAtBranch } from '../lib/branchAccess';   // A426
+import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
+import { mayIssueJoinCode } from '../lib/tillJoin';   // A427
+import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';   // A427
 import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
 import { cleanHistoryMethods } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
@@ -74,6 +78,43 @@ router.get('/catalogue-version', async (req, res) => {
 });
 
 
+// POST /api/pos/join-code — A427: the branch server asks for one enrolment code for a till someone at the server has
+// just allowed to join (lib/tillJoin.ts). The same single-use, branch-bound, 15-minute code the admin portal issues;
+// the till redeems it itself and gets its own session. Only a confirmed branch server, only for its own licensed branch.
+router.post('/join-code', async (req, res) => {
+  if (!req.isTill || req.surface !== 'desktop' || !req.deviceId) {
+    res.status(403).json({ error: 'Only a branch server can add a till.', code: 'not_a_server' }); return;
+  }
+  if (!(await isConfirmedBranchServer(req.businessId, req.deviceId))) {
+    res.status(403).json({ error: 'This machine is not confirmed as the branch server yet — let it sync once, then try again.', code: 'not_confirmed_server' });
+    return;
+  }
+  const { data: device } = await supabase.from('user_devices').select('branch_id')
+    .eq('business_id', req.businessId).eq('device_id', req.deviceId).maybeSingle();
+  const branchId = (device as { branch_id?: string | null } | null)?.branch_id ?? null;
+  if (!branchId) { res.status(409).json({ error: 'This branch server is not bound to a branch.', code: 'no_branch' }); return; }
+  const { data: branch } = await supabase.from('branches').select('id, name, desktop_licensed')
+    .eq('id', branchId).eq('business_id', req.businessId).maybeSingle();
+  if (!branch) { res.status(404).json({ error: 'Branch not found' }); return; }
+  if (!(branch as { desktop_licensed?: boolean }).desktop_licensed) {
+    res.status(409).json({ error: 'This branch has no desktop licence — ask ZapTill to assign one.', code: 'BRANCH_NOT_LICENSED' }); return;
+  }
+  if (!mayIssueJoinCode(req.deviceId)) {
+    res.status(429).json({ error: 'Too many tills added in the last hour — try again later.', code: 'join_rate' }); return;
+  }
+
+  const raw = makeCode();
+  const expiresAt = expiryFromNow();
+  const { error } = await supabase.from('device_enrolment_codes')
+    .insert({ business_id: req.businessId, branch_id: branchId, code_hash: hashCode(raw), expires_at: expiresAt });
+  if (error) { sendError(res, error); return; }
+
+  console.log(`[tillJoin] branch server ${req.deviceId} added a till to branch ${branchId} (code expires ${expiresAt})`);
+  res.json({
+    code: raw, businessId: req.businessId, branchId, branchName: (branch as { name?: string }).name ?? null, expiresAt,
+  });
+});
+
 // active products (with category colour), active categories, main branch id, and variant groups.
 // GET /api/pos/branch-staff — hands a branch NODE its staff roster with bcrypt
 // PIN hashes so it can authenticate cashiers offline (PHASE5 §4b / A17). This is
@@ -115,7 +156,8 @@ router.get('/branch-staff', async (req, res) => {
   // Effective permissions = role grants (all true) then per-user overrides
   // (granted true/false) — identical resolution to /verify-pin and the JWT.
   const roster = (staffList ?? [])
-    .filter((u: any) => (u.user_branches ?? []).some((b: any) => b.branch_id === branchId))
+    // A426: the same rule as PIN sign-in — no branch assigned means every branch (lib/branchAccess.ts)
+    .filter((u: any) => worksAtBranch(u.user_branches, branchId))
     .map((u: any) => {
       const permissions: Record<string, boolean> = {};
       (u.roles?.role_permissions ?? []).forEach((rp: any) => { if (rp.permissions?.key) permissions[rp.permissions.key] = true; });

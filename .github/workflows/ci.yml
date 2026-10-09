@@ -729,6 +729,18 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/till-rejoin.test.mjs
 
+      # A425 — a menu upload replaces a group's options; the till's pull now drops what the cloud removed, so a pizza
+      # never carries three required "Size" groups that block the sale.
+      - name: Desktop menu choices follow the cloud (no duplicate variants)
+        working-directory: apps/desktop
+        run: node --no-warnings test/choice-prune.test.mjs
+
+      # A427 — a new till finds the branch server on the network and joins when someone at the server allows it; the
+      # server keeps running (start with Windows, never sleep, tray).
+      - name: Desktop till joins the branch server (beacon, allow, always-on server)
+        working-directory: apps/desktop
+        run: node --no-warnings test/server-join.test.mjs
+
       # A410 — at a branch with a server, only the server talks to the cloud: a peer's every cloud call goes through
       # the real branch server's /node/cloud gateway; no internet there = no connection, never round it.
       - name: Desktop peers reach the cloud only through the branch server

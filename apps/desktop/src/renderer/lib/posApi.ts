@@ -310,6 +310,17 @@ declare global {
         getStaffSession: () => Promise<StaffSession | null>;
         clearStaffSession: () => Promise<boolean>;
       };
+      /** A427: a new till finds the branch server on the shop network and asks to join it. */
+      install: {
+        findServers: () => Promise<FoundServer[]>;
+        requestJoin: (url: string) => Promise<{ ok: true; name: string }>;
+        joinStatus: () => Promise<JoinStatus>;
+      };
+      /** A427: on the branch server — tills waiting to join, and the answer. */
+      serverJoin: {
+        requests: () => Promise<Array<{ id: string; name: string; ip: string; at: string }>>;
+        answer: (id: string, allow: boolean) => Promise<{ ok: true }>;
+      };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
       // tracking can).
@@ -732,3 +743,11 @@ function wrapApi<T>(target: T, seen = new WeakMap<object, any>()): T {
 }
 
 export const posApi = wrapApi(window.swiftpos);
+
+/** A427: a branch server heard on the shop network. */
+export interface FoundServer { url: string; ip: string; port: number; business: string | null; server: string | null }
+/** A427: where a join request stands. 'joined' carries what the setup screen fills in. */
+export type JoinStatus =
+  | { status: 'none' | 'pending' | 'denied' | 'expired' }
+  | { status: 'joined'; business: any; branchId: string; branchName: string | null; cloudUrl: string;
+      nodeIp: string; nodePort: number; nodeSecret: string };

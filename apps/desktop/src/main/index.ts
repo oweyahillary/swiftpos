@@ -9,7 +9,8 @@ import { initPrinting } from './print/printWorker';
 import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
-import { startNodeServer } from './nodeServer';
+import { startNodeServer, onServingChange } from './nodeServer';
+import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, markQuitting } from './serverMode';   // A427
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
@@ -119,6 +120,7 @@ function createWindow() {
   });
 
   win.setMenuBarVisibility(false);
+  keepServerWindowAlive(win);   // A427: a branch server's window hides to the tray instead of closing
 
   // D17: hold the env-badged title even if the loaded page sets its own
   // document.title, so the enrolled cloud stays visible in the title bar.
@@ -165,6 +167,7 @@ if (!gotTheLock) {
     const [win] = BrowserWindow.getAllWindows();
     if (win) {
       if (win.isMinimized()) win.restore();
+      win.show();   // A427: a branch server's window may be hidden in the tray
       win.focus();
     }
   });
@@ -200,6 +203,10 @@ app.whenReady().then(() => {
     try {
       initPrinting(getLocalDb(), () => BrowserWindow.getAllWindows()[0] ?? null);
     } catch (e) { console.error('[startup] print subsystem init failed:', e); }
+
+    // A427: whenever this machine starts or stops serving its branch — at start-up, at setup, on promotion — it
+    // goes into or out of server mode (start with Windows, never sleep, stay in the tray). See serverMode.ts.
+    onServingChange((on) => { if (on) enterServerMode(); else leaveServerMode(); });
 
     // If this device is the branch aggregation node, start its LAN listener so
     // peer tills can push orders and read combined branch reports.
@@ -364,7 +371,10 @@ app.whenReady().then(() => {
   }, 90_000);
 });
 
+app.on('before-quit', () => { markQuitting(); });   // A427: a real quit (tray, update, shutdown) is let through
+
 app.on('window-all-closed', () => {
+  if (isServing()) return;   // A427: the branch server keeps running in the tray
   if (process.platform !== 'darwin') app.quit();
 });
 

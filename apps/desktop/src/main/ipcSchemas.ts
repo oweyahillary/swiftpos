@@ -102,6 +102,11 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'auth:rejoin':            { business_id: { t: 'string', min: 1 }, code: { t: 'string', min: 1 } },   // A415: tech console only
   'auth:getSession':        NO_PAYLOAD,
   'auth:listBranches':      NO_PAYLOAD,
+  'install:findServers':    NO_PAYLOAD,                                                          // A427
+  'install:requestJoin':    { url: { t: 'string', min: 1 } },                                    // A427
+  'install:joinStatus':     NO_PAYLOAD,                                                          // A427
+  'node:joinRequests':      NO_PAYLOAD,                                                          // A427
+  'node:answerJoin':        { id: { t: 'string', min: 1 }, allow: { t: 'boolean' } },             // A427
   'branding:get':           NO_PAYLOAD,
   // A301: structure only — the value rules (hex, PNG/JPEG, 250 KB, SVG-reject) live in
   // brandingGuard.ts and are enforced in setBranding. accentHex/logoPng are optional so
