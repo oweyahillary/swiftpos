@@ -58,6 +58,24 @@
     DetailPrint '  netsh advfirewall firewall add rule name="SwiftPOS Branch Server" dir=in action=allow protocol=TCP localport=4100-4103 profile=private'
   ${EndIf}
 
+  ; ── A427: branch server discovery (UDP 4199) ─────────────────────────────
+  ; The branch server announces itself on the shop network every few seconds
+  ; (src/main/serverBeacon.ts) and a till being installed LISTENS on UDP 4199
+  ; to find it. The listening machine needs this inbound rule, so it is added on
+  ; every install, private profile only, for the same reasons as the rule above.
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ZapTill Server Discovery"'
+  Pop $0
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule \
+    name="ZapTill Server Discovery" \
+    description="Lets a ZapTill till being installed find the branch server on this network." \
+    dir=in action=allow protocol=UDP localport=4199 profile=private'
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "Firewall rule added (UDP 4199, private networks)."
+  ${Else}
+    DetailPrint "Could not add the discovery rule (exit $0). Tills can still be set up by typing the server address."
+  ${EndIf}
+
 !macroend
 
 !macro customUnInstall
@@ -66,6 +84,8 @@
   ; leaves an orphaned rule and the machine accumulates them.
   DetailPrint "Removing the SwiftPOS firewall rule..."
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="SwiftPOS Branch Server"'
+  Pop $0
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ZapTill Server Discovery"'
   Pop $0
 
 !macroend

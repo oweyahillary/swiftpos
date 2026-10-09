@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import type { DeployMode, DeviceRole } from '../lib/posApi';
+import type { DeployMode, DeviceRole, FoundServer } from '../lib/posApi';
 
 interface Props {
   // Called once the device config has been written. App.tsx then re-runs its
@@ -37,11 +37,21 @@ function makeNodeSecret(): string {
 
 const CLOUD_URL_HINT = 'https://api.zaptill.co.ke';
 
-type Step = 'connection' | 'activate' | 'bind';
+// A427: 'search' comes first — a till looks for its branch server on the network before anyone types anything.
+type Step = 'search' | 'connection' | 'activate' | 'bind';
 interface Branch { id: string; name: string }
 
 export default function InstallPage({ onComplete }: Props) {
-  const [step, setStep] = useState<Step>('connection');
+  const [step, setStep] = useState<Step>('search');
+
+  // ── Step 0 (A427): find the branch server on the shop network and ask to join it ──
+  // Owner, 2026-10-09: "the server to broadcast in the network and the till or any installation to listen, if none
+  // exist the tech gets the screen to select". Heard nothing → the usual steps below, exactly as before.
+  const [servers, setServers] = useState<FoundServer[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [joinTarget, setJoinTarget] = useState<FoundServer | null>(null);
+  const [joinNote, setJoinNote] = useState('');
+  const [joinedViaServer, setJoinedViaServer] = useState(false);
 
   // ── Step 1: connection ──
   // Always 'cloud'. The picker was removed (see step 1) but the value is still
@@ -116,6 +126,54 @@ export default function InstallPage({ onComplete }: Props) {
   const [verified, setVerified] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const search = async () => {
+    setSearching(true); setJoinNote(''); setServers([]);
+    let list: FoundServer[] = [];
+    try { list = await posApi.install.findServers(); } catch { list = []; }
+    setServers(list); setSearching(false);
+    if (list.length === 0) setStep('connection');   // no server on this network — the technician sets it up by hand
+  };
+  useEffect(() => { void search(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const askToJoin = async (srv: FoundServer) => {
+    setJoinNote(''); setError('');
+    try {
+      const r = await posApi.install.requestJoin(srv.url);
+      setJoinTarget(srv);
+      setJoinNote(`Waiting for someone at the server to allow "${r.name}" to join…`);
+    } catch (e: any) { setJoinNote(e?.message ?? 'Could not ask that server.'); }
+  };
+
+  // While waiting: ask every 2 seconds. Allowed → this till is already enrolled; the last step shows filled in.
+  useEffect(() => {
+    if (!joinTarget || step !== 'search') return;
+    let busy = false;
+    const t = setInterval(async () => {
+      if (busy) return; busy = true;
+      try {
+        const st = await posApi.install.joinStatus();
+        if (st.status === 'denied') { setJoinTarget(null); setJoinNote('The server did not allow this till to join.'); }
+        else if (st.status === 'expired' || st.status === 'none') { setJoinTarget(null); setJoinNote('The request ran out — ask again.'); }
+        else if (st.status === 'joined') {
+          setJoinTarget(null);
+          setServerUrl(st.cloudUrl); setVerified(true);
+          setBusinessName(st.business?.name ?? '');
+          if (st.business?.type) setBusinessType(st.business.type);
+          const list = await posApi.auth.listBranches().catch(() => []);
+          setBranches(list.map(b => ({ id: b.id, name: b.name })));
+          setBranchId(st.branchId); setBranchLocked(true);
+          setRole('till');
+          setNodeIp(st.nodeIp); setNodePort(String(st.nodePort)); setCustomPort(st.nodePort !== NODE_DEFAULT_PORT);
+          setNodeSecret(st.nodeSecret);
+          setJoinedViaServer(true);
+          setStep('bind');
+        }
+      } catch (e: any) { setJoinTarget(null); setJoinNote(e?.message ?? 'Joining failed — ask again.'); }
+      finally { busy = false; }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [joinTarget, step]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
   const urlValid = /^https?:\/\//i.test(cleanUrl);
@@ -247,7 +305,7 @@ export default function InstallPage({ onComplete }: Props) {
   );
 
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
-  const stepNum = step === 'connection' ? 1 : step === 'activate' ? 2 : 3;
+  const stepNum = step === 'search' || step === 'connection' ? 1 : step === 'activate' ? 2 : 3;
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4 py-10">
@@ -260,9 +318,40 @@ export default function InstallPage({ onComplete }: Props) {
 
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 space-y-5">
 
+          {/* ── A427: find the branch server ── */}
+          {step === 'search' && (
+            <div data-testid="install-search">
+              <p className="text-sm text-gray-300 font-medium">Looking for the branch server on this network…</p>
+              {searching && <p className="text-xs text-gray-400 mt-2">This takes a few seconds.</p>}
+              {!searching && servers.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {servers.map((srv) => (
+                    <button key={srv.url} onClick={() => askToJoin(srv)} disabled={!!joinTarget}
+                      className="w-full text-left rounded-xl border border-gray-700 bg-gray-800 hover:border-action-500 px-4 py-3 disabled:opacity-60">
+                      <div className="font-semibold text-white">{srv.business ?? 'ZapTill branch server'}</div>
+                      <div className="text-xs text-gray-300 mt-0.5">{srv.server ?? 'Branch server'} · {srv.ip}</div>
+                    </button>
+                  ))}
+                  <p className="text-xs text-gray-400">Choose the server to join. Someone at that server is asked to allow it.</p>
+                </div>
+              )}
+              {joinNote && <p className="text-sm mt-3 rounded-lg px-3 py-2 border text-amber-300 bg-amber-400/10 border-amber-400/20">{joinNote}</p>}
+              {!searching && (
+                <div className="flex gap-3 mt-4">
+                  <button onClick={search} disabled={!!joinTarget}
+                    className="px-4 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm disabled:opacity-40">Search again</button>
+                  <button onClick={() => { setJoinTarget(null); setStep('connection'); }}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm">Set up without a server</button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── STEP 1: connection ── */}
           {step === 'connection' && (
             <>
+              <button onClick={() => { setStep('search'); void search(); }}
+                className="text-xs text-action-400 hover:text-action-300">Search the network for the branch server again</button>
               {/* Deployment mode picker removed.
                   'Local' means the whole API runs on a branch PC — a different
                   architecture that this product does not ship. Offering it here
@@ -355,6 +444,7 @@ export default function InstallPage({ onComplete }: Props) {
               {businessName && (
                 <p className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2">
                   Activated for <span className="font-semibold">{businessName}</span>
+                  {joinedViaServer && <> — joined through the branch server; its address and access code are filled in below.</>}
                 </p>
               )}
               <div>

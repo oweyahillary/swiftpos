@@ -56,6 +56,8 @@ import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
 import { forwardToCloud } from './nodeGateway';
 import { GATEWAY_PREFIX } from './cloudGateway';
+import { startBeacon, stopBeacon } from './serverBeacon';   // A427
+import { createJoinRequest, readJoin } from './serverJoin';   // A427
 
 const NODE_PORT = Number(process.env.SWIFTPOS_NODE_PORT ?? 4100);
 
@@ -67,6 +69,25 @@ let portAttempt = 0;
 let boundPort: number | null = null;
 
 let server: http.Server | null = null;
+
+// A427: told when this machine starts or stops serving the branch — index.ts keeps a server awake and in the tray.
+// A hook rather than an import so this module still loads without Electron's window and tray (the gateway test).
+let servingHook: ((serving: boolean) => void) | null = null;
+export function onServingChange(cb: (serving: boolean) => void): void { servingHook = cb; }
+const announce = (serving: boolean) => { try { servingHook?.(serving); } catch (e) { console.error('[node] serving hook:', e); } };
+
+function lanAddress(req: http.IncomingMessage): string {
+  return String(req.socket?.remoteAddress ?? '').replace(/^::ffff:/, '');
+}
+
+/** What the beacon says: the port that bound, and names a person recognises. Nothing secret. */
+function beaconInfo() {
+  if (!boundPort) return null;
+  const c = getDeviceConfig();
+  let business: string | null = null;
+  try { business = (getLocalDb().prepare(`SELECT business_name FROM session WHERE id=1`).get() as any)?.business_name ?? null; } catch { /* not joined yet */ }
+  return { port: boundPort, business, server: c?.device_name || (c?.terminal_code ? `Server ${c.terminal_code}` : null) };
+}
 
 function readBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -137,6 +158,18 @@ export function startNodeServer(): void {
   server = http.createServer(async (req, res) => {
     try {
       const url = (req.url ?? '').split('?')[0];
+
+      // A427: the only two routes open WITHOUT the access code — a till being installed has none yet. A request only
+      // queues a question for the person at this server (serverJoin.ts); nothing is handed out until they allow it,
+      // and then only to the holder of that request's private token.
+      if (req.method === 'POST' && url === '/node/join') {
+        const r = createJoinRequest(await readBody(req).catch(() => ({})), lanAddress(req));
+        return r.ok ? json(res, 202, { id: r.id, token: r.token }) : json(res, r.status, { error: r.error });
+      }
+      if (req.method === 'GET' && url === '/node/join/status') {
+        const q = new URL(req.url ?? '', 'http://x').searchParams;
+        return json(res, 200, readJoin(q.get('id') ?? '', q.get('token') ?? ''));
+      }
 
       // Applied before routing, so it covers health, orders, report and the
       // tech-session pair without any route being able to opt out by omission.
@@ -419,6 +452,8 @@ export function startNodeServer(): void {
     } else {
       console.log(`[node] aggregation node listening on :${boundPort}`);
     }
+    startBeacon(beaconInfo);   // A427: tell the shop network this server is here
+    announce(true);
   });
 }
 
@@ -433,9 +468,12 @@ export function getNodePort(): number | null {
 }
 
 export function stopNodeServer(): void {
+  const was = !!server;
   if (server) { server.close(); server = null; }
+  stopBeacon();
   boundPort = null;
   portAttempt = 0;
+  if (was) announce(false);
 }
 
 // ── Broadcast tech token store (singleton row on the node) ──────────────────

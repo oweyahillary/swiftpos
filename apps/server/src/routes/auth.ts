@@ -54,6 +54,7 @@ import { otpGate, roleNeedsOtp, readOtpSettings, startTotpSetup, confirmTotpSetu
 import jwt           from 'jsonwebtoken';
 import bcrypt        from 'bcrypt';
 import crypto        from 'crypto';
+import { worksAtBranch } from '../lib/branchAccess';   // A426
 
 const router = safeRouter();
 
@@ -1484,8 +1485,7 @@ router.post('/verify-pin', requireAuth, async (req, res) => {
     return;
   }
 
-  const branchAccess = matchedUser.user_branches ?? [];
-  if (branchAccess.length > 0 && !branchAccess.some((b: any) => b.branch_id === branch_id)) {
+  if (!worksAtBranch(matchedUser.user_branches, branch_id)) {   // A426: one rule with the branch server's roster
     res.status(403).json({ error: 'You do not have access to this branch' });
     return;
   }

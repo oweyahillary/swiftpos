@@ -27,6 +27,17 @@ contextBridge.exposeInMainWorld('swiftpos', {
     clearStaffSession: ()                                 => ipcRenderer.invoke('auth:clearStaffSession'),
   },
 
+  // A427: a new till finds the branch server on the network and asks to join; the server answers.
+  install: {
+    findServers: ()            => ipcRenderer.invoke('install:findServers'),
+    requestJoin: (url: string) => ipcRenderer.invoke('install:requestJoin', { url }),
+    joinStatus:  ()            => ipcRenderer.invoke('install:joinStatus'),
+  },
+  serverJoin: {
+    requests: ()                            => ipcRenderer.invoke('node:joinRequests'),
+    answer:   (id: string, allow: boolean)  => ipcRenderer.invoke('node:answerJoin', { id, allow }),
+  },
+
   pos: {
     init:         ()                  => ipcRenderer.invoke('pos:init'),
     getVariants:  (productId: string) => ipcRenderer.invoke('pos:getVariants', productId),
