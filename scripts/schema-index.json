@@ -592,6 +592,34 @@
     "created_at": "\"timestamp with time zone\" NOT NULL",
     "branch_id": "\"uuid\""
   },
+  "offers": {
+    "id": "\"uuid\" NOT NULL",
+    "business_id": "\"uuid\" NOT NULL",
+    "name": "\"text\" NOT NULL",
+    "kind": "\"text\" NOT NULL",
+    "value": "\"numeric\" NOT NULL",
+    "spend_type": "\"text\" NOT NULL",
+    "applies_to": "\"text\" NOT NULL",
+    "product_ids": "\"ARRAY\" NOT NULL",
+    "category_ids": "\"ARRAY\" NOT NULL",
+    "buy_qty": "\"integer\" NOT NULL",
+    "get_qty": "\"integer\" NOT NULL",
+    "get_product_id": "\"uuid\"",
+    "min_spend": "\"numeric\" NOT NULL",
+    "meal_items": "\"jsonb\" NOT NULL",
+    "start_date": "\"date\"",
+    "end_date": "\"date\"",
+    "days": "\"ARRAY\"",
+    "start_time": "\"time without time zone\"",
+    "end_time": "\"time without time zone\"",
+    "branch_ids": "\"ARRAY\"",
+    "active": "\"boolean\" NOT NULL",
+    "created_by": "\"uuid\"",
+    "created_by_name": "\"text\"",
+    "created_at": "\"timestamp with time zone\" NOT NULL",
+    "updated_at": "\"timestamp with time zone\" NOT NULL",
+    "deleted_at": "\"timestamp with time zone\""
+  },
   "onboarding_progress": {
     "id": "\"uuid\" NOT NULL",
     "business_id": "\"uuid\" NOT NULL",
@@ -694,7 +722,9 @@
     "refunded_by": "\"uuid\"",
     "refund_authorized_by": "\"uuid\"",
     "delivery_fee": "\"numeric\" NOT NULL",
-    "delivery_free": "\"boolean\" NOT NULL"
+    "delivery_free": "\"boolean\" NOT NULL",
+    "offer_discount": "\"numeric\" NOT NULL",
+    "offers": "\"jsonb\""
   },
   "parking_sessions": {
     "id": "\"uuid\" NOT NULL",
