@@ -17,24 +17,28 @@ import { posApi } from '../lib/posApi';
  * button a human presses.
  *
  * ── UNLOCK IS THE PIN PAD, NOT THE OWNER LOGIN ───────────────────────────────
- * The PIN is verified through the same path as PinPage, which falls back to the
- * offline cache (`staff_pin_cache`, 14 days). If this screen demanded the owner
- * email login instead, a shop with no internet would be locked out of its own
- * till by its own screensaver — register A17 arriving through a door we built.
+ * A446: the PIN is checked by auth:unlock — this till's own staff list and saved
+ * sign-ins first (no network), then the branch server, then the cloud — and only
+ * the signed-in person's PIN lifts it; nothing about the session changes. If this
+ * screen demanded the owner email login instead, a shop with no internet would be
+ * locked out of its own till by its own screensaver — register A17.
  *
  * Only the staff member who is signed in can dismiss it. A different cashier
- * needs Lock till, which ends the shift properly.
+ * uses "Sign out — another person signs in" (the shift stays open).
  */
 export default function LockCurtain({
   staffName,
   staffId,
   branchId,
   onUnlock,
+  onSignOut,
 }: {
   staffName: string;
   staffId: string;
   branchId: string;
   onUnlock: () => void;
+  /** A446: sign this person out to the PIN screen (the cart was theirs; another cashier signs in fresh). */
+  onSignOut?: () => void;
 }) {
   const [pin, setPin]         = useState('');
   const [error, setError]     = useState<string | null>(null);
@@ -64,29 +68,24 @@ export default function LockCurtain({
     setBusy(true);
     setError(null);
     try {
-      // The SAME call PinPage makes, deliberately — it already carries the
-      // offline fallback (staff_pin_cache, 14 days) and the server's revocation
-      // and PERMISSIONS_CHANGED handling. A bespoke "just check this one PIN"
-      // path would be a second thing that must agree with the first, which is
-      // the seam this codebase keeps getting bitten by (§L).
-      const session = await posApi.auth.verifyPin(value, branchId);
-
-      // A correct PIN belonging to SOMEONE ELSE must not lift this curtain. It
-      // would silently continue the locked cashier's shift under another
-      // person's identity — every order still attributed to the first. Ending a
-      // shift is Lock till's job, and it is one button away.
-      if (session?.staff?.id === staffId) {
+      // A446 (session audit): auth:unlock — is this the signed-in person's PIN? It writes NOTHING unless it is (it used
+      // to be auth:verifyPin, which re-signed in whoever's PIN it was BEFORE this screen compared: a colleague's correct PIN
+      // silently made them the signed-in person behind "That is not X's PIN", and an unlock through the branch server
+      // swapped a working cloud session for an offline one). Checked on this till first — no network needed.
+      const r = await posApi.auth.unlock(value);
+      if (r.ok) {
         await posApi.idle.clear();
         onUnlock();
         return;
       }
-      setError(session ? `That is not ${staffName}'s PIN` : 'Wrong PIN');
+      setError(`That is not ${staffName}'s PIN. Try again.`);
       setPin('');
-    } catch {
-      // Offline with nothing cached is a real state, and saying "wrong PIN"
-      // would send a manager hunting for a password problem that is really a
-      // connectivity one.
-      setError('Cannot check that PIN right now. Use Lock till and sign in again.');
+    } catch (e: any) {
+      // A446 (owner's screenshot, 2026-10-11): every failure used to read "Cannot check that PIN right now. Use Lock till
+      // and sign in again" — a wrong PIN included — on a screen with no Lock till button, so the app had to be closed.
+      // Now the real reason (posApi words it: a wrong PIN, no connection and no saved sign-in, …), and a way out below.
+      const msg = String(e?.message ?? '');
+      setError(/not recognised|invalid pin/i.test(msg) ? `That is not ${staffName}'s PIN. Try again.` : (msg || 'Cannot check that PIN right now.'));
       setPin('');
     } finally {
       setBusy(false);
@@ -186,6 +185,17 @@ export default function LockCurtain({
             ⌫
           </button>
         </div>
+        {/* A446: the way out the old message pointed at ("Use Lock till") — a different cashier, a forgotten PIN, or a PIN
+            that cannot be checked: sign out to the PIN screen. The shift stays open; an unpaid order on screen is cleared (it says so). */}
+        {onSignOut && (
+          <button data-testid="lock-sign-out" onClick={onSignOut} disabled={busy}
+            className="mt-6 text-sm text-gray-300 hover:text-white underline underline-offset-4 disabled:opacity-40">
+            Sign out — another person signs in
+          </button>
+        )}
+        {onSignOut && (
+          <p className="mt-1 text-[11px] text-gray-500">The shift stays open; an order not yet paid is cleared.</p>
+        )}
       </div>
     </div>
   );

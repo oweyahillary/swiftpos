@@ -60,7 +60,9 @@ Module._resolveFilename = function (req, parent, ...r) {
 
 // A fetch that hangs until its AbortSignal fires — exactly what a black-holed
 // connection does, and exactly what the old code hung on forever.
+let calls = 0;
 globalThis.fetch = (_u, o) => new Promise((_res, rej) => {
+  if (String(_u).includes('/api/orders')) calls++;
   if (o?.signal) o.signal.addEventListener('abort', () => rej(o.signal.reason || new Error('aborted')));
 });
 
@@ -70,6 +72,7 @@ engine.configureSyncEngine('http://127.0.0.1:9', 'tok', 'refresh');
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`FAIL  ${name}`); } };
 const attempts = () => db.prepare(`SELECT attempts FROM sync_queue WHERE order_id='o1'`).get().attempts;
+const qrow = () => db.prepare(`SELECT status, last_error FROM sync_queue WHERE order_id='o1'`).get();
 
 console.log(`sync fetch timeout (driver: ${driver})\n`);
 
@@ -77,12 +80,15 @@ const t0 = Date.now();
 const r1 = await engine.syncPush();            // old code: hangs forever here
 const dt = Date.now() - t0;
 ok('a hung fetch RESOLVES via the timeout (does not hang the pass)', dt < 5000);
-ok('the order got a real attempt (not stranded at 0)', attempts() === 1);
+// A446 (session audit): a timeout is the LINE, not the sale — the order is tried (its reason recorded) but does not count
+// towards 'failed' (a long outage used to turn every sale 'failed', one every 2.5 minutes, with nothing retrying them).
+ok('the order got a real attempt (not stranded untried), and a timeout does not count towards failed',
+  calls === 1 && /timed out/.test(qrow().last_error ?? '') && attempts() === 0 && qrow().status === 'pending');
 ok('the failure names a timeout', /timed out/.test(JSON.stringify(r1.errors)));
 
 const r2 = await engine.syncPush();            // old code: "Sync already in progress" forever
 ok('a following sync is NOT wedged (Force sync still works)', !r2.errors.includes('Sync already in progress'));
-ok('the second pass attempted again', attempts() === 2);
+ok('the second pass attempted again', calls === 2 && qrow().status === 'pending');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -55,6 +55,7 @@ import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
 import { forwardToCloud } from './nodeGateway';
+import { refreshStaffRosterNow } from './staffRoster';   // A446
 import { serveSharedUpdate, shareDir, shareWanted, latestReady, noteTillVersion, readyAnswer } from './updateShare';   // A443
 import { GATEWAY_PREFIX } from './cloudGateway';
 import { startBeacon, stopBeacon } from './serverBeacon';   // A427
@@ -259,6 +260,7 @@ export function startNodeServer(): void {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refreshToken: token }),
+            signal: AbortSignal.timeout(10_000),   // A446: the till waits 12 s for this; never hang it
           });
           const data = await up.json().catch(() => ({}));
           return json(res, up.status, data);
@@ -381,6 +383,13 @@ export function startNodeServer(): void {
       // node's safeStorage wrapping is machine-bound); the peer re-wraps with its
       // own. The owner has accepted that this puts the branch's hashes on every
       // peer (PHASE5 §10.1) with the PIN-rotation runbook as mitigation.
+      // A446: a till changed staff (created a cashier, set a PIN) — this server pulls the branch's staff list from the
+      // cloud now, so its other tills have it on their next ask (and the PIN check here knows the new cashier at once).
+      if (req.method === 'POST' && url === '/node/roster/refresh') {
+        void refreshStaffRosterNow('a till changed staff');
+        return json(res, 202, { ok: true });
+      }
+
       if (req.method === 'POST' && url === '/node/roster') {
         const body = await readBody(req);
         const c = getDeviceConfig();

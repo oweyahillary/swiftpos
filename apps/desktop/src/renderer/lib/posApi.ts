@@ -340,6 +340,8 @@ declare global {
         getSession: () => Promise<{ till: { device_id: string | null }; business: any } | null>;
         listBranches: () => Promise<{ id: string; name: string; desktop_licensed: boolean }[]>;
         verifyPin: (pin: string, branch_id: string) => Promise<StaffSession>;
+        /** A446: the lock screen — is this the signed-in person's PIN? The session is kept (not re-signed in). */
+        unlock: (pin: string) => Promise<{ ok: boolean; reason?: 'other' | 'wrong' }>;
         getStaffSession: () => Promise<StaffSession | null>;
         clearStaffSession: () => Promise<boolean>;
       };

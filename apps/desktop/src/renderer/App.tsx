@@ -199,6 +199,7 @@ function AppScreens() {
       staffId={staff.staff.id}
       branchId={staff.branchId}
       onUnlock={() => setLocked(false)}
+      onSignOut={() => { void handleEndShift(); }}   // A446: the curtain's way out — sign out to the PIN screen
     />
   ) : null;
 

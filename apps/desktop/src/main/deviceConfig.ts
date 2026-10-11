@@ -474,3 +474,18 @@ export function setStockCountFreeze(raw: unknown): void {
 export function getStockCountFreeze(): StockCountFreeze {
   return parseStockCountFreeze(getDeviceConfig()?.stock_count_freeze ?? null);
 }
+
+/**
+ * A446: a till whose staff only ever signed in through its branch server (or offline) never recorded its branch, so a
+ * manager's change said "This till is not bound to a branch yet" and the menu was pulled for the business's main branch.
+ * The branch its signed-in person works at is its branch: recorded once, at start and on that sign-in. Returns it.
+ */
+export function tillBranchId(): string | null {
+  const cfg = getDeviceConfig();
+  if (cfg?.branch_id) return cfg.branch_id;
+  try {
+    const s = getLocalDb().prepare(`SELECT branch_id FROM staff_session WHERE id = 1`).get() as { branch_id?: string | null } | undefined;
+    if (s?.branch_id && cfg) { saveDeviceConfig({ branch_id: s.branch_id }); return s.branch_id; }
+  } catch { /* no session table yet */ }
+  return null;
+}

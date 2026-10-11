@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getSession: ()                                 => ipcRenderer.invoke('auth:getSession'),
     listBranches:      ()                                 => ipcRenderer.invoke('auth:listBranches'),
     verifyPin:         (pin: string, branch_id: string)   => ipcRenderer.invoke('auth:verifyPin', { pin, branch_id }),
+    unlock:            (pin: string)                      => ipcRenderer.invoke('auth:unlock', { pin }),   // A446
     getStaffSession:   ()                                 => ipcRenderer.invoke('auth:getStaffSession'),
     clearStaffSession: ()                                 => ipcRenderer.invoke('auth:clearStaffSession'),
   },

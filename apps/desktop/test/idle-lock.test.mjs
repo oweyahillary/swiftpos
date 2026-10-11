@@ -142,17 +142,20 @@ ok('App renders it ALONGSIDE the screen, not instead of it',
 
 // ── 4. Unlock goes to the PIN pad, and only for the locked user ────────────
 console.log('\n4. unlock path');
-ok('the curtain verifies a PIN',
-   /auth\.verifyPin/.test(curtain),
-   'The same call PinPage makes, so the offline cache (staff_pin_cache, 14 '
-   + 'days) and the revocation handling come for free rather than being a '
-   + 'second implementation that must agree with the first.');
+// A446 (session audit): the curtain checks the PIN with auth:unlock — this till's staff list and saved sign-ins (the
+// offline cache), then the branch server, then the cloud — and it changes NOTHING about the session. It used auth:verifyPin,
+// which re-signed in whoever's PIN it was before the curtain compared (a colleague's correct PIN switched the person).
+ok('the curtain verifies a PIN (offline too), without touching the session',
+   /posApi\.auth\.unlock\(value\)/.test(curtain)
+   && /const local = verifyPinAtNode\(String\(pin\), st\.branch_id\);/.test(handlers)
+   && /const saved = verifyPinOffline\(String\(pin\), st\.branch_id\);/.test(handlers),
+   'auth:unlock: the till\'s own list, then saved sign-ins (staff_pin_cache), then the server and the cloud.');
 ok('it does NOT send the user to the owner email login',
    !/LoginPage|owner-login/.test(curtain),
    'A shop with no internet and nothing cached would be locked out of its own '
    + 'till by its own screensaver — register A17 through a door we built.');
 ok('only the LOCKED staff member can dismiss it',
-   /session\?\.staff\?\.id === staffId/.test(curtain),
+   /const mine = \(id: string \| null \| undefined\) => \(\{ ok: id === st\.staff_id,/.test(handlers) && /if \(r\.ok\) \{/.test(curtain),
    'Another cashier with a valid PIN would otherwise continue the first '
    + 'cashier\'s shift under their identity, with every order still attributed '
    + 'to the person who walked away.');

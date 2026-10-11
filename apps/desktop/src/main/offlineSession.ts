@@ -17,6 +17,7 @@
  * different sign-in; the till is locked; the app quits. It is sent only to the same cloud endpoint an online sign-in uses
  * (`/api/auth/verify-pin`), with the same body.
  */
+import { isSessionRefusal } from './sessionRecovery';   // A446
 
 /** Shown by every cloud-owned editor while the session is an offline one. */
 export const OFFLINE_SESSION_MESSAGE =
@@ -75,7 +76,10 @@ export async function upgradeOfflineSession(deps: UpgradeDeps): Promise<UpgradeO
     let r: { status: number; body: any };
     try { r = await deps.verifyAtCloud(h.pin, h.branchId); }
     catch { return 'unreachable'; }
-    if (deps.isUnreachableStatus(r.status)) return 'unreachable';
+    // A446 (session audit): a 401 that refuses this TILL's session (not renewable right now) and 429 (too many tries) are "later" —
+    // they used to drop the held PIN for good, and the manager screens stayed "offline" until the person signed in again.
+    // A 401 "Invalid PIN" (the PIN was changed on the cloud) is still a real refusal, below.
+    if (deps.isUnreachableStatus(r.status) || r.status === 429 || (r.status === 401 && isSessionRefusal(r.body))) return 'unreachable';
     // Whoever is signed in may have changed while the request was out.
     if (held !== h) return 'mismatch';
     const now = deps.currentSession();

@@ -123,6 +123,15 @@ export function configureSyncEngine(serverUrl: string, accessToken: string, refr
 }
 
 // Set/clear the active staff token. Called on PIN login and shift end.
+/** A446: a signed-in GET to the cloud for the staff list (through the branch server on a till behind one); one renewal
+ *  on a 401. Kept here because the sync engine owns the till's tokens. */
+export async function rosterCloudGet(path: string): Promise<Response> {
+  if (!_serverUrl || !_accessToken) throw new Error('not signed in');
+  let res = await syncFetch(`${_serverUrl}${path}`, { headers: authHeaders() });
+  if (res.status === 401 && await refreshAccessToken()) res = await syncFetch(`${_serverUrl}${path}`, { headers: authHeaders() });
+  return res;
+}
+
 export function configureStaffSession(staffToken: string, staffRefresh = '') {
   _staffToken   = staffToken;
   _staffRefresh = staffRefresh;
@@ -383,9 +392,18 @@ function persistedStaffRefresh(): string {
   return readStaffTokens().refreshToken;
 }
 
+/** A446: who is signed in on this till right now (staff_session), or null. */
+function signedInStaffId(): string | null {
+  try { return (getLocalDb().prepare(`SELECT staff_id FROM staff_session WHERE id = 1`).get() as { staff_id?: string } | undefined)?.staff_id ?? null; }
+  catch { return null; }
+}
+
 async function doRefreshStaffToken(): Promise<boolean> {
   let refresh = _staffRefresh || persistedStaffRefresh();
   if (!refresh) return false;
+  // A446 (session audit): a renewal that finishes after its cashier signed out and another signed in must not write the
+  // first cashier's session over the second's — the second's sales would go out under the first's name.
+  const who = signedInStaffId();
   const attempt = (token: string) => syncFetch(`${_serverUrl}/api/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -406,6 +424,10 @@ async function doRefreshStaffToken(): Promise<boolean> {
       return false;
     }
     const { accessToken, refreshToken } = await res.json();
+    if (signedInStaffId() !== who) {
+      logLine('auth', 'staff token renewed after a different person signed in — discarded');
+      return false;
+    }
     _staffToken   = accessToken;
     _staffRefresh = refreshToken ?? _staffRefresh;
     writeStaffTokens({ token: _staffToken, refreshToken: _staffRefresh });
@@ -936,7 +958,13 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
   // concurrent/offline run; only adopt the new version once a pull actually lands,
   // so a skipped run is retried on the next tick rather than silently swallowed.
   // (The screens are told by syncAll itself — A321.)
-  const r = await syncAll();
+  // A446: the cloud just said something changed — take it from the CLOUD (through the branch server's gateway on a till
+  // behind one), not from the branch server's copy, which may not have caught up yet: the till then pulled the old copy,
+  // adopted the new version, and kept the old menu (a station added on the web: "No station …" on Test print) until the
+  // 10-minute sync. If the cloud cannot be reached the version is not adopted, so the next tick tries again.
+  _preferCloudPull = true;
+  let r: Awaited<ReturnType<typeof syncAll>>;
+  try { r = await syncAll(); } finally { _preferCloudPull = false; }
   if (r.pulled) _lastCatalogueVersion = version;
   return { changed: true, pulled: r.pulled };
 }
@@ -1276,6 +1304,7 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setReversalRules(c.reversalRules);
 }
 
+let _preferCloudPull = false;   // A446: set while a pull answers the cloud's own "something changed"
 async function pullCatalogue(): Promise<boolean> {
   const db = getLocalDb();
   const now = new Date().toISOString();
@@ -1314,7 +1343,7 @@ async function pullCatalogue(): Promise<boolean> {
   // (unreachable / refused / malformed) — and then we fall through to the cloud
   // path below, unchanged. So this is additive: only a peer with a live node
   // behaves any differently than it did before.
-  const nodeBundle = await fetchReferenceFromNode();
+  const nodeBundle = _preferCloudPull ? null : await fetchReferenceFromNode();   // A446
   if (nodeBundle) {
     const r: AcquiredReference = unpackNodeBundle(nodeBundle);
     ({ products, categories, comboItems, paymentMethods, offers, stations,
@@ -2160,10 +2189,19 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 
   for (const row of pending) {
     try {
+      // A446 (session audit): a sale rung by a cashier who is no longer the one signed in (queued while offline, then
+      // Brian signed in) goes up under the TILL's own session, which names the cashier in the sale (cashier_id — the
+      // cloud checks it against the branch's staff, lib/cashier.ts). Under the person signed in now, it was credited
+      // to them.
+      let rungBy: string | null = null;
+      try { rungBy = JSON.parse(row.payload)?.cashier_id ?? null; } catch { rungBy = null; }
+      const now = signedInStaffId();
+      const asTill = !!_accessToken && !!rungBy && !!now && rungBy !== now;
       const doPost = () => syncFetch(`${_serverUrl}/api/orders`, {
         method: 'POST',
         headers: {
           ...pushAuthHeaders(),
+          ...(asTill ? { Authorization: `Bearer ${_accessToken}` } : {}),
           // Idempotency key — the stable local order id, so retries (even across
           // requeues) always dedupe to the same server order.
           'X-Idempotency-Key': row.order_id,
@@ -2187,7 +2225,7 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
       // safe there and would NOT be safe here.
       if (res.status === 401 && !triedAuthRefresh) {
         triedAuthRefresh = true;
-        const refreshed = selectPushRefresh(_staffToken) === 'staff'
+        const refreshed = !asTill && selectPushRefresh(_staffToken) === 'staff'
           ? await refreshStaffToken()
           : await refreshAccessToken();
         if (refreshed) res = await doPost();
@@ -2225,6 +2263,15 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         const message = (err as any)?.error || 'drawer not on the cloud yet';
         db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
         logLine('sync', `order ${row.order_id} waits for its drawer: ${message}`);
+      } else if (isTransientStatus(res.status)) {
+        // A446 (session audit): the cloud down (5xx), busy (429), or this till's session not renewable right now (401 after
+        // the refresh failed) is not THIS sale's fault — it stays pending and never counts towards 'failed'. Counting it
+        // turned every sale of a long outage 'failed', one every 2.5 minutes, and nothing retried them by itself.
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        const message = describeServerError(err, res.status);
+        db.prepare(`UPDATE sync_queue SET last_error=? WHERE id=?`).run(message, row.id);
+        errors.push(`Order ${row.order_id}: ${message}`);
+        break;   // the rest of the batch would get the same answer
       } else {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         const message = describeServerError(err, res.status);
@@ -2235,15 +2282,15 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
         errors.push(`Order ${row.order_id}: ${message}`);
       }
     } catch (err: any) {
-      // Same escalation as the HTTP-error branch above. Without it an order the
-      // node actively refused sat 'pending' forever — invisible except as a
-      // count that never cleared, with no reason recorded anywhere the cashier
-      // or a manager could see. 'failed' surfaces the ⟳ N failed button, whose
-      // retry is idempotent on the stable order id.
-      db.prepare(`
-        UPDATE sync_queue SET attempts=attempts+1, last_error=?,
-        status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?
-      `).run(err.message ?? 'Push failed', row.id);
+      // A446 (session audit): a thrown fetch is the line, not the sale — no internet, the branch server off or with no
+      // internet itself (UplinkDown), a timeout. It stays pending and never counts towards 'failed' (it used to: a 36-minute
+      // outage would have left ~14 sales 'failed' until someone pressed retry). Anything else thrown still counts.
+      const transport = isTransportError(err);
+      db.prepare(transport
+        ? `UPDATE sync_queue SET last_error=? WHERE id=?`
+        : `UPDATE sync_queue SET attempts=attempts+1, last_error=?,
+           status=CASE WHEN attempts+1 >= 5 THEN 'failed' ELSE 'pending' END WHERE id=?`,
+      ).run(err.message ?? 'Push failed', row.id);
       errors.push(`Order ${row.order_id}: ${err.message}`);
       logLine('sync', `order push failed: ${err.message ?? err}`); // A177: push failures now reach the durable log too (were DB-only)
       // A177: a thrown fetch means the server is unreachable/timed out — the rest
@@ -2253,7 +2300,16 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
     }
   }
 
-  if (pushed) logLine('sync', `pushed ${pushed} order(s) to the cloud`); // A178: confirms the queue is draining
+  if (pushed) {
+    logLine('sync', `pushed ${pushed} order(s) to the cloud`); // A178: confirms the queue is draining
+    // A446: the line is back — sales left 'failed' by a connection problem (before this build, or a run of 5xx) go again.
+    const back = db.prepare(`
+      UPDATE sync_queue SET status='pending', attempts=0
+       WHERE status='failed' AND (last_error LIKE '%fetch failed%' OR last_error LIKE '%timed out%' OR last_error LIKE '%cannot reach%'
+          OR last_error LIKE '%ECONN%' OR last_error LIKE '%ENOTFOUND%' OR last_error LIKE '%EAI_AGAIN%' OR last_error LIKE '%HTTP 5%'
+          OR last_error LIKE '%refused this till%' OR last_error LIKE '%network%' OR last_error LIKE '%aborted%')`).run().changes;
+    if (back) logLine('sync', `${back} sale(s) left 'failed' by a connection problem are queued again`);
+  }
   return pushed;
 }
 
@@ -2263,6 +2319,18 @@ async function pushPendingOrders(errors: string[]): Promise<number> {
 // synced payments — instead of duplicating that math here or letting the
 // till's own number be trusted outright. Runs after pushPendingOrders so
 // "have all this shift's orders synced?" is a real answer, not a guess.
+/** A446: a thrown fetch that is the LINE (no internet, branch server off or without internet, a timeout), not the sale. */
+export function isTransportError(err: any): boolean {
+  const name = String(err?.name ?? '');
+  if (['UplinkDownError', 'NodeRefusedError', 'AbortError', 'TimeoutError'].includes(name)) return true;
+  const text = `${err?.message ?? ''} ${err?.cause?.code ?? ''} ${err?.cause?.message ?? ''}`;
+  return /fetch failed|timed out|timeout|ECONN|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket|network|aborted|cannot reach/i.test(text);
+}
+/** A446: an answer that is the cloud's or the session's state right now, not a verdict on the sale. */
+export function isTransientStatus(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408 || status === 401;
+}
+
 /**
  * Replicate this till's own rows to the branch node.
  *

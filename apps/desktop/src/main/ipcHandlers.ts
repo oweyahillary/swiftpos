@@ -45,6 +45,7 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
+import { tillBranchId } from './deviceConfig';   // A446
 import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
@@ -75,6 +76,7 @@ import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNod
 import { isUnreachableStatus } from './authTransport';
 import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from './offlineSession';
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
+import { refreshStaffRosterNow, staffChangedHere } from './staffRoster';   // A446
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 import { listenForServers } from './serverBeacon';   // A427
@@ -485,7 +487,10 @@ export function registerIpcHandlers() {
    * Refreshing here makes the first launch work, which is the one that happens
    * in front of the customer at opening time.
    */
-  async function tillFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  // A446 (session audit): every call has a time limit — it had none, so a slow cloud (a cold start, a lossy line) or a
+  // branch server that answered nothing left the PIN pad or the lock screen spinning for minutes. A timeout throws like
+  // no connection, so the PIN check falls back to this till's own staff list.
+  async function tillFetch(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<Response> {
     const db = getLocalDb();
     const readToken = () =>
       readSessionTokens().token || undefined;
@@ -495,6 +500,7 @@ export function registerIpcHandlers() {
 
     const call = (t: string) => cloudFetch(`${getCloudUrl()}${path}`, {
       ...init,
+      signal: init.signal ?? AbortSignal.timeout(timeoutMs),
       headers: {
         ...(init.headers ?? {}),
         // Rate limiting keys on this: per-DEVICE buckets instead of the
@@ -710,6 +716,10 @@ export function registerIpcHandlers() {
       configureStaffSession('', '');
       // A345: held in memory so the session becomes a cloud sign-in by itself once the network is back (offlineSession.ts).
       holdOfflinePin({ staffId: staff.staffId, branchId: branch_id, pin: String(pin) });
+      // A446: a till that has only ever signed people in through its branch server (or offline) never recorded its
+      // branch — "This till is not bound to a branch yet" on a manager's change, and the menu pulled for the main branch.
+      // The branch its staff sign in to is its branch.
+      if (!getDeviceConfig()?.branch_id) { saveDeviceConfig({ branch_id }); logLine('pin', `this till is now bound to branch ${branch_id}`); }
       return {
         staff: { id: staff.staffId, name: staff.name, role: staff.roleName },
         // The PIN screen routes on the TOP-LEVEL role (App.tsx hasManagerRights), exactly as the online answer gives it
@@ -728,10 +738,15 @@ export function registerIpcHandlers() {
     // sacked cashier signs in by unplugging a cable — now with two to choose from.
 
     // 1. A peer asks its branch node over the LAN first.
+    // A446: the node's "no" is NOT final any more. Its staff list can be a few seconds behind the cloud (a cashier just
+    // created, a PIN just changed) — and the till then said "not recognised" until the app was restarted. The cloud is
+    // asked next; only the cloud's "no" (or, offline, every local copy's) refuses. A deactivated cashier is still refused:
+    // the cloud refuses them, and offline every copy has dropped them on its next refresh.
+    let nodeSaidNo: string | null = null;
     if (hasNodeUrl) {
       const r = await verifyPinAtNodeClient(String(pin), branch_id);
       if (r.status === 'ok') { logLine('pin', `node sign-in: ${r.staff.name}`); return signInLocal(r.staff); }
-      if (r.status === 'rejected') throw new Error(r.message);   // answered no — final
+      if (r.status === 'rejected') { nodeSaidNo = r.message; logLine('pin', `the branch server did not know that PIN (${r.message}) - asking the cloud`); }
       // transport failure → fall through to the cloud
     }
 
@@ -741,17 +756,16 @@ export function registerIpcHandlers() {
     //    thrown-transport path and the 5xx path (A152) so a "down-but-answering"
     //    cloud rescues identically to an unreachable one.
     const fallbackToLocalAuthority = () => {
-      if (amNode) {
-        const v = verifyPinAtNode(String(pin), branch_id);
-        if (v.ok) return signInLocal(v.staff);
-        // A415: a branch server whose roster has not arrived yet (or cannot be read) checks the PIN the way any till
-        // does offline — the person's own saved sign-in — instead of turning everyone away.
-        if (v.reason !== 'no_roster' && v.reason !== 'unavailable') throw new Error(v.message);
-        logLine('pin', `branch roster ${v.reason} - checking the PIN on this till's saved sign-ins`);
-      }
+      // A446: EVERY till holds its branch's staff list now (staffRoster.ts) — checked first, then the person's own saved
+      // sign-in. A PIN neither knows refreshes the list at once (the next try may know it).
+      const v = verifyPinAtNode(String(pin), branch_id);
+      if (v.ok) return signInLocal(v.staff);
+      if (v.reason === 'ambiguous') throw new Error(v.message);
+      logLine('pin', `this till's staff list: ${v.reason} - checking the PIN on this till's saved sign-ins`);
       const verdict = verifyPinOffline(String(pin), branch_id);
-      if (!verdict.ok) throw new Error(verdict.message);
-      return signInLocal(verdict.staff);
+      if (verdict.ok) return signInLocal(verdict.staff);
+      void refreshStaffRosterNow('a PIN this till did not know');
+      throw new Error(nodeSaidNo ?? (v.reason === 'no_match' ? 'Invalid PIN' : verdict.message));
     };
 
     // 2. The cloud, exactly as before.
@@ -762,7 +776,7 @@ export function registerIpcHandlers() {
       headers: { 'Content-Type': 'application/json' },
       // PIN, branch, the running build and this till's name (verifyPinBody).
       body: verifyPinBody(String(pin), branch_id),
-      });
+      }, 8_000);   // A446: 8 s, then this till's own staff list
     } catch (netErr: any) {
       logLine('pin', `server unreachable at sign-in (${netErr?.message ?? netErr}) - trying the local authority`);
       return fallbackToLocalAuthority();
@@ -773,7 +787,10 @@ export function registerIpcHandlers() {
     // next two lines either threw an unhandled parse error on the gateway's HTML
     // body or read !res.ok as "Invalid PIN" — and the offline cache/node never
     // rescued a login it should have. A clean 4xx below stays FINAL.
-    if (isUnreachableStatus(res.status)) {
+    // A446 (session audit): 429 too — the cloud limits failed PINs per till (30 in 15 min), and a burst of wrong PINs
+    // then refused EVERY cashier on that till, the right PINs included, for up to 13 minutes. Too many tries is "cannot
+    // ask the cloud now", not a "no": this till's own staff list decides meanwhile.
+    if (isUnreachableStatus(res.status) || res.status === 429) {
       logLine('pin', `cloud answered ${res.status} at sign-in - treating as unreachable, trying the local authority`);
       return fallbackToLocalAuthority();
     }
@@ -818,6 +835,42 @@ export function registerIpcHandlers() {
       branchName: branchRow?.name ?? null,
       joinedDrawer,
     };
+  });
+
+  // A446: unlock the lock screen — is this the signed-in person's PIN? Checked where it is fastest and needs no network
+  // (this till's own staff list, then its saved sign-ins), then the branch server, then the cloud. The person's session
+  // is NOT replaced: unlocking used to go through auth:verifyPin, which re-signed them in — through the server or offline
+  // that swapped a working cloud session for an offline one (manager screens then said "no connection" until it upgraded),
+  // and any failure read "Cannot check that PIN right now" with no way out but closing the app.
+  handle('auth:unlock', async (_e, payload) => {
+    const { pin } = assertPayload<{ pin: string }>({ pin: { t: 'string', min: 1 } }, payload);
+    const st = getLocalDb().prepare(`SELECT staff_id, branch_id FROM staff_session WHERE id=1`).get() as { staff_id?: string; branch_id?: string } | undefined;
+    if (!st?.staff_id || !st.branch_id) throw new Error('Nobody is signed in on this till — sign in again.');
+    const mine = (id: string | null | undefined) => ({ ok: id === st.staff_id, reason: id === st.staff_id ? undefined : 'other' as const });
+    const local = verifyPinAtNode(String(pin), st.branch_id);
+    if (local.ok) return mine(local.staff.staffId);
+    const saved = verifyPinOffline(String(pin), st.branch_id);
+    if (saved.ok) return mine(saved.staff.staffId);
+    const cfg = getDeviceConfig();
+    if (cfg?.node_url && !isNodeRole(cfg.device_role)) {
+      const r = await verifyPinAtNodeClient(String(pin), st.branch_id);
+      if (r.status === 'ok') return mine(r.staff.staffId);
+    }
+    let res: Awaited<ReturnType<typeof tillFetch>>;
+    try {
+      res = await withinMs(tillFetch('/api/auth/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: verifyPinBody(String(pin), st.branch_id) }), 8_000);
+    } catch {
+      void refreshStaffRosterNow('an unlock PIN this till did not know');
+      throw new Error('This till does not know that PIN and cannot reach the cloud to check it. Try again, or sign out.');
+    }
+    if (isUnreachableStatus(res.status)) throw new Error('This till does not know that PIN and the cloud is not answering. Try again, or sign out.');
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) { void refreshStaffRosterNow('an unlock PIN this till did not know'); return { ok: false, reason: 'wrong' as const }; }
+    if (data.staff?.id !== st.staff_id) return { ok: false, reason: 'other' as const };
+    persistCloudSignIn(data, st.branch_id);   // the same person, with a fresh cloud session — better than the one held
+    void refreshStaffRosterNow('this till did not know a PIN the cloud did');
+    return { ok: true };
   });
 
   handle('auth:getStaffSession', async () => {
@@ -2164,6 +2217,7 @@ export function registerIpcHandlers() {
     }
 
     const call = (t: string) => cloudFetch(`${getCloudUrl()}${path}`, {
+      signal: AbortSignal.timeout(20_000),   // A446: a time limit — a manager's change never hangs
       method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -2268,7 +2322,10 @@ export function registerIpcHandlers() {
   handle('manage:listStations', async () => {
     // A411: while routing saved on this till waits for the cloud, this till's own copy is the truth for it.
     if (Object.keys(readPendingRouting(getLocalDb())).length) return withPendingFlags(localStations());
-    try { return withPendingFlags(await manageFetch('/api/stations', 'GET')); }
+    // A446 (owner's screenshot, 2026-10-11): the screen listed the CLOUD's stations while printing reads THIS TILL's copy —
+    // a station added on the web or another till showed here, and Test print said 'No station "…"' (and the kitchen got
+    // nothing for it) until the next menu pull. The list fetched is now also this till's copy, at once.
+    try { return withPendingFlags(await refreshStationsLocal()); }
     catch { return withPendingFlags(localStations()); }
   });
   /** A411: mark the stations whose routing is saved here but not yet on the cloud. */
@@ -2508,10 +2565,18 @@ export function registerIpcHandlers() {
 
   handle('manage:listStaff', async () => manageFetch('/api/staff', 'GET'));
   handle('manage:listRoles', async () => manageFetch('/api/staff/roles', 'GET'));
-  handle('manage:createStaff', async (_e, payload: any) =>
-    manageFetch('/api/staff', 'POST', payload));
-  handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) =>
-    manageFetch(`/api/staff/${id}`, 'PATCH', patch));
+  // A446: a staff member created or changed here reaches this till's own list at once, and the branch server's (so its
+  // other tills): the cashier signs in anywhere at the branch within seconds — not after the next menu pull.
+  handle('manage:createStaff', async (_e, payload: any) => {
+    const out = await manageFetch('/api/staff', 'POST', payload);
+    void staffChangedHere();
+    return out;
+  });
+  handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) => {
+    const out = await manageFetch(`/api/staff/${id}`, 'PATCH', patch);
+    void staffChangedHere();
+    return out;
+  });
 
   handle('manage:getReceiptText', async () => {
     const cfg = getDeviceConfig();
@@ -2576,7 +2641,7 @@ export function registerIpcHandlers() {
   handle('pos:offers', async () => {
     const rows = getLocalDb().prepare(`SELECT data FROM offers`).all() as Array<{ data: string }>;
     const offers = rows.flatMap((r) => { try { const c = cleanOffer(JSON.parse(r.data)); return c.ok ? [(c as { offer: Offer }).offer] : []; } catch { return []; } });
-    return { offers, branchId: getDeviceConfig()?.branch_id ?? null };
+    return { offers, branchId: tillBranchId() };
   });
   // A445: Manager › Offers — read and change the cloud's (online only; the till learns of a change on its next pull,
   // which is asked for at once).
@@ -2596,8 +2661,8 @@ export function registerIpcHandlers() {
   });
   handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {
     const list = (Array.isArray(codes) ? codes : []).map((c) => String(c).trim().toLowerCase());
-    const branchId = getDeviceConfig()?.branch_id;
-    if (!branchId) throw new Error('This till is not bound to a branch yet.');
+    const branchId = tillBranchId();   // A446: the signed-in person's branch when the till never recorded one
+    if (!branchId) throw new Error('This till does not know its branch yet — sign in once with a staff PIN, then try again.');
     const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });
     setPaymentMethodsEnabled(list);
     return out;
