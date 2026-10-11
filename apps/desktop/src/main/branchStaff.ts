@@ -152,3 +152,28 @@ export function verifyPinAtNode(pin: string, branchId: string): NodeVerdict {
   logLine('node', `node verify-pin: ${m.name}`);
   return { ok: true, staff: { staffId: m.staff_id, name: m.name, roleName: m.role_name, permissions } };
 }
+
+/**
+ * A446: after a fresh list from the CLOUD, this till's saved sign-ins (staff_pin_cache — whoever signed in here online)
+ * follow it: a person no longer on the branch's list, or whose PIN has changed since, is dropped. Before, a cashier removed
+ * (or a PIN changed) upstream could still sign in on a till offline with the old PIN for as long as the cache kept it.
+ * Returns how many saved sign-ins were dropped. Never runs on an empty list.
+ */
+export function pruneSavedSignIns(branchId: string, roster: BranchStaffRow[]): number {
+  if (!roster.length) return 0;
+  const db = getLocalDb();
+  const current = new Map(roster.map((s) => [s.staff_id, s.pin_hash]));
+  let rows: Array<{ staff_id: string; pin_hash_enc: string }> = [];
+  try { rows = db.prepare(`SELECT staff_id, pin_hash_enc FROM staff_pin_cache WHERE branch_id = ?`).all(branchId) as any[]; }
+  catch { return 0; }
+  const drop = db.prepare(`DELETE FROM staff_pin_cache WHERE staff_id = ? AND branch_id = ?`);
+  let n = 0;
+  for (const r of rows) {
+    const now = current.get(r.staff_id);
+    let saved = '';
+    try { saved = safeStorage.decryptString(Buffer.from(r.pin_hash_enc, 'base64')); } catch { saved = ''; }
+    if (!now || (saved && saved !== now)) { drop.run(r.staff_id, branchId); n++; }
+  }
+  if (n) logLine('staff', `dropped ${n} saved sign-in(s) no longer on the branch's list (removed, or PIN changed)`);
+  return n;
+}

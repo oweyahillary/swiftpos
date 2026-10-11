@@ -120,6 +120,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'update:getStatus':       NO_PAYLOAD,
   'update:installNow':      NO_PAYLOAD,
   'auth:verifyPin':         { pin: { t: 'string', min: 1 }, branch_id: { t: 'string', min: 1 } },
+  'auth:unlock':            { pin: { t: 'string', min: 1 } },   // A446
   'auth:getStaffSession':   NO_PAYLOAD,
   'auth:clearStaffSession': NO_PAYLOAD,
 

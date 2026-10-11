@@ -872,6 +872,21 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/update-share.test.mjs
 
+      # A446 — a branch simulated: a cashier created anywhere signs in on every till at once; every till keeps its staff list.
+      - name: Desktop staff list on every till (branch simulation)
+        working-directory: apps/desktop
+        run: node --no-warnings test/staff-sync.test.mjs
+
+      # A446 — a print station added on the web or another till prints on this till at once.
+      - name: Desktop print stations follow the cloud at once
+        working-directory: apps/desktop
+        run: node --no-warnings test/station-copy.test.mjs
+
+      # A447 — a manager records an expense from Manager › Expenses.
+      - name: Desktop manager records an expense
+        working-directory: apps/desktop
+        run: node --no-warnings test/manager-expense.test.mjs
+
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund
         working-directory: apps/desktop

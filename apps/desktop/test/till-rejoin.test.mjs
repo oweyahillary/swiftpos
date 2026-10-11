@@ -56,8 +56,11 @@ ok('the technician console has "Rejoin this till" (business ID + code), wired to
   && /'auth:rejoin':\s+\{ business_id: \{ t: 'string', min: 1 \}, code: \{ t: 'string', min: 1 \} \}/.test(src('main/ipcSchemas.ts')));
 
 console.log('\nA branch server with no roster yet\n');
+// A446: every till now checks its own staff list, then its saved sign-ins, on ANY miss but a shared PIN — an empty (or
+// not yet arrived) list never turns staff away.
 ok('an empty roster falls back to the till\'s own check — staff are not turned away',
-  /if \(v\.reason !== 'no_roster' && v\.reason !== 'unavailable'\) throw new Error\(v\.message\);/.test(ipc)
+  /if \(v\.reason === 'ambiguous'\) throw new Error\(v\.message\);/.test(ipc)
+  && /const verdict = verifyPinOffline\(String\(pin\), branch_id\);\s+if \(verdict\.ok\) return signInLocal\(verdict\.staff\);/.test(ipc)
   && /if \(n\.reason !== 'no_roster' && n\.reason !== 'unavailable'\) throw/.test(ipc));
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

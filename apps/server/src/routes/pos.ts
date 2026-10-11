@@ -9,6 +9,8 @@ import { safeRouter } from '../middleware/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 import { isNodeRole } from '../lib/deviceRegistry';
+import { checkDeviceBranch } from '../lib/deviceBinding';   // A446
+import { createHash } from 'crypto';   // A446
 import { MAX_DISCOUNT_PCT } from '../lib/discountPolicy';
 import { themesEnabled, effectiveThemeId } from '../lib/themeAccess';
 import { getWebAccess } from '../lib/webAccess';
@@ -73,6 +75,9 @@ router.get('/catalogue-version', async (req, res) => {
       latest('stock_takes',      'business_id', biz),
       // A445: an offer created, changed, switched off or deleted (updated_at moves on each, deleted_at keeps the row).
       latest('offers',           'business_id', biz),
+      // A446: print stations — a station added or changed on the web or another till reaches this till within 20 s
+      // (it waited for the 10-minute sync: "No station …" on Test print).
+      latest('print_stations',   'business_id', biz),
     ]);
     // ISO-8601 UTC strings sort chronologically; newest is the version.
     const version = picks.filter(Boolean).sort().pop() ?? null;
@@ -134,17 +139,27 @@ router.get('/branch-staff', async (req, res) => {
 
   const { data: device } = await supabase
     .from('user_devices')
-    .select('device_role, branch_id')
+    .select('device_role, branch_id, status, retired_at')
     .eq('device_id', deviceId)
     .eq('business_id', req.businessId)
     .maybeSingle();
 
-  if (!device || !isNodeRole((device as { device_role?: string }).device_role)) {
-    res.status(403).json({ error: 'this device is not registered as a branch server', code: 'not_a_node' });
+  // A446 (owner, 2026-10-11): "each till should keep a local copy of all staff pin related to that branch" — so a new
+  // cashier signs in at once on every till, and a till signs its staff in with no server and no internet. Every till of
+  // the business gets its branch's list now (it was the branch server only), as long as it is joined (not retired).
+  if (!device || (device as { retired_at?: string | null }).retired_at || (device as { status?: string }).status === 'blocked') {
+    res.status(403).json({ error: 'this till is not joined to the business', code: 'not_joined' });
     return;
   }
-  const branchId = (device as { branch_id?: string }).branch_id;
-  if (!branchId) { res.status(400).json({ error: 'this device is not bound to a branch' }); return; }
+  // The branch: the one the cloud bound this till to, else the one its own sign-in names (A415: a till's session names
+  // its branch) — and the device is bound to it now. A server or till whose record had no branch used to be refused
+  // here ("this device is not bound to a branch") and silently never got the list: new cashiers were "not recognised".
+  let branchId = (device as { branch_id?: string | null }).branch_id ?? null;
+  if (!branchId && req.branchId) {
+    const bound = await checkDeviceBranch(req.businessId!, deviceId, req.branchId);
+    if (bound.ok) branchId = bound.boundBranchId ?? req.branchId;
+  }
+  if (!branchId) { res.status(409).json({ error: 'this till has not been given a branch yet', code: 'no_branch' }); return; }
 
   const { data: staffList, error } = await supabase
     .from('users')
@@ -180,9 +195,13 @@ router.get('/branch-staff', async (req, res) => {
     })
     // bcrypt only — a legacy hash upgrades on the next ONLINE sign-in; the node
     // never tries to match against a format pinCache would refuse anyway.
-    .filter((s: { pin_hash: string | null }) => !!s.pin_hash && s.pin_hash.startsWith('$2'));
+    .filter((s: { pin_hash: string | null }) => !!s.pin_hash && s.pin_hash.startsWith('$2'))
+    .sort((a: { staff_id: string }, b: { staff_id: string }) => a.staff_id.localeCompare(b.staff_id));
 
-  res.json({ branch_id: branchId, staff: roster });
+  // A446: a version of exactly what is sent — a till that already holds it is told so (it asks every few seconds).
+  const version = createHash('sha256').update(JSON.stringify(roster)).digest('hex').slice(0, 24);
+  if (String(req.query.v ?? '') === version) { res.json({ branch_id: branchId, version, unchanged: true }); return; }
+  res.json({ branch_id: branchId, version, staff: roster });
 });
 
 router.get('/init', async (req, res) => {

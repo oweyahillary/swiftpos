@@ -65,6 +65,7 @@ import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import { lastSyncedLabel } from '../lib/syncNotice';
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import OffersScreen from '../screens/OffersScreen';   // A445
+import RecordExpenseForm from '../components/RecordExpenseForm';   // A447
 import { VOID_WINDOW_MIN } from '../lib/voidRefund';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
@@ -1227,6 +1228,10 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
   const [data, setData] = useState<{ rows: ExpenseRow[]; total: number; label: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  // A447: a manager records an expense here too (it was the cashier's Shift → Expenses only).
+  const [recording, setRecording] = useState(false);
+  const [saved, setSaved] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -1234,22 +1239,35 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
     posApi.expense.range(range).then(d => { if (live) setData(d); }).catch(() => { if (live) setData(null); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [range.preset, range.from, range.to]);
+  }, [range.preset, range.from, range.to, reload]);
 
   const rows = data?.rows ?? [];
   return (
     <div className="space-y-3">
-      <div>
-        <h2 className="text-lg font-bold text-white">Expenses</h2>
-        <p className="text-gray-300 text-sm" data-testid="expenses-summary">
-          {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(data?.total ?? 0, currency)} paid out`}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-white">Expenses</h2>
+          <p className="text-gray-300 text-sm" data-testid="expenses-summary">
+            {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(data?.total ?? 0, currency)} paid out`}
+          </p>
+        </div>
+        {!recording && (
+          <button data-testid="record-expense" onClick={() => { setRecording(true); setSaved(''); }}
+            className="shrink-0 px-3 py-2 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">
+            + Record expense
+          </button>
+        )}
       </div>
+      {recording && (
+        <RecordExpenseForm currency={currency} onCancel={() => setRecording(false)}
+          onSaved={(msg) => { setRecording(false); setSaved(msg); setReload((n) => n + 1); }} />
+      )}
+      {saved && <p className="text-sm text-gray-200" data-testid="record-expense-saved">{saved}</p>}
       {/* A358: the expense types, and "+ Add type" here as well as in Shift → Expenses (owner, on v0.6.18). */}
       <ExpenseTypesPanel canAdd={canAddType} />
       <ReportRangeBar value={range} onChange={setRange} />
       {loading ? <Spinner /> : rows.length === 0 ? (
-        <div className="text-center py-12 text-gray-300">No expenses in this date range. Record one from the POS: Shift → Expenses.</div>
+        <div className="text-center py-12 text-gray-300">No expenses in this date range. Record one with + Record expense, or from the POS: Shift → Expenses.</div>
       ) : (
         <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
           <table className="w-full text-sm">

@@ -17,7 +17,7 @@
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { isUnreachableStatus } from './authTransport';
 
-function nodeUrl(): string | null {
+export function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
   // Only a plain till with a configured node has an uplink target. The node
   // itself (role 'node') pushes to the cloud directly, not to itself.
@@ -28,7 +28,7 @@ function nodeUrl(): string | null {
 // Every /node/* call carries the branch secret. A till without one will be
 // refused by the node — which is the intended outcome, not a regression: it
 // means this till was never given the branch access code at install.
-function nodeHeaders(extra: Record<string, string> = {}): Record<string, string> {
+export function nodeHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const secret = getDeviceConfig()?.node_secret ?? '';
   return { 'X-Node-Secret': secret, ...extra };
 }
@@ -47,6 +47,7 @@ export async function refreshViaNode(refreshToken: string): Promise<{ accessToke
       method: 'POST',
       headers: nodeHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ refreshToken }),
+      signal: AbortSignal.timeout(12_000),   // A446: a branch server that answers nothing must not hang the refresh
     });
     if (res.status !== 200) return null; // 401 revoked · 503 node offline — nothing usable
     const data = await res.json().catch(() => null);
