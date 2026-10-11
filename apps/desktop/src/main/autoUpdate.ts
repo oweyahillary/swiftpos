@@ -39,6 +39,9 @@ import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { cloudFetch, cloudBaseFor } from './cloudGateway';
 import { readSessionTokens } from './tokenStore';
 import { refreshAccessToken } from './syncEngine';
+import { isNodeRole } from './deviceConfig';
+import { getNodePort } from './nodeServer';
+import { prepareShare, shareDir, onShareWanted } from './updateShare';   // A443
 
 const ONE_HOUR = 60 * 60 * 1000;   // A348: the approval check is one small JSON call
 
@@ -110,8 +113,16 @@ export interface UpdateCheckDeps {
   refresh: () => Promise<boolean>;
   running: string;
   log?: (line: string) => void;
+  /**
+   * A443: on a branch server — fetch the approved version for the branch's tills (whether or not this server needs it),
+   * and take this server's own update from that copy (its own gateway) once it is ready.
+   */
+  share?: {
+    prepare: (version: string) => Promise<'ready' | 'busy' | 'failed'>;
+    route: () => { base: string; headers: Record<string, string> } | null;
+  };
 }
-export interface UpdateCheckResult { decision: UpdateDecision | 'unreachable'; approved: string | null }
+export interface UpdateCheckResult { decision: UpdateDecision | 'unreachable'; approved: string | null; waiting?: boolean }
 
 /** One A348 check: ask the cloud, and only for an approved NEWER version open the feed and check it. Never throws. */
 export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckResult> {
@@ -136,8 +147,16 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
     return { decision: 'unreachable', approved: null };
   }
   const decision = decideUpdate(approved, d.running);
+  let shared: { base: string; headers: Record<string, string> } | null = null;
+  if (d.share && approved && decision !== 'hold') {
+    const st = await d.share.prepare(approved).catch(() => 'failed' as const);
+    if (decision === 'update') {
+      if (st !== 'ready') { d.log?.(`update ${approved}: the branch's copy is not ready yet (${st}) — waiting`); return { decision, approved, waiting: true }; }
+      shared = d.share.route();
+    }
+  }
   if (decision !== 'update' || !approved || !token) return { decision, approved };
-  const via = d.route?.(cloud) ?? { base: cloud, headers: {} };
+  const via = shared ?? d.route?.(cloud) ?? { base: cloud, headers: {} };
   d.updater.setFeedURL({ provider: 'generic', url: feedUrlFor(via.base, approved) });
   d.updater.requestHeaders = { Authorization: `Bearer ${token}`, ...via.headers };
   try {
@@ -149,6 +168,30 @@ export async function runUpdateCheck(d: UpdateCheckDeps): Promise<UpdateCheckRes
   }
   catch (e: any) { d.log?.(`update check failed: ${e?.message ?? e}`); }
   return { decision, approved };
+}
+
+/**
+ * A443: a till behind a branch server asks it "I run X — is there a newer version?". The server answers with the version
+ * it holds ready (and notes this till's). Null when there is no server, or it cannot be reached (asked again later).
+ */
+export async function askBranchServer(d: {
+  cfg: { device_role?: string | null; node_url?: string | null; node_secret?: string | null; device_id?: string | null;
+         device_name?: string | null; terminal_code?: string | null } | null;
+  running: string;
+  fetch: typeof fetch;
+}): Promise<{ version: string | null; newer: boolean } | null> {
+  const c = d.cfg;
+  const node = String(c?.node_url ?? '').trim().replace(/\/+$/, '');
+  if (!c || !node || isNodeRole(c.device_role ?? null)) return null;
+  const q = new URLSearchParams({ device: String(c.device_id ?? ''), name: String(c.device_name || c.terminal_code || ''), v: d.running });
+  try {
+    const res = await d.fetch(`${node}/node/update/ready?${q}`, {
+      headers: { 'X-Node-Secret': String(c.node_secret ?? '') }, signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const b = await res.json() as { version?: unknown; newer?: unknown };
+    return { version: typeof b?.version === 'string' ? b.version : null, newer: b?.newer === true };
+  } catch { return null; }
 }
 
 export function initAutoUpdate(): void {
@@ -190,6 +233,8 @@ export function initAutoUpdate(): void {
     if (busy || current.state === 'downloading' || current.state === 'downloaded') return;
     busy = true;
     try {
+      const cfg = getDeviceConfig();
+      const port = isNodeRole(cfg?.device_role ?? null) ? getNodePort() : null;
       const r = await runUpdateCheck({
         updater: autoUpdater as any,
         fetch: ((u: any, i: any) => cloudFetch(String(u), i)) as typeof fetch,   // A410: through the branch server on a peer
@@ -199,6 +244,25 @@ export function initAutoUpdate(): void {
         refresh: () => refreshAccessToken(),
         running: app.getVersion(),
         log: (line) => console.log('[autoUpdate]', line),
+        // A443: the branch server fetches the approved version once for the branch and updates itself from that copy.
+        // A443: a till behind a branch server waits until the server holds the approved version (it then downloads it
+        // from the server over the shop network). A server that does not answer the question (an older build) → as before.
+        share: !port && cfg?.node_url && !isNodeRole(cfg?.device_role ?? null) ? {
+          prepare: async (v) => {
+            const r = await askBranchServer({ cfg: cfg as any, running: app.getVersion(), fetch: globalThis.fetch });
+            return !r ? 'ready' : r.version === v ? 'ready' : 'busy';
+          },
+          route: () => null,
+        } : port && cfg?.node_secret ? {
+          prepare: (v) => prepareShare(v, {
+            fetch: globalThis.fetch, dir: shareDir(),
+            cloudUrl: () => { try { return getCloudUrl(); } catch { return null; } },
+            token: () => readSessionTokens().token || null,
+            refresh: () => refreshAccessToken(),
+            log: (line) => console.log('[autoUpdate]', line),
+          }),
+          route: () => ({ base: `http://127.0.0.1:${port}/node/cloud`, headers: { 'X-Node-Secret': String(cfg.node_secret) } }),
+        } : undefined,
       });
       if (r.decision !== 'update') console.log(`[autoUpdate] ${r.decision}${r.approved ? ` (approved ${r.approved})` : ''} — nothing to download`);
     } finally { busy = false; }
@@ -206,4 +270,20 @@ export function initAutoUpdate(): void {
 
   void check();
   setInterval(() => { void check(); }, ONE_HOUR);
+  // A443: a till behind a branch server asks it every 2 minutes (and now, at start — a till that was off asks as soon as
+  // it is back): told of a newer version the server holds, it checks with the cloud at once and takes it from the server.
+  const askServer = async () => {
+    if (busy || current.state === 'downloading' || current.state === 'downloaded') return;
+    const r = await askBranchServer({ cfg: getDeviceConfig() as any, running: app.getVersion(), fetch: globalThis.fetch });
+    if (r?.newer) { console.log(`[autoUpdate] the branch server holds ${r.version} — checking now`); void check(); }
+  };
+  void askServer();
+  setInterval(() => { void askServer(); }, 2 * 60_000);
+  // A443: a till asked this server for a version it does not hold yet — check now (at most every 5 minutes).
+  let lastAsked = 0;
+  onShareWanted(() => {
+    if (Date.now() - lastAsked < 5 * 60_000) return;
+    lastAsked = Date.now();
+    void check();
+  });
 }

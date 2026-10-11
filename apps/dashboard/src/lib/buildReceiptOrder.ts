@@ -68,6 +68,8 @@ export function buildReceiptOrder(a: {
   total: number;
   /** A349: the discount taken off the cart lines. */
   discount?: number;
+  /** A445: the offers inside `discount`, by name (each printed; the rest prints as "Discount:"). */
+  offers?: Array<{ name: string; amount: number }>;
   /** A349: the tip on top of the bill. */
   tip?: number;
   /** 0.6.27: the delivery fee on top of the bill. */
@@ -121,6 +123,7 @@ export function buildReceiptOrder(a: {
     changeGiven: toCents(a.change),
     total:       toCents(a.total),
     discount:    toCents(a.discount ?? 0),
+    ...(a.offers?.length ? { offers: a.offers.map((o) => ({ name: o.name, amount: toCents(o.amount) })) } : {}),   // A445
     tip:         toCents(a.tip ?? 0),
     deliveryFee: toCents(a.deliveryFee ?? 0),   // 0.6.27
     deliveryFree: a.deliveryFree === true,      // 0.6.33

@@ -321,7 +321,17 @@ function renderReceipt(ctx: PrintContext): Document {
   d.line(rule(cols));
   d.line(pair(cols, 'Total Qty:', String(totalQty)));
   // A349: the discount, net of tax like every figure above it; SubTotal is what is left, and the taxes below are on it.
-  if (tax.discount > 0) d.line(pair(cols, 'Discount:', `-${formatCents(tax.discount)}`));
+  // A445: offers by name (net of tax, as the discount), then whatever of the discount was the cashier's own.
+  let manualNet = tax.discount;
+  if (tax.discount > 0 && order.offers?.length) {
+    for (const o of order.offers) {
+      const net = Math.min(manualNet, netOf(o.amount, business.vatRate, business.ctlRate));
+      if (net <= 0) continue;
+      manualNet -= net;
+      d.line(pair(cols, `${o.name.slice(0, Math.max(8, cols - 14))}:`, `-${formatCents(net)}`));
+    }
+  }
+  if (manualNet > 0) d.line(pair(cols, 'Discount:', `-${formatCents(manualNet)}`));
   d.line(pair(cols, 'SubTotal:', formatCents(tax.subtotal)));
   d.line(rule(cols));
   // A349: the levy only where it is levied — a business without CTL no longer prints "CTL (0%) 0.00".

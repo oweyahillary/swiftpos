@@ -25,6 +25,7 @@ import branchesRoutes      from './branches';
 import discountsRoutes     from './discounts';
 import paymentMethodsRoutes from './payment-methods';
 import promotionsRoutes    from './promotions';
+import offersRoutes        from './offers';   // A445
 import flagsRoutes         from './flags';
 import versionRoutes       from './version';   // 0.6.28: which release the cloud runs
 import { adminVersionRouter } from './version';
@@ -62,6 +63,7 @@ router.use('/branches',       branchesRoutes);
 router.use('/discounts',      discountsRoutes);
 router.use('/payment-methods', paymentMethodsRoutes);
 router.use('/promotions',     promotionsRoutes);
+router.use('/offers',         offersRoutes);   // A445
 router.use('/combos',         combosRoutes);
 router.use('/reservations',   reservationsRoutes);
 router.use('/qr',             qrRoutes);

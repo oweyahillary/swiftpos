@@ -16,6 +16,8 @@ import { GATEWAY_PREFIX, GATEWAY_MARK, UPLINK_DOWN } from './cloudGateway';
 
 const MAX_BODY = 10 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 60_000;
+/** A443: once the answer has started, it is cut only when no bytes arrive for this long (never on its total time). */
+const UPSTREAM_IDLE_MS = 60_000;
 
 /** Request headers never passed on: hop-by-hop, the LAN's own, and what fetch sets itself. */
 const DROP_REQUEST = new Set([
@@ -64,7 +66,7 @@ function send(res: http.ServerResponse, status: number, body: unknown, extra: Re
 
 export async function forwardToCloud(
   req: http.IncomingMessage, res: http.ServerResponse, serverUrl: string,
-  deps: { fetch?: typeof fetch } = {},
+  deps: { fetch?: typeof fetch; timeoutMs?: number; idleMs?: number } = {},
 ): Promise<void> {
   const target = upstreamUrl(req.url ?? '', serverUrl);
   if (!target) return send(res, 400, { error: 'The branch server forwards only the ZapTill cloud API.' });
@@ -74,13 +76,22 @@ export async function forwardToCloud(
   try { body = method === 'GET' || method === 'HEAD' ? undefined : await readRaw(req); }
   catch { return send(res, 413, { error: 'Request too large for the branch server.' }); }
 
+  // A443: the limit used to be AbortSignal.timeout(60 s) on the whole exchange — body included — so any answer that took
+  // over a minute to pass on (an update installer on a shop line) was cut every time. Now: 60 s for the cloud to start
+  // answering, then cut only when nothing arrives for 60 s.
+  const ac = new AbortController();
+  let timer: NodeJS.Timeout | null = setTimeout(() => ac.abort(), deps.timeoutMs ?? UPSTREAM_TIMEOUT_MS);
+  const idleMs = deps.idleMs ?? UPSTREAM_IDLE_MS;
+  const poke = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => ac.abort(), idleMs); };
+  const stop = () => { if (timer) clearTimeout(timer); timer = null; };
   let up: Response;
   try {
     up = await (deps.fetch ?? globalThis.fetch)(target, {
       method, headers: upstreamHeaders(req.headers), body: body && body.length ? body : undefined,
-      redirect: 'follow', signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      redirect: 'follow', signal: ac.signal,
     } as RequestInit);
   } catch {
+    stop();
     return send(res, 502, { error: 'The branch server cannot reach the cloud right now.' }, { [UPLINK_DOWN]: 'down' });
   }
 
@@ -90,14 +101,17 @@ export async function forwardToCloud(
     const headers: Record<string, string> = { [GATEWAY_MARK]: '1' };
     up.headers.forEach((v, k) => { if (!DROP_RESPONSE.has(k.toLowerCase())) headers[k] = v; });
     res.writeHead(up.status, headers);
-    if (!up.body || method === 'HEAD') { res.end(); return; }
+    if (!up.body || method === 'HEAD') { stop(); res.end(); return; }
+    poke();
     await new Promise<void>((resolve) => {
       const stream = Readable.fromWeb(up.body as any);
-      stream.on('error', () => { res.destroy(); resolve(); });
-      res.on('close', resolve);
+      stream.on('data', poke);
+      stream.on('error', () => { stop(); res.destroy(); resolve(); });
+      res.on('close', () => { stop(); resolve(); });
       stream.pipe(res);
     });
   } catch {
+    stop();
     if (!res.headersSent) send(res, 502, { error: 'The branch server could not pass on the cloud\'s answer.' }, { [UPLINK_DOWN]: 'down' });
     else res.destroy();
   }

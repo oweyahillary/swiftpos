@@ -354,6 +354,8 @@ declare global {
       serverJoin: {
         requests: () => Promise<Array<{ id: string; name: string; ip: string; at: string }>>;
         answer: (id: string, allow: boolean) => Promise<{ ok: true }>;
+        /** A443: on the branch server — the version it holds for its tills, and what each till runs. */
+        tillVersions: () => Promise<{ serverVersion: string; ready: string | null; tills: Array<{ deviceId: string; name: string | null; version: string; seenAt: string; current: boolean }> }>;
       };
       // A52 — the idle lock. See main/idleMonitor.ts for why the decision lives
       // in the main process (OS idle cannot fire mid-sale; renderer activity
@@ -392,12 +394,16 @@ declare global {
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
         /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
         paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;
+        /** A445: the branch's offers as the till holds them, and its branch (an offer may be for chosen branches). */
+        offers: () => Promise<{ offers: import('../../shared/offers').Offer[]; branchId: string | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
         /** A349: printFailed names tickets that could not be produced (shown to the cashier); [] when all went out. */
         create: (payload: any) => Promise<{ orderId: string; printFailed?: string[] }>;
         void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; offline?: boolean; approvedBy?: string | null }>;
+        /** A444: an order's items, sizes, extras, notes and payments; `canReprint` = this person may reprint it. */
+        detail: (orderId: string) => Promise<{ ok: boolean; error?: string; detail?: import('../../shared/orderDetail').OrderDetail; canReprint?: boolean }>;
         refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) => Promise<{ ok: boolean; refunded: number; offline?: boolean; approvedBy?: string | null }>;
       };
       sync: {
@@ -614,6 +620,10 @@ declare global {
         /** 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method). Manager (settings.manage). */
         /** A429: switch the branch's payment methods (catalogue codes). */
         setPaymentMethodsEnabled: (codes: string[]) => Promise<any>;
+        /** A445: Manager › Offers — the cloud's offers (each with `editable`), save (new or changed), delete. */
+        offers: () => Promise<Array<import('../../shared/offers').Offer & { editable?: boolean; created_by_name?: string | null }>>;
+        saveOffer: (offer: unknown) => Promise<any>;
+        deleteOffer: (id: string) => Promise<any>;
         getCashierHistoryMethods: () => Promise<{ methods: string[] }>;
         setCashierHistoryMethods: (methods: string[]) => Promise<any>;
       };

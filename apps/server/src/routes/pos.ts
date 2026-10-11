@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { offersForBranch } from './offers';   // A445
 import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
@@ -70,6 +71,8 @@ router.get('/catalogue-version', async (req, res) => {
       latest('branch_prices',    'branch_id',   branchId),
       // A394: a stock count started, an item counted (released from a freeze), a count closed.
       latest('stock_takes',      'business_id', biz),
+      // A445: an offer created, changed, switched off or deleted (updated_at moves on each, deleted_at keeps the row).
+      latest('offers',           'business_id', biz),
     ]);
     // ISO-8601 UTC strings sort chronologically; newest is the version.
     const version = picks.filter(Boolean).sort().pop() ?? null;
@@ -476,6 +479,9 @@ router.get('/init', async (req, res) => {
     // A394: a stock count at this branch that freezes items — the products not to sell until they have been counted.
     // Always sent: null = nothing frozen. Older tills ignore it.
     stockCount: await frozenAtBranch(req.businessId, (opBranch as { id?: string } | null)?.id ?? null),
+    // A445: the offers this branch runs (on, not deleted, for every branch or this one) — the till applies them by its
+    // own clock (shared/offers.ts), offline too. Always sent: [] = none. Older tills ignore it.
+    offers: await offersForBranch(req.businessId!, (opBranch as { id?: string } | null)?.id ?? null),
     categories: categories ?? [],
     // Custom payment methods (A96) — the extras a business accepts beyond the
     // built-in Cash / M-Pesa / Card. Active only; the till caches these so they

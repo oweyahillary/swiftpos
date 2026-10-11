@@ -41,7 +41,7 @@ ok('an owner at a restaurant: seven sidebar items, the groups the owner asked fo
     'Sales [Orders · Item Mix · Current shift · Shift report]',
     'Expenses',
     'Close [Close Day · Close Branch]',
-    'Menu',
+    'Menu [Menu · Offers]',   // A445: Offers beside the menu
     'Settings [General · Printing · Staff]',
     'Stock',
   ]);
@@ -91,7 +91,7 @@ ok('Menu → Import stays in the Menu group (sidebar highlight and page title)',
 
 ok('every page ManagerPage can show belongs to exactly one group', () => {
   const nav = N.buildManagerNav(FULL);
-  for (const t of ['overview', 'orders', 'items', 'shift', 'zreport', 'expenses', 'dayclose', 'branchclose', 'menu',
+  for (const t of ['overview', 'orders', 'items', 'shift', 'zreport', 'expenses', 'dayclose', 'branchclose', 'menu', 'offers',
     'settings', 'printers', 'staff', 'stock']) {
     assert.equal(nav.filter((g) => g.tabs.some((x) => x.key === t)).length, 1, t);
   }
@@ -108,7 +108,8 @@ ok('the tab bar shows only when the group has more than one tab for this role', 
   assert.match(mp, /<SegmentedSelector options=\{activeGroup\.tabs\} value=\{active\} onChange=\{openTab\} \/>/);
 });
 ok('each tab renders its own page (no nested Orders/Shift selectors left)', () => {
-  assert.match(mp, /case 'orders':\s+return <OrdersTab currency=\{currency\} \/>;/);
+  // A444: the Orders page also gets who may void / refund from its row panel.
+  assert.match(mp, /case 'orders':\s+return <OrdersTab currency=\{currency\}(?: canVoidRefund=\{has\('orders\.void'\)\})? \/>;/);
   assert.match(mp, /case 'shift':\s+return <ShiftTab currency=\{currency\} \/>;/);
   assert.match(mp, /case 'zreport': return <ZReportTab/);
   assert.match(mp, /case 'items':\s+return <TopItemsTab/);

@@ -8,6 +8,7 @@
 //   Local sale     → delta deduction (quantity - sold), never absolute overwrite
 //   This means an offline sale is always applied on top of whatever quantity is current
 
+import { cleanOffer, type Offer } from './offers';   // A445
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
 import { logLine, describeResponse, getLogPath } from './logFile';
@@ -1294,6 +1295,7 @@ async function pullCatalogue(): Promise<boolean> {
   let products: any[] = [], categories: any[] = [];
   let comboItems: Record<string, any[]> | undefined;
   let paymentMethods: Array<{ code: string; name: string }> | null = null;
+  let offers: any[] | null = null;   // A445: null = the source sent none — the till keeps its offers
   let stations: any[] | null = null;
   let variantGroups: any[] = [], variantOptions: any[] = [];
   let modifierGroups: any[] = [], modifierOptions: any[] = [];
@@ -1315,7 +1317,7 @@ async function pullCatalogue(): Promise<boolean> {
   const nodeBundle = await fetchReferenceFromNode();
   if (nodeBundle) {
     const r: AcquiredReference = unpackNodeBundle(nodeBundle);
-    ({ products, categories, comboItems, paymentMethods, stations,
+    ({ products, categories, comboItems, paymentMethods, offers, stations,
        variantGroups, variantOptions, modifierGroups, modifierOptions,
        stockLevels, users, diningTables, tablesFetched, pumps, pumpsFetched } = r);
     // the branch server's snapshot is its whole catalogue — every product's choices are in it
@@ -1352,6 +1354,7 @@ async function pullCatalogue(): Promise<boolean> {
     clearInboundFailure('sync');
     products = _j.products; categories = _j.categories;
     comboItems = _j.comboItems; paymentMethods = _j.paymentMethods ?? null;
+    offers = Array.isArray(_j.offers) ? _j.offers : null;   // A445 (an older cloud sends none: keep what the till has)
     branchId = _j.branchId ?? null;
     effectiveBranchId = boundBranchId || branchId || null;
     // Business-wide config (VAT, CTL, discount ceiling, business type, receipt
@@ -1558,6 +1561,15 @@ async function pullCatalogue(): Promise<boolean> {
     // Combo components. Replaced wholesale rather than upserted — a component
     // REMOVED from a combo upstream must disappear here too, and an upsert would
     // leave it behind to be packed and cooked forever.
+    // A445: the branch's offers, replaced wholesale — only when the source sent them. Each kept as the cleaned offer.
+    if (offers !== null) {
+      db.prepare(`DELETE FROM offers`).run();
+      const putOffer = db.prepare(`INSERT OR REPLACE INTO offers (id, data) VALUES (?, ?)`);
+      for (const raw of offers) {
+        const c = cleanOffer(raw);
+        if (c.ok && (c as { offer: Offer }).offer.id) putOffer.run((c as { offer: Offer }).offer.id, JSON.stringify((c as { offer: Offer }).offer));
+      }
+    }
     db.prepare(`DELETE FROM combo_items`).run();
     const upsertCombo = db.prepare(`
       INSERT INTO combo_items (combo_id, product_id, name, quantity, sort_order, is_kitchen, synced_at)
@@ -2841,6 +2853,14 @@ export function createLocalOrder(orderPayload: any): string {
       // the cloud keeps whichever arrives first, so they must not diverge.
       buildCloudOrderPayload(orderPayload, { shiftId, deviceId, orderId, createdAt: now, cashierId }),
     ), now);
+
+    // A445: what offers took off this sale, and which — kept on the till (its reports, the reprint) and sent in the
+    // payload as they are (the cloud checks them: POST /api/orders recomputes the offers the sale claims).
+    const offerOff = Math.max(0, Number(orderPayload.offer_discount) || 0);
+    if (offerOff > 0 && Array.isArray(orderPayload.offers) && orderPayload.offers.length) {
+      db.prepare(`UPDATE orders SET offer_discount = ?, offers = ? WHERE id = ?`)
+        .run(offerOff, JSON.stringify(orderPayload.offers.map((o: any) => ({ offer_id: String(o.offer_id ?? ''), name: String(o.name ?? ''), amount: Number(o.amount) || 0 }))), orderId);
+    } else { delete orderPayload.offer_discount; delete orderPayload.offers; }
 
     // Keep the exact payload for a faithful reprint from Order History (A94).
     // Replayed through the same queueThermal path as the original, so the copy is

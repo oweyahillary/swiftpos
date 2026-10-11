@@ -7,14 +7,15 @@
  * the owner's own auth: GET /api/orders already scopes by owner-vs-staff
  * (branchScope), so an owner sees every branch's orders with no server change.
  *
- * Gated on `orders.view_all`. VOID is deliberately NOT here — that is Phase 2
- * (money-critical: orders.void + supervisor/authorizer PIN + shift/tax handling).
+ * Gated on `orders.view_all`. Void and Refund (orders.void) are here: the owner approves their own; a manager types
+ * their own PIN (A444). A444 also: an opened row lists the order's items, and Reprint is offered as the cloud allows.
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { api } from '../lib/api';
 import { usePermissions } from '../context/PermissionsContext';
 import { isRefunded } from './orderRefund';
 import { reprintOrderReceipt } from '../lib/reprintReceipt';
+import OrderItems from '../components/OrderItems';   // A444
 import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../lib/reversalRules';
 
 interface Payment { method: string; amount: number; status: string; }
@@ -31,7 +32,8 @@ interface Order {
   branch_id: string | null;
   payments: Payment[];
 }
-interface OrdersResponse { orders: Order[]; total: number; }
+/** can_reprint — 0.6.37: a manager or the owner (the cloud decides; a cashier never reprints). */
+interface OrdersResponse { orders: Order[]; total: number; can_reprint?: boolean; }
 
 const PAGE_SIZE = 25;
 
@@ -96,6 +98,10 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
   // Void / refund action (owner self-authorises server-side; reason required).
   const [action, setAction]       = useState<{ order: Order; type: 'void' | 'refund' } | null>(null);
   const [reason, setReason]       = useState('');
+  // A444: a manager (not the owner) approves a paid sale's void or refund with their own PIN, as on the till and the
+  // web POS — without it the cloud refused every paid one from this page.
+  const [pin, setPin]             = useState('');
+  const [canReprint, setCanReprint] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -112,6 +118,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
       const data = await api.get<OrdersResponse>(`/api/orders?${params}`);
       setOrders(data.orders);
       setTotal(data.total);
+      setCanReprint(data.can_reprint !== false);   // A444: Reprint as the cloud allows (it was offered to anyone)
       setPage(p);
     } catch (e: any) {
       setError(e?.message ?? 'Could not load orders');
@@ -125,9 +132,11 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
     setSubmitting(true);
     setActionError('');
     try {
-      await api.post(`/api/orders/${action.order.id}/${action.type}`, { reason: reason.trim() });
+      await api.post(`/api/orders/${action.order.id}/${action.type}`,
+        { reason: reason.trim(), ...(!isOwner && pin.trim() ? { override_pin: pin.trim() } : {}) });
       setAction(null);
       setReason('');
+      setPin('');
       load(page);
     } catch (e: any) {
       setActionError(e?.message ?? `Could not ${action.type} the order`);
@@ -233,13 +242,13 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                     <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       {actionsFor(o, isOwner, windowMin).includes('void') && (
                         <button
-                          onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setActionError(''); }}
+                          onClick={() => { setAction({ order: o, type: 'void' }); setReason(''); setPin(''); setActionError(''); }}
                           className="px-3 py-1 text-xs font-medium rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
                         >Void</button>
                       )}
                       {actionsFor(o, isOwner, windowMin).includes('refund') && !isRefunded(o.payments) && (
                         <button
-                          onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setActionError(''); }}
+                          onClick={() => { setAction({ order: o, type: 'refund' }); setReason(''); setPin(''); setActionError(''); }}
                           className="ml-1 px-3 py-1 text-xs font-medium rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
                         >Refund</button>
                       )}
@@ -250,6 +259,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                   <tr className="bg-gray-900/40 border-t border-gray-800">
                     <td colSpan={cols} className="px-4 py-3">
                       <div className="text-xs text-gray-400 space-y-1">
+                        <OrderItems orderId={o.id} currency={currency} get={(path) => api.get(path)} />
                         <div>Subtotal: {fmt(o.subtotal, currency)}
                           {o.discount_amount > 0 && <> · Discount: {fmt(o.discount_amount, currency)}</>}
                           · Total: <span className="text-gray-200">{fmt(o.total, currency)}</span></div>
@@ -262,7 +272,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                             </span>
                           ))}
                         </div>
-                        <div className="pt-2">
+                        {canReprint && <div className="pt-2">
                           <button
                             onClick={async () => {
                               setReprintingId(o.id); setReprintMsg('');
@@ -272,7 +282,7 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
                             disabled={reprintingId === o.id}
                             className="px-3 py-1 text-xs font-medium rounded-lg border border-swift/40 text-swift-text hover:bg-swift/10 transition-colors disabled:opacity-50"
                           >{reprintingId === o.id ? 'Printing…' : 'Reprint receipt'}</button>
-                        </div>
+                        </div>}
                       </div>
                     </td>
                   </tr>
@@ -326,6 +336,15 @@ export default function OrdersPage({ currency = 'KES' }: { currency?: string }) 
               rows={3}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-swift focus:outline-none mb-3"
             />
+            {!isOwner && (
+              <input
+                data-testid="orders-action-pin"
+                type="password" inputMode="numeric" maxLength={6} value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={action.order.payments.length ? 'Your manager PIN' : 'Your manager PIN (not needed — nothing was paid)'}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 tracking-widest focus:border-swift focus:outline-none mb-3"
+              />
+            )}
             {actionError && <div className="text-sm text-red-400 mb-3">{actionError}</div>}
             <div className="flex justify-end gap-2">
               <button

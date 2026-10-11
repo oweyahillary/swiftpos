@@ -93,6 +93,8 @@ export interface POSInitResponse {
   paymentMethods?: { code: string; name: string }[];
   /** A429: the payment methods this branch takes (catalogue codes); absent from an older cloud = the defaults. */
   paymentMethodsEnabled?: string[];
+  /** A445: the offers this branch runs (shared/offers.ts applies them to the cart). Absent from an older cloud = none. */
+  offers?: unknown[];
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };

@@ -122,7 +122,8 @@ const NAV: NavEntry[] = [
       { to: '/dashboard/discounts',  label: 'Discounts',  icon: 'discounts' },
       // Payment methods moved to Settings › Business › Payments (it is tender
       // configuration, not catalogue).
-      { to: '/dashboard/promotions', label: 'Promotions',   icon: 'promotions' },
+      // A445: Offers replaces Promotions in the menu (promotions were shown on the web POS but never charged).
+      { to: '/dashboard/offers',     label: 'Offers',       icon: 'promotions' },
       { to: '/dashboard/combos',     label: 'Combo Meals',  icon: 'combos', verticals: FOOD_VERTICALS },
     ],
   },
@@ -259,6 +260,7 @@ export default function DashboardLayout() {
     '/dashboard/products':   'Menu Items',
     '/dashboard/categories': 'Menu Sections',
     '/dashboard/promotions': 'Specials',
+    '/dashboard/offers': 'Offers',
     '/dashboard/combos':     'Set Meals',
     '/dashboard/inventory':  'Bar & Packaged Stock',
   };

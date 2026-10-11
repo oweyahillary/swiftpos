@@ -63,6 +63,9 @@ import ZReportView from '../components/ZReportView';
 import { printShiftReport } from '../lib/printShiftReport';
 import { usePrinterSettings } from '../hooks/usePrinterSettings';
 import { lastSyncedLabel } from '../lib/syncNotice';
+import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
+import OffersScreen from '../screens/OffersScreen';   // A445
+import { VOID_WINDOW_MIN } from '../lib/voidRefund';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
 function Icon({ d, size = 18, cls = '' }: { d: string; size?: number; cls?: string }) {
@@ -851,8 +854,12 @@ function SegmentedSelector<T extends string>({ options, value, onChange }: {
 
 // A351: Orders, Item Mix, Current shift and Shift report are the tabs of the Sales page (lib/managerNav.ts); before
 // that A105 had put them in pairs under Orders and Shift.
-function OrdersTab({ currency }: { currency: string }) {
+function OrdersTab({ currency, canVoidRefund = false }: { currency: string; canVoidRefund?: boolean }) {
   const [orders,  setOrders]  = useState<any[]>([]);
+  // A444: the order opened here — its items, Reprint and Void / Refund (this till's or, from the cloud, any till's).
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [voidWindowMin, setVoidWindowMin] = useState(VOID_WINDOW_MIN);
+  useEffect(() => { posApi.pos.reversalRules().then((r) => setVoidWindowMin(r.voidWindowMinutes)).catch(() => { /* the default */ }); }, []);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
   // Cross-sync stage 1 (2026-09-27): this till's own list (local, works offline) or every till at the
@@ -934,7 +941,8 @@ function OrdersTab({ currency }: { currency: string }) {
                 {orders.map(o => {
                   const method = o.payments?.[0]?.method ?? '—';
                   return (
-                    <tr key={o.id} className="hover:bg-gray-700/30 transition-colors">
+                    <tr key={o.id} data-testid="manager-order-row" onClick={() => setDetailId(o.id)} title="See the items in this order"
+                      className="hover:bg-gray-700/30 transition-colors cursor-pointer">
                       <td className="px-4 py-3 font-mono text-xs text-gray-300">
                         {o.order_number}
                         {o.origin === 'web' && (
@@ -966,6 +974,11 @@ function OrdersTab({ currency }: { currency: string }) {
             </table>
           </div>
         )}
+      {/* A444: the order's items, payments, Reprint and Void / Refund. */}
+      {detailId && (
+        <OrderDetailPanel orderId={detailId} currency={currency} canVoidRefund={canVoidRefund} windowMin={voidWindowMin}
+          onClose={() => setDetailId(null)} onChanged={() => load(range)} />
+      )}
     </div>
   );
 }
@@ -1741,7 +1754,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
         return <OverviewForDay render={(date) => (flags.isPetrol ? <PetrolOverview currency={currency} date={date} />
           : flags.isRestaurant ? <RestaurantOverview currency={currency} date={date} />
           : <RetailOverview currency={currency} date={date} />)} />;
-      case 'orders':  return <OrdersTab currency={currency} />;
+      case 'orders':  return <OrdersTab currency={currency} canVoidRefund={has('orders.void')} />;
       case 'shift':   return <ShiftTab currency={currency} />;
       case 'expenses': return <ExpensesTab currency={currency} canAddType={mayAddExpenseType(staff as any)} />;
       case 'dayclose': return <DayCloseTab currency={currency} />;
@@ -1751,6 +1764,8 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
       case 'items':   return <TopItemsTab currency={currency} />;
       case 'prices':  return <PricesTab   currency={currency} />;
       case 'menu':    return <MenuWorkbench currency={currency} onOpenImport={() => openTab('import')} />;
+      // A445: the owner sets offers for every branch or this one; anyone else for this branch (the cloud enforces it).
+      case 'offers':  return <OffersScreen currency={currency} isOwner={String(staff?.role ?? '').toLowerCase() === 'owner' || perms['*'] === true} />;
       case 'combos':  return <CombosTab  currency={currency} />;
       case 'import':  return <ImportTab  currency={currency} />;
       case 'staff':   return <StaffTab   branchId={staff.branchId} />;

@@ -55,6 +55,7 @@ import { collectInstructions, recordAck, recordPeerState } from './branchClose';
 import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
 import { forwardToCloud } from './nodeGateway';
+import { serveSharedUpdate, shareDir, shareWanted, latestReady, noteTillVersion, readyAnswer } from './updateShare';   // A443
 import { GATEWAY_PREFIX } from './cloudGateway';
 import { startBeacon, stopBeacon } from './serverBeacon';   // A427
 import { createJoinRequest, readJoin } from './serverJoin';   // A427
@@ -180,8 +181,22 @@ export function startNodeServer(): void {
       // A410: the branch's tills reach the cloud ONLY through this server. Raw pass-through of the till's own request
       // (its token, device and idempotency headers) to the cloud, and the answer straight back. See nodeGateway.ts.
       if (url.startsWith(`${GATEWAY_PREFIX}/`)) {
+        // A443: a till's update files come from this server's own copy (fetched once for the branch), not live.
+        if (serveSharedUpdate(req, res, shareDir(), shareWanted)) return;
         const serverUrl = getDeviceConfig()?.server_url ?? '';
         return await forwardToCloud(req, res, serverUrl);
+      }
+
+      // A443: a till asks "I run X — is there a newer version?" (every 2 minutes, at start, back online). The server
+      // remembers what each till runs (its screen lists them) and answers with the version it holds ready to share; a
+      // till told of a newer one checks with the cloud at once and downloads it from here.
+      if (req.method === 'GET' && url === '/node/update/ready') {
+        const q = new URL(req.url ?? '', 'http://x').searchParams;
+        const v = String(q.get('v') ?? '');
+        noteTillVersion(String(q.get('device') ?? ''), q.get('name'), v);
+        const ready = latestReady(shareDir());
+        if (!ready) shareWanted(v);   // nothing held yet: the server checks what is approved (at most every 5 min)
+        return json(res, 200, readyAnswer(ready, v));
       }
 
       // Health — tills probe this to decide reachability.

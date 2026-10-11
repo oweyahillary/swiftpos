@@ -57,6 +57,7 @@ const TableTurnoverPage       = lazy(() => import('./pages/pos/TableTurnoverPage
 const DiscountsPage           = lazy(() => import('./pages/DiscountsPage'));
 const PaymentMethodsPage      = lazy(() => import('./pages/PaymentMethodsPage'));
 const PromotionsPage          = lazy(() => import('./pages/PromotionsPage'));
+const OffersPage              = lazy(() => import('./pages/OffersPage'));   // A445
 const CombosPage              = lazy(() => import('./pages/products/CombosPage'));
 const ReservationsPage        = lazy(() => import('./pages/ReservationsPage'));
 const QRMenuPage              = lazy(() => import('./pages/QRMenuPage'));
@@ -147,6 +148,7 @@ export default function App() {
                       <Route path="discounts"                 element={<DiscountsPage />} />
                       <Route path="payment-methods"           element={<Navigate to="/dashboard/settings/business/payments" replace />} />
                       <Route path="promotions"                element={<PromotionsPage />} />
+                      <Route path="offers"                    element={<OffersPage />} />
                       <Route path="combos"                    element={<CombosPage />} />
                       <Route path="reservations"              element={<ReservationsPage />} />
                       <Route path="expenses"                  element={<ExpensesPage />} />

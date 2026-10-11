@@ -1,4 +1,5 @@
 import MethodDot from '../../components/MethodDot';
+import type { AppliedOffer } from '../../lib/offers';   // A445
 import { enabledFromSetting, paymentButtons } from '../../lib/paymentCatalogue';   // A429
 import { methodColour, methodSolid, methodTint } from '../../lib/paymentColours';
 import type { MonoRaster } from '../../lib/escposRenderer';
@@ -64,6 +65,8 @@ interface Props {
    *  discount made the charged total and the stored total disagree, and now
    *  (with the atomic-order payment guard) would fail the sale outright. */
   maxDiscountPct?: number;
+  /** A445: the offers on this cart (shared/offers.ts) — taken off first; loyalty and a promo code are capped on the rest. */
+  offers?: AppliedOffer[];
   /** Custom tenders beyond the built-ins (A96), from /api/pos/init. Rendered as
    *  extra method buttons; all are non-cash and settle immediately like a card. */
   customMethods?: { code: string; name: string }[];
@@ -103,7 +106,7 @@ export default function PaymentModal({
   cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
-  maxDiscountPct = 10, existingOrderId,
+  maxDiscountPct = 10, existingOrderId, offers = [],
   initialEvenSplit,
   pumpId,
   customMethods = [],
@@ -223,8 +226,14 @@ export default function PaymentModal({
   // reconcile to what the server stored — previously a silent mismatch, now
   // (with the atomic-order guard) a rejected sale. capDiscountPct mirrors the
   // server's capDiscount exactly.
-  const cappedDiscount = capDiscountPct(rawDiscount, subtotal, maxDiscountPct);
+  // A445: offers come off first and are not capped; the manual discount (loyalty + a promo code) is capped on what is
+  // left — exactly as the cloud recomputes it (orders.ts) and the till does.
+  const offerOff = Math.min(subtotal, Math.round(offers.reduce((s, o) => s + o.amount, 0) * 100) / 100);
+  const cappedDiscount = capDiscountPct(rawDiscount, Math.round((subtotal - offerOff) * 100) / 100, maxDiscountPct);
   const discountWasCapped = cappedDiscount < rawDiscount - 0.005;
+  /** The WHOLE discount: offers + the capped manual one (orders.discount_amount). */
+  const allDiscount = Math.round((offerOff + cappedDiscount) * 100) / 100;
+  const offerFields = offerOff > 0 ? { offer_discount: offerOff, offers } : {};
 
   // Split the capped amount back across loyalty and promo proportionally, so the
   // stored discount_amount and the receipt line items stay consistent. Loyalty
@@ -234,7 +243,7 @@ export default function PaymentModal({
 
   // The total actually charged: subtotal minus the capped discount. `total` came
   // in reflecting the uncapped discount, so recompute rather than trust it.
-  const chargedTotal  = Math.round((subtotal - cappedDiscount) * 100) / 100;
+  const chargedTotal  = Math.round((subtotal - allDiscount) * 100) / 100;
   // A349: VAT and the levy on what is actually CHARGED (after the capped discount), at the business's own rates — the
   // figures the receipt shows and the payload carries (the cloud recomputes and stores its own; they now agree).
   const taxes = extractTaxes(chargedTotal, Number(business?.vat_rate ?? 16), Number(business?.ctl_rate ?? 0) || 0);
@@ -309,7 +318,8 @@ export default function PaymentModal({
       subtotal,
       vat_amount:      chargedVat,
       ctl_amount:      chargedCtl,
-      discount_amount: cappedDiscount,
+      discount_amount: allDiscount,
+      ...offerFields,   // A445
       discount_id:     discountState?.discount.id ?? null,
       total:           chargedTotal,
       tip_amount:      tipAmount,
@@ -344,7 +354,8 @@ export default function PaymentModal({
   function buildPayPayload(payments: object[]) {
     return {
       payments,
-      discount_amount: cappedDiscount,
+      discount_amount: allDiscount,
+      ...offerFields,   // A445
       discount_id:     discountState?.discount.id ?? null,
       tip_amount:      tipAmount,
       ...feeFields,   // 0.6.33: + delivery_free (the cloud then leaves the fee out of the amount due)
@@ -502,7 +513,7 @@ export default function PaymentModal({
         orderType, cashierName: session?.staffName ?? 'Cashier',
         // A349: the BILL (after discount, before tip) with the discount and tip beside it — grandTotal (bill + tip)
         // could never reconcile with the lines, so the thermal receipt threw and fell back to the browser dialog.
-        cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, deliveryFee, deliveryFree: free, change: completedOrder.change,
+        cart, total: chargedTotal, discount: allDiscount, offers: offerOff > 0 ? offers : undefined, tip: tipAmount, deliveryFee, deliveryFree: free, change: completedOrder.change,
         payments: completedOrder.payments.map(p => ({ method: p.method, amount: p.amount })),
         tableNumber,
         orderNote,   // A367
@@ -684,6 +695,9 @@ export default function PaymentModal({
           <div className="text-center py-2">
             <p className="text-gray-400 text-sm">Total due</p>
             <p className="text-white text-3xl font-bold mt-1">{currency} {fmt(grandTotal)}</p>
+            {offerOff > 0 && offers.map((o) => (
+              <p key={o.offer_id} data-testid="payment-offer" className="text-amber-300 text-xs mt-1">Includes offer {o.name}: {currency} {fmt(o.amount)}</p>
+            ))}
             {loyaltyDiscount > 0 && <p className="text-green-400 text-xs mt-1">⭐ Includes {currency} {fmt(loyaltyDiscount)} loyalty discount</p>}
             {promoDiscount  > 0 && <p className="text-yellow-400 text-xs mt-0.5">🏷️ Includes {currency} {fmt(promoDiscount)} promo discount</p>}
             {discountWasCapped && (

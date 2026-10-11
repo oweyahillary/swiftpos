@@ -36,6 +36,7 @@
  * that is not mistaken for a quiet month.
  */
 
+import { detailFromLocal, type OrderDetail } from './orderDetail';   // A444
 import { isNodeRole } from './deviceConfig';
 import { getLocalDb } from './localDb';
 import { getDeviceConfig, getBusinessDayCutoff } from './deviceConfig';   // 0.6.34 + the day's end
@@ -325,6 +326,24 @@ export function getRecentOrders(limit = 30, range?: ReportRange, cashierId?: str
     cashier_name: o.cashier_id ? (names.get(o.cashier_id) ?? null) : null,
     payments: byOrder.get(o.id) ?? [],
   }));
+}
+
+// ── One order's detail (A444) ────────────────────────────────────────────────
+/** An order this till holds, with its items, their sizes and extras, and payments; null when it is not on this till. */
+export function localOrderDetail(orderId: string): OrderDetail | null {
+  const db = getLocalDb();
+  const order = db.prepare(`SELECT * FROM orders WHERE id = ?`).get(orderId) as any;
+  if (!order) return null;
+  const items = db.prepare(`SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid`).all(orderId) as any[];
+  const ids = items.map((i) => i.id);
+  const inIds = ids.map(() => '?').join(',');
+  const variants = ids.length ? db.prepare(`SELECT * FROM order_item_variants WHERE order_item_id IN (${inIds})`).all(...ids) as any[] : [];
+  const modifiers = ids.length ? db.prepare(`SELECT * FROM order_item_modifiers WHERE order_item_id IN (${inIds})`).all(...ids) as any[] : [];
+  const payments = db.prepare(`SELECT method, amount, reference, status FROM payments WHERE order_id = ? ORDER BY created_at`).all(orderId) as any[];
+  const name = (id: string | null) => id
+    ? ((db.prepare(`SELECT name FROM users WHERE id = ?`).get(id) as { name?: string } | undefined)?.name ?? null) : null;
+  return detailFromLocal({ ...order, cashier_name: name(order.cashier_id), voided_by_name: name(order.voided_by) },
+    items, variants, modifiers, payments);
 }
 
 // ── Stock levels ──────────────────────────────────────────────────────────────

@@ -83,7 +83,8 @@ ok('a business without CTL: no CTL line, VAT on the VAT-only net', () => {
 ok('the web callers pass the BILL with the discount and tip beside it (never bill + tip)', () => {
   const pm = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
   // 0.6.27: and the delivery fee beside them.
-  assert.match(pm, /cart, total: chargedTotal, discount: cappedDiscount, tip: tipAmount, deliveryFee, deliveryFree: free, change: completedOrder\.change,/);   // 0.6.33 + free
+  // A445: the whole discount (offers + the capped manual one), with the offers by name.
+  assert.match(pm, /cart, total: chargedTotal, discount: allDiscount, offers: offerOff > 0 \? offers : undefined, tip: tipAmount, deliveryFee, deliveryFree: free, change: completedOrder\.change,/);   // 0.6.33 + free
   assert.ok(!/cart, total: grandTotal/.test(pm));
   const cs = read('apps/dashboard/src/pages/pos/CashierScreen.tsx');
   assert.equal((cs.match(/discount: totalDiscount/g) || []).length, 3, 'Print Bill + both kitchen fires');

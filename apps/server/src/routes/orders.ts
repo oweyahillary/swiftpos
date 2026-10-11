@@ -34,6 +34,7 @@ import { confirmerByPin, confirmerRows } from '../lib/confirmerLookup';
 import { businessReversalRules } from '../lib/reversalSettings';
 import { voidWindowOpen, windowLabel } from '../lib/reversalRules';
 import { frozenAtBranch } from '../lib/stockTakeAccess';
+import { applyOffers, cleanOffer, type AppliedOffer, type OfferLine } from '../lib/offers';   // A445
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -154,7 +155,9 @@ const NO_APPROVER = {
 // trusted. Mutates each line's selectedVariants[].priceAdjustment and
 // selectedModifiers[].price to the authoritative DB values (so denormalised
 // display rows stay truthful). Returns computed money or a structured error.
-type RecomputeOk   = { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number; ctl: number };
+type RecomputeOk   = { ok: true; lines: { unitPrice: number; lineTotal: number }[]; subtotal: number; discount: number; total: number; vat: number; ctl: number;
+  /** A445: the part of `discount` that offers took off, and which offers. */
+  offerDiscount: number; offers: AppliedOffer[] };
 type RecomputeFail = { ok: false; status: number; error: string };
 type RecomputeResult = RecomputeOk | RecomputeFail;
 
@@ -163,11 +166,41 @@ type RecomputeResult = RecomputeOk | RecomputeFail;
 // An explicit type predicate narrows correctly regardless of strictness.
 const recomputeFailed = (r: RecomputeResult): r is RecomputeFail => !r.ok;
 
+// ── A445: offers a sale claims, checked on the cloud's own prices ─────────────
+// The till (or the web POS) applies offers by its own clock and sends what they took off (offer_discount) and which
+// (offers: [{offer_id, name, amount}]). The cloud recomputes those offers on the lines it priced itself — with the
+// SAME engine (lib/offers.ts) — ignoring the timing (an offline sale arrives later, and the offer may have ended or
+// been switched off since: the sale was made while it ran). A sale never gets more off than that gives, and offers of
+// another business are ignored. The manual discount is the rest of discount_amount, capped as before on what is left.
+export interface OfferClaim { amount: number; ids: string[] }
+export function offerClaimFrom(body: any): OfferClaim {
+  const amount = Math.max(0, round2(Number(body?.offer_discount) || 0));
+  const ids = Array.isArray(body?.offers)
+    ? [...new Set(body.offers.map((o: any) => String(o?.offer_id ?? '')).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)))] as string[]
+    : [];
+  return ids.length ? { amount, ids } : { amount: 0, ids: [] };
+}
+const OFFER_COLS = 'id, name, kind, value, spend_type, applies_to, product_ids, category_ids, buy_qty, get_qty, get_product_id, '
+  + 'min_spend, meal_items, start_date, end_date, days, start_time, end_time, branch_ids';
+export async function checkOfferClaim(businessId: string, branchId: string | null, lines: OfferLine[], claim: OfferClaim,
+  subtotal: number): Promise<{ offerDiscount: number; offers: AppliedOffer[] }> {
+  if (!(claim.amount > 0) || !claim.ids.length) return { offerDiscount: 0, offers: [] };
+  const { data } = await supabase.from('offers').select(OFFER_COLS).eq('business_id', businessId).in('id', claim.ids);
+  const offers = ((data ?? []) as any[]).map((r) => cleanOffer({ ...r, active: true })).flatMap((c) => (c.ok ? [c.offer] : []));
+  const r = applyOffers(lines, offers, { ignoreTiming: true, branchId });
+  const offerDiscount = round2(Math.min(claim.amount, r.total, subtotal));
+  if (!(offerDiscount > 0)) return { offerDiscount: 0, offers: [] };
+  // Claimed less than the engine gives (an offer changed since the sale): the sale's own figure, shared out the same way.
+  const k = r.total > 0 ? offerDiscount / r.total : 0;
+  return { offerDiscount, offers: r.applied.map((a) => ({ ...a, amount: round2(a.amount * k) })) };
+}
+
 async function recomputeOrderTotals(
   businessId: string,
   branchId: string,
   items: OrderItemInput[],
   discountAmount: number | string,
+  claim: OfferClaim = { amount: 0, ids: [] },
 ): Promise<RecomputeResult> {
   const vKey = (pid: string, g: string, o: string) => `${pid}::${g}::${o}`;
   const lineProductIds: string[] = items
@@ -178,12 +211,14 @@ async function recomputeOrderTotals(
   const variantAdjMap = new Map<string, number>();
   const variantAdjById = new Map<string, number>();
   const modifierPriceMap = new Map<string, number>();
+  const categoryMap = new Map<string, string | null>();   // A445
 
   if (lineProductIds.length) {
     const { data: bizProducts } = await supabase
-      .from('products').select('id, base_price')
+      .from('products').select('id, base_price, category_id')
       .eq('business_id', businessId).in('id', lineProductIds);
     (bizProducts ?? [] as Pick<DbProduct, 'id' | 'base_price'>[]).forEach(p => basePriceMap.set(p.id, Number(p.base_price)));
+    (bizProducts ?? []).forEach((p: any) => categoryMap.set(p.id, p.category_id ?? null));   // A445: offers by category
 
     // Per-branch pricing: overlay this branch's price overrides on top of the
     // base prices. Still authoritative (server-resolved, not client-trusted) —
@@ -258,12 +293,21 @@ async function recomputeOrderTotals(
   }
 
   const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
-  const discount = capDiscount(discountAmount, subtotal);
+  // A445: offers first (checked on these prices), then the manual discount — capped as before, on what is left.
+  const offerLines: OfferLine[] = items.map((item, i) => {
+    const pid: string | null = item?.product?.id ?? null;
+    const qty = Number(item.quantity) || 0;
+    return { key: String(i), product_id: pid, category_id: pid ? (categoryMap.get(pid) ?? null) : null,
+             unit_price: qty > 0 ? lines[i].lineTotal / qty : 0, quantity: qty };
+  });
+  const { offerDiscount, offers } = await checkOfferClaim(businessId, branchId || null, offerLines, claim, subtotal);
+  const manualAsked = claim.ids.length ? Math.max(0, (Number(discountAmount) || 0) - claim.amount) : discountAmount;
+  const discount = round2(offerDiscount + capDiscount(manualAsked, round2(subtotal - offerDiscount)));
   const total = round2(subtotal - discount);
 
   const { vat, ctl } = await taxSplit(businessId, total);
 
-  return { ok: true, lines, subtotal, discount, total, vat, ctl };
+  return { ok: true, lines, subtotal, discount, total, vat, ctl, offerDiscount, offers };
 }
 
 /**
@@ -507,7 +551,7 @@ router.post('/', async (req, res) => {
     }
 
     // ── Item 4: authoritative price recomputation (anti-tampering) ───────────
-    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, discount_amount);
+    const recomputed = await recomputeOrderTotals(req.businessId, branch_id, items, discount_amount, offerClaimFrom(req.body));   // A445
     if (recomputeFailed(recomputed)) { res.status(recomputed.status).json({ error: recomputed.error }); return; }
     const {
       lines: authLines,
@@ -790,6 +834,13 @@ router.post('/', async (req, res) => {
     const createdRow = Array.isArray(created) ? created[0] : created;
     // A367: the order's note. create_order_atomic (migration 69) does not carry orders.notes, so it is written right
     // after the order exists — a note is an instruction, not money, and a failure here is logged, never the sale's.
+    // A445: which offers took what off (create_order_atomic does not carry them — written right after, like the note).
+    if (recomputed.offerDiscount > 0) {
+      const { error: offErr } = await supabase.from('orders')
+        .update({ offer_discount: recomputed.offerDiscount, offers: recomputed.offers })
+        .eq('id', createdRow.order_id).eq('business_id', req.businessId);
+      if (offErr) console.error('[order-create] the offers on the sale were not saved:', offErr.message);
+    }
     const orderNote = cleanNote(orderNoteRaw, ORDER_NOTE_MAX);
     if (orderNote) {
       const { error: noteErr } = await supabase.from('orders').update({ notes: orderNote })
@@ -1065,6 +1116,13 @@ router.get('/:id', async (req, res, next) => {
       (data as any).voided_by_name     = (data as any).voided_by     ? (nameMap[(data as any).voided_by]     ?? null) : null;
       (data as any).authorized_by_name = (data as any).authorized_by ? (nameMap[(data as any).authorized_by] ?? null) : null;
     }
+  }
+
+  // A444: who sold it — the order panel on the till and the web names them.
+  if ((data as any).cashier_id) {
+    const { data: who } = await supabase.from('users').select('name')
+      .eq('id', (data as any).cashier_id).eq('business_id', req.businessId).maybeSingle();
+    (data as any).cashier_name = (who as any)?.name ?? null;
   }
 
   res.json(data);
@@ -1950,7 +2008,24 @@ router.post('/:id/pay', async (req, res) => {
     // price adjustment and quietly LOWER the bill. Discount and tax are the only
     // things that change here, so they are the only things recomputed.
     const paySubtotal = Number(order.subtotal) || 0;
-    const payDiscount = capDiscount(discount_amount, paySubtotal);
+    // A445: offers on a sale paid after it was opened — checked on its stored lines (their prices were the cloud's at
+    // /open), then the manual discount capped on what is left.
+    const payClaim = offerClaimFrom(req.body);
+    let payOffers: { offerDiscount: number; offers: AppliedOffer[] } = { offerDiscount: 0, offers: [] };
+    if (payClaim.ids.length) {
+      const its = ((order as any).order_items ?? []) as Array<{ product_id: string | null; quantity: number; subtotal: number }>;
+      const pids = [...new Set(its.map((i) => i.product_id).filter(Boolean))] as string[];
+      const { data: cats } = pids.length
+        ? await supabase.from('products').select('id, category_id').eq('business_id', req.businessId).in('id', pids)
+        : { data: [] as any[] };
+      const catOf = new Map(((cats ?? []) as any[]).map((c) => [c.id, c.category_id ?? null]));
+      payOffers = await checkOfferClaim(req.businessId!, (order as any).branch_id ?? null, its.map((i, n) => ({
+        key: String(n), product_id: i.product_id, category_id: i.product_id ? (catOf.get(i.product_id) ?? null) : null,
+        unit_price: Number(i.quantity) > 0 ? Number(i.subtotal) / Number(i.quantity) : 0, quantity: Number(i.quantity) || 0,
+      })), payClaim, paySubtotal);
+    }
+    const payManualAsked = payClaim.ids.length ? Math.max(0, (Number(discount_amount) || 0) - payClaim.amount) : discount_amount;
+    const payDiscount = round2(payOffers.offerDiscount + capDiscount(payManualAsked, round2(paySubtotal - payOffers.offerDiscount)));
     const payTotal    = round2(paySubtotal - payDiscount);
     const { vat: payVat, ctl: payCtl } = await taxSplit(req.businessId, payTotal);
 
@@ -2025,6 +2100,8 @@ router.post('/:id/pay', async (req, res) => {
     const orderUpdate: Record<string, unknown> = {
       status:          'completed',
       discount_amount: payDiscount,
+      offer_discount:  payOffers.offerDiscount,                                  // A445
+      offers:          payOffers.offers.length ? payOffers.offers : null,        // A445
       total:           payTotal,
       vat_amount:      payVat,
       ctl_amount:      payCtl,

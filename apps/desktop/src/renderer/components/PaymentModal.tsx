@@ -5,6 +5,7 @@ import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT 
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
 import { enabledFromSetting, paymentButtons } from '../../shared/paymentCatalogue';   // A429
+import type { AppliedOffer } from '../../shared/offers';   // A445
 
 // Payment modal — split tender + discount + tip.
 //
@@ -25,7 +26,11 @@ export interface PaymentLeg {
 }
 
 export interface PaymentResult {
+  /** The whole discount: the offers' + the manual one (orders.discount_amount). */
   discountAmount: number;
+  /** A445: the part offers took off, and which (orders.offer_discount / orders.offers). */
+  offerDiscount: number;
+  offers: AppliedOffer[];
   tipAmount: number;
   /** The BILL — subtotal minus discount, excluding tip. Goes to orders.total. */
   total: number;
@@ -57,6 +62,8 @@ interface Props {
   deliveryFee?: number;
   /** 0.6.27: who takes the order (shown beside the fee). */
   rider?: string | null;
+  /** A445: the offers on this cart (applied by the cart, shared/offers.ts) — shown, and taken off before a manual discount. */
+  offers?: AppliedOffer[];
   onConfirm: (result: PaymentResult) => void;
   onClose: () => void;
 }
@@ -66,7 +73,7 @@ interface Props {
 // business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
 // the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, offers = [], onConfirm, onClose }: Props) {
   const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
   // The first leg starts on cash when the branch takes cash, else on its first method.
   const firstMethod = buttons.some((b) => b.code === 'cash') ? 'cash' : (buttons[0]?.code ?? 'cash');
@@ -78,9 +85,10 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   const [localError, setLocalError] = useState('');
 
   const discountRaw = parseFloat(discountInput) || 0;
-  const { discountAmount, tipAmount, vatAmount, ctlAmount, total, amountDue: billAndTip, discountCapped } = useMemo(
-    () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct }),
-    [subtotal, discountRaw, discountMode, tipInput, vatRate, ctlRate, maxDiscountPct]
+  const offersOff = round2(offers.reduce((s, o) => s + o.amount, 0));
+  const { discountAmount, offerDiscount, manualDiscount, tipAmount, vatAmount, ctlAmount, total, amountDue: billAndTip, discountCapped } = useMemo(
+    () => computeTotals(subtotal, { discountRaw, discountMode, tipRaw: parseFloat(tipInput) || 0, vatRate, ctlRate, maxDiscountPct, offerDiscount: offersOff }),
+    [subtotal, discountRaw, discountMode, tipInput, vatRate, ctlRate, maxDiscountPct, offersOff]
   );
   // 0.6.27: the delivery fee rides on top like the tip — in the legs, not in the bill (total) or its taxes.
   const deliveryFee = cleanDeliveryFee(feeIn);
@@ -126,6 +134,8 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
     if (cashShort) { setLocalError('Cash tendered is less than the cash amount due'); return; }
     onConfirm({
       discountAmount,
+      offerDiscount,
+      offers: offerDiscount > 0 ? offers : [],
       tipAmount,
       total,
       amountDue,
@@ -157,10 +167,16 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
           <div className="flex justify-between text-gray-400">
             <span>Subtotal</span><span>{fmt(subtotal)}</span>
           </div>
-          {discountAmount > 0 && (
+          {/* A445: each offer by name, then the cashier's own discount. */}
+          {offerDiscount > 0 && offers.map((o) => (
+            <div key={o.offer_id} data-testid="payment-offer" className="flex justify-between text-amber-300">
+              <span>Offer: {o.name}</span><span>−{fmt(o.amount)}</span>
+            </div>
+          ))}
+          {manualDiscount > 0 && (
             <div className="flex justify-between text-amber-400">
               <span>Discount{discountMode === 'percent' ? ` (${discountRaw}%)` : ''}</span>
-              <span>−{fmt(discountAmount)}</span>
+              <span>−{fmt(manualDiscount)}</span>
             </div>
           )}
           {tipAmount > 0 && (
@@ -220,7 +236,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                   reconstruct the next morning. */}
               {discountCapped && (
                 <p className="text-xs text-amber-400 mt-1">
-                  Capped at {maxDiscountPct}% — {fmt(discountAmount)} applied. Ask a manager for more.
+                  Capped at {maxDiscountPct}% — {fmt(manualDiscount)} applied. Ask a manager for more.
                 </p>
               )}
             </div>

@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   serverJoin: {
     requests: ()                            => ipcRenderer.invoke('node:joinRequests'),
     answer:   (id: string, allow: boolean)  => ipcRenderer.invoke('node:answerJoin', { id, allow }),
+    tillVersions: ()                        => ipcRenderer.invoke('node:tillVersions'),   // A443
   },
 
   pos: {
@@ -52,6 +53,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
     paymentMethodsEnabled: ()         => ipcRenderer.invoke('pos:paymentMethodsEnabled'),   // A429
+    offers: ()                        => ipcRenderer.invoke('pos:offers'),   // A445
     // A278: main pushes 'catalogue:changed' after a background pull applied a web edit, so the
     // running POS reloads products/prices without a restart. Returns its own unsubscribe.
     onCatalogueChanged: (cb: () => void) => {
@@ -65,6 +67,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     create: (payload: any) => ipcRenderer.invoke('order:create', payload),
     void:   (orderId: string, reason: string, supervisor_pin?: string, authorizer_id?: string) =>
               ipcRenderer.invoke('order:void', { orderId, reason, supervisor_pin, authorizer_id }),
+    // A444: one order's items, payments and money (this till's records, else the cloud's).
+    detail: (orderId: string) => ipcRenderer.invoke('order:detail', orderId),
     refund: (orderId: string, reason: string, override_pin?: string, authorizer_id?: string) =>
               ipcRenderer.invoke('order:refund', { orderId, reason, override_pin, authorizer_id }),
   },
@@ -264,6 +268,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
     setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
     setPaymentMethodsEnabled: (codes: string[])          => ipcRenderer.invoke('manage:setPaymentMethodsEnabled', codes),   // A429
+    offers: ()                                           => ipcRenderer.invoke('manage:offers'),   // A445
+    saveOffer: (offer: unknown)                          => ipcRenderer.invoke('manage:saveOffer', offer),
+    deleteOffer: (id: string)                            => ipcRenderer.invoke('manage:deleteOffer', id),
     getCashierHistoryMethods: ()                         => ipcRenderer.invoke('manage:getCashierHistoryMethods'),   // 0.6.37
     setCashierHistoryMethods: (methods: string[])        => ipcRenderer.invoke('manage:setCashierHistoryMethods', methods),
   },

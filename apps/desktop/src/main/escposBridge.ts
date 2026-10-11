@@ -252,6 +252,8 @@ export interface SaleForPrint {
   total: number;
   /** A349: the discount taken off the cart lines (the lines sum to total + discount). 0 = none. */
   discount?: number;
+  /** A445: the offers inside `discount`, by name (printed one by one; the rest prints as "Discount:"). */
+  offers?: Array<{ name: string; amount: number }>;
   /** A349: the tip on top of the bill (printed after the total; PAY = total + tip). 0 = none. */
   tip?: number;
   /** 0.6.27: the delivery fee on top of the bill (PAY = total + tip + fee). 0 = none. */
@@ -380,6 +382,7 @@ export function printSale(
         total:          toCents(sale.total),
         // A349: without these a discounted sale's receipt could not reconcile its lines and never printed.
         discount:       toCents(sale.discount ?? 0),
+        ...(sale.offers?.length ? { offers: sale.offers.map((o) => ({ name: String(o.name ?? 'Offer'), amount: toCents(Number(o.amount) || 0) })) } : {}),   // A445
         tip:            toCents(sale.tip ?? 0),
         deliveryFee:    toCents(sale.deliveryFee ?? 0),   // 0.6.27
         deliveryFree:   sale.deliveryFree === true,       // 0.6.33

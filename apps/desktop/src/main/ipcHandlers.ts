@@ -11,6 +11,8 @@
 //   sync:trigger      → run syncAll()
 //   sync:status       → return { online, pendingCount }
 
+import { latestReady, shareDir, tillVersions } from './updateShare';   // A443
+import { cleanOffer, type Offer } from './offers';   // A445
 import { getMacAddressCached } from './machineFingerprint';
 import { app, ipcMain, net } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
@@ -64,6 +66,8 @@ import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getC
 import { branchCloseOverview, createCloseInstruction, executeCloseDay } from './branchClose';
 import { takeSnapshot, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors } from './nodeIngest';
+import { localOrderDetail } from './managerReports';   // A444
+import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './orderDetail';   // A444
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
@@ -1127,7 +1131,8 @@ export function registerIpcHandlers() {
         {
           billNumber:     String(payload.order_number ?? ''),
           orderType:      String(payload.order_type ?? 'retail'),
-          cashierName:    staff?.staff_name ?? '',
+          // A444: a reprint rebuilt from the order names who sold it; a live sale (and a stored payload) the person signed in.
+          cashierName:    String(payload.cashier_name ?? staff?.staff_name ?? ''),
           soldAt:         new Date(),
           tableNumber:    payload.table_number ?? undefined,
           deliveryPerson: payload.delivery_person ?? undefined,
@@ -1138,6 +1143,8 @@ export function registerIpcHandlers() {
           total:          Number(payload.total ?? 0),
           // A349: the BILL is after the discount and excludes the tip; the receipt needs both to reconcile and print.
           discount:       Number(payload.discount_amount ?? 0),
+          // A445: the offers on the sale, by name (part of the discount above).
+          offers:         Array.isArray(payload.offers) ? payload.offers : undefined,
           tip:            Number(payload.tip_amount ?? 0),
           deliveryFee:    Number(payload.delivery_fee ?? 0),   // 0.6.27: after the total with the tip; PAY includes it
           deliveryFree:   payload.delivery_free === true,       // 0.6.33: "Delivery: FREE" — the fee is not the customer's
@@ -1273,21 +1280,55 @@ export function registerIpcHandlers() {
     return { ok: true };
   });
 
+  // A444: an order's detail — this till's records, else the cloud (GET /api/orders/:id, the branch's other tills).
+  async function readOrderDetail(orderId: string): Promise<{ detail: OrderDetail; cashierId: string | null }> {
+    const local = localOrderDetail(orderId);
+    if (local) {
+      const row = getLocalDb().prepare(`SELECT cashier_id FROM orders WHERE id = ?`).get(orderId) as { cashier_id?: string } | undefined;
+      return { detail: local, cashierId: row?.cashier_id ?? null };
+    }
+    const cfg = getDeviceConfig();
+    const token = readStaffTokens().token ?? readSessionTokens().token;
+    if (!token) throw new Error('This order is not on this till, and the till is not signed in to the cloud.');
+    let res: Response;
+    try {
+      res = await Promise.race([
+        cloudFetch(`${getCloudUrl()}/api/orders/${encodeURIComponent(orderId)}`, {
+          headers: { Authorization: `Bearer ${token}`, 'x-device-id': cfg?.device_id ?? '' },
+        }),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('The cloud took too long to answer.')), 8_000)),
+      ]);
+    } catch (e: any) {
+      throw new Error(/took too long/.test(e?.message ?? '') ? e.message : 'This order is not on this till and the cloud cannot be reached.');
+    }
+    if (res.status === 404) throw new Error('Order not found.');
+    if (!res.ok) throw new Error(`The cloud did not answer (HTTP ${res.status}).`);
+    const body = await res.json() as any;
+    return { detail: detailFromCloud(body), cashierId: body?.cashier_id ?? null };
+  }
+
   // Reprint any recent order from Order History (A94). Replays the stored payload
   // through the same path as the original — byte-identical, marked "Duplicate
   // Print". Only orders created on THIS terminal (after the feature shipped) have
   // a stored payload; anything else reports honestly rather than printing wrong.
-  handle('escpos:reprintReceiptForOrder', (_e, orderId: string) => {
+  handle('escpos:reprintReceiptForOrder', async (_e, orderId: string) => {
     // 0.6.27: History's Reprint is for managers when the client has 'cashier_no_reprint' on — refused here too.
     if (!historyScope().canReprint) return { ok: false, error: 'Reprinting is for managers on this till.' };
     const row = getLocalDb()
       .prepare('SELECT payload FROM receipt_payloads WHERE order_id = ?')
       .get(orderId) as { payload?: string } | undefined;
-    if (!row?.payload) {
-      return { ok: false, error: 'No stored receipt for this order on this terminal.' };
+    // A444: no stored receipt (another till's sale, the web's, or older than the last 200) — rebuilt from the order
+    // itself: this till's records, else the cloud's.
+    let payload: any = null;
+    if (row?.payload) {
+      try { payload = JSON.parse(row.payload); } catch { return { ok: false, error: 'Could not rebuild this receipt.' }; }
+    } else {
+      const found = await readOrderDetail(String(orderId)).catch((e: any) => ({ error: e?.message ?? String(e) }));
+      if ('error' in found) return { ok: false, error: found.error };
+      payload = receiptPayloadFromDetail(found.detail);
     }
     try {
-      const r = queueThermal(JSON.parse(row.payload), ['receipt'], { at: new Date(), count: 1 });
+      const r = queueThermal(payload, ['receipt'], { at: new Date(), count: 1 });
       if (r.failed.length) return { ok: false, error: 'The receipt could not be produced — see the till log.' };
       return { ok: true };
     } catch {
@@ -2526,6 +2567,33 @@ export function registerIpcHandlers() {
   // defaults); a manager switches them for the branch (the cloud checks settings.manage and the codes), and this till uses
   // the new list at once, the branch's other tills on their next pull.
   handle('pos:paymentMethodsEnabled', async () => ({ enabled: getPaymentMethodsEnabled() }));
+  // A443: on the branch server — the version it holds for its tills, and which version each till said it runs.
+  handle('node:tillVersions', async () => {
+    const ready = latestReady(shareDir());
+    return { serverVersion: app.getVersion(), ready, tills: tillVersions(ready ?? app.getVersion()) };
+  });
+  // A445: the branch's offers, as the till holds them (pulled with the menu) — the cart applies them by this clock.
+  handle('pos:offers', async () => {
+    const rows = getLocalDb().prepare(`SELECT data FROM offers`).all() as Array<{ data: string }>;
+    const offers = rows.flatMap((r) => { try { const c = cleanOffer(JSON.parse(r.data)); return c.ok ? [(c as { offer: Offer }).offer] : []; } catch { return []; } });
+    return { offers, branchId: getDeviceConfig()?.branch_id ?? null };
+  });
+  // A445: Manager › Offers — read and change the cloud's (online only; the till learns of a change on its next pull,
+  // which is asked for at once).
+  handle('manage:offers', async () => manageFetch('/api/offers', 'GET'));
+  handle('manage:saveOffer', async (_e, raw) => {
+    const c = cleanOffer(raw);
+    if (!c.ok) throw new Error((c as { error: string }).error);
+    const id = String((raw as any)?.id ?? '');
+    const out = await manageFetch(id ? `/api/offers/${encodeURIComponent(id)}` : '/api/offers', id ? 'PATCH' : 'POST', (c as { offer: Offer }).offer);
+    syncAll().catch(console.error);
+    return out;
+  });
+  handle('manage:deleteOffer', async (_e, id: string) => {
+    const out = await manageFetch(`/api/offers/${encodeURIComponent(String(id))}`, 'DELETE');
+    syncAll().catch(console.error);
+    return out;
+  });
   handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {
     const list = (Array.isArray(codes) ? codes : []).map((c) => String(c).trim().toLowerCase());
     const branchId = getDeviceConfig()?.branch_id;
@@ -2559,6 +2627,23 @@ export function registerIpcHandlers() {
     const orders = getRecentOrders(0, resolveRange('today'), scope.ownOnly ? scope.staffId : null);
     // 0.6.37 (A387): a cashier sees only the payment methods the manager chose (a split sale: only its allowed part).
     return { scope, orders: scope.methods.length ? cashierHistoryView(orders as any[], scope.methods) : orders };
+  });
+  // A444: one order's items, sizes, extras, notes and payments — this till's records first, else the cloud's (another
+  // till's sale at the branch). A cashier only sees what their History already shows them.
+  handle('order:detail', async (_e, orderId: string) => {
+    const scope = historyScope();
+    if (!scope.staffId) return { ok: false, error: 'Sign in to see an order.' };
+    let found: { detail: OrderDetail; cashierId: string | null };
+    try { found = await readOrderDetail(String(orderId)); }
+    catch (e: any) { return { ok: false, error: e?.message ?? 'Could not read this order.' }; }
+    if (!scope.manager) {
+      if (scope.ownOnly && found.cashierId !== scope.staffId) return { ok: false, error: 'This sale is not yours.' };
+      if (scope.methods.length) {
+        const allowed = new Set(scope.methods);
+        found.detail = { ...found.detail, payments: found.detail.payments.filter((p) => allowed.has(p.method)) };
+      }
+    }
+    return { ok: true, detail: found.detail, canReprint: scope.canReprint };
   });
   handle('manager:recentOrders',  async (_e, r?: RangeArg) =>
     getRecentOrders(r?.limit ?? 30, r ? resolveRange(r.preset, r.from, r.to) : undefined));

@@ -1,7 +1,7 @@
 /**
  * POSOrderHistoryTab
  * Paginated, searchable order list scoped to the cashier's branch.
- * Tap an order to expand its line items and payment detail.
+ * Tap an order to expand its line items (A444: they were never shown) and payment detail.
  * Permission required: orders.view_all
  */
 
@@ -14,6 +14,8 @@ import { historyView, orderMethod, type HistorySort } from '../../lib/historyVie
 import { orderTypeLabel, customerDeliveryFee } from '../../lib/delivery';
 import { businessDateLocal } from '../../lib/businessDay';   // 0.6.34
 import { getWebDayCutoff } from '../../lib/webDayCutoff';   // 0.6.33: + free delivery
+import OrderItems from '../../components/OrderItems';   // A444
+import { parseReversalRules, DEFAULT_VOID_WINDOW_MINUTES, windowLabel } from '../../lib/reversalRules';   // A444
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,6 +73,15 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   // asks a manager's (or the owner's) own PIN and records who approved (A355).
   const mayVoid = hasPermission('orders.void');
   const [refunding, setRefunding]     = useState<string | null>(null);   // order id with the refund form open
+  // A444: Void too (it was refund-only here) — inside the owner's void window, with the same reason + manager PIN.
+  const [revMode, setRevMode]         = useState<'void' | 'refund'>('refund');
+  const [windowMin, setWindowMin]     = useState(DEFAULT_VOID_WINDOW_MINUTES);
+  useEffect(() => {
+    posApi.get<Array<{ key: string; value: unknown }>>('/api/business/settings')
+      .then((rows) => setWindowMin(parseReversalRules(rows ?? []).voidWindowMinutes))
+      .catch(() => { /* the default; the cloud enforces the real one */ });
+  }, [posApi]);
+  const inVoidWindow = (o: { created_at: string }) => (Date.now() - new Date(o.created_at).getTime()) / 60000 <= windowMin;
   const [refundReason, setRefundReason] = useState('');
   const [refundOther, setRefundOther] = useState('');
   const [refundPin, setRefundPin]     = useState('');
@@ -80,12 +91,14 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
   const submitRefund = async (order: Order) => {
     const reason = (refundReason === 'Other' ? refundOther : refundReason).trim();
     if (!reason) { setRefundMsg({ id: order.id, text: 'A reason is required.', ok: false }); return; }
-    if (!refundPin.trim()) { setRefundMsg({ id: order.id, text: 'A manager PIN is required to refund.', ok: false }); return; }
+    if (!refundPin.trim()) { setRefundMsg({ id: order.id, text: `A manager PIN is required to ${revMode}.`, ok: false }); return; }
     setRefundBusy(true); setRefundMsg(null);
     try {
-      await posApi.post(`/api/orders/${order.id}/refund`, { reason, override_pin: refundPin.trim() });
+      await posApi.post(`/api/orders/${order.id}/${revMode}`, { reason, override_pin: refundPin.trim() });
       setRefunding(null); setRefundReason(''); setRefundOther(''); setRefundPin('');
-      setRefundMsg({ id: order.id, text: `Refunded ${fmt(order.total, currency)} — hand it back in the tender it came in.`, ok: true });
+      setRefundMsg({ id: order.id, ok: true, text: revMode === 'void'
+        ? `Voided — the sale is removed; hand back ${fmt(paidOf(order), currency)} in the tender it came in.`
+        : `Refunded ${fmt(order.total, currency)} — hand it back in the tender it came in.` });
       await load(page);
     } catch (e: any) {
       // The cloud's own words (a wrong PIN, a missing permission, already refunded).
@@ -257,6 +270,12 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     <span style={{ ...s.detailVal, fontWeight: 700, color: '#22c55e' }}>{fmt(order.total, currency)}</span>
                   </div>
                   </>}
+                  {/* A444: what was in it. */}
+                  {!order.history_partial && (
+                    <div style={{ margin: '6px 0' }}>
+                      <OrderItems orderId={order.id} currency={currency} get={(path) => posApi.get(path)} />
+                    </div>
+                  )}
                   {order.payments.map((p, i) => (
                     <div key={i} style={{ ...s.detailRow, marginTop: 2 }}>
                       <span style={s.detailLabel}><MethodDot method={p.method} />{METHOD_ICON[p.method] ?? '💰'} {p.method}</span>
@@ -279,16 +298,25 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                     <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>{reprintMsg.text}</div>
                   )}
                   {/* A359: Refund (orders.void; completed, not refunded). */}
-                  {canRefundOrder(order, mayVoid) && refunding !== order.id && (
+                  {canRefundOrder(order, mayVoid) && refunding !== order.id && (<>
+                    {inVoidWindow(order) && (
+                      <button data-testid="history-void"
+                        onClick={(e) => { e.stopPropagation(); setRevMode('void'); setRefunding(order.id); setRefundReason(''); setRefundOther(''); setRefundPin(''); setRefundMsg(null); }}
+                        style={{ ...s.refundBtn, marginRight: 6 }}
+                        title={`Inside the ${windowLabel(windowMin)} void window`}
+                      >Void</button>
+                    )}
                     <button
-                      onClick={(e) => { e.stopPropagation(); setRefunding(order.id); setRefundReason(''); setRefundOther(''); setRefundPin(''); setRefundMsg(null); }}
+                      onClick={(e) => { e.stopPropagation(); setRevMode('refund'); setRefunding(order.id); setRefundReason(''); setRefundOther(''); setRefundPin(''); setRefundMsg(null); }}
                       style={s.refundBtn}
                     >Refund</button>
-                  )}
+                  </>)}
                   {refunding === order.id && (
                     <div style={s.refundForm} onClick={e => e.stopPropagation()}>
                       <div style={{ fontSize: 12, color: '#cbd5e1', marginBottom: 6 }}>
-                        Refund {fmt(order.total, currency)} — the sale stays on the books; only the money goes back.
+                        {revMode === 'void'
+                          ? `Void — the sale is removed as if it never happened; hand back ${fmt(paidOf(order), currency)}.`
+                          : `Refund ${fmt(order.total, currency)} — the sale stays on the books; only the money goes back.`}
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
                         {REFUND_REASONS.map(r => (
@@ -306,7 +334,7 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button type="button" disabled={refundBusy} onClick={() => void submitRefund(order)}
                           style={{ ...s.refundBtn, marginTop: 0, opacity: refundBusy ? 0.5 : 1 }}>
-                          {refundBusy ? 'Refunding…' : `Refund ${fmt(order.total, currency)}`}
+                          {refundBusy ? (revMode === 'void' ? 'Voiding…' : 'Refunding…') : (revMode === 'void' ? 'Void this sale' : `Refund ${fmt(order.total, currency)}`)}
                         </button>
                         <button type="button" disabled={refundBusy} onClick={() => setRefunding(null)} style={s.searchBtn}>Cancel</button>
                       </div>

@@ -51,22 +51,30 @@ export function computeTotals(subtotal: number, opts: {
   vatRate: number;
   ctlRate?: number;        // Catering/Tourism Levy %. Omitted or 0 = not applicable.
   maxDiscountPct?: number; // Ceiling from the server; falls back to the shared default.
+  /** A445: what offers took off (shared/offers.ts). Not capped; the manual discount is capped on what is left. */
+  offerDiscount?: number;
 }) {
   const { discountRaw, discountMode, tipRaw, vatRate, ctlRate = 0,
           maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT } = opts;
+  // A445: offers come off first — exactly as the cloud does (orders.ts recomputeOrderTotals) — and the manual discount
+  // is asked of, and capped on, what is left.
+  const offerDiscount = round2(Math.min(Math.max(opts.offerDiscount ?? 0, 0), subtotal));
+  const base = round2(subtotal - offerDiscount);
 
   // Clamp to the SAME ceiling the server applies, so the receipt, the drawer and
   // the stored order can never describe three different discounts.
-  const ceiling = round2(subtotal * (Math.max(0, maxDiscountPct) / 100));
+  const ceiling = round2(base * (Math.max(0, maxDiscountPct) / 100));
   const asked = round2(
     discountMode === 'percent'
-      ? subtotal * Math.min(Math.max(discountRaw, 0), 100) / 100
-      : Math.min(Math.max(discountRaw, 0), subtotal)
+      ? base * Math.min(Math.max(discountRaw, 0), 100) / 100
+      : Math.min(Math.max(discountRaw, 0), base)
   );
-  const discountAmount = round2(Math.min(asked, ceiling, subtotal));
+  const manualDiscount = round2(Math.min(asked, ceiling, base));
   // True when the cashier asked for more than policy allows. The modal surfaces
   // this rather than quietly charging a different number than was typed.
-  const discountCapped = asked > discountAmount + EPSILON;
+  const discountCapped = asked > manualDiscount + EPSILON;
+  // The WHOLE discount (offers + manual) — what orders.discount_amount holds, as before.
+  const discountAmount = round2(offerDiscount + manualDiscount);
   const tipAmount = round2(Math.max(tipRaw, 0));
   const discountedSubtotal = round2(subtotal - discountAmount);
   // Prices are inclusive of BOTH taxes, so back the net out with the combined
@@ -93,7 +101,7 @@ export function computeTotals(subtotal: number, opts: {
   // paid and printed sale was retried five times and then parked as 'failed'.
   const total     = discountedSubtotal;
   const amountDue = round2(discountedSubtotal + tipAmount);
-  return { discountAmount, tipAmount, vatAmount, ctlAmount, total, amountDue, discountCapped, maxDiscountPct };
+  return { discountAmount, offerDiscount, manualDiscount, tipAmount, vatAmount, ctlAmount, total, amountDue, discountCapped, maxDiscountPct };
 }
 
 // Resolves draft legs against the total due. A blank amount means "the

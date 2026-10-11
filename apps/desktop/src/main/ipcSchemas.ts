@@ -177,6 +177,12 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   // ── order (money path) ────────────────────────────────────────────────────
   'order:create': orderCreate,           // NEEDS_LIVE_TEST — see header note
   'order:void':   { orderId: { t: 'string', min: 1 }, reason: { t: 'string', min: 1 }, supervisor_pin: { t: 'string', optional: true }, override_pin: { t: 'string', optional: true }, authorizer_id: { t: 'string', optional: true } },
+  'order:detail': { kind: 'string' },   // A444
+  'pos:offers': NO_PAYLOAD,   // A445
+  'node:tillVersions': NO_PAYLOAD,   // A443
+  'manage:offers': NO_PAYLOAD,
+  'manage:saveOffer': { kind: 'object' },
+  'manage:deleteOffer': { kind: 'string' },
   'order:refund': { orderId: { t: 'string', min: 1 }, reason: { t: 'string', min: 1 }, override_pin: { t: 'string', optional: true }, authorizer_id: { t: 'string', optional: true } },
 
   // ── print (native) ────────────────────────────────────────────────────────
