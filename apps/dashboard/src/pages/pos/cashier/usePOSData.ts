@@ -58,6 +58,8 @@ export interface POSData {
   loyaltyEnabled:    boolean;
   maxDiscountPct:    number;
   paymentMethods:    { code: string; name: string }[];
+  /** A429: the payment methods this branch takes (null = not sent = the catalogue's defaults). */
+  paymentMethodsEnabled: string[] | null;
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -70,6 +72,7 @@ export function usePOSData(): POSData {
   const [products,          setProducts]          = useState<Product[]>([]);
   const [categories,        setCategories]        = useState<Category[]>([]);
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
+  const [paymentMethodsEnabled, setPaymentMethodsEnabled] = useState<string[] | null>(null);   // A429
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
@@ -106,6 +109,7 @@ export function usePOSData(): POSData {
       setProducts(init.products ?? []);
       setCategories(init.categories ?? []);
       setPaymentMethods(init.paymentMethods ?? []);
+      setPaymentMethodsEnabled(Array.isArray(init.paymentMethodsEnabled) ? init.paymentMethodsEnabled : null);   // A429
       setVariantsByProduct(init.variantsByProduct ?? {});
       setComboItems(init.comboItems ?? {});
       setKitchenExclusions(init.kitchenExclusions ?? []);
@@ -187,7 +191,7 @@ export function usePOSData(): POSData {
   return {
     products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter,
     tables, pumps, setPumps, branchPrinters,
-    businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, orderMode,
+    businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, orderMode,
     loading, error,
     reload: () => setTick(t => t + 1),
   };

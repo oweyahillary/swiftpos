@@ -13,6 +13,11 @@ export interface HelpTopic {
   title: string;
   /** What to do, in order. */
   steps: string[];
+  /**
+   * A422 part 2: a picture of the real screen beside a step — a file name in each app's public/help-img/ (shipped with
+   * the till, so Help works offline), null where the step needs none. Same order as `steps`. The printed card has none.
+   */
+  images?: Array<string | null>;
 }
 
 export const HELP_TOPICS: HelpTopic[] = [
@@ -109,3 +114,73 @@ export function whoToCallSteps(name: string, phones: string[]): string[] {
 }
 
 export const WHO_TO_CALL_TITLE = 'Who to call';
+
+/**
+ * A422 (owner, 2026-10-09: "Build a detailed help … especially for simple tasks like opening, closing day, manager
+ * confirming shift and closing day etc, well detailed"). Step by step, in the words on the screens (read from the code,
+ * 2026-10-10). DRAFT for the owner's review — the approved "What to do when" list above is unchanged. Screenshots come
+ * next (A422 part 2): they need the real screens.
+ */
+export const HOW_TO: HelpTopic[] = [
+  {
+    id: 'howto-open-shift',
+    title: 'Open your shift (start of the day)',
+    steps: [
+      'On the PIN screen, type your PIN and press Enter.',
+      'The "Open your drawer" box opens with your name. Count the cash in the drawer and type it in "Opening float" (0 if it is empty).',
+      'Press "Start selling". The top bar now shows a green "Shift open".',
+      'If the box shows someone else\'s name, press "Not you? Sign out" — never open a shift under another person\'s name.',
+    ],
+    images: ['open-1.jpg', 'open-2.jpg', 'open-3.jpg', null],
+  },
+  {
+    id: 'howto-close-shift',
+    title: 'Close your shift (end of your work)',
+    steps: [
+      'Finish or hold every open order first.',
+      'Tap "Shift open" in the top bar. The shift panel opens; "Close shift" is at the bottom of the Shift tab.',
+      'Count the cash in the drawer — include the opening float — and type it in "Counted cash in drawer".',
+      'Type the total for each other payment method listed (M-Pesa from the statement, card from the card machine). Type 0 if none.',
+      'Press "Close shift" (on some tills "Close shift & print Z-report"). If your report shows, press "Done — sign out". The PIN screen says "Shift closed." and is ready for the next person.',
+      'Leave the counted cash in the drawer (or as the manager tells you). A manager checks your count.',
+    ],
+    images: [null, 'close-2.jpg', 'close-3.jpg', null, 'close-5.jpg', 'close-6.jpg'],
+  },
+  {
+    id: 'howto-confirm-shift',
+    title: 'Manager: confirm a closed shift',
+    steps: [
+      'Sign in with your manager PIN and open Manager.',
+      'Find the shift: Overview › "Shift report — today" (any till), or Sales › Shift report, or Close › Close Day (this till). It says "Awaiting manager".',
+      'Press "Confirm". Count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total.',
+      'Type what YOU counted. Where the business shows the cashier\'s figure, give a reason for any difference.',
+      'Press "Confirm shift". The shift shows "Confirmed" by your name. A shift on another till is confirmed there too within a minute.',
+    ],
+    images: ['confirm-1.jpg', 'confirm-2.jpg', null, 'confirm-4.jpg', 'confirm-5.jpg'],
+  },
+  {
+    id: 'howto-close-day',
+    title: 'Manager: close the day',
+    steps: [
+      'Every shift on this till must be closed and confirmed first (see the two guides above).',
+      'Open Manager › Close › Close Day.',
+      'Count the cash and type it in "Cash you counted". Add a note if anything is unusual.',
+      'Press "Count verified — close the day". The screen shows "Day closed".',
+      'Do this on every till. On the branch server, Close › Close Branch shows every till\'s day and drawer, and can close them together.',
+      'If a shift opens later the same day, the day reopens; the next close counts only the cash since.',
+    ],
+    images: [null, 'day-2.jpg', 'day-3.jpg', 'day-4.jpg', null, null],
+  },
+  {
+    id: 'howto-void-refund',
+    title: 'Manager: void or refund a sale',
+    steps: [
+      'Tap "History" in the top bar of the selling screen.',
+      'Find the sale. Within the void window it shows "Void / Refund"; after it, "Refund".',
+      'Press it, choose why, and confirm. Once money has changed hands a manager\'s PIN is needed.',
+      'Give the money back in the same way it was paid (cash for cash, M-Pesa for M-Pesa).',
+      'Cashiers do not see these buttons — call a manager.',
+    ],
+    images: ['void-1.jpg', 'void-2.jpg', 'void-3.jpg', null, null],
+  },
+];

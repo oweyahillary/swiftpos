@@ -9,8 +9,9 @@
  *     opens it again. Quitting is only from the tray menu ("Restart ZapTill" also installs a downloaded update).
  * A plain till behaves exactly as before.
  */
-import { app, BrowserWindow, Menu, Tray, nativeImage, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, nativeImage, powerSaveBlocker } from 'electron';
 import path from 'path';
+import { installWatchdog, removeWatchdog, markQuitByHand } from './serverWatchdog';   // A435
 
 let tray: Tray | null = null;
 let blockerId: number | null = null;
@@ -30,8 +31,13 @@ function showWindow(): void {
 
 export function enterServerMode(): void {
   serving = true;
+  // A436: Windows shows a notification only for an app with its installed id (the installer's appId).
+  if (process.platform === 'win32') {
+    try { app.setAppUserModelId(app.getName().toLowerCase().includes('dev') ? 'com.swiftpos.desktop.dev' : 'com.swiftpos.desktop'); } catch { /* best effort */ }
+  }
   if (app.isPackaged) {
     try { app.setLoginItemSettings({ openAtLogin: true }); } catch (e) { console.warn('[serverMode] login item:', e); }
+    installWatchdog();   // A435: started again within 5 minutes after a crash (serverWatchdog.ts)
   }
   if (blockerId === null || !powerSaveBlocker.isStarted(blockerId)) {
     try { blockerId = powerSaveBlocker.start('prevent-app-suspension'); } catch (e) { console.warn('[serverMode] power:', e); }
@@ -46,7 +52,8 @@ export function enterServerMode(): void {
         { type: 'separator' },
         { label: 'Open ZapTill', click: showWindow },
         { label: 'Restart ZapTill', click: () => { quitting = true; app.relaunch(); app.quit(); } },
-        { label: 'Quit (the tills lose their server)', click: () => { quitting = true; app.quit(); } },
+        // A435: a quit from here stays quit — the watchdog does not start it again until it is opened by hand.
+        { label: 'Quit (the tills lose their server)', click: () => { quitting = true; markQuitByHand(); app.quit(); } },
       ]));
       tray.on('click', showWindow);
       tray.on('double-click', showWindow);
@@ -56,8 +63,10 @@ export function enterServerMode(): void {
 
 export function leaveServerMode(): void {
   serving = false;
-  if (app.isPackaged) {
+  // A437: on the way out (shutdown, tray Quit) the server still starts with Windows next time.
+  if (app.isPackaged && !quitting) {
     try { app.setLoginItemSettings({ openAtLogin: false }); } catch { /* best effort */ }
+    removeWatchdog();   // A435
   }
   if (blockerId !== null) { try { powerSaveBlocker.stop(blockerId); } catch { /* stopped */ } blockerId = null; }
   if (tray) { tray.destroy(); tray = null; }
@@ -67,5 +76,41 @@ export function leaveServerMode(): void {
 export function keepServerWindowAlive(win: BrowserWindow): void {
   win.on('close', (e) => {
     if (serving && !quitting) { e.preventDefault(); win.hide(); }
+  });
+}
+
+/**
+ * A436 (found 2026-10-10; owner: "proceed"): a till asked to join. The server's window is usually hidden in the tray,
+ * so it comes forward with the Allow / Deny prompt on top, its taskbar button flashes, and Windows shows a notification
+ * that opens it when clicked — whoever is near the server sees it before the request runs out (10 minutes).
+ */
+export function announceJoin(name: string, ip: string): void {
+  showWindow();
+  const [win] = BrowserWindow.getAllWindows();
+  try { win?.flashFrame(true); } catch { /* best effort */ }
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({
+      title: 'A till wants to join this branch server',
+      body: `${name} (${ip}) is asking to join. Open ZapTill on this computer and press Allow — or Deny if you do not know it.`,
+    });
+    n.on('click', showWindow);
+    n.show();
+  } catch (e) { console.warn('[serverMode] join notice:', e); }
+}
+
+/**
+ * A437 (found 2026-10-10; owner: "proceed with your recommendation"): Windows is shutting down, restarting or logging
+ * off. A branch server's window would only hide (keepServerWindowAlive) and Windows would wait on it ("this app is
+ * preventing shutdown"); and Windows ends the process right after session-end, so nothing asynchronous would run.
+ * So: on query-session-end the window is let close (never vetoed); on session-end the caller's clean-up runs at once —
+ * the database closed, not cut mid-write — and the app exits. It stays a login item for the next start. Every till, not only a server.
+ */
+export function closeCleanlyOnSessionEnd(win: BrowserWindow, cleanup: () => void): void {
+  win.on('query-session-end', () => { quitting = true; });
+  win.on('session-end', () => {
+    quitting = true;
+    try { cleanup(); } catch (e) { console.error('[serverMode] session end clean-up:', e); }
+    app.exit(0);
   });
 }

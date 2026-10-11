@@ -201,6 +201,8 @@ interface ModalProps {
   onSaved: () => void;
 }
 
+// A423: an email followed by password-type PINs reads to the browser as a sign-in form, and it filled in the OWNER's
+// saved email and password. Every email here is autoComplete="off" and every PIN "new-password" — the form starts empty.
 function StaffModal({ editing, roles, permissions, branches, mode, setMode, onClose, onSaved }: ModalProps) {
   const [hourlyRate, setHourlyRate] = useState(editing?.hourly_rate != null ? String(editing.hourly_rate) : '');
   const [name, setName] = useState(editing?.name ?? '');
@@ -354,6 +356,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             <div className="col-span-2">
               <label className="block text-sm text-gray-400 mb-1">Email</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                name="staff-email" autoComplete="off"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
           )}
@@ -363,6 +366,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                 Email <span className="text-amber-400 text-xs ml-1">— used for POS login</span>
               </label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                name="staff-email" autoComplete="off"
                 placeholder="staff@example.com"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
@@ -373,6 +377,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                 Email <span className="text-amber-400 text-xs ml-1">— required for POS login</span>
               </label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                name="staff-email" autoComplete="off"
                 placeholder="staff@example.com"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
               <p className="text-xs text-gray-600 mt-1">Staff use their email + PIN to log into the POS terminal.</p>
@@ -391,6 +396,7 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
                 PIN {editing ? '(leave blank to keep)' : '(4–6 digits)'}
               </label>
               <input type="password" value={pin} onChange={e => setPin(e.target.value)}
+                name="staff-pin" autoComplete="new-password"
                 maxLength={6} placeholder="••••"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-swift" />
             </div>
@@ -403,6 +409,8 @@ function StaffModal({ editing, roles, permissions, branches, mode, setMode, onCl
             <input
               type="password"
               inputMode="numeric"
+              name="staff-override-pin"
+              autoComplete="new-password"
               value={overridePin}
               onChange={e => { setOverridePin(e.target.value.replace(/\D/g, '')); setClearOverride(false); }}
               maxLength={6}

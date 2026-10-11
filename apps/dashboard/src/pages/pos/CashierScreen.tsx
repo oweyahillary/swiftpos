@@ -206,6 +206,7 @@ export default function CashierScreen() {
     orderMode:     posDataOrderMode,
     maxDiscountPct,
     paymentMethods,
+    paymentMethodsEnabled,   // A429
     loading,
     error:         posDataError,
     reload:        reloadPOSData,
@@ -324,6 +325,9 @@ export default function CashierScreen() {
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState('all');
+  // A428 (owner, 2026-10-09: "how can the cashier view menu description for ease of explaining to the customer?"):
+  // the ⓘ on a product opens its description — nothing is added until "Add to order".
+  const [infoProduct, setInfoProduct] = useState<any | null>(null);
   const [search, setSearch] = useState('');
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
   const [showCoversModal, setShowCoversModal] = useState(false);
@@ -1570,6 +1574,14 @@ export default function CashierScreen() {
                             <span style={{ fontSize: 9, color: '#64748b' }}>/{(product as any).fuel_unit ?? 'L'}</span>
                           )}
                         </div>
+                        {String((product as any).description ?? '').trim() && (
+                          <span role="button" tabIndex={0} aria-label={`About ${product.name}`} data-testid="product-info"
+                            style={s.infoBadge}
+                            onClick={(e) => { e.stopPropagation(); setInfoProduct(product); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setInfoProduct(product); } }}>
+                            ⓘ
+                          </span>
+                        )}
                       </button>
                     );
                   })
@@ -2272,6 +2284,33 @@ export default function CashierScreen() {
       )}
 
       {/* A367: the note editor — one line, or the whole order */}
+      {/* A428: an item's description, to explain it to a customer — adds nothing until "Add to order". */}
+      {infoProduct && (
+        <div data-testid="product-info-card" onClick={(e) => e.target === e.currentTarget && setInfoProduct(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
+          <div style={{ background: 'var(--pos-panel)', border: '1px solid var(--pos-border)', borderRadius: 16, width: '100%', maxWidth: 440, overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--pos-border)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{infoProduct.name}</div>
+                <div style={{ fontSize: 13, marginTop: 2, opacity: 0.85 }}>{currency} {Number(infoProduct.base_price).toLocaleString()}</div>
+              </div>
+              <button onClick={() => setInfoProduct(null)} aria-label="Close"
+                style={{ background: 'none', border: 'none', color: 'inherit', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ padding: '16px 20px', maxHeight: '50vh', overflowY: 'auto', fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+              {infoProduct.description}
+              {infoProduct.has_variants && <p style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>Has choices — they are asked for when it is added.</p>}
+            </div>
+            <div style={{ display: 'flex', gap: 12, padding: '0 20px 20px' }}>
+              <button onClick={() => setInfoProduct(null)}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 12, border: '1px solid var(--pos-border)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>Close</button>
+              <button onClick={() => { const p = infoProduct; setInfoProduct(null); addToCart(p); }}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 12, border: 'none', background: 'var(--action-500, #0d9488)', color: '#0b1220', fontWeight: 700, cursor: 'pointer' }}>Add to order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {noteFor !== null && (noteFor === 'order' || cart[noteFor]) && (
         <NoteModal
           kind={noteFor === 'order' ? 'order' : 'item'}
@@ -2305,6 +2344,7 @@ export default function CashierScreen() {
           discountState={discountState}
           maxDiscountPct={maxDiscountPct}
           customMethods={paymentMethods}
+          enabledMethods={paymentMethodsEnabled}
           shiftId={currentShift?.id ?? null}
           existingOrderId={activeKey ? sentOrderIds[activeKey] : undefined}
           pumpId={activeKey ? openOrders[activeKey]?.pumpId ?? null : null}
@@ -2801,6 +2841,12 @@ const s: Record<string, React.CSSProperties> = {
     flex: 1, overflowY: 'auto' as const, padding: 12,
     display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
     gap: 12, alignContent: 'start', background: 'var(--pos-bg)',
+  },
+  // A428: the ⓘ on a product with a description.
+  infoBadge: {
+    position: 'absolute' as const, bottom: 6, right: 6, width: 26, height: 26, borderRadius: 999,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+    background: 'var(--pos-bg, #0f172a)', border: '1px solid var(--pos-border)', cursor: 'pointer',
   },
   productCard: {
     position: 'relative' as const, background: 'var(--pos-panel)', border: '1px solid var(--pos-border)',

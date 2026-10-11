@@ -69,6 +69,16 @@ const MODE_ROWS: { label: string; methods: string[] }[] = [
   { label: 'Glovo', methods: ['glovo'] },
 ];
 
+/** A429: the catalogue's other methods by name (shared/paymentCatalogue.ts — this file cannot import it: rootDir is
+ *  src/main); a business's own method by its code, tidied. */
+const OTHER_MODE_NAMES: Record<string, string> = {
+  airtel_money: 'Airtel Money', tkash: 'T-Kash', bank_transfer: 'Bank transfer / Pesalink', cheque: 'Cheque',
+  voucher: 'Voucher / gift card', room_charge: 'Room charge', uber_eats: 'Uber Eats', bolt_food: 'Bolt Food', yum: 'Yum',
+};
+export function modeLabel(code: string): string {
+  return OTHER_MODE_NAMES[code] ?? (code ? code.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—');
+}
+
 interface Totals {
   netSales: number;
   grossSales: number;
@@ -494,7 +504,7 @@ export async function buildDailySalesWorkbook(
     // total stops matching the gross and nobody can see why.
     const listed = new Set(MODE_ROWS.flatMap(m => m.methods));
     for (const [method, amt] of byMode) {
-      if (!listed.has(method)) { collected += amt; put([method, money2(amt)], { fmt: MONEY }); }
+      if (!listed.has(method)) { collected += amt; put([modeLabel(method), money2(amt)], { fmt: MONEY }); }
     }
     put(['Total', money2(collected)], { style: 'key', fmt: MONEY });
     // Collections are compared against the CHARGED total (gross + round-off), not

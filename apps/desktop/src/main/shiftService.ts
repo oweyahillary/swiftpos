@@ -13,7 +13,7 @@
 import { emitEvent } from './nodeIngest';
 import { getLocalDb } from './localDb';
 import { getOpenShift } from './syncEngine';
-import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods } from './deviceConfig';
+import { getDeviceConfig, canSell, getPosFeatures, getCashierHistoryMethods, getCashierSeesShiftSales, getCashierHistoryTotals } from './deviceConfig';
 import { checkStaleDay, ensureDayOpen } from './dayService';
 import { v4 as uuid } from 'uuid';
 import { refundedSql, vatKeptSql, ctlKeptSql, money2 } from './orderMoney';
@@ -47,6 +47,22 @@ export function localShiftIds(shiftId: string): { order_ids: string[]; float_ids
   };
 }
 
+/**
+ * A442 (owner, 2026-10-11: "on the current shift report if two cashiers sell using the same shift we don't get the
+ * correct metrics … add each cashier's section on the report: total sales as it's doing right now, and a sales
+ * breakdown per cashier"). A shift is the till's drawer: whoever signs in sells into it, and each sale records who rang
+ * it up (orders.cashier_id). The shift's totals stay the drawer's; this is who sold what inside it — each person's
+ * orders, sales kept after refunds (the shift's netSales rule) and money by method (the shift's byMethod rule), so each
+ * column adds up exactly to the shift's own figure.
+ */
+export interface CashierLine {
+  cashier_id: string | null;
+  name: string;
+  orders: number;
+  sales: number;
+  byMethod: { method: string; amount: number }[];
+}
+
 export interface ZReport {
   shift: {
     id: string;
@@ -62,6 +78,8 @@ export interface ZReport {
     notes: string | null;
   };
   byMethod: { method: string; amount: number; orders: number }[];
+  /** A442: who sold what on this shift (biggest first). Absent from a report made before it. */
+  byCashier?: CashierLine[];
   totals: {
     orderCount: number;
     grossSales: number;
@@ -117,6 +135,9 @@ export interface ZReport {
    *  so an older caller or a stored report still renders. */
   kitchenVoids?: { summary: KitchenVoidSummary; lines: KitchenVoidLine[] };
   /** A365: the manager's confirmation — awaiting, or who/when/self and the per-method lines. null = closed before A365. */
+  /** A416: on a blind close, the cashier's own sales — only when the owner's switch is on (off by default). */
+  /** A416 / A442: the SHIFT's sales kept after refunds and its orders, and each person's part of them (no method). */
+  cashierSales?: { total: number; orders: number; byCashier?: Array<{ name: string; orders: number; sales: number }> };
   confirmation?: {
     status: 'awaiting' | 'confirmed';
     confirmed_by_name?: string | null; confirmed_at?: string; self?: boolean;
@@ -331,6 +352,31 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
     SELECT COUNT(*) AS c FROM orders WHERE shift_id=? AND status='voided'
   `).get(shiftId) as { c: number };
 
+  // A442: who sold what — the same orders and the same rules as agg (sales) and byMethod (money by method), per person.
+  const perCashier = db.prepare(`
+    SELECT o.cashier_id AS cashier_id, u.name AS name, COUNT(*) AS orders,
+           COALESCE(SUM(o.total), 0) - COALESCE(SUM(${refundedSql('o')}), 0) AS sales
+      FROM orders o LEFT JOIN users u ON u.id = o.cashier_id
+     WHERE o.shift_id = ? AND o.status != 'voided'
+     GROUP BY o.cashier_id
+  `).all(shiftId) as { cashier_id: string | null; name: string | null; orders: number; sales: number }[];
+  const perCashierMethod = db.prepare(`
+    SELECT o.cashier_id AS cashier_id, p.method AS method, COALESCE(SUM(p.amount), 0) AS amount
+      FROM payments p JOIN orders o ON o.id = p.order_id
+     WHERE o.shift_id = ? AND o.status != 'voided'
+     GROUP BY o.cashier_id, p.method
+  `).all(shiftId) as { cashier_id: string | null; method: string; amount: number }[];
+  const byCashier: CashierLine[] = perCashier.map((c) => ({
+    cashier_id: c.cashier_id ?? null,
+    name: c.name ?? (c.cashier_id && staff?.staff_id === c.cashier_id ? staff?.staff_name : null)
+      ?? (c.cashier_id ? 'Unknown staff' : 'Not recorded'),
+    orders: Number(c.orders),
+    sales: money2(Number(c.sales)),
+    byMethod: perCashierMethod.filter((m) => (m.cashier_id ?? null) === (c.cashier_id ?? null) && Math.round(Number(m.amount) * 100) !== 0)
+      .map((m) => ({ method: m.method, amount: money2(Number(m.amount)) }))
+      .sort((a, b) => b.amount - a.amount),
+  })).sort((a, b) => b.sales - a.sales || a.name.localeCompare(b.name));
+
   // 0.6.27: delivery fees (pass-through) and what the drawer paid riders — why cash is lower and M-Pesa higher.
   // 0.6.33: a FREE delivery's fee is not in the payments (the customer paid none) — counted apart, as the shop's cost.
   const fees = db.prepare(`
@@ -434,6 +480,7 @@ export function computeZReport(shiftId: string, foreign: ForeignCash | null = nu
       notes: shift.notes ?? null,
     },
     byMethod,
+    byCashier,   // A442
     notBackedUp,
     confirmation: shift.status === 'open' ? null : shiftConfirmation(shift),
     totals: {
@@ -498,7 +545,9 @@ export function shiftCloseRights(shift: { cashier_id?: string | null; opened_by?
  */
 export interface HistoryScope { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean;
   /** 0.6.37 (A387): the payment methods this person's History shows ([] = every; a manager always every). */
-  methods: string[] }
+  methods: string[];
+  /** A418: does History show the total of what the filters show? */
+  showTotal: boolean }
 /** The signed-in person, and whether they are a manager for shift purposes (isShiftManager). */
 function signedIn(): { staffId: string | null; manager: boolean } {
   const st = getLocalDb().prepare(`SELECT staff_id, role_name, permissions FROM staff_session WHERE id=1`).get() as
@@ -515,6 +564,8 @@ export function historyScope(): HistoryScope {
     // 0.6.37 (owner): "never reprints a receipt" — a cashier never reprints; a manager and the owner may.
     canReprint: manager,
     methods: manager ? [] : getCashierHistoryMethods(),
+    // A418: the total of what the filters show — a manager always; a cashier only while the owner's switches are on.
+    showTotal: manager || getCashierHistoryTotals(),
   };
 }
 
@@ -531,7 +582,7 @@ export function blindClose(): boolean {
  * The report a blind close may show: who, when, which methods to count, the cashier's own expenses and the manager's
  * confirmation status — every sales and cash figure taken out (not merely hidden on the screen).
  */
-export function blindReport(z: ZReport): ZReport & { blind: true; declareMethods: string[] } {
+export function blindReport(z: ZReport, seesSales: boolean = getCashierSeesShiftSales()): ZReport & { blind: true; declareMethods: string[] } {
   const declareMethods = [...new Set(z.byMethod
     .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
     .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));
@@ -553,6 +604,12 @@ export function blindReport(z: ZReport): ZReport & { blind: true; declareMethods
       riders: z.totals.riders ? [] : z.totals.riders,   // 0.6.33: money per rider — not for a blind close
     },
     confirmation: z.confirmation ? { ...z.confirmation, lines: z.confirmation.lines.map((l) => ({ ...l, expected: null, variance: null })) } : z.confirmation,
+    // A416 (owner: "waiter seeing total sales on the shift while closing … toggled on and off, by default off"): the
+    // cashier's sales kept after refunds, and the orders — never expected cash, a method's figure or the difference.
+    // A442: who sold what — each person's sales only (no method figures), and only with the A416 switch.
+    byCashier: seesSales ? (z.byCashier ?? []).map((c) => ({ ...c, byMethod: [] })) : [],
+    ...(seesSales ? { cashierSales: { total: money2(z.totals.netSales ?? z.totals.grossSales), orders: z.totals.orderCount,
+      byCashier: (z.byCashier ?? []).map((c) => ({ name: c.name, orders: c.orders, sales: c.sales })) } } : {}),
   };
 }
 

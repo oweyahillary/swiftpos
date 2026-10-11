@@ -29,6 +29,11 @@ function faviconDataUri(f: Flavor): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+/** A420: the client-facing production web — same rule as the badge: anything but 'dev' (absent included) is prod. */
+export function isProdDeployment(): boolean {
+  return (import.meta.env.VITE_APP_ENV ?? 'prod').toLowerCase() !== 'dev';
+}
+
 export function applyAppFlavor(): void {
   if (typeof document === 'undefined') return; // SSR/tests guard
   const env = (import.meta.env.VITE_APP_ENV ?? 'prod').toLowerCase();

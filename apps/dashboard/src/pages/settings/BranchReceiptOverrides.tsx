@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { cleanCutoff, cutoffLabel, MAX_CUTOFF_MINUTES } from '../../lib/businessDay';   // 0.6.34
 import { cleanHistoryMethods } from '../../lib/cashierHistory';   // 0.6.37 (A387)
 import HistoryMethodsPicker from './HistoryMethodsPicker';
+import BranchPaymentMethods from './BranchPaymentMethods';   // A429
 
 // A139: per-branch receipt text + hours that override the business default for a
 // franchise branch. A branch either INHERITS the business default (no row) or
@@ -56,6 +57,14 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
   const contOverridden = 'continuous_operation' in overrides;
   const contDefaultOn  = defaults.continuous_operation === 'true';
   const contValueOn    = contOverridden ? overrides.continuous_operation === 'true' : contDefaultOn;
+  // A416: a cashier closing a shift sees their sales — this branch's own, or the business default (off unless set).
+  const salesOverridden = 'cashier_sees_shift_sales' in overrides;
+  const salesDefaultOn  = defaults.cashier_sees_shift_sales === 'true';
+  const salesValueOn    = salesOverridden ? overrides.cashier_sees_shift_sales === 'true' : salesDefaultOn;
+  // A418: the History total — only while the switch above is on at this branch.
+  const totalsOverridden = 'cashier_history_totals' in overrides;
+  const totalsDefaultOn  = defaults.cashier_history_totals === 'true';
+  const totalsValueOn    = salesValueOn && (totalsOverridden ? overrides.cashier_history_totals === 'true' : totalsDefaultOn);
   // 0.6.34: the business-day end — the branch's own, or the business default.
   const cutOverridden  = 'business_day_cutoff' in overrides;
   const cutDefault     = cutoffLabel(cleanCutoff(defaults.business_day_cutoff) ?? 0);
@@ -130,6 +139,57 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
             </label>
           </div>
         </div>
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Cashiers see their sales at close</div>
+            <div className="text-xs text-gray-600 mt-0.5">
+              {salesOverridden ? 'Overridden for this branch' : `Using business default (${salesDefaultOn ? 'On' : 'Off'})`}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {salesOverridden && (
+              <button data-testid="branch-sees-sales-toggle"
+                onClick={() => save('cashier_sees_shift_sales', salesValueOn ? 'false' : 'true')}
+                className={`w-11 h-6 rounded-full transition-colors relative ${salesValueOn ? 'bg-swift-strong' : 'bg-gray-700'}`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${salesValueOn ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            )}
+            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+              <input
+                type="checkbox" checked={salesOverridden}
+                onChange={e => e.target.checked ? save('cashier_sees_shift_sales', salesDefaultOn ? 'true' : 'false') : save('cashier_sees_shift_sales', null)}
+              />
+              Override
+            </label>
+          </div>
+        </div>
+        <div className={`flex items-center justify-between mt-4 ${salesValueOn ? '' : 'opacity-50'}`}>
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Cashiers see a total in History</div>
+            <div className="text-xs text-gray-600 mt-0.5">
+              {!salesValueOn ? 'Needs "Cashiers see their sales at close" on'
+                : totalsOverridden ? 'Overridden for this branch' : `Using business default (${totalsDefaultOn ? 'On' : 'Off'})`}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {totalsOverridden && (
+              <button data-testid="branch-history-totals-toggle" disabled={!salesValueOn}
+                onClick={() => save('cashier_history_totals', totalsValueOn ? 'false' : 'true')}
+                className={`w-11 h-6 rounded-full transition-colors relative disabled:cursor-not-allowed ${totalsValueOn ? 'bg-swift-strong' : 'bg-gray-700'}`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${totalsValueOn ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            )}
+            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+              <input
+                type="checkbox" checked={totalsOverridden} disabled={!salesValueOn}
+                onChange={e => e.target.checked ? save('cashier_history_totals', totalsDefaultOn ? 'true' : 'false') : save('cashier_history_totals', null)}
+              />
+              Override
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* 0.6.34: this branch's own business-day end (e.g. a branch with a late bar). */}
@@ -188,6 +248,9 @@ export default function BranchReceiptOverrides({ branchId }: { branchId: string 
               onChange={(list) => save('cashier_history_methods', JSON.stringify(list))} />
           </div>
         )}
+        {/* A429: the payment methods this branch takes — each a switch. */}
+        <BranchPaymentMethods override={overrides.payment_methods_enabled} businessDefault={defaults.payment_methods_enabled}
+          onSave={(v) => save('payment_methods_enabled', v)} />
       </div>
     </div>
   );

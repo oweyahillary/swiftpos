@@ -52,6 +52,8 @@ interface Props {
   onCancel?: () => void;
   /** If false, hides M-Pesa option (e.g. no Daraja keys configured) */
   mpesaEnabled?: boolean;
+  /** A429: the methods the branch takes (of the four a split knows); absent = all four. */
+  enabledMethods?: string[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -78,11 +80,11 @@ function fmt(amount: number, currency: string) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SplitPaymentPanel({
-  total, currency, onConfirm, onCancel, mpesaEnabled = true,
+  total, currency, onConfirm, onCancel, mpesaEnabled = true, enabledMethods,
 }: Props) {
 
   const [legs, setLegs] = useState<PaymentLeg[]>([
-    { id: uid(), method: 'cash', amount: 0 },
+    { id: uid(), method: ((enabledMethods?.[0] ?? 'cash') as PaymentMethod), amount: 0 },   // A429: the branch's first method
   ]);
 
   const lastInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +131,7 @@ export default function SplitPaymentPanel({
   const usedMethods = new Set(legs.map(l => l.method));
   const availableMethods = ALL_METHODS.filter(m => {
     if (m === 'mpesa' && !mpesaEnabled) return false;
+    if (enabledMethods && !enabledMethods.includes(m)) return false;   // A429: only what the branch takes
     return !usedMethods.has(m);
   });
 

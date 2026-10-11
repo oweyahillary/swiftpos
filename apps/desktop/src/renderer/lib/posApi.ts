@@ -167,6 +167,10 @@ export interface ZReport {
                byReason: Array<{ reason: string; label: string; quantity: number; value: number }> };
     lines: KitchenVoidLine[];
   };
+  /** A416 / A442: on a blind close, the SHIFT's sales and each person's part — only with the owner's switch on. */
+  cashierSales?: { total: number; orders: number; byCashier?: Array<{ name: string; orders: number; sales: number }> };
+  /** A442: who sold what on this shift — each person's orders, sales (kept) and money by method. */
+  byCashier?: Array<{ cashier_id: string | null; name: string; orders: number; sales: number; byMethod: { method: string; amount: number }[] }>;
   /** A365: the manager's confirmation — awaiting, or confirmed (who, when, self) with per-method lines. */
   confirmation?: {
     status: 'awaiting' | 'confirmed';
@@ -208,6 +212,35 @@ export interface ExpenseRow {
 }
 
 /** Date-range selection for the manager reports. */
+
+/** A431 / A432 — main/branchDay.ts. */
+export type BranchShiftState = 'open' | 'awaiting' | 'confirmed' | 'closed';
+export interface BranchShiftRow {
+  id: string; device_id: string | null; till: string; this_till: boolean; cashier: string;
+  opened_at: string; closed_at: string | null; state: BranchShiftState; force_closed: boolean; confirmed_by: string | null;
+  opening_float: number; orders: number; sales: number; by_method: Array<{ method: string; amount: number }>;
+  expected_cash: number | null; counted_cash: number | null; variance: number | null;
+  declare_codes: string[];
+}
+/** A433: a shift anywhere at the branch, for Sales › Shift report (the cloud's list). */
+export interface BranchShiftListRow {
+  id: string; status: string; opened_at: string; closed_at: string | null; cashier_name: string | null;
+  expected_cash: number | null; cash_variance: number | null; till: string; this_till: boolean; awaiting: boolean;
+}
+export interface BranchDay {
+  source: 'cloud' | 'local';
+  scopeLabel: string;
+  fallbackReason: string | null;
+  localCoversBranch: boolean;
+  summary: any;
+  paymentMethods: Record<string, number>;
+  hourly: Array<{ hour: number; revenue: number; orders: number }>;
+  byTill: Array<{ device_id: string | null; label: string; this_till: boolean; orders: number; revenue: number }>;
+  shifts: BranchShiftRow[];
+  topProducts: Array<{ name: string; qty: number; revenue: number }>;
+  /** A440: staff performance — each person's sales by who rang them up, with their money by method. */
+  byStaff?: Array<{ id: string; name: string; orders: number; revenue: number; avg: number; by_method: Array<{ method: string; amount: number }> }>;
+}
 export interface ReportRangeArg {
   preset?: 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom';
   from?: string;
@@ -313,7 +346,8 @@ declare global {
       /** A427: a new till finds the branch server on the shop network and asks to join it. */
       install: {
         findServers: () => Promise<FoundServer[]>;
-        requestJoin: (url: string) => Promise<{ ok: true; name: string }>;
+        /** A436: `rejoin` — a till already set up, signed out: joins again keeping everything on it. */
+        requestJoin: (url: string, rejoin?: boolean) => Promise<{ ok: true; name: string }>;
         joinStatus: () => Promise<JoinStatus>;
       };
       /** A427: on the branch server — tills waiting to join, and the answer. */
@@ -348,7 +382,7 @@ declare global {
         features: () => Promise<PosFeatures>;
         stockCountFreeze: () => Promise<StockCountFreeze>;   // A394
         /** 0.6.27: History — the orders this person may see, and whether they may reprint from it. */
-        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; methods: string[] }; orders: any[] }>;
+        history: () => Promise<{ scope: { staffId: string | null; manager: boolean; ownOnly: boolean; canReprint: boolean; methods: string[]; showTotal?: boolean }; orders: any[] }>;
         /** 0.6.30: the owner's void window and offline void/refund rules (shared/reversalRules.ts). */
         reversalRules: () => Promise<{ voidWindowMinutes: number; offlineRefundMethods: string[]; offlineReverseWebSales: boolean; freeDeliveryAllowed: boolean; freeDeliveryOver: number | null }>;
         /** 0.6.35 (A384): the Help screen — who to call (the shop's tech or SwiftPOS support), this till's name and version. */
@@ -356,6 +390,8 @@ declare global {
         getTables: () => Promise<DiningTable[]>;
         getPumps: () => Promise<Pump[]>;
         paymentMethods: () => Promise<{ code: string; name: string }[]>;
+        /** A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults). */
+        paymentMethodsEnabled: () => Promise<{ enabled: string[] | null }>;
         onCatalogueChanged: (cb: () => void) => () => void;   // A278
       };
       order: {
@@ -510,6 +546,9 @@ declare global {
         confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
         confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null }>;
+        /** A433: another till's shift — confirmed on the cloud by the signed-in manager (or a manager's PIN). */
+        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null }>;
+        remoteConfirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;
         /** A366: may the signed-in person close the open shift — its owner or a manager? */
@@ -573,6 +612,8 @@ declare global {
         /** 0.6.30: the owner's void/refund rules (void_window_minutes, offline_refund_methods, offline_reverse_web_sales). */
         setReversalRule: (key: string, value: unknown) => Promise<any>;
         /** 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method). Manager (settings.manage). */
+        /** A429: switch the branch's payment methods (catalogue codes). */
+        setPaymentMethodsEnabled: (codes: string[]) => Promise<any>;
         getCashierHistoryMethods: () => Promise<{ methods: string[] }>;
         setCashierHistoryMethods: (methods: string[]) => Promise<any>;
       };
@@ -594,6 +635,12 @@ declare global {
         recentOrders:    (range?: ReportRangeArg) => Promise<any[]>;
         /** Every till's sales at this branch, from the cloud (online only — throws offline). */
         branchOrders:    (range?: ReportRangeArg) => Promise<any[]>;
+        /** A431 / A432: every till's sales and every shift at the branch (the cloud), else this till's — `source` says. */
+        branchDay:       (range?: ReportRangeArg) => Promise<BranchDay>;
+        /** A433: every shift at the branch (the cloud, a manager's sign-in) — throws offline. */
+        branchShifts:    () => Promise<BranchShiftListRow[]>;
+        /** A433: another till's shift as a Z-report, from the cloud. */
+        remoteZReport:   (shiftId: string) => Promise<ZReport>;
         stockLevels:     () => Promise<any[]>;
         fuelSales:       () => Promise<any>;
         pumpStatus:      () => Promise<any[]>;

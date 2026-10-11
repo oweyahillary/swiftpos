@@ -57,6 +57,8 @@ export const MANAGER_WRITES: RegExp[] = [
   /^\/api\/staff(\/[^/]+)?$/,                              // managers cannot create or promote owners (A10, the route)
   /^\/api\/business\/settings$/,                           // per key: receipt.manage / settings.manage / owner-only rules
   /^\/api\/expenses\/categories$/,                         // 0.6.18: a manager adds an expense type
+  /^\/api\/shifts\/[^/]+\/manager-confirm$/,              // A433: a manager confirms another till's shift, as themselves
+  /^\/api\/branches\/[^/]+\/settings$/,                    // A429: a manager switches the branch's payment methods (settings.manage)
 ];
 
 export type TerminalWriteVerdict = 'not-gated' | 'till' | 'manager' | 'denied';

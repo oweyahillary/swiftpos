@@ -1147,6 +1147,15 @@ function initSchema(db: Database.Database) {
     // A394 (67): the items a stock count freezes at this branch, JSON {ref, productIds} (shared/stockCountFreeze.ts).
     // Pulled (stockCount), never pushed. NULL = not told yet = nothing frozen.
     ['stock_count_freeze', 'TEXT'],
+    // A416 (68): may a cashier closing a shift see their sales? 1 / 0. Pulled (cashierSeesShiftSales), never pushed.
+    // NULL = not told yet = off (the default).
+    ['cashier_sees_shift_sales', 'INTEGER'],
+    // A418 (68): may a cashier's History show the total of what is filtered? 1 / 0 — the cloud sends it already
+    // combined with the switch above ("one should be on for the other"). NULL = not told yet = off.
+    ['cashier_history_totals', 'INTEGER'],
+    // A429 (69): the payment methods this branch takes — a JSON list of codes. Pulled (paymentMethodsEnabled), never
+    // pushed. NULL = not told yet = the catalogue's defaults (shared/paymentCatalogue.ts).
+    ['payment_methods_enabled', 'TEXT'],
   ]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1249,7 +1258,10 @@ function initSchema(db: Database.Database) {
 // 66 adds 0.6.37: device_config.cashier_history_methods (pulled) and expenses/float_transactions.approved_by (pushed:
 // the manager who approved a cash-out or an expense). REQUIRED moves with it.
 // 67 adds A394: device_config.stock_count_freeze (pulled) — the items a stock count freezes. REQUIRED moves with it.
-export const LOCAL_SCHEMA_VERSION = 67;
+// 68 adds A416 + A418: device_config.cashier_sees_shift_sales and cashier_history_totals (pulled) — a cashier sees their
+// sales at close, and a total in History. REQUIRED moves with it.
+// 69 adds A429: device_config.payment_methods_enabled (pulled) — the payment methods the branch takes. REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 69;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

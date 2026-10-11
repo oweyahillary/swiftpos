@@ -63,6 +63,12 @@ export interface ReferenceBundle {
     cashierHistoryMethods?: string[];
     /** A394: the items a stock count freezes ({ref, productIds}; null = none); undefined = the node has not been told. */
     stockCount?: StockCountFreeze | null;
+    /** A416: may a cashier see their sales at close? undefined = the node has not been told. */
+    cashierSeesShiftSales?: boolean;
+    /** A418: a cashier's History total. undefined = the node has not been told. */
+    cashierHistoryTotals?: boolean;
+    /** A429: the payment methods the branch takes. undefined = the node has not been told. */
+    paymentMethodsEnabled?: string[];
     /** A346: the node's copy of the cloud's answer — does the business have the web POS? null = not known. */
     webPosEnabled?: boolean | null;
     /** A367: the owner's quick picks for order notes; null = the node has not been told. */
@@ -116,6 +122,9 @@ export interface ReferenceRows {
     support?: { name: string | null; phone: string | null } | null; // 0.6.35
     cashierHistoryMethods?: string[]; // 0.6.37
     stockCount?: StockCountFreeze | null; // A394
+    cashierSeesShiftSales?: boolean;      // A416
+    cashierHistoryTotals?: boolean;       // A418
+    paymentMethodsEnabled?: string[];     // A429
     webPosEnabled?: boolean | null;   // A346
     noteQuickPicks?: string[] | null; // A367
     posFeatures?: Record<string, boolean> | null; // 0.6.27
@@ -226,6 +235,9 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       support: rows.config.support,                       // 0.6.35: relayed so a peer's Help shows the shop's tech
       cashierHistoryMethods: rows.config.cashierHistoryMethods,   // 0.6.37: relayed so a peer's History follows the manager
       stockCount: rows.config.stockCount,   // A394: relayed so a peer stops selling what the count freezes
+      cashierSeesShiftSales: rows.config.cashierSeesShiftSales,   // A416: relayed so a peer's cashiers follow the switch
+      cashierHistoryTotals: rows.config.cashierHistoryTotals,     // A418: relayed likewise
+      paymentMethodsEnabled: rows.config.paymentMethodsEnabled,   // A429: relayed so a peer shows the branch's methods
       webPosEnabled: rows.config.webPosEnabled ?? null,   // A346: relayed so a peer shows Stock only when the node does
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
@@ -302,6 +314,14 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         ? (cleanHistoryMethods(cfg.cashier_history_methods) ?? undefined) : undefined,
       // A394: undefined until the node itself has been told (a peer then keeps its own value).
       stockCount: typeof cfg?.stock_count_freeze === 'string' ? parseStockCountFreeze(cfg.stock_count_freeze) : undefined,
+      // A416: undefined until the node itself has been told (a peer then keeps its own value).
+      cashierSeesShiftSales: cfg?.cashier_sees_shift_sales == null ? undefined : cfg.cashier_sees_shift_sales === 1,
+      cashierHistoryTotals: cfg?.cashier_history_totals == null ? undefined : cfg.cashier_history_totals === 1,   // A418
+      // A429: undefined until the node itself has been told (a peer then keeps its own value).
+      paymentMethodsEnabled: (() => {
+        if (typeof cfg?.payment_methods_enabled !== 'string') return undefined;
+        try { const v = JSON.parse(cfg.payment_methods_enabled); return Array.isArray(v) ? v.map(String) : undefined; } catch { return undefined; }
+      })(),
       // 0.6.35: undefined until the node itself has heard from the cloud (a peer then keeps its own value).
       support: (() => {
         if (typeof cfg?.support_contact !== 'string') return undefined;
@@ -367,6 +387,12 @@ export interface AcquiredReference {
     cashierHistoryMethods?: string[];
     /** A394: the items a stock count freezes. undefined = not said (older cloud / node) → keep; null = none. */
     stockCount?: unknown;
+    /** A416: a cashier sees their sales at close. undefined = not said (older cloud / node) → keep. */
+    cashierSeesShiftSales?: boolean;
+    /** A418: a cashier's History total. undefined = not said → keep. */
+    cashierHistoryTotals?: boolean;
+    /** A429: the payment methods the branch takes. undefined = not said → keep. */
+    paymentMethodsEnabled?: string[];
     branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null } | null;
     /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
      *  which relays no branding today) → the till keeps its local value. */
@@ -423,6 +449,9 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       support: pi && typeof pi === 'object' && 'support' in pi ? supportWire(pi.support) : undefined,   // 0.6.35
       cashierHistoryMethods: Array.isArray(pi.cashierHistoryMethods) ? (cleanHistoryMethods(pi.cashierHistoryMethods) ?? undefined) : undefined,   // 0.6.37
       stockCount: pi && typeof pi === 'object' && 'stockCount' in pi ? (pi.stockCount ?? null) : undefined,   // A394
+      cashierSeesShiftSales: typeof pi.cashierSeesShiftSales === 'boolean' ? pi.cashierSeesShiftSales : undefined,   // A416
+      cashierHistoryTotals: typeof pi.cashierHistoryTotals === 'boolean' ? pi.cashierHistoryTotals : undefined,   // A418
+      paymentMethodsEnabled: Array.isArray(pi.paymentMethodsEnabled) ? pi.paymentMethodsEnabled.map(String) : undefined,   // A429
       // A346: only a real boolean counts; a node that has not heard from the cloud (null) or an older node says nothing.
       webPosEnabled: typeof pi.webPosEnabled === 'boolean' ? pi.webPosEnabled : undefined,
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367

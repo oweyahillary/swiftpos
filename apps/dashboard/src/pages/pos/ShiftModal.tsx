@@ -68,6 +68,9 @@ const fmt = (n: number, currency: string) =>
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+
+/** A442: one person's part of a shift — their orders and sales kept after refunds. */
+type Seller = { name: string; orders: number; sales: number };
 export default function ShiftModal({
   mode,
   shiftId,
@@ -111,6 +114,10 @@ export default function ShiftModal({
   // 0.6.27: a blind close ('blind_shift_close', a cashier) — no figures; which methods to declare come from the cloud.
   const [blind, setBlind] = useState(false);
   const [blindMethods, setBlindMethods] = useState<string[]>([]);
+  // A416: the owner's switch (off by default) — the cashier's own sales; the cloud sends it only when it is on.
+  const [cashierSales, setCashierSales] = useState<{ total: number; orders: number } | null>(null);
+  // A442: who sold what on this drawer (each person's orders and sales) — shown when more than one person sold.
+  const [sellers, setSellers] = useState<Seller[]>([]);
   // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figures at confirm, and the manager's reasons.
   const [confirmView, setConfirmView] = useState<{ showCashier: boolean; declared: Record<string, number> | null }>({ showCashier: false, declared: null });
   const [confirmReasons, setConfirmReasons] = useState<Record<string, string>>({});
@@ -239,11 +246,17 @@ export default function ShiftModal({
       .catch(() => setMethodOptions([]));
     if (shiftId) {
       posApi.get<{ by_method?: { method: string; amount: number }[]; cashier_id?: string | null; opened_by?: string | null; cashier_name?: string | null;
-                   blind?: boolean; declare_methods?: string[] }>(`/api/shifts/${shiftId}`)
+                   blind?: boolean; declare_methods?: string[];
+                   cashier_sales?: { total: number; orders: number; by_cashier?: Seller[] };
+                   by_cashier?: Seller[] }>(`/api/shifts/${shiftId}`)
         .then((r) => {
           setTaken(Array.isArray(r?.by_method) ? r.by_method : []);
           setBlind(r?.blind === true);
           setBlindMethods(Array.isArray(r?.declare_methods) ? r.declare_methods : []);
+          setCashierSales(r?.blind === true && r?.cashier_sales ? r.cashier_sales : null);
+          // A442: a blind close gets each person's sales only with the owner's switch on (inside cashier_sales).
+          const people = r?.blind === true ? (r?.cashier_sales?.by_cashier ?? []) : (r?.by_cashier ?? []);
+          setSellers(Array.isArray(people) ? people : []);
           setShiftOwner({ ids: [r?.cashier_id, r?.opened_by].filter(Boolean) as string[], name: r?.cashier_name ?? null });
         })
         .catch(() => setTaken([]));
@@ -478,6 +491,21 @@ export default function ShiftModal({
             <div style={s.iconRow}><span style={s.icon}>🔒</span></div>
             <h2 style={s.title}>Close Shift</h2>
             <p style={s.subtitle}>{blind ? 'Count the drawer and enter each method\'s total. A manager checks them.' : 'Count the cash in the drawer. We\'ll calculate the variance for you.'}</p>
+            {blind && cashierSales && (
+              <p style={s.subtitle} data-testid="cashier-sales">
+                Sales this shift: <strong>{fmt(cashierSales.total, currency)}</strong> · {cashierSales.orders} order{cashierSales.orders === 1 ? '' : 's'}
+              </p>
+            )}
+            {sellers.length > 1 && (
+              <div style={{ ...s.subtitle, marginTop: 4 }} data-testid="sales-by-cashier">
+                {sellers.map((c) => (
+                  <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                    <span>{c.name} · {c.orders} order{c.orders === 1 ? '' : 's'}</span>
+                    <strong>{fmt(c.sales, currency)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <label style={s.label}>Cash Counted ({currency}) — include the opening float</label>
             <input

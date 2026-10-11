@@ -13,7 +13,11 @@
  * MUTATIONS TO CONFIRM BITE:
  *   - a dot too pale (e.g. card #bcd0ff)                     → "every dot ≥ 3:1" fails (on white)
  *   - the tint too strong (alpha 0.6)                         → "label text ≥ 4.5:1 on every tinted button" fails
- *   - a selected button coloured by method (not the theme)    → "the SELECTED button keeps the theme" fails
+ *   - the selected button back to the theme's faint wash      → "the SELECTED button is solid in its own colour" fails
+ *   - methodSolid returning the dot unchanged                 → "white text ≥ 4.5:1 on every selected button" fails
+ *
+ * A430 (owner, 2026-10-09: "the payment method color when selected … hard to know which one is selected") replaced A344's
+ * "the selected button keeps the theme": it is now solid in its own colour, white text, a halo and a ✓.
  *   - the web copy edited on its own                          → "one palette" fails
  */
 import assert from 'node:assert';
@@ -72,6 +76,17 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_COLOURS_TS) {
     assert.equal(P.methodColour('Bank_Transfer').dot, P.methodColour('bank_transfer').dot);
     assert.ok(P.CUSTOM_METHOD_COLOURS.some((c) => c.dot === P.methodColour('voucher').dot));
   });
+  ok("white text ≥ 4.5:1 on every selected (solid) button, and it is still the method's own hue", () => {
+    const bad = [];
+    for (const m of ALL) {
+      const solid = P.methodSolid(m), r = cr(rgb('#ffffff'), rgb(solid));
+      if (r < 4.5) bad.push(`${m} ${solid}: ${r.toFixed(2)}`);
+      const [d, x] = [rgb(P.methodColour(m).dot), rgb(solid)];   // darkened, not re-hued: channels keep their order
+      const order = (c) => [0, 1, 2].sort((i, j) => c[j] - c[i]).join('');
+      if (order(d) !== order(x)) bad.push(`${m}: ${solid} is not a shade of ${P.methodColour(m).dot}`);
+    }
+    assert.deepEqual(bad, []);
+  });
   ok('one palette: the till\'s and the web\'s copies are byte-identical to shared/', () => {
     const canon = read('shared/paymentColours.ts');
     assert.equal(read('apps/desktop/src/shared/paymentColours.ts'), canon);
@@ -81,11 +96,16 @@ if ((maj < 23 || (maj === 23 && min < 6)) && !process.env.PAY_COLOURS_TS) {
   // ── Where it is used (source — React not run here) ──
   const tillPay = read('apps/desktop/src/renderer/components/PaymentModal.tsx');
   const webPay = read('apps/dashboard/src/pages/pos/PaymentModal.tsx');
-  ok('the SELECTED button keeps the theme (action-*); only unselected ones take the method colour — till and web', () => {
-    assert.match(tillPay, /style=\{leg\.method === m\.code \? undefined : \{ backgroundColor: methodTint\(m\.code\), borderColor: methodColour\(m\.code\)\.dot \}\}/);
-    assert.match(webPay, /style=\{method === m \? undefined : \{ backgroundColor: methodTint\(m\), borderColor: methodColour\(m\)\.dot \}\}/);
-    assert.match(webPay, /style=\{method === cm\.code \? undefined : \{ backgroundColor: methodTint\(cm\.code\), borderColor: methodColour\(cm\.code\)\.dot \}\}/);
-    for (const src of [tillPay, webPay]) assert.match(src, /'bg-action-500\/10 border-action-500 text-action-400'/);
+  ok('the SELECTED button is solid in its own colour, white, with a ✓; unselected ones keep the tint — till and web (A430)', () => {
+    // Exact source text, compared as a string (no regex escaping to get wrong).
+    const sel = (cond, c) => `style={${cond} ? { backgroundColor: methodSolid(${c}), borderColor: methodSolid(${c}), color: '#ffffff', `
+      + `boxShadow: \`0 0 0 3px \${methodTint(${c}, 0.45)}\` } : { backgroundColor: methodTint(${c}), borderColor: methodColour(${c}).dot }}`;
+    assert.ok(tillPay.includes(sel('leg.method === m.code', 'm.code')), 'till: selected style');
+    assert.ok(webPay.includes(sel('method === m', 'm')), 'web: selected style (built-in)');
+    assert.ok(webPay.includes(sel('method === cm.code', 'cm.code')), 'web: selected style (custom)');
+    // (The tip and quick-tender chips on the web keep the theme's action wash — they are amounts, not methods.)
+    assert.match(tillPay, /<span aria-hidden className="mr-1">✓<\/span>/);
+    assert.equal((webPay.match(/<span aria-hidden className="mr-1">✓<\/span>/g) || []).length, 2);
   });
   ok('the method dot beside the name: till POS orders, manager Orders / breakdowns / shift, shift panel; web order history and reports', () => {
     assert.match(read('apps/desktop/src/renderer/pages/POSPage.tsx'), /<MethodDot method=\{method\} \/>\{method\.replace/);

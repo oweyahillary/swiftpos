@@ -8,6 +8,7 @@ import { DEFAULT_SUPPORT_PHONES, whatsappNumber } from '../lib/support';   // 0.
 import { readOtpTrust, saveOtpTrust, dropOtpTrust } from '../lib/otpTrust';   // A391
 import ForgotPassword from '../components/ForgotPassword';   // A402
 import OtpCodeStep, { type OtpPrompt } from '../components/OtpCodeStep';
+import { loginBrand } from '../lib/loginBrand';   // A424
 
 // Error codes returned by POST /api/auth/login for specific access issues
 const ACCESS_ERROR_CODES: Record<string, { title: string; body: string; icon: string }> = {
@@ -59,7 +60,7 @@ export default function LoginPage() {
 
   const inputCls =
     'w-full bg-[#0f172a] border border-[#1e293b] rounded-xl px-4 py-3 text-white placeholder-[#334155] ' +
-    'focus:outline-none focus:border-swift focus:ring-1 focus:ring-swift/30 transition-all text-sm';
+    'focus:outline-none focus:border-[color:var(--brand)] focus:ring-1 focus:ring-[color:var(--brand)] transition-all text-sm';
 
   const handleLogin = async (e: React.FormEvent | null, chosenBusinessId?: string,
     otpExtra?: { otp_code?: string; otp_remember?: boolean; otp_resend?: boolean; otp_use_email?: boolean }) => {
@@ -209,39 +210,16 @@ export default function LoginPage() {
     );
   }
 
-  return (
-    <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] flex items-center justify-center px-4">
-
-      {/* Background grid */}
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `linear-gradient(rgba(20,184,166,0.03) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(20,184,166,0.03) 1px, transparent 1px)`,
-          backgroundSize: '48px 48px',
-        }}
-      />
-
-      <div className="w-full max-w-sm relative">
-
-        {/* Logo */}
-        <div className="text-center mb-8">
-          {tenant.status === 'found' ? (
-            <div className="mb-3"><TenantBrand tenant={tenant.tenant} /></div>
-          ) : tenant.status === 'loading' ? (
-            // 0.6.36: on a client's address, no brand at all until the cloud says whose it is (no flash of ZapTill).
-            <div className="mb-3 h-[60px]" aria-hidden data-testid="tenant-loading" />
-          ) : (
-          <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
-            <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
-          </div>
-          )}
-          <p className="text-[#334155] text-sm">Sign in to your dashboard</p>
-        </div>
-
-        <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-8 shadow-2xl">
-          {forgot ? (
+  // A424 (owner, 2026-10-10: "use the client's branding colour … the content overflows, can we find a better way,
+  // something classy and presentable"): a wide screen splits — the client's colour, logo and name on the left, the
+  // form on the right; a phone gets a compact brand header over the form. The form side scrolls on its own and is
+  // centred with auto margins, so a tall step (the code, a business choice, an error) is never cut off at the top or
+  // bottom, at any window size. The client's colour fills the button and the focus ring (loginBrand: readable on dark).
+  const brandName = tenant.status === 'found' ? tenant.tenant.name : 'ZapTill';
+  const brand = loginBrand(tenant.status === 'found' ? tenant.tenant.accent : null);
+  const brandVars = { '--brand': brand.accent, '--brand-text': brand.text } as React.CSSProperties;
+  const panel = (
+    forgot ? (
             <ForgotPassword initialEmail={email} inputCls={inputCls}
               onDone={(m) => { setForgot(false); setPassword(''); setError(''); setInfo(m); }}
               onBack={() => { setForgot(false); setError(''); }} />
@@ -272,7 +250,7 @@ export default function LoginPage() {
                     type="button"
                     disabled={loading}
                     onClick={() => { void handleLogin(null, b.id); }}
-                    className="w-full text-left bg-[#0f172a] border border-[#1e293b] hover:border-swift
+                    className="w-full text-left bg-[#0f172a] border border-[#1e293b] hover:border-[color:var(--brand)]
                                rounded-xl px-4 py-3 text-white transition-colors disabled:opacity-50"
                   >
                     {b.name ?? b.id}
@@ -340,7 +318,8 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl font-bold text-sm bg-swift-strong hover:bg-swift-deep text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              data-testid="login-submit" style={{ background: 'var(--brand)', color: 'var(--brand-text)' }}
+              className="w-full py-3 rounded-xl font-bold text-sm hover:brightness-110 shadow-lg shadow-black/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -354,18 +333,79 @@ export default function LoginPage() {
             </button>
 
           </form>
+          )
+  );
+
+  return (
+    <div data-theme-lock="dark" className="min-h-screen bg-[#080c14] lg:h-screen flex flex-col lg:flex-row" style={brandVars} data-testid="login-page">
+
+      {/* ── The brand panel (wide screens) ── */}
+      <aside className="hidden lg:flex relative overflow-hidden lg:w-[44%] xl:w-1/2 shrink-0 flex-col justify-between p-12 xl:p-16 border-r border-white/5"
+        data-testid="login-brand-panel"
+        style={{ background: `radial-gradient(120% 90% at 0% 0%, ${brand.raw}66 0%, transparent 55%), radial-gradient(90% 70% at 100% 100%, ${brand.raw}33 0%, transparent 60%), linear-gradient(160deg, ${brand.raw}22, #080c14 70%)` }}>
+        <div className="absolute inset-0 pointer-events-none opacity-[0.07]"
+          style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.9) 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+        <div className="relative">
+          {tenant.status === 'found' ? (
+            tenant.tenant.logo
+              ? <img src={tenant.tenant.logo} alt={tenant.tenant.name} className="max-h-24 max-w-[260px] object-contain rounded-xl bg-white/10 p-2 shadow-xl" />
+              : <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black shadow-xl" style={{ background: brand.accent, color: brand.text }}>{brandName.trim().charAt(0).toUpperCase()}</div>
+          ) : tenant.status === 'loading' ? (
+            <div className="h-24" aria-hidden />
+          ) : (
+            <div className="inline-flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-lg">Z</div>
+              <span className="text-2xl font-bold text-white tracking-tight">ZapTill</span>
+            </div>
           )}
         </div>
+        <div className="relative max-w-md">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-white/60">Welcome back</p>
+          {tenant.status !== 'loading' && (
+            <h1 className="mt-3 text-4xl xl:text-5xl font-bold text-white leading-tight break-words" data-testid="login-brand-name">{brandName}</h1>
+          )}
+          <div className="mt-5 h-1 w-16 rounded-full" style={{ background: brand.accent }} />
+          <p className="mt-5 text-base text-white/70 leading-relaxed">Sales, stock, staff and every branch — sign in to your dashboard.</p>
+        </div>
+        <p className="relative text-xs text-white/40">{tenant.status === 'found' ? 'on ZapTill' : 'ZapTill point of sale'}</p>
+      </aside>
 
-        <p className="text-center text-[#1e293b] text-xs mt-6">
-          No account? Contact your ZapTill agent to get set up.
-        </p>
-        {/* 0.6.35 (A384): forgot the password, locked out — what to do and who to call. */}
-        <p className="text-center text-xs mt-2">
-          <a href="/help" className="text-gray-400 hover:text-white underline" data-testid="login-help">Need help?</a>
-        </p>
-        {/* 0.6.36 (owner): no version on the sign-in page — it shows in the menu once signed in (ReleaseBadge). */}
-      </div>
+      {/* ── The form side: scrolls on its own; auto margins centre it without ever cutting it off ── */}
+      <main className="flex-1 min-h-0 overflow-y-auto flex flex-col px-5 py-8 sm:px-10">
+        <div className="w-full max-w-sm m-auto">
+
+          {/* Phones and narrow windows: the brand, compact, over the form */}
+          <div className="lg:hidden text-center mb-6">
+            {tenant.status === 'found' ? (
+              <div className="mb-1"><TenantBrand tenant={tenant.tenant} /></div>
+            ) : tenant.status === 'loading' ? (
+              // 0.6.36: on a client's address, no brand at all until the cloud says whose it is (no flash of ZapTill).
+              <div className="mb-3 h-[60px]" aria-hidden data-testid="tenant-loading" />
+            ) : (
+            <div className="inline-flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-swift-logo flex items-center justify-center text-[#0f172a] font-black text-sm">Z</div>
+              <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
+            </div>
+            )}
+          </div>
+
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-white tracking-tight">Sign in</h2>
+            <p className="text-sm text-[#64748b] mt-1">to your {tenant.status === 'found' ? `${brandName} ` : ''}dashboard</p>
+          </div>
+
+          <div className="sm:bg-[#0d1424] sm:border sm:border-[#1e293b] sm:rounded-2xl sm:p-7 sm:shadow-2xl">
+            {panel}
+          </div>
+
+          <div className="mt-6 flex flex-col items-center gap-2 text-xs">
+            <p className="text-[#475569] text-center">No account? Contact your ZapTill agent to get set up.</p>
+            {/* 0.6.35 (A384): forgot the password, locked out — what to do and who to call. */}
+            <a href="/help" className="text-gray-400 hover:text-white underline" data-testid="login-help">Need help?</a>
+          </div>
+          {/* 0.6.36 (owner): no version on the sign-in page — it shows in the menu once signed in (ReleaseBadge). */}
+        </div>
+      </main>
     </div>
   );
 }

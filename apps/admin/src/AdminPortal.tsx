@@ -235,13 +235,11 @@ function HealthBar({ score }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
+function LoginPage({ onLogin, req }) {
   const [email, setEmail]     = useState("");
   const [password, setPass]   = useState("");
   const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
-  const [showApi, setShowApi] = useState(false);
-  const [apiInput, setApiInput] = useState(apiUrl);
   // A391: the second step — the one-time code (emailed, or from the admin's authenticator app).
   const [otp, setOtp]         = useState(null);   // null = password step; { method, sentTo, note }
   const [code, setCode]       = useState("");
@@ -338,20 +336,7 @@ function LoginPage({ onLogin, apiUrl, setApiUrl, req }) {
           )}
         </form>
 
-        {!otp && (
-          <>
-            <button onClick={() => setShowApi(s => !s)} style={{ background: "none", border: "none", color: C.muted, width: "100%", marginTop: 18, fontSize: 11, cursor: "pointer" }}>
-              {showApi ? "Hide server address" : "Server address…"}
-            </button>
-            {showApi && (
-              <div style={{ marginTop: 10 }}>
-                <input style={S.input} value={apiInput} onChange={e => setApiInput(e.target.value)} placeholder="https://api.zaptill.co.ke" />
-                <button onClick={() => { setApiUrl(apiInput); saveApi(apiInput); }}
-                  style={{ ...S.btn, ...S.btnPrimary, width: "100%", marginTop: 8 }}>Save server address</button>
-              </div>
-            )}
-          </>
-        )}
+        {/* A419 (owner, 2026-10-09): no "Server address…" on the sign-in page — it is on Account, once signed in. */}
       </div>
     </div>
   );
@@ -2576,7 +2561,7 @@ export default function AdminPortal() {
   }
 
   if (!token || !admin) {
-    return <LoginPage onLogin={handleLogin} apiUrl={apiUrl} setApiUrl={setApiUrl} req={req} />;
+    return <LoginPage onLogin={handleLogin} req={req} />;
   }
 
   const pageEl = (() => {

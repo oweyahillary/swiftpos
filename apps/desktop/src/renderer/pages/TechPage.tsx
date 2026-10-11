@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
+import ServerKeepRunning from '../components/ServerKeepRunning';   // A435
 import type { TechSession, TechStatus } from '../lib/posApi';
 import BrandingEditor from './BrandingEditor';
 
@@ -317,6 +318,7 @@ export default function TechPage({ onExit }: Props) {
               </p>
             </>
           )}
+          {dev?.device_role && dev.device_role !== 'till' && <div className="mt-3"><ServerKeepRunning /></div>}
           <div className="mt-3">
             <label className="block text-[11px] text-gray-400 mb-1">Branch server address (this till points at)</label>
             <div className="flex gap-2">

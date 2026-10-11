@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RELEASE, releaseLabel, releasesDiffer } from '../lib/release';
+import { isProdDeployment } from '../lib/appFlavor';
 
 /**
  * ReleaseBadge — 0.6.28 (owner: "add versioning on the website also so that i can tell which one i am running").
@@ -10,7 +11,14 @@ import { RELEASE, releaseLabel, releasesDiffer } from '../lib/release';
  */
 type Cloud = { release: string; commit: string | null };
 
-export default function ReleaseBadge({ getCloud, tone = 'dark' }: {
+/** A420 (owner, 2026-10-09: "remove version on client side in production"): clients do not see it; the dev web still
+ *  does, and the admin portal (ReleaseLine) and the browser console keep telling the owner which release runs where. */
+export default function ReleaseBadge(props: { getCloud?: () => Promise<Cloud>; tone?: 'dark' | 'plain' }) {
+  if (isProdDeployment()) return null;
+  return <Badge {...props} />;
+}
+
+function Badge({ getCloud, tone = 'dark' }: {
   getCloud?: () => Promise<Cloud>;
   tone?: 'dark' | 'plain';
 }) {

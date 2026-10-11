@@ -4,12 +4,13 @@
  * Tabs: Master/DSR · Hourly Sales · Item Mix · Voids & Exceptions · Tax · Staff
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { ReportsSkeleton } from './pos/cashier/POSSkeletons';
 import { api, downloadFile } from '../lib/api';
 import { useBusiness } from '../context/BusinessContext';
 import { useBranch } from '../context/BranchContext';
 import { localDateStr } from '../lib/localDate';
+import { methodColour } from '../lib/paymentColours';   // A439
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -97,7 +98,9 @@ interface StaffReport {
   // A259d: the server emits staff_id / staff_name / avg_order_value (not cashier_id /
   // name / branch). The owner table read the old field names, so the Cashier column
   // rendered blank. Match the real contract.
-  staff: { staff_id: string; staff_name: string; orders: number; revenue: number; avg_order_value: number }[];
+  staff: { staff_id: string; staff_name: string; orders: number; revenue: number; avg_order_value: number;
+    /** A439: the cashier's money by payment method (adds up to revenue). Absent from an older server. */
+    by_method?: { method: string; amount: number }[] }[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -949,6 +952,8 @@ function TaxTab({ range, branchId, currency }: { range: DateRange; branchId: str
 
 function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: string; currency: string }) {
   const [data, setData]       = useState<StaffReport | null>(null);
+  const [showAll, setShowAll] = useState(false);            // A439
+  const [openRows, setOpenRows] = useState<string[]>([]);   // A439
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
 
@@ -968,9 +973,23 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
   if (!data)   return null;
 
   const total = data.staff.reduce((s, c) => s + c.revenue, 0);
+  const hasMethods = data.staff.some((s) => (s.by_method ?? []).length > 0);
+  const shown = (id: string) => showAll || openRows.includes(id);
+  const toggleRow = (id: string) => setOpenRows((r) => (r.includes(id) ? r.filter((x) => x !== id) : [...r, id]));
+  const METHOD_NAMES: Record<string, string> = { cash: 'Cash', mpesa: 'M-Pesa', card: 'Card', glovo: 'Glovo', credit: 'On account', unpaid: 'Not paid' };
+  const methodName = (m: string) => METHOD_NAMES[m] ?? m.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
   return (
     <div className="space-y-4">
+      {/* A439: each cashier's money by payment method — one row at a time, or everyone's. */}
+      {hasMethods && (
+        <div className="flex justify-end">
+          <button type="button" onClick={() => { setShowAll((v) => !v); setOpenRows([]); }} data-testid="staff-methods-all"
+            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/40">
+            {showAll ? 'Hide payment methods' : 'Show payment methods for everyone'}
+          </button>
+        </div>
+      )}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -982,11 +1001,13 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
                 <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Revenue</th>
                 <th className="text-right text-xs text-gray-400 px-2 py-2.5 font-medium">Avg Order</th>
                 <th className="text-right text-xs text-gray-400 px-4 py-2.5 font-medium">Share</th>
+                {hasMethods && <th className="px-4 py-2.5" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {data.staff.map((s, i) => (
-                <tr key={s.staff_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                <Fragment key={s.staff_id}>
+                <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                   <td className="px-4 py-2.5 text-gray-300 dark:text-gray-600 text-xs tabular-nums">{i + 1}</td>
                   <td className="px-2 py-2.5 text-gray-800 dark:text-gray-200 font-medium">{s.staff_name}</td>
                   <td className="px-2 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-400">{s.orders}</td>
@@ -1000,7 +1021,35 @@ function StaffTab({ range, branchId, currency }: { range: DateRange; branchId: s
                       <span className="text-xs text-gray-400 tabular-nums w-9 text-right">{pct(total > 0 ? (s.revenue / total) * 100 : 0)}</span>
                     </div>
                   </td>
+                  {hasMethods && (
+                    <td className="px-4 py-2.5 text-right">
+                      {(s.by_method ?? []).length > 0 && (
+                        <button type="button" onClick={() => toggleRow(s.staff_id)} disabled={showAll} data-testid="staff-methods-toggle"
+                          className="text-xs font-medium text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-40 whitespace-nowrap">
+                          {shown(s.staff_id) ? 'Hide methods' : 'Payment methods'}
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
+                {shown(s.staff_id) && (s.by_method ?? []).length > 0 && (
+                  <tr className="bg-gray-50/60 dark:bg-gray-900/30" data-testid="staff-methods-row">
+                    <td />
+                    <td colSpan={hasMethods ? 6 : 5} className="px-2 pb-3 pt-1">
+                      <div className="flex flex-wrap gap-2">
+                        {(s.by_method ?? []).map((m) => (
+                          <div key={m.method} className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full" style={{ background: methodColour(m.method).dot }} />
+                            <span className="text-gray-600 dark:text-gray-300">{methodName(m.method)}</span>
+                            <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{fmtShort(m.amount, currency)}</span>
+                            <span className="text-gray-400 tabular-nums">{pct(s.revenue > 0 ? (m.amount / s.revenue) * 100 : 0)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

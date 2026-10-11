@@ -37,7 +37,9 @@ interface Order {
   history_shown_total?: number;      //   … and this is that part's amount (never the whole bill)
 }
 /** 0.6.27: own_only — the cloud narrowed the list to this cashier's sales; can_reprint — Reprint is offered. */
-interface OrdersResponse { orders: Order[]; total: number; own_only?: boolean; can_reprint?: boolean; history_methods?: string[]; }
+interface OrdersResponse { orders: Order[]; total: number; own_only?: boolean; can_reprint?: boolean; history_methods?: string[];
+  /** A418: the total of every page the filters show — sent only when this person may see it. */
+  totals?: { orders: number; sales: number }; }
 
 // 0.6.27: the types a filter offers (the cloud filters; the list is paged).
 const TYPE_CHOICES = ['dine_in', 'takeaway', 'delivery', 'retail'];
@@ -94,6 +96,8 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
 
   const [orders, setOrders]       = useState<Order[]>([]);
   const [total, setTotal]         = useState(0);
+  // A418: the cloud's total of every page the filters show (a manager; a cashier while the owner's switches are on).
+  const [sums, setSums] = useState<{ orders: number; sales: number } | null>(null);
   const [page, setPage]           = useState(1);
   const [search, setSearch]       = useState('');
   const [loading, setLoading]     = useState(false);
@@ -126,8 +130,10 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
       if (t) params.set('order_type', t);
       if (m) params.set('method', m);
       if (session?.branchId) params.set('branch_id', session.branchId);
+      params.set('with_totals', '1');   // A418: answered only when this person may see it
 
       const res = await posApi.get<OrdersResponse>(`/api/orders?${params}`);
+      setSums(res.totals ?? null);
       setOrders(res.orders ?? []);
       setTotal(res.total ?? 0);
       setOwnOnly(res.own_only === true);
@@ -181,6 +187,12 @@ export default function POSOrderHistoryTab({ currency }: { currency: string }) {
         </select>
         {ownOnly && <span style={{ color: '#94a3b8' }}>Your sales only</span>}
       </div>
+      {sums && (
+        <div data-testid="history-total" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '6px 2px', marginBottom: 8, borderBottom: '1px solid #1e293b' }}>
+          <span style={{ color: '#94a3b8' }}>{sums.orders} order{sums.orders === 1 ? '' : 's'}{typeFilter || methodFilter || search ? ' (filtered)' : ''} today</span>
+          <strong>Sales {fmt(sums.sales, currency)}</strong>
+        </div>
+      )}
 
       {error && <p style={s.error}>{error}</p>}
 

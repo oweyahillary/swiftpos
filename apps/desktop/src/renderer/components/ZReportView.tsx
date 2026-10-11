@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { methodLabel } from '../../shared/paymentCatalogue';   // A429: every method by its name
 import type { ZReport } from '../lib/posApi';
 import { zBackupNote } from '../lib/syncNotice';
 import { confirmationPrintLines } from '../../shared/shiftConfirm';
@@ -47,7 +48,8 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       </div>
 
       {rule}
-      {row('Cashier', shift.cashier_name)}
+      {/* A442: with more than one person selling, the shift is the drawer one of them opened. */}
+      {row((report.byCashier?.length ?? 0) > 1 ? 'Opened by' : 'Cashier', shift.cashier_name)}
       {row('Shift', shift.id.slice(0, 8))}
       {row('Opened', dt(shift.opened_at))}
       {row('Closed', dt(shift.closed_at))}
@@ -58,10 +60,29 @@ const ZReportView = forwardRef<HTMLDivElement, Props>(({ report }, ref) => {
       {byMethod.length === 0 && <p style={{ color: '#555' }}>No sales this shift</p>}
       {byMethod.map(m => (
         <div key={m.method} style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ textTransform: 'uppercase' }}>{m.method === 'mpesa' ? 'M-PESA' : m.method === 'glovo' ? 'GLOVO' : m.method} ({m.orders})</span>
+          <span style={{ textTransform: 'uppercase' }}>{methodLabel(m.method).toUpperCase()} ({m.orders})</span>
           <span>{money(m.amount)}</span>
         </div>
       ))}
+      {/* A442: who sold what on this drawer — each person's sales (kept) and their money by method. */}
+      {(report.byCashier?.length ?? 0) > 0 && (
+        <div data-testid="zreport-view-by-cashier">
+          {rule}
+          <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>SALES BY CASHIER</p>
+          {report.byCashier!.map(c => (
+            <div key={c.cashier_id ?? 'none'} style={{ marginBottom: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                <span>{c.name} ({c.orders})</span><span>{money(c.sales)}</span>
+              </div>
+              {c.byMethod.map(m => (
+                <div key={m.method} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '10px' }}>
+                  <span>{methodLabel(m.method).toUpperCase()}</span><span>{money(m.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       {rule}
       {row('Orders', String(totals.orderCount))}
       {row('Gross sales', money(totals.grossSales))}

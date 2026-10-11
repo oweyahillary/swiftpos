@@ -57,6 +57,6 @@
     "pages/stock/PurchaseOrdersPage.tsx": 7,
     "pages/stock/StockTransfersPage.tsx": 4,
     "pages/stock/SuppliersPage.tsx": 5,
-    "lib/paymentColours.ts": 5
+    "lib/paymentColours.ts": 6
   }
 }

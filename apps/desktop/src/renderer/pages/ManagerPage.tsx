@@ -15,8 +15,9 @@
  * catalogue pull — AND something tracks stock.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
+import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
 import ExpenseTypesPanel from '../components/ExpenseTypesPanel';
@@ -55,7 +56,8 @@ import MenuWorkbench from './MenuWorkbench';
 import MethodDot from '../components/MethodDot';
 import { methodColour } from '../../shared/paymentColours';
 import ReportRangeBar from '../components/ReportRangeBar';
-import type { ReportRangeArg, ShiftSummary, ExpenseRow } from '../lib/posApi';
+import type { ReportRangeArg, ShiftSummary, ExpenseRow, BranchDay, BranchShiftState, BranchShiftRow, BranchShiftListRow } from '../lib/posApi';
+import ConfirmShiftModal from '../components/ConfirmShiftModal';   // A433
 import { modeFlags } from '../lib/posMode';
 import ZReportView from '../components/ZReportView';
 import { printShiftReport } from '../lib/printShiftReport';
@@ -159,8 +161,267 @@ function Spinner() {
   return <div className="flex items-center justify-center py-12 text-gray-300 text-sm">Loading…</div>;
 }
 
+// ── A431 / A432: every till, and the shift report ────────────────────────────
+// Owner, 2026-10-09: "the manager should view sales across all tills no matter the till they have logged into … add a
+// shift report in the overview". The Overview's figures come from manager:branchDay — the cloud's branch, else what this
+// till holds — and this line says which, so a till's partial view is never read as the branch's takings.
+function ScopeLine({ day }: { day: BranchDay | null }) {
+  if (!day) return null;
+  const cloud = day.source === 'cloud';
+  return (
+    <div data-testid="overview-scope" className={`text-xs rounded-lg px-3 py-2 border ${cloud
+      ? 'text-gray-300 bg-gray-800/60 border-gray-700'
+      : 'text-amber-300 bg-amber-400/10 border-amber-400/20'}`}>
+      <span className="font-semibold">{day.scopeLabel}</span>
+      {cloud ? ' · from the cloud' : day.fallbackReason ? ` · ${day.fallbackReason}` : ''}
+    </div>
+  );
+}
+
+const SHIFT_STATE: Record<BranchShiftState, { label: string; cls: string }> = {
+  open:      { label: 'Open',             cls: 'text-blue-300 bg-blue-400/10 border-blue-400/20' },
+  awaiting:  { label: 'Awaiting manager', cls: 'text-amber-300 bg-amber-400/10 border-amber-400/20' },
+  confirmed: { label: 'Confirmed',        cls: 'text-gray-200 bg-gray-700/60 border-gray-600' },
+  closed:    { label: 'Closed',           cls: 'text-gray-300 bg-gray-800 border-gray-700' },
+};
+
+function hhmm(iso: string | null) {
+  return iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '—';
+}
+
+function BranchShiftsAndTills({ day, currency, when = 'today' }: { day: BranchDay | null; currency: string; when?: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  // A433 (owner, 2026-10-10: "yes if they have logged in as the manager"): a signed-in manager confirms any till's shift
+  // from here — this till's on its own record (as Close does), another till's on the cloud (that till picks it up).
+  const [canConfirm, setCanConfirm] = useState(false);
+  const [confirming, setConfirming] = useState<BranchShiftRow | null>(null);
+  const [done, setDone] = useState<Record<string, string>>({});
+  useEffect(() => { posApi.shift.canConfirm().then((v) => setCanConfirm(v === true)).catch(() => setCanConfirm(false)); }, []);
+  if (!day) return null;
+  const money = (v: number | null) => (v == null ? '—' : fmt(v, currency));
+  return (
+    <>
+      {day.byTill.length > 1 && (
+        <Card title={`By till — ${when}`}>
+          <div className="divide-y divide-gray-700" data-testid="overview-by-till">
+            {day.byTill.map(t => (
+              <div key={t.device_id ?? 'web'} className="flex items-center justify-between py-2 text-sm">
+                <span className="text-white">{t.label}{t.this_till && <span className="text-gray-400 text-xs ml-2">this till</span>}</span>
+                <span className="tabular-nums"><span className="text-gray-400 text-xs mr-3">{t.orders} orders</span>
+                  <span className="text-white font-medium">{fmt(t.revenue, currency)}</span></span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card title={when === 'today' ? 'Shift report — today' : `Shift report — ${when}`}>
+        {day.shifts.length === 0
+          ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No shifts today.' : `No shifts on ${when}.`}</p>
+          : (
+            <div className="overflow-x-auto" data-testid="overview-shift-report">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
+                    <th className="py-2 pr-3 font-medium">Till</th>
+                    <th className="py-2 pr-3 font-medium">Cashier</th>
+                    <th className="py-2 pr-3 font-medium">Time</th>
+                    <th className="py-2 pr-3 font-medium text-right">Sales</th>
+                    <th className="py-2 pr-3 font-medium text-right">Expected cash</th>
+                    <th className="py-2 pr-3 font-medium text-right">Counted</th>
+                    <th className="py-2 pr-3 font-medium text-right">Difference</th>
+                    <th className="py-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {day.shifts.map(sh => {
+                    const st = SHIFT_STATE[sh.state];
+                    const diff = sh.variance;
+                    return (
+                      <Fragment key={sh.id}>
+                        <tr onClick={() => setOpen(open === sh.id ? null : sh.id)} className="cursor-pointer hover:bg-gray-700/30">
+                          <td className="py-2 pr-3 text-white whitespace-nowrap">{sh.till}{sh.this_till && <span className="text-gray-400 text-xs ml-1">(this)</span>}</td>
+                          <td className="py-2 pr-3 text-gray-200">{sh.cashier}</td>
+                          <td className="py-2 pr-3 text-gray-300 whitespace-nowrap tabular-nums">{hhmm(sh.opened_at)}–{sh.state === 'open' ? 'now' : hhmm(sh.closed_at)}</td>
+                          <td className="py-2 pr-3 text-right text-white tabular-nums">{fmt(sh.sales, currency)}<span className="block text-gray-400 text-xs">{sh.orders} orders</span></td>
+                          <td className="py-2 pr-3 text-right text-gray-200 tabular-nums">{money(sh.expected_cash)}</td>
+                          <td className="py-2 pr-3 text-right text-gray-200 tabular-nums">{money(sh.counted_cash)}</td>
+                          <td className={`py-2 pr-3 text-right tabular-nums ${diff == null || Math.round(diff * 100) === 0 ? 'text-gray-300' : diff < 0 ? 'text-red-400' : 'text-amber-300'}`}>
+                            {diff == null ? '—' : `${diff > 0 ? '+' : ''}${fmt(diff, currency)}`}</td>
+                          <td className="py-2">
+                            {done[sh.id] !== undefined
+                              ? <span className={`inline-block text-xs rounded-md border px-2 py-0.5 whitespace-nowrap ${SHIFT_STATE.confirmed.cls}`}>Confirmed</span>
+                              : <span className={`inline-block text-xs rounded-md border px-2 py-0.5 whitespace-nowrap ${st.cls}`}>{st.label}{sh.force_closed ? ' · forced' : ''}</span>}
+                            {(done[sh.id] || sh.confirmed_by) && <span className="block text-gray-400 text-xs mt-0.5">by {done[sh.id] || sh.confirmed_by}</span>}
+                            {sh.state === 'awaiting' && done[sh.id] === undefined && canConfirm && (
+                              <button data-testid="overview-confirm" onClick={(e) => { e.stopPropagation(); setConfirming(sh); }}
+                                className="block mt-1 text-xs font-semibold text-action-400 hover:text-action-300">Confirm</button>
+                            )}
+                          </td>
+                        </tr>
+                        {open === sh.id && (
+                          <tr>
+                            <td colSpan={8} className="pb-3 pt-1">
+                              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs bg-gray-900/60 rounded-lg px-3 py-2">
+                                <span className="text-gray-400">Opening float <span className="text-white tabular-nums">{fmt(sh.opening_float, currency)}</span></span>
+                                {sh.by_method.length === 0
+                                  ? <span className="text-gray-400">No payments</span>
+                                  : sh.by_method.map(m => (
+                                    <span key={m.method} className="text-gray-300 capitalize"><MethodDot method={m.method} />{m.method.replace(/_/g, ' ')}{' '}
+                                      <span className="text-white tabular-nums">{fmt(m.amount, currency)}</span></span>
+                                  ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Card>
+      <StaffPerformance day={day} currency={currency} when={when} />
+      {confirming && (
+        <ConfirmShiftModal
+          shiftId={confirming.id}
+          cashierName={confirming.cashier}
+          methods={confirming.declare_codes}
+          currency={currency}
+          openedAt={confirming.opened_at}
+          closedAt={confirming.closed_at}
+          remote={!confirming.this_till}
+          onDone={(c) => { setDone((d) => ({ ...d, [confirming.id]: c.confirmed_by_name ?? '' })); setConfirming(null); }}
+          onClose={() => setConfirming(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ── A440: staff performance ───────────────────────────────────────────────────
+// Owner, 2026-10-10: "can we add a staff performance report on the desktop, maybe under overview". Each person's sales
+// on the day by who rang them up (cashier B selling on cashier A's shift is B's — A438), with their money by payment
+// method a tap away. From the cloud: every till; offline: what this till holds (the scope line above says which).
+function StaffPerformance({ day, currency, when }: { day: BranchDay; currency: string; when: string }) {
+  const [openRows, setOpenRows] = useState<string[]>([]);
+  const [all, setAll] = useState(false);
+  const rows = day.byStaff ?? [];
+  const total = rows.reduce((t, r) => t + r.revenue, 0);
+  const shown = (id: string) => all || openRows.includes(id);
+  const toggle = (id: string) => setOpenRows((r) => (r.includes(id) ? r.filter((x) => x !== id) : [...r, id]));
+  return (
+    <Card title={`Staff performance — ${when}`}>
+      {rows.length === 0 ? (
+        <p className="text-gray-300 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
+      ) : (
+        <div data-testid="overview-staff">
+          <div className="flex justify-end mb-2">
+            <button type="button" onClick={() => { setAll((v) => !v); setOpenRows([]); }} data-testid="overview-staff-all"
+              className="text-xs rounded-lg border border-gray-700 px-2.5 py-1 text-gray-300 hover:border-gray-500">
+              {all ? 'Hide payment methods' : 'Payment methods for everyone'}
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
+                  <th className="py-2 pr-3 font-medium">#</th>
+                  <th className="py-2 pr-3 font-medium">Staff</th>
+                  <th className="py-2 pr-3 font-medium text-right">Orders</th>
+                  <th className="py-2 pr-3 font-medium text-right">Sales</th>
+                  <th className="py-2 pr-3 font-medium text-right">Avg order</th>
+                  <th className="py-2 pr-3 font-medium text-right">Share</th>
+                  <th className="py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {rows.map((r, i) => {
+                  const share = total > 0 ? (r.revenue / total) * 100 : 0;
+                  return (
+                    <Fragment key={r.id || 'unknown'}>
+                      <tr>
+                        <td className="py-2 pr-3 text-gray-400 tabular-nums">{i + 1}</td>
+                        <td className="py-2 pr-3 text-white">{r.name}</td>
+                        <td className="py-2 pr-3 text-right text-gray-200 tabular-nums">{r.orders}</td>
+                        <td className="py-2 pr-3 text-right text-white font-medium tabular-nums">{fmt(r.revenue, currency)}</td>
+                        <td className="py-2 pr-3 text-right text-gray-300 tabular-nums">{fmt(r.avg, currency)}</td>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-16 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-action-500 rounded-full" style={{ width: `${share}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-400 tabular-nums w-10 text-right">{share.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                        <td className="py-2 text-right">
+                          {r.by_method.length > 0 && !all && (
+                            <button type="button" onClick={() => toggle(r.id)} data-testid="overview-staff-methods"
+                              className="text-xs font-semibold text-action-400 hover:text-action-300 whitespace-nowrap">
+                              {shown(r.id) ? 'Hide' : 'Payment methods'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {shown(r.id) && r.by_method.length > 0 && (
+                        <tr>
+                          <td />
+                          <td colSpan={6} className="pb-3 pt-1">
+                            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs bg-gray-900/60 rounded-lg px-3 py-2">
+                              {r.by_method.map((m) => (
+                                <span key={m.method} className="text-gray-300 capitalize">
+                                  <MethodDot method={m.method} />{m.method === 'unpaid' ? 'not paid' : m.method.replace(/_/g, ' ')}{' '}
+                                  <span className="text-white tabular-nums">{fmt(m.amount, currency)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── A441: the Overview's day ──────────────────────────────────────────────────
+// Owner, 2026-10-10: "under overview can we add select date to view that date?". Today unless the manager picks a day
+// (a calendar, or a day back / forward); every card follows it and says which day it is.
+function OverviewForDay({ render }: { render: (date: string | null) => React.ReactNode }) {
+  const [date, setDate] = useState<string | null>(null);
+  const today = todayYmd();
+  const when = dayWord(date);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2" data-testid="overview-date">
+        <button type="button" onClick={() => setDate((d) => stepDay(d, -1))} aria-label="The day before"
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:border-gray-500">‹</button>
+        <input type="date" value={date ?? today} max={today} data-testid="overview-date-input"
+          onChange={(e) => setDate(e.target.value && e.target.value < today ? e.target.value : null)}
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white [color-scheme:dark]" />
+        <button type="button" onClick={() => setDate((d) => stepDay(d, 1))} disabled={date === null} aria-label="The day after"
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:border-gray-500 disabled:opacity-30">›</button>
+        {date !== null && (
+          <button type="button" onClick={() => setDate(null)} data-testid="overview-date-today"
+            className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:border-gray-500">Back to today</button>
+        )}
+        <span className="text-sm text-gray-400 ml-1">Showing <span className="text-white font-medium">{when}</span></span>
+      </div>
+      {render(date)}
+    </div>
+  );
+}
+
 // ── Overview Tab — Restaurant ─────────────────────────────────────────────────
-function RestaurantOverview({ currency }: { currency: string }) {
+function RestaurantOverview({ currency, date = null }: { currency: string; date?: string | null }) {
+  const when = dayWord(date);   // A441: the day shown — 'today' unless the manager picked another
   const [sales,    setSales]    = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [tables,   setTables]   = useState<any[]>([]);
@@ -173,8 +434,8 @@ function RestaurantOverview({ currency }: { currency: string }) {
       // on an old schema) must NOT blank the KPIs and top sellers. The old shared
       // try/catch zeroed the whole Overview when any single call threw.
       const [s, t, tb] = await Promise.allSettled([
-        posApi.manager.salesSummary(),
-        posApi.manager.topProducts(),
+        posApi.manager.branchDay(overviewRange(date)),   // A431: every till at the branch; A441: the day chosen
+        posApi.manager.topProducts(overviewRange(date)),
         posApi.manager.tableOccupancy(),
       ]);
       if (!live) return;
@@ -182,13 +443,15 @@ function RestaurantOverview({ currency }: { currency: string }) {
       else console.warn('[Overview] salesSummary failed:', s.reason);
       if (t.status === 'fulfilled') setTopItems(t.value);
       else console.warn('[Overview] topProducts failed:', t.reason);
+      // A433: from the cloud, every till's top sellers; else this till's (the title says so).
+      if (s.status === 'fulfilled' && s.value?.source === 'cloud') setTopItems((s.value.topProducts ?? []).slice(0, 8));
       if (tb.status === 'fulfilled') setTables(tb.value);
       else console.warn('[Overview] tableOccupancy failed:', tb.reason);
       setLoading(false);
     }
     load();
     return () => { live = false; };
-  }, []);
+  }, [date]);
 
   if (loading) return <Spinner />;
 
@@ -197,10 +460,11 @@ function RestaurantOverview({ currency }: { currency: string }) {
 
   return (
     <div className="space-y-4">
+      <ScopeLine day={sales} />
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Revenue today"   value={fmt(s?.totalRevenue ?? 0, currency)} accent />
-        <KpiCard label="Orders today"    value={String(s?.totalOrders ?? 0)} />
+        <KpiCard label={`Revenue ${when}`}   value={fmt(s?.totalRevenue ?? 0, currency)} accent />
+        <KpiCard label={`Orders ${when}`}    value={String(s?.totalOrders ?? 0)} />
         <KpiCard label="Avg order"       value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"   value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
@@ -208,9 +472,9 @@ function RestaurantOverview({ currency }: { currency: string }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Payment split */}
-        <Card title="Payment methods — today">
+        <Card title={`Payment methods — ${when}`}>
           {!sales?.paymentMethods || Object.keys(sales.paymentMethods).length === 0
-            ? <p className="text-gray-300 text-sm">No payments yet today.</p>
+            ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No payments yet today.' : 'No payments that day.'}</p>
             : (
               <div className="space-y-2">
                 {Object.entries(sales.paymentMethods as Record<string, number>)
@@ -236,9 +500,9 @@ function RestaurantOverview({ currency }: { currency: string }) {
         </Card>
 
         {/* Top items */}
-        <Card title="Top sellers — today">
+        <Card title={`Top sellers — ${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}>
           {topItems.length === 0
-            ? <p className="text-gray-300 text-sm">No sales yet today.</p>
+            ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
             : (
               <div className="divide-y divide-gray-700">
                 {topItems.map((p, i) => (
@@ -274,16 +538,18 @@ function RestaurantOverview({ currency }: { currency: string }) {
 
       {/* Hourly chart */}
       {(sales?.hourly?.length ?? 0) > 0 && (
-        <Card title="Hourly sales — today">
+        <Card title={`Hourly sales — ${when}`}>
           <HourlyChart hourly={sales.hourly} currency={currency} />
         </Card>
       )}
+      <BranchShiftsAndTills day={sales} currency={currency} when={when} />
     </div>
   );
 }
 
 // ── Overview Tab — Petrol ─────────────────────────────────────────────────────
-function PetrolOverview({ currency }: { currency: string }) {
+function PetrolOverview({ currency, date = null }: { currency: string; date?: string | null }) {
+  const when = dayWord(date);   // A441: the day shown — 'today' unless the manager picked another
   const [fuel,    setFuel]    = useState<any>(null);
   const [pumps,   setPumps]   = useState<any[]>([]);
   const [sales,   setSales]   = useState<any>(null);
@@ -296,7 +562,7 @@ function PetrolOverview({ currency }: { currency: string }) {
         const [f, p, s] = await Promise.all([
           posApi.manager.fuelSales(),
           posApi.manager.pumpStatus(),
-          posApi.manager.salesSummary(),
+          posApi.manager.branchDay(overviewRange(date)),   // A431: every till at the branch; A441: the day chosen
         ]);
         if (!live) return;
         setFuel(f); setPumps(p); setSales(s);
@@ -305,7 +571,7 @@ function PetrolOverview({ currency }: { currency: string }) {
     }
     load();
     return () => { live = false; };
-  }, []);
+  }, [date]);
 
   if (loading) return <Spinner />;
 
@@ -313,9 +579,10 @@ function PetrolOverview({ currency }: { currency: string }) {
 
   return (
     <div className="space-y-4">
+      <ScopeLine day={sales} />
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Revenue today"     value={fmt(f?.totalRevenue ?? 0, currency)} accent />
+        <KpiCard label={`Revenue ${when}`}     value={fmt((when === 'today' ? f?.totalRevenue : sales?.summary?.totalRevenue) ?? 0, currency)} accent />
         <KpiCard label="Litres sold"        value={fmtL(f?.totalLitres ?? 0)} />
         <KpiCard label="Transactions"       value={String(f?.totalTransactions ?? 0)} />
         <KpiCard label="Avg per transaction"
@@ -324,8 +591,11 @@ function PetrolOverview({ currency }: { currency: string }) {
             : '—'} />
       </div>
 
+      {when !== 'today' && (
+        <p className="text-xs text-gray-400" data-testid="overview-pumps-today-only">Pumps, litres and fuel grades show for today only — the sales, payments, shifts and staff below are {when}'s.</p>
+      )}
       {/* Pump monitor table */}
-      <Card title="Pump Monitor — today">
+      {when === 'today' && <Card title="Pump Monitor — today">
         {pumps.length === 0
           ? <p className="text-gray-300 text-sm">No pumps configured. Add pumps in server settings.</p>
           : (
@@ -369,10 +639,10 @@ function PetrolOverview({ currency }: { currency: string }) {
               </table>
             </div>
           )}
-      </Card>
+      </Card>}
 
       {/* Grade breakdown */}
-      {(fuel?.grades?.length ?? 0) > 0 && (
+      {when === 'today' && (fuel?.grades?.length ?? 0) > 0 && (
         <Card title="By fuel grade — today">
           <div className="divide-y divide-gray-700">
             {(fuel.grades as any[]).map((g: any) => {
@@ -396,7 +666,7 @@ function PetrolOverview({ currency }: { currency: string }) {
 
       {/* Payment split */}
       {sales?.paymentMethods && Object.keys(sales.paymentMethods).length > 0 && (
-        <Card title="Payment methods — today">
+        <Card title={`Payment methods — ${when}`}>
           <div className="space-y-2">
             {Object.entries(sales.paymentMethods as Record<string, number>)
               .sort(([, a], [, b]) => b - a)
@@ -419,12 +689,14 @@ function PetrolOverview({ currency }: { currency: string }) {
           </div>
         </Card>
       )}
+      <BranchShiftsAndTills day={sales} currency={currency} when={when} />
     </div>
   );
 }
 
 // ── Overview Tab — Retail / default ──────────────────────────────────────────
-function RetailOverview({ currency }: { currency: string }) {
+function RetailOverview({ currency, date = null }: { currency: string; date?: string | null }) {
+  const when = dayWord(date);   // A441: the day shown — 'today' unless the manager picked another
   const [sales,    setSales]    = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -434,33 +706,35 @@ function RetailOverview({ currency }: { currency: string }) {
     async function load() {
       try {
         const [s, t] = await Promise.all([
-          posApi.manager.salesSummary(),
-          posApi.manager.topProducts(),
+          posApi.manager.branchDay(overviewRange(date)),   // A431: every till at the branch; A441: the day chosen
+          posApi.manager.topProducts(overviewRange(date)),
         ]);
         if (!live) return;
-        setSales(s); setTopItems(t);
+        // A433: from the cloud, every till's top sellers; else this till's (the title says so).
+        setSales(s); setTopItems(s?.source === 'cloud' ? (s.topProducts ?? []).slice(0, 8) : t);
       } catch { /* best effort */ }
       finally { if (live) setLoading(false); }
     }
     load();
     return () => { live = false; };
-  }, []);
+  }, [date]);
 
   if (loading) return <Spinner />;
   const s = sales?.summary;
 
   return (
     <div className="space-y-4">
+      <ScopeLine day={sales} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Revenue today"  value={fmt(s?.totalRevenue ?? 0, currency)} accent />
-        <KpiCard label="Orders today"   value={String(s?.totalOrders ?? 0)} />
+        <KpiCard label={`Revenue ${when}`}  value={fmt(s?.totalRevenue ?? 0, currency)} accent />
+        <KpiCard label={`Orders ${when}`}   value={String(s?.totalOrders ?? 0)} />
         <KpiCard label="Avg order"      value={fmt(s?.avgOrderValue ?? 0, currency)} />
         <KpiCard label="VAT collected"  value={fmt(s?.totalVat ?? 0, currency)} />
       </div>
       <MoneyStrip s={s} currency={currency} hideVat />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card title="Payment methods — today">
+        <Card title={`Payment methods — ${when}`}>
           {!sales?.paymentMethods || Object.keys(sales.paymentMethods).length === 0
             ? <p className="text-gray-300 text-sm">No payments yet.</p>
             : (
@@ -485,9 +759,9 @@ function RetailOverview({ currency }: { currency: string }) {
             )}
         </Card>
 
-        <Card title="Top sellers — today">
+        <Card title={`Top sellers — ${when}${sales && sales.source !== 'cloud' && !sales.localCoversBranch ? ' (this till)' : ''}`}>
           {topItems.length === 0
-            ? <p className="text-gray-300 text-sm">No sales yet today.</p>
+            ? <p className="text-gray-300 text-sm">{when === 'today' ? 'No sales yet today.' : 'No sales that day.'}</p>
             : (
               <div className="divide-y divide-gray-700">
                 {topItems.map((p, i) => (
@@ -508,10 +782,11 @@ function RetailOverview({ currency }: { currency: string }) {
       </div>
 
       {(sales?.hourly?.length ?? 0) > 0 && (
-        <Card title="Hourly sales — today">
+        <Card title={`Hourly sales — ${when}`}>
           <HourlyChart hourly={sales.hourly} currency={currency} />
         </Card>
       )}
+      <BranchShiftsAndTills day={sales} currency={currency} when={when} />
     </div>
   );
 }
@@ -582,7 +857,8 @@ function OrdersTab({ currency }: { currency: string }) {
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
   // Cross-sync stage 1 (2026-09-27): this till's own list (local, works offline) or every till at the
   // branch (read from the cloud — owner: "Branch view, read from cloud"). Offline → this till, said so.
-  const [scope, setScope] = useState<'till' | 'branch'>('till');
+  // A433 (owner, 2026-10-10: "under sales report it should cover all tills"): every till first; offline → this till, said so.
+  const [scope, setScope] = useState<'till' | 'branch'>('branch');
   const [scopeNote, setScopeNote] = useState('');
 
   // 500 rather than 30: a date range is asked for in order to see the range, and
@@ -773,39 +1049,85 @@ function ShiftTab({ currency }: { currency: string }) {
 function ZReportTab({ businessName, currency }: { businessName: string; currency: string }) {
   // 0.6.11 (owner: "I should be able to print previous shift reports"): the open shift's live report
   // AND every past shift this till ran — pick one, see it, print it.
+  // A433 (owner, 2026-10-10: "under sales report it should cover all tills when logged in as the manager"): every till's
+  // shifts from the cloud too. This till's own are read from its own records (offline as well); another till's Z-report
+  // comes from the cloud. A shift awaiting a manager can be confirmed here.
   const [shifts,   setShifts]   = useState<ShiftSummary[]>([]);
+  const [branch,   setBranch]   = useState<BranchShiftListRow[] | null>(null);
+  const [branchNote, setBranchNote] = useState('');
   const [selected, setSelected] = useState<string | null>(null);   // null = the open shift (live)
   const [report,   setReport]   = useState<ZReport | null>(null);
   const [loading,  setLoading]  = useState(true);
+  const [canConfirm, setCanConfirm] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const printRef = useRef<HTMLDivElement>(null);
+  // Owner, 2026-10-10: "if there are two shifts running will the manager see two z reports side by side, and if more" —
+  // with nothing picked, every running shift at the branch, each its own live report, side by side (wrapping for more).
+  const [live, setLive] = useState<Array<{ id: string; till: string; this_till: boolean; report: ZReport | null }>>([]);
 
   useEffect(() => {
     posApi.shift.history().then(setShifts).catch(() => setShifts([]));
-  }, []);
+    posApi.manager.branchShifts()
+      .then(r => { setBranch(r); setBranchNote(''); })
+      .catch(() => { setBranch(null); setBranchNote("Other tills' shifts need the cloud — showing this till's only."); });
+    posApi.shift.canConfirm().then(v => setCanConfirm(v === true)).catch(() => setCanConfirm(false));
+  }, [reloadKey]);
+
+  // This till holds it → its own record; anything else → the cloud.
+  const local = new Set(shifts.map(x => x.id));
+  const remote = (id: string) => !local.has(id);
 
   useEffect(() => {
-    let live = true;
+    let on = true;
     setLoading(true);
-    const load = selected ? posApi.shift.zreport(selected) : posApi.shift.current({ includeForeign: true });
-    load.then(r => { if (live) setReport(r); }).catch(() => { if (live) setReport(null); })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
-  }, [selected]);
+    if (!selected) {
+      // Every running shift: this till's from its own records, another till's from the cloud. Offline → this till's.
+      const open = (branch ?? []).filter(x => x.status === 'open');
+      const mine = posApi.shift.current({ includeForeign: true }).catch(() => null);
+      const others = open.filter(x => !x.this_till).map(x =>
+        posApi.manager.remoteZReport(x.id).then(r => ({ id: x.id, till: x.till, this_till: false, report: r as ZReport | null }))
+          .catch(() => ({ id: x.id, till: x.till, this_till: false, report: null })));
+      Promise.all([mine, ...others]).then(([m, ...rest]) => {
+        if (!on) return;
+        const ownTill = open.find(x => x.this_till)?.till ?? 'This till';
+        const list = [...(m ? [{ id: (m as ZReport).shift.id, till: ownTill, this_till: true, report: m as ZReport }] : []), ...rest];
+        setLive(list);
+        setReport(list.length === 1 ? list[0].report : null);
+      }).finally(() => { if (on) setLoading(false); });
+      return () => { on = false; };
+    }
+    const load = remote(selected) ? posApi.manager.remoteZReport(selected) : posApi.shift.zreport(selected);
+    load.then(r => { if (on) setReport(r); }).catch(() => { if (on) setReport(null); })
+      .finally(() => { if (on) setLoading(false); });
+    return () => { on = false; };
+  }, [selected, reloadKey, shifts.length, branch]);
 
   const [printMsg, setPrintMsg] = useState('');
 
-  const handlePrint = async () => {
-    if (!report) return;
+  const handlePrint = async (which: ZReport | null = report) => {
+    if (!which) return;
     setPrintMsg('');
     // ESC/POS, like every other document. The HTML route printed roughly a third
     // of this report and stopped — see lib/printShiftReport.ts.
-    const r = await printShiftReport(report);
+    const r = await printShiftReport(which);
     if (!r.ok) setPrintMsg(r.error ?? 'Could not print the shift report.');
   };
 
-  const past = shifts.filter(x => x.status !== 'open');
   const when = (iso: string | null) =>
     iso ? new Date(iso).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  // Every till's (the cloud) — but this till's open drawer is the "Current shift (live)" line; else this till's past ones.
+  const options = branch
+    ? branch.filter(x => !(x.this_till && x.status === 'open')).map(x => ({
+        id: x.id,
+        label: `${x.till}${x.this_till ? ' (this)' : ''} · ${when(x.opened_at)} → ${x.status === 'open' ? 'open' : when(x.closed_at)} · ${x.cashier_name ?? 'Cashier'}`
+          + `${x.status === 'closed_unreconciled' ? ' · force-closed' : ''}${x.awaiting ? ' · awaiting manager' : ''}`,
+      }))
+    : shifts.filter(x => x.status !== 'open').map(x => ({
+        id: x.id,
+        label: `${when(x.opened_at)} → ${when(x.closed_at)} · ${x.cashier_name ?? 'Cashier'}${x.status === 'closed_unreconciled' ? ' · force-closed' : ''}`,
+      }));
+  const awaiting = !!selected && report?.confirmation?.status === 'awaiting';
 
   return (
     <div className="space-y-4">
@@ -813,33 +1135,52 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
         <div>
           <h2 className="text-lg font-bold text-white">Shift Report</h2>
           <p className="text-gray-300 text-sm">
-            {selected ? 'Z-report of a closed shift' : 'Live preview — not a closed Z-report'}
+            {selected ? 'Z-report of a shift' : `Live — ${live.length} running shift${live.length === 1 ? '' : 's'}, not closed Z-reports`}
+            {branch ? ' · every till at this branch' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select data-testid="shift-picker" value={selected ?? ''} onChange={e => setSelected(e.target.value || null)}
-            className="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
-            <option value="">Current shift (live)</option>
-            {past.map(x => (
-              <option key={x.id} value={x.id}>
-                {when(x.opened_at)} → {when(x.closed_at)} · {x.cashier_name ?? 'Cashier'}
-                {x.status === 'closed_unreconciled' ? ' · force-closed' : ''}
-              </option>
-            ))}
+            className="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 max-w-full">
+            <option value="">Running shifts — every till (live)</option>
+            {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
-          <button onClick={handlePrint} disabled={!report}
+          {awaiting && canConfirm && (
+            <button data-testid="zreport-confirm" onClick={() => setConfirming(true)}
+              className="px-4 py-2 bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-bold rounded-xl transition-colors">
+              Confirm this shift
+            </button>
+          )}
+          <button onClick={() => void handlePrint()} disabled={!report}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors">
             Print report
           </button>
         </div>
       </div>
-      {past.length === 0 && <p className="text-gray-400 text-xs">No closed shifts on this till yet.</p>}
+      {branchNote && <p className="text-amber-300 text-xs" data-testid="zreport-scope-note">{branchNote}</p>}
+      {options.length === 0 && <p className="text-gray-400 text-xs">No closed shifts yet.</p>}
 
-      {loading ? <Spinner /> : !report ? (
+      {loading ? <Spinner /> : !selected && live.length > 1 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start" data-testid="live-zreports">
+          {live.map(l => (
+            <div key={l.id} className="bg-white rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <span className="text-gray-900 text-sm font-bold">{l.till}{l.this_till ? ' (this till)' : ''}</span>
+                <button onClick={() => void handlePrint(l.report)} disabled={!l.report}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg">Print</button>
+              </div>
+              {l.report ? <ZReportView report={l.report} />
+                : <p className="text-gray-500 text-sm">Could not be loaded — it needs the cloud.</p>}
+            </div>
+          ))}
+          {printMsg && <p className="text-amber-400 text-xs">⚠ {printMsg}</p>}
+        </div>
+      ) : !report ? (
         <div className="text-center py-16">
           <p className="text-gray-400 font-medium">{selected ? 'That shift could not be loaded' : 'No open shift'}</p>
           <p className="text-gray-400 text-sm mt-1">
-            {selected ? 'Choose another shift above.' : 'Open a shift from the POS, or choose a previous shift above.'}
+            {selected ? (remote(selected) ? "Another till's shift needs the cloud — check the connection, or choose another." : 'Choose another shift above.')
+              : 'Open a shift from the POS, or choose a previous shift above.'}
           </p>
         </div>
       ) : (
@@ -847,6 +1188,20 @@ function ZReportTab({ businessName, currency }: { businessName: string; currency
           <ZReportView ref={printRef} report={report} />
           {printMsg && <p className="text-amber-400 text-xs mt-2">⚠ {printMsg}</p>}
         </div>
+      )}
+
+      {confirming && selected && report && (
+        <ConfirmShiftModal
+          shiftId={selected}
+          cashierName={report.shift.cashier_name}
+          methods={report.confirmation?.methods ?? []}
+          currency={currency}
+          openedAt={report.shift.opened_at}
+          closedAt={report.shift.closed_at}
+          remote={remote(selected)}
+          onDone={() => { setConfirming(false); setReloadKey(k => k + 1); }}
+          onClose={() => setConfirming(false)}
+        />
       )}
     </div>
   );
@@ -1012,12 +1367,20 @@ function TopItemsTab({ currency }: { currency: string }) {
   // eight rows, while staying a bounded "top sellers" (never the 500 an order
   // list needs).
   const [range, setRange] = useState<ReportRangeArg>({ preset: 'today' });
+  // A433: every till at the branch (the cloud), else what this till holds — and the line under the title says which.
+  const [scopeLine, setScopeLine] = useState('');
 
   useEffect(() => {
     let live = true;
     setLoading(true);
-    posApi.manager.topProducts({ ...range, limit: 50 })
-      .then(t => { if (live) setItems(t); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
+    posApi.manager.branchDay(range)
+      .then(d => {
+        if (!live) return;
+        setItems(d.topProducts ?? []);
+        setScopeLine(d.source === 'cloud' ? 'All tills at this branch'
+          : d.localCoversBranch ? 'What this branch server holds' : `This till only${d.fallbackReason ? ` — ${d.fallbackReason}` : ''}`);
+      })
+      .catch(() => {}).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [range.preset, range.from, range.to]);
 
@@ -1027,7 +1390,7 @@ function TopItemsTab({ currency }: { currency: string }) {
     <div className="space-y-3">
       <div>
         <h2 className="text-lg font-bold text-white">Item Mix</h2>
-        <p className="text-gray-300 text-sm">Top sellers from local order data · {fmt(totalRev, currency)} total</p>
+        <p className="text-gray-300 text-sm" data-testid="item-mix-scope">{scopeLine || 'Top sellers'} · {fmt(totalRev, currency)} total</p>
       </div>
 
       <ReportRangeBar value={range} onChange={setRange} exportKind="products" />
@@ -1374,9 +1737,10 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
   function renderContent() {
     switch (active) {
       case 'overview':
-        if (flags.isPetrol)     return <PetrolOverview     currency={currency} />;
-        if (flags.isRestaurant) return <RestaurantOverview currency={currency} />;
-        return <RetailOverview currency={currency} />;
+        // A441: the Overview for the day the manager picks (today unless they pick another).
+        return <OverviewForDay render={(date) => (flags.isPetrol ? <PetrolOverview currency={currency} date={date} />
+          : flags.isRestaurant ? <RestaurantOverview currency={currency} date={date} />
+          : <RetailOverview currency={currency} date={date} />)} />;
       case 'orders':  return <OrdersTab currency={currency} />;
       case 'shift':   return <ShiftTab currency={currency} />;
       case 'expenses': return <ExpensesTab currency={currency} canAddType={mayAddExpenseType(staff as any)} />;

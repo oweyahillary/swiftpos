@@ -25,6 +25,12 @@ export const JOIN_TTL_MS = 10 * 60_000;
 export const MAX_PENDING = 5;
 const requests = new Map<string, JoinRequest>();
 
+/** A436: told of every new request, so the server can bring its window forward and raise a Windows notification —
+ *  in server mode the window is usually hidden in the tray, and an unseen request runs out. Kept free of Electron. */
+type JoinListener = (r: { name: string; ip: string }) => void;
+let joinListener: JoinListener | null = null;
+export function onJoinAsked(fn: JoinListener | null): void { joinListener = fn; }
+
 const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, '').trim().slice(0, max) : '');
 
 function sweep(now: number): void {
@@ -45,6 +51,7 @@ export function createJoinRequest(body: any, ip: string, now: number = Date.now(
   const id = crypto.randomBytes(8).toString('hex');
   const token = crypto.randomBytes(24).toString('hex');
   requests.set(id, { id, token, device_id, name, ip, at: now, status: 'pending' });
+  try { joinListener?.({ name, ip }); } catch { /* a notice failing never refuses the till */ }
   return { ok: true, id, token };
 }
 

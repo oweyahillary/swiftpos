@@ -8,6 +8,7 @@ import ZReportView from '../components/ZReportView';
 import ConfirmShiftModal from '../components/ConfirmShiftModal';
 import { methodName, methodsToDeclare, readAmounts, confirmationLabel, type MethodOption } from '../../shared/shiftConfirm';
 import { expenseLabel } from '../../shared/expenseMethod';
+import { methodLabel } from '../../shared/paymentCatalogue';   // A442
 
 /** 0.6.27: what an expense can be paid with — cash, M-Pesa, card and the business's own methods. */
 function expenseMethodChoices(options: MethodOption[]): string[] {
@@ -21,6 +22,10 @@ interface Props {
   canAddExpenseType?: boolean;
   onClose: () => void;
   onShiftChange: (report: ZReport | null) => void;
+  /** A421 (owner, 2026-10-09: "once they close their shift take them directly to the keypad for the other cashier to log
+   *  in, no open drawer"): a closed shift signs this person out to the PIN screen. A cashier's (blind) close goes at once;
+   *  a manager's stays to print the Z-report or confirm, and Done signs them out. Never back to "Opening float". */
+  onSignOut?: (notice?: string) => void;
 }
 
 /** A334 + cross-sync stage 1: the web POS's part of a shared drawer — downloaded onto this till (webSales) plus what is
@@ -32,7 +37,7 @@ function webPart(report: { totals: { webSales?: { orders: number; cash_sales: nu
   return { sales, cash, show: sales > 0 || !!(f && (f.float_in || f.float_out || f.expenses)) };
 }
 
-export default function ShiftPanel({ business, canForceClose = false, canAddExpenseType = false, onClose, onShiftChange }: Props) {
+export default function ShiftPanel({ business, canForceClose = false, canAddExpenseType = false, onClose, onShiftChange, onSignOut }: Props) {
   const [report, setReport] = useState<ZReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -211,8 +216,14 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     setBusy(true); setError('');
     try {
       const r = await posApi.shift.close(counted, closeNotes.trim() || undefined, declaredRead.map);
+      // A421: a cashier has nothing to see on a blind close — straight to the PIN screen for the next person.
+      if ((r as any)?.blind && onSignOut) { onSignOut('Shift closed — your count is saved. A manager checks it.'); return; }
       setFinalReport(r);
       onShiftChange(null);
+      // Owner, 2026-10-10: "the close and print Z report button only closes but never prints" — it prints now (a manager's
+      // close; a cashier's is blind and has no paper). A failed print says so on the closed panel, with Print Z-report.
+      printShiftReport(r).then((p) => { if (!p.ok) setPrintMsg(p.error ?? 'Could not print the Z-report.'); })
+        .catch(() => setPrintMsg('Could not print the Z-report.'));
     } catch (e: any) { setError(e?.message ?? 'Could not close shift'); }
     finally { setBusy(false); }
   };
@@ -230,6 +241,9 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
     if (!res.ok) setPrintMsg(res.error ?? 'Could not print the Z-report.');
   };
 
+  // A421: once the shift is closed, leaving the panel (Done or ✕) signs out — the next person signs in and opens their own.
+  const leave = finalReport && onSignOut ? () => onSignOut('Shift closed.') : onClose;
+
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:border-action-500 transition-colors';
 
   return (
@@ -241,7 +255,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
           <h2 className="text-white font-bold">
             {finalReport ? 'Shift closed' : report ? 'Current shift' : 'Open shift'}
           </h2>
-          <button onClick={onClose} className="text-gray-300 hover:text-white transition-colors">✕</button>
+          <button onClick={leave} className="text-gray-300 hover:text-white transition-colors">✕</button>
         </div>
 
         {/* Tabs — only when a shift is open and not finalised */}
@@ -297,7 +311,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                 {!(finalReport as any).blind && (
                   <button onClick={() => void handlePrint()} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">Print Z-report</button>
                 )}
-                <button onClick={onClose} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">Done</button>
+                <button onClick={leave} className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm transition-colors">{onSignOut ? 'Done — sign out' : 'Done'}</button>
               </div>
               {/* A print that silently does nothing is the worst outcome here —
                   the drawer is counted and the paper trail is what is left. */}
@@ -325,6 +339,24 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
               {blind ? (
                 <div className="bg-gray-950 border border-gray-800 rounded-xl p-4 text-sm text-gray-300" data-testid="blind-shift">
                   {report.shift.cashier_name} · opened {new Date(report.shift.opened_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}
+                  {/* A416: the owner's switch (off by default) — the cashier's own sales; never expected cash or a method's figure. */}
+                  {report.cashierSales && (
+                    <p className="mt-2 text-white" data-testid="cashier-sales">
+                      Sales this shift: <span className="font-bold tabular-nums">{money(report.cashierSales.total)}</span>
+                      <span className="text-gray-400"> · {report.cashierSales.orders} order{report.cashierSales.orders === 1 ? '' : 's'}</span>
+                    </p>
+                  )}
+                  {/* A442: when more than one person sold on this drawer, each person's own part. */}
+                  {(report.cashierSales?.byCashier?.length ?? 0) > 1 && (
+                    <div className="mt-1.5 space-y-0.5" data-testid="cashier-sales-by-person">
+                      {report.cashierSales!.byCashier!.map((c) => (
+                        <p key={c.name} className="flex justify-between text-xs text-gray-300">
+                          <span>{c.name} · {c.orders} order{c.orders === 1 ? '' : 's'}</span>
+                          <span className="tabular-nums text-white">{money(c.sales)}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
@@ -429,7 +461,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
                   <textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder={noteRequired ? 'Note required to explain the variance' : 'Notes (optional)'} rows={2} className={inputCls} />
                 )}
                 <button onClick={handleClose} disabled={busy || !hasCount || noteRequired || declaredRead.ok === false} className="w-full bg-red-500/90 hover:bg-red-500 disabled:opacity-40 text-white font-bold rounded-xl py-2.5 text-sm transition-colors">
-                  {busy ? 'Closing…' : 'Close shift & print Z-report'}
+                  {busy ? 'Closing…' : blind ? 'Close shift' : 'Close shift & print Z-report'}
                 </button>
 
                 {/* The escape hatch for a shift nobody counted — typically one
@@ -638,6 +670,7 @@ export default function ShiftPanel({ business, canForceClose = false, canAddExpe
 // Compact on-screen rows (the printable version is ZReportView).
 function ZReportRows({ report, money }: { report: ZReport; money: (n: number) => string }) {
   const { shift, byMethod, totals } = report;
+  const people = report.byCashier ?? [];   // A442: who sold what on this drawer
   const Line = ({ l, v, strong, dot }: { l: string; v: string; strong?: boolean; dot?: string }) => (
     <div className={`flex justify-between text-sm ${strong ? 'font-semibold text-white' : 'text-gray-400'}`}>
       <span>{dot && <MethodDot method={dot} />}{l}</span><span>{v}</span>
@@ -645,7 +678,8 @@ function ZReportRows({ report, money }: { report: ZReport; money: (n: number) =>
   );
   return (
     <div className="space-y-1.5">
-      <Line l="Cashier" v={shift.cashier_name} />
+      {/* A442: with more than one person selling, the shift is the drawer that one of them opened. */}
+      <Line l={people.length > 1 ? 'Opened by' : 'Cashier'} v={shift.cashier_name} />
       <Line l="Orders"  v={String(totals.orderCount)} />
       <Line l="Gross sales" v={money(totals.grossSales)} strong />
       <div className="border-t border-gray-800 my-2" />
@@ -654,6 +688,22 @@ function ZReportRows({ report, money }: { report: ZReport; money: (n: number) =>
         : byMethod.map(m => (
           <Line key={m.method} dot={m.method} l={`${m.method === 'mpesa' ? 'M-Pesa' : m.method[0].toUpperCase() + m.method.slice(1)} (${m.orders})`} v={money(m.amount)} />
         ))}
+      {people.length > 0 && (
+        <div data-testid="zreport-by-cashier">
+          <div className="border-t border-gray-800 my-2" />
+          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Sales by cashier</p>
+          {people.map((c) => (
+            <div key={c.cashier_id ?? 'none'} className="mb-1.5">
+              <Line l={`${c.name} (${c.orders})`} v={money(c.sales)} strong />
+              {c.byMethod.map((m) => (
+                <div key={m.method} className="flex justify-between text-xs text-gray-400 pl-3">
+                  <span><MethodDot method={m.method} />{methodLabel(m.method)}</span><span className="tabular-nums">{money(m.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="border-t border-gray-800 my-2" />
       <Line l="Opening float" v={money(shift.opening_float)} />
       <Line l="Cash sales"    v={money(totals.cashSales)} />

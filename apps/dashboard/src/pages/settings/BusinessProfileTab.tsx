@@ -92,6 +92,10 @@ export default function BusinessProfileTab() {
   if (!record) return <div className="p-6 text-gray-500 text-sm">Could not load your business profile.</div>;
 
   const continuous = settings.continuous_operation === 'true';
+  // A416: a cashier closing a shift sees their sales — off unless turned on here (or for one branch).
+  const seesSales = settings.cashier_sees_shift_sales === 'true';
+  // A418: the History total — only while the switch above is on ("one should be on for the other").
+  const historyTotals = seesSales && settings.cashier_history_totals === 'true';
   // 0.6.34: every half hour from midnight to 06:00 (lib/businessDay.ts).
   const CUTOFF_CHOICES = Array.from({ length: MAX_CUTOFF_MINUTES / 30 + 1 }, (_, i) => cutoffLabel(i * 30));
 
@@ -204,6 +208,40 @@ export default function BusinessProfileTab() {
           </p>
           <HistoryMethodsPicker value={settings.cashier_history_methods}
             onChange={(list) => saveSetting('cashier_history_methods', JSON.stringify(list))} />
+        </div>
+        {/* A416 (owner, 2026-10-09): "waiter seeing total sales on the shift while closing … toggled on and off at will,
+            by default off". The count stays blind — never expected cash or the difference. */}
+        <div className="flex items-center justify-between mt-6 gap-4">
+          <div>
+            <h3 className="text-white font-semibold">Cashiers see their sales when closing a shift</h3>
+            <p className="text-gray-500 text-sm mt-0.5">
+              When on, a cashier closing a shift sees the shift's sales and number of orders — on the tills and the web POS.
+              They still never see the expected cash or any difference; a manager confirms the count. Off by default.
+            </p>
+          </div>
+          <button data-testid="cashier-sees-sales-toggle"
+            onClick={() => saveSetting('cashier_sees_shift_sales', seesSales ? 'false' : 'true')}
+            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${seesSales ? 'bg-swift-strong' : 'bg-gray-700'}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${seesSales ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </div>
+        {/* A418 (owner, 2026-10-09): "allow cashiers to filter their sales and it gives them a subtotal using the current
+            filter" — and "one should be on for the other to be active": greyed out until the switch above is on. */}
+        <div className={`flex items-center justify-between mt-6 gap-4 ${seesSales ? '' : 'opacity-50'}`}>
+          <div>
+            <h3 className="text-white font-semibold">Cashiers see a total in History</h3>
+            <p className="text-gray-500 text-sm mt-0.5">
+              When on, a cashier's History shows the number of orders and the sales of whatever the filters show (payment
+              method, type, search) — on the tills and the web POS. {seesSales ? 'Off by default.' : 'Turn on "Cashiers see their sales when closing a shift" first.'}
+            </p>
+          </div>
+          <button data-testid="cashier-history-totals-toggle" disabled={!seesSales}
+            onClick={() => saveSetting('cashier_history_totals', historyTotals ? 'false' : 'true')}
+            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 disabled:cursor-not-allowed ${historyTotals ? 'bg-swift-strong' : 'bg-gray-700'}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${historyTotals ? 'left-5' : 'left-0.5'}`} />
+          </button>
         </div>
       </section>
 

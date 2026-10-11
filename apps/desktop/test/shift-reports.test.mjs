@@ -140,8 +140,11 @@ ok('every style reads: text ≥ 4.5:1 on its fill (most ≥ 7)', weak.length ===
 
 console.log('\n0.6.11 — the screens (source; React not run here)');
 const mp = read('src/renderer/pages/ManagerPage.tsx');
+// A433: every till's shifts too — this till's still opened from its own records (shift:zreport), another till's from the cloud.
 ok('Shift report: a picker of this till\'s previous shifts, each opened via shift:zreport and printable',
-  /posApi\.shift\.history\(\)/.test(mp) && /selected \? posApi\.shift\.zreport\(selected\)/.test(mp) && /Print report/.test(mp));
+  /posApi\.shift\.history\(\)/.test(mp)
+  && /remote\(selected\) \? posApi\.manager\.remoteZReport\(selected\) : posApi\.shift\.zreport\(selected\)/.test(mp)
+  && /Print report/.test(mp));
 // A351: the sidebar is built in lib/managerNav.ts now; Expenses stays its own sidebar item there.
 ok('Expenses: its own manager tab, by date range', /\{ key: 'expenses', label: 'Expenses', tabs: \[\{ key: 'expenses', label: 'Expenses' \}\] \}/.test(read('src/renderer/lib/managerNav.ts')) && /posApi\.expense\.range\(range\)/.test(mp));
 const zv = read('src/renderer/components/ZReportView.tsx');

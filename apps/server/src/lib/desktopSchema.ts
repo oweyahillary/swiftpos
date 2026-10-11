@@ -61,7 +61,11 @@
  *  migration 118). A till on 65 keeps syncing; its cashiers see every method and its pay-outs carry no approver. */
 /** 67 = A394: device_config.stock_count_freeze (pulled). A till on 66 keeps syncing; it simply does not stop selling an
  *  item a frozen stock count is counting (the count still takes its sales into account). */
-export const REQUIRED_DESKTOP_SCHEMA = 67;
+/** 68 = A416: device_config.cashier_sees_shift_sales (pulled). A till on 67 keeps syncing; its cashiers simply do not see
+ *  their sales at close (the switch's default). */
+/** 69 = A429: device_config.payment_methods_enabled (pulled). A till on 68 keeps syncing; it simply shows its old
+ *  built-in payment buttons, not the branch's choice. */
+export const REQUIRED_DESKTOP_SCHEMA = 69;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

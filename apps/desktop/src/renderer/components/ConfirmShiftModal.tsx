@@ -18,11 +18,13 @@ interface Props {
   /** 0.6.29: the shift's open and close times, at the head of the table. */
   openedAt?: string | null;
   closedAt?: string | null;
+  /** A433: a shift another till holds — read and confirmed on the cloud, not this till's own record. */
+  remote?: boolean;
   onDone: (c: Confirmation) => void;
   onClose: () => void;
 }
 
-export default function ConfirmShiftModal({ shiftId, cashierName, methods, currency, openedAt, closedAt, onDone, onClose }: Props) {
+export default function ConfirmShiftModal({ shiftId, cashierName, methods, currency, openedAt, closedAt, remote = false, onDone, onClose }: Props) {
   const [options, setOptions] = useState<MethodOption[]>([]);
   const [pin, setPin] = useState('');
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -37,7 +39,7 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   const codes = [...new Set(['cash', ...methods.map((m) => m.toLowerCase())])];
 
   useEffect(() => {
-    posApi.shift.confirmView(shiftId).then(setView).catch(() => {});
+    (remote ? posApi.shift.remoteConfirmView(shiftId) : posApi.shift.confirmView(shiftId)).then(setView).catch(() => {});
     posApi.pos.paymentMethods().then(setOptions).catch(() => {});
     posApi.shift.canConfirm().then((v) => setSignedInManager(v === true)).catch(() => setSignedInManager(false));
   }, []);
@@ -56,7 +58,8 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
     if (!signedInManager && !pin.trim()) { setError('Enter your manager PIN.'); return; }
     setBusy(true); setError('');
     try {
-      const c = await posApi.shift.confirm(shiftId, signedInManager ? undefined : pin.trim(), r.map, view.showCashier ? reasons : undefined);
+      const confirm = remote ? posApi.shift.remoteConfirm : posApi.shift.confirm;
+      const c = await confirm(shiftId, signedInManager ? undefined : pin.trim(), r.map, view.showCashier ? reasons : undefined);
       setResult(c); setPin('');
     } catch (e: any) { setError(e?.message ?? 'Could not confirm the shift.'); }
     finally { setBusy(false); }

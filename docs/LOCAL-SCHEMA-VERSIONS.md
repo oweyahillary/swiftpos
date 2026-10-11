@@ -45,7 +45,9 @@ table predates the mechanism.
 | **50** | — | **NEVER EXISTED.** No commit ever sets this value. |
 | **51** | `a80c224` | ESC/POS printing — `escpos_enabled INTEGER`, `kitchen_exclusions TEXT` on the settings table. |
 | **52** | — | Local kitchen-exclusion override — `kitchen_exclusions_override TEXT` on `device_config`. NULL follows the synced cloud baseline (`kitchen_exclusions`); non-NULL is this terminal's own list, which wins and survives every catalogue pull. Shipped with the fix that made `saveDeviceConfig` actually persist `kitchen_exclusions` (it had been omitted from the INSERT/UPSERT, so the synced baseline never reached the DB). Superseded by 53. |
-| **53** | — | **A311 (2026-09-22):** `branding.receipt_logo_enabled INTEGER NOT NULL DEFAULT 0` — the client's opt-in receipt-logo toggle, pulled remote-wins with the branding row (cloud migration 105). `branding` is never pushed, so `HARD_MIN` is untouched; `REQUIRED` moved to 53 by the equality convention only. The current value. |
+| **53** | — | **A311 (2026-09-22):** `branding.receipt_logo_enabled INTEGER NOT NULL DEFAULT 0` — the client's opt-in receipt-logo toggle, pulled remote-wins with the branding row (cloud migration 105). `branding` is never pushed, so `HARD_MIN` is untouched; `REQUIRED` moved to 53 by the equality convention only. |
+| 54–68 | — | Not recorded here — each is described in the comment above `LOCAL_SCHEMA_VERSION` in `apps/desktop/src/main/localDb.ts`. |
+| **69** | — | **A429 (2026-10-10):** `device_config.payment_methods_enabled TEXT` — the payment methods the branch takes (a JSON list of catalogue codes), pulled with /pos/init and relayed by the branch server; never pushed. `REQUIRED` moved to 69 with it. The current value. |
 
 ## The gaps are real, and they are the same shape as the server's
 

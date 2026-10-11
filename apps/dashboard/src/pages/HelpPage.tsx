@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../lib/config';
 import { TOKEN_KEYS } from '../lib/api';
-import { HELP_TOPICS, WHO_TO_CALL_TITLE, whoToCallSteps } from '../lib/helpTopics';
+import { HELP_TOPICS, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../lib/helpTopics';
 import { supportContact, displayPhone, whatsappNumber, type SupportContact } from '../lib/support';
 
 /**
@@ -16,6 +16,7 @@ import { supportContact, displayPhone, whatsappNumber, type SupportContact } fro
 export default function HelpPage() {
   const [contact, setContact] = useState<SupportContact>(() => supportContact(null));
   const [open, setOpen] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<string | null>(null);   // A422 part 2: a step's picture, full size
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEYS.ownerAccess) || localStorage.getItem(TOKEN_KEYS.posAccess);
@@ -76,7 +77,16 @@ export default function HelpPage() {
           )}
         </div>
 
-        {HELP_TOPICS.map((t) => (
+        {/* A422: step by step — the everyday tasks, then "What to do when" below. */}
+        {zoom && (
+          <div className="fixed inset-0 z-[90] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setZoom(null)} data-testid="help-img-zoom">
+            <img src={`/help-img/${zoom}`} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+          </div>
+        )}
+        <h3 className="text-xs uppercase tracking-wide text-gray-400 pt-2" data-testid="help-howto">How to — step by step</h3>
+        {[...HOW_TO, { id: '__what', title: '', steps: [] }, ...HELP_TOPICS].map((t) => t.id === '__what' ? (
+          <h3 key={t.id} className="text-xs uppercase tracking-wide text-gray-400 pt-3">What to do when…</h3>
+        ) : (
           <div key={t.id} className="rounded-xl border border-white/10 bg-white/[0.03]">
             <button onClick={() => setOpen(open === t.id ? null : t.id)} data-testid={`help-topic-${t.id}`}
               className="w-full flex items-center justify-between px-5 py-3 text-left">
@@ -85,7 +95,21 @@ export default function HelpPage() {
             </button>
             {open === t.id && (
               <ol className="list-decimal pl-10 pr-5 pb-4 space-y-1.5 text-sm text-gray-300">
-                {t.steps.map((s, i) => <li key={i}>{s}</li>)}
+                {t.steps.map((s, i) => {
+                  // A422 part 2: the real screen for this step (shipped with the app; tap to see it full size).
+                  const img = (t as { images?: Array<string | null> }).images?.[i];
+                  return (
+                    <li key={i}>
+                      {s}
+                      {img && (
+                        <button type="button" onClick={() => setZoom(img)} className="block mt-2 mb-1" data-testid="help-step-img">
+                          <img src={`/help-img/${img}`} alt={s} loading="lazy"
+                            className="w-full max-w-xl rounded-lg border border-gray-700 shadow-lg hover:border-gray-500" />
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </div>

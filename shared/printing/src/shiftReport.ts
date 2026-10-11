@@ -49,6 +49,10 @@ export interface ShiftReportData {
   status: string;
 
   byMethod: ShiftReportMethodLine[];
+  /** A442: who sold what on this drawer — each person's orders, sales (kept) and money by method. Absent or a single
+   *  person's only with the label "Cashier" kept; printed as SALES BY CASHIER when given (an older caller: no section,
+   *  the report byte-identical to before). */
+  byCashier?: { name: string; orders: number; sales: Cents; byMethod: { method: string; amount: Cents }[] }[] | null;
   orderCount: number;
   grossSales: Cents;
   /** A349: refunds on the shift's orders, sales kept, the taxes in them (refund-reduced), and tips. null/absent =
@@ -149,6 +153,19 @@ export function renderShiftReport(r: ShiftReportData, paperWidthMm: 58 | 80): Do
     }
   }
   d.line(rule(cols));
+
+  // ── A442: sales by cashier — who sold what on this drawer ───────────────────
+  if (r.byCashier && r.byCashier.length > 0) {
+    d.line('SALES BY CASHIER', { bold: true });
+    for (const c of r.byCashier) {
+      d.line(pair(cols, `${c.name} (${c.orders})`, money(c.sales)), { bold: true });
+      for (const m of c.byMethod) {
+        const label = METHOD_LABELS[m.method] ?? m.method.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+        d.line(pair(cols, `  ${label}`, money(m.amount)));
+      }
+    }
+    d.line(rule(cols));
+  }
 
   d.line(pair(cols, 'Orders', String(r.orderCount)));
   d.line(pair(cols, 'Gross sales', money(r.grossSales)));

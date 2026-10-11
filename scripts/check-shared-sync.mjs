@@ -45,6 +45,16 @@ const SHARED = [
     ],
   },
   {
+    // A429: Kenya's payment methods and delivery apps, each a switch per branch — the till, the web POS, the cloud.
+    name: 'paymentCatalogue.ts',
+    copies: [
+      'shared/paymentCatalogue.ts',
+      'apps/server/src/lib/paymentCatalogue.ts',      // the cloud checks the setting and sends it to the tills
+      'apps/desktop/src/shared/paymentCatalogue.ts',  // the till's payment screen and Manager › Settings
+      'apps/dashboard/src/lib/paymentCatalogue.ts',   // the web POS and the branch settings
+    ],
+  },
+  {
     // 0.6.23: the mouse wheel never changes a number field (the till and the web).
     name: 'numberInputs.ts',
     copies: [
