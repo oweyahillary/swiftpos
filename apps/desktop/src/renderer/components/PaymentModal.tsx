@@ -1,9 +1,10 @@
 import MethodDot from './MethodDot';
-import { methodColour, methodTint } from '../../shared/paymentColours';
+import { methodColour, methodSolid, methodTint } from '../../shared/paymentColours';
 import { useMemo, useState } from 'react';
 import { computeTotals, buildLegView, round2, EPSILON, DEFAULT_MAX_DISCOUNT_PCT } from '../lib/payment';
 import type { DraftLeg, LegMethod } from '../lib/payment';
 import { cleanDeliveryFee, amountDue as amountDueWithFee } from '../../shared/delivery';
+import { enabledFromSetting, paymentButtons } from '../../shared/paymentCatalogue';   // A429
 
 // Payment modal — split tender + discount + tip.
 //
@@ -50,6 +51,8 @@ interface Props {
   // Custom tenders beyond the built-ins (A96), cached from the last pull so they
   // work offline. Rendered as extra method buttons; all are non-cash.
   customMethods?: { code: string; name: string }[];
+  /** A429: the payment methods the branch takes (catalogue codes); null / absent = the catalogue's defaults. */
+  enabledMethods?: string[] | null;
   /** 0.6.27: a delivery fee to collect on top of the bill ('delivery_fee' switch; 0 = none). */
   deliveryFee?: number;
   /** 0.6.27: who takes the order (shown beside the fee). */
@@ -58,17 +61,15 @@ interface Props {
   onClose: () => void;
 }
 
-const METHOD_META: Record<LegMethod, { label: string; icon: string }> = {
-  cash:  { label: 'Cash',   icon: '💵' },
-  mpesa: { label: 'M-Pesa', icon: '📱' },
-  card:  { label: 'Card',   icon: '💳' },
-  // Delivery aggregator: Glovo collects from the customer and settles to the
-  // business later, so nothing enters the drawer. Cash reconciliation filters on
-  // method='cash' specifically, so this cannot inflate expected cash.
-  glovo: { label: 'Glovo',  icon: '🛵' },
-};
+// A429: the buttons are the branch's switched-on methods from shared/paymentCatalogue.ts (Cash, M-Pesa, Card, Glovo
+// until a manager changes them; Airtel Money, T-Kash, bank transfer, the delivery apps … when switched on), then the
+// business's own methods (A96). Delivery apps (Glovo …) collect from the customer and settle later, so nothing enters
+// the drawer: cash reconciliation filters on method = 'cash' specifically, so no other method can inflate expected cash.
 
-export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], deliveryFee: feeIn = 0, rider = null, onConfirm, onClose }: Props) {
+export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscountPct = DEFAULT_MAX_DISCOUNT_PCT, currency, placing, error, customMethods = [], enabledMethods = null, deliveryFee: feeIn = 0, rider = null, onConfirm, onClose }: Props) {
+  const buttons = useMemo(() => paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'till'), [enabledMethods, customMethods]);
+  // The first leg starts on cash when the branch takes cash, else on its first method.
+  const firstMethod = buttons.some((b) => b.code === 'cash') ? 'cash' : (buttons[0]?.code ?? 'cash');
   // ── Adjustments ─────────────────────────────────────────
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
@@ -89,7 +90,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
   // Single leg by default; "Split payment" adds more. A blank amount means
   // "the remaining balance", so the common flow needs zero typing.
   const [legs, setLegs] = useState<DraftLeg[]>([
-    { method: 'cash', amount: '', tendered: '', reference: '' },
+    { method: firstMethod, amount: '', tendered: '', reference: '' },
   ]);
 
   const { view: legView, remaining, cashShort, balanced, allPositive } = useMemo(
@@ -109,7 +110,10 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
         ...l,
         amount: l.amount.trim() !== '' ? l.amount : String(legView[i]?.resolvedAmount || ''),
       }));
-      const nextMethod: LegMethod = pinned.some(l => l.method === 'cash') ? 'mpesa' : 'cash';
+      // The next leg: a method the branch takes that no leg uses yet (M-Pesa after cash, as before), else the first.
+      const used = new Set(pinned.map(l => l.method));
+      const order = ['cash', 'mpesa', ...buttons.map(b => b.code)];
+      const nextMethod: string = order.find(c => !used.has(c) && buttons.some(b => b.code === c)) ?? buttons[0]?.code ?? 'cash';
       return [...pinned, { method: nextMethod, amount: '', tendered: '', reference: '' }];
     });
   };
@@ -238,18 +242,16 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
             <div key={i} className="bg-gray-800/40 border border-gray-800 rounded-xl p-3 space-y-3">
               <div className="flex items-center gap-2">
                 <div className="grid grid-cols-3 gap-1.5 flex-1">
-                  {[
-                    ...(Object.keys(METHOD_META) as LegMethod[]).map(m => ({ code: m as string, label: METHOD_META[m].label, icon: METHOD_META[m].icon })),
-                    ...customMethods.map(cm => ({ code: cm.code, label: cm.name, icon: '🏦' })),
-                  ].map(m => (
+                  {buttons.map(b => ({ code: b.code, label: b.name, icon: b.icon })).map(m => (
                     <button
                       key={m.code}
                       onClick={() => setLeg(i, { method: m.code })}
-                      className={`py-2 rounded-lg text-xs font-medium border transition-colors ${leg.method === m.code ? 'bg-action-500/10 border-action-500 text-action-400' : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'}`}
-                      // A344: each method in its own colour; the SELECTED one keeps the theme highlight (action-*).
-                      style={leg.method === m.code ? undefined : { backgroundColor: methodTint(m.code), borderColor: methodColour(m.code).dot }}
+                      aria-pressed={leg.method === m.code}
+                      className={`py-2 rounded-lg text-xs border transition-colors ${leg.method === m.code ? 'font-bold' : 'font-medium bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'}`}
+                      // A344: each method in its own colour. A430: the SELECTED one solid in it, white text, a halo and a ✓.
+                      style={leg.method === m.code ? { backgroundColor: methodSolid(m.code), borderColor: methodSolid(m.code), color: '#ffffff', boxShadow: `0 0 0 3px ${methodTint(m.code, 0.45)}` } : { backgroundColor: methodTint(m.code), borderColor: methodColour(m.code).dot }}
                     >
-                      <MethodDot method={m.code} />{m.icon} {m.label}
+                      {leg.method === m.code ? <span aria-hidden className="mr-1">✓</span> : <MethodDot method={m.code} />}{m.icon} {m.label}
                     </button>
                   ))}
                 </div>
@@ -286,7 +288,7 @@ export default function PaymentModal({ subtotal, vatRate, ctlRate = 0, maxDiscou
                     <input
                       type="text" value={legs[i].reference}
                       onChange={e => setLeg(i, { reference: leg.method === 'mpesa' ? e.target.value.toUpperCase() : e.target.value })}
-                      placeholder={leg.method === 'mpesa' ? 'QHX4K2L9MP' : leg.method === 'glovo' ? 'Glovo order #' : 'Txn ID'}
+                      placeholder={buttons.find(b => b.code === leg.method)?.reference ?? 'Txn ID'}
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-action-500"
                     />
                   </div>

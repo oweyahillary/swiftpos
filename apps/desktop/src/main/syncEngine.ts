@@ -16,7 +16,7 @@ import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffToken
 import { deviceGrantBody } from './sessionRecovery';   // A407
 import { cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { cleanDeliveryFee, riderPayoutReason, isFreeDelivery } from './delivery';
-import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze } from './deviceConfig';
+import { getDeviceConfig, saveDeviceConfig, getCloudUrl, canSell, isNodeRole, setWebPosEnabled, setOrderNotePicks, setPosFeatures, setReversalRules, setBusinessDayCutoff, setSupportContact, setCashierHistoryMethods, setStockCountFreeze, setCashierSeesShiftSales, setCashierHistoryTotals, setPaymentMethodsEnabled } from './deviceConfig';
 import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
@@ -811,6 +811,53 @@ export async function pullShiftCloses(): Promise<number> {
   }
 }
 
+// A433 — a shift THIS till holds, confirmed by a manager somewhere else (the web, or another till: owner, 2026-10-10 —
+// "yes, if they have logged in as the manager"), is confirmed here too: the confirmation is the cloud's, so the till takes
+// it as it stands (no push back). Without this the till's Close Day kept waiting for a confirmation that had been made.
+let _pullingConfirms = false;
+export async function pullShiftConfirmations(): Promise<number> {
+  if (!_serverUrl || !(_staffToken || _accessToken) || !isOnline() || _pullingConfirms) return 0;
+  _pullingConfirms = true;
+  try {
+    const db = getLocalDb();
+    const dev = getDeviceConfig()?.device_id ?? null;
+    const waiting = db.prepare(`
+      SELECT id FROM shifts
+       WHERE status = 'closed' AND declared_methods IS NOT NULL AND confirmed_at IS NULL
+         AND COALESCE(confirm_sync, '') <> 'pending' AND sync_status = 'synced'
+         AND COALESCE(device_id,'') = COALESCE(?,'')
+       ORDER BY closed_at DESC LIMIT 20`).all(dev) as Array<{ id: string }>;
+    if (!waiting.length) return 0;
+    const url = `${_serverUrl}/api/shifts/state?ids=${encodeURIComponent(waiting.map((r) => r.id).join(','))}`;
+    let res = await syncFetch(url, { headers: pushAuthHeaders() });
+    if (res.status === 401 && await refreshStaffToken()) res = await syncFetch(url, { headers: pushAuthHeaders() });
+    if (!res.ok) return 0;   // an older cloud, or a hiccup — asked again on the next beat
+    const rows = await res.json() as Array<{ id: string; confirmed_at?: string | null; confirmed_by?: string | null;
+      confirmed_methods?: unknown; expected_methods?: unknown; confirm_reasons?: unknown; confirm_self?: boolean | null;
+      confirmed_by_name?: string | null }>;
+    const json = (v: unknown) => (v == null ? null : typeof v === 'string' ? v : JSON.stringify(v));
+    const apply = db.prepare(`
+      UPDATE shifts SET confirmed_at = @at, confirmed_by = @by, confirmed_methods = @confirmed, expected_methods = @expected,
+        confirm_reasons = @reasons, confirm_self = @self, confirm_sync = 'synced'
+       WHERE id = @id AND confirmed_at IS NULL AND COALESCE(device_id,'') = COALESCE(@dev,'')`);
+    let n = 0;
+    for (const r of rows) {
+      if (!r.confirmed_at || !waiting.some((w) => w.id === r.id)) continue;
+      const changed = apply.run({
+        id: r.id, dev, at: r.confirmed_at, by: r.confirmed_by ?? null, confirmed: json(r.confirmed_methods),
+        expected: json(r.expected_methods), reasons: json(r.confirm_reasons), self: r.confirm_self ? 1 : 0,
+      }).changes;
+      if (changed === 1) { n++; logLine('sync', `shift ${r.id} confirmed elsewhere by ${r.confirmed_by_name ?? 'a manager'} — confirmed here too`); }
+    }
+    return n;
+  } catch (err: any) {
+    logLine('sync', `shift confirmation check failed: ${err?.message ?? err}`);
+    return 0;
+  } finally {
+    _pullingConfirms = false;
+  }
+}
+
 // A404 — the cloud's test-data clears (admin portal), applied here in order; each one once (the last applied is kept
 // in maintenance_state). The day gate is re-read by the screens on their next check.
 const TEST_CLEAR_KEY = 'test_data_clear_seen';
@@ -1206,6 +1253,9 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setSupportContact(c.support);                // 0.6.35: undefined keeps; null = no tech (ZapTill support)
   setCashierHistoryMethods(c.cashierHistoryMethods);   // 0.6.37: undefined (older cloud / node) keeps
   setStockCountFreeze(c.stockCount);                   // A394: undefined (older cloud / node) keeps; null = nothing frozen
+  setCashierSeesShiftSales(c.cashierSeesShiftSales);   // A416: undefined (older cloud / node) keeps
+  setCashierHistoryTotals(c.cashierHistoryTotals);     // A418: undefined (older cloud / node) keeps
+  setPaymentMethodsEnabled(c.paymentMethodsEnabled);   // A429: undefined (older cloud / node) keeps
   if (Array.isArray(c.kitchenExclusions)) saveDeviceConfig({ kitchen_exclusions: JSON.stringify(c.kitchenExclusions) });
   // A304: remote-wins branding. Only when the cloud returned a row (c.branding set);
   // undefined (node path) or null (no cloud row) leaves the local mirror untouched, so a
@@ -1324,6 +1374,9 @@ async function pullCatalogue(): Promise<boolean> {
       support: 'support' in _j ? (_j.support ?? null) : undefined,   // 0.6.35: an older cloud sends no key → keep
       cashierHistoryMethods: Array.isArray(_j.cashierHistoryMethods) ? _j.cashierHistoryMethods : undefined,   // 0.6.37
       stockCount: 'stockCount' in _j ? (_j.stockCount ?? null) : undefined,   // A394: an older cloud sends no key → keep
+      cashierSeesShiftSales: typeof _j.cashierSeesShiftSales === 'boolean' ? _j.cashierSeesShiftSales : undefined,   // A416
+      cashierHistoryTotals: typeof _j.cashierHistoryTotals === 'boolean' ? _j.cashierHistoryTotals : undefined,   // A418
+      paymentMethodsEnabled: Array.isArray(_j.paymentMethodsEnabled) ? _j.paymentMethodsEnabled : undefined,   // A429
       // A304: null when the business has no branding row → applyReferenceConfig skips it,
       // keeping any local value. A row (even with null fields) is remote-wins.
       branding: (_j.branding && typeof _j.branding === 'object')

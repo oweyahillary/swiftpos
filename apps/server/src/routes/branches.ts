@@ -8,6 +8,7 @@ import { validate } from '../middleware/validate';
 import { CreateBranchSchema, UpdateBranchSchema } from '../lib/schemas';
 import { cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 
@@ -193,7 +194,10 @@ router.put('/:id/stock/:productId', requireAuth, async (req, res) => {
 // (branch → business default) happens server-side in GET /pos/init, so the
 // branch-bound till just receives its own values.
 const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff',   // 0.6.34 + the day's end
-  'cashier_history_methods'];   // 0.6.37 (A387): the methods a cashier's History shows
+  'cashier_history_methods',   // 0.6.37 (A387): the methods a cashier's History shows
+  'cashier_sees_shift_sales',   // A416: a cashier closing a shift sees their sales
+  'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
+  'payment_methods_enabled'];  // A429: the payment methods this branch takes
 
 // Confirms :id is a branch of THIS business — never let an owner read or write
 // overrides on another tenant's branch (the till resolves by branch_id alone).
@@ -251,6 +255,12 @@ router.post('/:id/settings', requireAuth, requireAnyPermission('settings.manage'
     if (clean === null) { res.status(400).json({ error: 'The business day may end from 00:00 to 06:00 (HH:MM).' }); return; }
     stored = clean;
     invalidateDayCutoff(req.businessId);
+  }
+  // A429: the payment methods this branch takes — only catalogue codes.
+  if (key === PAYMENT_METHODS_ENABLED_KEY) {
+    const clean = enabledSettingValue(value);
+    if (clean === null) { res.status(400).json({ error: 'Choose payment methods from the list.' }); return; }
+    stored = clean;
   }
   // 0.6.37 (A387): a branch's own History methods — a list of method codes ([] = every method).
   if (key === CASHIER_HISTORY_METHODS_KEY) {

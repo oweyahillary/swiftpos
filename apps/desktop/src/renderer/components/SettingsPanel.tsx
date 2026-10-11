@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
 import PaymentMethodsPanel from './PaymentMethodsPanel';
+import BranchPaymentMethodsPanel from './BranchPaymentMethodsPanel';   // A429
 import ReversalRulesPanel from './ReversalRulesPanel';
 import CashierHistoryPanel from './CashierHistoryPanel';
 
@@ -81,6 +82,11 @@ export default function SettingsPanel({ canEdit = true, isOwner = false }: { can
       {/* 0.6.37 (A387): the payment methods a cashier's History shows. */}
       <section className="border-t border-gray-800 pt-6">
         <CashierHistoryPanel canEdit={canEdit} />
+      </section>
+
+      {/* A429: the payment methods this branch takes — Kenya's common ones and the delivery apps, each a switch. */}
+      <section className="border-t border-gray-800 pt-6">
+        <BranchPaymentMethodsPanel canEdit={canEdit} />
       </section>
 
       {/* Payment methods, moved here from its own tab. */}

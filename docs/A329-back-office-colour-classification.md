@@ -1223,3 +1223,11 @@ familiar colour, which is why SwiftPOS actions moved to teal in A329), Card blue
 words 'green' / 'blue' naming them. They are drawn only as a dot beside a method name, a tint behind an UNSELECTED method button,
 and a method's bar in a breakdown; a selected method button keeps the theme / `swift-*` highlight. Byte-identical with
 `shared/paymentColours.ts` and the till's copy (check-shared-sync).
+
+## Addendum 2026-10-10 — A429 the payment catalogue's colours (`lib/paymentColours.ts`, baseline 5 → 6)
+
+Reviewed: one more **identity** colour of a payment method (data, not an action) — T-Kash (Telkom's mobile money) sky blue
+`#0b8ec7`, drawn exactly like the A344 ones: a dot beside the method's name, a tint behind an unselected method button, a
+bar in a breakdown. The catalogue's other new methods (Airtel Money red, room charge bronze, Uber Eats slate, Bolt Food
+teal, Yum magenta) are not green or blue and do not count. Byte-identical with `shared/paymentColours.ts` and the till's
+copy (check-shared-sync); every dot passes the contrast test (tests/payment-colours.test.mjs).

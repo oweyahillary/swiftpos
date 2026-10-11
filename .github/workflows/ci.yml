@@ -741,6 +741,11 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/server-join.test.mjs
 
+      # A435 — the branch server is started again within 5 minutes if it stops (scheduled task); a tray Quit stays quit.
+      - name: Desktop branch server watchdog
+        working-directory: apps/desktop
+        run: node --no-warnings test/server-watchdog.test.mjs
+
       # A410 — at a branch with a server, only the server talks to the cloud: a peer's every cloud call goes through
       # the real branch server's /node/cloud gateway; no internet there = no connection, never round it.
       - name: Desktop peers reach the cloud only through the branch server
@@ -836,6 +841,61 @@ jobs:
       - name: Desktop void and refund from History
         working-directory: apps/desktop
         run: node --no-warnings test/void-refund.test.mjs
+
+      # A421 — a shift closed on the till signs the person out to the PIN screen; never "Opening float" for the next one.
+      - name: Desktop shift close signs out
+        working-directory: apps/desktop
+        run: node --no-warnings test/shift-close-signout.test.mjs
+
+      # A431 / A432 — a manager on any till sees every till's sales and every shift on the Overview.
+      - name: Desktop Overview covers every till, with a shift report
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-day.test.mjs
+
+      # A433 — a signed-in manager confirms any till's shift; Sales covers every till.
+      - name: Desktop manager confirms any till's shift; Sales covers every till
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-shifts-confirm.test.mjs
+
+      # A434 — a manager's close prints the Z-report; every running shift side by side.
+      - name: Desktop close prints the Z-report; running shifts side by side
+        working-directory: apps/desktop
+        run: node --no-warnings test/zreport-print-live.test.mjs
+
+      # A442 — two cashiers on one shift: the drawer's figures unchanged, and who sold what on the report (till + cloud).
+      - name: Desktop shift report by cashier
+        working-directory: apps/desktop
+        run: node --no-warnings test/shift-by-cashier.test.mjs
+
+      # A428 — the ⓘ on a product opens its description; nothing is added until "Add to order".
+      - name: Desktop and web POS product description
+        working-directory: apps/desktop
+        run: node --no-warnings test/product-info.test.mjs
+
+      # A422 — step-by-step help (open, close, confirm a shift, close the day, void / refund) on the till and the web.
+      - name: Desktop and web step-by-step help
+        working-directory: apps/desktop
+        run: node --no-warnings test/help-howto.test.mjs
+
+      # A422 part 2 — the guides' pictures of the real screens, in the till (offline) and on the web.
+      - name: Desktop and web help pictures
+        working-directory: apps/desktop
+        run: node --no-warnings test/help-images.test.mjs
+
+      # A417 part 2 — ZapTill's own on-screen keyboard, never over the field being typed in.
+      - name: Desktop on-screen keyboard
+        working-directory: apps/desktop
+        run: node --no-warnings test/osk.test.mjs
+
+      # A417 — the Windows touch keyboard stays shut over the lock screen's own keypad.
+      - name: Desktop lock keypad keeps the touch keyboard shut
+        working-directory: apps/desktop
+        run: node --no-warnings test/lock-keypad-osk.test.mjs
+
+      # A436 / A437 — a join request to a hidden server is seen; the till says press Allow there; shutdown closes cleanly.
+      - name: Desktop join notice and clean shutdown
+        working-directory: apps/desktop
+        run: node --no-warnings test/server-notice.test.mjs
 
       # A279 / A341 / A357 — the POS says which filter it shows; a manager adds an expense type; VAT once on the Overview.
       - name: Desktop 0.6.18 till extras

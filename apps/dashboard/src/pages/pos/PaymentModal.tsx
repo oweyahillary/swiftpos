@@ -1,5 +1,6 @@
 import MethodDot from '../../components/MethodDot';
-import { methodColour, methodTint } from '../../lib/paymentColours';
+import { enabledFromSetting, paymentButtons } from '../../lib/paymentCatalogue';   // A429
+import { methodColour, methodSolid, methodTint } from '../../lib/paymentColours';
 import type { MonoRaster } from '../../lib/escposRenderer';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
@@ -66,6 +67,8 @@ interface Props {
   /** Custom tenders beyond the built-ins (A96), from /api/pos/init. Rendered as
    *  extra method buttons; all are non-cash and settle immediately like a card. */
   customMethods?: { code: string; name: string }[];
+  /** A429: the payment methods the branch takes (catalogue codes); null / absent = the catalogue's defaults. */
+  enabledMethods?: string[] | null;
   /** If set, the order already exists in DB (order-first model) — use /pay instead of POST /orders */
   existingOrderId?: string;
   /** Open directly in even-split mode (A151 — the restaurant "Split Bill" entry). */
@@ -104,6 +107,7 @@ export default function PaymentModal({
   initialEvenSplit,
   pumpId,
   customMethods = [],
+  enabledMethods = null,
   orderNote = null,
   rider = null,
   deliveryFee = 0,
@@ -119,7 +123,13 @@ export default function PaymentModal({
   const [splitMode, setSplitMode]   = useState(false);
   const [evenSplitMode, setEvenSplitMode] = useState(!!initialEvenSplit);
   const [byItemMode, setByItemMode] = useState(false);
-  const [method, setMethod]         = useState<string>('cash');
+  // A429: the branch's methods — the four this screen knows by name (cash, M-Pesa, card, on account) where switched on,
+  // then the catalogue's other switched-on methods (Glovo, Airtel Money …) and the business's own: those settle at once,
+  // like a card.
+  const branchButtons = paymentButtons(enabledFromSetting(enabledMethods), customMethods, 'web');
+  const builtInMethods = (['cash', 'mpesa', 'card', 'credit'] as SingleMethod[]).filter(m => branchButtons.some(b => b.code === m));
+  const extraMethods = branchButtons.filter(b => !(['cash', 'mpesa', 'card', 'credit'] as string[]).includes(b.code));
+  const [method, setMethod]         = useState<string>(() => builtInMethods[0] ?? extraMethods[0]?.code ?? 'cash');
   // Credit account for the attached customer (fetched when 'credit' is chosen).
   const [creditInfo, setCreditInfo] = useState<{ credit_limit: number; credit_balance: number; available_credit: number } | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
@@ -753,6 +763,7 @@ export default function PaymentModal({
           {/* ── SPLIT PAYMENT (by method) ── */}
           {splitMode && !evenSplitMode && !byItemMode && (
             <SplitPaymentPanel
+              enabledMethods={builtInMethods}
               total={grandTotal}
               currency={currency}
               onConfirm={handleSplitCharge}
@@ -765,29 +776,29 @@ export default function PaymentModal({
             <>
               {/* Method tabs */}
               <div className="grid grid-cols-4 gap-2">
-                {(['cash', 'mpesa', 'card', 'credit'] as SingleMethod[]).map(m => (
-                  <button key={m} onClick={() => setMethod(m)}
-                    className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
+                {builtInMethods.map(m => (
+                  <button key={m} onClick={() => setMethod(m)} aria-pressed={method === m}
+                    className={`py-3 rounded-xl text-sm border transition-colors ${
                       method === m
-                        ? 'bg-action-500/10 border-action-500 text-action-400'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                        ? 'font-bold'
+                        : 'font-medium bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
                     }`}
-                    // A344: each method in its own colour; the SELECTED one keeps the theme highlight (action-*).
-                    style={method === m ? undefined : { backgroundColor: methodTint(m), borderColor: methodColour(m).dot }}>
-                    <MethodDot method={m} />{m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
+                    // A344: each method in its own colour. A430: the SELECTED one solid in it, white text, a halo and a ✓.
+                    style={method === m ? { backgroundColor: methodSolid(m), borderColor: methodSolid(m), color: '#ffffff', boxShadow: `0 0 0 3px ${methodTint(m, 0.45)}` } : { backgroundColor: methodTint(m), borderColor: methodColour(m).dot }}>
+                    {method === m ? <span aria-hidden className="mr-1">✓</span> : <MethodDot method={m} />}{m === 'cash' ? '💵' : m === 'mpesa' ? '📱' : m === 'card' ? '💳' : '🧾'}<br />
                     <span className="capitalize">{m === 'mpesa' ? 'M-Pesa' : m === 'credit' ? 'On Account' : m}</span>
                   </button>
                 ))}
-                {/* Custom methods (A96) — settle immediately like a card. */}
-                {customMethods.map(cm => (
-                  <button key={cm.code} onClick={() => setMethod(cm.code)}
-                    className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
+                {/* A429: the branch's other methods, then the business's own (A96) — settle immediately like a card. */}
+                {extraMethods.map(cm => (
+                  <button key={cm.code} onClick={() => setMethod(cm.code)} aria-pressed={method === cm.code}
+                    className={`py-3 rounded-xl text-sm border transition-colors ${
                       method === cm.code
-                        ? 'bg-action-500/10 border-action-500 text-action-400'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                        ? 'font-bold'
+                        : 'font-medium bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
                     }`}
-                    style={method === cm.code ? undefined : { backgroundColor: methodTint(cm.code), borderColor: methodColour(cm.code).dot }}>
-                    <MethodDot method={cm.code} />🏦<br />
+                    style={method === cm.code ? { backgroundColor: methodSolid(cm.code), borderColor: methodSolid(cm.code), color: '#ffffff', boxShadow: `0 0 0 3px ${methodTint(cm.code, 0.45)}` } : { backgroundColor: methodTint(cm.code), borderColor: methodColour(cm.code).dot }}>
+                    {method === cm.code ? <span aria-hidden className="mr-1">✓</span> : <MethodDot method={cm.code} />}{cm.icon}<br />
                     <span>{cm.name}</span>
                   </button>
                 ))}

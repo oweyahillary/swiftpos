@@ -150,8 +150,10 @@ await ok('History filters and orders by payment method or type (never changes th
   assert.equal(list[0].created_at, '2026-09-30T10:00:00Z');
 });
 await ok('the cloud narrows a cashier to their own sales and says whether Reprint is offered (a manager sees all)', () => {
-  assert.match(orders, /const ownOnly = !manager && features\.cashier_own_history;\s*if \(ownOnly\) query = query\.eq\('cashier_id', req\.userId/);
-  assert.match(orders, /can_reprint: manager \}\);/);   // 0.6.37: a cashier never reprints
+  // A418: the filters are written once (`filtered`) and applied to the page — and to the total of every page.
+  assert.match(orders, /const ownOnly = !manager && features\.cashier_own_history;[\s\S]{0,1200}?if \(ownOnly\) q = q\.eq\('cashier_id', req\.userId/);
+  assert.match(orders, /query = filtered\(query\);/);
+  assert.match(orders, /can_reprint: manager(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);   // 0.6.37: a cashier never reprints
   const h = read('apps/dashboard/src/pages/pos/POSOrderHistoryTab.tsx');
   assert.match(h, /\{canReprint && <button/);
   assert.match(h, /\{orderTypeLabel\(order\.order_type, order\.delivery_person\)\}/);
@@ -160,7 +162,7 @@ await ok('the cloud narrows a cashier to their own sales and says whether Reprin
 // ── 1 + 8: the blind close, the manager's reasons ────────────────────────────
 await ok('a blind close: the cloud hands a cashier no figures and asks no variance note', () => {
   const sh = read('apps/server/src/routes/shifts.ts');
-  assert.match(sh, /if \(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);
+  assert.match(sh, /if \(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{[\s\S]{0,600}?res\.json\(\{\s*id: shift\.id,[^}]*blind: true, declare_methods: declareMethods,/);
   assert.match(sh, /if \(!isManager && !req\.isTill && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\) \{\s*res\.json\(\{ \.\.\.closed, expected_cash: null, cash_variance: null, blind: true,/);
   assert.match(sh, /&& !\(!callerMayConfirm\(req\) && \(await businessPosFeatures\(req\.businessId\)\)\.blind_shift_close\)\) \{/);
 });

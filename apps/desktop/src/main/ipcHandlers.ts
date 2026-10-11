@@ -43,12 +43,13 @@ import { setIdleSurface, clearIdleLock, suppressIdleLock } from './idleMonitor';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { configureSyncEngine, configureStaffSession, syncAll, syncPush, pushStationRoutingNow, pushWastageNow, retryFailedOrders, getSyncStatus, createLocalOrder, refreshAccessToken, refreshStaffToken, testConnection, pullWebSales, getOpenShift, queueBrandingPush } from './syncEngine';
-import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze } from './deviceConfig';
+import { getCloudUrl, getDeviceConfig, saveDeviceConfig, isConfigured, clearDeviceConfig, getPosFeatures, getReversalRules, setReversalRules, getSupportContact, getCashierHistoryMethods, setCashierHistoryMethods, getStockCountFreeze, getPaymentMethodsEnabled, setPaymentMethodsEnabled } from './deviceConfig';
 import { isReversalSettingKey, reversalSettingValue } from './reversalRules';
 import { reverseOffline, mayReverseLocal, type LocalPerson } from './offlineReversal';
 import { parseNotePicks, cleanNote, ORDER_NOTE_MAX } from './orderNotes';
 import { openShift, addFloat, closeShift, currentShiftReport, computeZReport, getStaleShift, forceCloseShift, adoptCloudShift, localShiftIds, listShifts, listExpenses, awaitingConfirmation, confirmShift, shiftCloseRights, isShiftManager, historyScope, blindClose, blindReport, confirmView, type ForeignCash } from './shiftService';
 import { resolveRange, getReportScope, type RangePreset } from './managerReports';
+import { branchDay } from './branchDay';   // A431 / A432
 import { cloudBranchOrders, mirrorTillRefund, reverseRiderPayout } from './webSales';
 import { cleanExpenseMethod } from './expenseMethod';
 import { cleanDeliveryFee } from './delivery';
@@ -211,10 +212,13 @@ export function registerIpcHandlers() {
   // Terminal code and the rest of setup stay on the setup screen as before.
   handle('install:findServers', async () => listenForServers(6000));
 
-  let joinAsk: { url: string; id: string; token: string } | null = null;
+  // A436: `rejoin` — a till already set up but signed out (the sign-in-code screen, EnrolPage) asks the same way and,
+  // once allowed, joins its business again KEEPING everything on it (joinBusiness rejoin), its setup untouched.
+  let joinAsk: { url: string; id: string; token: string; rejoin: boolean } | null = null;
   handle('install:requestJoin', async (_event, payload) => {
-    const { url } = assertPayload<{ url: string }>({ url: { t: 'string', min: 1 } }, payload);
+    const { url, rejoin } = assertPayload<{ url: string; rejoin?: boolean }>({ url: { t: 'string', min: 1 }, rejoin: { t: 'boolean', optional: true } }, payload);
     if (!/^http:\/\/(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/.test(url)) throw new Error('That is not a branch server address.');
+    if (rejoin && isNodeRole(getDeviceConfig()?.device_role)) throw new Error('This computer is the branch server — it rejoins from the technician console, not through itself.');
     const deviceId = getDeviceConfig()?.device_id ?? saveDeviceConfig({ configured: false } as any).device_id;
     let res: Response;
     try {
@@ -223,7 +227,7 @@ export function registerIpcHandlers() {
     } catch { throw new Error('Could not reach that branch server. Check this till is on the same network.'); }
     const body: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body?.error ?? `The branch server refused (HTTP ${res.status}).`);
-    joinAsk = { url, id: String(body.id), token: String(body.token) };
+    joinAsk = { url, id: String(body.id), token: String(body.token), rejoin: !!rejoin };
     logLine('join', `asked the branch server at ${url} to join`);
     return { ok: true, name: os.hostname() };
   });
@@ -243,6 +247,21 @@ export function registerIpcHandlers() {
     }
     const g = r.grant;
     const port = Number(new URL(ask.url).port);
+    if (ask.rejoin) {
+      // Already set up: only the way to the server changes (saved first, so the rejoin goes through it — A410); put
+      // back as it was if the cloud refuses (another branch's server, say).
+      const before = getDeviceConfig();
+      saveDeviceConfig({ node_url: ask.url, node_secret: String(g.node_secret) } as any);
+      try {
+        const joined = await joinBusiness(String(g.business_id), String(g.code), true);
+        logLine('join', `rejoined ${joined.business?.name ?? 'the business'} through the branch server at ${ask.url}`);
+        return { status: 'joined' as const, business: joined.business, branchId: String(g.branch_id), branchName: g.branch_name ?? null,
+          cloudUrl: String(g.cloud_url), nodeIp: new URL(ask.url).hostname, nodePort: port, nodeSecret: String(g.node_secret) };
+      } catch (e) {
+        saveDeviceConfig({ node_url: before?.node_url ?? null, node_secret: before?.node_secret ?? null } as any);
+        throw e;
+      }
+    }
     // Where the server is and how to reach it — saved BEFORE enrolling, so the enrolment goes through the server
     // (A410) and works even when this till has no internet of its own. Not marked configured: setup finishes on screen.
     saveDeviceConfig({ deploy_mode: 'cloud', server_url: String(g.cloud_url), branch_id: String(g.branch_id),
@@ -1858,6 +1877,44 @@ export function registerIpcHandlers() {
   // 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')?
   handle('shift:confirmView', async (_event, shiftId: string) => confirmView(String(shiftId)));
 
+  // ── A433 (owner, 2026-10-10: "yes if they have logged in as the manager, and under sales report it should cover all
+  // tills"): another till's shifts, from the cloud, with the manager's own sign-in (manageFetch — never the till's
+  // session, A415). This till's own shifts keep the local calls above (they work offline and push as before).
+  handle('manager:branchShifts', async () => {
+    const own = getDeviceConfig()?.device_id ?? null;
+    const rows = await manageFetch('/api/shifts?limit=60', 'GET') as any[];
+    return (rows ?? []).map((s) => ({
+      id: s.id, status: s.status, opened_at: s.opened_at, closed_at: s.closed_at ?? null,
+      cashier_name: s.cashier_name ?? null, expected_cash: s.expected_cash ?? null, cash_variance: s.cash_variance ?? null,
+      till: s.terminal_code || (s.device_id ? 'Till' : 'Web Till'),
+      this_till: !!own && s.device_id === own,
+      awaiting: !!s.awaiting_confirmation,
+    }));
+  });
+  handle('manager:remoteZReport', async (_e, shiftId: string) => {
+    const z = await manageFetch(`/api/shifts/${encodeURIComponent(String(shiftId))}/zreport`, 'GET');
+    const session = getLocalDb().prepare(`SELECT business_name, currency FROM session WHERE id=1`).get() as any;
+    return { ...z, businessName: session?.business_name ?? '', currency: session?.currency ?? 'KES' };
+  });
+  handle('shift:remoteConfirmView', async (_e, shiftId: string) =>
+    manageFetch(`/api/shifts/${encodeURIComponent(String(shiftId))}/confirm-view`, 'GET'));
+  handle('shift:remoteConfirm', async (_event, payload) => {
+    const { shiftId, pin, counts, reasons } = assertPayload<{ shiftId: string; pin?: string; counts: Record<string, number>; reasons?: Record<string, string> }>(
+      { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } }, payload);
+    const me = signedInConfirmer();
+    if (!me && !String(pin ?? '').trim()) throw new Error('Enter the PIN of a manager (or the owner) on duty.');
+    // manager-confirm: a person's sign-in only (never the device token), and never `confirmed_by` — that is the holding
+    // till's replay of its OWN shift. The cloud takes the signed-in manager, or the PIN.
+    const r = await manageFetch(`/api/shifts/${encodeURIComponent(shiftId)}/manager-confirm`, 'POST', {
+      confirmed_methods: counts, ...(reasons ? { confirm_reasons: reasons } : {}), ...(String(pin ?? '').trim() ? { pin: String(pin).trim() } : {}),
+    });
+    logLine('shift', `A433 shift ${shiftId} (another till) confirmed on the cloud by ${r?.confirmer_name ?? me?.name ?? 'a manager'}`);
+    return {
+      shift_id: shiftId, confirmed_by: r?.confirmed_by ?? me?.id ?? '', confirmed_by_name: r?.confirmer_name ?? me?.name ?? null,
+      confirmed_at: r?.confirmed_at ?? new Date().toISOString(), self: !!r?.confirm_self, lines: r?.lines ?? [],
+    };
+  });
+
   // ── 0.6.28: Send to kitchen is recorded; sent items come back only as a recorded kitchen void ────────────────────
   // Owner, 2026-10-01: a sent order cancelled after the customer paid in cash — "the cashier pockets the money". Every
   // sent item ends paid (order:create → markKitchenPaid) or voided here. See kitchenService.ts.
@@ -2465,6 +2522,18 @@ export function registerIpcHandlers() {
 
   // 0.6.37 (A387): the payment methods a cashier's History shows, from Manager → Settings. The cloud stores it for the
   // business (settings.manage); this till uses the new list at once, the others on their next pull.
+  // A429: the payment methods this branch takes — the payment screen reads them (null = not told yet = the catalogue's
+  // defaults); a manager switches them for the branch (the cloud checks settings.manage and the codes), and this till uses
+  // the new list at once, the branch's other tills on their next pull.
+  handle('pos:paymentMethodsEnabled', async () => ({ enabled: getPaymentMethodsEnabled() }));
+  handle('manage:setPaymentMethodsEnabled', async (_e, codes) => {
+    const list = (Array.isArray(codes) ? codes : []).map((c) => String(c).trim().toLowerCase());
+    const branchId = getDeviceConfig()?.branch_id;
+    if (!branchId) throw new Error('This till is not bound to a branch yet.');
+    const out = await manageFetch(`/api/branches/${encodeURIComponent(branchId)}/settings`, 'POST', { key: 'payment_methods_enabled', value: list });
+    setPaymentMethodsEnabled(list);
+    return out;
+  });
   handle('manage:getCashierHistoryMethods', async () => ({ methods: getCashierHistoryMethods() }));
   handle('manage:setCashierHistoryMethods', async (_e, methods) => {
     const clean = historyMethodsSettingValue(methods);
@@ -2510,6 +2579,10 @@ export function registerIpcHandlers() {
     const body = await res.json() as { orders?: any[] };
     return cloudBranchOrders(body.orders ?? [], cfg?.device_id ?? null);
   });
+
+  // A431 / A432: the Overview — every till's sales and every shift at the branch, from the cloud (a manager's sign-in);
+  // this till's own rows when the cloud cannot be reached, saying so. Read-only.
+  handle('manager:branchDay', async (_e, r?: RangeArg) => branchDay(resolveRange(r?.preset ?? 'today', r?.from, r?.to)));
 
   // What the figures cover. Paired with every range query so a till's partial
   // view can never be read as the branch's takings.

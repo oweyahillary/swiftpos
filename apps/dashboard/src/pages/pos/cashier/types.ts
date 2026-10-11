@@ -91,6 +91,8 @@ export interface POSInitResponse {
   maxDiscountPct?: number;
   /** Custom payment methods (A96), per business. Optional for older servers. */
   paymentMethods?: { code: string; name: string }[];
+  /** A429: the payment methods this branch takes (catalogue codes); absent from an older cloud = the defaults. */
+  paymentMethodsEnabled?: string[];
 }
 
 export type { CartItem, Product, Category, VariantGroup, VariantOption };

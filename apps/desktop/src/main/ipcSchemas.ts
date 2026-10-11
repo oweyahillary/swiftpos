@@ -103,7 +103,7 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'auth:getSession':        NO_PAYLOAD,
   'auth:listBranches':      NO_PAYLOAD,
   'install:findServers':    NO_PAYLOAD,                                                          // A427
-  'install:requestJoin':    { url: { t: 'string', min: 1 } },                                    // A427
+  'install:requestJoin':    { url: { t: 'string', min: 1 }, rejoin: { t: 'boolean', optional: true } }, // A427, A436
   'install:joinStatus':     NO_PAYLOAD,                                                          // A427
   'node:joinRequests':      NO_PAYLOAD,                                                          // A427
   'node:answerJoin':        { id: { t: 'string', min: 1 }, allow: { t: 'boolean' } },             // A427
@@ -227,6 +227,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'shift:closeRights':      NO_PAYLOAD,
   'shift:confirm':          { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },
   'shift:confirmView':      { kind: 'string' },
+  'shift:remoteConfirmView': { kind: 'string' },   // A433
+  'shift:remoteConfirm':    { shiftId: { t: 'string', min: 1 }, pin: { t: 'string', optional: true }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } },   // A433
   'shift:zreport':          { kind: 'string' },
   'shift:history':          NO_PAYLOAD,
 
@@ -280,6 +282,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:getContinuousOperation': NO_PAYLOAD,
   'manage:setContinuousOperation': { kind: 'boolean' },
   'manage:setReversalRule':        { key: { t: 'string', min: 1 }, value: { t: 'any' } },   // 0.6.30
+  'pos:paymentMethodsEnabled':       NO_PAYLOAD,                                            // A429
+  'manage:setPaymentMethodsEnabled': { kind: 'stringArray' },                                // A429
   'manage:getCashierHistoryMethods': NO_PAYLOAD,                                            // 0.6.37 (A387)
   'manage:setCashierHistoryMethods': { kind: 'stringArray' },
 
@@ -291,6 +295,9 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manager:topProducts':    { ...rangeArg },
   'manager:recentOrders':   { ...rangeArg },
   'manager:branchOrders':   { ...rangeArg },
+  'manager:branchDay':      { ...rangeArg },   // A431 / A432
+  'manager:branchShifts':   NO_PAYLOAD,   // A433
+  'manager:remoteZReport':  { kind: 'string' },   // A433
   'manager:reportScope':    NO_PAYLOAD,
   'manager:resolveRange':   rangeArg,
   'manager:exportCsv':      { kind: 'object' },  // req bag

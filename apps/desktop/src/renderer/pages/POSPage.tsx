@@ -28,7 +28,7 @@ import { syncNotice } from '../lib/syncNotice';
 import ShiftPanel from './ShiftPanel';
 import NoteModal from '../components/NoteModal';
 import { noteLines } from '../../shared/orderNotes';
-import { historyView, historyChoices, orderMethod, type HistorySort } from '../../shared/historyView';
+import { historyView, historyChoices, orderMethod, historyTotal, historyByCashier, orderCashierName, type HistorySort } from '../../shared/historyView';
 import { orderTypeLabel, deliveryProblem, cleanDeliveryFee, customerDeliveryFee, autoFreeDelivery } from '../../shared/delivery';
 import { noPosFeatures, type PosFeatures } from '../../shared/posFeatures';
 import { NO_FREEZE, isFrozen, frozenMessage, type StockCountFreeze } from '../../shared/stockCountFreeze';   // A394
@@ -41,6 +41,8 @@ import { onGrid } from '../../shared/productDays';
 interface Props {
   business: { id: string; name: string; currency: string };
   onLogout: () => void;
+  /** A421: a shift closed on this till signs the person out to the PIN screen, with a line for it there. */
+  onShiftClosed?: (notice?: string) => void;
   // Present only when the signed-in staff member has manager rights. The POS
   // screen was previously a one-way trip: an owner who opened it to check a
   // change had to sign out and re-enter a PIN to get back to the Menu tab,
@@ -71,7 +73,7 @@ const newLineId = () => (globalThis.crypto?.randomUUID?.() ?? `l-${Date.now()}-$
 const withLineIds = (cart: CartItem[]): CartItem[] =>
   (cart ?? []).map((i) => ({ ...i, lineId: i.lineId ?? newLineId(), sentQty: sentQtyOf(i) }));
 
-export default function POSPage({ business, onLogout, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
+export default function POSPage({ business, onLogout, onShiftClosed, onOpenManager, canManagePrinters = false, canVoidRefund = false, canAddExpenseType = false, canSeeSync = false, onHelp }: Props) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -229,6 +231,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   const [reprintNote, setReprintNote] = useState('');
   // Custom tenders (A96), cached locally so they work offline. Refreshed on mount.
   const [customMethods, setCustomMethods] = useState<{ code: string; name: string }[]>([]);
+  // A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults).
+  const [enabledMethods, setEnabledMethods] = useState<string[] | null>(null);
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
@@ -273,9 +277,19 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
   // 0.6.27: who sees what in History (per-client switches) and the cashier's filters / order.
   const [historyCanReprint, setHistoryCanReprint] = useState(true);
   const [historyOwnOnly, setHistoryOwnOnly] = useState(false);
+  // A418: the total of what the filters show — a manager always; a cashier while the owner's switches are on.
+  const [historyShowTotal, setHistoryShowTotal] = useState(false);
+  // A428 (owner, 2026-10-09: "how can the cashier view menu description for ease of explaining to the customer?"):
+  // the ⓘ on a tile opens the item's description — nothing is added to the order until the cashier says so.
+  const [infoProduct, setInfoProduct] = useState<any | null>(null);
   const [historyMethod, setHistoryMethod] = useState('');
   const [historyType, setHistoryType] = useState('');
   const [historySort, setHistorySort] = useState<HistorySort>('time');
+  // A438 (owner, 2026-10-10): a manager filters by who rang the sale up — cashier B selling on cashier A's shift is
+  // still B's — alone or with the payment filter, and sees each cashier's sales by payment method ("By cashier").
+  const [historyManager, setHistoryManager] = useState(false);
+  const [historyCashier, setHistoryCashier] = useState('');
+  const [showByCashier, setShowByCashier] = useState(false);
   // 0.6.30: the owner's void window (minutes; default 30) — History's Void / Refund label follows it.
   const [voidWindowMin, setVoidWindowMin] = useState(VOID_WINDOW_MIN);
   const loadHistory = async () => {
@@ -284,6 +298,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
     setRecentOrders(h.orders);
     setHistoryCanReprint(h.scope.canReprint);
     setHistoryOwnOnly(h.scope.ownOnly);
+    setHistoryShowTotal(h.scope.showTotal === true);
+    setHistoryManager(h.scope.manager === true);
   };
 
   // A355: only people who may void/refund (orders.void, or the owner) see History's reversal BUTTONS — the owner's
@@ -329,6 +345,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
       setCanForceClose(has('shifts.force_close') || has('settings.manage'));
     }).catch(() => {});
     posApi.pos.paymentMethods().then(setCustomMethods).catch(() => {});
+    posApi.pos.paymentMethodsEnabled().then((r) => setEnabledMethods(r?.enabled ?? null)).catch(() => {});   // A429
     // NOT reserving a bill number here. See the reservedBill declaration.
 
     posApi.config.get().then(async cfg => {
@@ -1357,6 +1374,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           canAddExpenseType={canAddExpenseType}
           onClose={() => setShowShift(false)}
           onShiftChange={setShift}
+          onSignOut={onShiftClosed}
         />
       )}
 
@@ -1482,6 +1500,14 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                       <p className="text-green-400 text-sm font-semibold mt-1">
                         {product.has_variants ? 'from ' : ''}{currency} {Number(effectivePrice(product)).toLocaleString()}
                       </p>
+                      {String(product.description ?? '').trim() && (
+                        <span role="button" tabIndex={0} aria-label={`About ${product.name}`} data-testid="product-info"
+                          onClick={(e) => { e.stopPropagation(); setInfoProduct(product); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setInfoProduct(product); } }}
+                          className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-gray-800 border border-gray-700 text-gray-200 text-sm flex items-center justify-center hover:border-gray-500">
+                          ⓘ
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -1785,6 +1811,7 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           placing={placing}
           error={payError}
           customMethods={customMethods}
+          enabledMethods={enabledMethods}
           deliveryFee={feeDue}
           rider={orderType === 'delivery' ? deliveryPerson.trim() || null : null}
           onConfirm={handleCharge}
@@ -1807,7 +1834,8 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           cashier to notice a message and go and find a button.
           Suppressed while needsManager, so we never ask for a counted float that
           cannot be used until yesterday's day is closed. */}
-      {needsShift && !needsManager && (
+      {/* A421: never over the shift panel — a closed shift there ends in sign-out, not "Opening float". */}
+      {needsShift && !needsManager && !showShift && (
         <OpenDrawerModal
           cashierName={cashierName ?? undefined}
           currency={currency}
@@ -1831,6 +1859,37 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
           onDelete={handleDeleteHeld}
           onClose={() => setShowHeld(false)}
         />
+      )}
+
+      {/* A428: an item's description, to explain it to a customer — adds nothing until "Add to order". */}
+      {infoProduct && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" data-testid="product-info-card"
+          onClick={e => e.target === e.currentTarget && setInfoProduct(null)}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-800">
+              <div className="min-w-0">
+                <h2 className="text-white font-semibold">{infoProduct.name}</h2>
+                <p className="text-white text-sm font-semibold mt-0.5 tabular-nums">
+                  {infoProduct.has_variants ? 'from ' : ''}{currency} {Number(effectivePrice(infoProduct)).toLocaleString()}
+                  {infoProduct.categories?.name && <span className="text-gray-400 font-normal"> · {infoProduct.categories.name}</span>}
+                </p>
+              </div>
+              <button onClick={() => setInfoProduct(null)} className="text-gray-300 hover:text-white text-lg">✕</button>
+            </div>
+            <div className="px-5 py-4 max-h-[50vh] overflow-y-auto">
+              <p className="text-gray-200 text-sm whitespace-pre-line leading-relaxed">{infoProduct.description}</p>
+              {(infoProduct.has_variants || infoProduct.has_modifiers) && (
+                <p className="text-gray-400 text-xs mt-3">Has choices — they are asked for when it is added.</p>
+              )}
+            </div>
+            <div className="flex gap-3 px-5 pb-5">
+              <button onClick={() => setInfoProduct(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-2.5 text-sm font-medium">Close</button>
+              <button onClick={() => { const p = infoProduct; setInfoProduct(null); handleTap(p); }}
+                className="flex-1 bg-action-500 hover:bg-action-400 text-gray-950 font-bold rounded-xl py-2.5 text-sm">Add to order</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Order History + Void panel ────────────────────────────── */}
@@ -1861,13 +1920,67 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                   <option value="">All types</option>
                   {historyChoices(recentOrders).types.map(t => <option key={t} value={t}>{orderTypeLabel(t)}</option>)}
                 </select>
+                {/* A438: managers — by who rang the sale up, alone or with the payment filter. */}
+                {historyManager && (
+                  <select value={historyCashier} onChange={e => setHistoryCashier(e.target.value)} data-testid="history-cashier"
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
+                    <option value="">All cashiers</option>
+                    {historyChoices(recentOrders).cashiers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                )}
+                {historyManager && (
+                  <button type="button" onClick={() => setShowByCashier(v => !v)} data-testid="history-by-cashier-toggle"
+                    className={`rounded-lg px-2.5 py-1.5 border ${showByCashier ? 'bg-gray-200 text-gray-900 border-gray-200' : 'bg-gray-800 text-gray-200 border-gray-700 hover:border-gray-500'}`}>
+                    By cashier
+                  </button>
+                )}
                 <span className="text-gray-400 ml-auto">Order by</span>
                 <select value={historySort} onChange={e => setHistorySort(e.target.value as HistorySort)} data-testid="history-sort"
                   className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
                   <option value="time">Time</option>
                   <option value="method">Payment method</option>
                   <option value="type">Type</option>
+                  {historyManager && <option value="cashier">Cashier</option>}
                 </select>
+              </div>
+            )}
+            {/* A418: the total of what the filters show (sorting never changes it). */}
+            {historyShowTotal && recentOrders.length > 0 && (() => {
+              const t = historyTotal(historyView(recentOrders, { method: historyMethod, type: historyType, cashier: historyManager ? historyCashier : '', sort: historySort }));
+              return (
+                <div className="flex items-center justify-between px-5 py-2 border-b border-gray-800 text-sm bg-gray-800/40" data-testid="history-total">
+                  <span className="text-gray-300">{t.orders} order{t.orders === 1 ? '' : 's'}{historyMethod || historyType || (historyManager && historyCashier) ? ' (filtered)' : ''}</span>
+                  <span className="text-white font-semibold tabular-nums">
+                    Sales {currency} {t.sales.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* A438: each cashier's sales in what the payment and type filters show, by payment method. A tap filters to them. */}
+            {historyManager && showByCashier && recentOrders.length > 0 && (
+              <div className="px-5 py-3 border-b border-gray-800 bg-gray-800/30 max-h-[35vh] overflow-y-auto" data-testid="history-by-cashier">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {historyByCashier(historyView(recentOrders, { method: historyMethod, type: historyType })).map(c => (
+                    <button key={c.id} type="button" onClick={() => setHistoryCashier(historyCashier === c.id ? '' : c.id)}
+                      className={`text-left rounded-xl border px-3 py-2.5 ${historyCashier === c.id ? 'border-gray-200 bg-gray-800' : 'border-gray-700 bg-gray-900 hover:border-gray-500'}`}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-white text-sm font-semibold truncate">{c.name}</span>
+                        <span className="text-white text-sm font-semibold tabular-nums whitespace-nowrap">
+                          {currency} {c.sales.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{c.orders} order{c.orders === 1 ? '' : 's'}</div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                        {c.methods.map(m => (
+                          <span key={m.method} className="text-[11px] text-gray-300 capitalize whitespace-nowrap">
+                            <MethodDot method={m.method} />{m.method.replace(/_/g, ' ')} <span className="tabular-nums text-gray-200">{m.amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1880,13 +1993,13 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-900">
                     <tr className="border-b border-gray-800">
-                      {['Order #', 'Time', 'Type', 'Payment', 'Total', 'Status', ''].map(h => (
+                      {['Order #', 'Time', ...(historyManager ? ['Cashier'] : []), 'Type', 'Payment', 'Total', 'Status', ''].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800/50">
-                    {historyView(recentOrders, { method: historyMethod, type: historyType, sort: historySort }).map(o => {
+                    {historyView(recentOrders, { method: historyMethod, type: historyType, cashier: historyManager ? historyCashier : '', sort: historySort }).map(o => {
                       const method   = orderMethod(o);
                       const ageMin   = ageMinutes(o);
                       // A355: "Void / Refund" inside the void window, "Refund" after it (it used to vanish at 30 min).
@@ -1905,6 +2018,9 @@ export default function POSPage({ business, onLogout, onOpenManager, canManagePr
                           <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">
                             {ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`}
                           </td>
+                          {historyManager && (
+                            <td className="px-4 py-2.5 text-gray-300 text-xs whitespace-nowrap" data-testid="history-cashier-cell">{orderCashierName(o)}</td>
+                          )}
                           <td className="px-4 py-2.5 text-gray-300 capitalize text-xs">
                             {orderTypeLabel(o.order_type, o.delivery_person)}
                           </td>

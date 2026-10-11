@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { cashierHistoryView } from '../lib/cashierHistory';   // 0.6.37 (A387)
 import { getHistoryMethods } from '../lib/historyMethods';
+import { cashierHistoryTotals, historyTotal } from '../lib/cashierShiftSales';   // A418
 import { classifyOrderCreateError } from '../lib/orderErrors';
 import { pickCashier, claimNeedsValidation } from '../lib/cashier';
 import { sendError } from '../lib/sendError';
@@ -976,28 +977,50 @@ router.get('/', async (req, res) => {
     .order('created_at', { ascending: false })
     .range(parseInt(offset as string), parseInt(offset as string) + parseInt(limit as string) - 1);
 
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
-  if (status)       query = query.eq('status', status as string);
-  if (date_from)    query = query.gte('created_at', date_from as string);
-  if (date_to)      query = query.lte('created_at', date_to as string);
-  if (search)       query = query.ilike('order_number', `%${search}%`);
-  // 0.6.27: History narrowed by order type or payment method (the web POS's Orders filters).
-  if (typeof order_type === 'string' && order_type) query = query.eq('order_type', order_type);
-  if (typeof method === 'string' && method)         query = query.eq('pm.method', method.toLowerCase());
-  if (historyMethods.length)                        query = query.in('pm.method', historyMethods);
   // 0.6.27: 'cashier_own_history' (admin portal) — a cashier sees only the sales they rang; a manager sees all.
   const features = await businessPosFeatures(req.businessId);
   const ownOnly = !manager && features.cashier_own_history;
-  if (ownOnly) query = query.eq('cashier_id', req.userId ?? '00000000-0000-0000-0000-000000000000');
+  // The filters, once — the page below and A418's total of every page use the same ones.
+  const filtered = (q: any) => {
+    if (scopedBranch) q = q.eq('branch_id', scopedBranch);
+    if (status)       q = q.eq('status', status as string);
+    if (date_from)    q = q.gte('created_at', date_from as string);
+    if (date_to)      q = q.lte('created_at', date_to as string);
+    if (search)       q = q.ilike('order_number', `%${search}%`);
+    // 0.6.27: History narrowed by order type or payment method (the web POS's Orders filters).
+    if (typeof order_type === 'string' && order_type) q = q.eq('order_type', order_type);
+    if (typeof method === 'string' && method)         q = q.eq('pm.method', method.toLowerCase());
+    if (historyMethods.length)                        q = q.in('pm.method', historyMethods);
+    if (ownOnly) q = q.eq('cashier_id', req.userId ?? '00000000-0000-0000-0000-000000000000');
+    return q;
+  };
+  query = filtered(query);
 
   const { data, error, count } = await query;
   if (error) { sendError(res, error); return; }
   let orders = (data ?? []).map(({ pm, ...o }: any) => o);
   // 0.6.37 (A387): a split sale shows a cashier only its allowed part (shared/cashierHistory.ts).
   if (historyMethods.length) orders = cashierHistoryView(orders, historyMethods);
+  // A418: the total of EVERY page the filters show (not the page on screen) — asked for (with_totals=1, the web POS's
+  // History), for a manager, or a cashier while the owner's two switches are on ("one should be on for the other").
+  let totals: { orders: number; sales: number } | undefined;
+  if (req.query.with_totals === '1'
+      && (manager || await cashierHistoryTotals(req.businessId!, scopedBranch ?? (req as any).branchId ?? null))) {
+    const rows: any[] = [];
+    for (let at = 0; ; at += 500) {
+      const { data: page, error: tErr } = await filtered(supabase.from('orders')
+        .select(`id, status, total, refunded_amount, payments ( method, amount, status )${joinPm ? ', pm:payments!inner ( method )' : ''}`)
+        .eq('business_id', req.businessId))
+        .order('id', { ascending: true }).range(at, at + 499);
+      if (tErr) { sendError(res, tErr); return; }
+      rows.push(...(page ?? []).map(({ pm, ...o }: any) => o));
+      if ((page ?? []).length < 500) break;
+    }
+    totals = historyTotal(historyMethods.length ? cashierHistoryView(rows, historyMethods) : rows);
+  }
   // can_reprint: 0.6.37 (owner) — a cashier never reprints a receipt; a manager and the owner may.
   res.json({ orders, total: count ?? 0, own_only: ownOnly,
-             history_methods: historyMethods, can_reprint: manager });
+             history_methods: historyMethods, can_reprint: manager, ...(totals ? { totals } : {}) });
 });
 
 // GET /api/orders/:id

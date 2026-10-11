@@ -138,7 +138,9 @@ export default function LockCurtain({
         <input
           id="lock-pin-input"
           type="password"
-          inputMode="numeric"
+          // A417 (owner's screenshot, 2026-10-09): on a touch till Windows took this hidden field's focus for typing and
+          // opened its own keyboard over the keypad below. "none" keeps it shut; a physical keypad still types here.
+          inputMode="none"
           value={pin}
           onChange={e => {
             setPin(e.target.value.replace(/\D/g, '').slice(0, 6));

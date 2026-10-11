@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { posApi } from '../lib/posApi';
+import { useEffect, useState } from 'react';
+import { posApi, type FoundServer } from '../lib/posApi';
+import JoinWaitPanel from '../components/JoinWaitPanel';   // A436
 
 // EnrolPage — A158/A415. A till joins its business ONLY with a one-time enrolment code
 // ZapTill issues in the admin portal — never anyone's email/password — and the
@@ -7,6 +8,11 @@ import { posApi } from '../lib/posApi';
 // person). This is the screen a CONFIGURED-but-session-less terminal shows:
 // first-run install is handled by InstallPage. A till that already has its data
 // is rejoined from the technician console instead (Rejoin this till), which keeps it.
+//
+// A436 (found 2026-10-10; owner: "proceed — on the till a message should tell the technician to accept on the
+// server"): "Find the branch server" — the till asks the branch server on this network, the way a new till does
+// (A427), and once someone there presses Allow it joins its business again KEEPING everything on it. While it waits
+// it says to go to the server and press Allow (JoinWaitPanel).
 
 interface Props {
   onComplete: () => void;
@@ -21,6 +27,46 @@ export default function EnrolPage({ onComplete }: Props) {
   const [code, setCode]             = useState('');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
+  // A436: the branch server route.
+  const [searching, setSearching]   = useState(false);
+  const [servers, setServers]       = useState<FoundServer[] | null>(null);
+  const [joinTarget, setJoinTarget] = useState<FoundServer | null>(null);
+  const [joinWait, setJoinWait]     = useState<{ tillName: string; at: number } | null>(null);
+  const [joinNote, setJoinNote]     = useState('');
+
+  const findServer = async () => {
+    setSearching(true); setJoinNote(''); setServers(null);
+    let list: FoundServer[] = [];
+    try { list = await posApi.install.findServers(); } catch { list = []; }
+    setServers(list); setSearching(false);
+    if (list.length === 0) setJoinNote('No branch server answered on this network. Check the server computer is on and ZapTill is running there, or enter a code below.');
+  };
+
+  const askToJoin = async (srv: FoundServer) => {
+    setJoinNote(''); setError('');
+    try {
+      const r = await posApi.install.requestJoin(srv.url, true);
+      setJoinTarget(srv);
+      setJoinWait({ tillName: r.name, at: Date.now() });
+    } catch (e: any) { setJoinNote(e?.message ?? 'Could not ask that server.'); }
+  };
+
+  // While waiting: ask every 2 seconds; allowed → this till has joined again, on to sign-in.
+  useEffect(() => {
+    if (!joinTarget) return;
+    let busy = false;
+    const t = setInterval(async () => {
+      if (busy) return; busy = true;
+      try {
+        const st = await posApi.install.joinStatus();
+        if (st.status === 'denied') { setJoinTarget(null); setJoinNote('The server did not allow this till to join.'); }
+        else if (st.status === 'expired' || st.status === 'none') { setJoinTarget(null); setJoinNote('The request ran out — ask again.'); }
+        else if (st.status === 'joined') { setJoinTarget(null); onComplete(); }
+      } catch (e: any) { setJoinTarget(null); setJoinNote(e?.message ?? 'Joining failed — ask again.'); }
+      finally { busy = false; }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [joinTarget]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnrol = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -58,6 +104,34 @@ export default function EnrolPage({ onComplete }: Props) {
             <span className="text-xl font-bold text-white tracking-tight">ZapTill</span>
           </div>
           <p className="text-[#334155] text-sm">Activate this terminal</p>
+        </div>
+
+        {/* A436: join through the branch server on this network — someone there presses Allow. */}
+        <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-6 shadow-2xl mb-4" data-testid="enrol-find-server">
+          <p className="text-white text-sm font-semibold">Join through the branch server</p>
+          <p className="text-[#64748b] text-xs leading-relaxed mt-1">
+            No code needed: this till asks the branch server on this network, and someone at the server presses Allow.
+            Everything on this till is kept.
+          </p>
+          {servers && servers.length > 0 && !joinTarget && (
+            <div className="mt-3 space-y-2">
+              {servers.map((srv) => (
+                <button key={srv.url} type="button" onClick={() => askToJoin(srv)}
+                  className="w-full text-left rounded-xl border border-[#1e293b] bg-[#0f172a] hover:border-[#3b82f6] px-4 py-3">
+                  <div className="font-semibold text-white text-sm">{srv.business ?? 'ZapTill branch server'}</div>
+                  <div className="text-xs text-[#64748b] mt-0.5">{srv.server ?? 'Branch server'} · {srv.ip}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          {joinTarget && joinWait && <JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} />}
+          {joinNote && <p className="text-sm mt-3 rounded-lg px-3 py-2 border text-amber-300 bg-amber-400/10 border-amber-400/20">{joinNote}</p>}
+          {!joinTarget && (
+            <button type="button" onClick={findServer} disabled={searching} data-testid="enrol-find-server-btn"
+              className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold bg-[#1e293b] hover:bg-[#334155] text-white disabled:opacity-40">
+              {searching ? 'Looking for the branch server…' : servers ? 'Search again' : 'Find the branch server'}
+            </button>
+          )}
         </div>
 
         <div className="bg-[#0d1424] border border-[#1e293b] rounded-2xl p-8 shadow-2xl">

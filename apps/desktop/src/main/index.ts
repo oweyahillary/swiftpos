@@ -3,14 +3,16 @@ import { isNodeRole } from './deviceConfig';
 import path from 'path';
 import fs from 'fs';
 import { readSessionTokens, migratePlaintextTokens } from './tokenStore';
-import { getLocalDb } from './localDb';
+import { getLocalDb, closeLocalDb } from './localDb';
 import { registerIpcHandlers } from './ipcHandlers';
 import { initPrinting } from './print/printWorker';
-import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow } from './syncEngine';
+import { configureSyncEngine, syncAll, syncPush, getSyncStatus, pullIfCatalogueChanged, onCataloguePulled, pullWebSales, pullShiftCloses, pullShiftConfirmations, onShiftClosedElsewhere, stationRoutingPending, pushStationRoutingNow, wastagePending, pushWastageNow } from './syncEngine';
 import { startIdleMonitor } from './idleMonitor';
 import { getCloudUrl, getDeviceConfig } from './deviceConfig';
 import { startNodeServer, onServingChange } from './nodeServer';
-import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, markQuitting } from './serverMode';   // A427
+import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, markQuitting, announceJoin, closeCleanlyOnSessionEnd } from './serverMode';   // A427, A436, A437
+import { onJoinAsked } from './serverJoin';   // A436
+import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './serverWatchdog';   // A435
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
 import { ownDayState, executeCloseDay } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
@@ -121,6 +123,10 @@ function createWindow() {
 
   win.setMenuBarVisibility(false);
   keepServerWindowAlive(win);   // A427: a branch server's window hides to the tray instead of closing
+  // A437: Windows shutting down or logging off — close properly (the database closed, not cut), never hide. The LAN
+  // server is NOT stopped through stopNodeServer: that announces "no longer serving", which would take ZapTill out of
+  // start-with-Windows — the exit drops its sockets anyway.
+  closeCleanlyOnSessionEnd(win, () => { closeLocalDb(); });
 
   // D17: hold the env-badged title even if the loaded page sets its own
   // document.title, so the enrolled cloud stays visible in the title bar.
@@ -163,7 +169,8 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    if (argv.includes(WATCHDOG_ARG)) return;   // A435: the watchdog's check — ZapTill is running; leave the window be
     const [win] = BrowserWindow.getAllWindows();
     if (win) {
       if (win.isMinimized()) win.restore();
@@ -174,6 +181,9 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
+  // A435: a watchdog launch after someone quit from the tray stays down; opening ZapTill by hand clears that.
+  if (watchdogStaysDown(process.argv, quitByHand())) { app.exit(0); return; }
+  if (!process.argv.includes(WATCHDOG_ARG)) clearQuitByHand();
   // A299: from here on, main's console.error / console.warn also go to
   // swiftpos.log — so a failure is in the file, not just a packaged console
   // nobody can read. Must run before the rest of startup can throw.
@@ -207,6 +217,8 @@ app.whenReady().then(() => {
     // A427: whenever this machine starts or stops serving its branch — at start-up, at setup, on promotion — it
     // goes into or out of server mode (start with Windows, never sleep, stay in the tray). See serverMode.ts.
     onServingChange((on) => { if (on) enterServerMode(); else leaveServerMode(); });
+    // A436: a till asking to join brings this server's window forward and raises a Windows notification.
+    onJoinAsked(({ name, ip }) => announceJoin(name, ip));
 
     // If this device is the branch aggregation node, start its LAN listener so
     // peer tills can push orders and read combined branch reports.
@@ -278,6 +290,8 @@ app.whenReady().then(() => {
     // A414: wastage recorded on this till while offline goes up on the same beat.
     if (wastagePending()) pushWastageNow().catch(console.error);
   }, 20_000);
+  // A433: a shift this till holds, confirmed on the web or another till, is confirmed here too — on its own 20 s beat.
+  setInterval(() => { pullShiftConfirmations().catch(console.error); }, 20_000);
   // A401: tell every window, so the cashier sees why selling stopped (POSPage shows the notice and re-reads the shift).
   onShiftClosedElsewhere((c) => {
     for (const w of BrowserWindow.getAllWindows()) {

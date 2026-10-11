@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
-import { HELP_TOPICS, WHO_TO_CALL_TITLE, whoToCallSteps } from '../../shared/helpTopics';
+import { HELP_TOPICS, HOW_TO, WHO_TO_CALL_TITLE, whoToCallSteps } from '../../shared/helpTopics';
 import { displayPhone, DEFAULT_SUPPORT_NAME, DEFAULT_SUPPORT_PHONES } from '../../shared/support';
 
 /**
@@ -29,6 +29,7 @@ const FALLBACK: HelpInfo = {
 export default function HelpScreen({ businessName, onClose }: Props) {
   const [info, setInfo] = useState<HelpInfo>(FALLBACK);
   const [open, setOpen] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<string | null>(null);   // A422 part 2: a step's picture, full size
 
   useEffect(() => {
     posApi.pos.help().then((h) => h && setInfo(h)).catch(() => { /* ZapTill support's numbers stay */ });
@@ -93,7 +94,16 @@ export default function HelpScreen({ businessName, onClose }: Props) {
             <p className="text-xs text-gray-400 mt-1">Call or WhatsApp. Have ready the shop name, this till's name and version (above) and a photo of the error.</p>
           </div>
 
-          {HELP_TOPICS.map((t) => (
+          {/* A422: step by step — the everyday tasks, then "What to do when" below. */}
+          {zoom && (
+            <div className="fixed inset-0 z-[90] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setZoom(null)} data-testid="help-img-zoom">
+              <img src={`./help-img/${zoom}`} alt="" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+            </div>
+          )}
+          <h3 className="text-xs uppercase tracking-wide text-gray-400 pt-2" data-testid="help-howto">How to — step by step</h3>
+          {[...HOW_TO, { id: '__what', title: '', steps: [] }, ...HELP_TOPICS].map((t) => t.id === '__what' ? (
+            <h3 key={t.id} className="text-xs uppercase tracking-wide text-gray-400 pt-3">What to do when…</h3>
+          ) : (
             <div key={t.id} className="rounded-xl border border-gray-800 bg-gray-900">
               <button onClick={() => setOpen(open === t.id ? null : t.id)} data-testid={`help-topic-${t.id}`}
                 className="w-full flex items-center justify-between px-5 py-3 text-left">
@@ -102,7 +112,21 @@ export default function HelpScreen({ businessName, onClose }: Props) {
               </button>
               {open === t.id && (
                 <ol className="list-decimal pl-10 pr-5 pb-4 space-y-1.5 text-sm text-gray-200">
-                  {t.steps.map((s, i) => <li key={i}>{s}</li>)}
+                  {t.steps.map((s, i) => {
+                    // A422 part 2: the real screen for this step (shipped with the app; tap to see it full size).
+                    const img = (t as { images?: Array<string | null> }).images?.[i];
+                    return (
+                      <li key={i}>
+                        {s}
+                        {img && (
+                          <button type="button" onClick={() => setZoom(img)} className="block mt-2 mb-1" data-testid="help-step-img">
+                            <img src={`./help-img/${img}`} alt={s} loading="lazy"
+                              className="w-full max-w-xl rounded-lg border border-gray-700 shadow-lg hover:border-gray-500" />
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </div>

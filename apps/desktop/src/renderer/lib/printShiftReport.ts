@@ -32,7 +32,8 @@ export async function printShiftReport(
     businessName,
     currencyCode: currency ?? 'KES',
 
-    cashierName: shift.cashier_name,
+    // A442: more than one person sold on this drawer — the shift is the one who opened it; who sold what follows.
+    cashierName: (report.byCashier?.length ?? 0) > 1 ? `${shift.cashier_name} (opened)` : shift.cashier_name,
     // Eight characters is what the owner is asked to quote when something needs
     // looking up. A full uuid on paper is unreadable and nobody copies it.
     shiftRef:    shift.id.slice(0, 8),
@@ -44,6 +45,10 @@ export async function printShiftReport(
       method: m.method,
       orders: m.orders,
       amount: toCents(m.amount),
+    })),
+    byCashier: (report.byCashier ?? []).map(c => ({
+      name: c.name, orders: c.orders, sales: toCents(c.sales),
+      byMethod: c.byMethod.map(m => ({ method: m.method, amount: toCents(m.amount) })),
     })),
     orderCount: totals.orderCount,
     grossSales: toCents(totals.grossSales),

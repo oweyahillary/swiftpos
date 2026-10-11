@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { branchScope, requirePermission, requireAnyPermission } from '../middleware/rbac';
 import { sendError } from '../lib/sendError';
 import { safeRouter } from '../middleware/asyncHandler';
@@ -19,6 +19,10 @@ import { siblingsOf, siblingSummary, closedWithTillNote, type SiblingCash } from
 import { mayConfirm, callerMayConfirm, methodMap, confirmationLines, isSelfConfirm, replayTime, type MethodMap } from '../lib/shiftConfirm';
 import { confirmerRows, confirmerByPin } from '../lib/confirmerLookup';
 import { payoutApprover } from '../lib/payoutApproval';   // 0.6.37 (A388)
+import { buildBranchReport, type BranchOrder, type BranchShift, type TillName } from '../lib/branchReport';
+import { orderTax } from '../lib/orderTax';
+import { buildShiftZReport, shiftByCashier } from '../lib/shiftZReport';
+import { cashierSeesShiftSales } from '../lib/cashierShiftSales';   // A416
 
 const router = safeRouter();
 router.use(requireAuth);
@@ -165,17 +169,22 @@ router.get('/state', async (req, res) => {
     .filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
   if (!ids.length) { res.json([]); return; }
   const { data, error } = await supabase.from('shifts')
-    .select('id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes')
+    // A433: and the confirmation — a shift confirmed on the web or another till is confirmed on the till that holds it.
+    .select('id, status, closed_at, close_method, closed_by, closing_float, cash_variance, expected_cash, notes, confirmed_at, confirmed_by, confirmed_methods, expected_methods, confirm_reasons, confirm_self')
     .eq('business_id', req.businessId).in('id', ids);
   if (error) { sendError(res, error); return; }
   const rows = (data ?? []) as Array<{ id: string; status: string; closed_by: string | null; [k: string]: unknown }>;
-  const closerIds = [...new Set(rows.map((r) => r.closed_by).filter((x): x is string => !!x))];
+  const closerIds = [...new Set(rows.flatMap((r) => [r.closed_by, r.confirmed_by as string | null]).filter((x): x is string => !!x))];
   const names = new Map<string, string>();
   if (closerIds.length) {
     const { data: us } = await supabase.from('users').select('id, name').in('id', closerIds);
     for (const u of (us ?? []) as Array<{ id: string; name: string | null }>) names.set(u.id, u.name ?? '');
   }
-  res.json(rows.map((r) => ({ ...r, closed_by_name: r.closed_by ? names.get(r.closed_by) || null : null })));
+  res.json(rows.map((r) => ({
+    ...r,
+    closed_by_name: r.closed_by ? names.get(r.closed_by) || null : null,
+    confirmed_by_name: r.confirmed_by ? names.get(r.confirmed_by as string) || null : null,
+  })));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -630,7 +639,7 @@ router.post('/confirmer', async (req, res) => {
 });
 
 // POST /api/shifts/:id/confirm
-router.post('/:id/confirm', async (req, res) => {
+async function confirmShiftRoute(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const counts = methodMap(req.body?.confirmed_methods);
   if (!counts) { res.status(400).json({ error: 'Enter the counted amount for every payment method.' }); return; }
@@ -702,6 +711,14 @@ router.post('/:id/confirm', async (req, res) => {
     confirmer_name: confirmer.name,
     lines: confirmationLines(declaredMap, expected, counts).map((l) => (reasons?.[l.method] ? { ...l, reason: reasons[l.method] } : l)),
   });
+}
+router.post('/:id/confirm', confirmShiftRoute);
+// A433 (owner, 2026-10-10: "yes if they have logged in as the manager"): a manager on ANOTHER till confirms as
+// themselves — the same rules, never the replay (`confirmed_by` is the holding till's alone). Its own path, so the
+// till's device token can never reach it (lib/terminalWrites.ts MANAGER_WRITES: a person's sign-in only).
+router.post('/:id/manager-confirm', async (req, res) => {
+  if (req.body && typeof req.body === 'object') delete req.body.confirmed_by;
+  await confirmShiftRoute(req, res);
 });
 
 // GET /api/shifts/:id/confirm-view — 0.6.27: may the web's confirm screen show the cashier's figures
@@ -1030,6 +1047,205 @@ router.post('/:id/expense', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/branch-report?from=&to=&tz_offset_min=
+// A431 / A432 (owner, 2026-10-09: "the manager should view sales across all tills no matter the till they have logged
+// into … add a shift report in the overview"). The branch's sales in the range, in the shape the till's Overview draws,
+// and every shift that was open in it (opened before `to`, and still open or closed after `from`) with its own sales,
+// expected and counted cash and where it stands. Every till and the web POS. A MANAGER's (a person who may confirm a
+// shift — never a cashier: the cashier's close is blind, never the till's own session, A415). Open to the till (unlike
+// /api/reports, web-only), reached through the branch server on a till behind one (A410).
+// ─────────────────────────────────────────────────────────────────────────────
+const REPORT_PAGE = 500;
+const ORDER_COLS = 'id, created_at, device_id, shift_id, cashier_id, total, vat_amount, ctl_amount, refunded_amount, refunded_at, '
+  + 'discount_amount, tip_amount, payments ( method, amount, status )';
+
+/** Every completed order at the branch in a time range, or of some shifts — paged: a plain select stops silently at the
+ *  row cap (lib/pgQuery.ts). */
+async function allOrders(businessId: string, by: { branchId: string; from: string; to: string } | { shiftIds: string[] }): Promise<any[]> {
+  const out: any[] = [];
+  for (let at = 0; ; at += REPORT_PAGE) {
+    let q = supabase.from('orders').select(ORDER_COLS).eq('business_id', businessId).eq('status', 'completed');
+    q = 'shiftIds' in by
+      ? q.in('shift_id', by.shiftIds)
+      : q.eq('branch_id', by.branchId).gte('created_at', by.from).lte('created_at', by.to);
+    const { data, error } = await q.order('id', { ascending: true }).range(at, at + REPORT_PAGE - 1);
+    if (error) throw new Error(`branch-report orders: ${error.message}`);
+    out.push(...(data ?? []));
+    if ((data ?? []).length < REPORT_PAGE) return out;
+  }
+}
+
+function toBranchOrder(o: any): BranchOrder {
+  const t = orderTax(o);
+  return {
+    id: o.id, created_at: o.created_at, device_id: o.device_id ?? null, shift_id: o.shift_id ?? null,
+    cashier_id: o.cashier_id ?? null,   // A440
+    gross: t.gross, refunded: t.refunded, net: t.net, vat: t.vat, ctl: t.ctl,
+    discount: Number(o.discount_amount ?? 0) || 0, tip: Number(o.tip_amount ?? 0) || 0,
+    payments: (o.payments ?? []).map((p: any) => ({ method: String(p.method ?? 'other'), amount: Number(p.amount) || 0, status: p.status ?? null })),
+  };
+}
+
+router.get('/branch-report', async (req, res) => {
+  if (!callerMayConfirm(req)) { res.status(403).json({ error: 'A manager signs in to see the branch.', code: 'MANAGER_ONLY' }); return; }
+  const branchId = branchScope(req);
+  if (!branchId) { res.status(400).json({ error: 'Which branch? (branch_id)' }); return; }
+  const from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
+  const f = Date.parse(from), t = Date.parse(to);
+  if (!Number.isFinite(f) || !Number.isFinite(t) || t < f) { res.status(400).json({ error: 'from and to must be times, from first' }); return; }
+  if (t - f > 32 * 86_400_000) { res.status(400).json({ error: 'At most a month at a time' }); return; }
+  const tz = Math.max(-840, Math.min(840, Math.round(Number(req.query.tz_offset_min ?? 180)) || 0));
+  const fromIso = new Date(f).toISOString(), toIso = new Date(t).toISOString();
+
+  const [orders, shiftsRes, devicesRes] = await Promise.all([
+    allOrders(req.businessId, { branchId, from: fromIso, to: toIso }),
+    supabase.from('shifts')
+      .select('id, device_id, terminal_code, cashier_id, status, opened_at, closed_at, opening_float, closing_float, '
+        + 'expected_cash, cash_variance, close_method, declared_methods, confirmed_at, confirmed_by')
+      .eq('business_id', req.businessId).eq('branch_id', branchId)
+      .lte('opened_at', toIso).or(`status.eq.open,closed_at.gte.${fromIso}`)
+      .order('opened_at', { ascending: false }).limit(200),
+    supabase.from('user_devices').select('device_id, terminal_code, device_label')
+      .eq('business_id', req.businessId).eq('branch_id', branchId).not('device_id', 'is', null),
+  ]);
+  if (shiftsRes.error) { sendError(res, shiftsRes.error); return; }
+  const shifts = (shiftsRes.data ?? []) as any[];
+
+  // A shift's own sales, whenever rung — a drawer opened before `from` still shows all of it.
+  const shiftIds = shifts.map(s => s.id);
+  // Paged inside each chunk too: ten busy shifts can pass the row cap together (chunkIn alone would truncate silently).
+  const shiftOrders: any[] = [];
+  for (let i = 0; i < shiftIds.length; i += 50) {
+    const chunk = shiftIds.slice(i, i + 50);
+    shiftOrders.push(...await allOrders(req.businessId, { shiftIds: chunk }));
+  }
+
+  const names = new Map<string, TillName>();
+  for (const d of (devicesRes.data ?? []) as TillName[]) if (d.device_id && !names.has(d.device_id)) names.set(d.device_id, d);
+  // A440: and everyone who rang a sale up, for staff performance.
+  const personIds = [...new Set([...shifts.flatMap(s => [s.cashier_id, s.confirmed_by]), ...orders.map((o: any) => o.cashier_id)].filter(Boolean))] as string[];
+  const people = new Map<string, string>();
+  if (personIds.length) {
+    const { data: users } = await supabase.from('users').select('id, name').in('id', personIds.slice(0, 500));
+    for (const u of users ?? []) people.set(u.id, u.name);
+  }
+  const expectedOpen = new Map<string, number>();
+  await Promise.all(shifts.filter(s => s.status === 'open').slice(0, 50).map(async s => {
+    try { expectedOpen.set(s.id, await computeExpectedCash(s.id, Number(s.opening_float) || 0)); }
+    catch { /* left out — the till shows "—", never a wrong figure */ }
+  }));
+
+  // A433: Item Mix for every till — the lines of the range's orders, by product, paged inside each chunk.
+  const itemTotals = new Map<string, { name: string; qty: number; revenue: number }>();
+  const orderIds = orders.map((o: any) => o.id as string);
+  for (let i = 0; i < orderIds.length; i += 100) {
+    const chunk = orderIds.slice(i, i + 100);
+    for (let at = 0; ; at += REPORT_PAGE) {
+      const { data, error } = await supabase.from('order_items').select('id, product_name, quantity, subtotal')
+        .in('order_id', chunk).order('id', { ascending: true }).range(at, at + REPORT_PAGE - 1);
+      if (error) { sendError(res, error); return; }
+      for (const it of (data ?? []) as Array<{ product_name: string | null; quantity: unknown; subtotal: unknown }>) {
+        const name = it.product_name ?? 'Item';
+        const v = itemTotals.get(name) ?? { name, qty: 0, revenue: 0 };
+        v.qty += Number(it.quantity) || 0; v.revenue += Number(it.subtotal) || 0;
+        itemTotals.set(name, v);
+      }
+      if ((data ?? []).length < REPORT_PAGE) break;
+    }
+  }
+  const topProducts = [...itemTotals.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 50)
+    .map((p) => ({ name: p.name, qty: Math.round(p.qty * 1000) / 1000, revenue: Math.round(p.revenue * 100) / 100 }));
+  const declaredCodes = new Map(shifts.map((s) => [s.id as string, Object.keys(methodMap(s.declared_methods) ?? {})]));
+
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  const report = buildBranchReport({
+      orders: orders.map(toBranchOrder),
+      shifts: shifts.map((s): BranchShift => ({
+        id: s.id, device_id: s.device_id ?? null, terminal_code: s.terminal_code ?? null, cashier_id: s.cashier_id ?? null,
+        status: s.status, opened_at: s.opened_at, closed_at: s.closed_at ?? null,
+        opening_float: Number(s.opening_float) || 0, closing_float: num(s.closing_float),
+        expected_cash: num(s.expected_cash), cash_variance: num(s.cash_variance), close_method: s.close_method ?? null,
+        declared_methods: s.declared_methods ?? null, confirmed_at: s.confirmed_at ?? null, confirmed_by: s.confirmed_by ?? null,
+      })),
+      shiftOrders: (shiftOrders as any[]).map(toBranchOrder),
+      names, people, expectedOpen, tzOffsetMin: tz,
+  });
+  res.json({
+    scope: 'branch',
+    from: fromIso, to: toIso,
+    ...report,
+    // A433: what a manager recounts to confirm each shift (the methods the cashier declared; cash always).
+    shifts: report.shifts.map((x) => ({ ...x, declare_codes: declaredCodes.get(x.id) ?? [] })),
+    topProducts,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shifts/:id/zreport — A433 (owner, 2026-10-10: "under sales report it should cover all tills when logged in as
+// the manager"). Any shift at the branch as a Z-report in the till's own shape (lib/shiftZReport.ts), for a manager on a
+// till that does not hold it. A manager only, the caller's branch.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:id/zreport', async (req, res) => {
+  if (!callerMayConfirm(req)) { res.status(403).json({ error: 'A manager signs in to see another till\'s shift.', code: 'MANAGER_ONLY' }); return; }
+  const { data: shift, error } = await supabase.from('shifts').select('*')
+    .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
+  if (error) { sendError(res, error); return; }
+  const branchId = branchScope(req);
+  if (!shift || (branchId && shift.branch_id !== branchId)) { res.status(404).json({ error: 'Shift not found' }); return; }
+
+  const [orders, voids, floats, exps, biz] = await Promise.all([
+    allOrders(req.businessId!, { shiftIds: [shift.id] }),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('shift_id', shift.id).eq('status', 'voided'),
+    supabase.from('float_transactions').select('type, amount').eq('shift_id', shift.id),
+    supabase.from('expenses').select('description, amount, created_at, payment_method, paid_by').eq('shift_id', shift.id).order('created_at'),
+    supabase.from('businesses').select('ctl_rate').eq('id', req.businessId).maybeSingle(),
+  ]);
+  // A442: and everyone who rang a sale up on it.
+  const ids = [...new Set([shift.cashier_id, shift.confirmed_by, ...((exps.data ?? []) as any[]).map((e) => e.paid_by),
+    ...orders.map((o: any) => o.cashier_id)].filter(Boolean))] as string[];
+  const nameOf = new Map<string, string>();
+  if (ids.length) {
+    const { data: us } = await supabase.from('users').select('id, name').in('id', ids);
+    for (const u of us ?? []) nameOf.set(u.id, u.name);
+  }
+  const declared = methodMap(shift.declared_methods);
+  let confirmation = null as Parameters<typeof buildShiftZReport>[0]['confirmation'];
+  if (declared || shift.confirmed_at) {
+    const reasons = (shift.confirm_reasons ?? {}) as Record<string, string>;
+    const lines = (shift.confirmed_at
+      ? confirmationLines(declared, methodMap(shift.expected_methods), methodMap(shift.confirmed_methods))
+      : confirmationLines(declared, null, null)).map((l) => (reasons[l.method] ? { ...l, reason: reasons[l.method] } : l));
+    confirmation = {
+      declared, lines, methods: [...new Set(['cash', ...Object.keys(declared ?? {})])],
+      confirmedByName: shift.confirmed_by ? (nameOf.get(shift.confirmed_by) ?? null) : null,
+    };
+  }
+  let expectedNow: number | null = null;
+  if (shift.status === 'open') { try { expectedNow = await computeExpectedCash(shift.id, Number(shift.opening_float) || 0); } catch { /* computed from the rows */ } }
+  const n = (v: unknown) => (v == null ? null : Number(v));
+  res.json(buildShiftZReport({
+    shift: {
+      id: shift.id, status: shift.status, opened_at: shift.opened_at, closed_at: shift.closed_at ?? null,
+      cashier_id: shift.cashier_id ?? null, opening_float: Number(shift.opening_float) || 0,
+      closing_float: n(shift.closing_float), expected_cash: n(shift.expected_cash), cash_variance: n(shift.cash_variance),
+      notes: shift.notes ?? null, confirmed_at: shift.confirmed_at ?? null, confirm_self: shift.confirm_self ?? null,
+    },
+    cashierName: (shift.cashier_id && nameOf.get(shift.cashier_id)) || 'Unknown',
+    orders: orders.map(toBranchOrder),
+    people: nameOf,   // A442
+    voidCount: voids.count ?? 0,
+    floatTxns: ((floats.data ?? []) as any[]).map((f) => ({ type: f.type, amount: Number(f.amount) || 0 })),
+    expenses: ((exps.data ?? []) as any[]).map((e) => ({
+      description: e.description ?? null, amount: Number(e.amount) || 0, created_at: e.created_at,
+      payment_method: e.payment_method ?? 'cash', paid_by_name: e.paid_by ? (nameOf.get(e.paid_by) ?? null) : null,
+    })),
+    expectedNow,
+    ctlLevied: Number((biz.data as any)?.ctl_rate ?? 0) > 0,
+    confirmation,
+  }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/shifts
 // Lists shifts for the business. Supports filters: branch_id, status, from, to.
 // Enriches with cashier name (fetched separately to avoid Supabase FK join issues).
@@ -1112,7 +1328,7 @@ router.get('/:id', async (req, res) => {
       .order('created_at'),
     supabase
       .from('orders')
-      .select('id, total, created_at, payments ( method, amount, status )')
+      .select('id, total, refunded_amount, created_at, cashier_id, payments ( method, amount, status )')   // A442: + who
       .eq('shift_id', id)
       .eq('status', 'completed'),
   ]);
@@ -1156,14 +1372,34 @@ router.get('/:id', async (req, res) => {
   });
   const expectedCash = Number(shift.opening_float) + cashSales + floatIn - floatOut;
 
+  // A442: who sold what on this drawer — each person's orders, sales kept after refunds and money by method.
+  const sellerIds = [...new Set((orders ?? []).map((o: any) => o.cashier_id).filter(Boolean))] as string[];
+  const sellerNames = new Map<string, string>();
+  if (sellerIds.length) {
+    const { data: us } = await supabase.from('users').select('id, name').in('id', sellerIds.slice(0, 500));
+    for (const u of us ?? []) sellerNames.set(u.id, u.name);
+  }
+  const byCashier = shiftByCashier((orders ?? []).map((o: any) => ({
+    cashier_id: o.cashier_id ?? null,
+    net: Number(o.total) - Math.min(Math.max(Number(o.refunded_amount ?? 0), 0), Number(o.total)),
+    payments: (o.payments ?? []).map((p: any) => ({ method: String(p.method ?? 'other'), amount: Number(p.amount) || 0, status: p.status ?? null })),
+  })), sellerNames);
+
   // 0.6.27 ('blind_shift_close'): a cashier gets which methods to declare, never the figures.
   const declareMethods = [...new Set((byMethod as Array<{ method: string; amount: number }>)
     .filter((m) => String(m.method).toLowerCase() !== 'cash' && Math.round(Number(m.amount) * 100) !== 0)
     .map((m) => String(m.method).toLowerCase()))].sort((a, b) => a.localeCompare(b));
   if (!callerMayConfirm(req) && (await businessPosFeatures(req.businessId)).blind_shift_close) {
+    // A416: the owner's switch (off by default) — the cashier sees their shift's sales (kept after refunds) and orders.
+    // Never expected cash, the per-method figures or the difference: the count stays blind.
+    const seesSales = await cashierSeesShiftSales(req.businessId!, shift.branch_id);
+    const kept = (orders ?? []).reduce((s: number, o: any) => s + Number(o.total) - Math.min(Math.max(Number(o.refunded_amount ?? 0), 0), Number(o.total)), 0);
     res.json({
       id: shift.id, status: shift.status, opened_at: shift.opened_at, cashier_id: shift.cashier_id, opened_by: shift.opened_by,
       cashier_name: cashier?.name ?? 'Unknown', blind: true, declare_methods: declareMethods,
+      ...(seesSales ? { cashier_sales: { total: Math.round(kept * 100) / 100, orders: (orders ?? []).length,
+        // A442: each person's part — sales only, never a method's figure (the count stays blind).
+        by_cashier: byCashier.map((c) => ({ name: c.name, orders: c.orders, sales: c.sales })) } } : {}),
     });
     return;
   }
@@ -1174,6 +1410,7 @@ router.get('/:id', async (req, res) => {
     order_count: (orders ?? []).length,
     total_revenue: totalRevenue,
     by_method: byMethod,
+    by_cashier: byCashier,   // A442
     cash_sales: cashSales,
     float_in: floatIn,
     float_out: floatOut,

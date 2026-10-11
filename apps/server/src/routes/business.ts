@@ -11,6 +11,7 @@ import { isReversalSettingKey, reversalSettingValue } from '../lib/reversalRules
 import { BUSINESS_DAY_CUTOFF_KEY, cutoffSettingValue } from '../lib/businessDay';   // 0.6.34
 import { invalidateDayCutoff } from '../lib/dayCutoff';
 import { CASHIER_HISTORY_METHODS_KEY, historyMethodsSettingValue } from '../lib/cashierHistory';   // 0.6.37 (A387)
+import { PAYMENT_METHODS_ENABLED_KEY, enabledSettingValue } from '../lib/paymentCatalogue';   // A429
 import { invalidateHistoryMethods } from '../lib/historyMethods';
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { STOCK_COUNT_FREEZE_KEY, freezeSetting } from '../lib/stockTakeRules';   // A394
@@ -78,6 +79,12 @@ const READABLE_SETTING_KEYS = new Set([
   'business_day_cutoff',
   // 0.6.37 (A387): the payment methods a cashier's History shows (a JSON list; [] = every method).
   'cashier_history_methods',
+  // A429: the payment methods switched on (a JSON list of catalogue codes; absent = the defaults).
+  'payment_methods_enabled',
+  // A416: a cashier closing a shift sees their sales ("true"); off by default (lib/cashierShiftSales.ts).
+  'cashier_sees_shift_sales',
+  // A418: a cashier's History shows the total of what is filtered ("true"); only while cashier_sees_shift_sales is on.
+  'cashier_history_totals',
   // A394: is an item being counted frozen (not sold until counted)? The owner's choice — "true" / "false".
   'stock_count_freeze',
   // Names that must never reach a kitchen ticket — drinks, sauces, packaged
@@ -416,6 +423,23 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
       : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
     if (cutErr) { sendError(res, cutErr); return; }
     invalidateDayCutoff(req.businessId);
+    res.json({ key, value: clean });
+    return;
+  }
+
+  // ── A429: the payment methods switched on — only catalogue codes; stored as a JSON list in catalogue order ──
+  if (key === PAYMENT_METHODS_ENABLED_KEY) {
+    const clean = enabledSettingValue(value);
+    if (clean === null) {
+      res.status(400).json({ error: 'Choose payment methods from the list.', code: 'INVALID_VALUE' });
+      return;
+    }
+    const { data: existingPm } = await supabase
+      .from('business_settings').select('id').eq('business_id', req.businessId).eq('key', key).maybeSingle();
+    const { error: pmErr } = existingPm
+      ? await supabase.from('business_settings').update({ value: clean, updated_at: new Date().toISOString() }).eq('id', existingPm.id)
+      : await supabase.from('business_settings').insert({ business_id: req.businessId, key, value: clean });
+    if (pmErr) { sendError(res, pmErr); return; }
     res.json({ key, value: clean });
     return;
   }

@@ -13,6 +13,7 @@ import TechPage from './pages/TechPage';
 import UpdateBanner from './pages/UpdateBanner';
 import HelpScreen from './components/HelpScreen';   // 0.6.35 (A384)
 import JoinPrompt from './components/JoinPrompt';   // A427
+import OnScreenKeyboard from './components/OnScreenKeyboard';   // A417
 import { computeThemeVars, applyThemeVars } from './lib/themeVars';
 
 type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 'tech';
@@ -20,8 +21,9 @@ type AppState = 'loading' | 'install' | 'enrol' | 'pin' | 'pos' | 'manager' | 't
 const MANAGER_ROLES = ['manager', 'supervisor', 'admin', 'branch_manager'];
 
 // A427: on the branch server, "a till wants to join" shows over every screen — PIN pad, till, manager, tech.
+// A417: the on-screen keyboard serves every screen too — it opens when a field is tapped with a finger or pen.
 export default function App() {
-  return (<><AppScreens /><JoinPrompt /></>);
+  return (<><AppScreens /><JoinPrompt /><OnScreenKeyboard /></>);
 }
 
 function AppScreens() {
@@ -131,12 +133,17 @@ function AppScreens() {
 
   // Staff PIN verified → route by role.
   const handleStaffLogin = (s: StaffSession) => {
+    setPinNotice(null);
     setStaff(s);
     setState(hasManagerRights(s) ? 'manager' : 'pos');
   };
 
   // End the current staff shift -> back to PIN pad (the till stays joined).
-  const handleEndShift = async () => {
+  // A421: a line for the PIN screen after a shift closes ("Shift closed — your count is saved."); gone at the next sign-in.
+  const [pinNotice, setPinNotice] = useState<string | null>(null);
+
+  const handleEndShift = async (notice?: unknown) => {
+    setPinNotice(typeof notice === 'string' ? notice : null);   // a click event is not a notice
     await posApi.auth.clearStaffSession();
     setStaff(null);
     setLocked(false);          // never leave a curtain over the PIN pad
@@ -172,6 +179,7 @@ function AppScreens() {
         onStaffLogin={handleStaffLogin}
         onTechUnlock={() => setState('tech')}
         onHelp={openHelp}
+        notice={pinNotice}
       />
       {help}
       </>
@@ -222,6 +230,7 @@ function AppScreens() {
     <POSPage
       business={session!.business}
       onLogout={handleEndShift}
+      onShiftClosed={handleEndShift}
       // Cashiers get no button at all — the tools they can't use shouldn't be
       // visible, and ManagerPage gates each tab on its own permission anyway.
       onOpenManager={hasManagerRights(staff) ? (tab?: 'dayclose') => { setManagerTab(tab ?? null); setState('manager'); } : undefined}

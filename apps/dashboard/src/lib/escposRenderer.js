@@ -491,6 +491,17 @@ function renderShiftReport(r, paperWidthMm) {
     }
   }
   d.line(rule(cols));
+  if (r.byCashier && r.byCashier.length > 0) {
+    d.line("SALES BY CASHIER", { bold: true });
+    for (const c of r.byCashier) {
+      d.line(pair(cols, `${c.name} (${c.orders})`, money(c.sales)), { bold: true });
+      for (const m of c.byMethod) {
+        const label = METHOD_LABELS[m.method] ?? m.method.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+        d.line(pair(cols, `  ${label}`, money(m.amount)));
+      }
+    }
+    d.line(rule(cols));
+  }
   d.line(pair(cols, "Orders", String(r.orderCount)));
   d.line(pair(cols, "Gross sales", money(r.grossSales)));
   if (r.refunds != null && r.refunds > 0) {

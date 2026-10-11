@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { enabledFromSetting } from '../lib/paymentCatalogue';   // A429
 import { sendError } from '../lib/sendError';
 import { parseNotePicks } from '../lib/orderNotes';
 import { parseReversalRules, REVERSAL_SETTING_KEYS } from '../lib/reversalRules';
@@ -15,7 +16,8 @@ import { isConfirmedBranchServer } from '../lib/deviceRole';   // A427
 import { mayIssueJoinCode } from '../lib/tillJoin';   // A427
 import { makeCode, hashCode, expiryFromNow } from '../lib/enrolCode';   // A427
 import { cleanCutoff } from '../lib/businessDay';   // 0.6.34
-import { cleanHistoryMethods } from '../lib/cashierHistory';   // 0.6.37 (A387)
+import { cleanHistoryMethods } from '../lib/cashierHistory';
+import { cleanSeesSales, historyTotalsOn } from '../lib/cashierShiftSales';   // A416 / A418   // 0.6.37 (A387)
 import { getSupportContact } from '../lib/supportContact';   // 0.6.35 (A384)
 import { frozenAtBranch } from '../lib/stockTakeAccess';   // A394
 
@@ -229,7 +231,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'order_note_picks',
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks',
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -264,7 +266,7 @@ router.get('/init', async (req, res) => {
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods'])
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled'])
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -431,6 +433,12 @@ router.get('/init', async (req, res) => {
     businessDayCutoff: cleanCutoff(receiptText.business_day_cutoff) ?? 0,
     // 0.6.37 (A387): the payment methods a cashier's History shows ([] = every method); the branch's own value wins.
     cashierHistoryMethods: cleanHistoryMethods(receiptText.cashier_history_methods) ?? [],
+    // A416: a cashier closing a shift sees their sales — off unless the owner/manager turned it on; the branch's own wins.
+    cashierSeesShiftSales: cleanSeesSales(receiptText.cashier_sees_shift_sales),
+    // A418: a cashier's History total — only while the switch above is on too ("one should be on for the other").
+    cashierHistoryTotals: historyTotalsOn(receiptText.cashier_sees_shift_sales, receiptText.cashier_history_totals),
+    // A429: the payment methods this branch takes (catalogue codes); the branch's own value wins; absent = the defaults.
+    paymentMethodsEnabled: enabledFromSetting(receiptText.payment_methods_enabled),
     // 0.6.35 (A384): the tech allocated to this client (admin portal) — their name and number on the till's Help.
     // Always sent: null = no tech → the Help shows SwiftPOS support's numbers (shared/support.ts). Older tills ignore it.
     support: await getSupportContact(req.businessId),

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
+import JoinWaitPanel from '../components/JoinWaitPanel';   // A436
+import ServerKeepRunning from '../components/ServerKeepRunning';   // A435
 import type { DeployMode, DeviceRole, FoundServer } from '../lib/posApi';
 
 interface Props {
@@ -51,6 +53,7 @@ export default function InstallPage({ onComplete }: Props) {
   const [searching, setSearching] = useState(false);
   const [joinTarget, setJoinTarget] = useState<FoundServer | null>(null);
   const [joinNote, setJoinNote] = useState('');
+  const [joinWait, setJoinWait] = useState<{ tillName: string; at: number } | null>(null);   // A436
   const [joinedViaServer, setJoinedViaServer] = useState(false);
 
   // ── Step 1: connection ──
@@ -141,7 +144,7 @@ export default function InstallPage({ onComplete }: Props) {
     try {
       const r = await posApi.install.requestJoin(srv.url);
       setJoinTarget(srv);
-      setJoinNote(`Waiting for someone at the server to allow "${r.name}" to join…`);
+      setJoinWait({ tillName: r.name, at: Date.now() });   // A436: tells the technician to press Allow on the server
     } catch (e: any) { setJoinNote(e?.message ?? 'Could not ask that server.'); }
   };
 
@@ -335,6 +338,7 @@ export default function InstallPage({ onComplete }: Props) {
                   <p className="text-xs text-gray-400">Choose the server to join. Someone at that server is asked to allow it.</p>
                 </div>
               )}
+              {joinTarget && joinWait && <JoinWaitPanel tillName={joinWait.tillName} srv={joinTarget} askedAt={joinWait.at} />}
               {joinNote && <p className="text-sm mt-3 rounded-lg px-3 py-2 border text-amber-300 bg-amber-400/10 border-amber-400/20">{joinNote}</p>}
               {!searching && (
                 <div className="flex gap-3 mt-4">
@@ -490,6 +494,7 @@ export default function InstallPage({ onComplete }: Props) {
                   </p>
                 </div>
               )}
+              {(role === 'node' || role === 'office') && <ServerKeepRunning />}
               {role === 'till' && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-1.5">

@@ -78,7 +78,7 @@ await ok('the cloud: the setting (settings.manage, validated), the branch overri
   assert.match(biz, /if \(key === CASHIER_HISTORY_METHODS_KEY\) \{\s*const clean = historyMethodsSettingValue\(value\);\s*if \(clean === null\)/);
   assert.match(biz, /invalidateHistoryMethods\(req\.businessId\)/);
   const br = read('apps/server/src/routes/branches.ts');
-  assert.match(br, /OVERRIDABLE_KEYS = \[[^\]]*'cashier_history_methods'\]/);
+  assert.match(br, /OVERRIDABLE_KEYS = \[[^\]]*'cashier_history_methods',?[^\]]*\]/);
   assert.match(br, /if \(key === CASHIER_HISTORY_METHODS_KEY\) \{\s*const clean = historyMethodsSettingValue\(value\);/);
   const pos = read('apps/server/src/routes/pos.ts');
   assert.match(pos, /cashierHistoryMethods: cleanHistoryMethods\(receiptText\.cashier_history_methods\) \?\? \[\]/);
@@ -91,9 +91,11 @@ await ok('the cloud: the setting (settings.manage, validated), the branch overri
 await ok('GET /api/orders: a cashier\'s list filtered in the query (pages right), split sales trimmed; managers see all; only managers reprint', () => {
   const o = read('apps/server/src/routes/orders.ts');
   assert.match(o, /const historyMethods = manager \? \[\] : await getHistoryMethods\(/);
-  assert.match(o, /if \(historyMethods\.length\)\s+query = query\.in\('pm\.method', historyMethods\);/);
+  // A418: the filters are written once (`filtered`) and applied to the page — and to the total of every page.
+  assert.match(o, /if \(historyMethods\.length\)\s+q = q\.in\('pm\.method', historyMethods\);/);
+  assert.match(o, /query = filtered\(query\);/);
   assert.match(o, /if \(historyMethods\.length\) orders = cashierHistoryView\(orders, historyMethods\);/);
-  assert.match(o, /total: count \?\? 0, own_only: ownOnly,\s*history_methods: historyMethods, can_reprint: manager \}\);/);
+  assert.match(o, /total: count \?\? 0, own_only: ownOnly,\s*history_methods: historyMethods, can_reprint: manager(?:, \.\.\.\(totals \? \{ totals \} : \{\}\))? \}\);/);
 });
 
 await ok('the web: POS History shows the allowed part; Settings and the branch override offer the methods', () => {

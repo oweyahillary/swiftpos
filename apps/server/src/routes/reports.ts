@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { chunkIn } from '../lib/pgQuery';
 import { summariseKitchenVoids, kitchenVoidText } from '../lib/kitchenLines';
 import { sumOrderTax, orderTax, keptFraction } from '../lib/orderTax';
+import { splitByMethod, addMethods, methodList } from '../lib/staffMethods';   // A439
 import { businessDateEAT, businessRangeEAT } from '../lib/businessDay';   // 0.6.34
 import { getDayCutoff } from '../lib/dayCutoff';
 
@@ -214,18 +215,23 @@ router.get('/staff', async (req, res) => {
   const { start, end } = getDateRange(from as string, to as string, (req as any).dayCutoff ?? 0);
   const scopedBranch = branchScope(req);
 
-  let query = supabase
-    .from('orders')
-    .select('id, total, refunded_amount, refunded_at, cashier_id, shift_id, branch_id, created_at, branches ( name )')
-    .eq('business_id', req.businessId)
-    .eq('status', 'completed')
-    .gte('created_at', start)
-    .lte('created_at', end);
-
-  if (scopedBranch) query = query.eq('branch_id', scopedBranch);
-
-  const { data: orders, error } = await query;
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  // A439: paged by id — one read stops at 1,000 rows, and a busy month has more; with each sale's payments, for the
+  // money by payment method.
+  const orders: any[] = [];
+  for (let at = 0; ; at += 1000) {
+    let query = supabase
+      .from('orders')
+      .select('id, total, refunded_amount, refunded_at, cashier_id, shift_id, branch_id, created_at, branches ( name ), payments ( method, amount, status )')
+      .eq('business_id', req.businessId)
+      .eq('status', 'completed')
+      .gte('created_at', start)
+      .lte('created_at', end);
+    if (scopedBranch) query = query.eq('branch_id', scopedBranch);
+    const { data: page, error } = await query.order('id', { ascending: true }).range(at, at + 999);
+    if (error) { res.status(500).json({ error: error.message }); return; }
+    orders.push(...(page ?? []));
+    if (!page || page.length < 1000) break;
+  }
 
   // A259c: orders rung offline/desktop often land with NO cashier_id AND NO shift_id,
   // so both id- and shift_id-based lookups miss and everything buckets into "Unknown".
@@ -268,17 +274,19 @@ router.get('/staff', async (req, res) => {
       .forEach(u => { userMap[u.id] = u.name || u.email || 'Unknown'; });
   }
 
-  const staffMap: Record<string, { name: string; branch: string; orders: number; revenue: number }> = {};
+  const staffMap: Record<string, { name: string; branch: string; orders: number; revenue: number; methods: Record<string, number> }> = {};
   (orders ?? [] as ReportOrderRow[]).forEach((o) => {
     const cid    = cashierOf(o);
     const key    = cid ?? 'unknown';
     const name   = (cid && userMap[cid]) ? userMap[cid] : 'Unknown';
     const branch = embedOne<{ name: string }>((o as any).branches)?.name ?? '';
-    if (!staffMap[key]) staffMap[key] = { name, branch, orders: 0, revenue: 0 };
+    if (!staffMap[key]) staffMap[key] = { name, branch, orders: 0, revenue: 0, methods: {} };
     staffMap[key].orders++;
     // Net of refunds: a cashier's attributed sales should not include money
     // handed back. Order count still counts the sale — it did happen.
-    staffMap[key].revenue += orderTax(o as any).net;
+    const kept = orderTax(o as any).net;
+    staffMap[key].revenue += kept;
+    addMethods(staffMap[key].methods, splitByMethod(kept, (o as any).payments));   // A439
   });
 
   const staff = Object.entries(staffMap)
@@ -291,6 +299,7 @@ router.get('/staff', async (req, res) => {
       revenue:         v.revenue,
       avg_order_value: v.orders ? v.revenue / v.orders : 0,
       voids:           0,
+      by_method:       methodList(v.methods),   // A439: this cashier's money by payment method
     }))
     .sort((a, b) => b.revenue - a.revenue);
 

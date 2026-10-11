@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
   // A427: a new till finds the branch server on the network and asks to join; the server answers.
   install: {
     findServers: ()            => ipcRenderer.invoke('install:findServers'),
-    requestJoin: (url: string) => ipcRenderer.invoke('install:requestJoin', { url }),
+    requestJoin: (url: string, rejoin?: boolean) => ipcRenderer.invoke('install:requestJoin', { url, rejoin: !!rejoin }),
     joinStatus:  ()            => ipcRenderer.invoke('install:joinStatus'),
   },
   serverJoin: {
@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getTables:    ()                  => ipcRenderer.invoke('pos:getTables'),
     getPumps:     ()                  => ipcRenderer.invoke('pos:getPumps'),
     paymentMethods: ()                => ipcRenderer.invoke('pos:paymentMethods'),
+    paymentMethodsEnabled: ()         => ipcRenderer.invoke('pos:paymentMethodsEnabled'),   // A429
     // A278: main pushes 'catalogue:changed' after a background pull applied a web edit, so the
     // running POS reloads products/prices without a restart. Returns its own unsubscribe.
     onCatalogueChanged: (cb: () => void) => {
@@ -194,6 +195,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) =>
       ipcRenderer.invoke('shift:confirm', { shiftId, pin, counts, reasons }),
     confirmView: (shiftId: string) => ipcRenderer.invoke('shift:confirmView', shiftId),   // 0.6.27
+    // A433: another till's shift, confirmed on the cloud by the signed-in manager (or a PIN).
+    remoteConfirmView: (shiftId: string) => ipcRenderer.invoke('shift:remoteConfirmView', shiftId),
+    remoteConfirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) =>
+      ipcRenderer.invoke('shift:remoteConfirm', { shiftId, pin, counts, reasons }),
     // 0.6.23: a manager already signed in confirms without a PIN.
     canConfirm: ()                                                       => ipcRenderer.invoke('shift:canConfirm'),
     // A366: may the signed-in person close the open shift (its owner or a manager)?
@@ -258,6 +263,7 @@ contextBridge.exposeInMainWorld('swiftpos', {
     getContinuousOperation: ()                           => ipcRenderer.invoke('manage:getContinuousOperation'),
     setContinuousOperation: (enabled: boolean)           => ipcRenderer.invoke('manage:setContinuousOperation', enabled),
     setReversalRule: (key: string, value: unknown)       => ipcRenderer.invoke('manage:setReversalRule', { key, value }),   // 0.6.30
+    setPaymentMethodsEnabled: (codes: string[])          => ipcRenderer.invoke('manage:setPaymentMethodsEnabled', codes),   // A429
     getCashierHistoryMethods: ()                         => ipcRenderer.invoke('manage:getCashierHistoryMethods'),   // 0.6.37
     setCashierHistoryMethods: (methods: string[])        => ipcRenderer.invoke('manage:setCashierHistoryMethods', methods),
   },
@@ -268,6 +274,9 @@ contextBridge.exposeInMainWorld('swiftpos', {
     topProducts:    (range?: any) => ipcRenderer.invoke('manager:topProducts', range),
     recentOrders:   (range?: any) => ipcRenderer.invoke('manager:recentOrders', range),
     branchOrders:   (range?: any) => ipcRenderer.invoke('manager:branchOrders', range),
+    branchDay:      (range?: any) => ipcRenderer.invoke('manager:branchDay', range),   // A431 / A432
+    branchShifts:   () => ipcRenderer.invoke('manager:branchShifts'),   // A433
+    remoteZReport:  (shiftId: string) => ipcRenderer.invoke('manager:remoteZReport', shiftId),   // A433
     reportScope:    ()            => ipcRenderer.invoke('manager:reportScope'),
     resolveRange:   (range: any)  => ipcRenderer.invoke('manager:resolveRange', range),
     exportCsv:      (req: any)    => ipcRenderer.invoke('manager:exportCsv', req),
