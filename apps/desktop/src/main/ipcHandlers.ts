@@ -2319,12 +2319,12 @@ export function registerIpcHandlers() {
     return sts.map(st => ({ ...st, active: !!st.active,
       category_ids: links.filter(l => l.station_id === st.id).map(l => l.category_id) }));
   };
+  // A446 (owner's screenshot, 2026-10-11): the screen listed the CLOUD's stations while printing reads THIS TILL's copy —
+  // a station added on the web or another till showed here, and Test print said 'No station "…"' (and the kitchen got
+  // nothing for it) until the next menu pull. The list fetched is now also this till's copy, at once.
   handle('manage:listStations', async () => {
     // A411: while routing saved on this till waits for the cloud, this till's own copy is the truth for it.
     if (Object.keys(readPendingRouting(getLocalDb())).length) return withPendingFlags(localStations());
-    // A446 (owner's screenshot, 2026-10-11): the screen listed the CLOUD's stations while printing reads THIS TILL's copy —
-    // a station added on the web or another till showed here, and Test print said 'No station "…"' (and the kitchen got
-    // nothing for it) until the next menu pull. The list fetched is now also this till's copy, at once.
     try { return withPendingFlags(await refreshStationsLocal()); }
     catch { return withPendingFlags(localStations()); }
   });
