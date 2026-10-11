@@ -8,6 +8,7 @@
  * useEffect and use `// eslint-disable-line` to suppress the lint warning.
  */
 
+import { OffersManager } from '../OffersPage';   // A445
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate }    from 'react-router-dom';
 import { usePOSAuth }     from '../../context/POSAuthContext';
@@ -76,6 +77,8 @@ interface NavItem { key: string; label: React.ReactNode; title: string; permissi
 const NAV_ITEMS: NavItem[] = [
   { key: 'overview',  label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Overview</span></>,  title: 'Overview', permission: null, group: null },
   { key: 'menu',      label: <><Icon d={I.overview}  className="flex-shrink-0" /><span className="truncate">Menu</span></>,      title: 'Menu', permission: 'products.view', group: null },
+  // A445: offers for this branch (the people who edit the menu).
+  { key: 'offers',    label: <><Icon d={I.tag}       className="flex-shrink-0" /><span className="truncate">Offers</span></>,    title: 'Offers', permission: 'products.manage', group: null },
   { key: 'inventory', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Inventory</span></>, title: 'Inventory', permission: 'inventory.view', group: 'Inventory' },
   { key: 'receiving', label: <><Icon d={I.inventory} className="flex-shrink-0" /><span className="truncate">Receiving</span></>, title: 'Receiving', permission: 'inventory.receive', group: 'Inventory' },
   // A394: stock take — the manager counts (blind); the owner reviews and posts.
@@ -1328,6 +1331,8 @@ export default function ManagerDashboard() {
         return <Wastage client={posApi} branchId={session.branchId} currency={currency} branches={managerBranch} />;
       case 'expiry':
         return <Expiry client={posApi} branchId={session.branchId} currency={currency} />;
+      case 'offers':   // A445: this branch's offers (the cloud keeps a manager to their own branch)
+        return <OffersManager client={posApi} isOwner={false} branchId={session.branchId ?? null} currency={currency} />;
       default: return <OverviewTab />;
     }
   }

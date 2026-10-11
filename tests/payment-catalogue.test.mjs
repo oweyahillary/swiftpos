@@ -118,8 +118,10 @@ ok('a manager on a till may save it (the branch settings path, settings.manage)'
 console.log('\nThe till');
 ok('kept on the till (schema 69, the cloud requires it), pulled, relayed to the branch\'s other tills', () => {
   assert.ok(read('apps/desktop/src/main/localDb.ts').includes("['payment_methods_enabled', 'TEXT'],"));
-  assert.ok(read('apps/desktop/src/main/localDb.ts').includes('export const LOCAL_SCHEMA_VERSION = 69;'));
-  assert.ok(read('apps/server/src/lib/desktopSchema.ts').includes('export const REQUIRED_DESKTOP_SCHEMA = 69;'));
+  // Added at 69; a later schema (A445: 70) keeps it — the till and the cloud still move together.
+  const local = Number(read('apps/desktop/src/main/localDb.ts').match(/export const LOCAL_SCHEMA_VERSION = (\d+);/)[1]);
+  const required = Number(read('apps/server/src/lib/desktopSchema.ts').match(/export const REQUIRED_DESKTOP_SCHEMA = (\d+);/)[1]);
+  assert.ok(local >= 69 && required === local, `local ${local}, required ${required}`);
   const sync = read('apps/desktop/src/main/syncEngine.ts');
   assert.ok(sync.includes('setPaymentMethodsEnabled(c.paymentMethodsEnabled);'));
   assert.ok(sync.includes('paymentMethodsEnabled: Array.isArray(_j.paymentMethodsEnabled) ? _j.paymentMethodsEnabled : undefined,'));

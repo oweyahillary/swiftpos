@@ -52,7 +52,8 @@ ok('the list offers Refund only when canRefundOrder says so, gated on orders.voi
   assert.match(tab, /\{isRefunded\(order\.payments\) && <span style=\{s\.refundedBadge\}>refunded<\/span>\}/);
 });
 ok('it posts to the cloud refund with a reason and the manager\'s PIN, and shows the cloud\'s own words', () => {
-  assert.match(tab, /await posApi\.post\(`\/api\/orders\/\$\{order\.id\}\/refund`, \{ reason, override_pin: refundPin\.trim\(\) \}\);/);
+  // A444: the same form voids too (inside the window) — `revMode` is 'refund' or 'void'.
+  assert.match(tab, /await posApi\.post\(`\/api\/orders\/\$\{order\.id\}\/\$\{revMode\}`, \{ reason, override_pin: refundPin\.trim\(\) \}\);/);
   assert.match(tab, /setRefundMsg\(\{ id: order\.id, text: e\?\.message \?\? 'Refund failed', ok: false \}\);/);
   assert.match(tab, /placeholder="Manager or owner PIN"/);
 });

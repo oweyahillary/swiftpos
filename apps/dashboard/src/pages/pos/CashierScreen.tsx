@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { applyOffers, type AppliedOffer } from '../../lib/offers';   // A445
 import { POSLoadingSkeleton } from './cashier/POSSkeletons';
 import { usePOSData }         from './cashier/usePOSData';
 import { useCart }            from './cashier/useCart';
@@ -65,17 +66,6 @@ const ZONE_COLORS: Record<string, { bg: string; border: string; text: string }> 
 };
 const DEFAULT_ZONE = { bg: '#1f2937', border: '#4b5563', text: '#9ca3af' };
 function zoneColor(zone?: string) { return zone ? (ZONE_COLORS[zone] ?? DEFAULT_ZONE) : DEFAULT_ZONE; }
-
-interface ActivePromo {
-  id: string;
-  name: string;
-  promo_type: string;
-  discount_type: 'percentage' | 'fixed' | null;
-  discount_value: number | null;
-  min_quantity: number;
-  free_quantity: number | null;
-  applies_to: string;
-}
 
 interface Pump {
   id: string;
@@ -207,6 +197,7 @@ export default function CashierScreen() {
     maxDiscountPct,
     paymentMethods,
     paymentMethodsEnabled,   // A429
+    offers: branchOffers,    // A445
     loading,
     error:         posDataError,
     reload:        reloadPOSData,
@@ -368,7 +359,6 @@ export default function CashierScreen() {
   // branchPrinters comes from usePOSData hook above
   const [showDrawer, setShowDrawer] = useState(false);
   const [discountState, setDiscountState] = useState<DiscountState | null>(null);
-  const [activePromos, setActivePromos]   = useState<ActivePromo[]>([]);
   const [floorMode, setFloorMode]         = useState(true);
   // A188: only use the absolute-positioned floor plan when tables actually carry a
   // saved layout. Without it every tile falls back to (40,40) and stacks into one
@@ -475,22 +465,11 @@ export default function CashierScreen() {
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  // ── Auto-apply promotions (poll every 60s for time-based) ─────────────────
-  useEffect(() => {
-    let mounted = true;
-    async function checkPromos() {
-      try {
-        const productIds  = cart.map(i => i.product.id).filter(Boolean).join(',');
-        const p = new URLSearchParams();
-        if (productIds) p.set('product_ids', productIds);
-        const promos = await api.get<ActivePromo[]>(`/api/promotions/active?${p}`);
-        if (mounted) setActivePromos(promos ?? []);
-      } catch { if (mounted) setActivePromos([]); }
-    }
-    checkPromos();
-    const timer = setInterval(checkPromos, 60_000);
-    return () => { mounted = false; clearInterval(timer); };
-  }, [cart]); // eslint-disable-line
+  // ── A445: offers apply by themselves (shared/offers.ts, the till's and the cloud's rules) ──────────────────────
+  // The old promotions here were shown on the cart but never charged or stored. Offers come with the menu (pos/init)
+  // and run by this clock, ticked every 30 s so a happy hour starts and ends on time.
+  const [offerClock, setOfferClock] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setOfferClock(new Date()), 30_000); return () => clearInterval(t); }, []);
 
     // ── Sync active cart to openOrders ────────────────────────────────────────
   useEffect(() => {
@@ -1006,17 +985,15 @@ export default function CashierScreen() {
     ? parkingBill.amount
     : cartSubtotal(cart);
   const loyaltyDiscount = loyaltyState?.discountAmount ?? 0;
-  // Auto-applied promotion discount
-  const autoPromoDiscount = activePromos.reduce((total, promo) => {
-    if (!promo.discount_value) return total;
-    if (promo.promo_type === 'quantity_discount') {
-      const cartQty = cart.reduce((s, i) => s + i.quantity, 0);
-      if (cartQty < promo.min_quantity) return total;
-    }
-    if (promo.discount_type === 'percentage') return total + (subtotal * Number(promo.discount_value) / 100);
-    if (promo.discount_type === 'fixed')      return total + Number(promo.discount_value);
-    return total;
-  }, 0);
+  // A445: what the branch's offers take off this cart (never on a parking bill — that is time, not items).
+  const offerResult = useMemo(() => isParking ? { total: 0, applied: [] as AppliedOffer[], byLine: {} } : applyOffers(cart.map((i, n) => ({
+    key: String(n),
+    product_id: i.product?.id ?? null,
+    category_id: (i.product as any)?.category_id ?? (i.product as any)?.categories?.id ?? null,
+    unit_price: i.quantity > 0 ? i.lineTotal / i.quantity : 0,
+    quantity: i.quantity,
+  })), branchOffers, { at: offerClock, branchId: session?.branchId ?? null }), [cart, branchOffers, offerClock, isParking, session?.branchId]);
+  const autoPromoDiscount = offerResult.total;
   const promoDiscount = (discountState?.discount_amount ?? 0) + autoPromoDiscount;
   const totalDiscount = loyaltyDiscount + promoDiscount;
   const orderTotal = Math.max(0, subtotal - totalDiscount);
@@ -1805,20 +1782,16 @@ export default function CashierScreen() {
                   <span style={{ ...s.totalValue, color: '#475569' }}>{fmt(ctlAmount, currency)}</span>
                 </div>
               )}
-              {activePromos.length > 0 && (
+              {offerResult.applied.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
-                  {activePromos.map(p => (
-                    <div key={p.id} style={{
+                  {offerResult.applied.map(p => (
+                    <div key={p.offer_id} data-testid="cart-offer" style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)',
                       borderRadius: 8, padding: '4px 10px',
                     }}>
-                      <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 600 }}>🎉 {p.name}</span>
-                      {p.discount_value != null && (
-                        <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>
-                          {p.discount_type === 'percentage' ? `-${p.discount_value}%` : `-KES ${p.discount_value}`}
-                        </span>
-                      )}
+                      <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 600 }}>Offer: {p.name}</span>
+                      <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>-{fmt(p.amount, currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -2343,6 +2316,7 @@ export default function CashierScreen() {
           loyaltyState={loyaltyState}
           discountState={discountState}
           maxDiscountPct={maxDiscountPct}
+          offers={offerResult.applied}   // A445
           customMethods={paymentMethods}
           enabledMethods={paymentMethodsEnabled}
           shiftId={currentShift?.id ?? null}

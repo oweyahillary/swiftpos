@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { applyOffers, type Offer } from '../../shared/offers';   // A445
 import { posApi } from '../lib/posApi';
 import { cartSubtotal, extractTaxes, computeUnitPrice, computeLineTotal, generateOrderNumber, effectivePrice } from '../lib/cart';
 import type { CartItem } from '../lib/cart';
@@ -21,6 +22,7 @@ import PrinterSettingsModal from '../components/PrinterSettingsModal';
 import OpenDrawerModal from '../components/OpenDrawerModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import VoidModal from '../components/VoidModal';
+import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import { reverseAction, isRefunded, ageMinutes, VOID_WINDOW_MIN } from '../lib/voidRefund';
 import { windowLabel } from '../../shared/reversalRules';
 import { filterSummary, emptyGridMessage } from '../lib/posFilter';
@@ -233,6 +235,16 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [customMethods, setCustomMethods] = useState<{ code: string; name: string }[]>([]);
   // A429: the payment methods this branch takes (null = not told yet = the catalogue's defaults).
   const [enabledMethods, setEnabledMethods] = useState<string[] | null>(null);
+  // A445: the branch's offers (pulled with the menu; reloaded when it changes) and the clock they run by — the cart
+  // applies them by themselves, offline too.
+  const [offerList, setOfferList] = useState<{ offers: Offer[]; branchId: string | null }>({ offers: [], branchId: null });
+  useEffect(() => {
+    const load = () => { posApi.pos.offers().then(setOfferList).catch(() => { /* none until the next pull */ }); };
+    load();
+    return posApi.pos.onCatalogueChanged(load);
+  }, []);
+  const [offerClock, setOfferClock] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setOfferClock(new Date()), 30_000); return () => clearInterval(t); }, []);
 
   // Receipt state
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
@@ -274,6 +286,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [voidTarget, setVoidTarget] = useState<any | null>(null);
+  // A444: the order opened from History — its items, sizes, extras, payments; Reprint and Void / Refund there too.
+  const [detailId, setDetailId] = useState<string | null>(null);
   // 0.6.27: who sees what in History (per-client switches) and the cashier's filters / order.
   const [historyCanReprint, setHistoryCanReprint] = useState(true);
   const [historyOwnOnly, setHistoryOwnOnly] = useState(false);
@@ -923,7 +937,17 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
   // it, so the safe fallback is 'no levy', unlike VAT where 16 is the norm.
   const ctlRate = ctlRateFromServer;
   const subtotal = cartSubtotal(cart);
-  const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(subtotal, vatRate, ctlRate);
+  // A445: what the offers take off this cart (shared/offers.ts — the same rules the cloud checks the sale with).
+  const offerResult = useMemo(() => applyOffers(cart.map((i, n) => ({
+    key: i.lineId ?? String(n),
+    product_id: i.product?.id ?? null,
+    category_id: i.product?.category_id ?? i.product?.categories?.id ?? null,
+    unit_price: i.quantity > 0 ? i.lineTotal / i.quantity : 0,
+    quantity: i.quantity,
+  })), offerList.offers, { at: offerClock, branchId: offerList.branchId }), [cart, offerList, offerClock]);
+  const offerOff = offerResult.total;
+  const toPay = Math.round((subtotal - offerOff) * 100) / 100;
+  const { vat: vatAmount, ctl: ctlAmount } = extractTaxes(toPay, vatRate, ctlRate);
 
   // ── Payment ────────────────────────────────────────────
 
@@ -970,6 +994,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
         ...(riderFee > 0 ? { delivery_fee: riderFee, ...(freeNow ? { delivery_free: true } : {}) } : {}),
         subtotal,
         discount_amount: payment.discountAmount,
+        // A445: the part offers took off, and which — the cloud checks them against its own prices.
+        ...(payment.offerDiscount > 0 ? { offer_discount: payment.offerDiscount, offers: payment.offers } : {}),
         // The BILL, excluding tip. The tip rides in tip_amount and shows up in
         // the payment legs, which reconcile to total + tip (migration 66).
         tip_amount: payment.tipAmount,
@@ -1729,8 +1755,14 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                 <span>VAT ({vatRate}%)</span><span>{currency} {vatAmount.toFixed(2)}</span>
               </div>
             )}
+            {/* A445: each offer on this cart, by name. */}
+            {offerResult.applied.map((o) => (
+              <div key={o.offer_id} data-testid="cart-offer" className="flex justify-between text-sm text-amber-300">
+                <span>Offer: {o.name}</span><span>−{currency} {o.amount.toLocaleString()}</span>
+              </div>
+            ))}
             <div className="flex justify-between text-white font-bold text-lg pt-1 border-t border-gray-800">
-              <span>Total</span><span>{currency} {subtotal.toLocaleString()}</span>
+              <span>Total</span><span>{currency} {toPay.toLocaleString()}</span>
             </div>
             <button
               onClick={() => {
@@ -1746,7 +1778,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               disabled={cart.length === 0 || blocked}
               className="w-full bg-action-500 hover:bg-action-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl py-3 transition-colors mt-1"
             >
-              Charge {currency} {subtotal.toLocaleString()}
+              Charge {currency} {toPay.toLocaleString()}
             </button>
           </div>
         </div>
@@ -1814,6 +1846,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
           enabledMethods={enabledMethods}
           deliveryFee={feeDue}
           rider={orderType === 'delivery' ? deliveryPerson.trim() || null : null}
+          offers={offerResult.applied}
           onConfirm={handleCharge}
           onClose={() => { setShowPayment(false); setPayError(''); }}
         />
@@ -2007,7 +2040,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                       const fmtMoney = (n: number) =>
                         `${currency} ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (
-                        <tr key={o.id} className="hover:bg-gray-800/30 transition-colors">
+                        <tr key={o.id} data-testid="history-row" onClick={() => setDetailId(o.id)} title="See the items in this order"
+                          className="hover:bg-gray-800/30 transition-colors cursor-pointer">
                           <td className="px-4 py-2.5 font-mono text-xs text-gray-300">
                             {o.order_number}
                             {o.origin === 'web' && (
@@ -2058,7 +2092,8 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                             <div className="flex items-center gap-2 justify-end">
                               {o.status === 'completed' && historyCanReprint && (
                                 <button
-                                  onClick={async () => {
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
                                     const r = await window.swiftpos.escpos.reprintReceiptForOrder(o.id);
                                     setReprintNote(r.ok ? `Receipt ${o.order_number} sent to the printer` : (r.error ?? 'Could not reprint'));
                                   }}
@@ -2070,7 +2105,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
                               )}
                               {reverse && (
                                 <button
-                                  onClick={() => { setVoidTarget(o); setShowHistory(false); }}
+                                  onClick={(e) => { e.stopPropagation(); setVoidTarget(o); setShowHistory(false); }}
                                   className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 rounded-lg px-2.5 py-1 transition-colors whitespace-nowrap"
                                 >
                                   {reverse.label}
@@ -2087,6 +2122,18 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
             </div>
           </div>
         </div>
+      )}
+
+      {/* A444: one order's items, payments, Reprint and Void / Refund. */}
+      {detailId && (
+        <OrderDetailPanel
+          orderId={detailId}
+          currency={currency}
+          canVoidRefund={canVoid}
+          windowMin={voidWindowMin}
+          onClose={() => setDetailId(null)}
+          onChanged={() => { loadHistory().catch(() => {}); }}
+        />
       )}
 
       {/* ── Void confirmation modal ────────────────────────────────── */}

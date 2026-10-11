@@ -389,7 +389,16 @@ function renderReceipt(ctx) {
   });
   d.line(rule(cols));
   d.line(pair(cols, "Total Qty:", String(totalQty)));
-  if (tax.discount > 0) d.line(pair(cols, "Discount:", `-${formatCents(tax.discount)}`));
+  let manualNet = tax.discount;
+  if (tax.discount > 0 && order.offers?.length) {
+    for (const o of order.offers) {
+      const net = Math.min(manualNet, netOf(o.amount, business.vatRate, business.ctlRate));
+      if (net <= 0) continue;
+      manualNet -= net;
+      d.line(pair(cols, `${o.name.slice(0, Math.max(8, cols - 14))}:`, `-${formatCents(net)}`));
+    }
+  }
+  if (manualNet > 0) d.line(pair(cols, "Discount:", `-${formatCents(manualNet)}`));
   d.line(pair(cols, "SubTotal:", formatCents(tax.subtotal)));
   d.line(rule(cols));
   if (business.ctlRate > 0 || tax.ctl !== 0) d.line(pair(cols, `CTL (${rate(business.ctlRate)}%)`, formatCents(tax.ctl)));

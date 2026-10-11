@@ -54,6 +54,8 @@ export interface ReferenceBundle {
     receiptFooter: string | null;
     kitchenExclusions: string[] | null;
     paymentMethods: Array<{ code: string; name: string }>;
+    /** A445: the branch's offers (as the cloud sent them). Absent from an older node. */
+    offers?: any[];
     continuousOperation: boolean | null;
     /** 0.6.34: when the business day ends (minutes after midnight); null = the node has not been told. */
     businessDayCutoff?: number | null;
@@ -98,6 +100,7 @@ export interface ReferenceRows {
   categories: any[];
   comboItems: any[];        // combo_items rows
   paymentMethods: any[];    // payment_methods rows (code, name, sort_order)
+  offers?: any[];           // A445: offers rows (id, data JSON)
   printStations: any[];     // print_stations rows
   categoryStations: any[];  // category_stations rows (category_id, station_id)
   variantGroups: any[];
@@ -230,6 +233,8 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       receiptFooter: rows.config.receiptFooter,
       kitchenExclusions: rows.config.kitchenExclusions,
       paymentMethods,
+      // A445: relayed so a peer applies the branch's offers (each row's data is the offer as the cloud sent it).
+      offers: (rows.offers ?? []).flatMap((r: any) => { try { return [JSON.parse(r.data)]; } catch { return []; } }),
       continuousOperation: rows.config.continuousOperation,
       businessDayCutoff: rows.config.businessDayCutoff ?? null,   // 0.6.34: relayed so a peer's day ends with the node's
       support: rows.config.support,                       // 0.6.35: relayed so a peer's Help shows the shop's tech
@@ -284,6 +289,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
     categories: all(`SELECT id, name, color, icon, sort_order, status, is_kitchen FROM categories`),
     comboItems: all(`SELECT combo_id, product_id, name, quantity, sort_order, is_kitchen FROM combo_items ORDER BY combo_id, sort_order`),
     paymentMethods: all(`SELECT code, name, sort_order FROM payment_methods ORDER BY sort_order`),
+    offers: all(`SELECT id, data FROM offers`),   // A445
     printStations: all(`SELECT id, name, kind, sort_order, active FROM print_stations`),
     categoryStations: all(`SELECT category_id, station_id FROM category_stations`),
     variantGroups: all(`SELECT id, product_id, name, required, sort_order FROM variant_groups`),
@@ -358,6 +364,7 @@ export interface AcquiredReference {
   categories: any[];
   comboItems: Record<string, any[]>;
   paymentMethods: Array<{ code: string; name: string }> | null; // null = leave tenders
+  offers: any[] | null;      // A445: null = the source sent none (an older node) — leave the till's offers
   stations: any[] | null;    // null = don't wipe routing
   variantGroups: any[];
   variantOptions: any[];
@@ -424,6 +431,7 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
     categories: arr(pi.categories),
     comboItems: pi.comboItems && typeof pi.comboItems === 'object' && !Array.isArray(pi.comboItems) ? pi.comboItems : {},
     paymentMethods: Array.isArray(pi.paymentMethods) ? pi.paymentMethods : null,
+    offers: Array.isArray(pi.offers) ? pi.offers : null,   // A445
     stations: Array.isArray(bundle?.stations) ? bundle.stations : null,
     variantGroups: arr(bundle?.variantGroups),
     variantOptions: arr(bundle?.variantOptions),

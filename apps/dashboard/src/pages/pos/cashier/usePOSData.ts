@@ -8,6 +8,7 @@
  * The hook returns stable references — only re-fetches when `session` changes.
  */
 
+import { cleanOffer, type Offer } from '../../../lib/offers';   // A445
 import { parseNotePicks } from '../../../lib/orderNotes';
 import { parsePosFeatures, noPosFeatures, type PosFeatures } from '../../../lib/posFeatures';
 import { rulesFromWire } from '../../../lib/reversalRules';
@@ -60,6 +61,8 @@ export interface POSData {
   paymentMethods:    { code: string; name: string }[];
   /** A429: the payment methods this branch takes (null = not sent = the catalogue's defaults). */
   paymentMethodsEnabled: string[] | null;
+  /** A445: the branch's offers, cleaned (shared/offers.ts). */
+  offers: Offer[];
   orderMode:         'pay_first' | 'order_first';
   loading:           boolean;
   error:             string | null;
@@ -73,6 +76,7 @@ export function usePOSData(): POSData {
   const [categories,        setCategories]        = useState<Category[]>([]);
   const [paymentMethods,    setPaymentMethods]    = useState<{ code: string; name: string }[]>([]);
   const [paymentMethodsEnabled, setPaymentMethodsEnabled] = useState<string[] | null>(null);   // A429
+  const [offers, setOffers] = useState<Offer[]>([]);   // A445
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, VariantGroup[]>>({});
   const [comboItems,        setComboItems]        = useState<Record<string, ComboComponent[]>>({});
   const [kitchenExclusions, setKitchenExclusions] = useState<string[]>([]);
@@ -110,6 +114,7 @@ export function usePOSData(): POSData {
       setCategories(init.categories ?? []);
       setPaymentMethods(init.paymentMethods ?? []);
       setPaymentMethodsEnabled(Array.isArray(init.paymentMethodsEnabled) ? init.paymentMethodsEnabled : null);   // A429
+      setOffers((Array.isArray(init.offers) ? init.offers : []).flatMap((o) => { const c = cleanOffer(o); return c.ok ? [(c as { offer: Offer }).offer] : []; }));   // A445
       setVariantsByProduct(init.variantsByProduct ?? {});
       setComboItems(init.comboItems ?? {});
       setKitchenExclusions(init.kitchenExclusions ?? []);
@@ -191,7 +196,7 @@ export function usePOSData(): POSData {
   return {
     products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter,
     tables, pumps, setPumps, branchPrinters,
-    businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, orderMode,
+    businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
     loading, error,
     reload: () => setTick(t => t + 1),
   };

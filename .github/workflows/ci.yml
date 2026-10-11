@@ -867,6 +867,16 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/shift-by-cashier.test.mjs
 
+      # A443 — the branch server fetches an approved update once (resuming) and the tills take it from the server.
+      - name: Desktop update shared by the branch server
+        working-directory: apps/desktop
+        run: node --no-warnings test/update-share.test.mjs
+
+      # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
+      - name: Desktop and web order detail, reprint, void and refund
+        working-directory: apps/desktop
+        run: node --no-warnings test/order-detail.test.mjs
+
       # A428 — the ⓘ on a product opens its description; nothing is added until "Add to order".
       - name: Desktop and web POS product description
         working-directory: apps/desktop

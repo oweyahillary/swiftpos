@@ -45,6 +45,27 @@ const SHARED = [
     ],
   },
   {
+    // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
+    name: 'offers.ts',
+    copies: [
+      'shared/offers.ts',
+      'apps/server/src/lib/offers.ts',          // the cloud checks what a sale claims, and validates an offer on save
+      'apps/desktop/src/shared/offers.ts',      // the till's cart and Manager › Offers
+      'apps/desktop/src/main/offers.ts',        // the main process cleans what the pull stores
+      'apps/dashboard/src/lib/offers.ts',       // the web POS's cart and the Offers page
+    ],
+  },
+  {
+    // A444: an order's items, payments and money in one shape (till records or the cloud), and the reprint payload.
+    name: 'orderDetail.ts',
+    copies: [
+      'shared/orderDetail.ts',
+      'apps/desktop/src/shared/orderDetail.ts',    // the order panel on the till's History and Manager › Orders
+      'apps/desktop/src/main/orderDetail.ts',      // the main process reads the till's rows and rebuilds a reprint
+      'apps/dashboard/src/lib/orderDetail.ts',     // the web Orders page and the web POS order history
+    ],
+  },
+  {
     // A429: Kenya's payment methods and delivery apps, each a switch per branch — the till, the web POS, the cloud.
     name: 'paymentCatalogue.ts',
     copies: [

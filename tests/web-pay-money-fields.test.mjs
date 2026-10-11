@@ -91,8 +91,13 @@ for (const k of MONEY) {
     assert.strictEqual(payBody.get(k), orderBody.get(k),
       'The legs are grandTotal on both paths; the fields that produce it must agree.'));
 }
-ok('discount_amount is the CAPPED discount, not the raw one', () =>
-  assert.strictEqual(payBody.get('discount_amount'), 'cappedDiscount'));
+ok('discount_amount is the CAPPED discount, not the raw one', () => {
+  // A445: the whole discount — the offers (not capped) plus the manual one, capped on what the offers leave.
+  assert.strictEqual(payBody.get('discount_amount'), 'allDiscount');
+  const pm = readFileSync(resolve(ROOT, 'apps/dashboard/src/pages/pos/PaymentModal.tsx'), 'utf8');
+  assert.match(pm, /const cappedDiscount = capDiscountPct\(rawDiscount, Math\.round\(\(subtotal - offerOff\) \* 100\) \/ 100, maxDiscountPct\);/);
+  assert.match(pm, /const allDiscount = Math\.round\(\(offerOff \+ cappedDiscount\) \* 100\) \/ 100;/);
+});
 
 console.log('\n2. every /pay call site uses that body');
 {

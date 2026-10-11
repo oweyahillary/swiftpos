@@ -1158,6 +1158,13 @@ function initSchema(db: Database.Database) {
     ['payment_methods_enabled', 'TEXT'],
   ]);
 
+  // A445 (70): offers — the branch's offers, pulled with the menu (pos/init `offers`) and applied to the cart by the till's
+  // own clock (shared/offers.ts), offline too. One row per offer, the whole offer as JSON; replaced wholesale on each pull.
+  // Never pushed. orders.offer_discount / orders.offers — what offers took off a sale and which (part of discount_amount,
+  // which stays the whole discount); they ride in the order payload (POST /api/orders), where the cloud checks them.
+  db.exec(`CREATE TABLE IF NOT EXISTS offers (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
+  migrateColumns(db, 'orders', [['offer_discount', 'REAL DEFAULT 0'], ['offers', 'TEXT']]);
+
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
   // already exist, so a till that ran the trial with thermal OFF would keep 0 —
   // and with the HTML sale path removed it would print nothing at all. Guarded
@@ -1261,7 +1268,8 @@ function initSchema(db: Database.Database) {
 // 68 adds A416 + A418: device_config.cashier_sees_shift_sales and cashier_history_totals (pulled) — a cashier sees their
 // sales at close, and a total in History. REQUIRED moves with it.
 // 69 adds A429: device_config.payment_methods_enabled (pulled) — the payment methods the branch takes. REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 69;
+// 70 adds A445: offers (pulled, the branch's offers) and orders.offer_discount + orders.offers (the order payload). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 70;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

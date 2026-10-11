@@ -20,7 +20,7 @@
 
 export type TabKey =
   | 'overview' | 'orders' | 'items' | 'shift' | 'zreport' | 'expenses' | 'dayclose' | 'branchclose'
-  | 'menu' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage';
+  | 'menu' | 'offers' | 'prices' | 'combos' | 'import' | 'settings' | 'printers' | 'staff' | 'stock' | 'wastage';
 
 export type GroupKey = 'overview' | 'sales' | 'expenses' | 'close' | 'menu' | 'settings' | 'stock';
 
@@ -58,7 +58,8 @@ export function buildManagerNav(a: NavAccess): NavGroup[] {
     // Manager-only: Close Day is the escape route for the trading-day gate.
     { key: 'close', label: 'Close', tabs: a.isManagerRole
       ? [{ key: 'dayclose', label: 'Close Day' }, { key: 'branchclose', label: 'Close Branch' }] : [] },
-    { key: 'menu', label: 'Menu', tabs: a.canManageProducts ? [{ key: 'menu', label: 'Menu' }] : [] },
+    // A445: Offers beside the menu, for the same people (products.manage).
+    { key: 'menu', label: 'Menu', tabs: a.canManageProducts ? [{ key: 'menu', label: 'Menu' }, { key: 'offers', label: 'Offers' }] : [] },
     { key: 'settings', label: 'Settings', tabs: [
       ...((a.canManageSettings || a.canManageProducts) ? [{ key: 'settings' as TabKey, label: 'General' }] : []),
       ...(a.canPrinting ? [{ key: 'printers' as TabKey, label: 'Printing' }] : []),

@@ -99,6 +99,9 @@ export interface Order {
   total: Cents;
   /** Discount taken off the lines (gross, tax-inclusive). The lines sum to total + discount. Omitted = none. */
   discount?: Cents;
+  /** A445: the offers inside `discount` (gross, tax-inclusive), each printed by name; what is left of `discount` prints as
+   *  "Discount:". Omitted = the one "Discount:" line, byte-identical to before. */
+  offers?: Array<{ name: string; amount: Cents }>;
   /** Tip on top of the bill. Not a sale and not taxed — printed after the total; the customer pays total + tip. */
   tip?: Cents;
   /** 0.6.27: delivery fee on top of the bill (pass-through to the rider). Not a sale, not taxed — printed after the
