@@ -111,6 +111,9 @@ export default function ExpensesPage() {
   const [filterFrom, setFilterFrom]         = useState(firstOfMonth);
   const [filterTo, setFilterTo]             = useState(today);
   const [filterCategory, setFilterCategory] = useState('');
+  // A452 (owner, 2026-10-12): filter by how it was paid and who paid it; a subtotal per method while filtered.
+  const [filterMethod, setFilterMethod]     = useState('');
+  const [filterPayer, setFilterPayer]       = useState('');
 
   // Expense modal
   const [expenseModal, setExpenseModal] = useState<'add' | Expense | null>(null);
@@ -124,6 +127,17 @@ export default function ExpensesPage() {
   const [catSaving, setCatSaving]       = useState(false);
   const [catError, setCatError]         = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<ExpenseCategory | null>(null);
+
+  // A452: the filters run on the period's rows (already loaded); the subtotals follow them.
+  const methodOf = (e: Expense) => e.payment_method ?? 'cash';
+  const methodName = (code: string) => EXPENSE_METHODS.find(m => m.code === code)?.name ?? code;
+  const methodOptions = [...new Set(expenses.map(methodOf))].sort();
+  const payerOptions = [...new Map(expenses.filter(e => e.paid_by).map(e => [e.paid_by as string, e.paid_by_name ?? 'Unknown'])).entries()];
+  const shown = expenses.filter(e => (!filterMethod || methodOf(e) === filterMethod) && (!filterPayer || e.paid_by === filterPayer));
+  const narrowed = !!(filterMethod || filterPayer);
+  const shownTotal = shown.reduce((a, e) => a + Number(e.amount || 0), 0);
+  const byMethod = [...shown.reduce((m, e) => m.set(methodOf(e), (m.get(methodOf(e)) ?? 0) + Number(e.amount || 0)), new Map<string, number>()).entries()]
+    .sort((a, b) => b[1] - a[1]);
 
   // ── Data loading ───────────────────────────────────────────────────────────
 
@@ -381,21 +395,49 @@ export default function ExpensesPage() {
               />
             </div>
 
+            {/* A452: how it was paid, and who paid */}
+            <select data-testid="expense-filter-method" value={filterMethod} onChange={e => setFilterMethod(e.target.value)}
+              className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+              <option value="">All payment methods</option>
+              {methodOptions.map(m => <option key={m} value={m}>{methodName(m)}</option>)}
+            </select>
+            <select data-testid="expense-filter-payer" value={filterPayer} onChange={e => setFilterPayer(e.target.value)}
+              className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+              <option value="">Everyone who paid</option>
+              {payerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+            {narrowed && (
+              <button onClick={() => { setFilterMethod(''); setFilterPayer(''); }} className="text-xs text-gray-400 hover:text-white underline">Clear</button>
+            )}
+
             {/* Summary chip */}
             <div className="ml-auto flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2">
-              <span className="text-red-400 text-xs font-medium">Total Expenses</span>
-              <span className="text-red-300 text-sm font-bold">{fmt(total, currency)}</span>
+              <span className="text-red-400 text-xs font-medium">{narrowed ? 'Filtered expenses' : 'Total Expenses'}</span>
+              <span className="text-red-300 text-sm font-bold">{fmt(narrowed ? shownTotal : total, currency)}</span>
+              {narrowed && <span className="text-red-400/70 text-xs">of {fmt(total, currency)}</span>}
             </div>
           </div>
+
+          {/* A452: a subtotal per payment method while a filter is on */}
+          {narrowed && shown.length > 0 && (
+            <div data-testid="expense-method-subtotals" className="flex flex-wrap gap-2">
+              {byMethod.map(([m, amt]) => (
+                <div key={m} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
+                  <span className="text-gray-400">{methodName(m)}</span>
+                  <span className="ml-2 font-semibold text-white">{fmt(amt, currency)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Table */}
           <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
             {loading ? (
               <div className="py-16 text-center text-gray-500 text-sm">Loading…</div>
-            ) : expenses.length === 0 ? (
+            ) : shown.length === 0 ? (
               <div className="py-16 text-center">
                 <p className="text-3xl mb-3">💸</p>
-                <p className="text-gray-400 text-sm font-medium">No expenses found</p>
+                <p className="text-gray-400 text-sm font-medium">{narrowed ? 'No expenses match these filters' : 'No expenses found'}</p>
                 <p className="text-gray-600 text-xs mt-1">
                   {canManage ? 'Click "+ Add Expense" to record one.' : 'No expenses in this period.'}
                 </p>
@@ -416,7 +458,7 @@ export default function ExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.map(e => (
+                  {shown.map(e => (
                     <tr key={e.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group">
                       <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{fmtDate(e.expense_date)}</td>
                       <td className="px-4 py-3 text-white max-w-xs">
@@ -465,10 +507,10 @@ export default function ExpensesPage() {
                 <tfoot>
                   <tr className="border-t border-gray-700">
                     <td colSpan={7} className="px-4 py-3 text-gray-500 text-xs font-semibold">
-                      {expenses.length} expense{expenses.length !== 1 ? 's' : ''}
+                      {shown.length} expense{shown.length !== 1 ? 's' : ''}{narrowed ? ' (filtered)' : ''}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-red-300">
-                      {fmt(total, currency)}
+                      {fmt(narrowed ? shownTotal : total, currency)}
                     </td>
                     {canManage && <td />}
                   </tr>

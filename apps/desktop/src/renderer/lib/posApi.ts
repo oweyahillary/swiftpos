@@ -205,10 +205,22 @@ export interface ShiftSummary {
   cashier_name: string | null; expected_cash: number | null; cash_variance: number | null;
 }
 
+/** A452: one shift as its till reports it to the branch server (main/branchClose.ts PeerShift). */
+export interface BranchPeerShift {
+  id: string; cashier_name: string; opened_at: string; closed_at: string | null;
+  state: 'open' | 'awaiting' | 'confirmed' | 'closed';
+  orders: number; sales: number; by_method: Record<string, number>; expected: Record<string, number>;
+  methods: string[]; declared: Record<string, number> | null;
+  cash: { opening_float: number; cash_sales: number; float_in: number; float_out: number; expenses: number };
+  confirmed?: { by_name: string | null; at: string; counted: Record<string, number> | null } | null;
+}
+
 /** 0.6.11: an expense on the manager's Expenses screen. */
 export interface ExpenseRow {
   id: string; description: string; amount: number; created_at: string; shift_id: string | null;
   paid_by_name: string | null; expense_category_id: string | null; sync_status: string;
+  /** A452: how it was paid, its type, who paid it. */
+  payment_method: string; expense_type_name: string | null; paid_by: string | null;
 }
 
 /** Date-range selection for the manager reports. */
@@ -449,11 +461,16 @@ declare global {
               business_date: string | null; day_open: boolean;
               open_drawer: { cashier_name: string | null } | null;
               drawers_on_day: number; cashiers_counted_total: number;
+              /** A452: the till's shifts (absent from an older till), and its clock when it reported. */
+              shifts?: BranchPeerShift[];
+              clock?: string;
             } | null;
+            /** A452: the latest confirm sent per shift. */
+            confirms?: Record<string, { status: string; error: string | null; created_at: string }>;
             instruction: {
               id: number; status: string; created_at: string;
               delivered_at: string | null; acked_at: string | null;
-              payload: { business_date: string; counted_cash: number; notes?: string };
+              payload: { business_date: string; counted_cash: number | null; notes?: string };
               ack: { ok: boolean; error?: string; summary?: any; already_closed?: boolean } | null;
             } | null;
           }>;
@@ -461,6 +478,13 @@ declare global {
         closeTill: (deviceId: string, countedCash: number, notes?: string) => Promise<{
           ok: boolean; error?: string; instruction_id?: number;
           self?: boolean; summary?: unknown; already_closed?: boolean;
+        }>;
+        confirmShift: (deviceId: string, shiftId: string, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<{
+          ok: boolean; error?: string; instruction_id?: number; self?: boolean; summary?: Confirmation | null;
+        }>;
+        closeBranch: (notes?: string) => Promise<{
+          ok: boolean; error?: string; blockers?: string[];
+          results?: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }>;
         }>;
       };
       print: {
@@ -553,9 +577,9 @@ declare global {
         /** A365: a manager's blind recount of every payment method, approved with their own PIN. */
         confirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')? */
-        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null }>;
+        confirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>;
         /** A433: another till's shift — confirmed on the cloud by the signed-in manager (or a manager's PIN). */
-        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null }>;
+        remoteConfirmView: (shiftId: string) => Promise<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>;
         remoteConfirm: (shiftId: string, pin: string | undefined, counts: Record<string, number>, reasons?: Record<string, string>) => Promise<Confirmation>;
         /** 0.6.23: is the signed-in person a manager (confirms without a PIN)? */
         canConfirm: () => Promise<boolean>;

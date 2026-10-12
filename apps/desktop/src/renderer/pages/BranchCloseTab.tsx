@@ -1,41 +1,45 @@
 /**
- * BranchCloseTab — Phase 4: close every till's trading day from the branch server.
+ * BranchCloseTab — close the branch from the branch server (Phase 4; A452 rebuilt it around the shifts).
+ *
+ * Owner, 2026-10-12: "I thought it would show running shifts per till like the shift report, and when a cashier closes a
+ * shift the manager gets a confirm shift just like on the till; the manager can click on a till and get its sales; when
+ * all shifts are closed and confirmed they get a Close branch; when a branch is closed all tills reset to a new day and
+ * the server time is the final time." And: "while confirming a shift let the manager see what the system holds … so he
+ * can get the variance before confirming."
  *
  * WHAT THE MANAGER SEES
- *   One row per till: its reported day state (and how old that report is), a
- *   counted-cash field, and a Close button. Below, a roll-up of what has been
- *   counted so far. A till the node has not heard from recently is marked
- *   stale rather than hidden — a branch close that silently omits a terminal
- *   looks identical to a complete one, which is the failure this screen must
- *   never produce.
+ *   One card per till, with its shifts of the day as that till reports them (every 15 s — its own books, never the
+ *   server's replicated copies): who, when, sales and orders; open a shift for its sales by method and what the till
+ *   expects. A closed shift waiting for a manager is confirmed here: what the system expects beside each count, the
+ *   variance as it is typed. The till records the confirmation itself (an instruction it collects within ~15 s).
+ *   Close branch is offered once every till has reported, no drawer is open and nothing waits for a manager — each
+ *   till then closes its day with its confirmed counts (no second count), a till still on yesterday's day included.
  *
- * WHAT THIS SCREEN DOES NOT DO
- *   - It shows no expected cash before a count is entered — same blind rule as
- *     the per-till Close Day screen, held harder here because a manager could
- *     otherwise read every till's target off one page.
- *   - It computes no cash figures itself. Counted cash goes to the till; the
- *     till answers with expected and variance from its own books. The node's
- *     replicated copies are not consulted for money.
- *   - It never pretends. A till that does not ack stays visibly "waiting"; a
- *     till that refuses shows the refusal verbatim ("a drawer is still open").
+ * IT NEVER PRETENDS. A till not heard from, on an older version, refusing, or still answering is shown as such.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { posApi } from '../lib/posApi';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { posApi, type BranchPeerShift } from '../lib/posApi';
+import { methodName, type MethodOption } from '../../shared/shiftConfirm';
+import MethodDot from '../components/MethodDot';
 
 interface Props { currency: string }
 
 type Overview = Extract<Awaited<ReturnType<typeof posApi.branchClose.overview>>, { tills: any }>;
 type TillView = Overview['tills'][number];
 
+const STALE_MS = 120_000;
+const tillLabel = (t: { is_self: boolean; device_id: string }) => (t.is_self ? 'This terminal (branch server)' : `Terminal ${t.device_id.slice(0, 8)}`);
+
 export default function BranchCloseTab({ currency }: Props) {
   const [ov, setOv] = useState<Overview | null>(null);
   const [err, setErr] = useState('');
   const [role, setRole] = useState<string | null>(null);
-  const [counts, setCounts] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<string | null>(null);
-  const [rowMsg, setRowMsg] = useState<Record<string, string>>({});
+  const [options, setOptions] = useState<MethodOption[]>([]);
+  const [open, setOpen] = useState<string | null>(null);          // the shift whose details are shown
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [closeMsg, setCloseMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const alive = useRef(true);
 
   const load = useCallback(async () => {
@@ -49,45 +53,21 @@ export default function BranchCloseTab({ currency }: Props) {
   useEffect(() => {
     alive.current = true;
     posApi.config.get().then(c => { if (alive.current) setRole(c?.device_role ?? 'till'); }).catch(() => setRole('till'));
+    posApi.pos.paymentMethods().then(o => { if (alive.current) setOptions(o); }).catch(() => {});
     void load();
-    // 5s while this screen is open: instructions resolve on the peers' 15s
-    // poll, and the manager is standing here watching for exactly that.
+    // 5 s while this screen is open: the tills report every 15 s, and the manager is standing here watching.
     const t = setInterval(() => { void load(); }, 5_000);
     return () => { alive.current = false; clearInterval(t); };
   }, [load]);
 
-  const money = (v: number) =>
-    `${currency} ${Number(v || 0).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
-
+  const money = (v: number) => `${currency} ${Number(v || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '');
   const ageOf = (iso: string | null): { label: string; stale: boolean } => {
     if (!iso) return { label: 'never', stale: true };
     const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
     if (s < 45) return { label: `${s}s ago`, stale: false };
-    if (s < 3600) return { label: `${Math.floor(s / 60)}m ago`, stale: s > 120 };
+    if (s < 3600) return { label: `${Math.floor(s / 60)}m ago`, stale: s * 1000 > STALE_MS };
     return { label: `${Math.floor(s / 3600)}h ago`, stale: true };
-  };
-
-  const closeTill = async (t: TillView) => {
-    const amount = Number(counts[t.device_id]);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setRowMsg(m => ({ ...m, [t.device_id]: 'Enter the cash you counted for this till first.' }));
-      return;
-    }
-    setBusy(t.device_id);
-    setRowMsg(m => ({ ...m, [t.device_id]: '' }));
-    try {
-      const r = await posApi.branchClose.closeTill(t.device_id, amount, notes[t.device_id] || undefined);
-      if (!r.ok) {
-        setRowMsg(m => ({ ...m, [t.device_id]: r.error ?? 'Could not close this till.' }));
-      } else if (r.self) {
-        setRowMsg(m => ({ ...m, [t.device_id]: r.already_closed ? 'Already closed.' : 'Closed.' }));
-      } else {
-        setRowMsg(m => ({ ...m, [t.device_id]: 'Sent — waiting for the till (up to ~15s)…' }));
-      }
-      await load();
-    } finally {
-      setBusy(null);
-    }
   };
 
   if (role !== null && role !== 'node' && role !== 'office') {
@@ -102,115 +82,286 @@ export default function BranchCloseTab({ currency }: Props) {
   if (err) return <div className="p-6 text-sm text-red-300">{err}</div>;
   if (!ov) return <div className="p-6 text-sm text-gray-400">Loading…</div>;
 
-  // The roll-up counts only what has actually been confirmed: acked closes and
-  // the node's own close. Entered-but-unsent figures are not money yet.
-  const closedTills = ov.tills.filter(t =>
-    (t.instruction?.status === 'acked' && t.instruction.ack?.ok) ||
-    (t.is_self && t.state && !t.state.day_open));
-  const confirmedTotal = ov.tills.reduce((sum, t) => {
-    const a = t.instruction?.status === 'acked' && t.instruction.ack?.ok ? t.instruction.payload.counted_cash : 0;
-    return sum + a;
-  }, 0);
-  const waiting = ov.tills.filter(t => t.instruction?.status === 'pending');
-  const failed  = ov.tills.filter(t => t.instruction?.status === 'failed');
+  // What stands between the branch and its close — the same checks the server makes when Close branch is pressed.
+  const blockers: string[] = [];
+  for (const t of ov.tills) {
+    const st = t.state;
+    if (!st) { blockers.push(`${tillLabel(t)} has never reported in`); continue; }
+    if (!t.is_self && ageOf(t.last_seen).stale) blockers.push(`${tillLabel(t)} has not been heard from in the last 2 minutes`);
+    if (!st.shifts) blockers.push(`${tillLabel(t)} needs the update to close from here`);
+    if (st.open_drawer) blockers.push(`${tillLabel(t)}: ${st.open_drawer.cashier_name ?? 'a cashier'}'s drawer is still open`);
+    const waiting = (st.shifts ?? []).filter(s => s.state === 'awaiting').length;
+    if (waiting) blockers.push(`${tillLabel(t)}: ${waiting} shift${waiting === 1 ? '' : 's'} to confirm`);
+  }
+  const dayOpen = ov.tills.filter(t => t.state?.day_open);
+  const closedTills = ov.tills.filter(t => !t.state?.day_open || (t.instruction?.status === 'acked' && t.instruction.ack?.ok));
+  const waitingClose = ov.tills.filter(t => t.instruction?.status === 'pending');
+  const refusedClose = ov.tills.filter(t => t.instruction?.status === 'failed');
+  const allShifts = ov.tills.flatMap(t => t.state?.shifts ?? []);
+  const branchSales = allShifts.reduce((a, s) => a + s.sales, 0);
+  const branchOrders = allShifts.reduce((a, s) => a + s.orders, 0);
+
+  const closeBranch = async () => {
+    setClosing(true); setCloseMsg(null);
+    try {
+      const r = await posApi.branchClose.closeBranch();
+      if (!r.ok) setCloseMsg({ ok: false, text: r.error ?? (r.results ?? []).filter(x => !x.ok).map(x => `${x.device_id.slice(0, 8)}: ${x.error}`).join('; ') ?? 'Could not close the branch.' });
+      else setCloseMsg({ ok: true, text: (r.results ?? []).some(x => x.sent) ? 'Closing — each till answers within ~15 seconds.' : 'The branch is closed.' });
+      await load();
+    } finally { setClosing(false); }
+  };
 
   return (
-    <div className="p-6 space-y-4 max-w-3xl">
+    <div className="p-6 space-y-4 max-w-4xl" data-testid="branch-close">
       <div>
         <h2 className="text-lg font-semibold text-gray-100">Close the branch</h2>
-        <p className="text-sm text-gray-400">Trading date <span className="text-gray-200 font-medium">{ov.business_date}</span>.
-          Each till closes its own day; this screen asks them to, and reports exactly what happened.</p>
+        <p className="text-sm text-gray-400">
+          Server date <span className="text-gray-200 font-medium">{ov.business_date}</span> — the server's date is final.
+          Each till's shifts are below as the till reports them. Confirm each closed shift, then close the branch: every
+          till closes its day and starts the next.
+        </p>
+        <p className="text-sm text-gray-300 mt-1" data-testid="branch-totals">
+          Today across the branch: {branchOrders} order{branchOrders === 1 ? '' : 's'} · {money(branchSales)} sales
+        </p>
       </div>
 
       {ov.tills.map(t => {
         const age = ageOf(t.is_self ? new Date().toISOString() : t.last_seen);
+        const st = t.state;
         const ins = t.instruction;
-        const closed = (ins?.status === 'acked' && ins.ack?.ok) || (t.is_self && t.state && !t.state.day_open);
-        const ackSummary: any = ins?.ack?.summary ?? null;
+        const closedNow = ins?.status === 'acked' && ins.ack?.ok;
+        const behindDay = st?.day_open && st.business_date && st.business_date !== ov.business_date;
+        const skewMin = st?.clock && t.last_seen ? Math.round((new Date(st.clock).getTime() - new Date(t.last_seen).getTime()) / 60_000) : 0;
         return (
-          <div key={t.device_id} className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2">
-            <div className="flex items-center gap-3">
-              <span className="text-gray-100 font-medium">{t.is_self ? 'This terminal (branch server)' : `Terminal ${t.device_id.slice(0, 8)}`}</span>
+          <div key={t.device_id} className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-3" data-testid={`till-${t.device_id}`}>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-gray-100 font-medium">{tillLabel(t)}</span>
               {!t.is_self && (
                 <span className={`text-xs ${age.stale ? 'text-amber-400' : 'text-gray-500'}`}>
                   last seen {age.label}{age.stale ? ' — figures may be stale' : ''}
                 </span>
               )}
-              {closed && <span className="text-xs px-2 py-0.5 rounded bg-green-600/20 text-green-300 border border-green-600/40">day closed</span>}
-              {ins?.status === 'pending' && <span className="text-xs px-2 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-600/40">waiting for till…</span>}
+              {st && !st.day_open && <span className="text-xs px-2 py-0.5 rounded bg-gray-600/30 text-gray-300 border border-gray-600/50">day closed</span>}
+              {closedNow && <span className="text-xs px-2 py-0.5 rounded bg-action-600/20 text-action-300 border border-action-600/40">closed with the branch</span>}
+              {ins?.status === 'pending' && <span className="text-xs px-2 py-0.5 rounded bg-amber-600/20 text-amber-300 border border-amber-600/40">closing — waiting for the till…</span>}
               {ins?.status === 'failed' && <span className="text-xs px-2 py-0.5 rounded bg-red-600/20 text-red-300 border border-red-600/40">refused</span>}
             </div>
 
-            {t.state ? (
-              <p className="text-xs text-gray-400">
-                {t.state.day_open
-                  ? <>Day {t.state.business_date} open · {t.state.drawers_on_day} drawer{t.state.drawers_on_day === 1 ? '' : 's'} closed,
-                      cashiers counted {money(t.state.cashiers_counted_total)}
-                      {t.state.open_drawer && <span className="text-amber-300"> · a drawer is still open{t.state.open_drawer.cashier_name ? ` (${t.state.open_drawer.cashier_name})` : ''}</span>}</>
-                  : 'No open trading day.'}
-              </p>
-            ) : (
-              <p className="text-xs text-amber-400/80">This till has never reported in. It cannot be closed from here until it does.</p>
-            )}
-
-            {ins?.status === 'failed' && ins.ack?.error && (
-              <p className="text-xs text-red-300">{ins.ack.error}</p>
-            )}
-            {closed && ackSummary && (
-              <p className="text-xs text-gray-400">
-                Counted {money(ins!.payload.counted_cash)} · expected {money(ackSummary.expectedCash ?? 0)} ·{' '}
-                <span className={Math.abs(ackSummary.variance ?? 0) < 0.005 ? 'text-green-300' : 'text-amber-300'}>
-                  variance {money(ackSummary.variance ?? 0)}
-                </span>
+            {!st && <p className="text-xs text-amber-400/80">This till has never reported in. It shows here once it is on and reaches the server.</p>}
+            {behindDay && (
+              <p className="text-xs text-amber-300" data-testid="behind-day">
+                Its trading day {st!.business_date} is still open — it closes with the branch, and the till starts {ov.business_date}.
               </p>
             )}
-
-            {!closed && t.state?.day_open && (
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="number" min="0" step="0.01" placeholder="Cash you counted"
-                  value={counts[t.device_id] ?? ''}
-                  onChange={e => setCounts(m => ({ ...m, [t.device_id]: e.target.value }))}
-                  className="bg-gray-900 border border-gray-600 rounded-md px-3 py-1.5 text-sm text-gray-100 w-44"
-                />
-                <input
-                  type="text" placeholder="Notes (optional)"
-                  value={notes[t.device_id] ?? ''}
-                  onChange={e => setNotes(m => ({ ...m, [t.device_id]: e.target.value }))}
-                  className="bg-gray-900 border border-gray-600 rounded-md px-3 py-1.5 text-sm text-gray-100 flex-1"
-                />
-                <button
-                  onClick={() => closeTill(t)}
-                  disabled={busy === t.device_id || ins?.status === 'pending'}
-                  className="text-sm px-3 py-1.5 rounded-md bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 whitespace-nowrap"
-                >
-                  {busy === t.device_id ? 'Sending…' : 'Close this till'}
-                </button>
-              </div>
+            {Math.abs(skewMin) >= 5 && (
+              <p className="text-xs text-amber-300">This till's clock is {Math.abs(skewMin)} min {skewMin > 0 ? 'ahead of' : 'behind'} the server — set it right; the server's time counts.</p>
             )}
-            {rowMsg[t.device_id] && <p className="text-xs text-gray-300">{rowMsg[t.device_id]}</p>}
+            {st && !st.shifts && (
+              <p className="text-xs text-amber-300">This till is on an older version — update it to see and confirm its shifts here.</p>
+            )}
+            {ins?.status === 'failed' && ins.ack?.error && <p className="text-xs text-red-300">{ins.ack.error}</p>}
+
+            {st?.shifts && st.shifts.length === 0 && st.day_open && <p className="text-xs text-gray-400">No shifts on this till today.</p>}
+            {st?.shifts && st.shifts.length > 0 && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 text-left">
+                    <th className="font-normal pb-1">Cashier</th><th className="font-normal pb-1">Shift</th>
+                    <th className="font-normal pb-1">Status</th><th className="font-normal pb-1 text-right">Orders</th>
+                    <th className="font-normal pb-1 text-right">Sales</th><th />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700/60">
+                  {st.shifts.map(s => {
+                    const c = t.confirms?.[s.id];
+                    return (
+                      <Fragment key={s.id}>
+                        <tr className="cursor-pointer hover:bg-gray-700/30" onClick={() => setOpen(open === s.id ? null : s.id)} data-testid={`shift-${s.id}`}>
+                          <td className="py-2 text-gray-100">{s.cashier_name}</td>
+                          <td className="py-2 text-gray-400 text-xs">{time(s.opened_at)} – {s.closed_at ? time(s.closed_at) : 'now'}</td>
+                          <td className="py-2"><ShiftBadge s={s} pending={c?.status === 'pending'} /></td>
+                          <td className="py-2 text-right text-gray-300 tabular-nums">{s.orders}</td>
+                          <td className="py-2 text-right text-gray-100 font-medium tabular-nums">{money(s.sales)}</td>
+                          <td className="py-2 text-right text-xs text-gray-400 pl-2">{open === s.id ? 'Hide' : 'Details'}</td>
+                        </tr>
+                        {c?.status === 'failed' && c.error && (
+                          <tr><td colSpan={6} className="pb-2 text-xs text-red-300">The till did not take the confirmation: {c.error}</td></tr>
+                        )}
+                        {open === s.id && (
+                          <tr><td colSpan={6} className="pb-3">
+                            <ShiftDetails s={s} money={money} options={options} />
+                            {s.state === 'awaiting' && c?.status !== 'pending' && (
+                              confirming === s.id
+                                ? <ConfirmHere till={t} s={s} money={money} options={options} currency={currency}
+                                    onDone={() => { setConfirming(null); void load(); }} onCancel={() => setConfirming(null)} />
+                                : <button data-testid={`confirm-${s.id}`} onClick={() => setConfirming(s.id)}
+                                    className="mt-2 px-3 py-1.5 rounded-md bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold">
+                                    Confirm this shift
+                                  </button>
+                            )}
+                          </td></tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {closedNow && ins?.ack?.summary && (
+              <p className="text-xs text-gray-400">
+                Day {ins.ack.summary.closedDate ?? ''} closed · counted {money(ins.ack.summary.countedCash ?? 0)} · expected {money(ins.ack.summary.expectedCash ?? 0)} ·{' '}
+                <span className={Math.abs(ins.ack.summary.variance ?? 0) < 0.005 ? 'text-gray-200' : 'text-amber-300'}>variance {money(ins.ack.summary.variance ?? 0)}</span>
+              </p>
+            )}
           </div>
         );
       })}
 
-      <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 text-sm">
+      <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 space-y-2 text-sm" data-testid="close-branch">
         <div className="flex justify-between text-gray-300">
-          <span>Tills closed</span>
+          <span>Tills with their day closed</span>
           <span>{closedTills.length} of {ov.tills.length}</span>
         </div>
-        <div className="flex justify-between text-gray-300 mt-1">
-          <span>Confirmed counted total (remote tills)</span>
-          <span className="font-medium text-gray-100">{money(confirmedTotal)}</span>
-        </div>
-        {waiting.length > 0 && (
-          <p className="text-xs text-blue-300 mt-2">Waiting on {waiting.length} till{waiting.length === 1 ? '' : 's'} to answer.</p>
+        {blockers.length > 0 ? (
+          <div className="text-xs text-amber-300 space-y-0.5" data-testid="close-blockers">
+            <p className="text-gray-300">Before the branch can close:</p>
+            {blockers.map(b => <p key={b}>· {b}</p>)}
+          </div>
+        ) : dayOpen.length === 0 ? (
+          <p className="text-xs text-gray-400">Every till's day is closed. Each starts {ov.business_date === '' ? 'the next day' : 'the next trading day'} at its next sale.</p>
+        ) : (
+          <p className="text-xs text-gray-300">Every shift is closed and confirmed. Closing the branch closes each till's day with its confirmed counts.</p>
         )}
-        {failed.length > 0 && (
-          <p className="text-xs text-red-300 mt-2">{failed.length} till{failed.length === 1 ? '' : 's'} refused — the reason is on the card. Fix it there, then close again.</p>
-        )}
-        {closedTills.length < ov.tills.length && waiting.length === 0 && failed.length === 0 && (
-          <p className="text-xs text-gray-500 mt-2">The branch is closed only when every till above says so. A till that cannot be reached is closed at the till, exactly as before.</p>
-        )}
+        {waitingClose.length > 0 && <p className="text-xs text-amber-300">Waiting on {waitingClose.length} till{waitingClose.length === 1 ? '' : 's'} to answer.</p>}
+        {refusedClose.length > 0 && <p className="text-xs text-red-300">{refusedClose.length} till{refusedClose.length === 1 ? '' : 's'} refused — the reason is on its card.</p>}
+        {closeMsg && <p className={`text-xs ${closeMsg.ok ? 'text-gray-200' : 'text-red-300'}`}>{closeMsg.text}</p>}
+        <button data-testid="close-branch-btn" onClick={() => void closeBranch()}
+          disabled={closing || blockers.length > 0 || dayOpen.length === 0 || waitingClose.length > 0}
+          className="w-full mt-1 px-4 py-2.5 rounded-lg bg-action-500 hover:bg-action-400 text-gray-950 font-bold disabled:opacity-40">
+          {closing ? 'Closing…' : 'Close branch'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ShiftBadge({ s, pending }: { s: BranchPeerShift; pending: boolean }) {
+  const [cls, text] = pending ? ['bg-amber-600/20 text-amber-300 border-amber-600/40', 'confirming…']
+    : s.state === 'open' ? ['bg-action-600/20 text-action-300 border-action-600/40', 'open']
+    : s.state === 'awaiting' ? ['bg-amber-600/20 text-amber-300 border-amber-600/40', 'to confirm']
+    : s.state === 'confirmed' ? ['bg-gray-600/30 text-gray-200 border-gray-500/50', 'confirmed']
+    : ['bg-gray-600/30 text-gray-300 border-gray-600/50', 'closed'];
+  return <span className={`text-xs px-2 py-0.5 rounded border ${cls}`}>{text}</span>;
+}
+
+/** A shift's sales by method and what its till expects — the shift report, compact. */
+function ShiftDetails({ s, money, options }: { s: BranchPeerShift; money: (n: number) => string; options: MethodOption[] }) {
+  const methods = [...new Set([...Object.keys(s.by_method), ...Object.keys(s.expected)])].sort((a, b) => (a === 'cash' ? -1 : b === 'cash' ? 1 : a.localeCompare(b)));
+  return (
+    <div className="bg-gray-900/60 border border-gray-700 rounded-md p-3 space-y-2" data-testid={`details-${s.id}`}>
+      <table className="w-full text-xs">
+        <thead><tr className="text-gray-500"><th className="text-left font-normal">Method</th><th className="text-right font-normal">Sales</th><th className="text-right font-normal">Expected</th>
+          {s.confirmed?.counted && <th className="text-right font-normal">Confirmed</th>}</tr></thead>
+        <tbody>
+          {methods.map(m => (
+            <tr key={m} className="text-gray-200">
+              <td className="py-0.5"><MethodDot method={m} />{methodName(m, options)}</td>
+              <td className="py-0.5 text-right tabular-nums">{money(s.by_method[m] ?? 0)}</td>
+              <td className="py-0.5 text-right tabular-nums">{money(s.expected[m] ?? 0)}</td>
+              {s.confirmed?.counted && <td className="py-0.5 text-right tabular-nums">{money(s.confirmed.counted[m] ?? 0)}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs text-gray-400">
+        Cash expected {money(s.expected.cash ?? 0)} = float {money(s.cash.opening_float)} + cash sales {money(s.cash.cash_sales)}
+        {s.cash.float_in ? ` + float in ${money(s.cash.float_in)}` : ''}{s.cash.float_out ? ` − paid out ${money(s.cash.float_out)}` : ''}
+        {s.cash.expenses ? ` − expenses ${money(s.cash.expenses)}` : ''}
+      </p>
+      {s.confirmed && <p className="text-xs text-gray-300">Confirmed by {s.confirmed.by_name ?? 'a manager'} at {new Date(s.confirmed.at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}.</p>}
+    </div>
+  );
+}
+
+/** Confirm a closed shift from the server: the till's expected figure beside each count, the variance as typed. */
+function ConfirmHere({ till, s, money, options, currency, onDone, onCancel }: {
+  till: TillView; s: BranchPeerShift; money: (n: number) => string; options: MethodOption[]; currency: string;
+  onDone: () => void; onCancel: () => void;
+}) {
+  const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const codes = s.methods.length ? s.methods : ['cash'];
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-white text-sm focus:outline-none focus:border-action-500';
+
+  const submit = async () => {
+    const counts: Record<string, number> = {};
+    const missing: string[] = [];
+    for (const c of codes) {
+      const v = (inputs[c] ?? '').trim();
+      if (v === '' || !Number.isFinite(Number(v)) || Number(v) < 0) missing.push(methodName(c, options)); else counts[c] = Number(v);
+    }
+    if (missing.length) { setError(`Enter what you counted for: ${missing.join(', ')}.`); return; }
+    if (s.declared) {
+      const need = codes.filter(c => Math.round((counts[c] - (s.declared?.[c] ?? 0)) * 100) !== 0 && !(reasons[c] ?? '').trim());
+      if (need.length) { setError(`Give a reason where your count differs from the cashier's: ${need.map(c => methodName(c, options)).join(', ')}.`); return; }
+    }
+    setBusy(true); setError('');
+    try {
+      const clean = Object.fromEntries(Object.entries(reasons).filter(([, v]) => v.trim()));
+      const r = await posApi.branchClose.confirmShift(till.device_id, s.id, counts, Object.keys(clean).length ? clean : undefined);
+      if (!r.ok) { setError(r.error ?? 'Could not confirm the shift.'); return; }
+      onDone();
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mt-2 bg-gray-900/80 border border-action-600/40 rounded-md p-3 space-y-2" data-testid={`confirm-form-${s.id}`}>
+      <p className="text-xs text-gray-300">Count each method — the drawer, the M-Pesa statement, the card machine's total. What the system expects is beside it; the difference shows as you type.</p>
+      {error && <p className="text-xs text-red-300">{error}</p>}
+      <table className="w-full text-sm">
+        <thead><tr className="text-xs text-gray-500 text-left">
+          <th className="font-normal">Method</th><th className="font-normal text-right pr-2">Expected</th>
+          {s.declared && <th className="font-normal text-right pr-2">Cashier</th>}
+          <th className="font-normal">Counted ({currency})</th><th className="font-normal text-right">Variance</th>
+        </tr></thead>
+        <tbody>
+          {codes.map(c => {
+            const exp = Number(s.expected[c] ?? 0);
+            const typed = inputs[c] ?? '';
+            const v = typed.trim() !== '' && Number.isFinite(Number(typed)) ? Math.round((Number(typed) - exp) * 100) / 100 : null;
+            const differsFromCashier = !!s.declared && typed.trim() !== '' && Math.round((Number(typed) - (s.declared[c] ?? 0)) * 100) !== 0;
+            return (
+              <Fragment key={c}>
+                <tr>
+                  <td className="py-1 text-gray-200 whitespace-nowrap"><MethodDot method={c} />{methodName(c, options)}</td>
+                  <td className="py-1 pr-2 text-right text-gray-200 tabular-nums" data-testid={`expected-${c}`}>{money(exp)}</td>
+                  {s.declared && <td className="py-1 pr-2 text-right text-gray-300 tabular-nums">{money(s.declared[c] ?? 0)}</td>}
+                  <td className="py-1 w-36"><input type="number" inputMode="decimal" value={typed} placeholder="0.00" className={inputCls}
+                    data-testid={`count-${c}`} onWheel={(e) => (e.target as HTMLInputElement).blur()} onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} /></td>
+                  <td data-testid={`variance-${c}`} className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${v === null ? 'text-gray-500' : v === 0 ? 'text-gray-300' : v > 0 ? 'text-amber-300' : 'text-red-300'}`}>
+                    {v === null ? '—' : v === 0 ? 'balanced' : `${v > 0 ? 'over' : 'short'} ${money(Math.abs(v))}`}
+                  </td>
+                </tr>
+                {(differsFromCashier || (v !== null && v !== 0)) && (
+                  <tr><td colSpan={s.declared ? 5 : 4} className="pb-1">
+                    <input type="text" maxLength={200} value={reasons[c] ?? ''} placeholder={differsFromCashier ? 'Reason — your count differs from the cashier\'s' : 'Note on the difference (optional)'}
+                      className={inputCls + ' border-amber-500/50'} onChange={(e) => setReasons({ ...reasons, [c]: e.target.value })} />
+                  </td></tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="flex gap-2">
+        <button onClick={() => void submit()} disabled={busy} data-testid={`confirm-send-${s.id}`}
+          className="px-3 py-1.5 rounded-md bg-action-500 hover:bg-action-400 text-gray-950 text-sm font-semibold disabled:opacity-40">
+          {busy ? 'Confirming…' : 'Confirm shift'}
+        </button>
+        <button onClick={onCancel} className="px-3 py-1.5 rounded-md border border-gray-600 text-gray-200 text-sm">Cancel</button>
       </div>
     </div>
   );

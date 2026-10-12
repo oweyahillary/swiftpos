@@ -17,6 +17,7 @@
 
 import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { posApi, ZReport } from '../lib/posApi';
+import { methodLabel } from '../../shared/paymentCatalogue';   // A452
 import { overviewRange, dayWord, stepDay, todayYmd } from '../lib/overviewDate';   // A441
 import { MenuTab, StaffTab, CombosTab, ImportTab } from './ManageTabs';
 import SettingsPanel from '../components/SettingsPanel';
@@ -1242,14 +1243,26 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
     return () => { live = false; };
   }, [range.preset, range.from, range.to, reload]);
 
-  const rows = data?.rows ?? [];
+  const all = data?.rows ?? [];
+  // A452 (owner, 2026-10-12): "what payment method was used and a filter to payment method, who paid, and a subtotal per
+  // method if a filter is applied".
+  const [method, setMethod] = useState('');
+  const [payer, setPayer] = useState('');
+  const methods = [...new Set(all.map((e) => e.payment_method || 'cash'))].sort();
+  const payers = [...new Map(all.filter((e) => e.paid_by).map((e) => [e.paid_by as string, e.paid_by_name ?? 'Unknown'])).entries()];
+  const rows = all.filter((e) => (!method || (e.payment_method || 'cash') === method) && (!payer || e.paid_by === payer));
+  const filtered = !!(method || payer);
+  const shownTotal = rows.reduce((a, e) => a + Number(e.amount || 0), 0);
+  const byMethod = [...rows.reduce((m, e) => m.set(e.payment_method || 'cash', (m.get(e.payment_method || 'cash') ?? 0) + Number(e.amount || 0)), new Map<string, number>()).entries()]
+    .sort((a, b) => b[1] - a[1]);
+  const selectCls = 'bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200';
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-white">Expenses</h2>
           <p className="text-gray-300 text-sm" data-testid="expenses-summary">
-            {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(data?.total ?? 0, currency)} paid out`}
+            {loading ? 'Loading…' : `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(shownTotal, currency)} paid out${filtered ? ` (of ${fmt(data?.total ?? 0, currency)})` : ''}`}
           </p>
         </div>
         {!recording && (
@@ -1267,14 +1280,37 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
       {/* A358: the expense types, and "+ Add type" here as well as in Shift → Expenses (owner, on v0.6.18). */}
       <ExpenseTypesPanel canAdd={canAddType} />
       <ReportRangeBar value={range} onChange={setRange} />
+      {all.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select data-testid="expense-filter-method" value={method} onChange={(e) => setMethod(e.target.value)} className={selectCls}>
+            <option value="">All payment methods</option>
+            {methods.map((m) => <option key={m} value={m}>{methodLabel(m)}</option>)}
+          </select>
+          <select data-testid="expense-filter-payer" value={payer} onChange={(e) => setPayer(e.target.value)} className={selectCls}>
+            <option value="">Everyone who paid</option>
+            {payers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+          {filtered && <button onClick={() => { setMethod(''); setPayer(''); }} className="text-sm text-gray-300 hover:text-white underline">Clear</button>}
+        </div>
+      )}
+      {filtered && rows.length > 0 && (
+        <div data-testid="expense-method-subtotals" className="flex flex-wrap gap-2">
+          {byMethod.map(([m, amt]) => (
+            <div key={m} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+              <span className="text-gray-300">{methodLabel(m)}</span>
+              <span className="ml-2 font-semibold text-white tabular-nums">{fmt(amt, currency)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {loading ? <Spinner /> : rows.length === 0 ? (
-        <div className="text-center py-12 text-gray-300">No expenses in this date range. Record one with + Record expense, or from the POS: Shift → Expenses.</div>
+        <div className="text-center py-12 text-gray-300">{filtered ? 'No expenses match these filters.' : 'No expenses in this date range. Record one with + Record expense, or from the POS: Shift → Expenses.'}</div>
       ) : (
         <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-700">
-                {['When', 'Description', 'Paid by', 'Amount'].map(h => (
+                {['When', 'Description', 'Type', 'Paid with', 'Paid by', 'Amount'].map(h => (
                   <th key={h} className={`px-4 py-3 text-xs font-medium text-gray-300 ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
@@ -1289,6 +1325,8 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
                     {e.description}
                     {e.sync_status !== 'synced' && <span className="ml-1.5 text-[10px] text-amber-400">not synced</span>}
                   </td>
+                  <td className="px-4 py-3 text-gray-300">{e.expense_type_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-300">{methodLabel(e.payment_method || 'cash')}</td>
                   <td className="px-4 py-3 text-gray-300">{e.paid_by_name ?? '—'}</td>
                   <td className="px-4 py-3 text-right font-semibold text-white tabular-nums">{fmt(e.amount, currency)}</td>
                 </tr>
@@ -1296,8 +1334,8 @@ function ExpensesTab({ currency, canAddType }: { currency: string; canAddType: b
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-700">
-                <td colSpan={3} className="px-4 py-3 text-gray-300 font-medium">Total</td>
-                <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmt(data?.total ?? 0, currency)}</td>
+                <td colSpan={5} className="px-4 py-3 text-gray-300 font-medium">{filtered ? 'Total (filtered)' : 'Total'}</td>
+                <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmt(shownTotal, currency)}</td>
               </tr>
             </tfoot>
           </table>
