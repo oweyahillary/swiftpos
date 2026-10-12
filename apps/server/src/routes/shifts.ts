@@ -726,10 +726,13 @@ router.post('/:id/manager-confirm', async (req, res) => {
 // holds the screen for the confirming manager may read it.
 router.get('/:id/confirm-view', async (req, res) => {
   const showCashier = (await businessPosFeatures(req.businessId)).confirm_shows_cashier_figures;
-  if (!showCashier) { res.json({ showCashier: false, declared: null }); return; }
-  const { data: shift } = await supabase.from('shifts').select('declared_methods')
+  const { data: shift } = await supabase.from('shifts').select('id, declared_methods, expected_cash, opening_float')
     .eq('id', req.params.id).eq('business_id', req.businessId).maybeSingle();
-  res.json({ showCashier: true, declared: methodMap(shift?.declared_methods) });
+  // A452 (owner, 2026-10-12): "while confirming a shift let the manager see what the system holds … so that he can get
+  // the variance before confirming". The expected figures go to a person who may confirm (a manager, the owner) only —
+  // never to a cashier holding the screen.
+  const expected = shift && callerMayConfirm(req) ? await expectedByMethod(shift as any) : null;
+  res.json({ showCashier, declared: showCashier ? methodMap(shift?.declared_methods) : null, expected });
 });
 
 /**

@@ -260,10 +260,14 @@ ok('A366 — End Shift: another cashier sees who owns the shift, not the count f
 ok('the closed shift offers "Manager: confirm now"', /data-testid="confirm-now"/.test(src('renderer/pages/ShiftPanel.tsx')));
 // 0.6.27: blind unless the client has 'confirm_shows_cashier_figures' — then the CASHIER's figure (never the expected one)
 // shows beside each box, only when the till's main says so (confirmView).
-ok('the confirm screen is blind: no expected figure before it is saved; the cashier\'s only with the switch',
-  !/expected/i.test(src('renderer/components/ConfirmShiftModal.tsx').split('{!result && (')[1].split('{result && (')[0])
+// A452 (owner, 2026-10-12: "let the manager see what the system holds … the variance before confirming"): the expected
+// figures reach the confirm screen only for a manager signed in on the till — never the cashier whose shift it is.
+ok('the confirm screen shows a signed-in manager the expected figures and the variance; anyone else none; the cashier\'s only with the switch',
+  /const showExpected = !!view\.expected;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
+  && /data-testid=\{`variance-\$\{c\}`\}/.test(src('renderer/components/ConfirmShiftModal.tsx'))
+  && /return signedInConfirmer\(\) \? v : \{ \.\.\.v, expected: null \};/.test(src('main/ipcHandlers.ts'))
   && /const cashierSaid = view\.showCashier && view\.declared \? \(view\.declared\[c\] \?\? 0\) : null;/.test(src('renderer/components/ConfirmShiftModal.tsx'))
-  && /const showCashier = getPosFeatures\(\)\.confirm_shows_cashier_figures;\s*if \(!showCashier\) return \{ showCashier: false, declared: null \};/.test(src('main/shiftService.ts')));
+  && /if \(!showCashier\) return \{ showCashier: false, declared: null, expected \};/.test(src('main/shiftService.ts')));
 ok('Close lists the shifts awaiting a manager and holds the close button',
   /data-testid="awaiting-shifts"/.test(src('renderer/pages/DayCloseTab.tsx'))
   && /disabled=\{!isManager \|\| busy \|\| counted === '' \|\| awaiting\.length > 0\}/.test(src('renderer/pages/DayCloseTab.tsx')));

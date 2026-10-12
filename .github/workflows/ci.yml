@@ -899,6 +899,12 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/business-identity.test.mjs
 
+      # A452 — Close Branch on the branch server: each till's shifts, confirm them there (expected beside the count),
+      # close every till's day at once on the server's date; expenses by payment method and who paid.
+      - name: Desktop Close Branch with shifts, confirmations and expenses filters
+        working-directory: apps/desktop
+        run: node --no-warnings test/branch-close-shifts.test.mjs
+
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund
         working-directory: apps/desktop

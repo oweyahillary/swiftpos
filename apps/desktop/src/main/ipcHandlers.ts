@@ -65,7 +65,7 @@ import { exportDailySalesReport } from './dailySalesReport';
 /** Range selection sent from the manager report screens. */
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
-import { branchCloseOverview, createCloseInstruction, executeCloseDay } from './branchClose';
+import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
 import { takeSnapshot, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { localOrderDetail } from './managerReports';   // A444
@@ -1830,6 +1830,66 @@ export function registerIpcHandlers() {
       return { ok: false, error: err?.message ?? 'Could not start the close' };
     }
   });
+  // A452: a manager on the branch server confirms another till's shift — counted here, with the till's expected figures
+  // on screen; the till itself records it (its own books), as when a manager confirms at that till.
+  handle('branchClose:confirmShift', async (_e, payload) => {
+    const { device_id, shift_id, counts, reasons } = assertPayload<{ device_id: string; shift_id: string; counts: Record<string, number>; reasons?: Record<string, string> }>(
+      { device_id: { t: 'string', min: 1 }, shift_id: { t: 'string', min: 1 }, counts: { t: 'any' }, reasons: { t: 'any', optional: true } }, payload);
+    try {
+      const confirmer = signedInConfirmer();
+      if (!confirmer) return { ok: false, error: 'Only a manager (or the owner) signed in here can confirm a shift.' };
+      const instr = { shift_id, counts, reasons: reasons ?? null, confirmer };
+      if (device_id === getDeviceConfig()?.device_id) {
+        const r = executeConfirmShift(instr);
+        if (r.ok) pushNow();
+        return r.ok ? { ok: true, self: true, summary: r.summary ?? null } : { ok: false, error: r.error };
+      }
+      const { id } = createConfirmInstruction(device_id, instr, confirmer.id);
+      logLine('branchClose', `A452 confirm of shift ${shift_id} sent to ${device_id} by ${confirmer.name ?? confirmer.id}`);
+      return { ok: true, instruction_id: id };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Could not confirm the shift' };
+    }
+  });
+  // A452: Close Branch — every till's day, once no drawer is open and no shift waits for a manager (owner: "when all
+  // shifts are closed and confirmed they get a close branch"). No second count: each till closes with its confirmed
+  // shifts' cash. The server's date is final — a till still on yesterday closes that day too.
+  handle('branchClose:closeBranch', async (_e, payload) => {
+    const { notes } = assertPayload<{ notes?: string }>({ notes: { t: 'string', optional: true } }, payload ?? {});
+    try {
+      if (!isManager()) return { ok: false, error: 'Only a manager can close the branch.' };
+      const ov = branchCloseOverview();
+      const blockers: string[] = [];
+      const label = (t: { is_self: boolean; device_id: string }) => (t.is_self ? 'This terminal' : `Terminal ${t.device_id.slice(0, 8)}`);
+      for (const t of ov.tills) {
+        const st = t.state as PeerDayState | null;
+        if (!st) { blockers.push(`${label(t)} has never reported in`); continue; }
+        if (!t.is_self && (!t.last_seen || Date.now() - new Date(t.last_seen).getTime() > 120_000)) blockers.push(`${label(t)} has not been heard from in the last 2 minutes`);
+        if (!st.shifts) blockers.push(`${label(t)} is on an older version — update it to close the branch from here`);
+        if (st.open_drawer) blockers.push(`${label(t)} still has a drawer open${st.open_drawer.cashier_name ? ` (${st.open_drawer.cashier_name})` : ''}`);
+        const waiting = (st.shifts ?? []).filter((s) => s.state === 'awaiting').length;
+        if (waiting) blockers.push(`${label(t)}: ${waiting} shift${waiting === 1 ? '' : 's'} not confirmed yet`);
+      }
+      if (blockers.length) return { ok: false, error: `The branch cannot close yet: ${blockers.join('; ')}.`, blockers };
+      const staff = getLocalDb().prepare(`SELECT staff_id, staff_name FROM staff_session WHERE id=1`).get() as any;
+      const base = { business_date: businessDateNow(), counted_cash: null, notes, closed_by_staff_id: staff?.staff_id ?? null, closed_by_name: staff?.staff_name ?? null };
+      const results: Array<{ device_id: string; ok: boolean; sent?: boolean; error?: string }> = [];
+      for (const t of ov.tills) {
+        if (!(t.state as PeerDayState | null)?.day_open) continue;
+        if (t.is_self) {
+          const r = executeCloseDay(base);
+          results.push({ device_id: t.device_id, ok: r.ok, error: r.error });
+        } else {
+          createCloseInstruction(t.device_id, base, staff?.staff_id ?? null);
+          results.push({ device_id: t.device_id, ok: true, sent: true });
+        }
+      }
+      logLine('branchClose', `A452 branch close by ${staff?.staff_name ?? 'a manager'}: ${results.map((r) => `${r.device_id.slice(0, 8)}=${r.ok ? (r.sent ? 'sent' : 'closed') : 'refused'}`).join(', ') || 'nothing open'}`);
+      return { ok: results.every((r) => r.ok), results };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? 'Could not close the branch' };
+    }
+  });
   handle('day:summary', async () => getDayCloseSummary());
   handle('day:isManager', async () => isManager());
   handle('day:conflicts', async () => getConflictedShifts());
@@ -1980,7 +2040,11 @@ export function registerIpcHandlers() {
   });
 
   // 0.6.27: may the confirm screen show the cashier's figures ('confirm_shows_cashier_figures')?
-  handle('shift:confirmView', async (_event, shiftId: string) => confirmView(String(shiftId)));
+  // A452: the expected figures only to a manager signed in here — never to the cashier whose shift it is (blind close).
+  handle('shift:confirmView', async (_event, shiftId: string) => {
+    const v = confirmView(String(shiftId));
+    return signedInConfirmer() ? v : { ...v, expected: null };
+  });
 
   // ── A433 (owner, 2026-10-10: "yes if they have logged in as the manager, and under sales report it should cover all
   // tills"): another till's shifts, from the cloud, with the manager's own sign-in (manageFetch — never the till's

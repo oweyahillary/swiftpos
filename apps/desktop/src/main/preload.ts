@@ -101,6 +101,10 @@ contextBridge.exposeInMainWorld('swiftpos', {
     overview: () => ipcRenderer.invoke('branchClose:overview'),
     closeTill: (device_id: string, counted_cash: number, notes?: string) =>
       ipcRenderer.invoke('branchClose:closeTill', { device_id, counted_cash, notes }),
+    // A452: confirm another till's shift from the branch server; close every till's day at once.
+    confirmShift: (device_id: string, shift_id: string, counts: Record<string, number>, reasons?: Record<string, string>) =>
+      ipcRenderer.invoke('branchClose:confirmShift', { device_id, shift_id, counts, reasons }),
+    closeBranch: (notes?: string) => ipcRenderer.invoke('branchClose:closeBranch', { notes }),
   },
   print: {
     list: () => ipcRenderer.invoke('print:list'),

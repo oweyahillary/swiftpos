@@ -17,7 +17,7 @@ import { enterServerMode, leaveServerMode, keepServerWindowAlive, isServing, mar
 import { onJoinAsked } from './serverJoin';   // A436
 import { WATCHDOG_ARG, watchdogStaysDown, quitByHand, clearQuitByHand } from './serverWatchdog';   // A435
 import { pollNodeInstructions, ackNodeInstruction, pullNodeDistribution } from './nodeClient';
-import { ownDayState, executeCloseDay } from './branchClose';
+import { ownDayState, executeCloseDay, executeConfirmShift } from './branchClose';
 import { applyDistribution, distributionCursors } from './nodeIngest';
 import { pruneIfDue, snapshotIfDue } from './maintenance';
 import { initAutoUpdate } from './autoUpdate';
@@ -340,6 +340,13 @@ app.whenReady().then(() => {
       if (!instructions) return;
       for (const ins of instructions) {
         if (pendingAcks.has(ins.id)) continue;          // executed, ack in flight
+        if (ins.kind === 'confirm_shift') {
+          // A452: a manager on the branch server confirmed one of this till's shifts — recorded here, on its own books.
+          const ack = executeConfirmShift(ins.payload);
+          if (ack.ok) syncPush().catch(() => { /* the timer retries */ });
+          if (!(await ackNodeInstruction(ins.id, ack))) pendingAcks.set(ins.id, ack);
+          continue;
+        }
         if (ins.kind !== 'close_day') {
           // Named, not ignored: an unknown kind means the node is on a newer
           // build — the manager must find out rather than watch it spin.

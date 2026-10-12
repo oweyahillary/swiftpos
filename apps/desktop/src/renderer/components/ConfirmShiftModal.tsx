@@ -1,7 +1,8 @@
 /**
- * ConfirmShiftModal — A365: a manager confirms a closed shift with a BLIND recount of every payment method, approved
- * with their own PIN. Neither the cashier's figures nor the expected ones are shown until it is saved — a counter who
- * can see the target closes a shortage to zero without deciding to (the same rule as the day close).
+ * ConfirmShiftModal — A365: a manager confirms a closed shift with a recount of every payment method, approved with
+ * their own PIN. A452 (owner, 2026-10-12: "let the manager see what the system holds … so that he can get the variance
+ * before confirming"): a manager signed in sees the expected figure per method and the variance as they type. The
+ * cashier's own close stays blind; a manager confirming with a PIN on the cashier's screen sees no expected figures.
  */
 import { useEffect, useState } from 'react';
 import { posApi, type Confirmation } from '../lib/posApi';
@@ -34,7 +35,8 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
   // 0.6.23: a manager already signed in confirms as themselves — no PIN (owner: "do they need to key in their password?").
   const [signedInManager, setSignedInManager] = useState(false);
   // 0.6.27 ('confirm_shows_cashier_figures'): the cashier's figure beside each box, and a reason where they differ.
-  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const [view, setView] = useState<{ showCashier: boolean; declared: Record<string, number> | null; expected?: Record<string, number> | null }>({ showCashier: false, declared: null });
+  const showExpected = !!view.expected;   // A452
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const codes = [...new Set(['cash', ...methods.map((m) => m.toLowerCase())])];
 
@@ -80,7 +82,9 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
           {!result && (
             <>
               <p className="text-xs text-gray-400">
-                {view.showCashier
+                {showExpected
+                  ? 'Manager: count every payment method — the drawer, the M-Pesa statement, the card machine\'s total. What the system expects is beside each; the difference shows as you type.'
+                  : view.showCashier
                   ? 'Manager: count every payment method yourself and enter what you find beside the cashier\'s figure. Where they differ, say why.'
                   : 'Manager: count every payment method yourself — the drawer, the M-Pesa statement, the card machine\'s total — and enter what you find. The cashier\'s figures are shown after you save.'}
               </p>
@@ -95,8 +99,10 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
                 <thead>
                   <tr className="text-xs text-gray-500 text-left">
                     <th className="font-normal pb-1">Method</th>
+                    {showExpected && <th className="font-normal pb-1 text-right pr-2">Expected</th>}
                     {view.showCashier && <th className="font-normal pb-1 text-right pr-2">Cashier</th>}
                     <th className="font-normal pb-1">Manager ({currency})</th>
+                    {showExpected && <th className="font-normal pb-1 text-right">Variance</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -104,9 +110,14 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
                     const cashierSaid = view.showCashier && view.declared ? (view.declared[c] ?? 0) : null;
                     const typed = inputs[c] ?? '';
                     const differs = cashierSaid !== null && typed.trim() !== '' && Math.round(Number(typed) * 100) !== Math.round(cashierSaid * 100);
+                    const expectedHere = showExpected ? Number(view.expected?.[c] ?? 0) : null;
+                    const variance = expectedHere !== null && typed.trim() !== '' && Number.isFinite(Number(typed)) ? Math.round((Number(typed) - expectedHere) * 100) / 100 : null;
                     return [
                       <tr key={c} className="align-middle">
                         <td className="py-1 text-gray-200 whitespace-nowrap"><MethodDot method={c} />{methodName(c, options)}</td>
+                        {showExpected && (
+                          <td className="py-1 pr-2 text-right text-gray-200 tabular-nums" data-testid={`expected-${c}`}>{money(expectedHere ?? 0)}</td>
+                        )}
                         {view.showCashier && (
                           <td className="py-1 pr-2 text-right text-gray-300 tabular-nums" data-testid={`cashier-${c}`}>{money(cashierSaid ?? 0)}</td>
                         )}
@@ -115,10 +126,15 @@ export default function ConfirmShiftModal({ shiftId, cashierName, methods, curre
                             data-testid={`confirm-${c}`} onWheel={(e) => (e.target as HTMLInputElement).blur()}
                             onChange={(e) => setInputs({ ...inputs, [c]: e.target.value })} />
                         </td>
+                        {showExpected && (
+                          <td data-testid={`variance-${c}`} className={`py-1 pl-2 text-right tabular-nums whitespace-nowrap ${variance === null ? 'text-gray-500' : variance === 0 ? 'text-gray-300' : variance > 0 ? 'text-amber-300' : 'text-red-300'}`}>
+                            {variance === null ? '—' : variance === 0 ? 'balanced' : `${variance > 0 ? 'over' : 'short'} ${money(Math.abs(variance))}`}
+                          </td>
+                        )}
                       </tr>,
                       differs && (
                         <tr key={`${c}-reason`}>
-                          <td colSpan={view.showCashier ? 3 : 2} className="pb-2">
+                          <td colSpan={2 + (view.showCashier ? 1 : 0) + (showExpected ? 2 : 0)} className="pb-2">
                             <input type="text" maxLength={REASON_MAX} value={reasons[c] ?? ''} data-testid={`reason-${c}`}
                               placeholder={`Reason — ${methodName(c, options)} is ${Number(typed) > (cashierSaid ?? 0) ? 'more' : 'less'} than the cashier's`}
                               className={inputCls + ' border-amber-500/50'}

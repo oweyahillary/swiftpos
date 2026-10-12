@@ -853,11 +853,15 @@ function parseReasons(json: string | null | undefined): Record<string, string> |
  * 0.6.27: what the confirm screen may show. With 'confirm_shows_cashier_figures' the manager sees the cashier's figure
  * per method (and must give a reason where their count differs); without it the recount stays blind (A365).
  */
-export function confirmView(shiftId: string): { showCashier: boolean; declared: MethodMap | null } {
+export function confirmView(shiftId: string): { showCashier: boolean; declared: MethodMap | null; expected: MethodMap | null } {
+  // A452 (owner, 2026-10-12): the confirming manager sees what the system holds per method — the variance before they
+  // confirm. The IPC handler asks only for a manager signed in (or one confirming with their PIN on the same screen).
+  let expected: MethodMap | null = null;
+  try { expected = expectedMethods(shiftId); } catch { expected = null; }
   const showCashier = getPosFeatures().confirm_shows_cashier_figures;
-  if (!showCashier) return { showCashier: false, declared: null };
+  if (!showCashier) return { showCashier: false, declared: null, expected };
   const row = getLocalDb().prepare(`SELECT declared_methods FROM shifts WHERE id=?`).get(shiftId) as { declared_methods: string | null } | undefined;
-  return { showCashier: true, declared: parseMap(row?.declared_methods ?? null) };
+  return { showCashier: true, declared: parseMap(row?.declared_methods ?? null), expected };
 }
 
 /**
@@ -990,12 +994,15 @@ export function listShifts(limit = 60): ShiftSummary[] {
 export interface ExpenseRow {
   id: string; description: string; amount: number; created_at: string; shift_id: string | null;
   paid_by_name: string | null; expense_category_id: string | null; sync_status: string;
+  /** A452: how it was paid (cash, mpesa, card, …), its type, and who paid it (the person signed in when recorded). */
+  payment_method: string; expense_type_name: string | null; paid_by: string | null;
 }
 export function listExpenses(from: string, to: string): { rows: ExpenseRow[]; total: number } {
   const db = getLocalDb();
   const rows = (db.prepare(`
     SELECT e.id, e.description, e.amount, e.created_at, e.shift_id, u.name AS paid_by_name,
-           e.expense_category_id, e.sync_status
+           e.expense_category_id, e.sync_status,
+           COALESCE(e.payment_method, 'cash') AS payment_method, e.expense_type_name, e.paid_by   -- A452
       FROM expenses e LEFT JOIN users u ON u.id = e.paid_by
      -- own: the cash this till's drawers paid out; another till's expenses are on its own screen.
      WHERE COALESCE(e.device_id,'') = COALESCE(?,'')
