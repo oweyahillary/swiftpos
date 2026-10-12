@@ -122,8 +122,9 @@ console.log('\n3. the allow-list, and the order of the checks');
   const listed = (src.match(/RECEIPT_SETTING_KEYS = new Set\(\[([^\]]*)\]/) ?? [])[1] ?? '';
   const keys = (listed.match(/'[\w.]+'/g) ?? []).map(s => s.slice(1, -1)).sort();
 
-  ok('the allow-list is exactly receipt_header and receipt_footer',
-     JSON.stringify(keys) === JSON.stringify(['receipt_footer', 'receipt_header']),
+  // A450: + the receipt's Pay by M-Pesa line (label + number), written from the same Receipt text screen.
+  ok('the allow-list is exactly the receipt text: header, footer and the M-Pesa line',
+     JSON.stringify(keys) === JSON.stringify(['receipt_footer', 'receipt_header', 'receipt_pay_label', 'receipt_pay_number']),
      `found: ${JSON.stringify(keys)}. ReceiptTextTab writes exactly these two `
      + `(ipcHandlers.ts:1591-1592). Anything else here widens what a manager can `
      + `write beyond the screen that motivated it.`);

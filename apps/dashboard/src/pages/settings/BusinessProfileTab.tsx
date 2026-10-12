@@ -162,6 +162,24 @@ export default function BusinessProfileTab() {
               />
             </div>
           ))}
+          {/* A450: how a customer pays by M-Pesa — printed under the payments on every receipt ("Buy Goods: 123456"). */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Pay by M-Pesa (printed under the payments)</label>
+            <div className="flex gap-2">
+              <select data-testid="receipt-pay-label"
+                value={settings.receipt_pay_label || 'Buy Goods'}
+                onChange={e => { setSettings(prev => ({ ...prev, receipt_pay_label: e.target.value })); saveSetting('receipt_pay_label', e.target.value); }}
+                className="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-swift">
+                {['Buy Goods', 'Paybill', 'Till No.'].map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+              <input data-testid="receipt-pay-number" inputMode="numeric" placeholder="e.g. 123456 (empty = not printed)"
+                value={settings.receipt_pay_number ?? ''}
+                onChange={e => setSettings(prev => ({ ...prev, receipt_pay_number: e.target.value }))}
+                onBlur={e => saveSetting('receipt_pay_number', e.target.value.trim())}
+                className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-swift" />
+            </div>
+            <p className="text-gray-600 text-xs mt-1">A branch with its own number sets it under Branches › the branch › Receipt &amp; hours.</p>
+          </div>
         </div>
       </section>
 

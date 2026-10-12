@@ -65,9 +65,11 @@
  *  their sales at close (the switch's default). */
 /** 69 = A429: device_config.payment_methods_enabled (pulled). A till on 68 keeps syncing; it simply shows its old
  *  built-in payment buttons, not the branch's choice. */
+/** 71 = A448: local_changes (local only — changes made on the till, sent through POST /api/changes). A till on 70 keeps
+ *  syncing; its manager screens simply write to the cloud first, as before. */
 /** 70 = A445: offers (pulled) and orders.offer_discount / orders.offers (the order payload). A till on 69 keeps syncing;
  *  it simply applies no offers (its sales carry none, so the cloud applies none to them). */
-export const REQUIRED_DESKTOP_SCHEMA = 70;
+export const REQUIRED_DESKTOP_SCHEMA = 71;
 
 /** 42 still sends valid rows; it just omits covers. Not worth blocking a till. */
 export const HARD_MIN_DESKTOP_SCHEMA = 41;

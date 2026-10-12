@@ -36,6 +36,7 @@ import { getLocalDb, getDbPath, closeLocalDb, getBranding, setBranding } from '.
 import { getUpdateStatus, installUpdateNow } from './autoUpdate';
 import { logLine } from './logFile';
 import { readSessionTokens, readStaffTokens, writeSessionTokens, writeStaffTokens, writeDeviceSecret } from './tokenStore';
+import { getReceiptPay } from './receiptPay';   // A450
 import { isSessionRefusal } from './sessionRecovery';   // A407
 import { cloudFetch } from './cloudGateway';   // A410: a till on a branch reaches the cloud only through its branch server
 import { saveRoutingLocally, overlayPending, readPending as readPendingRouting, mayRoute } from './stationRouting';   // A411
@@ -72,11 +73,13 @@ import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './o
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels, getFuelSalesToday, getPumpStatus, getTableOccupancy, getPriceList, setBranchPrice, clearBranchPrice } from './managerReports';
 import { listPrinters, printHtmlSilent, openPrintPreview, probePrinter, probeGeometry } from './printService';
 import { refreshTechConfig, checkRevealCode, openTechSession, getActiveSession, closeTechSession, logTechAction, flushTechAudit, runTechQuery, closeTechReadonlyDb, getRawTechToken } from './techService';
-import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode } from './nodeClient';
+import { hasNode, isNodeReachable, fetchNodeReport, broadcastTechToken, fetchNodeTechToken, probeNode, verifyPinAtNodeClient, fetchRosterFromNode, relayBrandingToNode } from './nodeClient';
 import { isUnreachableStatus } from './authTransport';
 import { holdOfflinePin, clearOfflinePin, heldOfflinePin, upgradeOfflineSession, OFFLINE_SESSION_MESSAGE, NO_CONNECTION_MESSAGE, type ManageOfflineReason } from './offlineSession';
 import { verifyPinAtNode, storeBranchStaff } from './branchStaff';
 import { refreshStaffRosterNow, staffChangedHere } from './staffRoster';   // A446
+import { overlayLocalChanges } from './localChanges';   // A448
+import { recordTillChange, sendTillChangesNow, tillChangeStates } from './changeQueue';   // A448
 import { unpackRosterSnapshot } from './rosterSnapshot';
 import { startNodeServer, stopNodeServer } from './nodeServer';
 import { listenForServers } from './serverBeacon';   // A427
@@ -1224,6 +1227,9 @@ export function registerIpcHandlers() {
           vatRate:         Number((cfg as any)?.vat_rate ?? 16),
           ctlRate:         Number((cfg as any)?.ctl_rate ?? 0),
           thankYouMessage: (cfg as any)?.receipt_footer || undefined,
+          // A450: "Buy Goods: 123456" under the payments — set on the web; none when no number is set.
+          tillLabel:       getReceiptPay()?.label,
+          tillNumber:      getReceiptPay()?.number,
           footerCredit:    'Powered by ZapTill',
           // A312: the client logo on customer receipts — ONLY when the client's toggle is on
           // and a raster exists. Decoded by shared/printing; a malformed stored value decodes
@@ -1513,6 +1519,11 @@ export function registerIpcHandlers() {
         receiptLogoEnabled?: boolean },
   ) => {
     const saved = setBranding(businessId, { accentHex, logoPng, logoRgba, receiptLogoEnabled });
+    // A381: and to the branch server at once — the branch's other tills take it from there, with no internet too.
+    if (hasNode() && !isNodeRole(getDeviceConfig()?.device_role ?? null)) {
+      const b = getBranding();
+      if (b) void relayBrandingToNode({ accentHex: b.accentHex, logoPng: b.logoPng, logoReceipt: b.logoReceipt, receiptLogoEnabled: b.receiptLogoEnabled });
+    }
     // 0.6.25: and to the cloud (owner's decision), so the next pull does not put the old logo back. Never fails the save.
     const cloud = await queueBrandingPush().catch((e: any) => ({ state: 'pending' as const, message: String(e?.message ?? e) }));
     return { ...saved, cloud };
@@ -2261,23 +2272,72 @@ export function registerIpcHandlers() {
     try { await syncAll(); } catch (e: any) { console.warn('[manage] post-edit sync failed:', e?.message); }
   }
 
-  handle('manage:listProducts', async () => manageFetch('/api/products', 'GET'));
+  // A448: what a product change may carry to be saved on the till first; anything more (a picture, sizes, extras, fuel,
+  // sold by weight or the piece) needs the cloud first, as before.
+  function tillCanHoldProduct(p: any): boolean {
+    if (!p || typeof p !== 'object') return false;
+    if (p.image_url) return false;
+    if (p.has_variants === true || p.has_modifiers === true || p.is_fuel === true) return false;
+    if (p.sold_by && p.sold_by !== 'each') return false;
+    if (p.pieces_per_unit && Number(p.pieces_per_unit) > 1) return false;
+    return true;
+  }
+  /** This till's products in the shape the menu screen reads (offline). */
+  function localProductsForScreen(): any[] {
+    return (getLocalDb().prepare(`SELECT p.*, p.plu AS plu_code, c.name AS category_name FROM products p LEFT JOIN categories c ON c.id = p.category_id ORDER BY p.name`).all() as any[])
+      .map((r) => ({ ...r, categories: r.category_id ? { id: r.category_id, name: r.category_name } : null,
+        show_days: (() => { try { return r.show_days ? JSON.parse(r.show_days) : null; } catch { return null; } })() }));
+  }
+  /** A list from the cloud (or this till), with this till's changes that still wait laid over it — so the screen shows
+   *  what the till sells: a change made here, a new item made here, each marked (waiting / with the owner / refused). */
+  function overlayOnList(entity: 'product' | 'category' | 'staff', rows: any[]): any[] {
+    const list = Array.isArray(rows) ? rows.map((r) => ({ ...r })) : [];
+    const open = getLocalDb().prepare(`SELECT entity_id, op, data, state, message FROM local_changes WHERE entity = ? AND state IN ('pending', 'awaiting') ORDER BY made_at`)
+      .all(entity) as Array<{ entity_id: string; op: string; data: string; state: string; message: string | null }>;
+    for (const c of open) {
+      const data = JSON.parse(c.data);
+      delete data.pin; delete data.pin_hash_enc; delete data.permissions;
+      const i = list.findIndex((r) => r.id === c.entity_id);
+      if (c.op === 'delete') { if (i >= 0) { if (entity === 'product') list[i].status = 'inactive'; else list.splice(i, 1); } continue; }
+      if (i >= 0) Object.assign(list[i], data, { change_state: c.state, change_message: c.message });
+      else list.push({ id: c.entity_id, status: 'active', ...data, change_state: c.state, change_message: c.message });
+    }
+    return list;
+  }
+  // A448: what waits on this till (the screens' "not on the cloud yet" / "waiting for the owner" / "refused").
+  handle('manage:changeStates', async () => tillChangeStates());
+
+  // A448: the menu is saved on this till first (it sells the new way at once, offline too) and reaches the cloud after
+  // (changeQueue.ts). What the till cannot hold yet — a picture, sizes, extras, fuel, sold by the piece — still goes to
+  // the cloud first, as before.
+  handle('manage:listProducts', async () => {
+    try { return overlayOnList('product', await manageFetch('/api/products', 'GET')); }
+    catch { return overlayOnList('product', localProductsForScreen()); }
+  });
   handle('manage:createProduct', async (_e, payload: any) => {
-    const out = await manageFetch('/api/products', 'POST', payload);
-    await refreshCatalogue();
-    return out;
+    if (!tillCanHoldProduct(payload)) {
+      const out = await manageFetch('/api/products', 'POST', payload);
+      await refreshCatalogue();
+      return out;
+    }
+    const ch = recordTillChange({ entity: 'product', op: 'create', data: payload });
+    return { id: ch.entity_id, ...ch.data, change_state: 'pending' };
   });
   handle('manage:updateProduct', async (_e, { id, patch }: { id: string; patch: any }) => {
-    const out = await manageFetch(`/api/products/${id}`, 'PATCH', patch);
-    await refreshCatalogue();
-    return out;
+    if (!tillCanHoldProduct(patch)) {
+      const out = await manageFetch(`/api/products/${id}`, 'PATCH', patch);
+      await refreshCatalogue();
+      return out;
+    }
+    const ch = recordTillChange({ entity: 'product', op: 'update', entity_id: id, data: patch });
+    return { id, ...ch.data, change_state: 'pending' };
   });
 
   handle('manage:listCategories', async () => {
-    try { return await manageFetch('/api/categories', 'GET'); }
+    try { return overlayOnList('category', await manageFetch('/api/categories', 'GET')); }
     catch {
       const db = getLocalDb();
-      return db.prepare(`SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order`).all();
+      return overlayOnList('category', db.prepare(`SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order`).all() as any[]);
     }
   });
   // ── Print stations ────────────────────────────────────────────────────────
@@ -2303,6 +2363,7 @@ export function registerIpcHandlers() {
         for (const cid of st.category_ids ?? []) insLk.run(cid, st.id);
       }
       overlayPending(db);   // A411: routing saved here and not yet on the cloud stays
+      overlayLocalChanges(db);   // A448: changes made here stay
     })();
     return stations;
   };
@@ -2325,14 +2386,18 @@ export function registerIpcHandlers() {
   handle('manage:listStations', async () => {
     // A411: while routing saved on this till waits for the cloud, this till's own copy is the truth for it.
     if (Object.keys(readPendingRouting(getLocalDb())).length) return withPendingFlags(localStations());
-    try { return withPendingFlags(await refreshStationsLocal()); }
+    try { await refreshStationsLocal(); return withPendingFlags(localStations()); }   // A448: the till's own (with its changes)
     catch { return withPendingFlags(localStations()); }
   });
   /** A411: mark the stations whose routing is saved here but not yet on the cloud. */
   function withPendingFlags(list: any[]) {
     const pending = readPendingRouting(getLocalDb());
-    return (list ?? []).map((st: any) => pending[st.id]
-      ? { ...st, category_ids: pending[st.id].category_ids, pending_sync: true } : st);
+    const changes = new Map(tillChangeStates('station').map((c) => [c.entity_id, c]));   // A448
+    return (list ?? []).map((st: any) => {
+      const c = changes.get(st.id);
+      const out = pending[st.id] ? { ...st, category_ids: pending[st.id].category_ids, pending_sync: true } : st;
+      return c ? { ...out, change_state: c.state, change_message: c.message } : out;
+    });
   }
 
   // ── Custom payment methods (A97) ──────────────────────────────────────────
@@ -2379,10 +2444,14 @@ export function registerIpcHandlers() {
          ORDER BY c.name`).all() as any[]);
     }
   });
+  // A448 (owner, 2026-10-11: "a totally offline till can't add another printer — that's bad"): a station is added,
+  // renamed or removed on this till first — it prints at once — and reaches the cloud after (changeQueue.ts).
   handle('manage:createStation', async (_e, payload: any) => {
-    const out = await manageFetch('/api/stations', 'POST', payload);
-    await refreshStationsLocal();
-    return out;
+    const name = String(payload?.name ?? '').trim();
+    const dup = getLocalDb().prepare(`SELECT id FROM print_stations WHERE lower(name) = lower(?)`).get(name) as { id?: string } | undefined;
+    if (dup?.id) throw new Error(`A station called "${name}" already exists here`);
+    const ch = recordTillChange({ entity: 'station', op: 'create', data: { name, kind: payload?.kind ?? 'kitchen', sort_order: payload?.sort_order ?? 0 } });
+    return { id: ch.entity_id, name, kind: ch.data.kind, sort_order: ch.data.sort_order ?? 0, active: true, category_ids: [], change_state: 'pending' };
   });
   // One-click day-one seed: Kitchen + Packing + Till, categories routed by
   // is_kitchen server-side (A92). Refresh the local station cache so routing
@@ -2393,14 +2462,12 @@ export function registerIpcHandlers() {
     return out;
   });
   handle('manage:updateStation', async (_e, { id, patch }: { id: string; patch: any }) => {
-    const out = await manageFetch(`/api/stations/${id}`, 'PATCH', patch);
-    await refreshStationsLocal();
-    return out;
+    const ch = recordTillChange({ entity: 'station', op: 'update', entity_id: id, data: patch });
+    return { id, ...ch.data, change_state: 'pending' };
   });
   handle('manage:deleteStation', async (_e, id: string) => {
-    const out = await manageFetch(`/api/stations/${id}`, 'DELETE');
-    await refreshStationsLocal();
-    return out;
+    recordTillChange({ entity: 'station', op: 'delete', entity_id: id });
+    return { ok: true };
   });
   // A411: saved on this till first (tickets print the new way at once, online or not), then sent to the cloud — now if
   // it can be reached (through the branch server on a peer, A410), else at the next sync. See stationRouting.ts.
@@ -2473,15 +2540,17 @@ export function registerIpcHandlers() {
     catch (e: any) { return { online: false, message: e?.message ?? 'Could not reach the cloud.' }; }
   });
 
+  // A448: saved on this till first, to the cloud after.
   handle('manage:createCategory', async (_e, payload: any) => {
-    const out = await manageFetch('/api/categories', 'POST', payload);
-    await refreshCatalogue();
-    return out;
+    const name = String(payload?.name ?? '').trim();
+    const dup = getLocalDb().prepare(`SELECT id FROM categories WHERE lower(name) = lower(?) AND status = 'active'`).get(name) as { id?: string } | undefined;
+    if (dup?.id) throw new Error(`A category called "${name}" already exists.`);
+    const ch = recordTillChange({ entity: 'category', op: 'create', data: payload });
+    return { id: ch.entity_id, ...ch.data, change_state: 'pending' };
   });
   handle('manage:updateCategory', async (_e, { id, patch }: { id: string; patch: any }) => {
-    const out = await manageFetch(`/api/categories/${id}`, 'PATCH', patch);
-    await refreshCatalogue();
-    return out;
+    const ch = recordTillChange({ entity: 'category', op: 'update', entity_id: id, data: patch });
+    return { id, ...ch.data, change_state: 'pending' };
   });
 
   // Combos. The till sells a combo as one line; these define what the dispatcher
@@ -2563,11 +2632,42 @@ export function registerIpcHandlers() {
   handle('manage:deleteModifierGroup', async (_e, id: string) =>
     manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'));
 
-  handle('manage:listStaff', async () => manageFetch('/api/staff', 'GET'));
-  handle('manage:listRoles', async () => manageFetch('/api/staff/roles', 'GET'));
+  handle('manage:listStaff', async () => overlayOnList('staff', await manageFetch('/api/staff', 'GET')));
+  // A448: the roles are kept on this till too, so a cashier can be added offline with their role's name and permissions.
+  handle('manage:listRoles', async () => {
+    try {
+      const roles = await manageFetch('/api/staff/roles', 'GET');
+      getLocalDb().prepare(`INSERT OR REPLACE INTO maintenance_state (key, value, updated_at) VALUES ('roles_cache', ?, ?)`)
+        .run(JSON.stringify(roles ?? []), new Date().toISOString());
+      return roles;
+    } catch (e) {
+      const row = getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as { value?: string } | undefined;
+      if (row?.value) return JSON.parse(row.value);
+      throw e;
+    }
+  });
+  // A448 (owner, 2026-10-12: "offline supersedes online when it comes to PIN change"): a staff member's PIN set on this
+  // till works here at once (and on the branch's other tills through the branch server), and wins on the cloud — unless
+  // another person has that PIN, when the owner is told.
+  handle('manage:setStaffPin', async (_e, { id, pin }: { id: string; pin: string }) => {
+    recordTillChange({ entity: 'staff_pin', op: 'update', entity_id: String(id), data: { pin: String(pin) } });
+    return { ok: true };
+  });
   // A446: a staff member created or changed here reaches this till's own list at once, and the branch server's (so its
   // other tills): the cashier signs in anywhere at the branch within seconds — not after the next menu pull.
   handle('manage:createStaff', async (_e, payload: any) => {
+    // A448: a cashier (name, PIN, role) is added on this till first — they sign in here at once, offline too. An override
+    // PIN or an email still needs the cloud first.
+    // Only for a role this till has saved (it gives the new cashier their permissions here); otherwise the cloud, as before.
+    const roles = (() => { try { return JSON.parse((getLocalDb().prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]'); } catch { return []; } })() as any[];
+    const role = payload?.role_id ? roles.find((r) => r?.id === payload.role_id) : null;
+    if (role && !payload?.override_pin && !payload?.email) {
+      const perms: Record<string, boolean> = {};
+      for (const p of (role?.permissions ?? role?.role_permissions ?? [])) { const k = p?.key ?? p?.permissions?.key; if (k) perms[k] = true; }
+      const ch = recordTillChange({ entity: 'staff', op: 'create', data: { name: payload?.name, role_id: payload?.role_id, pin: payload?.pin } },
+        { roleName: role?.name ?? null, permissions: perms });
+      return { id: ch.entity_id, name: ch.data.name, role_id: ch.data.role_id, change_state: 'pending' };
+    }
     const out = await manageFetch('/api/staff', 'POST', payload);
     void staffChangedHere();
     return out;

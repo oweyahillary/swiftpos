@@ -36,7 +36,7 @@ ok('A265: receiptHeader/receiptFooter are destructured from usePOSData (Charge n
   // They are used in the PaymentModal props + printBill; must be declared or the
   // PaymentModal render throws ReferenceError (the dashboard build is esbuild-only,
   // so an undeclared identifier is only caught at runtime).
-  assert.match(c, /\n    receiptHeader,\n    receiptFooter,\n    businessMode:/);
+  assert.match(c, /\n    receiptHeader,\n    receiptFooter,\n(?:    receiptPay,   \/\/ A450\n)?    businessMode:/);
   assert.match(c, /receiptHeader=\{receiptHeader\}/);
 });
 

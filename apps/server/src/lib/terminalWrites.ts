@@ -38,6 +38,9 @@ export const TILL_WRITES: RegExp[] = [
   // signed out; the till checked their inventory.waste / inventory.adjust first). Recording only — voiding an entry
   // (/api/wastage/:id/void, stock back) stays a person's.
   /^\/api\/wastage$/,
+  // A448: changes saved on the till (stations, categories, products, a PIN) sent later with the till's own sign-in — the
+  // person who made each may have signed out; the cloud checks THEIR permission for each change (lib/changeApply.ts).
+  /^\/api\/changes$/,
   // A427: the branch server asks for one enrolment code for a till someone at the server allowed to join. The route
   // itself admits only a confirmed branch server, for its own licensed branch, a few times an hour (routes/pos.ts).
   /^\/api\/pos\/join-code$/,

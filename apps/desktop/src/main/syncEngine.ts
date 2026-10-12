@@ -8,6 +8,8 @@
 //   Local sale     → delta deduction (quantity - sold), never absolute overwrite
 //   This means an offline sale is always applied on top of whatever quantity is current
 
+import { overlayLocalChanges } from './localChanges';   // A448
+import { nodeChangeVersion } from './nodeClient';   // A448
 import { cleanOffer, type Offer } from './offers';   // A445
 import { net } from 'electron';
 import { getLocalDb, LOCAL_SCHEMA_VERSION, applyPulledBranding, applyPulledTheme } from './localDb';
@@ -22,7 +24,8 @@ import { selectPushRefresh } from './authTransport';
 import { storeBranchStaff } from './branchStaff';
 import { refreshTechConfig } from './techService';
 import { hasNode, pushRowsToNode, measureNodeDrift, refreshViaNode, fetchReferenceFromNode, fetchRosterFromNode } from './nodeClient';
-import { cloudFetch } from './cloudGateway';   // A410
+import { nodeRefusal, cloudFetch } from './cloudGateway';
+import { setReceiptPay } from './receiptPay';   // A450   // A410
 import { readPending as readPendingWaste, pushPendingWastage, type WasteOutcome } from './tillWastage';   // A414
 import { readPending as readPendingRouting, overlayPending as overlayPendingRouting, pushPendingRouting, type PushOutcome } from './stationRouting';   // A411
 // A275: reuse the SAME local close the branch-LAN central close uses, so remote
@@ -30,7 +33,7 @@ import { readPending as readPendingRouting, overlayPending as overlayPendingRout
 // sync), so the branchClose ↔ syncEngine import cycle resolves safely.
 import { executeCloseDay } from './branchClose';
 import { unpackRosterSnapshot } from './rosterSnapshot';
-import { unpackNodeBundle, numOrNull, type AcquiredReference } from './referenceBundle';
+import { unpackNodeBundle, numOrNull, type AcquiredReference, identityFromWire } from './referenceBundle';
 import { buildCloudOrderPayload } from './peerRelay';
 import { ownOrderIds, webSaleShifts, applyWebOrders, applyOwnReversals, type WebOrder, type OwnReversal } from './webSales';
 import { replayOutcome } from './offlineReversal';
@@ -104,13 +107,27 @@ const SYNC_STALE_MS = 3 * 60_000;
 // existing per-call catch already handles (attempts++, escalate to failed).
 // Env-overridable so tests can use a short timeout.
 const SYNC_FETCH_TIMEOUT_MS = Number(process.env.SYNC_FETCH_TIMEOUT_MS) || 20_000;
-function syncFetch(url: string, opts: any = {}): Promise<Response> {
+async function syncFetch(url: string, opts: any = {}): Promise<Response> {
   const ctrl = new AbortController();
-  const timer = setTimeout(
+  let timer = setTimeout(
     () => ctrl.abort(new Error(`sync fetch timed out after ${SYNC_FETCH_TIMEOUT_MS}ms`)),
     SYNC_FETCH_TIMEOUT_MS);
-  // A410: on a till with a branch server, through the server — the only machine on the branch that talks to the cloud.
-  return cloudFetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+  try {
+    // A410: on a till with a branch server, through the server — the only machine on the branch that talks to the cloud.
+    const res = await cloudFetch(url, { ...opts, signal: ctrl.signal });
+    if (typeof (res as any)?.arrayBuffer !== 'function') return res;
+    // A448: the body too has a time limit. Before, the limit ended with the headers — a line that stalled mid-answer (a
+    // big menu on a weak link) held the pull, and every pull queued behind it, for good. Read here, handed back whole.
+    clearTimeout(timer);
+    timer = setTimeout(
+      () => ctrl.abort(new Error(`sync fetch body timed out after ${SYNC_FETCH_TIMEOUT_MS}ms`)),
+      SYNC_FETCH_TIMEOUT_MS);
+    const nullBody = [101, 204, 205, 304].includes(res.status);
+    const body = nullBody ? null : await res.arrayBuffer();
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 // A20: last roster version this peer applied, in-memory. Skips re-wrapping an
 // unchanged roster every pull; on restart it re-applies once, which is harmless.
@@ -123,6 +140,22 @@ export function configureSyncEngine(serverUrl: string, accessToken: string, refr
 }
 
 // Set/clear the active staff token. Called on PIN login and shift end.
+/** A448: send this till's queued changes / ask after the ones with the owner — with the till's OWN session (the person who
+ *  made each may have signed out; the cloud checks their permission), through the branch server on a till behind one. */
+export async function tillChangesPost(changes: Record<string, unknown>[]): Promise<Response> {
+  if (!_serverUrl || !_accessToken) throw new Error('not signed in');
+  const branch = getDeviceConfig()?.branch_id ?? '';
+  const go = () => syncFetch(`${_serverUrl}/api/changes`, { method: 'POST', headers: { ...authHeaders(), ...(branch ? { 'X-Branch-Id': branch } : {}) },
+    body: JSON.stringify({ changes }) });
+  let res = await go();
+  if (res.status === 401 && await refreshAccessToken()) res = await go();
+  return res;
+}
+export async function tillChangesState(ids: string[]): Promise<Array<{ id: string; status: string; message?: string | null }>> {
+  const res = await rosterCloudGet(`/api/changes/state?ids=${encodeURIComponent(ids.join(','))}`);
+  return res.ok ? await res.json() as any : [];
+}
+
 /** A446: a signed-in GET to the cloud for the staff list (through the branch server on a till behind one); one renewal
  *  on a 401. Kept here because the sync engine owns the till's tokens. */
 export async function rosterCloudGet(path: string): Promise<Response> {
@@ -950,6 +983,13 @@ export async function pullIfCatalogueChanged(): Promise<{ changed: boolean; pull
     clearInboundFailure('version');
   } catch (e: any) {
     noteInboundFailure('version', `catalogue-version check failed: ${e?.message ?? 'unreachable'} — changes will arrive with the 10-minute sync instead`);
+    // A448: no cloud — a change made on another till of this branch reached the branch server: pull it from there.
+    const nodeVersion = await nodeChangeVersion().catch(() => null);
+    if (nodeVersion && nodeVersion !== _lastNodeChangeVersion) {
+      const r = await syncAll();
+      if (r.pulled) _lastNodeChangeVersion = nodeVersion;
+      return { changed: true, pulled: r.pulled };
+    }
     return { changed: false, pulled: false };
   }
   if (!version || version === _lastCatalogueVersion) return { changed: false, pulled: false };
@@ -1002,6 +1042,8 @@ export function getSyncStatus(): {
   parkedReason?: string;
   /** A363: the last moment this till had nothing waiting for the cloud (ISO), null if never recorded. */
   lastSyncedAt?: string | null;
+  /** A448: the branch server refused this till's access code (recently) — nothing reaches the cloud through it. */
+  nodeRefused?: { status: number; since: string } | null;
 } {
   const db = getLocalDb();
   const pending = db.prepare(`SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`).get() as { count: number };
@@ -1061,6 +1103,7 @@ export function getSyncStatus(): {
     parkedCount: parked.count,
     parkedReason: parked.reason ?? undefined,
     lastSyncedAt: lastSyncedAt(),
+    nodeRefused: hasNode() ? nodeRefusal() : null,
   };
 }
 
@@ -1302,9 +1345,23 @@ function applyReferenceConfig(c: AcquiredReference['config']): void {
   setPosFeatures(c.posFeatures);
   // 0.6.30: the owner's void window and offline void/refund rules. undefined = not said → keep.
   setReversalRules(c.reversalRules);
+  // A450: the business's name and currency follow the cloud (owner: "I changed a business name on the web but the till"
+  // kept the old one — it was written only at sign-in). Receipts, reports and the screens read them from `session`.
+  applyBusinessIdentity(c.businessName, c.currency);
+  setReceiptPay(c.receiptPay);   // A450: undefined = not said → keep
 }
 
-let _preferCloudPull = false;   // A446: set while a pull answers the cloud's own "something changed"
+/** A450: the business's name / currency as the last pull said; nothing when not said or unchanged. */
+export function applyBusinessIdentity(name: string | undefined, currency: string | undefined): void {
+  try {
+    const db = getLocalDb();
+    if (name) db.prepare(`UPDATE session SET business_name = ? WHERE id = 1 AND business_name IS NOT ?`).run(name, name);
+    if (currency) db.prepare(`UPDATE session SET currency = ? WHERE id = 1 AND currency IS NOT ?`).run(currency, currency);
+  } catch { /* the next pull */ }
+}
+
+let _preferCloudPull = false;
+let _lastNodeChangeVersion: string | null = null;   // A448: the branch server's own change counter, last seen   // A446: set while a pull answers the cloud's own "something changed"
 async function pullCatalogue(): Promise<boolean> {
   const db = getLocalDb();
   const now = new Date().toISOString();
@@ -1427,6 +1484,10 @@ async function pullCatalogue(): Promise<boolean> {
       noteQuickPicks: Array.isArray(_j.noteQuickPicks) ? _j.noteQuickPicks.map(String) : undefined,   // A367
       posFeatures: _j.posFeatures && typeof _j.posFeatures === 'object' ? _j.posFeatures : undefined,   // 0.6.27
       reversalRules: _j.reversalRules && typeof _j.reversalRules === 'object' ? _j.reversalRules : undefined,   // 0.6.30
+      // A450: the business's name and currency (a rename on the web), and the receipt's Buy Goods / Paybill line.
+      businessName: identityFromWire(_j).businessName,
+      currency: identityFromWire(_j).currency,
+      receiptPay: identityFromWire(_j).receiptPay,
     });
 
     // Fetch variants + modifiers (per product — the N in the cloud's 7 + N).
@@ -1827,6 +1888,9 @@ async function pullCatalogue(): Promise<boolean> {
         });
       }
     }
+    // A448: this till's own changes that still wait (not yet answered, or with the owner) go back over what the pull wrote
+    // — a pull never undoes a change made here.
+    overlayLocalChanges(db);
   })();
 
   // PHASE5 §4b (A17): a NODE also pulls the branch staff roster so it can

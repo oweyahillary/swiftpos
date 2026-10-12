@@ -48,7 +48,8 @@ table predates the mechanism.
 | **53** | — | **A311 (2026-09-22):** `branding.receipt_logo_enabled INTEGER NOT NULL DEFAULT 0` — the client's opt-in receipt-logo toggle, pulled remote-wins with the branding row (cloud migration 105). `branding` is never pushed, so `HARD_MIN` is untouched; `REQUIRED` moved to 53 by the equality convention only. |
 | 54–68 | — | Not recorded here — each is described in the comment above `LOCAL_SCHEMA_VERSION` in `apps/desktop/src/main/localDb.ts`. |
 | **69** | — | **A429 (2026-10-10):** `device_config.payment_methods_enabled TEXT` — the payment methods the branch takes (a JSON list of catalogue codes), pulled with /pos/init and relayed by the branch server; never pushed. `REQUIRED` moved to 69 with it. |
-| **70** | 128 | **A445 (2026-10-11):** `offers (id, data)` — the branch's offers, pulled with /pos/init (`offers`) and relayed by the branch server, replaced wholesale; never pushed. `orders.offer_discount REAL`, `orders.offers TEXT` — what offers took off a sale and which; in the order payload (POST /api/orders), checked by the cloud. `REQUIRED` moved to 70 with it. The current value. |
+| **70** | 128 | **A445 (2026-10-11):** `offers (id, data)` — the branch's offers, pulled with /pos/init (`offers`) and relayed by the branch server, replaced wholesale; never pushed. `orders.offer_discount REAL`, `orders.offers TEXT` — what offers took off a sale and which; in the order payload (POST /api/orders), checked by the cloud. `REQUIRED` moved to 70 with it. |
+| **71** | 129 | **A448 (2026-10-12):** `local_changes` — a manager's change made on the till (a print station, a category, a product, a cashier, a PIN), applied there at once and queued; sent through POST /api/changes (the cloud: applied / identical / awaiting the owner / refused). Local only. `REQUIRED` moved to 71 with it. The current value. |
 
 ## The gaps are real, and they are the same shape as the server's
 

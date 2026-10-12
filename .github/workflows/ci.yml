@@ -887,6 +887,18 @@ jobs:
         working-directory: apps/desktop
         run: node --no-warnings test/manager-expense.test.mjs
 
+      # A448 — the till works on its own: a station, the menu, a cashier or a PIN changed offline works at once and reaches
+      # the cloud later; a clash waits for the owner (the cloud's side: tests/till-changes-cloud.test.mjs).
+      - name: Desktop changes made on the till first (offline simulation)
+        working-directory: apps/desktop
+        run: node --no-warnings test/till-first.test.mjs
+
+      # A450 + A381 — the business's name, currency and receipt M-Pesa line follow the cloud; a logo reaches a branch's
+      # tills through the branch server.
+      - name: Desktop business name, receipt M-Pesa line and logo follow the cloud
+        working-directory: apps/desktop
+        run: node --no-warnings test/business-identity.test.mjs
+
       # A444 — a past order's items, reprint and void / refund for a manager, on the till and the web.
       - name: Desktop and web order detail, reprint, void and refund
         working-directory: apps/desktop

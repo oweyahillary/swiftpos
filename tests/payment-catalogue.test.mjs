@@ -105,7 +105,7 @@ const br = read('apps/server/src/routes/branches.ts');
 const pos = read('apps/server/src/routes/pos.ts');
 ok('stored for the business and per branch — only catalogue codes', () => {
   assert.ok(biz.includes("  'payment_methods_enabled',\n") && biz.includes('if (key === PAYMENT_METHODS_ENABLED_KEY) {\n    const clean = enabledSettingValue(value);'));
-  assert.ok(br.includes("'payment_methods_enabled'];") && br.includes('if (key === PAYMENT_METHODS_ENABLED_KEY) {\n    const clean = enabledSettingValue(value);'));
+  assert.ok(/'payment_methods_enabled'(\];|,\s+\/\/ A429)/.test(br) && br.includes('if (key === PAYMENT_METHODS_ENABLED_KEY) {\n    const clean = enabledSettingValue(value);'));
 });
 ok('sent to every till and the web POS — the branch\'s own wins', () => {
   assert.equal((pos.match(/'payment_methods_enabled'/g) || []).length, 2);

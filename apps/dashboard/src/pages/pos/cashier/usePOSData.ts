@@ -50,6 +50,7 @@ export interface POSData {
   /** A313: the receipt logo to print, already gated on the client's toggle; null = none. */
   receiptLogo:       MonoRaster | null;
   receiptFooter:     string;
+  receiptPay:        { label: string; number: string } | null;   // A450
   tables:            Table[];
   pumps:             Pump[];
   setPumps:          Dispatch<SetStateAction<Pump[]>>;
@@ -87,6 +88,7 @@ export function usePOSData(): POSData {
   const [receiptHeader,     setReceiptHeader]     = useState('');
   const [receiptLogo,       setReceiptLogo]       = useState<MonoRaster | null>(null);
   const [receiptFooter,     setReceiptFooter]     = useState('');
+  const [receiptPay,        setReceiptPay]        = useState<{ label: string; number: string } | null>(null);   // A450
   const [tables,            setTables]            = useState<Table[]>([]);
   const [pumps,             setPumps]             = useState<Pump[]>([]);
   const [branchPrinters,    setBranchPrinters]    = useState<BranchPrinter[]>([]);
@@ -129,6 +131,7 @@ export function usePOSData(): POSData {
       setReceiptLogo(init.branding?.receiptLogoEnabled && init.branding.logoReceipt
         ? monoRasterFromString(init.branding.logoReceipt) : null);
       setReceiptFooter(init.receiptFooter ?? '');
+      setReceiptPay(init.receiptPayNumber ? { label: init.receiptPayLabel ?? '', number: init.receiptPayNumber } : null);   // A450
       setCurrency(init.currency ?? 'KES');
       setLoyaltyEnabled(init.loyaltyEnabled ?? false);
       // Clamp the web POS to the server's discount ceiling. Falls back to the
@@ -194,7 +197,7 @@ export function usePOSData(): POSData {
   useEffect(() => { load(); }, [load, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter,
+    products, categories, variantsByProduct, comboItems, kitchenExclusions, notePicks, posFeatures, freeDeliveryAllowed, freeDeliveryOver, receiptHeader, receiptLogo, receiptFooter, receiptPay,
     tables, pumps, setPumps, branchPrinters,
     businessMode, currency, loyaltyEnabled, maxDiscountPct, paymentMethods, paymentMethodsEnabled, offers, orderMode,
     loading, error,

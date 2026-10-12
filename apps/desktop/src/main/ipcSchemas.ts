@@ -283,6 +283,8 @@ export const IPC_SCHEMAS: Record<string, ChannelSpec> = {
   'manage:cachedMenu':          NO_PAYLOAD,   // A345: offline, read-only
   'manage:cachedStaff':         NO_PAYLOAD,   // A345: offline, read-only
   'manage:createStaff':         { name: { t: 'string' } },
+  'manage:setStaffPin':         { id: { t: 'string', min: 1 }, pin: { t: 'string', min: 4 } },   // A448
+  'manage:changeStates':        NO_PAYLOAD,   // A448
   'manage:updateStaff':         idPatch,
   'manage:getReceiptText':      NO_PAYLOAD,
   'manage:setReceiptText':      { header: { t: 'string' }, footer: { t: 'string' } },

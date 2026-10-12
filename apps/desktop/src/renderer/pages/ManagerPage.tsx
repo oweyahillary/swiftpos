@@ -66,6 +66,7 @@ import { lastSyncedLabel } from '../lib/syncNotice';
 import OrderDetailPanel from '../components/OrderDetailPanel';   // A444
 import OffersScreen from '../screens/OffersScreen';   // A445
 import RecordExpenseForm from '../components/RecordExpenseForm';   // A447
+import TillChangesNotice from '../components/TillChangesNotice';   // A448
 import { VOID_WINDOW_MIN } from '../lib/voidRefund';
 
 // ── SVG icons (zero dependency) ───────────────────────────────────────────────
@@ -1914,6 +1915,7 @@ export default function ManagerPage({ business, staff, onOpenPOS, onLogout, onHe
               <SegmentedSelector options={activeGroup.tabs} value={active} onChange={openTab} />
             </div>
           )}
+          <TillChangesNotice />   {/* A448: changes made here that have not settled with the cloud */}
           {renderContent()}
         </main>
       </div>

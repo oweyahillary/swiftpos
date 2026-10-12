@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, net, shell } from 'electron';
+import { sendTillChangesNow } from './changeQueue';   // A448
 import { tillBranchId } from './deviceConfig';   // A446
 import { configureStaffRoster, startStaffRosterTimer } from './staffRoster';   // A446
 import { isNodeRole } from './deviceConfig';
@@ -291,6 +292,7 @@ app.whenReady().then(() => {
     if (stationRoutingPending()) pushStationRoutingNow().catch(console.error);
     // A414: wastage recorded on this till while offline goes up on the same beat.
     if (wastagePending()) pushWastageNow().catch(console.error);
+    void sendTillChangesNow();   // A448: changes made on this till
   }, 20_000);
   // A446: this till's own copy of its branch's staff list — every 10 s on a branch server, 20 s on any till, and at once
   // when staff change here (staffRoster.ts). A new cashier signs in on every till within seconds, offline too.

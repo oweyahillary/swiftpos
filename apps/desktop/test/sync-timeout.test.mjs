@@ -90,5 +90,22 @@ const r2 = await engine.syncPush();            // old code: "Sync already in pro
 ok('a following sync is NOT wedged (Force sync still works)', !r2.errors.includes('Sync already in progress'));
 ok('the second pass attempted again', calls === 2 && qrow().status === 'pending');
 
+// A448: the answer starts (headers, some bytes) and then the line stalls. Before, the limit ended with the headers and the
+// body read hung the pass for good. The stream errors when the signal aborts — as a real socket's body does.
+globalThis.fetch = (_u, o) => {
+  if (String(_u).includes('/api/orders')) calls++;
+  const body = new ReadableStream({ start(c) {
+    c.enqueue(new TextEncoder().encode('{"id":'));
+    o?.signal?.addEventListener('abort', () => c.error(o.signal.reason || new Error('aborted')));
+  } });
+  return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }));
+};
+const t3 = Date.now();
+const r3 = await engine.syncPush();
+ok('an answer that stalls mid-body RESOLVES via the timeout too (the body has a time limit)',
+  Date.now() - t3 < 5000 && calls === 3 && /timed out/.test(JSON.stringify(r3.errors) + (qrow().last_error ?? '')), JSON.stringify(r3.errors));
+const r4 = await engine.syncPush();
+ok('…and the next sync is not wedged', !r4.errors.includes('Sync already in progress') && calls === 4);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

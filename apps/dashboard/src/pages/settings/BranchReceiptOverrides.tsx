@@ -12,6 +12,9 @@ import BranchPaymentMethods from './BranchPaymentMethods';   // A429
 const TEXT_FIELDS = [
   { key: 'receipt_header', label: 'Receipt header' },
   { key: 'receipt_footer', label: 'Receipt footer' },
+  // A450: this branch's own M-Pesa number (each branch often has its own till).
+  { key: 'receipt_pay_label', label: 'Pay by M-Pesa — label (Buy Goods, Paybill, Till No.)' },
+  { key: 'receipt_pay_number', label: 'Pay by M-Pesa — number' },
 ] as const;
 
 export default function BranchReceiptOverrides({ branchId }: { branchId: string }) {

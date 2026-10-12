@@ -16,6 +16,7 @@
 
 import { getDeviceConfig, isNodeRole } from './deviceConfig';
 import { isUnreachableStatus } from './authTransport';
+import { noteNodeRefused, noteNodeAccepted } from './cloudGateway';   // A448
 
 export function nodeUrl(): string | null {
   const cfg = getDeviceConfig();
@@ -74,8 +75,10 @@ export async function isNodeReachable(timeoutMs = 2500): Promise<boolean> {
     clearTimeout(t);
     if (res.status === 401) {
       console.error('[node] branch server rejected our access code — this till will not aggregate. Re-run install with the correct code.');
+      noteNodeRefused(401);   // A448: the manager is told (sync notice), not only the log
       return false;
     }
+    if (res.ok) noteNodeAccepted();
     return res.ok;
   } catch { return false; }
 }
@@ -423,4 +426,42 @@ export async function verifyPinAtNodeClient(pin: string, branchId: string, timeo
   } finally {
     clearTimeout(t);
   }
+}
+
+// ── A448: changes made on a till, shared with the branch over the LAN ────────────────────────────────────────────────
+/** The branch server's own change counter (it moves when a till of the branch hands it a change). null = no answer. */
+export async function nodeChangeVersion(timeoutMs = 3000): Promise<string | null> {
+  const base = nodeUrl();
+  if (!base) return null;
+  try {
+    const res = await fetch(`${base}/node/changes/version`, { headers: nodeHeaders(), signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    const b = await res.json().catch(() => null) as { version?: string } | null;
+    return b?.version ?? null;
+  } catch { return null; }
+}
+
+/** Hand changes made on this till to the branch server: it applies them too (its other tills see them with no internet)
+ *  and sends them to the cloud itself. Best-effort: this till sends them to the cloud as well. */
+/** A381: a logo (or accent) set on this till — handed to the branch server, so the branch's other tills take it from
+ *  there at once, with no internet. False when there is no server or it did not answer (the cloud still gets it). */
+export async function relayBrandingToNode(b: { accentHex: string | null; logoPng: string | null; logoReceipt: string | null; receiptLogoEnabled: boolean },
+  timeoutMs = 6000): Promise<boolean> {
+  const base = nodeUrl();
+  if (!base) return false;
+  try {
+    const res = await fetch(`${base}/node/branding`, { method: 'POST', headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(b), signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok;
+  } catch { return false; }
+}
+
+export async function relayChangesToNode(changes: Record<string, unknown>[], timeoutMs = 4000): Promise<boolean> {
+  const base = nodeUrl();
+  if (!base || !changes.length) return false;
+  try {
+    const res = await fetch(`${base}/node/changes`, { method: 'POST', headers: nodeHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ changes }), signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok;
+  } catch { return false; }
 }

@@ -52,6 +52,7 @@ interface Props {
   receiptHeader?: string;
   receiptLogo?: MonoRaster | null;   // A313
   receiptFooter?: string;
+  receiptPay?: { label: string; number: string } | null;   // A450
   orderType?: OrderType;
   tableNumber?: string;
   loyaltyState: LoyaltyState | null;
@@ -103,7 +104,7 @@ function fmt(n: number) {
 }
 
 export default function PaymentModal({
-  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter,
+  cart, total, subtotal, vatAmount, currency, business, branchId, branchName, receiptHeader, receiptLogo, receiptFooter, receiptPay,
   orderType = 'retail', tableNumber,
   loyaltyState, discountState, onClose, onSuccess, onPaid, shiftId,
   maxDiscountPct = 10, existingOrderId, offers = [],
@@ -519,7 +520,7 @@ export default function PaymentModal({
         orderNote,   // A367
       });
       const biz = buildReceiptBusinessConfig(resolvedBusiness, printerSettings.footerMessage, 0,
-        { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo });
+        { branchName, header: receiptHeader, footerText: receiptFooter, logoRaster: receiptLogo, pay: receiptPay });
       const bytes = renderEscPos(order, biz, printerSettings.paperWidth);
       const copies = printerSettings.copies ?? 1;
       for (let i = 0; i < copies; i++) {

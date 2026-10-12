@@ -79,6 +79,18 @@ export class NodeRefusedError extends Error {
   constructor(public status: number) { super(`fetch failed: the branch server refused this till (HTTP ${status})`); this.name = 'NodeRefusedError'; }
 }
 
+// A448: the branch server's own refusal of this till (a wrong branch access code) — kept so the manager is TOLD, not just
+// the log: sales were safe on the till, but nothing reached the cloud or the other tills, silently, until someone looked.
+let nodeRefusedAt = 0;
+let nodeRefusedStatus = 0;
+const NODE_REFUSAL_SHOWN_MS = 5 * 60_000;
+/** The branch server refused this till (status), or null — cleared by the next answer it does accept. */
+export function noteNodeRefused(status: number, now = Date.now()): void { nodeRefusedAt = now; nodeRefusedStatus = status; }
+export function noteNodeAccepted(): void { nodeRefusedAt = 0; nodeRefusedStatus = 0; }
+export function nodeRefusal(now = Date.now()): { status: number; since: string } | null {
+  return nodeRefusedAt && now - nodeRefusedAt < NODE_REFUSAL_SHOWN_MS ? { status: nodeRefusedStatus, since: new Date(nodeRefusedAt).toISOString() } : null;
+}
+
 // A branch server on an older build has no gateway. Remembered for a while so every request does not pay a round trip.
 let oldNodeUntil = 0;
 const OLD_NODE_RETRY_MS = 10 * 60_000;
@@ -115,10 +127,12 @@ export async function cloudFetch(url: string, init: any = {}, deps: { fetch?: ty
     // Not the cloud's answer — the branch server's own (a wrong branch access code is a 401). Passed on, a 401 would read
     // as the till's sign-in being refused and start the lost-session recovery (A407). It is a connection problem.
     (deps.log ?? console.warn)(`[gateway] the branch server refused the request (HTTP ${res.status}) — check this till's branch access code`);
+    if (res.status === 401 || res.status === 403) noteNodeRefused(res.status, now);
     throw new NodeRefusedError(res.status);
   }
+  noteNodeAccepted();
   return res;
 }
 
 /** Tests only. */
-export function _resetGatewayMemory(): void { oldNodeUntil = 0; }
+export function _resetGatewayMemory(): void { oldNodeUntil = 0; noteNodeAccepted(); }

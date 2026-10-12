@@ -49,6 +49,9 @@ export interface ReceiptBusinessConfig {
   kraPin?: string;
   telephone?: string;
   thankYouMessage?: string;
+  /** A450: how a customer pays by M-Pesa — printed under the payments ("Buy Goods: 123456"). */
+  tillLabel?: string;
+  tillNumber?: string;
   vatRate: number;   // required by shared/printing's tax line
   ctlRate: number;   // required by shared/printing's tax line
 }
@@ -137,6 +140,8 @@ export function buildReceiptBusinessConfig(
   footerMessage?: string,
   ctlRate = 0,
   extra: { branchName?: string; header?: string; footerText?: string;
+           /** A450: the business's (or branch's) Buy Goods / Paybill line; null or no number = none. */
+           pay?: { label: string; number: string } | null;
            /** A313: already resolved by the caller (toggle ON + decodable raster) — the builder never decides. */
            logoRaster?: import('./escposRenderer').MonoRaster | null } = {},
 ): ReceiptBusinessConfig {
@@ -153,6 +158,8 @@ export function buildReceiptBusinessConfig(
     // (paybill / delivery no.). Owner receipt_footer wins; the per-device printer
     // footerMessage is the fallback. (A255 — was mapped to an ignored footerText.)
     thankYouMessage: extra.footerText || footerMessage || undefined,
+    tillLabel:       extra.pay?.number?.trim() ? (extra.pay.label?.trim() || 'Buy Goods') : undefined,   // A450
+    tillNumber:      extra.pay?.number?.trim() || undefined,
     // Rates must match what the business actually charges so the tax line equals
     // the desktop's. vat_rate comes from the business; CTL defaults to 0 unless
     // the business levies it (pass ctlRate through when it does).

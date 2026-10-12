@@ -82,6 +82,7 @@ export async function reprintOrderReceipt(orderId: string): Promise<{ ok: boolea
     branchName: order.branch_name ?? undefined,
     header:     map['receipt_header'] || undefined,
     footerText: map['receipt_footer'] || undefined,
+    pay: { label: map['receipt_pay_label'] ?? '', number: map['receipt_pay_number'] ?? '' },   // A450
     logoRaster: branding?.receipt_logo_enabled && branding.logo_receipt ? monoRasterFromString(branding.logo_receipt) : null,
   });
 
