@@ -139,6 +139,24 @@ async function verifyOverrideAuthorizer(
   return { result: found.result === 'none' ? 'no_authorizers' : 'invalid' };
 }
 
+/**
+ * A451: the person recorded on a void / refund (voided_by, authorized_by, refunded_by, …) — always a users row of this
+ * business, the column's foreign key. An owner whose sign-in carries no users row (auth.ts's last-resort token: the
+ * auth.users id) is recorded as the business's owner row when there is one, else as nobody. Before, that owner's every
+ * void and refund on the web failed with a 500 — the database refused the id (owner, 2026-10-12, order 8a523b99…).
+ */
+async function recordedPerson(businessId: string, userId: string | null | undefined, isOwner: boolean): Promise<string | null> {
+  const ofBusiness = async (id: string) => {
+    const { data } = await supabase.from('users').select('id').eq('id', id).eq('business_id', businessId).maybeSingle();
+    return !!data;
+  };
+  if (userId && await ofBusiness(userId)) return userId;
+  if (!isOwner) return null;
+  const { data: biz } = await supabase.from('businesses').select('owner_id').eq('id', businessId).maybeSingle();
+  const ownerId = (biz as { owner_id?: string | null } | null)?.owner_id ?? null;
+  return ownerId && await ofBusiness(ownerId) ? ownerId : null;
+}
+
 // What the till/web is told when no approval matched (A355). The legacy business-wide supervisor PIN is still tried
 // first by the caller; this is the answer when it does not match either. One wording for void and refund.
 const APPROVER_PIN_REFUSED = {
@@ -1234,6 +1252,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
     if ('status' in r) { res.status(r.status).json(r.body); return; }
     replay = r;
   }
+  const me = await recordedPerson(req.businessId!, req.userId, !!req.isOwner);   // A451: a users row, or nobody
 
   // What was actually taken, per leg. Refunding is bounded by this rather than
   // by the order total: if a leg failed, that money never arrived and must not
@@ -1261,7 +1280,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
     // A187: an owner refunding from the dashboard self-authorises — no
     // second-signature PIN. The audit trail is preserved: refunded_by = req.userId
     // and refund_authorized_by = the same owner (set below).
-    authorizedBy = req.userId ?? null;
+    authorizedBy = me;
   } else {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
@@ -1306,7 +1325,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
         refunded_at:          replay?.at ?? new Date().toISOString(),
         refunded_amount:      round2(takenTotal),
         refund_reason:        String(reason).trim(),
-        refunded_by:          replay ? (replay.actorId ?? req.userId) : req.userId,
+        refunded_by:          replay ? (replay.actorId ?? me) : me,
         refund_authorized_by: authorizedBy,
       })
       .eq('id', orderId);
@@ -1325,7 +1344,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
           p_method:        null,
           p_reference:     null,
           p_notes:         `Refund: ${order.order_number} — ${reason}`,
-          p_created_by:    req.userId ?? null,
+          p_created_by:    me,
           p_enforce_limit: false,
         });
         if (crErr) console.error('[credit] refund reversal failed for order', orderId, crErr.message);
@@ -1366,7 +1385,7 @@ router.post('/:id/refund', reversalGate, async (req, res) => {
           // exist, so this insert was silently rejected and voided stock was
           // never restored to the ledger — the level was corrected, the audit
           // trail explaining why was not.
-          created_by: req.userId,
+          created_by: me,
         });
       }
     }
@@ -1425,6 +1444,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
     if ('status' in r) { res.status(r.status).json(r.body); return; }
     replay = r;
   }
+  const me = await recordedPerson(req.businessId!, req.userId, !!req.isOwner);   // A451: a users row, or nobody
 
   const orderAge = (Date.now() - new Date(order.created_at).getTime()) / 60000;
   // Owners may void at any age — the books are theirs, a reason is still required and
@@ -1460,7 +1480,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
     // A187: an owner voiding from the dashboard self-authorises — no
     // second-signature PIN. Audit trail preserved: voided_by = req.userId
     // and authorized_by = the same owner (set below).
-    authorizedBy = req.userId ?? null;
+    authorizedBy = me;
   } else if (isPaid) {
     const pin = (override_pin ?? supervisor_pin) as string | undefined;
     const ov = await verifyOverrideAuthorizer(req.businessId, authorizer_id, pin);
@@ -1484,7 +1504,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
     const { error: vErr } = await supabase
       .from('orders')
       .update({ status: 'voided', void_reason: reason, voided_at: replay?.at ?? new Date().toISOString(),
-                voided_by: replay ? (replay.actorId ?? req.userId) : req.userId, authorized_by: authorizedBy })
+                voided_by: replay ? (replay.actorId ?? me) : me, authorized_by: authorizedBy })
       .eq('id', orderId);
     if (vErr) throw vErr;
 
@@ -1546,7 +1566,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
             p_method:        null,
             p_reference:     null,
             p_notes:         `Void: ${order.order_number} — ${reason}`,
-            p_created_by:    req.userId ?? null,
+            p_created_by:    me,
             p_enforce_limit: false,
           });
           if (crErr) console.error('[credit] void reversal failed for order', orderId, crErr.message);
@@ -1591,7 +1611,7 @@ router.post('/:id/void', reversalGate, async (req, res) => {
           quantity_change: item.quantity,
           quantity_after: newQty,
           notes: `Void of Order ${order.order_number}: ${reason}`,
-          created_by: req.userId,
+          created_by: me,
         });
     }
 

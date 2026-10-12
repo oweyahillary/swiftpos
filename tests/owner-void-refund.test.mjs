@@ -46,12 +46,14 @@ const ok = (name, fn) => {
 ok('void: owner self-authorises (skips PIN)', () => {
   assert.match(voidBody, /isPaid\s*&&\s*req\.isOwner/,
     'expected an isPaid && req.isOwner branch that bypasses the supervisor PIN');
-  assert.match(voidBody, /req\.isOwner[\s\S]*?authorizedBy\s*=\s*req\.userId/,
-    'owner branch must set authorizedBy = req.userId (self-authorised)');
+  // A451: the owner as a users row (recordedPerson) — an owner token without one failed every void with a 500.
+  assert.match(voidBody, /const me = await recordedPerson\(req\.businessId!, req\.userId, !!req\.isOwner\)/, 'the person recorded is resolved');
+  assert.match(voidBody, /req\.isOwner[\s\S]*?authorizedBy\s*=\s*me;/,
+    'owner branch must set authorizedBy = the owner (self-authorised)');
 });
 ok('void: audit trail recorded (who + why)', () => {
   // 0.6.30: a till's offline replay records the person who did it at the counter (else the caller).
-  assert.match(voidBody, /voided_by: replay \? \(replay\.actorId \?\? req\.userId\) : req\.userId/, 'must record voided_by = req.userId');
+  assert.match(voidBody, /voided_by: replay \? \(replay\.actorId \?\? me\) : me/, 'must record voided_by = the person (a users row)');
   assert.match(voidBody, /void_reason:\s*reason/,    'must record the void_reason');
   assert.match(voidBody, /A reason is required to void/, 'reason must be required');
 });
@@ -70,11 +72,12 @@ ok('void: owner voids at any age; staff stay window-limited', () => {
 
 // ── REFUND ────────────────────────────────────────────────────────────────────
 ok('refund: owner self-authorises (skips PIN)', () => {
-  assert.match(refundBody, /if \(req\.isOwner\)[\s\S]*?authorizedBy\s*=\s*req\.userId/,
-    'owner branch must set authorizedBy = req.userId (self-authorised)');
+  assert.match(refundBody, /const me = await recordedPerson\(req\.businessId!, req\.userId, !!req\.isOwner\)/, 'the person recorded is resolved');
+  assert.match(refundBody, /if \(req\.isOwner\)[\s\S]*?authorizedBy\s*=\s*me;/,
+    'owner branch must set authorizedBy = the owner (self-authorised)');
 });
 ok('refund: audit trail recorded (who + why)', () => {
-  assert.match(refundBody, /refunded_by:\s*replay \? \(replay\.actorId \?\? req\.userId\) : req\.userId/, 'must record refunded_by = req.userId');
+  assert.match(refundBody, /refunded_by:\s*replay \? \(replay\.actorId \?\? me\) : me/, 'must record refunded_by = the person (a users row)');
   assert.match(refundBody, /refund_reason:\s*String\(reason\)\.trim\(\)/, 'must record the refund_reason');
   assert.match(refundBody, /refund_authorized_by:\s*authorizedBy/, 'must record refund_authorized_by');
   assert.match(refundBody, /A reason is required to refund/, 'reason must be required');
