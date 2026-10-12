@@ -46,7 +46,7 @@ router.get('/catalogue-version', async (req, res) => {
 
   // Latest updated_at from one table; null (not throw) if the column/scope is absent,
   // so one odd table can never fail the whole check.
-  const latest = async (table: string, col: 'business_id' | 'branch_id', val: string | null): Promise<string | null> => {
+  const latest = async (table: string, col: 'business_id' | 'branch_id' | 'id', val: string | null): Promise<string | null> => {
     if (!val) return null;
     try {
       const { data, error } = await supabase
@@ -78,6 +78,9 @@ router.get('/catalogue-version', async (req, res) => {
       // A446: print stations — a station added or changed on the web or another till reaches this till within 20 s
       // (it waited for the 10-minute sync: "No station …" on Test print).
       latest('print_stations',   'business_id', biz),
+      // A450: the business itself — a new business name (or currency) on the web reaches every till within 20 s; it
+      // waited for the 10-minute pull, and the till then ignored it (the name was written only at sign-in).
+      latest('businesses',       'id',          biz),
     ]);
     // ISO-8601 UTC strings sort chronologically; newest is the version.
     const version = picks.filter(Boolean).sort().pop() ?? null;
@@ -253,7 +256,7 @@ router.get('/init', async (req, res) => {
       .eq('business_id', req.businessId)
       // kitchen_exclusions rides along with the receipt text because it is the
       // same shape of thing: owner-authored, per business, cached on every till.
-      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks',
+      .in('key', ['receipt_header', 'receipt_footer', 'kitchen_exclusions', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'order_note_picks', 'receipt_pay_label', 'receipt_pay_number',
         ...REVERSAL_SETTING_KEYS]),
     // The MAIN branch — used only as the fallback operating branch for a till
     // that has not sent its binding yet, and as the `branchId` the desktop falls
@@ -288,7 +291,7 @@ router.get('/init', async (req, res) => {
           .select('key, value')
           .eq('business_id', req.businessId)
           .eq('branch_id', requestedBranchId)
-          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled'])
+          .in('key', ['receipt_header', 'receipt_footer', 'continuous_operation', 'business_day_cutoff', 'cashier_history_methods', 'cashier_sees_shift_sales', 'cashier_history_totals', 'payment_methods_enabled', 'receipt_pay_label', 'receipt_pay_number'])
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('businesses')
@@ -467,6 +470,10 @@ router.get('/init', async (req, res) => {
     // A346: the till shows its Stock screen only when this is true (cached on the till; older tills ignore it).
     webPosEnabled,
     receiptFooter: receiptText.receipt_footer ?? '',
+    // A450: how a customer pays the business by M-Pesa, printed under the payments ("Buy Goods: 123456", "Paybill: …").
+    // '' = not set (the receipt prints no such line). The branch's own value wins, as for the header and footer.
+    receiptPayLabel: receiptText.receipt_pay_label ?? '',
+    receiptPayNumber: receiptText.receipt_pay_number ?? '',
     // Things that must never reach a kitchen ticket — drinks, sauces, packaged
     // sides. Stated by the owner rather than inferred: a keyword guess is wrong
     // occasionally and silently, and the cook is the one who finds out.

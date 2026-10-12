@@ -148,8 +148,10 @@ console.log('\n5. Routing edits are instant; tickets say what to make; one owner
       return IH.slice(i, j === -1 ? undefined : j);
     };
     const stationWrites = ['manage:createStation', 'manage:updateStation', 'manage:deleteStation', 'manage:setStationCategories'];
+    // A448: a station made, changed or removed here is saved on this till first (recordTillChange touches only the
+    // station tables) and works at once, offline too; routing still refreshes the two tables from the cloud.
     ok('station writes refresh ONLY the two station tables',
-       stationWrites.every(c => body(c).includes('refreshStationsLocal()') && !body(c).includes('refreshCatalogue()')));
+       stationWrites.every(c => (body(c).includes('refreshStationsLocal()') || body(c).includes('recordTillChange(')) && !body(c).includes('refreshCatalogue()')));
   }
   ok('the light refresh rewrites both tables transactionally',
      /refreshStationsLocal[\s\S]{0,900}DELETE FROM category_stations[\s\S]{0,80}DELETE FROM print_stations[\s\S]{0,700}\)\(\)/.test(IH));

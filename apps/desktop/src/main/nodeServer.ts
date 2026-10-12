@@ -46,7 +46,7 @@
 import http from 'http';
 import { isNodeRole } from './deviceConfig';
 import crypto from 'crypto';
-import { getLocalDb } from './localDb';
+import { getLocalDb, applyPulledBranding } from './localDb';
 import { getDeviceConfig, ensureNodeSecret } from './deviceConfig';
 import { getSalesSummary, getTopProducts, getRecentOrders, getStockLevels } from './managerReports';
 import { applyPeerRows, isReplicatedTable, listPeers, collectDistribution, applyPendingEvents } from './nodeIngest';
@@ -56,6 +56,8 @@ import { buildReferenceBundle } from './referenceBundle';
 import { buildRosterSnapshot } from './rosterSnapshot';
 import { forwardToCloud } from './nodeGateway';
 import { refreshStaffRosterNow } from './staffRoster';   // A446
+import { acceptRelayedChanges, changeVersion, bumpChangeVersion } from './localChanges';   // A448 (+ A381)
+import { tillSecrets as nodeSecrets } from './changeQueue';   // A448
 import { serveSharedUpdate, shareDir, shareWanted, latestReady, noteTillVersion, readyAnswer } from './updateShare';   // A443
 import { GATEWAY_PREFIX } from './cloudGateway';
 import { startBeacon, stopBeacon } from './serverBeacon';   // A427
@@ -383,6 +385,28 @@ export function startNodeServer(): void {
       // node's safeStorage wrapping is machine-bound); the peer re-wraps with its
       // own. The owner has accepted that this puts the branch's hashes on every
       // peer (PHASE5 §10.1) with the PIN-rotation runbook as mitigation.
+      // A448: a till of this branch hands over a change made on it (a printer station, a category, a product, a cashier, a
+      // PIN): applied here too — the branch's other tills see it with no internet — and sent to the cloud from here as well
+      // (the cloud recognises a change sent twice by its id).
+      if (req.method === 'POST' && url === '/node/changes') {
+        const body = await readBody(req);
+        const n = acceptRelayedChanges(getLocalDb(), Array.isArray(body?.changes) ? body.changes.slice(0, 50) : [], nodeSecrets);
+        return json(res, 200, { accepted: n, version: changeVersion(getLocalDb()) });
+      }
+      // A381: a till set the business's logo / accent — applied here (the branch's other tills take it with their next pull
+      // from this server; the change counter tells a till with no internet to pull now). The till sends it to the cloud.
+      if (req.method === 'POST' && url === '/node/branding') {
+        const body = await readBody(req);
+        const str = (v: unknown) => (typeof v === 'string' ? v : null);
+        if (str(body?.logoPng) && !/^[A-Za-z0-9+/=]+$/.test(String(body.logoPng))) return json(res, 400, { error: 'logoPng must be base64' });
+        applyPulledBranding({ accentHex: str(body?.accentHex), logoPng: str(body?.logoPng), logoReceipt: str(body?.logoReceipt),
+          receiptLogoEnabled: body?.receiptLogoEnabled === true });
+        return json(res, 200, { ok: true, version: bumpChangeVersion(getLocalDb()) });
+      }
+      if (req.method === 'GET' && url === '/node/changes/version') {
+        return json(res, 200, { version: changeVersion(getLocalDb()) });
+      }
+
       // A446: a till changed staff (created a cashier, set a PIN) — this server pulls the branch's staff list from the
       // cloud now, so its other tills have it on their next ask (and the PIN check here knows the new cashier at once).
       if (req.method === 'POST' && url === '/node/roster/refresh') {

@@ -64,6 +64,7 @@ export interface PrintRoutedArgs {
   receiptHeader?: string;
   receiptLogo?: MonoRaster | null;   // A313
   receiptFooter?: string;
+  receiptPay?: { label: string; number: string } | null;   // A450: the Buy Goods / Paybill line
   /** Restrict to these station kinds (e.g. Send-to-Kitchen = kitchen+dispatch). */
   kinds?: Kind[];
   /** A269: render the receipt as a proforma BILL (Print Bill), not a fiscal receipt. */
@@ -148,7 +149,7 @@ export async function printRoutedStations(a: PrintRoutedArgs): Promise<PrintRout
     note: a.orderNote || undefined,   // A367
   } as any;
   const biz = buildReceiptBusinessConfig(a.business, a.footerMessage, a.ctlRate ?? 0,
-    { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter, logoRaster: a.receiptLogo });
+    { branchName: a.branchName, header: a.receiptHeader, footerText: a.receiptFooter, logoRaster: a.receiptLogo, pay: a.receiptPay });
 
   let printed = 0, failed = 0;
   for (const p of printers) {

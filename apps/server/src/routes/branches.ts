@@ -197,7 +197,8 @@ const OVERRIDABLE_KEYS = ['receipt_header', 'receipt_footer', 'continuous_operat
   'cashier_history_methods',   // 0.6.37 (A387): the methods a cashier's History shows
   'cashier_sees_shift_sales',   // A416: a cashier closing a shift sees their sales
   'cashier_history_totals',    // A418: a cashier's History shows the total of what is filtered
-  'payment_methods_enabled'];  // A429: the payment methods this branch takes
+  'payment_methods_enabled',   // A429: the payment methods this branch takes
+  'receipt_pay_label', 'receipt_pay_number'];   // A450: each branch its own Buy Goods / Paybill number
 
 // Confirms :id is a branch of THIS business — never let an owner read or write
 // overrides on another tenant's branch (the till resolves by branch_id alone).

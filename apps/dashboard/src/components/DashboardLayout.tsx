@@ -113,6 +113,8 @@ const NAV: NavEntry[] = [
   // KDS moved out of Settings — it is a live operational screen, not a setting.
   { to: '/kds',                label: 'KDS',      icon: 'kds', verticals: FOOD_VERTICALS },
   { to: '/dashboard/inventory',    label: 'Inventory',   icon: 'inventory', badgeKey: 'inventory' },
+  // A448: changes made on a till that clash with the cloud's — the owner decides.
+  { to: '/dashboard/approvals',    label: 'Approvals',   icon: 'promotions', badgeKey: 'approvals' },
   { to: '/dashboard/reservations', label: 'Reservations', icon: 'reservations', verticals: FOOD_VERTICALS },
   {
     label: 'Menu', icon: 'menu',
@@ -261,6 +263,7 @@ export default function DashboardLayout() {
     '/dashboard/categories': 'Menu Sections',
     '/dashboard/promotions': 'Specials',
     '/dashboard/offers': 'Offers',
+    '/dashboard/approvals': 'Approvals',
     '/dashboard/combos':     'Set Meals',
     '/dashboard/inventory':  'Bar & Packaged Stock',
   };
@@ -382,6 +385,16 @@ export default function DashboardLayout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // ── A450: Approvals badge — changes made on a till that wait for the owner (0 for anyone who does not decide) ──
+  const [approvalsCount, setApprovalsCount] = useState(0);
+  useEffect(() => {
+    const check = () => { api.get<{ count: number }>('/api/changes/count').then((r) => setApprovalsCount(Number(r?.count) || 0)).catch(() => {}); };
+    check();
+    const interval = setInterval(check, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+  const badges: Record<string, number> = { approvals: approvalsCount };
+
   // ── Low-stock badge ─────────────────────────────────────────────────────────
   const [lowStockCount, setLowStockCount] = useState(0);
 
@@ -502,6 +515,12 @@ export default function DashboardLayout() {
                     <span className="text-[10px] text-gray-600 truncate">{entry.sub}</span>
                   </span>
                 ) : entry.label}
+                {entry.badgeKey && (badges[entry.badgeKey] ?? 0) > 0 && (
+                  <span data-testid={`nav-badge-${entry.badgeKey}`}
+                    className="ml-auto min-w-[1.25rem] px-1.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-bold text-center">
+                    {badges[entry.badgeKey] > 99 ? '99+' : badges[entry.badgeKey]}
+                  </span>
+                )}
               </NavLink>
             )
           )}

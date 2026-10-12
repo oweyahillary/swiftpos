@@ -612,6 +612,10 @@ declare global {
         cachedMenu:     () => Promise<{ offline: OfflineManage | null; products: any[]; categories: any[]; combos: any[] }>;
         cachedStaff:    () => Promise<{ offline: OfflineManage | null; source: 'branch' | 'till' | null; staff: any[] }>;
         createStaff:    (payload: any) => Promise<any>;
+        /** A448: set a staff member's PIN on this till — works here at once, wins on the cloud (unless another has it). */
+        setStaffPin:    (id: string, pin: string) => Promise<{ ok: true }>;
+        /** A448: changes made on this till that wait (for the cloud, or the owner's approval) or were refused. */
+        changeStates:   () => Promise<Array<{ entity_id: string; entity: string; state: 'pending' | 'awaiting' | 'refused' | 'done' | 'rejected'; message: string | null; summary: string }>>;
         updateStaff:    (id: string, patch: any) => Promise<any>;
         getReceiptText: () => Promise<{ header: string; footer: string }>;
         setReceiptText: (header: string, footer: string) => Promise<any>;

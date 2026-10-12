@@ -68,6 +68,14 @@ ok('refusals first (red, the reason) — this morning\'s case; then failures (re
   const f = N.syncNotice({ ...s, parkedCount: 0 }, NOW);
   assert.deepEqual(f, { tone: 'alert', action: 'retry-failed', text: '1 sale failed to sync: bad date · last synced never' });
 });
+ok('A448: the branch server refusing this till’s access code comes first — red, what to do', () => {
+  const n = N.syncNotice({ online: true, pendingCount: 3, failedCount: 1, parkedCount: 1, lastSyncedAt: null,
+    nodeRefused: { status: 401, since: '2026-10-12T07:00:00Z' } }, NOW);
+  assert.equal(n.tone, 'alert');
+  assert.match(n.text, /^The branch server refused this till's access code — sales are kept on this till/);
+  assert.match(n.text, /Branch access code/);
+  assert.equal(N.syncNotice({ online: true, pendingCount: 0, failedCount: 0, nodeRefused: null }, NOW), null);
+});
 ok('the Z-report note: refused drawer, sales not up yet, or nothing', () => {
   assert.equal(N.zBackupNote({ sales: 0, drawerRefused: true }), 'NOT BACKED UP: the cloud refused this shift — a manager must check the sync notice.');
   assert.equal(N.zBackupNote({ sales: 2, drawerRefused: false }), 'NOT BACKED UP YET: 2 sales of this shift are only on this till until it syncs.');

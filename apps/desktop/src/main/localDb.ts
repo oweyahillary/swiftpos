@@ -1163,6 +1163,15 @@ function initSchema(db: Database.Database) {
   // Never pushed. orders.offer_discount / orders.offers — what offers took off a sale and which (part of discount_amount,
   // which stays the whole discount); they ride in the order payload (POST /api/orders), where the cloud checks them.
   db.exec(`CREATE TABLE IF NOT EXISTS offers (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
+
+  // A448 (71): local_changes — a manager's change made on this till (a print station, a category, a product, a cashier, a
+  // PIN), applied here at once and queued for the cloud (localChanges.ts). Local only: what is sent is the change itself
+  // (POST /api/changes), and the till keeps its own until the cloud has answered.
+  db.exec(`CREATE TABLE IF NOT EXISTS local_changes (
+    id TEXT PRIMARY KEY, entity TEXT NOT NULL, op TEXT NOT NULL, entity_id TEXT NOT NULL, base TEXT, data TEXT NOT NULL,
+    made_by TEXT, made_by_name TEXT, made_at TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', message TEXT,
+    canonical_id TEXT, tries INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS local_changes_open ON local_changes (state, made_at)`);
   migrateColumns(db, 'orders', [['offer_discount', 'REAL DEFAULT 0'], ['offers', 'TEXT']]);
 
   // 0.5.27 one-time backfill. Changing a column DEFAULT does not touch rows that
@@ -1269,7 +1278,8 @@ function initSchema(db: Database.Database) {
 // sales at close, and a total in History. REQUIRED moves with it.
 // 69 adds A429: device_config.payment_methods_enabled (pulled) — the payment methods the branch takes. REQUIRED moves.
 // 70 adds A445: offers (pulled, the branch's offers) and orders.offer_discount + orders.offers (the order payload). REQUIRED moves.
-export const LOCAL_SCHEMA_VERSION = 70;
+// 71 adds A448: local_changes (local only — a manager's change made on this till, queued for the cloud). REQUIRED moves.
+export const LOCAL_SCHEMA_VERSION = 71;
 
 /** What this install has actually applied, for support and for skipping backfills. */
 export function getLocalSchemaVersion(): number {

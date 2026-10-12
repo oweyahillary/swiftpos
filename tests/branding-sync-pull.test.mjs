@@ -34,7 +34,7 @@ ok('syncEngine imports applyPulledBranding', /import\s*\{[^}]*applyPulledBrandin
 // 0.6.25 (A368): …except while this till's own upload is still on its way to the cloud.
 ok('applyReferenceConfig applies branding (guarded; not while a till upload is pending)', /if\s*\(\s*c\.branding\s*&&\s*!brandingPushPending\(\)\s*\)\s*applyPulledBranding\(\s*c\.branding\s*\)/.test(sync));
 ok('cloud path sets branding from the init response', /branding:\s*\(\s*_j\.branding/.test(sync));
-ok('referenceBundle config carries optional branding', /branding\?:\s*\{[^}]*accentHex[^}]*logoPng/.test(refb));
+ok('referenceBundle config carries optional branding', /branding\?:\s*PulledBranding/.test(refb) && /interface PulledBranding \{[^}]*accentHex[^}]*logoPng/.test(refb));   // A381: one named shape
 ok('applyPulledBranding is keyed by the session business', /applyPulledBranding/.test(ldb) && /FROM session WHERE id\s*=\s*1/.test(ldb) && /ON CONFLICT\(business_id\)/.test(ldb));
 ok('server /init selects business_branding', /\.from\('business_branding'\)/.test(pos));
 ok('server /init returns branding in the response', /branding:\s*branding\s*\?/.test(pos));

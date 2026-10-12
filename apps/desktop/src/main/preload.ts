@@ -262,6 +262,8 @@ contextBridge.exposeInMainWorld('swiftpos', {
     cachedMenu:     ()                                   => ipcRenderer.invoke('manage:cachedMenu'),
     cachedStaff:    ()                                   => ipcRenderer.invoke('manage:cachedStaff'),
     createStaff:    (payload: any)                       => ipcRenderer.invoke('manage:createStaff', payload),
+    setStaffPin:    (id: string, pin: string)            => ipcRenderer.invoke('manage:setStaffPin', { id, pin }),   // A448
+    changeStates:   ()                                   => ipcRenderer.invoke('manage:changeStates'),   // A448
     updateStaff:    (id: string, patch: any)             => ipcRenderer.invoke('manage:updateStaff', { id, patch }),
     getReceiptText: ()                                   => ipcRenderer.invoke('manage:getReceiptText'),
     setReceiptText: (header: string, footer: string)     => ipcRenderer.invoke('manage:setReceiptText', { header, footer }),

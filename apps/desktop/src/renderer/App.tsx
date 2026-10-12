@@ -57,6 +57,15 @@ function AppScreens() {
     const unsubscribe = posApi.pos.onCatalogueChanged(load);
     return () => { cancelled = true; unsubscribe(); };
   }, []);
+  // A450: the business's name (and currency) follow the cloud — after any pull the screens show the new name at once
+  // (owner: renamed on the web, the till kept the old one until it was set up again).
+  useEffect(() => posApi.pos.onCatalogueChanged(() => {
+    posApi.auth.getSession().then((s: any) => {
+      if (!s?.business) return;
+      setSession((prev) => (prev && (prev.business?.name !== s.business.name || prev.business?.currency !== s.business.currency)
+        ? { ...prev, business: { ...prev.business, name: s.business.name, currency: s.business.currency } } : prev));
+    }).catch(() => { /* the next pull */ });
+  }), []);
   const strip = brandStrip
     ? <div aria-hidden className="fixed top-0 inset-x-0 h-[3px] z-[60] pointer-events-none" style={{ background: brandStrip }} />
     : null;

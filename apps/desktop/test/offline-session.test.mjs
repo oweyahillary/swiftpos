@@ -120,11 +120,15 @@ const shown = humanise(r1.error.message);
 ok('(1) …and the screen shows exactly that (the humaniser does not turn it into "This till is not signed in")',
   shown.startsWith('You signed in while offline.') && /Selling is not affected/.test(shown), shown);
 const others = await Promise.all([
-  attempt(() => call('manage:listProducts')), attempt(() => call('manage:listPaymentMethods')),
+  attempt(() => call('manage:listPaymentMethods')),
   attempt(() => call('manage:setReceiptText', { header: 'H', footer: 'F' })), attempt(() => call('manage:createStaff', { name: 'X' })),
 ]);
-ok('(1) the same for every cloud-owned editor (menu, payment methods, saving receipt text, adding staff)',
+ok('(1) the same for every cloud-owned editor (payment methods, saving receipt text, adding staff with a role this till has not saved)',
   others.every((r) => r.error && /signed in while offline/.test(r.error.message)), others.map((r) => r.error?.message ?? 'no error').join(' | '));
+// A448: the menu is the till's own — offline it lists this till's menu (and a manager changes it here; test/till-first).
+const menuList = await attempt(() => call('manage:listProducts'));
+ok('(1) the Menu list, offline sign-in: this till’s own menu, no error (A448)',
+  !menuList.error && Array.isArray(menuList.value) && menuList.value.some((p) => p.name === 'Beef Burger'), menuList.error?.message ?? JSON.stringify(menuList.value));
 
 // ── (2) What the till has saved, read-only ──
 const menu = await call('manage:cachedMenu');

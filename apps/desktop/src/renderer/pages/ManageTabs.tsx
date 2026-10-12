@@ -5,14 +5,14 @@
  * product or reprice one — which for a fast food place is a daily event, not an
  * occasional one.
  *
- * Every write here is ONLINE-ONLY. Sales queue offline because a sale must never
- * be refused; catalogue edits must not, because two tills inventing the same
- * product on a dead network produces duplicates with no sane merge. The IPC layer
- * fails with a plain-language message and these screens surface it as-is.
+ * A448 (owner, 2026-10-11/12: "a totally offline till can't add another printer — that's bad … cloud should never block a
+ * till from working"): a category, a product (its main fields), a cashier and a PIN are saved on THIS TILL FIRST — they
+ * work here at once, offline too — and reach the cloud after (main/changeQueue.ts). Two tills inventing the same thing
+ * offline is resolved there: the same → kept (one id); different → the owner approves. A picture, sizes, extras and an
+ * override PIN still need the cloud first, and say so.
  *
- * Permissions are enforced SERVER-side (products.manage, staff.manage). These
- * screens hide what the role can't do as a courtesy, but hiding a button is not
- * the control — the API is.
+ * Permissions: the till checks the signed-in person's before saving; the cloud checks the maker's again when the change
+ * arrives (products.manage, staff.manage). Hiding a button is a courtesy, not the control.
  */
 
 import { useEffect, useState } from 'react';
@@ -361,7 +361,8 @@ export function StaffTab({ branchId }: { branchId?: string }) {
       const cached = await posApi.manage.cachedStaff().catch(() => null);
       if (cached?.offline) {
         setStaff(cached.staff);
-        setRoles([]);
+        // A448: the roles this till saved the last time it was online — a cashier can still be added here, offline.
+        setRoles(await posApi.manage.listRoles().then((r) => (Array.isArray(r) ? r : [])).catch(() => []));
         setShowNew(false);
         setErr('');
         setOffline({ message: cached.offline.message, source: cached.source });
@@ -409,6 +410,22 @@ export function StaffTab({ branchId }: { branchId?: string }) {
     } finally { setBusy(false); }
   };
 
+  // A448 (owner, 2026-10-12: "offline supersedes online when it comes to PIN change"): a PIN set here works on this till at
+  // once, offline too, and wins on the cloud — unless another person already has it (then the owner is told).
+  const [pinFor, setPinFor] = useState<string | null>(null);
+  const [newPin, setNewPin] = useState('');
+  const savePin = async (m: any) => {
+    if (!/^\d{4,6}$/.test(newPin)) { setErr('PIN must be 4–6 digits.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await posApi.manage.setStaffPin(m.id, newPin);
+      setOk(`${m.name}'s PIN is changed — it works on this till now.`); setTimeout(() => setOk(''), 4000);
+      setPinFor(null); setNewPin('');
+      await load();
+    } catch (e: any) { setErr(e?.message ?? 'Could not change the PIN.'); }
+    finally { setBusy(false); }
+  };
+
   const toggleActive = async (m: any) => {
     setBusy(true); setErr('');
     try {
@@ -432,15 +449,17 @@ export function StaffTab({ branchId }: { branchId?: string }) {
             <p className="text-sm text-amber-300">{offline.message}</p>
             <p className="text-xs text-gray-300 mt-1">
               {offline.source === 'branch'
-                ? 'Showing this branch\'s staff as saved on this till — read-only.'
-                : 'Showing the staff who have signed in on this till — read-only. Others appear once the till is online.'}
+                ? 'Showing this branch\'s staff as saved on this till.'
+                : 'Showing the staff who have signed in on this till. Others appear once the till is online.'}
+              {' '}A cashier added or a PIN changed here works on this till at once and reaches the cloud when it is back.
             </p>
           </div>
           <button onClick={load} className="text-xs text-gray-300 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5">
             Try again
           </button>
         </div>
-      ) : (
+      ) : null}
+      {(!offline || roles.length > 0) && (
         <button onClick={() => setShowNew(v => !v)} className={`${btn} mb-4`}>
           {showNew ? 'Cancel' : 'Add staff member'}
         </button>
@@ -505,7 +524,32 @@ export function StaffTab({ branchId }: { branchId?: string }) {
                 {m.roles?.name ?? m.role_name ?? m.role ?? '—'}
                 {m.can_authorize ? ' · can authorise voids' : ''}
               </p>
+              {/* A448: a cashier added (or a PIN set) here that the cloud has not taken yet, or that waits for the owner. */}
+              {m.change_state && (
+                <p data-testid="staff-change-state" className="text-[11px] text-amber-300">
+                  {m.change_state === 'pending' ? 'Saved on this till — not on the cloud yet'
+                    : m.change_state === 'awaiting' ? 'Waiting for the owner\'s approval'
+                    : m.change_message ?? 'Not taken by the cloud'}
+                </p>
+              )}
+              {pinFor === m.id && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input type="password" inputMode="numeric" maxLength={6} value={newPin} autoFocus
+                    onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="New PIN (4–6 digits)"
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white w-40 tracking-widest" />
+                  <button data-testid="staff-pin-save" onClick={() => void savePin(m)} disabled={busy}
+                    className="text-xs bg-action-500 hover:bg-action-400 text-gray-950 font-semibold rounded-lg px-3 py-1">Save PIN</button>
+                  <button onClick={() => { setPinFor(null); setNewPin(''); }} className="text-xs text-gray-300 px-1">Cancel</button>
+                </div>
+              )}
             </div>
+            {pinFor !== m.id && (
+              <button data-testid="staff-change-pin" onClick={() => { setPinFor(m.id); setNewPin(''); setErr(''); }} disabled={busy}
+                className="text-xs text-gray-300 hover:text-white px-2">
+                Change PIN
+              </button>
+            )}
             {!offline && (
               <button onClick={() => toggleActive(m)} disabled={busy}
                 className="text-xs text-gray-300 hover:text-amber-400 px-2">

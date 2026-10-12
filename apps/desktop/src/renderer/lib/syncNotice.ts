@@ -22,6 +22,8 @@ export interface SyncStatusLike {
   parkedReason?: string;
   /** The last moment this till had nothing waiting for the cloud (ISO), or null if never. */
   lastSyncedAt?: string | null;
+  /** A448: the branch server refused this till's access code — nothing reaches the cloud through it until it is fixed. */
+  nodeRefused?: { status: number; since: string } | null;
 }
 
 interface StaffLike { role?: string | null; permissions?: Record<string, boolean> | null }
@@ -60,6 +62,11 @@ export type SyncNotice =
 /** The manager's bottom notice, or null when nothing waits. Refusals first — they need a person; failures next. */
 export function syncNotice(s: SyncStatusLike, now: Date = new Date()): SyncNotice | null {
   const last = `last synced ${lastSyncedLabel(s.lastSyncedAt, now)}`;
+  // A448: first — it stops everything reaching the cloud, and only a person can fix it (before: the log alone said so).
+  if (s.nodeRefused) {
+    return { tone: 'alert', action: 'sync',
+      text: `The branch server refused this till's access code — sales are kept on this till but reach nothing else. A technician re-enters the code (Install › Branch access code) · ${last}` };
+  }
   if ((s.parkedCount ?? 0) > 0) {
     return { tone: 'alert', action: 'sync',
       text: `The cloud refused ${plural(s.parkedCount!, 'record')}${s.parkedReason ? `: ${s.parkedReason}` : ''} · ${last}` };

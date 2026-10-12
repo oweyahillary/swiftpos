@@ -192,6 +192,7 @@ export default function CashierScreen() {
     receiptLogo,
     receiptHeader,
     receiptFooter,
+    receiptPay,   // A450
     businessMode:  posDataMode,
     orderMode:     posDataOrderMode,
     maxDiscountPct,
@@ -806,7 +807,7 @@ export default function CashierScreen() {
         categories,
         orderNote,   // A367
         branchName: session?.branchName,
-        receiptHeader, receiptFooter,
+        receiptHeader, receiptFooter, receiptPay,
         receiptLogo,
         kinds: ['receipt'],            // A253: Print Bill is a customer proforma, not the kitchen fire
       });
@@ -2311,6 +2312,7 @@ export default function CashierScreen() {
           receiptHeader={receiptHeader}
           receiptLogo={receiptLogo}
           receiptFooter={receiptFooter}
+          receiptPay={receiptPay}
           orderType={getOrderType()}
           tableNumber={activeKey && openOrders[activeKey]?.tableName ? openOrders[activeKey].tableName : undefined}
           loyaltyState={loyaltyState}

@@ -45,6 +45,16 @@ const SHARED = [
     ],
   },
   {
+    // A448: a manager's change made on a till — which fields, how cleaned, apply / identical / owner's approval.
+    name: 'tillChanges.ts',
+    copies: [
+      'shared/tillChanges.ts',
+      'apps/server/src/lib/tillChanges.ts',     // the cloud applies a till's change, or holds it for the owner
+      'apps/desktop/src/main/tillChanges.ts',   // the till records and applies its own change at once
+      'apps/desktop/src/shared/tillChanges.ts', // the till's screens show what waits
+    ],
+  },
+  {
     // A445: offers — the rules the till's cart, the web POS's cart and the cloud's check of a sale all run.
     name: 'offers.ts',
     copies: [

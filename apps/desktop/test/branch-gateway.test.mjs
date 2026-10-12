@@ -124,6 +124,12 @@ console.log('\nThrough the real branch server\n');
   ok('a wrong access code is "no connection", never a refused sign-in', threw?.name === 'NodeRefusedError' && /fetch failed/.test(threw.message), String(threw));
 }
 {
+  // A448: and the manager is TOLD (sync:status → the sync notice) — before, only the log said so.
+  ok('a wrong access code is remembered for the manager’s notice', G.nodeRefusal()?.status === 401, JSON.stringify(G.nodeRefusal()));
+  await G.cloudFetch(`${CLOUD}/api/x`, {}, { cfg: peer });
+  ok('…and cleared by the next request the server accepts (the right code entered)', G.nodeRefusal() === null);
+}
+{
   const r = await fetch(`${NODE}/node/cloud/admin/secret`, { headers: { 'X-Node-Secret': SECRET } });
   ok('the server refuses anything but the cloud API', r.status === 400);
   const r2 = await fetch(`${NODE}/node/cloud/api/x`);
@@ -163,7 +169,7 @@ console.log('\nThe till\'s callers\n');
   // The sync engine on a peer: its cloud calls go through the server.
   const E = require(path.join(dist, 'syncEngine.js'));
   const S = fs.readFileSync(path.join(src, 'syncEngine.ts'), 'utf8');
-  ok('the sync engine goes through it (syncFetch → cloudFetch)', /function syncFetch[\s\S]{0,700}return cloudFetch\(url,/.test(S) && !/function syncFetch[\s\S]{0,700}globalThis\.fetch\(/.test(S));
+  ok('the sync engine goes through it (syncFetch → cloudFetch)', /function syncFetch[\s\S]{0,700}await cloudFetch\(url,/.test(S) && !/function syncFetch[\s\S]{0,700}globalThis\.fetch\(/.test(S));
   // Every remaining raw fetch( in main is not a cloud call.
   const offenders = [];
   for (const f of fs.readdirSync(src).filter((f) => f.endsWith('.ts'))) {

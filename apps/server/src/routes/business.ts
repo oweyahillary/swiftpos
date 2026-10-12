@@ -35,7 +35,7 @@ const BCRYPT_ROUNDS = 12;
 // setting added in future is writable by a manager until somebody remembers to
 // add it — and the thing they would forget is whichever one is newest, which is
 // also the one least likely to be noticed.
-const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer']);
+const RECEIPT_SETTING_KEYS = new Set(['receipt_header', 'receipt_footer', 'receipt_pay_label', 'receipt_pay_number']);   // A450: + how to pay
 
 const HASHED_SETTING_KEYS = new Set(['supervisor_pin']);
 
@@ -73,6 +73,8 @@ const READABLE_SETTING_KEYS = new Set([
   // body — address, PIN, phone, thank-you line, social handles. Multi-line;
   // newlines are preserved and rendered as separate lines.
   'receipt_header', 'receipt_footer',
+  // A450: how a customer pays by M-Pesa, printed under the payments: a label ("Buy Goods", "Paybill", "Till No.") and the number.
+  'receipt_pay_label', 'receipt_pay_number',
   // 24-hour operation: a business that never closes overnight (A104).
   'continuous_operation',
   // 0.6.34: when the business day ends ("HH:MM", 00:00–06:00) — a bar trading past midnight (lib/businessDay.ts).
@@ -364,7 +366,7 @@ router.post('/settings', requireAuth, requireAnyPermission('receipt.manage', 'se
       // Name the key they tried, not the permission they lack: the caller with
       // receipt.manage is a manager who has just been told "no" on a screen
       // that offered them the field. A45 is what the vaguer message cost.
-      detail: `receipt.manage may only write receipt_header and receipt_footer, not "${key}"`,
+      detail: `receipt.manage may only write the receipt text (header, footer, how to pay), not "${key}"`,
     });
     return;
   }

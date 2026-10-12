@@ -34,6 +34,17 @@ import { supportWire } from './support';   // 0.6.35 (A384)
 import { cleanHistoryMethods } from './cashierHistory';   // 0.6.37 (A387)
 import { parseStockCountFreeze, type StockCountFreeze } from './stockCountFreeze';   // A394
 
+/** A450: the receipt's "Buy Goods: 123456" line. A number is what makes it print; the label defaults to Buy Goods. */
+export interface ReceiptPay { label: string; number: string }
+export function cleanReceiptPay(label: unknown, number: unknown): ReceiptPay | null {
+  const n = typeof number === 'string' ? number.trim().slice(0, 40) : '';
+  if (!n) return null;
+  const l = typeof label === 'string' ? label.trim().slice(0, 30) : '';
+  return { label: l || 'Buy Goods', number: n };
+}
+/** A381 / A450: the business's branding as a pull carries it. */
+export interface PulledBranding { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null }
+
 // ── Cloud-shaped output ──────────────────────────────────────────────────────
 // Field names and value types match what pullCatalogue destructures, NOT the
 // local column names. The two differ (local stores INTEGER 0/1 and role_name;
@@ -79,6 +90,15 @@ export interface ReferenceBundle {
     posFeatures?: Record<string, boolean> | null;
     /** 0.6.30: the owner's void window and offline void/refund rules; null = the node has not been told. */
     reversalRules?: ReversalRules | null;
+    /** A450: the business's name and currency as the server holds them (a rename on the web reaches its tills). */
+    businessName?: string;
+    currency?: string;
+    /** A450: the receipt's Buy Goods / Paybill line ('' = none). Absent = the node has not been told. */
+    receiptPayLabel?: string;
+    receiptPayNumber?: string;
+    /** A381: the business's branding (logo, accent) as the server holds it — a logo changed with no internet reaches
+     *  every till of the branch. Absent = none on the server. */
+    branding?: PulledBranding;
   };
   // The pieces pullCatalogue fetches separately (per-product loops + branch GETs).
   // Served flat here so a peer makes ONE node call instead of the cloud's 7 + N.
@@ -132,6 +152,10 @@ export interface ReferenceRows {
     noteQuickPicks?: string[] | null; // A367
     posFeatures?: Record<string, boolean> | null; // 0.6.27
     reversalRules?: ReversalRules | null;         // 0.6.30
+    businessName?: string | null;                 // A450
+    currency?: string | null;                     // A450
+    receiptPay?: ReceiptPay | null;               // A450: undefined = the node has not been told
+    branding?: PulledBranding | null;             // A381
   };
 }
 
@@ -247,6 +271,12 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
       noteQuickPicks: rows.config.noteQuickPicks ?? null, // A367: relayed so a peer offers the same quick picks
       posFeatures: rows.config.posFeatures ?? null,       // 0.6.27: relayed so a peer follows the same switches
       reversalRules: rows.config.reversalRules ?? null,   // 0.6.30: relayed so a peer applies the owner's rules offline
+      // A450: the business's name and currency, and the receipt's Buy Goods / Paybill line — relayed so a peer prints them.
+      ...(rows.config.businessName ? { businessName: rows.config.businessName } : {}),
+      ...(rows.config.currency ? { currency: rows.config.currency } : {}),
+      ...(rows.config.receiptPay === undefined ? {}
+        : { receiptPayLabel: rows.config.receiptPay?.label ?? '', receiptPayNumber: rows.config.receiptPay?.number ?? '' }),
+      ...(rows.config.branding ? { branding: rows.config.branding } : {}),   // A381
     },
     variantGroups: rows.variantGroups,
     variantOptions: rows.variantOptions,
@@ -264,6 +294,24 @@ export function mapReferenceBundle(rows: ReferenceRows): ReferenceBundle {
 // Minimal shape of the better-sqlite3 handle this module needs — declared
 // locally so the pure test never has to load the native module to type-check.
 interface RefDb { prepare(sql: string): { all(...a: any[]): any[] }; }
+
+/** A450 + A381: what the server itself holds of the business — its name and currency, the receipt's pay line, its
+ *  branding. Each read on its own: a missing table (an older local DB) leaves that field out, never the bundle. */
+function nodeIdentity(all: (sql: string) => any[]): Pick<ReferenceRows['config'], 'businessName' | 'currency' | 'receiptPay' | 'branding'> {
+  const one = (sql: string): any => { try { return all(sql)[0]; } catch { return undefined; } };
+  const sess = one(`SELECT business_name, currency FROM session WHERE id = 1`);
+  const pay = one(`SELECT value FROM maintenance_state WHERE key = 'receipt_pay'`);
+  const b = one(`SELECT accent_hex, logo_png, logo_receipt, receipt_logo_enabled FROM branding LIMIT 1`);
+  let receiptPay: ReceiptPay | null | undefined;
+  if (pay?.value) { try { const v = JSON.parse(pay.value); receiptPay = v ? cleanReceiptPay(v.label, v.number) : null; } catch { receiptPay = undefined; } }
+  return {
+    businessName: typeof sess?.business_name === 'string' && sess.business_name.trim() ? sess.business_name : null,
+    currency: typeof sess?.currency === 'string' && sess.currency.trim() ? sess.currency : null,
+    receiptPay,
+    branding: b ? { accentHex: b.accent_hex ?? null, logoPng: b.logo_png ?? null, logoReceipt: b.logo_receipt ?? null,
+      receiptLogoEnabled: b.receipt_logo_enabled === 1 || b.receipt_logo_enabled === true } : null,
+  };
+}
 
 /**
  * Read the node's local reference tables and shape them for a peer. Thin DB
@@ -345,6 +393,7 @@ export function buildReferenceBundle(db: RefDb, cfg: any): ReferenceBundle {
         if (typeof cfg?.reversal_rules !== 'string') return null;
         try { return rulesFromWire(JSON.parse(cfg.reversal_rules)); } catch { return null; }
       })(),
+      ...nodeIdentity(all),   // A450 + A381
     },
   };
 
@@ -400,7 +449,12 @@ export interface AcquiredReference {
     cashierHistoryTotals?: boolean;
     /** A429: the payment methods the branch takes. undefined = not said → keep. */
     paymentMethodsEnabled?: string[];
-    branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean | null } | null;
+    branding?: PulledBranding | null;
+    /** A450: the business's name and currency (a rename on the web). undefined = not said → keep. */
+    businessName?: string;
+    currency?: string;
+    /** A450: the receipt's Buy Goods / Paybill line. undefined = not said → keep; null = none. */
+    receiptPay?: ReceiptPay | null;
     /** A325: the effective action theme (cloud /pos/init only). undefined = not sent (older cloud, or a node bundle,
      *  which relays no branding today) → the till keeps its local value. */
     themeId?: string | null;
@@ -465,6 +519,22 @@ export function unpackNodeBundle(bundle: any): AcquiredReference {
       noteQuickPicks: Array.isArray(pi.noteQuickPicks) ? pi.noteQuickPicks.map(String) : undefined,   // A367
       posFeatures: pi.posFeatures && typeof pi.posFeatures === 'object' ? parsePosFeatures(pi.posFeatures) : undefined,   // 0.6.27
       reversalRules: pi.reversalRules && typeof pi.reversalRules === 'object' ? rulesFromWire(pi.reversalRules) : undefined,   // 0.6.30
+      ...identityFromWire(pi),   // A450 + A381
     },
   };
+}
+
+/** A450 + A381: the business's name, currency, receipt pay line and branding from a pull (the cloud's /pos/init or a
+ *  branch server's bundle — the same field names). Each undefined when not said, so the till keeps what it has. */
+export function identityFromWire(pi: any): { businessName?: string; currency?: string; receiptPay?: ReceiptPay | null; branding?: PulledBranding } {
+  const out: { businessName?: string; currency?: string; receiptPay?: ReceiptPay | null; branding?: PulledBranding } = {};
+  if (typeof pi?.businessName === 'string' && pi.businessName.trim()) out.businessName = pi.businessName.trim();
+  if (typeof pi?.currency === 'string' && pi.currency.trim()) out.currency = pi.currency.trim();
+  if (pi && typeof pi === 'object' && 'receiptPayNumber' in pi) out.receiptPay = cleanReceiptPay(pi.receiptPayLabel, pi.receiptPayNumber);
+  if (pi?.branding && typeof pi.branding === 'object') {
+    out.branding = { accentHex: pi.branding.accentHex ?? null, logoPng: pi.branding.logoPng ?? null,
+      logoReceipt: 'logoReceipt' in pi.branding ? (pi.branding.logoReceipt ?? null) : undefined,
+      receiptLogoEnabled: 'receiptLogoEnabled' in pi.branding ? pi.branding.receiptLogoEnabled === true : undefined };
+  }
+  return out;
 }

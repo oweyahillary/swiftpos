@@ -79,6 +79,8 @@ export interface POSInitResponse {
   /** A304/A311: branding from /pos/init; null when the business has no row. */
   branding?: { accentHex: string | null; logoPng: string | null; logoReceipt?: string | null; receiptLogoEnabled?: boolean } | null;
   receiptFooter?: string;
+  receiptPayLabel?: string;    // A450
+  receiptPayNumber?: string;   // A450
   businessType: string;
   businessName: string;
   currency: string;
