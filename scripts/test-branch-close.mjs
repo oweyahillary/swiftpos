@@ -12,8 +12,9 @@
  *      two answers.
  *   3. Only an ack changes status, and it lands acked/failed by the peer's
  *      verdict.
- *   4. The executor is idempotent: no open day → ok:true already_closed, and a
- *      date mismatch is a named refusal, not a close of the wrong day.
+ *   4. The executor is idempotent: no open day → ok:true already_closed. A452: the
+ *      server's date is final — a till's older open day closes with the branch,
+ *      and the close notes which day it was (it used to refuse: "check the clocks").
  *   5. closeDay keeps its local isManager gate; closeDayInstructed exists and
  *      does NOT re-check it (the instruction is the authority).
  */
@@ -137,12 +138,14 @@ console.log('\n3. The peer\'s refusal is recorded as a refusal');
 }
 
 // ── 4. Executor semantics, pinned in source ──────────────────────────────────
-console.log('\n4. The executor is idempotent and refuses a date mismatch by name');
+console.log('\n4. The executor is idempotent; an older open day closes with the branch, named');
 {
   ok('no open day acks SUCCESS with already_closed (not an error)',
      /if \(!day\) \{\s*return \{ ok: true, already_closed: true \};/.test(SRC_BC));
-  ok('a date mismatch is refused, not closed',
-     SRC_BC.includes(`not \${payload.business_date}`) && SRC_BC.includes('Check the clocks'));
+  ok('A452: an older open day closes with the branch (the server\'s date is final) — the note names the day',
+     !/error:\s*`This till's open trading day is/.test(SRC_BC)
+     && SRC_BC.includes("closed with the branch's ${payload.business_date}.")
+     && /closedDate: day\.business_date/.test(SRC_BC));
   ok('executeCloseDay never throws — the ack is the error channel',
      /executeCloseDay[\s\S]{0,300}try \{/.test(SRC_BC) && /catch \(err: any\) \{\s*return \{ ok: false/.test(SRC_BC));
 }
