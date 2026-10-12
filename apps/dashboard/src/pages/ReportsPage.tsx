@@ -24,6 +24,8 @@ interface MasterReport {
     netSales: number; totalRevenue: number; totalOrders: number;
     voidedCount: number; voidedValue: number; avgOrderValue: number;
     totalExpenses: number; netProfit: number;
+    /** A451: sales + delivery fees + tips — what the payment methods add up to. Absent from an older cloud. */
+    totalDeliveryFees?: number; totalTips?: number; totalCollected?: number;
   };
   channels: { channel: string; amount: number; pct: number }[];
   payments: { method: string; amount: number }[];
@@ -234,6 +236,7 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
 
   const { summary, channels, payments, categoryBreakdown, expenses } = data;
   const maxCh = Math.max(...channels.map(c => c.amount), 1);
+  const paidTotal = payments.reduce((s, p) => s + Number(p.amount || 0), 0);   // A451: what the payment methods add up to
 
   return (
     <div className="space-y-5">
@@ -257,8 +260,11 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
       {/* KPI rows */}
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Sale Summary</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-          <KpiCard label="Gross Sales"  value={fmtShort(summary.totalSale, currency)} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+          {/* A451: what was paid, VAT included — the sales plus delivery fees and tips; the payment methods add up to it. */}
+          <KpiCard label="Total Collected (incl. VAT)" value={fmtShort(summary.totalCollected ?? summary.totalSale, currency)}
+            sub={`sales ${fmtShort(summary.totalSale, currency)}${(summary.totalDeliveryFees ?? 0) > 0 ? ` + delivery ${fmtShort(summary.totalDeliveryFees!, currency)}` : ''}${(summary.totalTips ?? 0) > 0 ? ` + tips ${fmtShort(summary.totalTips!, currency)}` : ''}`} />
+          <KpiCard label="Gross Sales (incl. VAT)"  value={fmtShort(summary.totalSale, currency)} />
           <KpiCard label="VAT 16%"      value={fmtShort(summary.totalVat, currency)} />
           <KpiCard label="CTL 2%"       value={fmtShort(summary.totalCtl, currency)} />
           <KpiCard label="Net Sales"    value={fmtShort(summary.netSales, currency)} accent />
@@ -294,12 +300,22 @@ function MasterTab({ range, branchId, currency }: { range: DateRange; branchId: 
 
         <SectionCard title="Payment Methods">
           <table className="w-full text-sm">
+            {payments.length > 0 && (
+              <tfoot>
+                <tr className="border-t border-gray-200 dark:border-gray-600">
+                  <td className="pt-2 font-semibold text-gray-900 dark:text-white">Total paid</td>
+                  <td className="pt-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{fmtShort(paidTotal, currency)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {payments.sort((a, b) => b.amount - a.amount).map(p => (
                 <tr key={p.method}>
                   <td className="py-2 text-gray-700 dark:text-gray-300 capitalize">{p.method.replace(/_/g, ' ')}</td>
                   <td className="py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">{fmtShort(p.amount, currency)}</td>
-                  <td className="py-2 text-right text-gray-400 w-14">{pct(summary.totalRevenue > 0 ? (p.amount / summary.totalRevenue) * 100 : 0)}</td>
+                  {/* A451: a share of what was PAID (it includes delivery fees and tips) — the shares add up to 100%. */}
+                  <td className="py-2 text-right text-gray-400 w-14">{pct(paidTotal > 0 ? (p.amount / paidTotal) * 100 : 0)}</td>
                 </tr>
               ))}
             </tbody>

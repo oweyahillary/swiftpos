@@ -400,10 +400,10 @@ export async function verifyPin(
     return { valid, needsUpgrade: false };
   }
   const legacyHash = legacyPinHash(pin, businessId);
-  const valid = crypto.timingSafeEqual(
-    Buffer.from(legacyHash, 'hex'),
-    Buffer.from(storedHash, 'hex'),
-  );
+  // A451: a stored hash of another shape (not bcrypt, not this hex) is simply no match — timingSafeEqual THROWS on
+  // buffers of different lengths, and one odd row failed every manager-PIN check of the business with a 500.
+  const a = Buffer.from(legacyHash, 'hex'), b = Buffer.from(String(storedHash ?? ''), 'hex');
+  const valid = a.length === b.length && b.length > 0 && crypto.timingSafeEqual(a, b);
   return { valid, needsUpgrade: valid };
 }
 

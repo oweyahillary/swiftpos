@@ -717,6 +717,7 @@ router.get('/master', async (req, res) => {
     .select(`
       id, order_number, order_type, aggregator_name, status,
       subtotal, vat_amount, ctl_amount, discount_amount, total,
+      tip_amount, delivery_fee, delivery_free,
       refunded_amount, refunded_at,
       created_at, branch_id, cashier_id,
       branches ( name ),
@@ -746,6 +747,13 @@ router.get('/master', async (req, res) => {
   const totalCtl      = saleAgg.ctl;
   const totalSale     = grossInclVat;
   const netSales      = saleAgg.netOfTax;
+
+  // A451: what the customers PAID — the sales above plus what rides on top of a bill: a delivery fee (unless free) and
+  // a tip. Each payment covers total + tip + fee (create_order_atomic), so the payment methods add up to THIS, not to the
+  // sales (owner, 2026-10-12: cash 2,050 + M-Pesa 7,000 = 9,050 counted at the till, against "Gross Sales 8,900").
+  const totalDeliveryFees = completed.reduce((s, o: any) => s + (o.delivery_free ? 0 : Number(o.delivery_fee ?? 0)), 0);
+  const totalTips         = completed.reduce((s, o: any) => s + Number(o.tip_amount ?? 0), 0);
+  const totalCollected    = totalSale + totalDeliveryFees + totalTips;
 
   // ── 3. Channel split ──────────────────────────────────────────────────────
   const channels: Record<string, number> = {
@@ -850,6 +858,9 @@ router.get('/master', async (req, res) => {
       avgOrderValue: completed.length ? totalRevenue / completed.length : 0,
       totalExpenses,
       netProfit:    netSales - totalExpenses,
+      totalDeliveryFees,   // A451
+      totalTips,           // A451
+      totalCollected,      // A451: sales (incl. VAT) + delivery fees + tips — what the payment methods add up to
     },
     channels: Object.entries(channels).map(([channel, amount]) => ({
       channel,
