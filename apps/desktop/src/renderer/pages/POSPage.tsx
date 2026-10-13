@@ -607,9 +607,12 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
 
   // The Clear button. 0.6.28: an order with items on a kitchen ticket is cleared only by voiding them — Clear was the
   // quiet way to make a sent (and paid-in-cash) order disappear. Hold keeps it instead.
-  const clearCart = () => {
+  const clearCart = async () => {
     const sent = cart.filter((i) => sentQtyOf(i) > 0);
-    if (!sent.length || !orderNumber) { resetOrder(); return; }
+    if (!sent.length) { resetOrder(); return; }
+    // A461: items the kitchen has are cleared ONLY by a kitchen void — even when the order has lost its number (a table
+    // or takeaway switch whose auto-hold did not take it): it used to reset quietly then, with no void and no manager.
+    if (!orderNumber) await ensureOrderNumberAsync();
     setKitchenVoid({ title: 'Clear the order', lines: sent.map((i) => linePayload(i, sentQtyOf(i))), apply: resetOrder });
   };
 
@@ -1552,7 +1555,7 @@ export default function POSPage({ business, onLogout, onShiftClosed, onOpenManag
               Current order
               {orderNumber && <span className="text-gray-300 text-xs font-normal ml-2">{orderNumber}</span>}
             </h2>
-            {cart.length > 0 && <button onClick={clearCart} className="text-xs text-gray-300 hover:text-red-400 transition-colors">Clear</button>}
+            {cart.length > 0 && <button onClick={() => void clearCart()} className="text-xs text-gray-300 hover:text-red-400 transition-colors">Clear</button>}
           </div>
 
           {/* Restaurant / café — order type, table, kitchen, hold */}

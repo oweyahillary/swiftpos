@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from 'react';
 import { posApi } from '../lib/posApi';
+import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 import { parseCsvRows, csvBool } from '../lib/csv';
 import type { CsvRow } from '../lib/csv';
 
@@ -426,14 +427,39 @@ export function StaffTab({ branchId }: { branchId?: string }) {
     finally { setBusy(false); }
   };
 
+  // A459: the cloud's list says `status` ('active' / 'inactive'); an older list or the till's own copy, `is_active`.
+  const isActive = (m: any) => (m.status ? m.status === 'active' : m.is_active !== false);
   const toggleActive = async (m: any) => {
     setBusy(true); setErr('');
     try {
-      await posApi.manage.updateStaff(m.id, { is_active: !m.is_active });
+      const nowActive = !isActive(m);
+      await posApi.manage.updateStaff(m.id, { status: nowActive ? 'active' : 'inactive' });
+      setOk(nowActive ? `${m.name} can sign in again.` : `${m.name} is deactivated — their PIN no longer works on this till.`);
+      setTimeout(() => setOk(''), 4000);
       await load();
     } catch (e: any) {
       setErr(e?.message ?? 'Could not update.');
     } finally { setBusy(false); }
+  };
+
+  // A459: rename, or a new role — on this till at once (offline too), the branch and the cloud later.
+  const [editFor, setEditFor] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const saveEdit = async (m: any) => {
+    const patch: Record<string, unknown> = {};
+    if (editName.trim() && editName.trim() !== m.name) patch.name = editName.trim();
+    const currentRole = m.role_id ?? m.roles?.id ?? '';
+    if (editRole && editRole !== currentRole) patch.role_id = editRole;
+    if (!Object.keys(patch).length) { setEditFor(null); return; }
+    setBusy(true); setErr('');
+    try {
+      await posApi.manage.updateStaff(m.id, patch);
+      setOk(`${patch.name ?? m.name} is updated.`); setTimeout(() => setOk(''), 3000);
+      setEditFor(null);
+      await load();
+    } catch (e: any) { setErr(e?.message ?? 'Could not update.'); }
+    finally { setBusy(false); }
   };
 
   if (loading) return <p className="text-gray-300 p-4">Loading staff…</p>;
@@ -513,7 +539,7 @@ export function StaffTab({ branchId }: { branchId?: string }) {
         {staff.map(m => (
           <div key={m.id} className="flex items-center gap-3 px-4 py-2.5">
             <div className="min-w-0 flex-1">
-              <p className={`truncate ${m.is_active === false ? 'text-gray-300 line-through' : 'text-white'}`}>
+              <p className={`truncate ${!isActive(m) ? 'text-gray-300 line-through' : 'text-white'}`}>
                 {m.name}
               </p>
               {/* The API nests the role as `roles: { id, name }`. This read
@@ -532,6 +558,21 @@ export function StaffTab({ branchId }: { branchId?: string }) {
                     : m.change_message ?? 'Not taken by the cloud'}
                 </p>
               )}
+              {editFor === m.id && (
+                <div className="flex flex-wrap items-center gap-2 mt-2" data-testid="staff-edit">
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={80} autoFocus
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white w-44" />
+                  {roles.length > 0 && (
+                    <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                      className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white">
+                      {roles.filter((r: any) => r.assignable !== false || r.id === editRole).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  )}
+                  <button data-testid="staff-edit-save" onClick={() => void saveEdit(m)} disabled={busy}
+                    className="text-xs bg-action-500 hover:bg-action-400 text-gray-950 font-semibold rounded-lg px-3 py-1">Save</button>
+                  <button onClick={() => setEditFor(null)} className="text-xs text-gray-300 px-1">Cancel</button>
+                </div>
+              )}
               {pinFor === m.id && (
                 <div className="flex items-center gap-2 mt-2">
                   <input type="password" inputMode="numeric" maxLength={6} value={newPin} autoFocus
@@ -544,25 +585,29 @@ export function StaffTab({ branchId }: { branchId?: string }) {
                 </div>
               )}
             </div>
+            {editFor !== m.id && pinFor !== m.id && (
+              <button data-testid="staff-edit-open" onClick={() => { setEditFor(m.id); setEditName(m.name ?? ''); setEditRole(m.role_id ?? m.roles?.id ?? ''); setErr(''); }} disabled={busy}
+                className="text-xs text-gray-300 hover:text-white px-2">
+                Edit
+              </button>
+            )}
             {pinFor !== m.id && (
               <button data-testid="staff-change-pin" onClick={() => { setPinFor(m.id); setNewPin(''); setErr(''); }} disabled={busy}
                 className="text-xs text-gray-300 hover:text-white px-2">
                 Change PIN
               </button>
             )}
-            {!offline && (
-              <button onClick={() => toggleActive(m)} disabled={busy}
-                className="text-xs text-gray-300 hover:text-amber-400 px-2">
-                {m.is_active === false ? 'Reactivate' : 'Deactivate'}
-              </button>
-            )}
+            <button data-testid="staff-toggle-active" onClick={() => toggleActive(m)} disabled={busy}
+              className="text-xs text-gray-300 hover:text-amber-400 px-2">
+              {isActive(m) ? 'Deactivate' : 'Reactivate'}
+            </button>
           </div>
         ))}
       </div>
 
       <p className="text-xs text-gray-400 mt-3">
-        Deactivating stops the PIN working immediately. Staff are never deleted, so
-        past sales keep their cashier name.
+        Deactivating stops the PIN working on this till at once (offline too) and on the other tills as the change
+        reaches them. Staff are never deleted, so past sales keep their cashier name.
       </p>
     </div>
   );
@@ -1260,6 +1305,7 @@ function readItemKitchen(row: CsvRow): boolean | undefined {
 }
 
 export function ImportTab({ currency, onDone }: { currency: string; onDone?: () => void }) {
+  const online = useOnlineLicence();   // A460: variants and add-ons from a file only with the online licence
   const [rows, setRows] = useState<CsvRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   // Variant creation is one round trip per product, so it can take a while
@@ -1417,8 +1463,8 @@ export function ImportTab({ currency, onDone }: { currency: string; onDone?: () 
       const wantVariants = valid
         .map(r => ({
           product: r.name.trim(),
-          specs:   readVariantSpecs(r),
-          addons:  readAddonSpecs(r),
+          specs:   online ? readVariantSpecs(r) : [],   // A460
+          addons:  online ? readAddonSpecs(r) : [],
           itemKitchen: readItemKitchen(r),
         }))
         .filter(v => v.specs.length > 0 || v.addons.length > 0 || v.itemKitchen !== undefined);

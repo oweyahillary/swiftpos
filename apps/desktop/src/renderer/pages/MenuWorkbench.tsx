@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { posApi, type OfflineManage } from '../lib/posApi';
 import ChoicesEditor from '../components/ChoicesEditor';
+import { useOnlineLicence } from '../lib/onlineLicence';   // A460
 
 interface Category { id: string; name: string }
 interface Product {
@@ -401,6 +402,7 @@ function SavedItemDetail({
 }) {
   const label = 'block text-xs text-gray-400 mb-1';
   const section = 'text-xs font-semibold text-gray-300 uppercase tracking-wide';
+  const online = useOnlineLicence();   // A460: combos, choices and extras only with the online licence
   return (
     <div className="space-y-4">
       <div>
@@ -421,6 +423,7 @@ function SavedItemDetail({
           <p className="text-gray-300 text-sm">{product.description}</p>
         </div>
       )}
+      {online && (<>
       <div className="border-t border-gray-800 pt-3">
         <p className={section}>Comes with</p>
         {components.length === 0 ? (
@@ -434,6 +437,7 @@ function SavedItemDetail({
         )}
       </div>
       <p className="text-xs text-gray-400">Read-only while offline. Choices and extras are edited once the till is online.</p>
+      </>)}
     </div>
   );
 }
@@ -461,6 +465,7 @@ function ItemDetail({
   const [description, setDescription] = useState(product.description ?? '');
   const [modifiers, setModifiers] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  const online = useOnlineLicence();   // A460: combos, choices and extras only with the online licence
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
@@ -527,7 +532,7 @@ function ItemDetail({
       </button>
       {msg && <p className="text-xs text-gray-400">{msg}</p>}
 
-      <div className="border-t border-gray-800 pt-3 space-y-3">
+      {online && <div className="border-t border-gray-800 pt-3 space-y-3" data-testid="premium-choices">
         <div>
           <p className={section}>Comes with</p>
           {components.length === 0 ? (
@@ -565,7 +570,7 @@ function ItemDetail({
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       <p className="text-[11px] text-gray-600">
         {currency} · {catName(product.category_id)}

@@ -66,7 +66,7 @@ async function record(ctx: ChangeContext, c: TillChange, r: ChangeResult, extra:
     entity: c.entity, entity_id: c.entity_id, op: c.op, base: c.base,
     // A PIN is never stored: only that one was set.
     proposed: extra.proposed ?? (c.entity === 'staff_pin' ? { pin_set: true }
-      : c.entity === 'staff' ? { name: c.data.name, role_id: c.data.role_id, pin_set: true } : c.data),
+      : c.entity === 'staff' && c.op === 'create' ? { name: c.data.name, role_id: c.data.role_id, pin_set: true } : c.data),
     cloud_value: extra.cloud_value ?? null, status: r.status, message: r.message ?? null, canonical_id: r.canonical_id ?? null,
     made_by: c.made_by, made_by_name: c.made_by_name, made_at: c.made_at,
   });
@@ -88,7 +88,7 @@ async function write(ctx: ChangeContext, c: TillChange, targetId: string, create
     const { error } = await supabase.from('users').update({ pin_hash: hash }).eq('id', targetId).eq('business_id', ctx.businessId);
     return error?.message ?? null;
   }
-  if (c.entity === 'staff') {
+  if (c.entity === 'staff' && create) {
     // bcrypt, so the cashier is on every till's staff list (A446) at once — the web's create kept a legacy hash that the
     // lists skip until a first online sign-in.
     const hash = await bcrypt.hash(String(c.data.pin), 10);
@@ -139,7 +139,7 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
   if (!callerOk && !maker.ok) return done({ id: c.id, status: 'refused', message: `${c.made_by_name ?? 'Whoever made it'} may not make this change` });
 
   try {
-    if (c.entity === 'staff') {
+    if (c.entity === 'staff' && c.op === 'create') {
       const { data: had } = await supabase.from('users').select('id').eq('id', c.entity_id).eq('business_id', ctx.businessId).maybeSingle();
       if (had) return done({ id: c.id, status: 'identical' });
       // A manager may not add someone above themselves (the web's own rule).
@@ -203,6 +203,12 @@ export async function applyChange(ctx: ChangeContext, c: TillChange): Promise<Ch
         return done({ id: c.id, status: 'refused', message: `that PIN is already ${clash}'s — choose another` });
       }
     }
+    if (c.entity === 'staff') {
+      // A459: the web's own rules for a staff edit (routes/staff.ts PATCH): only the owner changes an owner or admin, or
+      // gives anyone such a role; a manager changes people of their own branch.
+      const refusal = await staffEditRefusal(ctx, c, cur as Row);
+      if (refusal) return done({ id: c.id, status: 'refused', message: refusal });
+    }
     const bad = await namesAreOurs(ctx, c);
     if (bad) return { id: c.id, status: 'refused', message: bad, retry: true };
     const v = judgeUpdate(c.entity, cur as Row, c.base, c.data);
@@ -241,6 +247,24 @@ export async function decideChange(businessId: string, id: string, approve: bool
   await supabase.from('notifications').update({ read_at: new Date().toISOString() })
     .eq('business_id', businessId).eq('type', 'change_approval').ilike('message', `%[change:${id}]%`);
   return { ok: true, status };
+}
+
+/** A459: why a staff edit from a till may not be made — the web's rules (routes/staff.ts PATCH) — or null. */
+async function staffEditRefusal(ctx: ChangeContext, c: TillChange, cur: Row): Promise<string | null> {
+  if (await isOwnerOf(ctx.businessId, c.made_by)) return null;
+  const roleName = async (id: unknown) => {
+    if (!id) return null;
+    const { data } = await supabase.from('roles').select('name').eq('id', String(id)).maybeSingle();
+    return (data as Row | null)?.name ?? null;
+  };
+  if (await isOwnerOf(ctx.businessId, c.entity_id) || isElevatedRoleName(await roleName(cur.role_id))) return 'only the owner changes an owner or an admin';
+  if (c.data.role_id !== undefined && isElevatedRoleName(await roleName(c.data.role_id))) return 'only the owner gives that role';
+  if (ctx.branchId) {
+    const { data: theirs } = await supabase.from('user_branches').select('branch_id').eq('user_id', c.entity_id);
+    const list = ((theirs ?? []) as Row[]).map((b) => b.branch_id);
+    if (list.length && !list.includes(ctx.branchId)) return 'they work at another branch — change them there or on the web';
+  }
+  return null;
 }
 
 /** A cashier added on a till works at that till's branch. */

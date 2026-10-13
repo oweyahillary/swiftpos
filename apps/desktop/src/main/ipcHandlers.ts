@@ -14,7 +14,7 @@
 import { latestReady, shareDir, tillVersions } from './updateShare';   // A443
 import { cleanOffer, type Offer } from './offers';   // A445
 import { getMacAddressCached } from './machineFingerprint';
-import { app, ipcMain, net } from 'electron';
+import { app, ipcMain, net, dialog, BrowserWindow } from 'electron';
 import { isNodeRole, ensureNodeSecret } from './deviceConfig';
 import { printSale, escposEnabled, setEscposEnabled, kitchenExclusions, kitchenExclusionsState, setKitchenExclusions, clearKitchenExclusionsOverride } from './escposBridge';
 import { expectStringArray, assertPayload } from './ipcValidate';
@@ -67,7 +67,7 @@ import { exportDailySalesReport } from './dailySalesReport';
 type RangeArg = { preset?: RangePreset; from?: string; to?: string; limit?: number };
 import { checkDayGate, getOpenDay, getDayCloseSummary, closeDay, isManager, getConflictedShifts, retryConflictedShift, businessDateNow } from './dayService';
 import { branchCloseOverview, createCloseInstruction, executeCloseDay, createConfirmInstruction, executeConfirmShift, type PeerDayState } from './branchClose';
-import { takeSnapshot, maintenanceStatus } from './maintenance';
+import { takeSnapshot, setBackupDir, maintenanceStatus } from './maintenance';
 import { emitEvent, resetOutboxCursors } from './nodeIngest';
 import { localOrderDetail } from './managerReports';   // A444
 import { detailFromCloud, receiptPayloadFromDetail, type OrderDetail } from './orderDetail';   // A444
@@ -2342,8 +2342,11 @@ export function registerIpcHandlers() {
     try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
 
     if (!res.ok) {
-      if (res.status === 403) throw new Error('Your role does not allow this change.');
-      throw new Error(data?.error ?? `Request failed (${res.status})`);
+      // A197: the cloud's code travels with the message (a screen offers the right next step — e.g. same_user_receipt).
+      const err: Error & { code?: string | null; status?: number } = new Error(res.status === 403 && !data?.code
+        ? 'Your role does not allow this change.' : (data?.error ?? `Request failed (${res.status})`));
+      err.code = data?.code ?? null; err.status = res.status;
+      throw err;
     }
     return data;
   }
@@ -2596,6 +2599,7 @@ export function registerIpcHandlers() {
     }
   });
   handle('wastage:record', async (_e, payload: { reason: string; note?: string; items: any[] }) => {
+    requireOnlineLicence();   // A460
     const db = getLocalDb();
     const staff = db.prepare(`SELECT staff_name, role_name, permissions, branch_id FROM staff_session WHERE id = 1`).get() as
       { staff_name: string; role_name: string | null; permissions: string; branch_id: string } | undefined;
@@ -2649,16 +2653,19 @@ export function registerIpcHandlers() {
 
   handle('manage:listCombos', async () => manageFetch('/api/combos', 'GET'));
   handle('manage:createCombo', async (_e, payload: any) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch('/api/combos', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
   handle('manage:updateCombo', async (_e, { id, patch }: { id: string; patch: any }) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/combos/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
   handle('manage:setComboItems', async (_e, { id, items }: { id: string; items: any[] }) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/combos/${id}/items`, 'PUT', { items });
     await refreshCatalogue();
     return out;
@@ -2671,32 +2678,38 @@ export function registerIpcHandlers() {
   // display what migration 45 classified but cannot resolve anything it left as
   // 'review' — which is exactly where a human is needed.
   handle('manage:updateVariantGroup', async (_e, { id, patch }: { id: string; patch: any }) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/variants/groups/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
   handle('manage:createVariantOption', async (_e, payload: any) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch('/api/variants/options', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
   handle('manage:updateVariantOption', async (_e, { id, patch }: { id: string; patch: any }) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/variants/options/${id}`, 'PATCH', patch);
     await refreshCatalogue();
     return out;
   });
   handle('manage:deleteVariantOption', async (_e, id: string) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/variants/options/${id}`, 'DELETE');
     await refreshCatalogue();
     return out;
   });
 
   handle('manage:createVariantGroup', async (_e, payload: any) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch('/api/variants/groups', 'POST', payload);
     await refreshCatalogue();
     return out;
   });
   handle('manage:deleteVariantGroup', async (_e, id: string) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/variants/groups/${id}`, 'DELETE');
     await refreshCatalogue();
     return out;
@@ -2710,10 +2723,8 @@ export function registerIpcHandlers() {
   // both. The POS has always rendered these; nothing could create them.
   handle('manage:listModifierGroups', async (_e, productId: string) =>
     manageFetch(`/api/modifiers/groups?product_id=${encodeURIComponent(productId)}`, 'GET'));
-  handle('manage:createModifierGroup', async (_e, payload: any) =>
-    manageFetch('/api/modifiers/groups', 'POST', payload));
-  handle('manage:deleteModifierGroup', async (_e, id: string) =>
-    manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'));
+  handle('manage:createModifierGroup', async (_e, payload: any) => { requireOnlineLicence(); return manageFetch('/api/modifiers/groups', 'POST', payload); });
+  handle('manage:deleteModifierGroup', async (_e, id: string) => { requireOnlineLicence(); return manageFetch(`/api/modifiers/groups/${id}`, 'DELETE'); });
 
   handle('manage:listStaff', async () => overlayOnList('staff', await manageFetch('/api/staff', 'GET')));
   // A448: the roles are kept on this till too, so a cashier can be added offline with their role's name and permissions.
@@ -2755,8 +2766,76 @@ export function registerIpcHandlers() {
     void staffChangedHere();
     return out;
   });
+  // ── A197: stock transfers between branches, on the till (online licence; inventory.transfer) ──────────────────────
+  // Owner, 2026-10-13: "A197 … add it yes but it's tied to the online licence just like stock … inside the stock tab".
+  // The cloud does the work (routes/stock.ts: pending → in_transit → received / cancelled; stock moves on each step).
+  const transferBranch = (): string | null => {
+    const st = getLocalDb().prepare(`SELECT branch_id FROM staff_session WHERE id=1`).get() as { branch_id?: string } | undefined;
+    return st?.branch_id || getDeviceConfig()?.branch_id || null;
+  };
+  const transferAnswer = async (fn: () => Promise<any>) => {
+    try { return { ok: true, data: await fn() }; }
+    catch (e: any) { return { ok: false, error: e?.message ?? 'Could not reach the cloud', code: e?.code ?? null }; }
+  };
+  handle('transfers:list', async () => {
+    requireOnlineLicence();
+    const branch = transferBranch();
+    if (!branch) return { ok: false, error: 'This till is not bound to a branch.' };
+    const r = await transferAnswer(() => manageFetch(`/api/stock/transfers?branch_id=${encodeURIComponent(branch)}&limit=100`, 'GET'));
+    return r.ok ? { ...r, branch_id: branch } : r;
+  });
+  handle('transfers:branches', async () => {
+    requireOnlineLicence();
+    const branch = transferBranch();
+    return transferAnswer(async () => ((await manageFetch('/api/branches', 'GET')) ?? []).filter((b: any) => b.id !== branch)
+      .map((b: any) => ({ id: b.id, name: b.name })));
+  });
+  handle('transfers:create', async (_e, payload) => {
+    const { to_branch_id, notes, items } = assertPayload<{ to_branch_id: string; notes?: string; items: Array<{ product_id: string; quantity: number }> }>(
+      { to_branch_id: { t: 'string', min: 1 }, notes: { t: 'string', optional: true }, items: { t: 'any' } }, payload);
+    requireOnlineLicence();
+    const from = transferBranch();
+    if (!from) return { ok: false, error: 'This till is not bound to a branch.' };
+    const clean = (Array.isArray(items) ? items : []).map((i) => ({ product_id: String(i?.product_id ?? ''), quantity: Number(i?.quantity) }))
+      .filter((i) => i.product_id && Number.isFinite(i.quantity) && i.quantity > 0);
+    if (!clean.length) return { ok: false, error: 'Add at least one item with a quantity.' };
+    return transferAnswer(() => manageFetch('/api/stock/transfers', 'POST', { from_branch_id: from, to_branch_id, notes: notes?.trim() || undefined, items: clean }));
+  });
+  handle('transfers:status', async (_e, payload) => {
+    const p = assertPayload<{ id: string; status: string; reason?: string; received_items?: unknown; receipt_note?: string; allow_same_user?: boolean }>(
+      { id: { t: 'string', min: 1 }, status: { t: 'string', min: 1 }, reason: { t: 'string', optional: true }, received_items: { t: 'any', optional: true },
+        receipt_note: { t: 'string', optional: true }, allow_same_user: { t: 'boolean', optional: true } }, payload);
+    requireOnlineLicence();
+    if (!['in_transit', 'received', 'cancelled'].includes(p.status)) return { ok: false, error: 'Unknown step.' };
+    const { id, ...body } = p;
+    const r = await transferAnswer(() => manageFetch(`/api/stock/transfers/${encodeURIComponent(id)}/status`, 'PATCH', body));
+    if (r.ok && p.status !== 'cancelled') void syncAll().catch(() => { /* the stock levels follow on the next pull */ });
+    return r;
+  });
+
+  // A460: premium writes (combos, variants, modifiers, offers, wastage) refuse without the online licence — the screens
+  // are hidden then, and a screen hidden is not a door locked.
+  const requireOnlineLicence = (): void => {
+    if (getDeviceConfig()?.web_pos_enabled !== true) throw new Error('This is part of the online licence — ask ZapTill to turn it on for your business.');
+  };
   handle('manage:updateStaff', async (_e, { id, patch }: { id: string; patch: any }) => {
-    const out = await manageFetch(`/api/staff/${id}`, 'PATCH', patch);
+    // A459: the screen's Deactivate sent { is_active } — a field the cloud does not know (it never deactivated anyone).
+    const p: Record<string, unknown> = { ...(patch ?? {}) };
+    if (typeof p.is_active === 'boolean') { p.status = p.is_active ? 'active' : 'inactive'; delete p.is_active; }
+    // A459 (owner, 2026-10-13: rename, role and deactivate on the till, offline too): these go on this till first — at
+    // once, offline too — and reach the branch server and the cloud later (A448). Anything else (an override PIN, branches,
+    // an email) still needs the cloud first.
+    const tillFirst = Object.keys(p).length > 0 && Object.keys(p).every((k) => ['name', 'role_id', 'status'].includes(k));
+    if (tillFirst) {
+      try {
+        const ch = recordTillChange({ entity: 'staff', op: 'update', entity_id: String(id), data: p });
+        void staffChangedHere();
+        return { id: ch.entity_id, ...p, change_state: 'pending' };
+      } catch (e: any) {
+        if (!/not on this till/.test(String(e?.message ?? ''))) throw e;   // someone this till does not hold: the cloud, as before
+      }
+    }
+    const out = await manageFetch(`/api/staff/${id}`, 'PATCH', p);
     void staffChangedHere();
     return out;
   });
@@ -2830,6 +2909,7 @@ export function registerIpcHandlers() {
   // which is asked for at once).
   handle('manage:offers', async () => manageFetch('/api/offers', 'GET'));
   handle('manage:saveOffer', async (_e, raw) => {
+    requireOnlineLicence();   // A460
     const c = cleanOffer(raw);
     if (!c.ok) throw new Error((c as { error: string }).error);
     const id = String((raw as any)?.id ?? '');
@@ -2838,6 +2918,7 @@ export function registerIpcHandlers() {
     return out;
   });
   handle('manage:deleteOffer', async (_e, id: string) => {
+    requireOnlineLicence();   // A460
     const out = await manageFetch(`/api/offers/${encodeURIComponent(String(id))}`, 'DELETE');
     syncAll().catch(console.error);
     return out;
@@ -3367,6 +3448,21 @@ export function registerIpcHandlers() {
   });
 
   handle('tech:maintenance', async () => maintenanceStatus());
+  // A380: the technician chooses where the branch server's backups go — proven by writing one there at once.
+  handle('tech:chooseBackupDir', async () => {
+    if (!getActiveSession()) throw new Error('Tech session required');
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const res = await dialog.showOpenDialog(win!, { title: 'Choose the backup folder (a USB drive or a second disk)',
+      properties: ['openDirectory', 'createDirectory'] });
+    return res.canceled || !res.filePaths?.[0] ? null : res.filePaths[0];
+  });
+  handle('tech:setBackupDir', async (_e, payload) => {
+    const { dir } = assertPayload<{ dir: string | null }>({ dir: { t: 'any' } }, payload ?? {});
+    if (!getActiveSession()) throw new Error('Tech session required');
+    const clean = typeof dir === 'string' && dir.trim() ? dir.trim() : null;
+    logTechAction('backup.dir', { dir: clean ?? '(default)' });
+    return setBackupDir(clean);
+  });
 
   handle('tech:query', async (_event, { sql }: { sql: string }) => {
     if (!getActiveSession()) return { ok: false, error: 'No active tech session.' };

@@ -66,8 +66,15 @@ export function readLocal(db: Database.Database, entity: ChangeEntity, id: strin
         show_days: days, barcode: r.barcode, plu_code: r.plu, is_kitchen: r.is_kitchen === null ? null : !!r.is_kitchen, track_stock: !!r.track_stock };
     }
     if (entity === 'staff' || entity === 'staff_pin') {
-      const r = db.prepare(`SELECT name FROM branch_staff WHERE staff_id = ?`).get(id) as any;
-      return r ? { name: r.name } : null;
+      const r = db.prepare(`SELECT name, role_name, status FROM branch_staff WHERE staff_id = ?`).get(id) as any;
+      if (!r) return null;
+      // A459: the role by its id, from the roles this till saved (what the cloud compares an update against).
+      let roleId: string | null = null;
+      try {
+        const roles = JSON.parse((db.prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]') as any[];
+        roleId = roles.find((x) => String(x?.name ?? '').toLowerCase() === String(r.role_name ?? '').toLowerCase())?.id ?? null;
+      } catch { roleId = null; }
+      return { name: r.name, status: r.status ?? 'active', ...(roleId ? { role_id: roleId } : {}) };
     }
   } catch { /* a table not there yet */ }
   return null;
@@ -103,6 +110,28 @@ export function applyLocal(db: Database.Database, c: Pick<TillChange, 'entity' |
     set('products', { name: d.name, description: d.description, base_price: d.base_price, category_id: d.category_id, status: d.status,
       show_days: d.show_days === undefined ? undefined : json(d.show_days), barcode: d.barcode, plu: d.plu_code,
       is_kitchen: d.is_kitchen === undefined ? undefined : bit(d.is_kitchen), track_stock: d.track_stock === undefined ? undefined : bit(d.track_stock) });
+    return;
+  }
+  if (c.entity === 'staff' && c.op === 'update') {
+    // A459: a rename, a new role (its name and permissions from the roles this till saved) or (de)activation — here at once.
+    // Inactive: kept on this till's list (so it can be undone) but no longer signs in here (branchStaff filters status),
+    // and its saved sign-in is dropped.
+    const cols: Record<string, unknown> = { name: d.name, status: d.status };
+    if (d.role_id !== undefined) {
+      try {
+        const roles = JSON.parse((db.prepare(`SELECT value FROM maintenance_state WHERE key = 'roles_cache'`).get() as any)?.value ?? '[]') as any[];
+        const role = roles.find((x) => x?.id === d.role_id);
+        if (role) {
+          const perms: Record<string, boolean> = {};
+          for (const p of (role.permissions ?? role.role_permissions ?? [])) { const k = p?.key ?? p?.permissions?.key; if (k) perms[k] = true; }
+          cols.role_name = role.name; cols.permissions = JSON.stringify(perms);
+        }
+      } catch { /* the role stays until the next list */ }
+    }
+    const keys = Object.keys(cols).filter((k) => cols[k] !== undefined);
+    if (keys.length) db.prepare(`UPDATE branch_staff SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @now WHERE staff_id = @id`)
+      .run({ ...Object.fromEntries(keys.map((k) => [k, cols[k]])), now: new Date().toISOString(), id: c.entity_id });
+    if (d.status === 'inactive') { try { db.prepare(`DELETE FROM staff_pin_cache WHERE staff_id = ?`).run(c.entity_id); } catch { /* none */ } }
     return;
   }
   if ((c.entity === 'staff' || c.entity === 'staff_pin') && local.pinHashEnc) {

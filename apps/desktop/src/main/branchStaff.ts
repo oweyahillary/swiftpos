@@ -92,7 +92,7 @@ export function readBranchStaffForServe(branchId: string): Array<{
   };
   let rows: any[];
   try {
-    rows = getLocalDb().prepare(`SELECT * FROM branch_staff WHERE branch_id = ?`).all(branchId) as any[];
+    rows = getLocalDb().prepare(`SELECT * FROM branch_staff WHERE branch_id = ? AND COALESCE(status, 'active') = 'active'`).all(branchId) as any[];   // A459: an inactive person is neither served nor signed in
   } catch { return []; }
 
   const out: any[] = [];
@@ -126,7 +126,7 @@ export function verifyPinAtNode(pin: string, branchId: string): NodeVerdict {
 
   let rows: any[];
   try {
-    rows = getLocalDb().prepare(`SELECT * FROM branch_staff WHERE branch_id = ?`).all(branchId) as any[];
+    rows = getLocalDb().prepare(`SELECT * FROM branch_staff WHERE branch_id = ? AND COALESCE(status, 'active') = 'active'`).all(branchId) as any[];   // A459: an inactive person is neither served nor signed in
   } catch { rows = []; }
   if (rows.length === 0) {
     return { ok: false, reason: 'no_roster', message: 'This branch server has no staff roster yet.' };

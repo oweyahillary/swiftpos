@@ -82,9 +82,12 @@ export const ENTITY_SPECS: Record<ChangeEntity, EntitySpec> = {
       source: 'purchased', tax_type: 'B', pieces_per_unit: 1 },
   },
   // A cashier added on a till (offline too): they sign in on that till at once; the cloud adds them to the till's branch.
+  // A459 (owner, 2026-10-13: rename, role and deactivate offline — "yes, all three"): a staff member is also UPDATED from a
+  // till — name, role, active / inactive. A PIN is never part of an update (staff_pin is).
   staff: {
     table: 'users', permissions: ['staff.manage'],
-    fields: { name: text(80, true), role_id: uuidOrNull, pin: (v) => (/^\d{4,6}$/.test(String(v ?? '')) ? ok(String(v)) : no('must be 4–6 digits')) },
+    fields: { name: text(80, true), role_id: uuidOrNull, status: oneOf(['active', 'inactive']),
+      pin: (v) => (/^\d{4,6}$/.test(String(v ?? '')) ? ok(String(v)) : no('must be 4–6 digits')) },
     required: ['name', 'role_id', 'pin'], sameBy: [], defaults: { status: 'active' },
   },
   staff_pin: {
@@ -115,7 +118,7 @@ export function cleanChange(raw: any): { ok: true; change: TillChange } | { ok: 
   const op = String(r.op ?? '') as ChangeOp;
   if (!['create', 'update', 'delete'].includes(op)) return { ok: false, error: 'unknown operation' };
   if (entity === 'staff_pin' && op !== 'update') return { ok: false, error: 'a PIN is only changed' };
-  if (entity === 'staff' && op !== 'create') return { ok: false, error: 'a staff member is only added this way' };
+  if (entity === 'staff' && op === 'delete') return { ok: false, error: 'a staff member is deactivated, never deleted' };
   const id = String(r.id ?? ''), entityId = String(r.entity_id ?? '');
   if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[0-9a-f-]{36}$/i.test(entityId)) return { ok: false, error: 'a change needs valid ids' };
   const data: Record<string, unknown> = {};
@@ -127,6 +130,7 @@ export function cleanChange(raw: any): { ok: true; change: TillChange } | { ok: 
       if (!c.ok) return { ok: false, error: `${k} ${(c as { error: string }).error}` };
       data[k] = (c as { value: unknown }).value;
     }
+    if (entity === 'staff' && op === 'update') delete data.pin;   // A459: a PIN changes only as staff_pin
     if (op === 'create') for (const k of spec.required) if (data[k] === undefined || data[k] === null || data[k] === '') return { ok: false, error: `${k} is required` };
     if (op === 'update' && !Object.keys(data).length) return { ok: false, error: 'nothing to change' };
   }

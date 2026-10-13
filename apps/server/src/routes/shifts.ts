@@ -459,7 +459,8 @@ router.post('/:id/close', validate(CloseShiftSchema), async (req, res) => {
   // 0.6.28 ('kitchen_void_approval'): not while an order sent to the kitchen on this shift is unpaid — it is charged, or a
   // manager voids its items (POST /api/orders/:id/kitchen-void). A till's own close is checked on the till (its ledger),
   // and its replay is never refused for it (refusing would make the till retry forever).
-  if (!tillReplay && (await businessPosFeatures(req.businessId!)).kitchen_void_approval) {
+  // A461: unless the client has 'pay_later_tabs' (eat now, pay later — the order stays open until it is charged).
+  if (!tillReplay && !(await businessPosFeatures(req.businessId!)).pay_later_tabs) {
     const { data: unpaid } = await supabase.from('orders').select('order_number')
       .eq('business_id', req.businessId).eq('shift_id', id).eq('status', 'open').limit(20);
     if ((unpaid ?? []).length) {

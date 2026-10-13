@@ -14,7 +14,7 @@
 //   - recordKitchenSend overwrites sent_qty instead of adding                     → "a second send adds to the first" fails
 //   - markKitchenPaid not called from order:create (source pin)                   → "the sale marks its sent lines paid" fails
 //   - recordKitchenVoid accepts any reason                                        → "an unknown reason is refused" fails
-//   - kitchenCloseBlock ignores the switch                                        → "switch off: the shift may end" fails
+//   - kitchenCloseBlock ignores the switch                                        → '"eat now, pay later" on: the shift may end' fails
 //   - openKitchenOrders counts voided items                                       → "a partly voided order shows what is left" fails
 //   - the push marks kitchen voids synced without the cloud's count               → "an older cloud: kept pending" fails
 //   - kitchen:void skips the approver when the switch is on (source pin)          → "with the switch a manager approves" fails
@@ -80,9 +80,10 @@ ok('a second send adds to the first (2 + 1 chicken on tickets)',
   open1.length === 1 && open1[0].lines.find((l) => l.line_id === 'a')?.qty === 3, JSON.stringify(open1));
 ok('the unpaid order is listed with its value (3 × 1000 + 300)', open1[0].value === 3300 && open1[0].held === false);
 
-C.setPosFeatures({ kitchen_void_approval: false });
-ok('switch off: the shift may end (the order is still listed, not blocking)', K.kitchenCloseBlock(shiftId) === null);
-C.setPosFeatures({ kitchen_void_approval: true });
+// A461: the block follows 'pay_later_tabs' (eat now, pay later — off by default); kitchen voids always need a manager.
+C.setPosFeatures({ pay_later_tabs: true });
+ok('"eat now, pay later" on: the shift may end (the order is still listed, on hold, not blocking)', K.kitchenCloseBlock(shiftId) === null);
+C.setPosFeatures({ pay_later_tabs: false });
 const block = K.kitchenCloseBlock(shiftId);
 ok('switch on: End Shift is refused while a sent order is unpaid, naming it', /1 order was sent to the kitchen and not paid \(#T1-100\)/.test(block ?? ''), block);
 
@@ -153,8 +154,10 @@ ok('the kitchen gets a VOID ticket (kitchen and dispatch)', /kitchen_void: \{ by
 ok('End Shift checks the unpaid kitchen orders first', /const kitchenBlock = openShiftId \? kitchenCloseBlock\(openShiftId\) : null;\s*if \(kitchenBlock\) throw new Error\(kitchenBlock\);/.test(ipc));
 ok('a held tab with sent items is not deleted', /if \(ledgerOpen \|\| anySent\(Array\.isArray\(cart\) \? cart : \[\]\)\) \{\s*throw new Error\(/.test(ipc));
 const pos = src('renderer/pages/POSPage.tsx');
-ok('Clear with sent items asks for a kitchen void (Hold keeps it instead)',
-  /const sent = cart\.filter\(\(i\) => sentQtyOf\(i\) > 0\);\s*if \(!sent\.length \|\| !orderNumber\) \{ resetOrder\(\); return; \}\s*setKitchenVoid\(\{ title: 'Clear the order'/.test(pos));
+// A461: also when the order has lost its number — it used to reset quietly then (no void, no manager).
+ok('Clear with sent items asks for a kitchen void — even with no order number (Hold keeps it instead)',
+  /const sent = cart\.filter\(\(i\) => sentQtyOf\(i\) > 0\);\s*if \(!sent\.length\) \{ resetOrder\(\); return; \}[\s\S]{0,300}if \(!orderNumber\) await ensureOrderNumberAsync\(\);\s*setKitchenVoid\(\{ title: 'Clear the order'/.test(pos)
+  && !/if \(!sent\.length \|\| !orderNumber\) \{ resetOrder\(\); return; \}/.test(pos));
 ok('removing or reducing a sent line asks for a kitchen void',
   /const back = voidQtyFor\(item, newQty\);\s*if \(back > 0\) \{\s*setKitchenVoid\(/.test(pos) && /const sent = sentQtyOf\(item\);\s*if \(sent > 0\) \{\s*setKitchenVoid\(/.test(pos));
 ok('Send prints only what the kitchen has not had (quantity − sentQty)',

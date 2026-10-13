@@ -123,8 +123,44 @@ export function pruneIfDue(now = new Date()): PruneResult | null {
 
 export interface SnapshotResult { ok: boolean; path?: string; bytes?: number; error?: string; pruned?: number }
 
+export function defaultSnapshotDir(): string {
+  return path.join(app.getPath('userData'), 'backups');
+}
 export function snapshotDir(): string {
-  return getState('backup_dir') || path.join(app.getPath('userData'), 'backups');
+  return getState('backup_dir') || defaultSnapshotDir();
+}
+
+/**
+ * A380: is this folder on the database's own disk? A failed disk (or a stolen PC) takes the database and such backups
+ * together. Compared by volume (fs dev — the volume serial on Windows) when both exist, else by drive / UNC root.
+ * A network share (\\server\share) is another machine: not the same disk.
+ */
+export function onDatabaseDisk(dir: string, dbPath = getDbPath()): boolean {
+  const resolved = path.resolve(dir);
+  if (/^\\\\/.test(resolved)) return false;
+  try {
+    const existing = fs.existsSync(resolved) ? resolved : path.dirname(resolved);
+    return fs.statSync(existing).dev === fs.statSync(dbPath).dev;
+  } catch {
+    return path.parse(resolved).root.toLowerCase() === path.parse(path.resolve(dbPath)).root.toLowerCase();
+  }
+}
+
+/**
+ * A380 (owner, 2026-10-03: "we add the backup folder setting later"; 2026-10-13: "A380 is okay we can build it"): the
+ * branch server's backups go to the folder the technician chooses (a USB drive, a second disk). Proven at once: a backup
+ * is written there now; if that fails the previous folder stays and the reason is returned. null = back to the default.
+ */
+export async function setBackupDir(dir: string | null, now = new Date()): Promise<SnapshotResult & { dir: string; same_disk: boolean }> {
+  const previous = getState('backup_dir');
+  const target = dir && dir.trim() ? path.resolve(dir.trim()) : null;
+  setState('backup_dir', target);
+  const r = await takeSnapshot(now);
+  if (!r.ok) {
+    setState('backup_dir', previous);
+    return { ...r, error: `Could not write a backup to ${target ?? defaultSnapshotDir()}: ${r.error ?? 'unknown error'} — the backups stay in ${snapshotDir()}.`, dir: snapshotDir(), same_disk: onDatabaseDisk(snapshotDir()) };
+  }
+  return { ...r, dir: snapshotDir(), same_disk: onDatabaseDisk(snapshotDir()) };
 }
 
 /**
@@ -161,7 +197,9 @@ export async function takeSnapshot(now = new Date()): Promise<SnapshotResult> {
     setState('last_backup_status', `ok — ${(bytes / 1024 / 1024).toFixed(1)} MB, keeping ${Math.min(snaps.length, snapshotKeep())}`);
     return { ok: true, path: dest, bytes, pruned };
   } catch (err: any) {
-    setState('last_backup_at', now.toISOString());
+    // A380: a failure is recorded as a failed ATTEMPT — last_backup_at stays the last GOOD backup, so the Tech page never
+    // shows a failure as a recent backup, and the nightly job tries again within the hour (it waited 20 hours).
+    setState('last_backup_attempt_at', now.toISOString());
     setState('last_backup_status', `FAILED — ${err?.message ?? 'unknown error'}`);
     return { ok: false, error: err?.message ?? 'snapshot failed' };
   }
@@ -172,6 +210,8 @@ export async function snapshotIfDue(now = new Date()): Promise<SnapshotResult | 
   if (!isNodeRole(getDeviceConfig()?.device_role)) return null;
   const last = getState('last_backup_at');
   if (last && now.getTime() - new Date(last).getTime() < 20 * 3_600_000) return null;
+  const tried = getState('last_backup_attempt_at');   // A380: a failed one is tried again after an hour
+  if (tried && (!last || tried > last) && now.getTime() - new Date(tried).getTime() < 3_600_000) return null;
   return takeSnapshot(now);
 }
 
@@ -179,11 +219,16 @@ export async function snapshotIfDue(now = new Date()): Promise<SnapshotResult | 
 export function maintenanceStatus(): {
   last_backup_at: string | null; last_backup_status: string | null; backup_dir: string;
   last_prune_at: string | null; retention_days: number;
+  /** A380: the folder is on the database's own disk; the technician chose it (else the default). */
+  same_disk: boolean; custom_dir: boolean; keep: number;
 } {
   return {
     last_backup_at: getState('last_backup_at'),
     last_backup_status: getState('last_backup_status'),
     backup_dir: snapshotDir(),
+    same_disk: onDatabaseDisk(snapshotDir()),
+    custom_dir: !!getState('backup_dir'),
+    keep: snapshotKeep(),
     last_prune_at: getState('last_prune_at'),
     retention_days: retentionDays(),
   };

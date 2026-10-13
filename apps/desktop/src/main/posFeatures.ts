@@ -26,11 +26,12 @@ export const POS_FEATURES = [
     // 0.6.37 (owner, 2026-10-03: "never reprints a receipt"): now always so — the switch no longer changes anything.
     description: 'Always on since 0.6.37: cashiers never reprint a receipt from History. Managers can.',
   },
-  // 0.6.28 (owner, 2026-10-01: a sent order cancelled after the customer paid in cash — "the cashier pockets the money").
+  // A461 (owner, 2026-10-13: "some of their clients can eat today and pay later, that meal remains on hold till it's paid …
+  // so the cashier should be able to close with the held items, but let it be a switch turned off by default").
   {
-    key: 'kitchen_void_approval',
-    label: 'Kitchen voids need a manager',
-    description: 'Once items are sent to the kitchen, removing or reducing them needs a manager (signed in, or their PIN) and a reason. A shift cannot end while a sent order is unpaid.',
+    key: 'pay_later_tabs',
+    label: 'Eat now, pay later',
+    description: 'A cashier may end a shift while orders sent to the kitchen are still unpaid — a customer who pays a day or more later. The order stays on hold, listed, until it is charged. Off: a shift cannot end while a sent order is unpaid.',
   },
   {
     key: 'pay_before_kitchen',
@@ -61,8 +62,14 @@ export const POS_FEATURES = [
  *   blind_shift_close             — a cashier never sees sales, per-method totals or expected cash (a manager sees all);
  *   confirm_shows_cashier_figures — at confirm the manager sees the cashier's figure per method, keys in their own, and
  *                                   gives a reason where they differ.
+ *   kitchen_void_approval         — A461 (owner, 2026-10-13: cashiers voided items sent to the kitchen without a manager —
+ *                                   the switch was off; "always on for everyone"): removing or reducing anything already
+ *                                   sent to the kitchen needs a manager (signed in, or their PIN) and a reason; a shift
+ *                                   cannot end while a sent order is unpaid — unless the client has 'pay_later_tabs' (eat
+ *                                   now, pay later). Was a switch since 0.6.28 (a sent order cancelled after the customer
+ *                                   paid in cash — "the cashier pockets the money").
  */
-export const STANDARD_POS_FEATURES = ['blind_shift_close', 'confirm_shows_cashier_figures'] as const;
+export const STANDARD_POS_FEATURES = ['blind_shift_close', 'confirm_shows_cashier_figures', 'kitchen_void_approval'] as const;
 
 export type PosFeatureKey = (typeof POS_FEATURES)[number]['key'] | (typeof STANDARD_POS_FEATURES)[number];
 export type PosFeatures = Record<PosFeatureKey, boolean>;

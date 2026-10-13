@@ -244,8 +244,9 @@ ok('Menu page: falls back ONLY when the till says it is offline, and says why', 
 ok('Menu page: offline, prices cannot be edited, import is hidden, the detail is the read-only one',
   /disabled=\{savingId === p\.id \|\| !!offline\}/.test(menuPage) && /onOpenImport && !offline &&/.test(menuPage) && /\) : offline \? \(\s*<SavedItemDetail/.test(menuPage));
 const staffPage = src('renderer/pages/ManageTabs.tsx');
-ok('Staff page: offline, the saved list with the reason; no Add, no Deactivate', /if \(cached\?\.offline\) \{/.test(staffPage)
-  && /\{offline \? \(\s*<div className="bg-amber-500\/10/.test(staffPage) && /\{!offline && \(\s*<button onClick=\{\(\) => toggleActive\(m\)\}/.test(staffPage));
+// A459 (owner, 2026-10-13: rename, role and deactivate offline — "yes, all three"): Deactivate works offline now.
+ok('Staff page: offline, the saved list with the reason; Deactivate and Edit work offline (A459)', /if \(cached\?\.offline\) \{/.test(staffPage)
+  && /\{offline \? \(\s*<div className="bg-amber-500\/10/.test(staffPage) && /data-testid="staff-toggle-active" onClick=\{\(\) => toggleActive\(m\)\}/.test(staffPage));
 ok('the IPC bridge and schema carry the two new channels', /cachedMenu:\s+\(\)\s+=> ipcRenderer\.invoke\('manage:cachedMenu'\)/.test(src('main/preload.ts'))
   && /'manage:cachedStaff':\s+NO_PAYLOAD/.test(src('main/ipcSchemas.ts')));
 
